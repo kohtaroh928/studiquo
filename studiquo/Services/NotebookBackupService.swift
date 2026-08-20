@@ -85,7 +85,7 @@ enum NotebookBackupService {
         guard let data = try? JSONEncoder().encode(makeArchive(notebook)) else { return }
         let manager = FileManager.default
         guard let root = try? manager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("GoodNotesFree/AutoBackups", isDirectory: true) else { return }
+            .appendingPathComponent("studiquo/AutoBackups", isDirectory: true) else { return }
         try? manager.createDirectory(at: root, withIntermediateDirectories: true)
         let identifier = String(describing: notebook.persistentModelID).replacingOccurrences(of: "[^A-Za-z0-9]", with: "-", options: .regularExpression)
         let stamp = ISO8601DateFormatter().string(from: .now).replacingOccurrences(of: ":", with: "-")
@@ -101,7 +101,7 @@ enum NotebookBackupService {
     static func automaticBackups() -> [AutomaticBackup] {
         let manager = FileManager.default
         guard let root = try? manager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("GoodNotesFree/AutoBackups", isDirectory: true),
+            .appendingPathComponent("studiquo/AutoBackups", isDirectory: true),
               let urls = try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
         return urls.compactMap { url in
             guard let data = try? Data(contentsOf: url),

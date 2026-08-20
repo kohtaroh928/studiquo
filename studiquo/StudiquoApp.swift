@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct GoodNotesFreeApp: App {
+struct StudiquoApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
