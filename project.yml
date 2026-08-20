@@ -1,17 +1,17 @@
-name: GoodNotesFree
+name: studiquo
 options:
   bundleIdPrefix: com.yabuko
   deploymentTarget:
     iOS: "17.0"
 targets:
-  GoodNotesFree:
+  studiquo:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
     sources:
-      - path: GoodNotesFree
+      - path: studiquo
     info:
-      path: GoodNotesFree/Info.plist
+      path: studiquo/Info.plist
       properties:
         UILaunchScreen:
           UIColorName: LaunchBackground
@@ -19,7 +19,7 @@ targets:
       base:
         TARGETED_DEVICE_FAMILY: "2"
         SWIFT_VERSION: "5.0"
-        PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.goodnotesfree
+        PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquo
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 972G4VGUA6
         GENERATE_INFOPLIST_FILE: YES
