@@ -10,6 +10,10 @@ import UIKit
 /// the pencil is still down — matching the reference video instead of
 /// approximating it.
 final class InkCanvasView: UIView {
+    enum ShapeKind: String {
+        case rectangle, ellipse, line
+    }
+
     // MARK: Configuration
 
     var strokeColorHex: String = "#1C1C1E"
@@ -18,6 +22,17 @@ final class InkCanvasView: UIView {
     var isScratchOutEnabled = true
     var isEraser = false
     var eraserWidth: CGFloat = 24
+    /// When set, a pencil drag defines the shape's bounding box live —
+    /// instead of freehand ink — and lifting commits it. Takes priority over
+    /// every other tool state while non-nil.
+    var pendingShapeKind: ShapeKind? {
+        didSet {
+            guard pendingShapeKind != oldValue else { return }
+            shapeDragStart = nil
+            shapeDragCurrent = nil
+            liveLayer.path = nil
+        }
+    }
     /// When false the view takes no touches at all — the "no tool selected,
     /// just scroll" state.
     var isDrawingEnabled = true {
@@ -31,6 +46,13 @@ final class InkCanvasView: UIView {
 
     var onDrawingChanged: ((InkDrawing) -> Void)?
     var onStrokeBegan: (() -> Void)?
+    /// Fired once the pencil lifts (or the touch is cancelled), whatever the
+    /// outcome — a committed stroke, an erase, or nothing. The representable
+    /// uses this to let ancestor scroll views move again once it's safe.
+    var onStrokeEnded: (() -> Void)?
+    /// Fired after a dragged shape is committed, so the owner can return to
+    /// the pen tool instead of leaving the shape tool silently armed.
+    var onShapeCommitted: (() -> Void)?
 
     private(set) var drawing = InkDrawing() {
         didSet { onDrawingChanged?(drawing) }
@@ -108,9 +130,11 @@ final class InkCanvasView: UIView {
     private var lastMovementLocation: CGPoint?
     private var isStraightened = false
     private var isEllipseLocked = false
+    private var isRectangleLocked = false
     private var holdTimer: Timer?
     private var strokeStartLocation: CGPoint?
-    private var currentEraseTargets: Set<UUID> = []
+    private var shapeDragStart: CGPoint?
+    private var shapeDragCurrent: CGPoint?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -140,7 +164,16 @@ final class InkCanvasView: UIView {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard isDrawingEnabled, let touch = touches.first, touch.type == .pencil else { return }
-        guard rawPoints.isEmpty else { return } // ignore a second finger/pencil mid-stroke
+        guard rawPoints.isEmpty, shapeDragStart == nil else { return } // ignore a second finger/pencil mid-stroke
+
+        if let kind = pendingShapeKind {
+            onStrokeBegan?()
+            let location = touch.location(in: self)
+            shapeDragStart = location
+            shapeDragCurrent = location
+            updateShapePreview(kind: kind)
+            return
+        }
 
         onStrokeBegan?()
         let now = Date()
@@ -148,14 +181,14 @@ final class InkCanvasView: UIView {
         lastMovementAt = now
         isStraightened = false
         isEllipseLocked = false
-        currentEraseTargets = []
+        isRectangleLocked = false
         let location = touch.location(in: self)
         strokeStartLocation = location
         lastMovementLocation = location
         rawPoints = [InkPoint(location: location, force: normalizedForce(touch), timeOffset: 0)]
 
         if isEraser {
-            eraseIfTouching(location)
+            eraseParts(along: [location])
         } else {
             updateLiveLayer()
             startHoldTimer()
@@ -163,22 +196,49 @@ final class InkCanvasView: UIView {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first, touch.type == .pencil, strokeStartedAt != nil else { return }
+        guard let touch = touches.first, touch.type == .pencil else { return }
 
+        if let kind = pendingShapeKind, shapeDragStart != nil {
+            shapeDragCurrent = touch.location(in: self)
+            updateShapePreview(kind: kind)
+            return
+        }
+
+        guard strokeStartedAt != nil else { return }
         let samples = event?.coalescedTouches(for: touch) ?? [touch]
+        let previousEraserLocation = rawPoints.last?.location
         for sample in samples {
             appendSample(sample)
         }
         if isEraser {
-            if let last = rawPoints.last?.location { eraseIfTouching(last) }
-        } else if !isStraightened && !isEllipseLocked {
+            let path = [previousEraserLocation].compactMap { $0 } + samples.map { $0.location(in: self) }
+            eraseParts(along: path)
+        } else if !isStraightened && !isEllipseLocked && !isRectangleLocked {
             updateLiveLayer()
         }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first, touch.type == .pencil, strokeStartedAt != nil else { return }
+        guard let touch = touches.first, touch.type == .pencil else { return }
+
+        if let kind = pendingShapeKind, let start = shapeDragStart {
+            let end = touch.location(in: self)
+            commitShape(kind: kind, from: start, to: end)
+            shapeDragStart = nil
+            shapeDragCurrent = nil
+            liveLayer.path = nil
+            onStrokeEnded?()
+            onShapeCommitted?()
+            return
+        }
+
+        guard strokeStartedAt != nil else { return }
+        let previousEraserLocation = rawPoints.last?.location
         appendSample(touch)
+        if isEraser {
+            let path = [previousEraserLocation, Optional(touch.location(in: self))].compactMap { $0 }
+            eraseParts(along: path)
+        }
         finishStroke()
     }
 
@@ -206,6 +266,8 @@ final class InkCanvasView: UIView {
             } else if isEllipseLocked {
                 // Likewise, keep refitting the ellipse to the growing path.
                 emitEllipsePreview()
+            } else if isRectangleLocked {
+                emitRectanglePreview()
             } else {
                 startHoldTimer()
             }
@@ -222,20 +284,37 @@ final class InkCanvasView: UIView {
         holdTimer?.invalidate()
         holdTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
-            guard let since = self.lastMovementAt, !self.isStraightened, !self.isEllipseLocked else { return }
+            guard let since = self.lastMovementAt,
+                  !self.isStraightened, !self.isEllipseLocked, !self.isRectangleLocked else { return }
             guard Date().timeIntervalSince(since) >= self.straightenHoldDuration else { return }
             guard let start = self.strokeStartLocation, let current = self.lastMovementLocation else { return }
             let distanceFromStart = hypot(current.x - start.x, current.y - start.y)
 
-            if distanceFromStart > 16, !self.looksLikeClosedLoop() {
+            if self.rectangleIfClosedLoop(self.previewStroke()) != nil {
+                self.isRectangleLocked = true
+                self.emitRectanglePreview()
+                self.triggerCorrectionFeedback(at: current)
+            } else if distanceFromStart > 16, !self.looksLikeClosedLoop() {
                 self.isStraightened = true
                 self.emitStraightPreview(to: current)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                self.triggerCorrectionFeedback(at: current)
             } else if self.looksLikeClosedLoop() {
                 self.isEllipseLocked = true
                 self.emitEllipsePreview()
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                self.triggerCorrectionFeedback(at: current)
             }
+        }
+    }
+
+    /// Felt as a snap through the pencil itself: `UICanvasFeedbackGenerator`
+    /// is UIKit's canvas-alignment feedback API, which drives Apple Pencil
+    /// Pro's haptic engine directly when one is connected. Older iOS falls
+    /// back to the device's own Taptic Engine, same as before.
+    private func triggerCorrectionFeedback(at point: CGPoint) {
+        if #available(iOS 17.5, *) {
+            UICanvasFeedbackGenerator(view: self).alignmentOccurred(at: point)
+        } else {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }
     }
 
@@ -265,6 +344,46 @@ final class InkCanvasView: UIView {
         liveLayer.fillColor = UIColor(inkHex: strokeColorHex)
             .withAlphaComponent(isHighlighter ? 0.45 : 1)
             .cgColor
+    }
+
+    private func emitRectanglePreview() {
+        let bounds = Self.correctedRectangleBounds(
+            previewStroke().bounds.insetBy(dx: strokeWidth, dy: strokeWidth)
+        )
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let preview = InkStroke(
+            points: Self.rectanglePoints(in: bounds), colorHex: strokeColorHex,
+            width: strokeWidth, opacity: isHighlighter ? 0.45 : 1,
+            isHighlighter: isHighlighter
+        )
+        liveLayer.path = Self.path(for: [preview]).cgPath
+        liveLayer.fillColor = UIColor(inkHex: strokeColorHex)
+            .withAlphaComponent(isHighlighter ? 0.45 : 1).cgColor
+    }
+
+    private func previewStroke() -> InkStroke {
+        InkStroke(points: rawPoints, colorHex: strokeColorHex, width: strokeWidth,
+                  opacity: isHighlighter ? 0.45 : 1, isHighlighter: isHighlighter)
+    }
+
+    private static func rectanglePoints(in rect: CGRect) -> [InkPoint] {
+        let corners = [
+            CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.minY),
+        ]
+        return corners.enumerated().map { index, point in
+            InkPoint(location: point, force: 0.5, timeOffset: Double(index) / 4)
+        }
+    }
+
+    private static func correctedRectangleBounds(_ bounds: CGRect) -> CGRect {
+        guard bounds.width > 0, bounds.height > 0 else { return bounds }
+        let ratio = bounds.width / bounds.height
+        guard (0.8...1.25).contains(ratio) else { return bounds }
+        let side = (bounds.width + bounds.height) / 2
+        return CGRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2,
+                      width: side, height: side)
     }
 
     private static func ellipsePoints(in bounds: CGRect, steps: Int = 72) -> [InkPoint] {
@@ -298,6 +417,51 @@ final class InkCanvasView: UIView {
             .cgColor
     }
 
+    // MARK: Shape tool (drag to create)
+
+    private func updateShapePreview(kind: ShapeKind) {
+        guard let start = shapeDragStart, let current = shapeDragCurrent else { return }
+        let preview = InkStroke(points: shapePoints(kind: kind, from: start, to: current), colorHex: strokeColorHex, width: strokeWidth)
+        liveLayer.path = Self.path(for: [preview]).cgPath
+        liveLayer.fillColor = UIColor(inkHex: strokeColorHex).cgColor
+    }
+
+    /// Commits the dragged shape as an ordinary stroke — same undo/erase/
+    /// export handling as anything drawn by hand. A drag shorter than this
+    /// is treated as an accidental tap rather than a degenerate sliver of a
+    /// shape.
+    private func commitShape(kind: ShapeKind, from start: CGPoint, to end: CGPoint) {
+        guard hypot(end.x - start.x, end.y - start.y) > 8 else { return }
+        let stroke = InkStroke(points: shapePoints(kind: kind, from: start, to: end), colorHex: strokeColorHex, width: strokeWidth)
+        drawing.strokes.append(stroke)
+        withoutImplicitAnimations { addCommittedLayer(for: stroke) }
+    }
+
+    private func shapePoints(kind: ShapeKind, from start: CGPoint, to end: CGPoint) -> [InkPoint] {
+        switch kind {
+        case .line:
+            return [
+                InkPoint(location: start, force: 0.6, timeOffset: 0),
+                InkPoint(location: end, force: 0.6, timeOffset: 1),
+            ]
+        case .rectangle:
+            let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
+            let corners = [
+                CGPoint(x: rect.minX, y: rect.minY),
+                CGPoint(x: rect.maxX, y: rect.minY),
+                CGPoint(x: rect.maxX, y: rect.maxY),
+                CGPoint(x: rect.minX, y: rect.maxY),
+                CGPoint(x: rect.minX, y: rect.minY),
+            ]
+            return corners.enumerated().map { index, point in
+                InkPoint(location: point, force: 0.6, timeOffset: TimeInterval(index) / 4)
+            }
+        case .ellipse:
+            let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
+            return Self.ellipsePoints(in: rect)
+        }
+    }
+
     private func updateLiveLayer() {
         guard rawPoints.count > 1 else { return }
         let preview = InkStroke(
@@ -324,17 +488,12 @@ final class InkCanvasView: UIView {
             lastMovementAt = nil
             isStraightened = false
             isEllipseLocked = false
+            isRectangleLocked = false
             liveLayer.path = nil
-            currentEraseTargets = []
+            onStrokeEnded?()
         }
 
-        guard !isEraser else {
-            if !currentEraseTargets.isEmpty {
-                drawing.strokes.removeAll { currentEraseTargets.contains($0.id) }
-                withoutImplicitAnimations { removeCommittedLayers(ids: currentEraseTargets) }
-            }
-            return
-        }
+        guard !isEraser else { return }
 
         guard rawPoints.count > 1 else { return }
 
@@ -350,22 +509,39 @@ final class InkCanvasView: UIView {
                 InkPoint(location: start, force: 0.5, timeOffset: 0),
                 InkPoint(location: end, force: 0.5, timeOffset: 1),
             ]
+        } else if isRectangleLocked {
+            let bounds = Self.correctedRectangleBounds(
+                stroke.bounds.insetBy(dx: strokeWidth, dy: strokeWidth)
+            )
+            stroke.points = Self.rectanglePoints(in: bounds)
         } else if isEllipseLocked {
             // Locked live, while the pencil was still down — use the exact
             // same fit the on-screen preview was already showing.
             let bounds = stroke.bounds.insetBy(dx: strokeWidth, dy: strokeWidth)
             stroke.points = Self.ellipsePoints(in: bounds)
-        } else if !isHighlighter, let ellipse = ellipseIfClosedLoop(stroke) {
-            // Fallback for a circle drawn fast enough that the pencil never
-            // paused: recognised from the finished shape instead of live.
-            stroke = ellipse
-        } else if !isHighlighter, isScratchOutEnabled, isScribble(stroke) {
-            let hit = drawing.strokes.filter { strokeIsCoveredBy($0, scribble: stroke) }
-            if !hit.isEmpty {
-                let hitIDs = Set(hit.map(\.id))
-                drawing.strokes.removeAll { hitIDs.contains($0.id) }
-                withoutImplicitAnimations { removeCommittedLayers(ids: hitIDs) }
-                return
+        } else {
+            // Scribble-to-erase is checked before the closed-loop ellipse
+            // fallback below: a scribble that happens to loop back near its
+            // own start is still a scribble, not a circle someone drew
+            // fast, and erasing should win that tie — otherwise a crumple
+            // gesture that closes on itself got "cleaned up" into a circle
+            // instead of erasing what it was scribbled over.
+            if !isHighlighter, isScratchOutEnabled, isScribble(stroke) {
+                let hit = drawing.strokes.filter { strokeIsCoveredBy($0, scribble: stroke) }
+                if !hit.isEmpty {
+                    let hitIDs = Set(hit.map(\.id))
+                    drawing.strokes.removeAll { hitIDs.contains($0.id) }
+                    withoutImplicitAnimations { removeCommittedLayers(ids: hitIDs) }
+                    return
+                }
+            }
+            if !isHighlighter, let rectangle = rectangleIfClosedLoop(stroke) {
+                stroke = rectangle
+            } else if !isHighlighter, let ellipse = ellipseIfClosedLoop(stroke) {
+                // Fallback for a circle drawn fast enough that the pencil
+                // never paused: recognised from the finished shape instead
+                // of live.
+                stroke = ellipse
             }
         }
 
@@ -373,19 +549,74 @@ final class InkCanvasView: UIView {
         withoutImplicitAnimations { addCommittedLayer(for: stroke) }
     }
 
-    // MARK: Eraser (bitmap-style: touched strokes are removed on lift)
+    // MARK: Eraser (bitmap-style: only the touched portions are removed)
 
-    private func eraseIfTouching(_ location: CGPoint) {
-        for stroke in drawing.strokes where !currentEraseTargets.contains(stroke.id) {
-            guard stroke.bounds.insetBy(dx: -eraserWidth, dy: -eraserWidth).contains(location) else { continue }
-            guard stroke.points.contains(where: {
-                hypot($0.location.x - location.x, $0.location.y - location.y) <= eraserWidth
-            }) else { continue }
-            currentEraseTargets.insert(stroke.id)
-            // Fade the touched stroke immediately so erasing reads as live —
-            // it's actually removed (and the layer discarded) on lift.
-            strokeLayers[stroke.id]?.opacity = 0.15
+    /// Applies each newly travelled Pencil segment immediately. There is no
+    /// faded preview and no work deferred until lift: the visible drawing is
+    /// replaced in the same move event in which the eraser crosses it.
+    private func eraseParts(along eraserPath: [CGPoint]) {
+        guard !eraserPath.isEmpty else { return }
+        let radius = max(1, eraserWidth / 2)
+        let eraserBounds = eraserPath.dropFirst().reduce(
+            CGRect(origin: eraserPath[0], size: .zero)
+        ) { $0.union(CGRect(origin: $1, size: .zero)) }
+            .insetBy(dx: -radius - strokeWidth, dy: -radius - strokeWidth)
+        var changed = false
+        var result: [InkStroke] = []
+
+        for stroke in drawing.strokes {
+            guard stroke.bounds.intersects(eraserBounds) else {
+                result.append(stroke)
+                continue
+            }
+            let source = Self.isGeneratedRectangle(stroke.points) ? stroke.points : Self.smoothed(stroke.points)
+            let samples = Self.resampled(source, maxSpacing: max(1, radius * 0.25))
+            var runs: [[InkPoint]] = []
+            var run: [InkPoint] = []
+            for sample in samples {
+                let erased = Self.distance(from: sample.location, to: eraserPath) <= radius + stroke.width / 2
+                if erased {
+                    changed = true
+                    if run.count > 1 { runs.append(run) }
+                    run = []
+                } else {
+                    run.append(sample)
+                }
+            }
+            if run.count > 1 { runs.append(run) }
+
+            if runs.isEmpty {
+                if !samples.isEmpty && !samples.allSatisfy({ Self.distance(from: $0.location, to: eraserPath) <= radius + stroke.width / 2 }) {
+                    result.append(stroke)
+                }
+            } else if runs.count == 1 && runs[0].count == samples.count {
+                result.append(stroke)
+            } else {
+                for points in runs {
+                    var fragment = stroke
+                    fragment.id = UUID()
+                    fragment.points = points
+                    result.append(fragment)
+                }
+            }
         }
+
+        guard changed else { return }
+        drawing.strokes = result
+        rebuildCommittedLayers()
+    }
+
+    private static func distance(from point: CGPoint, to polyline: [CGPoint]) -> CGFloat {
+        guard let first = polyline.first else { return .greatestFiniteMagnitude }
+        guard polyline.count > 1 else { return hypot(point.x - first.x, point.y - first.y) }
+        var best = CGFloat.greatestFiniteMagnitude
+        for (a, b) in zip(polyline, polyline.dropFirst()) {
+            let dx = b.x - a.x, dy = b.y - a.y
+            let lengthSquared = dx * dx + dy * dy
+            let t = lengthSquared > 0 ? min(1, max(0, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared)) : 0
+            best = min(best, hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t)))
+        }
+        return best
     }
 
     // MARK: Shape recognition (circle/ellipse)
@@ -425,6 +656,33 @@ final class InkCanvasView: UIView {
         }
         var result = stroke
         result.points = ellipsePoints
+        return result
+    }
+
+    private func rectangleIfClosedLoop(_ stroke: InkStroke) -> InkStroke? {
+        let points = stroke.points.map(\.location)
+        guard points.count >= 12, let first = points.first, let last = points.last else { return nil }
+        let bounds = stroke.bounds.insetBy(dx: stroke.width, dy: stroke.width)
+        guard bounds.width >= 24, bounds.height >= 24 else { return nil }
+        let diagonal = hypot(bounds.width, bounds.height)
+        guard hypot(last.x - first.x, last.y - first.y) <= diagonal * 0.35 else { return nil }
+
+        let cornerRadius = min(bounds.width, bounds.height) * 0.24
+        let corners = [
+            CGPoint(x: bounds.minX, y: bounds.minY), CGPoint(x: bounds.maxX, y: bounds.minY),
+            CGPoint(x: bounds.maxX, y: bounds.maxY), CGPoint(x: bounds.minX, y: bounds.maxY),
+        ]
+        guard corners.allSatisfy({ corner in
+            points.contains { hypot($0.x - corner.x, $0.y - corner.y) <= cornerRadius }
+        }) else { return nil }
+
+        let averageEdgeDistance = points.reduce(CGFloat.zero) { total, point in
+            total + min(abs(point.x - bounds.minX), abs(point.x - bounds.maxX),
+                        abs(point.y - bounds.minY), abs(point.y - bounds.maxY))
+        } / CGFloat(points.count)
+        guard averageEdgeDistance <= min(bounds.width, bounds.height) * 0.12 else { return nil }
+        var result = stroke
+        result.points = Self.rectanglePoints(in: Self.correctedRectangleBounds(bounds))
         return result
     }
 
@@ -494,42 +752,136 @@ final class InkCanvasView: UIView {
     }
 
     static func ribbon(for stroke: InkStroke) -> UIBezierPath {
-        let path = UIBezierPath()
-        let points = stroke.points
-        guard points.count > 1 else {
-            if let point = points.first {
-                let radius = stroke.width * max(point.force, 0.4) / 2
-                path.append(UIBezierPath(ovalIn: CGRect(
-                    x: point.location.x - radius, y: point.location.y - radius,
-                    width: radius * 2, height: radius * 2
-                )))
+        let rawPoints = stroke.points
+        guard rawPoints.count > 1 else {
+            let path = UIBezierPath()
+            if let point = rawPoints.first {
+                appendDab(to: path, center: point.location, radius: stroke.width / 2)
             }
             return path
         }
 
-        var left: [CGPoint] = []
-        var right: [CGPoint] = []
-        for index in points.indices {
-            let point = points[index]
-            let previous = points[max(0, index - 1)].location
-            let next = points[min(points.count - 1, index + 1)].location
-            var direction = CGPoint(x: next.x - previous.x, y: next.y - previous.y)
-            let length = hypot(direction.x, direction.y)
-            if length > 0.001 {
-                direction = CGPoint(x: direction.x / length, y: direction.y / length)
-            } else {
-                direction = CGPoint(x: 1, y: 0)
-            }
-            let normal = CGPoint(x: -direction.y, y: direction.x)
-            let halfWidth = stroke.width * max(point.force, 0.35) / 2
-            left.append(CGPoint(x: point.location.x + normal.x * halfWidth, y: point.location.y + normal.y * halfWidth))
-            right.append(CGPoint(x: point.location.x - normal.x * halfWidth, y: point.location.y - normal.y * halfWidth))
-        }
+        // Raw touch samples are noisy and unevenly spaced, which is what
+        // made the old point-to-point ribbon look faceted rather than
+        // drawn — PencilKit hides the same sensor jitter internally. Pass
+        // 1 damps that jitter; pass 2 fits a curve through the result and
+        // resamples it densely, so the outline traces a curve instead of a
+        // polyline of raw samples. Spacing is tied to the stroke's own
+        // width rather than a fixed sample count, so a fast flick with a
+        // thin pen still gets enough samples to stay solid.
+        let maxSpacing = max(0.75, stroke.width * 0.25)
+        // Corrected/tool-created rectangles are stored as exactly four
+        // axis-aligned corners plus the repeated first corner. Running those
+        // sparse corner points through Catmull-Rom treats every 90° corner as
+        // part of a broad curve, producing the teardrop-like shape seen on
+        // screen. Keep generated polygon edges exact; freehand ink and
+        // ellipses still use the smoothing pipeline.
+        let points = isGeneratedRectangle(rawPoints)
+            ? rawPoints
+            : resampled(smoothed(rawPoints), maxSpacing: maxSpacing)
 
-        path.move(to: left[0])
-        for point in left.dropFirst() { path.addLine(to: point) }
-        for point in right.reversed() { path.addLine(to: point) }
-        path.close()
-        return path
+        // Build one Core Graphics stroked outline. The previous renderer
+        // appended independently wound quads and circles to one fill path;
+        // where their winding directions opposed each other Core Animation
+        // treated the overlap as a hole (the white beads in handwriting and
+        // white crescents at line ends). A single round-cap/round-join stroke
+        // has one coherent outline, so overlaps can never cancel its fill.
+        let centerline = UIBezierPath()
+        centerline.move(to: points[0].location)
+        for point in points.dropFirst() { centerline.addLine(to: point.location) }
+        let outline = centerline.cgPath.copy(
+            strokingWithWidth: stroke.width,
+            lineCap: .round,
+            lineJoin: .round,
+            miterLimit: 2
+        )
+        return UIBezierPath(cgPath: outline)
+    }
+
+    private static func isGeneratedRectangle(_ points: [InkPoint]) -> Bool {
+        guard points.count == 5,
+              let first = points.first?.location,
+              let last = points.last?.location,
+              hypot(first.x - last.x, first.y - last.y) < 0.01 else { return false }
+
+        for (a, b) in zip(points, points.dropFirst()) {
+            let dx = abs(a.location.x - b.location.x)
+            let dy = abs(a.location.y - b.location.y)
+            guard (dx < 0.01 && dy > 0.01) || (dy < 0.01 && dx > 0.01) else { return false }
+        }
+        return true
+    }
+
+    private static func appendDab(to path: UIBezierPath, center: CGPoint, radius: CGFloat) {
+        path.append(UIBezierPath(ovalIn: CGRect(
+            x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2
+        )))
+    }
+
+    /// Light jitter reduction: each interior point is pulled toward the
+    /// midpoint of its neighbours. Endpoints are left untouched so a stroke
+    /// still starts and ends exactly where the pencil touched down and
+    /// lifted.
+    private static func smoothed(_ points: [InkPoint]) -> [InkPoint] {
+        guard points.count > 2 else { return points }
+        var result = points
+        for index in 1..<(points.count - 1) {
+            let previous = points[index - 1].location
+            let current = points[index].location
+            let next = points[index + 1].location
+            result[index].location = CGPoint(
+                x: current.x * 0.5 + (previous.x + next.x) * 0.25,
+                y: current.y * 0.5 + (previous.y + next.y) * 0.25
+            )
+        }
+        return result
+    }
+
+    /// Fits a Catmull-Rom spline through the (already jitter-reduced)
+    /// samples and resamples it so consecutive samples are never farther
+    /// apart than `maxSpacing` — the same technique PencilKit's ink uses —
+    /// instead of straight segments between raw touch events. Subdividing
+    /// by distance rather than a fixed count per segment keeps dabs
+    /// overlapping (no gaps) even where a fast flick left raw samples far
+    /// apart, without over-subdividing slow, closely-spaced segments.
+    private static func resampled(_ points: [InkPoint], maxSpacing: CGFloat) -> [InkPoint] {
+        guard points.count > 2 else { return points }
+        var result: [InkPoint] = [points[0]]
+        for index in 0..<(points.count - 1) {
+            let p0 = points[max(0, index - 1)]
+            let p1 = points[index]
+            let p2 = points[index + 1]
+            let p3 = points[min(points.count - 1, index + 2)]
+            let segmentLength = hypot(p2.location.x - p1.location.x, p2.location.y - p1.location.y)
+            let steps = max(1, Int((segmentLength / maxSpacing).rounded(.up)))
+            for step in 1...steps {
+                let t = CGFloat(step) / CGFloat(steps)
+                result.append(catmullRom(p0, p1, p2, p3, t))
+            }
+        }
+        return result
+    }
+
+    private static func catmullRom(_ p0: InkPoint, _ p1: InkPoint, _ p2: InkPoint, _ p3: InkPoint, _ t: CGFloat) -> InkPoint {
+        let t2 = t * t
+        let t3 = t2 * t
+        func interpolate(_ a: CGFloat, _ b: CGFloat, _ c: CGFloat, _ d: CGFloat) -> CGFloat {
+            0.5 * (
+                (2 * b)
+                + (-a + c) * t
+                + (2 * a - 5 * b + 4 * c - d) * t2
+                + (-a + 3 * b - 3 * c + d) * t3
+            )
+        }
+        return InkPoint(
+            location: CGPoint(
+                x: interpolate(p0.location.x, p1.location.x, p2.location.x, p3.location.x),
+                y: interpolate(p0.location.y, p1.location.y, p2.location.y, p3.location.y)
+            ),
+            force: interpolate(p0.force, p1.force, p2.force, p3.force),
+            timeOffset: TimeInterval(interpolate(
+                CGFloat(p0.timeOffset), CGFloat(p1.timeOffset), CGFloat(p2.timeOffset), CGFloat(p3.timeOffset)
+            ))
+        )
     }
 }

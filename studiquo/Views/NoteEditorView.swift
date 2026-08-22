@@ -5,11 +5,10 @@ import PhotosUI
 import WebKit
 
 private extension Notification.Name {
-    static let goodNotesFreeOpenPageLink = Notification.Name("GoodNotesFreeOpenPageLink")
-    static let goodNotesFreeUndoDrawing = Notification.Name("GoodNotesFreeUndoDrawing")
-    static let goodNotesFreeRedoDrawing = Notification.Name("GoodNotesFreeRedoDrawing")
-    static let goodNotesFreeOpenNotebookTab = Notification.Name("GoodNotesFreeOpenNotebookTab")
-    static let goodNotesFreeAddShapeStroke = Notification.Name("GoodNotesFreeAddShapeStroke")
+    static let studiquoOpenPageLink = Notification.Name("StudiquoOpenPageLink")
+    static let studiquoUndoDrawing = Notification.Name("StudiquoUndoDrawing")
+    static let studiquoRedoDrawing = Notification.Name("StudiquoRedoDrawing")
+    static let studiquoOpenNotebookTab = Notification.Name("StudiquoOpenNotebookTab")
 }
 
 /// True while the enclosing pane is pinch-zoomed. The page list uses it to
@@ -31,7 +30,7 @@ private enum ActivePane { case primary, secondary }
 private enum PaneDropTarget: Equatable { case primary, secondary }
 
 /// What a top tab-bar selection (or drag) should load into a split pane.
-/// Posted cross-file via `GoodNotesFreeSwitchPaneTarget` from ContentView,
+/// Posted cross-file via `StudiquoSwitchPaneTarget` from ContentView,
 /// since a tab tap must land in whichever NoteEditorView instance is
 /// currently alive without recreating it (see `routeTabSelection`).
 enum PaneSwitchTarget {
@@ -112,13 +111,17 @@ struct NoteEditorView: View {
     @AppStorage("drawingColor") private var drawingColorHex = "#1C1C1E"
     @AppStorage("drawingWidth") private var drawingWidth = 4.0
     @AppStorage("eraserWidth") private var eraserWidth = 24.0
-    // Key deliberately renamed: the old "scratchOutEnabled" is already stored
-    // as true on existing installs, so flipping the default alone would not
-    // reach them. Scratch-to-erase repeatedly destroyed ordinary handwriting
-    // (Japanese characters overlap and reverse direction enough to look like
-    // a scribble), and it was never a requested feature — so it now starts off
-    // and stays opt-in via the toolbar toggle.
+    // Key deliberately renamed from the old "scratchOutEnabled" so a fresh
+    // default actually reaches existing installs (an @AppStorage default is
+    // only used the first time a key is read, so reusing the old key would
+    // have kept whatever was already stored under it). Defaults on, and
+    // stays toggleable from the drawing bar.
     @AppStorage("scratchOutEnabledV2") private var isScratchOutEnabled = true
+    /// Armed shape kind ("" for none) for the drag-to-create shape tool.
+    /// Shared via the same `@AppStorage` key with `PageCanvasContainer`, the
+    /// same pattern `drawingToolRaw` already uses to reach the active page's
+    /// canvas without a direct reference to it.
+    @AppStorage("pendingShapeKind") private var pendingShapeKindRaw = ""
     @AppStorage("selectedElementColor") private var selectedElementColorHex = "#1C1C1E"
 
     var body: some View {
@@ -235,17 +238,17 @@ struct NoteEditorView: View {
             primaryPageIndex = clamped(primaryPageIndex, pageCount: count)
             notebook.refreshLibraryMetadata()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .goodNotesFreeOpenPageLink)) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .studiquoOpenPageLink)) { notification in
             guard let target = notification.object as? Int,
                   notebook.sortedPages.indices.contains(target) else { return }
             primaryPageIndex = target
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("GoodNotesFreePageActivated"))) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoPageActivated"))) { notification in
             guard let page = notification.object as? NotePage else { return }
             if page.notebook === secondaryNotebook { activePane = .secondary }
             else if page.notebook === notebook { activePane = .primary }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("GoodNotesFreeSwitchPaneTarget"))) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoSwitchPaneTarget"))) { notification in
             guard let target = notification.object as? PaneSwitchTarget else { return }
             routeTabSelection(target)
         }
@@ -349,13 +352,13 @@ struct NoteEditorView: View {
     private func sharedDrawingToolbarControls(isVertical: Bool) -> some View {
         Button {
             if let activePage {
-                NotificationCenter.default.post(name: .goodNotesFreeUndoDrawing, object: activePage)
+                NotificationCenter.default.post(name: .studiquoUndoDrawing, object: activePage)
             }
         } label: { Image(systemName: "arrow.uturn.backward").frame(width: 28, height: 28) }
 
         Button {
             if let activePage {
-                NotificationCenter.default.post(name: .goodNotesFreeRedoDrawing, object: activePage)
+                NotificationCenter.default.post(name: .studiquoRedoDrawing, object: activePage)
             }
         } label: { Image(systemName: "arrow.uturn.forward").frame(width: 28, height: 28) }
 
@@ -371,6 +374,7 @@ struct NoteEditorView: View {
 
         ForEach(DrawingToolKind.toolbarCases, id: \.rawValue) { tool in
             Button {
+                pendingShapeKindRaw = ""
                 drawingToolRaw = (drawingTool == tool ? DrawingToolKind.none : tool).rawValue
             } label: {
                 Image(systemName: tool.icon)
@@ -471,7 +475,8 @@ struct NoteEditorView: View {
                             currentPageIndex: $primaryPageIndex,
                             usesDarkPageDisplay: usesDarkPageDisplay,
                             onRequestAddPage: { requestPageAddition(to: displayedPrimaryNotebook) },
-                            onQuickAddPage: { quickAddPage(to: displayedPrimaryNotebook) }
+                            onQuickAddPage: { quickAddPage(to: displayedPrimaryNotebook) },
+                            onQuickAddPageAtTop: { quickAddPageAtTop(to: displayedPrimaryNotebook) }
                         )
                     }
                 }
@@ -508,7 +513,8 @@ struct NoteEditorView: View {
                         currentPageIndex: $secondaryPageIndex,
                         showsTitle: true,
                         onRequestAddPage: { requestPageAddition(to: secondaryNotebook) },
-                        onQuickAddPage: { quickAddPage(to: secondaryNotebook) }
+                        onQuickAddPage: { quickAddPage(to: secondaryNotebook) },
+                        onQuickAddPageAtTop: { quickAddPageAtTop(to: secondaryNotebook) }
                     )
                 }
             }
@@ -542,7 +548,7 @@ struct NoteEditorView: View {
         ToolbarItemGroup(placement: .navigationBarTrailing) {
             Button {
                 guard let page = currentPrimaryPage else { return }
-                NotificationCenter.default.post(name: .goodNotesFreeUndoDrawing, object: page)
+                NotificationCenter.default.post(name: .studiquoUndoDrawing, object: page)
             } label: {
                 Label("元に戻す", systemImage: "arrow.uturn.backward")
             }
@@ -550,7 +556,7 @@ struct NoteEditorView: View {
 
             Button {
                 guard let page = currentPrimaryPage else { return }
-                NotificationCenter.default.post(name: .goodNotesFreeRedoDrawing, object: page)
+                NotificationCenter.default.post(name: .studiquoRedoDrawing, object: page)
             } label: {
                 Label("やり直す", systemImage: "arrow.uturn.forward")
             }
@@ -866,11 +872,11 @@ struct NoteEditorView: View {
 
                 toolStripButton("元に戻す", icon: "arrow.uturn.backward") {
                     guard let page = currentPrimaryPage else { return }
-                    NotificationCenter.default.post(name: .goodNotesFreeUndoDrawing, object: page)
+                    NotificationCenter.default.post(name: .studiquoUndoDrawing, object: page)
                 }
                 toolStripButton("やり直す", icon: "arrow.uturn.forward") {
                     guard let page = currentPrimaryPage else { return }
-                    NotificationCenter.default.post(name: .goodNotesFreeRedoDrawing, object: page)
+                    NotificationCenter.default.post(name: .studiquoRedoDrawing, object: page)
                 }
                 toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode, action: selectPen)
                 toolStripButton("消しゴム", icon: "eraser", isActive: drawingTool == .eraser && !isReadOnlyMode, action: selectEraser)
@@ -919,7 +925,7 @@ struct NoteEditorView: View {
                         Button { addShapeElement(kind) } label: { Label(kind.title, systemImage: kind.icon) }
                     }
                     Button { addShapeElement(.studyTape) } label: { Label("暗記テープ", systemImage: "rectangle.fill") }
-                } label: { toolStripLabel("図形", icon: "square.on.circle") }
+                } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "") }
 
                 Menu {
                     Button("1画面", systemImage: "rectangle") { splitMode = .single }
@@ -1033,7 +1039,7 @@ struct NoteEditorView: View {
         splitRatio = 0.5
         activePane = .primary
         NotificationCenter.default.post(
-            name: Notification.Name("GoodNotesFreeOpenWebTab"),
+            name: Notification.Name("StudiquoOpenWebTab"),
             object: WebTabInfo(id: homeURL, title: title, homeURL: homeURL)
         )
     }
@@ -1092,7 +1098,9 @@ struct NoteEditorView: View {
 
     private func selectPen() {
         isReadOnlyMode = false
-        if drawingTool == .pen && showsDrawingToolbar {
+        pendingShapeKindRaw = ""
+        if drawingTool == .pen {
+            drawingToolRaw = DrawingToolKind.none.rawValue
             showsDrawingToolbar = false
         } else {
             drawingToolRaw = DrawingToolKind.pen.rawValue
@@ -1102,8 +1110,14 @@ struct NoteEditorView: View {
 
     private func selectEraser() {
         isReadOnlyMode = false
-        drawingToolRaw = DrawingToolKind.eraser.rawValue
-        showsDrawingToolbar = true
+        pendingShapeKindRaw = ""
+        if drawingTool == .eraser {
+            drawingToolRaw = DrawingToolKind.none.rawValue
+            showsDrawingToolbar = false
+        } else {
+            drawingToolRaw = DrawingToolKind.eraser.rawValue
+            showsDrawingToolbar = true
+        }
     }
 
     private func prepareSplit(_ mode: SplitMode) {
@@ -1166,7 +1180,7 @@ struct NoteEditorView: View {
         splitMode = pendingSplitMode ?? .horizontal
         splitRatio = 0.5
         activePane = .secondary
-        NotificationCenter.default.post(name: .goodNotesFreeOpenNotebookTab, object: object)
+        NotificationCenter.default.post(name: .studiquoOpenNotebookTab, object: object)
         showsSplitSourcePicker = false
     }
 
@@ -1187,12 +1201,18 @@ struct NoteEditorView: View {
     private func deleteCurrentPage() {
         let target = activeNotebook
         guard target.pages.count > 1, let page = activePage else { return }
-        target.pages.removeAll { $0 === page }
+        let deletedIndex = activePane == .secondary ? secondaryPageIndex : primaryPageIndex
+        let pageID = page.persistentModelID
+        target.pages.removeAll { $0.persistentModelID == pageID }
+        page.notebook = nil
         modelContext.delete(page)
         for (order, remaining) in target.sortedPages.enumerated() { remaining.order = order }
+        target.refreshLibraryMetadata()
         target.updatedAt = .now
-        if activePane == .secondary { secondaryPageIndex = min(secondaryPageIndex, target.pages.count - 1) }
-        else { primaryPageIndex = min(primaryPageIndex, target.pages.count - 1) }
+        let nextIndex = min(deletedIndex, target.pages.count - 1)
+        if activePane == .secondary { secondaryPageIndex = nextIndex }
+        else { primaryPageIndex = nextIndex }
+        try? modelContext.save()
     }
 
     private func trashPendingNotebook() {
@@ -1240,6 +1260,27 @@ struct NoteEditorView: View {
             activePane = .secondary
         } else {
             primaryPageIndex = target.pages.count - 1
+            activePane = .primary
+        }
+    }
+
+    /// The mirror of `quickAddPage`, for pulling past the top instead of
+    /// the bottom: prepends a blank page and shifts every existing page's
+    /// order down by one to make room for it at the front.
+    private func quickAddPageAtTop(to target: Notebook) {
+        let template = target.sortedPages.first?.pageTemplate ?? .blank
+        for page in target.pages { page.order += 1 }
+        let newPage = NotePage(order: 0)
+        newPage.pageTemplate = template
+        newPage.notebook = target
+        target.pages.append(newPage)
+        target.refreshLibraryMetadata()
+        target.updatedAt = .now
+        if target === secondaryNotebook {
+            secondaryPageIndex = 0
+            activePane = .secondary
+        } else {
+            primaryPageIndex = 0
             activePane = .primary
         }
     }
@@ -1321,14 +1362,16 @@ struct NoteEditorView: View {
         notebook.updatedAt = .now
     }
 
+    /// Arms the shape tool for rectangle/ellipse/line: the shape itself
+    /// isn't created here — `InkCanvasView` draws it live once the user
+    /// drags on the canvas with the pencil, sized to that drag. `studyTape`
+    /// isn't a drawn shape, so it still gets placed immediately.
     private func addShapeElement(_ kind: PageElementKind) {
         guard let page = currentPrimaryPage else { return }
         if [.rectangle, .ellipse, .line].contains(kind) {
-            NotificationCenter.default.post(
-                name: .goodNotesFreeAddShapeStroke,
-                object: page,
-                userInfo: ["kind": kind.rawValue, "colorHex": selectedElementColorHex]
-            )
+            isReadOnlyMode = false
+            pendingShapeKindRaw = kind.rawValue
+            drawingToolRaw = DrawingToolKind.none.rawValue
             return
         }
         let element = PageElement(
@@ -1902,10 +1945,15 @@ private struct PageDeletionPicker: View {
         guard !selectedIDs.isEmpty, selectedIDs.count < notebook.pages.count else { return }
         let removed = notebook.pages.filter { selectedIDs.contains(pageID($0)) }
         notebook.pages.removeAll { selectedIDs.contains(pageID($0)) }
-        removed.forEach(modelContext.delete)
+        removed.forEach {
+            $0.notebook = nil
+            modelContext.delete($0)
+        }
         for (order, page) in notebook.sortedPages.enumerated() { page.order = order }
+        notebook.refreshLibraryMetadata()
         notebook.updatedAt = .now
         currentPageIndex = min(currentPageIndex, notebook.pages.count - 1)
+        try? modelContext.save()
         dismiss()
     }
 }
@@ -1917,6 +1965,7 @@ private struct NotebookPaneView: View {
     var usesDarkPageDisplay = false
     let onRequestAddPage: () -> Void
     var onQuickAddPage: () -> Void = {}
+    var onQuickAddPageAtTop: () -> Void = {}
     @State private var pageViewMode: PageViewMode = .continuous
 
     var body: some View {
@@ -1960,7 +2009,8 @@ private struct NotebookPaneView: View {
                 pages: pages,
                 currentPageIndex: $currentPageIndex,
                 usesDarkPageDisplay: usesDarkPageDisplay,
-                onAddPage: onQuickAddPage
+                onAddPage: onQuickAddPage,
+                onAddPageAtTop: onQuickAddPageAtTop
             )
         case .horizontal:
             HorizontalPagesView(pages: pages, currentPageIndex: $currentPageIndex, usesDarkPageDisplay: usesDarkPageDisplay)
@@ -2055,6 +2105,13 @@ private struct BottomAdderMaxYPreferenceKey: PreferenceKey {
     }
 }
 
+private struct TopAdderMinYPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = -.infinity
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 private struct PagesContentHeightPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -2073,11 +2130,15 @@ private struct ContinuousPagesView: View {
     @Binding var currentPageIndex: Int
     let usesDarkPageDisplay: Bool
     let onAddPage: () -> Void
+    var onAddPageAtTop: () -> Void = {}
 
     @State private var scrollTarget: Int?
     @State private var bottomPullProgress: CGFloat = 0
     @State private var hasTriggeredPageAdd = false
     @State private var pullHoldStartedAt: Date?
+    @State private var topPullProgress: CGFloat = 0
+    @State private var hasTriggeredTopPageAdd = false
+    @State private var topPullHoldStartedAt: Date?
     @State private var contentHeight: CGFloat = 0
     /// Rubber-band overscroll needed to fill the gauge. UIKit damps
     /// overscroll heavily, so this is deliberately smaller than the finger
@@ -2093,6 +2154,17 @@ private struct ContinuousPagesView: View {
 
             ScrollView(.vertical) {
                 LazyVStack(spacing: 18) {
+                    TopPageAdder(progress: topPullProgress)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onAddPageAtTop() }
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: TopAdderMinYPreferenceKey.self,
+                                    value: proxy.frame(in: .named("notePagesScroll")).minY
+                                )
+                            }
+                        )
                     ForEach(Array(pages.enumerated()), id: \.element.persistentModelID) { index, page in
                         let aspect = max(page.pageWidth / page.pageHeight, 0.1)
 
@@ -2193,8 +2265,86 @@ private struct ContinuousPagesView: View {
                     if progress == 0 { hasTriggeredPageAdd = false }
                 }
             }
+            .onPreferenceChange(TopAdderMinYPreferenceKey.self) { minY in
+                // Mirrors the bottom gauge above, but for pulling past the
+                // top: the adder is the first thing in the stack, so at
+                // rest its top edge sits one top-padding below the
+                // viewport's top edge, and pulling down past the top
+                // rubber-bands it further down from there.
+                guard minY.isFinite, contentHeight > geometry.size.height else {
+                    if topPullProgress != 0 { topPullProgress = 0 }
+                    hasTriggeredTopPageAdd = false
+                    topPullHoldStartedAt = nil
+                    return
+                }
+
+                let restingMinY = Self.contentBottomPadding
+                let overscroll = max(0, minY - restingMinY)
+                let progress = min(overscroll / Self.pullThreshold, 1)
+                topPullProgress = progress
+
+                if progress >= 1 {
+                    attemptTopPageAddIfHeld()
+                } else {
+                    topPullHoldStartedAt = nil
+                    if progress == 0 { hasTriggeredTopPageAdd = false }
+                }
+            }
+            // A steady hold at the top can stop producing new scroll
+            // geometry entirely — no finger jitter, no rubber-band spring
+            // still settling — so `onPreferenceChange` above may never
+            // fire again to notice the hold duration has elapsed. Pulling
+            // to the *bottom* usually arrives with a bit of scroll
+            // momentum that keeps the rubber band gently springing for a
+            // moment, which is enough incidental jitter to re-fire that
+            // handler; a deliberate pull-then-hold at the top has no such
+            // momentum. Polling here catches the hold either way.
+            .onReceive(Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()) { _ in
+                guard topPullProgress >= 1 else { return }
+                attemptTopPageAddIfHeld()
+            }
         }
         .background(Color(.secondarySystemBackground))
+    }
+
+    private func attemptTopPageAddIfHeld() {
+        guard !hasTriggeredTopPageAdd else { return }
+        if topPullHoldStartedAt == nil { topPullHoldStartedAt = Date() }
+        if let started = topPullHoldStartedAt, Date().timeIntervalSince(started) >= Self.pullHoldDuration {
+            hasTriggeredTopPageAdd = true
+            onAddPageAtTop()
+        }
+    }
+}
+
+private struct TopPageAdder: View {
+    let progress: CGFloat
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .stroke(Color.secondary.opacity(0.22), lineWidth: 5)
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "plus")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(progress >= 1 ? Color.accentColor : Color.secondary)
+            }
+            .frame(width: 48, height: 48)
+            .scaleEffect(progress >= 1 ? 1.12 : 1)
+            .opacity(progress > 0.02 ? 1 : 0.38)
+            Text(progress >= 1 ? "指を離してページを追加" : "さらに引っ張ってページを追加")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .opacity(progress > 0.02 ? 1 : 0.65)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 92)
+        .opacity(progress > 0.001 ? 1 : 0)
+        .animation(.easeOut(duration: 0.12), value: progress)
     }
 }
 
@@ -2224,6 +2374,7 @@ private struct BottomPageAdder: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 92)
+        .opacity(progress > 0.001 ? 1 : 0)
         .animation(.easeOut(duration: 0.12), value: progress)
     }
 }
@@ -2403,19 +2554,25 @@ struct PageCanvasContainer: View {
     @AppStorage("drawingWidth") private var drawingWidth = 4.0
     @AppStorage("eraserWidth") private var eraserWidth = 24.0
     @AppStorage("readOnlyMode") private var isReadOnlyMode = false
-    // Key deliberately renamed: the old "scratchOutEnabled" is already stored
-    // as true on existing installs, so flipping the default alone would not
-    // reach them. Scratch-to-erase repeatedly destroyed ordinary handwriting
-    // (Japanese characters overlap and reverse direction enough to look like
-    // a scribble), and it was never a requested feature — so it now starts off
-    // and stays opt-in via the toolbar toggle.
+    // Key deliberately renamed from the old "scratchOutEnabled" so a fresh
+    // default actually reaches existing installs (an @AppStorage default is
+    // only used the first time a key is read, so reusing the old key would
+    // have kept whatever was already stored under it). Defaults on, and
+    // stays toggleable from the drawing bar.
     @AppStorage("scratchOutEnabledV2") private var isScratchOutEnabled = true
+    /// Shares the armed shape kind with the toolbar in `NoteEditorView` via
+    /// the same `@AppStorage` key — see the property there for why.
+    @AppStorage("pendingShapeKind") private var pendingShapeKindRaw = ""
 
     private var drawingTool: Binding<DrawingToolKind> {
         Binding(
             get: { DrawingToolKind(rawValue: drawingToolRaw) ?? .pen },
             set: { drawingToolRaw = $0.rawValue }
         )
+    }
+
+    private var pendingShapeKind: InkCanvasView.ShapeKind? {
+        InkCanvasView.ShapeKind(rawValue: pendingShapeKindRaw)
     }
 
     var body: some View {
@@ -2443,11 +2600,16 @@ struct PageCanvasContainer: View {
                             eraserWidth: eraserWidth,
                             drawingVersion: drawingVersion,
                             isScratchOutEnabled: isScratchOutEnabled,
+                            pendingShapeKind: pendingShapeKind,
                             onActivate: {
                                 NotificationCenter.default.post(
-                                    name: Notification.Name("GoodNotesFreePageActivated"),
+                                    name: Notification.Name("StudiquoPageActivated"),
                                     object: page
                                 )
+                            },
+                            onShapeCommitted: {
+                                pendingShapeKindRaw = ""
+                                drawingToolRaw = DrawingToolKind.pen.rawValue
                             }
                         )
                             .allowsHitTesting(!isReadOnlyMode)
@@ -2505,27 +2667,13 @@ struct PageCanvasContainer: View {
             scheduleDrawingSave(newValue, delay: drawingTool.wrappedValue == .eraser ? .zero : .milliseconds(180))
         }
         .onDisappear { scheduleDrawingSave(drawing, delay: .zero) }
-        .onReceive(NotificationCenter.default.publisher(for: .goodNotesFreeUndoDrawing)) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .studiquoUndoDrawing)) { notification in
             guard let targetPage = notification.object as? NotePage, targetPage === page else { return }
             undoDrawing()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .goodNotesFreeRedoDrawing)) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .studiquoRedoDrawing)) { notification in
             guard let targetPage = notification.object as? NotePage, targetPage === page else { return }
             redoDrawing()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .goodNotesFreeAddShapeStroke)) { notification in
-            guard let targetPage = notification.object as? NotePage,
-                  targetPage === page,
-                  let rawKind = notification.userInfo?["kind"] as? String,
-                  let kind = PageElementKind(rawValue: rawKind),
-                  let colorHex = notification.userInfo?["colorHex"] as? String else { return }
-            appendShapeStroke(
-                kind: kind,
-                colorHex: colorHex,
-                center: CGPoint(x: 0.5, y: 0.3),
-                relativeSize: CGSize(width: kind == .line ? 0.45 : 0.3, height: kind == .line ? 0.04 : 0.18),
-                rotation: 0
-            )
         }
     }
 
@@ -2585,24 +2733,6 @@ struct PageCanvasContainer: View {
         legacyShapes.forEach(modelContext.delete)
         isApplyingHistory = true
         drawing = InkDrawing(strokes: drawing.strokes + addedStrokes)
-        drawingVersion += 1
-    }
-
-    private func appendShapeStroke(
-        kind: PageElementKind,
-        colorHex: String,
-        center: CGPoint,
-        relativeSize: CGSize,
-        rotation: Double
-    ) {
-        guard let stroke = shapeStroke(
-            kind: kind,
-            colorHex: colorHex,
-            center: center,
-            relativeSize: relativeSize,
-            rotation: rotation
-        ) else { return }
-        drawing = InkDrawing(strokes: drawing.strokes + [stroke])
         drawingVersion += 1
     }
 
@@ -2831,7 +2961,7 @@ private struct EditablePageElement: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 6))
                 .onTapGesture {
-                    NotificationCenter.default.post(name: .goodNotesFreeOpenPageLink, object: link.target)
+                    NotificationCenter.default.post(name: .studiquoOpenPageLink, object: link.target)
                 }
         }
     }
@@ -3044,6 +3174,7 @@ private struct NotebookSearchView: View {
 }
 
 private struct PageSidebar: View {
+    @Environment(\.modelContext) private var modelContext
     @Bindable var notebook: Notebook
     @Binding var currentPageIndex: Int
     let onRequestAddPage: () -> Void
@@ -3188,10 +3319,17 @@ private struct PageSidebar: View {
 
     private func deleteBookmarkedPages() {
         guard canDeleteBookmarkedPages else { return }
+        let removed = notebook.pages.filter(\.isBookmarked)
         notebook.pages.removeAll(where: \.isBookmarked)
+        removed.forEach {
+            $0.notebook = nil
+            modelContext.delete($0)
+        }
         for (order, page) in notebook.sortedPages.enumerated() { page.order = order }
+        notebook.refreshLibraryMetadata()
         notebook.updatedAt = .now
         currentPageIndex = min(currentPageIndex, notebook.pages.count - 1)
+        try? modelContext.save()
     }
 
     private func pageID(_ page: NotePage) -> String {
@@ -3230,11 +3368,18 @@ private struct PageSidebar: View {
     private func deleteSelectedPages() {
         guard canDeleteSelectedPages else { return }
         let ids = selectedPageIDs
+        let removed = notebook.pages.filter { ids.contains(pageID($0)) }
         notebook.pages.removeAll { ids.contains(pageID($0)) }
+        removed.forEach {
+            $0.notebook = nil
+            modelContext.delete($0)
+        }
         for (order, page) in notebook.sortedPages.enumerated() { page.order = order }
+        notebook.refreshLibraryMetadata()
         notebook.updatedAt = .now
         currentPageIndex = min(currentPageIndex, notebook.pages.count - 1)
         selectedPageIDs.removeAll()
+        try? modelContext.save()
     }
 
     private func duplicate(_ source: NotePage) {
