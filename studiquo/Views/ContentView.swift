@@ -328,7 +328,7 @@ struct ContentView: View {
             }
             columnVisibility = .detailOnly
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("GoodNotesFreeOpenNotebookTab"))) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenNotebookTab"))) { notification in
             if let deck = notification.object as? FlashcardDeck {
                 if !openFlashcardDecks.contains(where: { $0 === deck }) { openFlashcardDecks.append(deck) }
             } else if let notebook = notification.object as? Notebook,
@@ -336,7 +336,7 @@ struct ContentView: View {
                 openNotebooks.append(notebook)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("GoodNotesFreeOpenWebTab"))) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenWebTab"))) { notification in
             guard let tab = notification.object as? WebTabInfo else { return }
             if let index = openWebTabs.firstIndex(where: { $0.id == tab.id }) {
                 openWebTabs[index] = tab
@@ -453,7 +453,7 @@ struct ContentView: View {
             return
         }
         NotificationCenter.default.post(
-            name: Notification.Name("GoodNotesFreeSwitchPaneTarget"),
+            name: Notification.Name("StudiquoSwitchPaneTarget"),
             object: PaneSwitchTarget.notebook(notebook)
         )
     }
@@ -464,7 +464,7 @@ struct ContentView: View {
             return
         }
         NotificationCenter.default.post(
-            name: Notification.Name("GoodNotesFreeSwitchPaneTarget"),
+            name: Notification.Name("StudiquoSwitchPaneTarget"),
             object: PaneSwitchTarget.flashcardDeck(deck)
         )
     }
@@ -472,7 +472,7 @@ struct ContentView: View {
     private func selectWebTab(_ tab: WebTabInfo) {
         guard selectedNotebook != nil else { return }
         NotificationCenter.default.post(
-            name: Notification.Name("GoodNotesFreeSwitchPaneTarget"),
+            name: Notification.Name("StudiquoSwitchPaneTarget"),
             object: PaneSwitchTarget.web(title: tab.title, homeURL: tab.homeURL)
         )
     }

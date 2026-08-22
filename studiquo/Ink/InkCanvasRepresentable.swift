@@ -37,7 +37,12 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     /// `onDrawingChanged`, and never needs this.
     var drawingVersion: Int = 0
     var isScratchOutEnabled: Bool
+    /// When set, a pencil drag on the canvas defines this shape's bounding
+    /// box instead of drawing freehand ink; lifting commits it and calls
+    /// `onShapeCommitted`.
+    var pendingShapeKind: InkCanvasView.ShapeKind?
     var onActivate: () -> Void = {}
+    var onShapeCommitted: () -> Void = {}
 
     func makeUIView(context: Context) -> InkCanvasView {
         let view = InkCanvasView()
@@ -49,6 +54,13 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         }
         view.onStrokeBegan = { [coordinator = context.coordinator] in
             coordinator.parent.onActivate()
+            coordinator.freezeAncestorScrolling()
+        }
+        view.onStrokeEnded = { [coordinator = context.coordinator] in
+            coordinator.unfreezeAncestorScrolling()
+        }
+        view.onShapeCommitted = { [coordinator = context.coordinator] in
+            coordinator.parent.onShapeCommitted()
         }
         return view
     }
@@ -78,6 +90,7 @@ struct InkCanvasRepresentable: UIViewRepresentable {
                     NSNumber(value: UITouch.TouchType.direct.rawValue)
                 ]
                 scrollView.delaysContentTouches = false
+                coordinator.ancestorScrollViews.append(scrollView)
                 patched += 1
             }
             current = candidate.superview
@@ -92,7 +105,8 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         view.isScratchOutEnabled = isScratchOutEnabled
         view.isHighlighter = selectedTool == .highlighter
         view.isEraser = selectedTool == .eraser
-        view.isDrawingEnabled = selectedTool == .pen || selectedTool == .highlighter || selectedTool == .eraser
+        view.pendingShapeKind = pendingShapeKind
+        view.isDrawingEnabled = selectedTool == .pen || selectedTool == .highlighter || selectedTool == .eraser || pendingShapeKind != nil
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -101,6 +115,32 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         var parent: InkCanvasRepresentable
         var lastSyncedVersion = -1
         var hasPatchedAncestors = false
+        /// The page list's scroll view and the pinch-zoom container,
+        /// discovered once by walking up from the canvas.
+        var ancestorScrollViews: [UIScrollView] = []
         init(_ parent: InkCanvasRepresentable) { self.parent = parent }
+
+        /// Stops the page from moving under the pencil for as long as a
+        /// stroke is in progress. Pencil touches are excluded from these
+        /// scroll views' pan recognisers (see above) so they can drive ink
+        /// instead of panning — but that exclusion also means a pencil
+        /// touch can never "catch" a scroll view that's still coasting from
+        /// a previous finger swipe, the way a normal touch-down would. Left
+        /// alone, that residual momentum (or an in-flight zoom bounce) kept
+        /// sliding the page under a stationary pencil, so the stroke being
+        /// drawn came out shifted and blurred instead of following the tip.
+        func freezeAncestorScrolling() {
+            for scrollView in ancestorScrollViews {
+                scrollView.setContentOffset(scrollView.contentOffset, animated: false)
+                scrollView.setZoomScale(scrollView.zoomScale, animated: false)
+                scrollView.isScrollEnabled = false
+            }
+        }
+
+        func unfreezeAncestorScrolling() {
+            for scrollView in ancestorScrollViews {
+                scrollView.isScrollEnabled = true
+            }
+        }
     }
 }
