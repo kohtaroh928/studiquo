@@ -37,12 +37,18 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     /// `onDrawingChanged`, and never needs this.
     var drawingVersion: Int = 0
     var isScratchOutEnabled: Bool
+    var isLineCorrectionEnabled: Bool = true
+    var isEllipseCorrectionEnabled: Bool = true
+    var isRectangleCorrectionEnabled: Bool = true
+    var isTriangleCorrectionEnabled: Bool = true
+    var isParabolaCorrectionEnabled: Bool = true
     /// When set, a pencil drag on the canvas defines this shape's bounding
     /// box instead of drawing freehand ink; lifting commits it and calls
     /// `onShapeCommitted`.
     var pendingShapeKind: InkCanvasView.ShapeKind?
     var onActivate: () -> Void = {}
     var onShapeCommitted: () -> Void = {}
+    var onSelectionChanged: (InkDrawing?) -> Void = { _ in }
 
     func makeUIView(context: Context) -> InkCanvasView {
         let view = InkCanvasView()
@@ -61,6 +67,9 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         }
         view.onShapeCommitted = { [coordinator = context.coordinator] in
             coordinator.parent.onShapeCommitted()
+        }
+        view.onSelectionChanged = { [coordinator = context.coordinator] selection in
+            coordinator.parent.onSelectionChanged(selection)
         }
         return view
     }
@@ -103,10 +112,17 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         view.strokeWidth = width
         view.eraserWidth = eraserWidth
         view.isScratchOutEnabled = isScratchOutEnabled
+        view.isLineCorrectionEnabled = isLineCorrectionEnabled
+        view.isEllipseCorrectionEnabled = isEllipseCorrectionEnabled
+        view.isRectangleCorrectionEnabled = isRectangleCorrectionEnabled
+        view.isTriangleCorrectionEnabled = isTriangleCorrectionEnabled
+        view.isParabolaCorrectionEnabled = isParabolaCorrectionEnabled
         view.isHighlighter = selectedTool == .highlighter
         view.isEraser = selectedTool == .eraser
+        view.isLasso = selectedTool == .lasso
         view.pendingShapeKind = pendingShapeKind
-        view.isDrawingEnabled = selectedTool == .pen || selectedTool == .highlighter || selectedTool == .eraser || pendingShapeKind != nil
+        view.isDrawingEnabled = selectedTool == .pen || selectedTool == .highlighter
+            || selectedTool == .eraser || selectedTool == .lasso || pendingShapeKind != nil
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }

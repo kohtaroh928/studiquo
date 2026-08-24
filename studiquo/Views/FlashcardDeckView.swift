@@ -6,9 +6,6 @@ struct FlashcardDeckView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var mode: Mode = .edit
-    @State private var question = ""
-    @State private var answer = ""
-    @State private var editingCard: Flashcard?
     @State private var studyCards: [Flashcard] = []
     @State private var studyIndex = 0
     @State private var showsAnswer = false
@@ -17,11 +14,6 @@ struct FlashcardDeckView: View {
         case edit = "カード作成"
         case study = "暗記する"
         var id: String { rawValue }
-    }
-
-    private var canCreateCard: Bool {
-        !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -44,51 +36,10 @@ struct FlashcardDeckView: View {
         .onAppear(perform: prepareStudy)
         .onChange(of: mode) { _, value in if value == .study { prepareStudy() } }
         .onChange(of: deck.orderModeRawValue) { _, _ in prepareStudy() }
-        .sheet(item: $editingCard) { card in
-            FlashcardEditView(card: card) { deck.updatedAt = .now }
-        }
     }
 
     private var editor: some View {
-        HStack(spacing: 0) {
-            Form {
-                Section("新規暗記カード") {
-                    TextField("問題", text: $question, axis: .vertical)
-                        .lineLimit(3...8)
-                    TextField("答え", text: $answer, axis: .vertical)
-                        .lineLimit(3...8)
-                    Button("このカードを保存して次へ", action: createCard)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!canCreateCard)
-                    if !canCreateCard && (!question.isEmpty || !answer.isEmpty) {
-                        Text("問題と答えの両方を入力すると、次のカードを作れます。")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                }
-            }
-            .frame(minWidth: 320, idealWidth: 420)
-
-            Divider()
-
-            List {
-                Section("作成済みカード（\(deck.cards.count)枚）") {
-                    ForEach(Array(deck.sortedCards.enumerated()), id: \.element.persistentModelID) { index, card in
-                        Button { editingCard = card } label: {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("\(index + 1). \(card.question)").font(.headline).lineLimit(2)
-                                Text(card.answer).foregroundStyle(.secondary).lineLimit(2)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .swipeActions {
-                            Button("削除", role: .destructive) { delete(card) }
-                        }
-                    }
-                    .onMove(perform: moveCards)
-                }
-            }
-        }
+        FlashcardEditorContent(deck: deck)
     }
 
     private var study: some View {
@@ -144,6 +95,102 @@ struct FlashcardDeckView: View {
         }
     }
 
+    private func prepareStudy() {
+        studyCards = deck.orderMode == .random ? deck.sortedCards.shuffled() : deck.sortedCards
+        studyIndex = 0
+        showsAnswer = false
+    }
+
+    private func moveStudy(by amount: Int) {
+        studyIndex = min(max(0, studyIndex + amount), max(0, studyCards.count - 1))
+        showsAnswer = false
+    }
+}
+
+/// Shared by the full-screen deck opened from Home and by a deck shown in a
+/// split pane, keeping card creation behavior identical in both places.
+struct FlashcardEditorContent: View {
+    @Bindable var deck: FlashcardDeck
+    @Environment(\.modelContext) private var modelContext
+    @State private var question = ""
+    @State private var answer = ""
+    @State private var editingCard: Flashcard?
+
+    private var canCreateCard: Bool {
+        !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            if geometry.size.width >= 700 {
+                HStack(spacing: 0) {
+                    cardForm.frame(minWidth: 320, idealWidth: 420)
+                    Divider()
+                    cardList
+                }
+            } else {
+                // A split pane is roughly half the screen width. Stacking the
+                // same form and list keeps every control inside that pane
+                // instead of forcing the full-screen two-column layout to
+                // overflow into the neighboring notebook.
+                VStack(spacing: 0) {
+                    cardForm.frame(height: max(250, geometry.size.height * 0.52))
+                    Divider()
+                    cardList
+                }
+            }
+        }
+        .sheet(item: $editingCard) { card in
+            FlashcardEditView(card: card) { deck.updatedAt = .now }
+        }
+    }
+
+    private var cardForm: some View {
+        Form {
+            Section("新規暗記カード") {
+                TextField("問題", text: $question, axis: .vertical)
+                    .lineLimit(3...8)
+                    .dropDestination(for: String.self) { items, _ in
+                        appendRecognizedText(items.first, to: &question)
+                    }
+                TextField("答え", text: $answer, axis: .vertical)
+                    .lineLimit(3...8)
+                    .dropDestination(for: String.self) { items, _ in
+                        appendRecognizedText(items.first, to: &answer)
+                    }
+                Button("このカードを保存して次へ", action: createCard)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canCreateCard)
+                if !canCreateCard && (!question.isEmpty || !answer.isEmpty) {
+                    Text("問題と答えの両方を入力すると、次のカードを作れます。")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+
+    private var cardList: some View {
+        List {
+            Section("作成済みカード（\(deck.cards.count)枚）") {
+                ForEach(Array(deck.sortedCards.enumerated()), id: \.element.persistentModelID) { index, card in
+                    Button { editingCard = card } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("\(index + 1). \(card.question)").font(.headline).lineLimit(2)
+                            Text(card.answer).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .swipeActions {
+                        Button("削除", role: .destructive) { delete(card) }
+                    }
+                }
+                .onMove(perform: moveCards)
+            }
+        }
+    }
+
     private func createCard() {
         guard canCreateCard else { return }
         let card = Flashcard(
@@ -157,6 +204,15 @@ struct FlashcardDeckView: View {
         modelContext.insert(card)
         question = ""
         answer = ""
+    }
+
+    private func appendRecognizedText(_ text: String?, to field: inout String) -> Bool {
+        guard let text else { return false }
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return false }
+        if !field.isEmpty, !field.hasSuffix("\n") { field += "\n" }
+        field += value
+        return true
     }
 
     private func delete(_ card: Flashcard) {
@@ -177,16 +233,6 @@ struct FlashcardDeckView: View {
         deck.updatedAt = .now
     }
 
-    private func prepareStudy() {
-        studyCards = deck.orderMode == .random ? deck.sortedCards.shuffled() : deck.sortedCards
-        studyIndex = 0
-        showsAnswer = false
-    }
-
-    private func moveStudy(by amount: Int) {
-        studyIndex = min(max(0, studyIndex + amount), max(0, studyCards.count - 1))
-        showsAnswer = false
-    }
 }
 
 private struct FlashcardEditView: View {

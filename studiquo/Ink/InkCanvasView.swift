@@ -20,8 +20,24 @@ final class InkCanvasView: UIView {
     var strokeWidth: CGFloat = 4
     var isHighlighter = false
     var isScratchOutEnabled = true
-    var isEraser = false
-    var eraserWidth: CGFloat = 24
+    var isLineCorrectionEnabled = true
+    var isEllipseCorrectionEnabled = true
+    var isRectangleCorrectionEnabled = true
+    var isTriangleCorrectionEnabled = true
+    var isParabolaCorrectionEnabled = true
+    var isEraser = false {
+        didSet { if !isEraser { hideEraserCursor() } }
+    }
+    var isLasso = false {
+        didSet {
+            if !isLasso { clearLassoSelection() }
+        }
+    }
+    var eraserWidth: CGFloat = 24 {
+        didSet {
+            if let eraserCursorLocation { showEraserCursor(at: eraserCursorLocation) }
+        }
+    }
     /// When set, a pencil drag defines the shape's bounding box live —
     /// instead of freehand ink — and lifting commits it. Takes priority over
     /// every other tool state while non-nil.
@@ -53,6 +69,10 @@ final class InkCanvasView: UIView {
     /// Fired after a dragged shape is committed, so the owner can return to
     /// the pen tool instead of leaving the shape tool silently armed.
     var onShapeCommitted: (() -> Void)?
+    /// Supplies only the currently lasso-selected strokes. The SwiftUI owner
+    /// uses this small drawing for on-device OCR and never scans the rest of
+    /// the notebook.
+    var onSelectionChanged: ((InkDrawing?) -> Void)?
 
     private(set) var drawing = InkDrawing() {
         didSet { onDrawingChanged?(drawing) }
@@ -62,6 +82,7 @@ final class InkCanvasView: UIView {
     /// loading from disk or undo/redo, where echoing back out would be
     /// redundant (and, for undo/redo, actively wrong).
     func setDrawing(_ newValue: InkDrawing) {
+        clearLassoSelection()
         drawing = newValue
         rebuildCommittedLayers()
     }
@@ -78,6 +99,10 @@ final class InkCanvasView: UIView {
     /// The stroke currently being drawn, on its own layer so committing it
     /// never has to touch — or repaint — anything already on the page.
     private let liveLayer = CAShapeLayer()
+    /// Dashed freehand outline while lassoing, retained around the selected
+    /// strokes until their following move finishes.
+    private let selectionLayer = CAShapeLayer()
+    private let eraserCursorLayer = CAShapeLayer()
 
     /// Wholesale rebuild — for loading a page and undo/redo, where every
     /// stroke is legitimately new to this view. NOT used for a normal
@@ -131,10 +156,21 @@ final class InkCanvasView: UIView {
     private var isStraightened = false
     private var isEllipseLocked = false
     private var isRectangleLocked = false
+    private var isTriangleLocked = false
+    private var isParabolaLocked = false
+    private var lockedShapeBounds: CGRect?
+    private var lockedShapeFixedCorner: CGPoint?
+    private var lockedNormalizedPoints: [InkPoint]?
     private var holdTimer: Timer?
     private var strokeStartLocation: CGPoint?
     private var shapeDragStart: CGPoint?
     private var shapeDragCurrent: CGPoint?
+    private var lassoPoints: [CGPoint] = []
+    private var selectionPolygon: [CGPoint] = []
+    private var selectedStrokeIDs: Set<UUID> = []
+    private var selectionDragStart: CGPoint?
+    private var selectionDragOffset: CGPoint = .zero
+    private var eraserCursorLocation: CGPoint?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -152,12 +188,27 @@ final class InkCanvasView: UIView {
         liveLayer.fillRule = .nonZero
         layer.addSublayer(committedContainer)
         layer.addSublayer(liveLayer)
+        selectionLayer.fillColor = UIColor.clear.cgColor
+        selectionLayer.strokeColor = UIColor.systemBlue.cgColor
+        selectionLayer.lineWidth = 1.5
+        selectionLayer.lineCap = .round
+        selectionLayer.lineJoin = .round
+        selectionLayer.lineDashPattern = [6, 4]
+        layer.addSublayer(selectionLayer)
+        eraserCursorLayer.fillColor = UIColor.systemGray.withAlphaComponent(0.10).cgColor
+        eraserCursorLayer.strokeColor = UIColor.systemGray.withAlphaComponent(0.85).cgColor
+        eraserCursorLayer.lineWidth = 1.2
+        eraserCursorLayer.isHidden = true
+        layer.addSublayer(eraserCursorLayer)
+        addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(handleEraserHover(_:))))
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         committedContainer.frame = bounds
         liveLayer.frame = bounds
+        selectionLayer.frame = bounds
+        eraserCursorLayer.frame = bounds
     }
 
     // MARK: Touch handling
@@ -175,6 +226,12 @@ final class InkCanvasView: UIView {
             return
         }
 
+        if isLasso {
+            onStrokeBegan?()
+            beginLasso(at: touch.location(in: self))
+            return
+        }
+
         onStrokeBegan?()
         let now = Date()
         strokeStartedAt = now
@@ -182,12 +239,18 @@ final class InkCanvasView: UIView {
         isStraightened = false
         isEllipseLocked = false
         isRectangleLocked = false
+        isTriangleLocked = false
+        isParabolaLocked = false
+        lockedShapeBounds = nil
+        lockedShapeFixedCorner = nil
+        lockedNormalizedPoints = nil
         let location = touch.location(in: self)
         strokeStartLocation = location
         lastMovementLocation = location
         rawPoints = [InkPoint(location: location, force: normalizedForce(touch), timeOffset: 0)]
 
         if isEraser {
+            showEraserCursor(at: location)
             eraseParts(along: [location])
         } else {
             updateLiveLayer()
@@ -204,6 +267,13 @@ final class InkCanvasView: UIView {
             return
         }
 
+
+        if isLasso {
+            let samples = event?.coalescedTouches(for: touch) ?? [touch]
+            moveLasso(to: samples.map { $0.location(in: self) })
+            return
+        }
+
         guard strokeStartedAt != nil else { return }
         let samples = event?.coalescedTouches(for: touch) ?? [touch]
         let previousEraserLocation = rawPoints.last?.location
@@ -212,8 +282,10 @@ final class InkCanvasView: UIView {
         }
         if isEraser {
             let path = [previousEraserLocation].compactMap { $0 } + samples.map { $0.location(in: self) }
+            if let location = path.last { showEraserCursor(at: location) }
             eraseParts(along: path)
-        } else if !isStraightened && !isEllipseLocked && !isRectangleLocked {
+        } else if !isStraightened && !isEllipseLocked && !isRectangleLocked
+                    && !isTriangleLocked && !isParabolaLocked {
             updateLiveLayer()
         }
     }
@@ -232,12 +304,19 @@ final class InkCanvasView: UIView {
             return
         }
 
+        if isLasso {
+            endLasso(at: touch.location(in: self))
+            onStrokeEnded?()
+            return
+        }
+
         guard strokeStartedAt != nil else { return }
         let previousEraserLocation = rawPoints.last?.location
         appendSample(touch)
         if isEraser {
             let path = [previousEraserLocation, Optional(touch.location(in: self))].compactMap { $0 }
             eraseParts(along: path)
+            hideEraserCursor()
         }
         finishStroke()
     }
@@ -264,14 +343,176 @@ final class InkCanvasView: UIView {
                 // line, just extend the far end to follow, ruler-style.
                 emitStraightPreview(to: location)
             } else if isEllipseLocked {
-                // Likewise, keep refitting the ellipse to the growing path.
+                updateLockedShapeBounds(to: location, snapToSquare: false)
                 emitEllipsePreview()
             } else if isRectangleLocked {
+                updateLockedShapeBounds(to: location, snapToSquare: true)
                 emitRectanglePreview()
+            } else if isTriangleLocked || isParabolaLocked {
+                updateLockedShapeBounds(to: location, snapToSquare: false)
+                emitNormalizedShapePreview()
             } else {
                 startHoldTimer()
             }
         }
+    }
+
+    // MARK: Lasso selection
+
+    private func beginLasso(at location: CGPoint) {
+        if !selectedStrokeIDs.isEmpty, Self.point(location, isInside: selectionPolygon) {
+            selectionDragStart = location
+            selectionDragOffset = .zero
+            return
+        }
+        clearLassoSelection()
+        lassoPoints = [location]
+        updateLassoPath(lassoPoints)
+    }
+
+    private func moveLasso(to locations: [CGPoint]) {
+        guard !locations.isEmpty else { return }
+        if let start = selectionDragStart {
+            guard let location = locations.last else { return }
+            selectionDragOffset = CGPoint(x: location.x - start.x, y: location.y - start.y)
+            let transform = CGAffineTransform(translationX: selectionDragOffset.x, y: selectionDragOffset.y)
+            withoutImplicitAnimations {
+                for id in selectedStrokeIDs { strokeLayers[id]?.setAffineTransform(transform) }
+            }
+            let movedOutline = selectionPolygon.map {
+                CGPoint(x: $0.x + selectionDragOffset.x, y: $0.y + selectionDragOffset.y)
+            }
+            updateLassoPath(movedOutline)
+        } else {
+            for location in locations {
+                if let last = lassoPoints.last, hypot(location.x - last.x, location.y - last.y) < 1 { continue }
+                lassoPoints.append(location)
+            }
+            updateLassoPath(lassoPoints)
+        }
+    }
+
+    private func endLasso(at location: CGPoint) {
+        if selectionDragStart != nil {
+            commitSelectionMove()
+            return
+        }
+
+        if let last = lassoPoints.last, hypot(location.x - last.x, location.y - last.y) >= 1 {
+            lassoPoints.append(location)
+        }
+        guard lassoPoints.count >= 8,
+              let first = lassoPoints.first, let last = lassoPoints.last else {
+            clearLassoSelection()
+            return
+        }
+        let bounds = lassoPoints.dropFirst().reduce(CGRect(origin: first, size: .zero)) {
+            $0.union(CGRect(origin: $1, size: .zero))
+        }
+        let closureTolerance = max(18, hypot(bounds.width, bounds.height) * 0.18)
+        guard bounds.width >= 12, bounds.height >= 12,
+              hypot(last.x - first.x, last.y - first.y) <= closureTolerance else {
+            clearLassoSelection()
+            return
+        }
+
+        selectionPolygon = lassoPoints + [first]
+        selectedStrokeIDs = Set(drawing.strokes.compactMap { stroke in
+            // Sample along every segment, not only at the stored touch
+            // points. A corrected straight line may contain just its two end
+            // points; enclosing the middle must still select the whole line.
+            let samples = Self.selectionSamples(for: stroke.points)
+            guard !samples.isEmpty else { return nil }
+            return samples.contains { Self.point($0, isInside: selectionPolygon) } ? stroke.id : nil
+        })
+        guard !selectedStrokeIDs.isEmpty else {
+            clearLassoSelection()
+            return
+        }
+        lassoPoints = []
+        updateLassoPath(selectionPolygon)
+        onSelectionChanged?(InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) }))
+    }
+
+    private func commitSelectionMove() {
+        let offset = selectionDragOffset
+        withoutImplicitAnimations {
+            for id in selectedStrokeIDs { strokeLayers[id]?.setAffineTransform(.identity) }
+        }
+        if abs(offset.x) > 0.01 || abs(offset.y) > 0.01 {
+            var movedDrawing = drawing
+            movedDrawing.strokes = drawing.strokes.map { stroke in
+                guard selectedStrokeIDs.contains(stroke.id) else { return stroke }
+                var moved = stroke
+                moved.points = stroke.points.map { point in
+                    var copy = point
+                    copy.location = CGPoint(x: point.location.x + offset.x, y: point.location.y + offset.y)
+                    return copy
+                }
+                return moved
+            }
+            drawing = movedDrawing
+            rebuildCommittedLayers()
+        }
+        clearLassoSelection()
+    }
+
+    private func updateLassoPath(_ points: [CGPoint]) {
+        let path = UIBezierPath()
+        if let first = points.first {
+            path.move(to: first)
+            for point in points.dropFirst() { path.addLine(to: point) }
+        }
+        withoutImplicitAnimations { selectionLayer.path = path.cgPath }
+    }
+
+    private func clearLassoSelection() {
+        let hadSelection = !selectedStrokeIDs.isEmpty
+        withoutImplicitAnimations {
+            for id in selectedStrokeIDs { strokeLayers[id]?.setAffineTransform(.identity) }
+            selectionLayer.setAffineTransform(.identity)
+            selectionLayer.path = nil
+        }
+        lassoPoints = []
+        selectionPolygon = []
+        selectedStrokeIDs = []
+        selectionDragStart = nil
+        selectionDragOffset = .zero
+        if hadSelection { onSelectionChanged?(nil) }
+    }
+
+    private static func point(_ point: CGPoint, isInside polygon: [CGPoint]) -> Bool {
+        guard polygon.count >= 3 else { return false }
+        var inside = false
+        var previous = polygon[polygon.count - 1]
+        for current in polygon {
+            let crosses = (current.y > point.y) != (previous.y > point.y)
+            if crosses {
+                let intersectionX = (previous.x - current.x) * (point.y - current.y)
+                    / (previous.y - current.y) + current.x
+                if point.x < intersectionX { inside.toggle() }
+            }
+            previous = current
+        }
+        return inside
+    }
+
+    private static func selectionSamples(for points: [InkPoint]) -> [CGPoint] {
+        guard let first = points.first?.location else { return [] }
+        guard points.count > 1 else { return [first] }
+        var result = [first]
+        for (a, b) in zip(points, points.dropFirst()) {
+            let distance = hypot(b.location.x - a.location.x, b.location.y - a.location.y)
+            let steps = max(1, Int(ceil(distance / 4)))
+            for step in 1...steps {
+                let progress = CGFloat(step) / CGFloat(steps)
+                result.append(CGPoint(
+                    x: a.location.x + (b.location.x - a.location.x) * progress,
+                    y: a.location.y + (b.location.y - a.location.y) * progress
+                ))
+            }
+        }
+        return result
     }
 
     // MARK: Straighten / circle (live, both triggered by holding still)
@@ -285,21 +526,38 @@ final class InkCanvasView: UIView {
         holdTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
             guard let since = self.lastMovementAt,
-                  !self.isStraightened, !self.isEllipseLocked, !self.isRectangleLocked else { return }
+                  !self.isStraightened, !self.isEllipseLocked, !self.isRectangleLocked,
+                  !self.isTriangleLocked, !self.isParabolaLocked else { return }
             guard Date().timeIntervalSince(since) >= self.straightenHoldDuration else { return }
             guard let start = self.strokeStartLocation, let current = self.lastMovementLocation else { return }
             let distanceFromStart = hypot(current.x - start.x, current.y - start.y)
 
-            if self.rectangleIfClosedLoop(self.previewStroke()) != nil {
+            if self.isRectangleCorrectionEnabled,
+               self.rectangleIfClosedLoop(self.previewStroke()) != nil {
                 self.isRectangleLocked = true
+                self.prepareLockedShape(at: current, snapToSquare: true)
                 self.emitRectanglePreview()
                 self.triggerCorrectionFeedback(at: current)
-            } else if distanceFromStart > 16, !self.looksLikeClosedLoop() {
+            } else if self.isTriangleCorrectionEnabled,
+                      let triangle = self.triangleIfClosedLoop(self.previewStroke()) {
+                self.isTriangleLocked = true
+                self.prepareLockedNormalizedShape(points: triangle.points, at: current)
+                self.emitNormalizedShapePreview()
+                self.triggerCorrectionFeedback(at: current)
+            } else if self.isParabolaCorrectionEnabled,
+                      let parabola = self.parabolaIfRecognized(self.previewStroke()) {
+                self.isParabolaLocked = true
+                self.prepareLockedNormalizedShape(points: parabola.points, at: current)
+                self.emitNormalizedShapePreview()
+                self.triggerCorrectionFeedback(at: current)
+            } else if self.isLineCorrectionEnabled,
+                      distanceFromStart > 16, !self.looksLikeClosedLoop() {
                 self.isStraightened = true
                 self.emitStraightPreview(to: current)
                 self.triggerCorrectionFeedback(at: current)
-            } else if self.looksLikeClosedLoop() {
+            } else if self.isEllipseCorrectionEnabled, self.looksLikeClosedLoop() {
                 self.isEllipseLocked = true
+                self.prepareLockedShape(at: current, snapToSquare: false)
                 self.emitEllipsePreview()
                 self.triggerCorrectionFeedback(at: current)
             }
@@ -330,8 +588,7 @@ final class InkCanvasView: UIView {
     }
 
     private func emitEllipsePreview() {
-        let bounds = InkStroke(points: rawPoints, colorHex: strokeColorHex, width: strokeWidth).bounds
-            .insetBy(dx: strokeWidth, dy: strokeWidth) // `bounds` already pads by width; undo the double pad
+        let bounds = lockedShapeBounds ?? previewStroke().bounds.insetBy(dx: strokeWidth, dy: strokeWidth)
         guard bounds.width > 0, bounds.height > 0 else { return }
         let preview = InkStroke(
             points: Self.ellipsePoints(in: bounds),
@@ -347,9 +604,8 @@ final class InkCanvasView: UIView {
     }
 
     private func emitRectanglePreview() {
-        let bounds = Self.correctedRectangleBounds(
-            previewStroke().bounds.insetBy(dx: strokeWidth, dy: strokeWidth)
-        )
+        let bounds = lockedShapeBounds ?? Self.correctedRectangleBounds(
+            previewStroke().bounds.insetBy(dx: strokeWidth, dy: strokeWidth))
         guard bounds.width > 0, bounds.height > 0 else { return }
         let preview = InkStroke(
             points: Self.rectanglePoints(in: bounds), colorHex: strokeColorHex,
@@ -364,6 +620,79 @@ final class InkCanvasView: UIView {
     private func previewStroke() -> InkStroke {
         InkStroke(points: rawPoints, colorHex: strokeColorHex, width: strokeWidth,
                   opacity: isHighlighter ? 0.45 : 1, isHighlighter: isHighlighter)
+    }
+
+    /// Once a closed shape snaps, the corner opposite the Pencil is fixed.
+    /// Continuing to drag moves the Pencil-side corner, allowing a circle to
+    /// become an ellipse (and back), or a square to become a rectangle.
+    private func prepareLockedShape(at pencilLocation: CGPoint, snapToSquare: Bool) {
+        var bounds = previewStroke().bounds.insetBy(dx: strokeWidth, dy: strokeWidth)
+        if snapToSquare { bounds = Self.correctedRectangleBounds(bounds) }
+        lockedShapeBounds = bounds
+        let corners = [
+            CGPoint(x: bounds.minX, y: bounds.minY), CGPoint(x: bounds.maxX, y: bounds.minY),
+            CGPoint(x: bounds.maxX, y: bounds.maxY), CGPoint(x: bounds.minX, y: bounds.maxY),
+        ]
+        lockedShapeFixedCorner = corners.max {
+            hypot($0.x - pencilLocation.x, $0.y - pencilLocation.y)
+                < hypot($1.x - pencilLocation.x, $1.y - pencilLocation.y)
+        }
+    }
+
+    private func updateLockedShapeBounds(to pencilLocation: CGPoint, snapToSquare: Bool) {
+        guard let fixed = lockedShapeFixedCorner else { return }
+        var bounds = CGRect(
+            x: min(fixed.x, pencilLocation.x), y: min(fixed.y, pencilLocation.y),
+            width: abs(pencilLocation.x - fixed.x), height: abs(pencilLocation.y - fixed.y)
+        )
+        guard bounds.width >= 4, bounds.height >= 4 else { return }
+        if snapToSquare { bounds = Self.correctedRectangleBounds(bounds) }
+        lockedShapeBounds = bounds
+    }
+
+    private func prepareLockedNormalizedShape(points: [InkPoint], at pencilLocation: CGPoint) {
+        guard let first = points.first else { return }
+        let bounds = points.dropFirst().reduce(CGRect(origin: first.location, size: .zero)) {
+            $0.union(CGRect(origin: $1.location, size: .zero))
+        }
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        lockedShapeBounds = bounds
+        lockedNormalizedPoints = points.map { point in
+            InkPoint(
+                location: CGPoint(x: (point.location.x - bounds.minX) / bounds.width,
+                                  y: (point.location.y - bounds.minY) / bounds.height),
+                force: point.force, timeOffset: point.timeOffset
+            )
+        }
+        let corners = [
+            CGPoint(x: bounds.minX, y: bounds.minY), CGPoint(x: bounds.maxX, y: bounds.minY),
+            CGPoint(x: bounds.maxX, y: bounds.maxY), CGPoint(x: bounds.minX, y: bounds.maxY),
+        ]
+        lockedShapeFixedCorner = corners.max {
+            hypot($0.x - pencilLocation.x, $0.y - pencilLocation.y)
+                < hypot($1.x - pencilLocation.x, $1.y - pencilLocation.y)
+        }
+    }
+
+    private func lockedShapePoints() -> [InkPoint] {
+        guard let bounds = lockedShapeBounds, let normalized = lockedNormalizedPoints else { return [] }
+        return normalized.map { point in
+            InkPoint(
+                location: CGPoint(x: bounds.minX + point.location.x * bounds.width,
+                                  y: bounds.minY + point.location.y * bounds.height),
+                force: point.force, timeOffset: point.timeOffset
+            )
+        }
+    }
+
+    private func emitNormalizedShapePreview() {
+        let points = lockedShapePoints()
+        guard points.count > 1 else { return }
+        let preview = InkStroke(points: points, colorHex: strokeColorHex, width: strokeWidth,
+                                opacity: isHighlighter ? 0.45 : 1, isHighlighter: isHighlighter)
+        liveLayer.path = Self.path(for: [preview]).cgPath
+        liveLayer.fillColor = UIColor(inkHex: strokeColorHex)
+            .withAlphaComponent(isHighlighter ? 0.45 : 1).cgColor
     }
 
     private static func rectanglePoints(in rect: CGRect) -> [InkPoint] {
@@ -489,6 +818,11 @@ final class InkCanvasView: UIView {
             isStraightened = false
             isEllipseLocked = false
             isRectangleLocked = false
+            isTriangleLocked = false
+            isParabolaLocked = false
+            lockedShapeBounds = nil
+            lockedShapeFixedCorner = nil
+            lockedNormalizedPoints = nil
             liveLayer.path = nil
             onStrokeEnded?()
         }
@@ -510,15 +844,16 @@ final class InkCanvasView: UIView {
                 InkPoint(location: end, force: 0.5, timeOffset: 1),
             ]
         } else if isRectangleLocked {
-            let bounds = Self.correctedRectangleBounds(
-                stroke.bounds.insetBy(dx: strokeWidth, dy: strokeWidth)
-            )
+            let bounds = lockedShapeBounds ?? Self.correctedRectangleBounds(
+                stroke.bounds.insetBy(dx: strokeWidth, dy: strokeWidth))
             stroke.points = Self.rectanglePoints(in: bounds)
         } else if isEllipseLocked {
             // Locked live, while the pencil was still down — use the exact
             // same fit the on-screen preview was already showing.
-            let bounds = stroke.bounds.insetBy(dx: strokeWidth, dy: strokeWidth)
+            let bounds = lockedShapeBounds ?? stroke.bounds.insetBy(dx: strokeWidth, dy: strokeWidth)
             stroke.points = Self.ellipsePoints(in: bounds)
+        } else if isTriangleLocked || isParabolaLocked {
+            stroke.points = lockedShapePoints()
         } else {
             // Scribble-to-erase is checked before the closed-loop ellipse
             // fallback below: a scribble that happens to loop back near its
@@ -535,14 +870,9 @@ final class InkCanvasView: UIView {
                     return
                 }
             }
-            if !isHighlighter, let rectangle = rectangleIfClosedLoop(stroke) {
-                stroke = rectangle
-            } else if !isHighlighter, let ellipse = ellipseIfClosedLoop(stroke) {
-                // Fallback for a circle drawn fast enough that the pencil
-                // never paused: recognised from the finished shape instead
-                // of live.
-                stroke = ellipse
-            }
+            // Closed shapes are intentionally not corrected on lift. Like
+            // straight lines, they only snap after the Pencil has remained
+            // down and still for `straightenHoldDuration`.
         }
 
         drawing.strokes.append(stroke)
@@ -550,6 +880,37 @@ final class InkCanvasView: UIView {
     }
 
     // MARK: Eraser (bitmap-style: only the touched portions are removed)
+
+    @objc private func handleEraserHover(_ recognizer: UIHoverGestureRecognizer) {
+        guard isEraser else { hideEraserCursor(); return }
+        switch recognizer.state {
+        case .began, .changed:
+            showEraserCursor(at: recognizer.location(in: self))
+        default:
+            hideEraserCursor()
+        }
+    }
+
+    private func showEraserCursor(at location: CGPoint) {
+        eraserCursorLocation = location
+        let radius = max(1, eraserWidth / 2)
+        let path = UIBezierPath(ovalIn: CGRect(
+            x: location.x - radius, y: location.y - radius,
+            width: radius * 2, height: radius * 2
+        ))
+        withoutImplicitAnimations {
+            eraserCursorLayer.path = path.cgPath
+            eraserCursorLayer.isHidden = false
+        }
+    }
+
+    private func hideEraserCursor() {
+        eraserCursorLocation = nil
+        withoutImplicitAnimations {
+            eraserCursorLayer.isHidden = true
+            eraserCursorLayer.path = nil
+        }
+    }
 
     /// Applies each newly travelled Pencil segment immediately. There is no
     /// faded preview and no work deferred until lift: the visible drawing is
@@ -569,8 +930,11 @@ final class InkCanvasView: UIView {
                 result.append(stroke)
                 continue
             }
-            let source = Self.isGeneratedRectangle(stroke.points) ? stroke.points : Self.smoothed(stroke.points)
-            let samples = Self.resampled(source, maxSpacing: max(1, radius * 0.25))
+            let source = Self.isGeneratedPolygon(stroke.points) ? stroke.points : Self.smoothed(stroke.points)
+            // Corrected lines store only their two endpoints. Linear
+            // resampling makes the entire segment hittable, including its
+            // middle, instead of testing only those endpoints.
+            let samples = Self.linearlyResampled(source, maxSpacing: max(1, radius * 0.25))
             var runs: [[InkPoint]] = []
             var run: [InkPoint] = []
             for sample in samples {
@@ -617,6 +981,26 @@ final class InkCanvasView: UIView {
             best = min(best, hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t)))
         }
         return best
+    }
+
+    private static func linearlyResampled(_ points: [InkPoint], maxSpacing: CGFloat) -> [InkPoint] {
+        guard let first = points.first else { return [] }
+        guard points.count > 1 else { return [first] }
+        var result = [first]
+        for (a, b) in zip(points, points.dropFirst()) {
+            let distance = hypot(b.location.x - a.location.x, b.location.y - a.location.y)
+            let steps = max(1, Int(ceil(distance / maxSpacing)))
+            for step in 1...steps {
+                let t = CGFloat(step) / CGFloat(steps)
+                result.append(InkPoint(
+                    location: CGPoint(x: a.location.x + (b.location.x - a.location.x) * t,
+                                      y: a.location.y + (b.location.y - a.location.y) * t),
+                    force: a.force + (b.force - a.force) * t,
+                    timeOffset: a.timeOffset + (b.timeOffset - a.timeOffset) * Double(t)
+                ))
+            }
+        }
+        return result
     }
 
     // MARK: Shape recognition (circle/ellipse)
@@ -686,6 +1070,149 @@ final class InkCanvasView: UIView {
         return result
     }
 
+    private func triangleIfClosedLoop(_ stroke: InkStroke) -> InkStroke? {
+        let points = stroke.points.map(\.location)
+        guard points.count >= 10, let first = points.first, let last = points.last else { return nil }
+        let bounds = stroke.bounds.insetBy(dx: stroke.width, dy: stroke.width)
+        let diagonal = hypot(bounds.width, bounds.height)
+        guard bounds.width >= 24, bounds.height >= 24,
+              hypot(last.x - first.x, last.y - first.y) <= diagonal * 0.35 else { return nil }
+
+        let hull = Self.convexHull(points)
+        guard hull.count >= 3 else { return nil }
+        var best: (CGPoint, CGPoint, CGPoint)?
+        var bestArea: CGFloat = 0
+        for i in 0..<(hull.count - 2) {
+            for j in (i + 1)..<(hull.count - 1) {
+                for k in (j + 1)..<hull.count {
+                    let area = abs(Self.cross(hull[i], hull[j], hull[k]))
+                    if area > bestArea {
+                        bestArea = area
+                        best = (hull[i], hull[j], hull[k])
+                    }
+                }
+            }
+        }
+        guard let best, bestArea >= bounds.width * bounds.height * 0.35 else { return nil }
+        let center = CGPoint(x: (best.0.x + best.1.x + best.2.x) / 3,
+                             y: (best.0.y + best.1.y + best.2.y) / 3)
+        let vertices = [best.0, best.1, best.2].sorted {
+            atan2($0.y - center.y, $0.x - center.x) < atan2($1.y - center.y, $1.x - center.x)
+        }
+        let averageDeviation = points.reduce(CGFloat.zero) { total, point in
+            let edgeDistance = min(
+                Self.distanceToSegment(point, vertices[0], vertices[1]),
+                Self.distanceToSegment(point, vertices[1], vertices[2]),
+                Self.distanceToSegment(point, vertices[2], vertices[0])
+            )
+            return total + edgeDistance
+        } / CGFloat(points.count)
+        guard averageDeviation <= diagonal * 0.075 else { return nil }
+
+        let closed = vertices + [vertices[0]]
+        var result = stroke
+        result.points = closed.enumerated().map { index, point in
+            InkPoint(location: point, force: 0.5, timeOffset: Double(index) / 3)
+        }
+        return result
+    }
+
+    /// Fits a vertical quadratic using least squares in normalized
+    /// coordinates. Both U and inverted-U strokes are accepted, while near
+    /// straight lines and shapes whose vertex lies outside the drawn span are
+    /// rejected.
+    private func parabolaIfRecognized(_ stroke: InkStroke) -> InkStroke? {
+        let points = stroke.points.map(\.location)
+        guard points.count >= 10 else { return nil }
+        let minX = points.map(\.x).min() ?? 0, maxX = points.map(\.x).max() ?? 0
+        let minY = points.map(\.y).min() ?? 0, maxY = points.map(\.y).max() ?? 0
+        let width = maxX - minX, height = maxY - minY
+        guard width >= 30, height >= 20 else { return nil }
+
+        let midX = (minX + maxX) / 2
+        let normalized = points.map { point in
+            (x: (point.x - midX) / (width / 2), y: (point.y - minY) / height)
+        }
+        var s1 = CGFloat.zero, s2 = CGFloat.zero, s3 = CGFloat.zero, s4 = CGFloat.zero
+        var sy = CGFloat.zero, sxy = CGFloat.zero, sx2y = CGFloat.zero
+        for point in normalized {
+            let x2 = point.x * point.x
+            s1 += point.x; s2 += x2; s3 += x2 * point.x; s4 += x2 * x2
+            sy += point.y; sxy += point.x * point.y; sx2y += x2 * point.y
+        }
+        let matrix: [[CGFloat]] = [
+            [s4, s3, s2, sx2y], [s3, s2, s1, sxy],
+            [s2, s1, CGFloat(normalized.count), sy],
+        ]
+        guard let solution = Self.solve3x3(matrix) else { return nil }
+        let a = solution[0], b = solution[1], c = solution[2]
+        guard abs(a) >= 0.22 else { return nil }
+        let vertexX = -b / (2 * a)
+        guard abs(vertexX) <= 1.15 else { return nil }
+        let rmse = sqrt(normalized.reduce(CGFloat.zero) { total, point in
+            let error = point.y - (a * point.x * point.x + b * point.x + c)
+            return total + error * error
+        } / CGFloat(normalized.count))
+        guard rmse <= 0.14 else { return nil }
+
+        let fitted = (0...64).map { index -> InkPoint in
+            let nx = -1 + 2 * CGFloat(index) / 64
+            let ny = a * nx * nx + b * nx + c
+            return InkPoint(location: CGPoint(x: midX + nx * width / 2, y: minY + ny * height),
+                            force: 0.5, timeOffset: Double(index) / 64)
+        }
+        var result = stroke
+        result.points = fitted
+        return result
+    }
+
+    private static func convexHull(_ points: [CGPoint]) -> [CGPoint] {
+        let sorted = points.sorted { $0.x == $1.x ? $0.y < $1.y : $0.x < $1.x }
+        guard sorted.count > 2 else { return sorted }
+        var lower: [CGPoint] = []
+        for point in sorted {
+            while lower.count >= 2 && cross(lower[lower.count - 2], lower[lower.count - 1], point) <= 0 {
+                lower.removeLast()
+            }
+            lower.append(point)
+        }
+        var upper: [CGPoint] = []
+        for point in sorted.reversed() {
+            while upper.count >= 2 && cross(upper[upper.count - 2], upper[upper.count - 1], point) <= 0 {
+                upper.removeLast()
+            }
+            upper.append(point)
+        }
+        return Array(lower.dropLast() + upper.dropLast())
+    }
+
+    private static func cross(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint) -> CGFloat {
+        (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+    }
+
+    private static func distanceToSegment(_ point: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let lengthSquared = dx * dx + dy * dy
+        let t = lengthSquared > 0 ? min(1, max(0, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared)) : 0
+        return hypot(point.x - (a.x + dx * t), point.y - (a.y + dy * t))
+    }
+
+    private static func solve3x3(_ input: [[CGFloat]]) -> [CGFloat]? {
+        var matrix = input
+        for column in 0..<3 {
+            guard let pivot = (column..<3).max(by: { abs(matrix[$0][column]) < abs(matrix[$1][column]) }),
+                  abs(matrix[pivot][column]) > 0.000_001 else { return nil }
+            matrix.swapAt(column, pivot)
+            let divisor = matrix[column][column]
+            for j in column..<4 { matrix[column][j] /= divisor }
+            for row in 0..<3 where row != column {
+                let factor = matrix[row][column]
+                for j in column..<4 { matrix[row][j] -= factor * matrix[column][j] }
+            }
+        }
+        return [matrix[0][3], matrix[1][3], matrix[2][3]]
+    }
+
     // MARK: Scribble-to-erase
 
     /// A deliberate scribble doubles back over roughly the same small area
@@ -699,35 +1226,43 @@ final class InkCanvasView: UIView {
         guard diagonal > 0 else { return false }
         let ratio = stroke.pathLength / diagonal
 
+        // Coalesced Pencil samples can be less than a point apart. Comparing
+        // every Nth stored sample therefore often produced vectors too short
+        // to count, even for an obvious back-and-forth scribble. Build
+        // direction vectors only after the Pencil has travelled a meaningful
+        // distance so recognition is independent of the sampling rate.
         var turns = 0
         var previousVector: CGPoint?
         let points = stroke.points.map(\.location)
-        for index in stride(from: 3, to: points.count, by: 3) {
-            let vector = CGPoint(x: points[index].x - points[index - 3].x, y: points[index].y - points[index - 3].y)
+        var anchor = points[0]
+        for point in points.dropFirst() {
+            let vector = CGPoint(x: point.x - anchor.x, y: point.y - anchor.y)
             let length = hypot(vector.x, vector.y)
-            guard length > 2 else { continue }
+            guard length >= 6 else { continue }
             if let previous = previousVector {
                 let previousLength = hypot(previous.x, previous.y)
                 let dot = (previous.x * vector.x + previous.y * vector.y) / max(previousLength * length, 0.001)
-                if dot < 0.2 { turns += 1 }
+                if dot < -0.05 { turns += 1 }
             }
             previousVector = vector
+            anchor = point
         }
-        return turns >= 2 && ratio >= 1.3
+        return turns >= 2 && ratio >= 1.45
     }
 
     private func strokeIsCoveredBy(_ stroke: InkStroke, scribble: InkStroke) -> Bool {
         guard stroke.bounds.intersects(scribble.bounds) else { return false }
         let scribblePoints = scribble.points.map(\.location)
-        let strokePoints = stroke.points.map(\.location)
-        guard !strokePoints.isEmpty else { return false }
-        let sampleStep = max(1, strokePoints.count / 24)
-        let samples = stride(from: 0, to: strokePoints.count, by: sampleStep).map { strokePoints[$0] }
-        let radius: CGFloat = 18
+        guard scribblePoints.count > 1 else { return false }
+        // Resample the whole target path, including the middle of corrected
+        // lines that are stored with only two endpoints.
+        let samples = Self.linearlyResampled(stroke.points, maxSpacing: 6).map(\.location)
+        guard !samples.isEmpty else { return false }
+        let radius = max(14, stroke.width + scribble.width + 8)
         let covered = samples.filter { sample in
-            scribblePoints.contains { hypot($0.x - sample.x, $0.y - sample.y) <= radius }
+            Self.distance(from: sample, to: scribblePoints) <= radius
         }.count
-        return Double(covered) / Double(samples.count) >= 0.12
+        return Double(covered) / Double(samples.count) >= 0.08
     }
 
     // MARK: Force
@@ -776,7 +1311,7 @@ final class InkCanvasView: UIView {
         // part of a broad curve, producing the teardrop-like shape seen on
         // screen. Keep generated polygon edges exact; freehand ink and
         // ellipses still use the smoothing pipeline.
-        let points = isGeneratedRectangle(rawPoints)
+        let points = isGeneratedPolygon(rawPoints)
             ? rawPoints
             : resampled(smoothed(rawPoints), maxSpacing: maxSpacing)
 
@@ -810,6 +1345,17 @@ final class InkCanvasView: UIView {
             guard (dx < 0.01 && dy > 0.01) || (dy < 0.01 && dx > 0.01) else { return false }
         }
         return true
+    }
+
+    private static func isGeneratedPolygon(_ points: [InkPoint]) -> Bool {
+        if isGeneratedRectangle(points) { return true }
+        guard points.count == 4,
+              let first = points.first?.location,
+              let last = points.last?.location,
+              hypot(first.x - last.x, first.y - last.y) < 0.01 else { return false }
+        return zip(points, points.dropFirst()).allSatisfy {
+            hypot($0.location.x - $1.location.x, $0.location.y - $1.location.y) > 0.01
+        }
     }
 
     private static func appendDab(to path: UIBezierPath, center: CGPoint, radius: CGFloat) {
