@@ -8,6 +8,20 @@ enum HandwritingRecognitionService {
               !drawing.strokes.isEmpty else { return "" }
 
         let bounds = CGRect(origin: .zero, size: pageSize)
+        return await recognize(drawing: drawing, bounds: bounds)
+    }
+
+    /// Recognises only the strokes selected by the lasso. Cropping before
+    /// rasterising keeps both Vision's input and the work it performs small,
+    /// regardless of how many pages the notebook contains.
+    static func recognize(drawing: InkDrawing) async -> String {
+        guard let first = drawing.strokes.first else { return "" }
+        let inkBounds = drawing.strokes.dropFirst().reduce(first.bounds) { $0.union($1.bounds) }
+        let padding = max(12, min(32, max(inkBounds.width, inkBounds.height) * 0.06))
+        return await recognize(drawing: drawing, bounds: inkBounds.insetBy(dx: -padding, dy: -padding))
+    }
+
+    private static func recognize(drawing: InkDrawing, bounds: CGRect) async -> String {
         let image = drawing.image(from: bounds, scale: 2)
         guard let cgImage = image.cgImage else { return "" }
 

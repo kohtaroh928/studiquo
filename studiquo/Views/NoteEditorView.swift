@@ -9,6 +9,7 @@ private extension Notification.Name {
     static let studiquoUndoDrawing = Notification.Name("StudiquoUndoDrawing")
     static let studiquoRedoDrawing = Notification.Name("StudiquoRedoDrawing")
     static let studiquoOpenNotebookTab = Notification.Name("StudiquoOpenNotebookTab")
+    static let studiquoRecognizedSelection = Notification.Name("StudiquoRecognizedSelection")
 }
 
 /// True while the enclosing pane is pinch-zoomed. The page list uses it to
@@ -78,6 +79,8 @@ struct NoteEditorView: View {
     @State private var secondaryNotebook: Notebook?
     @State private var splitMode: SplitMode = .single
     @State private var splitRatio: CGFloat = 0.5
+    @State private var isPortraitLayout = false
+    @State private var recognizedSelectionDragText = ""
     @State private var activePane: ActivePane = .primary
     @State private var pendingSplitMode: SplitMode?
     @State private var showsSplitSourcePicker = false
@@ -94,7 +97,6 @@ struct NoteEditorView: View {
     @State private var textToInsert = ""
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var selectedBackgroundPhotoItem: PhotosPickerItem?
-    @State private var showsNotebookSearch = false
     @State private var isRecognizingHandwriting = false
     @State private var recognitionProgress = ""
     @State private var isFocusMode = false
@@ -117,6 +119,11 @@ struct NoteEditorView: View {
     // have kept whatever was already stored under it). Defaults on, and
     // stays toggleable from the drawing bar.
     @AppStorage("scratchOutEnabledV2") private var isScratchOutEnabled = true
+    @AppStorage("lineCorrectionEnabled") private var isLineCorrectionEnabled = true
+    @AppStorage("ellipseCorrectionEnabled") private var isEllipseCorrectionEnabled = true
+    @AppStorage("rectangleCorrectionEnabled") private var isRectangleCorrectionEnabled = true
+    @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
+    @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
     /// Armed shape kind ("" for none) for the drag-to-create shape tool.
     /// Shared via the same `@AppStorage` key with `PageCanvasContainer`, the
     /// same pattern `drawingToolRaw` already uses to reach the active page's
@@ -147,8 +154,19 @@ struct NoteEditorView: View {
                 if !isReadOnlyMode && showsDrawingToolbar {
                     sharedDrawingToolbar(in: geometry.size)
                 }
+
+                if !recognizedSelectionDragText.isEmpty {
+                    recognizedSelectionDragChip
+                        .padding(.top, 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .zIndex(1000)
+                }
             }
             .clipped()
+            .onAppear { updateOrientation(for: geometry.size) }
+            .onChange(of: geometry.size) { _, newSize in
+                updateOrientation(for: newSize)
+            }
         }
         .navigationTitle(primaryFlashcardDeck?.title ?? displayedPrimaryNotebook.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -156,11 +174,11 @@ struct NoteEditorView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             if !isFocusMode { editorToolStrip }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .studiquoRecognizedSelection)) { notification in
+            recognizedSelectionDragText = notification.object as? String ?? ""
+        }
         .sheet(item: $exportURL) { wrapped in
             ShareSheet(items: [wrapped.url])
-        }
-        .sheet(isPresented: $showsNotebookSearch) {
-            NotebookSearchView(notebook: notebook, currentPageIndex: $primaryPageIndex)
         }
         .sheet(isPresented: $showsStudySession) {
             StudySessionView(notebook: notebook)
@@ -372,6 +390,16 @@ struct NoteEditorView: View {
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(isScratchOutEnabled ? Color.accentColor : .clear, lineWidth: 1.5))
         }
 
+        Menu {
+            Toggle("直線", isOn: $isLineCorrectionEnabled)
+            Toggle("円・楕円", isOn: $isEllipseCorrectionEnabled)
+            Toggle("正方形・長方形", isOn: $isRectangleCorrectionEnabled)
+            Toggle("三角形", isOn: $isTriangleCorrectionEnabled)
+            Toggle("二次関数", isOn: $isParabolaCorrectionEnabled)
+        } label: {
+            Image(systemName: "wand.and.stars").frame(width: 28, height: 28)
+        }
+
         ForEach(DrawingToolKind.toolbarCases, id: \.rawValue) { tool in
             Button {
                 pendingShapeKindRaw = ""
@@ -402,15 +430,13 @@ struct NoteEditorView: View {
 
         if drawingTool == .eraser {
             Menu {
-                Slider(value: $eraserWidth, in: 10...60, step: 1) {
-                    Text("消しゴムの大きさ")
-                } minimumValueLabel: {
-                    Image(systemName: "eraser").font(.caption2)
-                } maximumValueLabel: {
-                    Image(systemName: "eraser.fill").font(.body)
+                Picker("大きさ", selection: $eraserWidth) {
+                    Text("小さい").tag(10.0)
+                    Text("標準").tag(24.0)
+                    Text("大きい").tag(40.0)
+                    Text("特大").tag(60.0)
                 }
-                .frame(width: 220)
-            } label: { Image(systemName: "eraser").frame(width: 28, height: 28) }
+            } label: { Image(systemName: "lineweight").frame(width: 28, height: 28) }
         } else {
             Menu {
                 Picker("太さ", selection: $drawingWidth) {
@@ -428,6 +454,19 @@ struct NoteEditorView: View {
             x: min(max(center.x, width / 2 + 6), max(width / 2 + 6, size.width - width / 2 - 6)),
             y: min(max(center.y, height / 2 + 6), max(height / 2 + 6, size.height - height / 2 - 6))
         )
+    }
+
+    private var recognizedSelectionDragChip: some View {
+        Label(recognizedSelectionDragText, systemImage: "hand.draw")
+            .font(.subheadline.weight(.semibold))
+            .lineLimit(2)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().stroke(Color.accentColor, lineWidth: 1.5))
+            .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+            .draggable(recognizedSelectionDragText)
+            .accessibilityLabel("認識した文字。暗記カードへドラッグできます")
     }
 
     @ViewBuilder
@@ -464,12 +503,12 @@ struct NoteEditorView: View {
 
     @ViewBuilder
     private var primaryPane: some View {
-        GeometryReader { geometry in
-            ZoomableWorkspace(size: geometry.size) {
-                Group {
-                    if let primaryFlashcardDeck {
-                        FlashcardPaneView(deck: primaryFlashcardDeck)
-                    } else {
+        Group {
+            if let primaryFlashcardDeck {
+                FlashcardPaneView(deck: primaryFlashcardDeck)
+            } else {
+                GeometryReader { geometry in
+                    ZoomableWorkspace(size: geometry.size) {
                         NotebookPaneView(
                             notebook: displayedPrimaryNotebook,
                             currentPageIndex: $primaryPageIndex,
@@ -495,11 +534,7 @@ struct NoteEditorView: View {
         if secondaryShowsWeb {
             WebSearchPane(browser: webBrowser)
         } else if let secondaryFlashcardDeck {
-            GeometryReader { geometry in
-                ZoomableWorkspace(size: geometry.size) {
-                    FlashcardPaneView(deck: secondaryFlashcardDeck)
-                }
-            }
+            FlashcardPaneView(deck: secondaryFlashcardDeck)
                 .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
                 .dropDestination(for: String.self) { items, _ in
                     guard let value = items.first else { return false }
@@ -581,13 +616,6 @@ struct NoteEditorView: View {
                     systemImage: "sidebar.left"
                 )
             }
-
-            Button {
-                showsNotebookSearch = true
-            } label: {
-                Label("ノート内検索", systemImage: "magnifyingglass")
-            }
-            .keyboardShortcut("f", modifiers: .command)
 
             Button {
                 showsOutline = true
@@ -779,6 +807,7 @@ struct NoteEditorView: View {
                 } label: {
                     Label("左右に2分割", systemImage: "rectangle.split.2x1")
                 }
+                .disabled(isPortraitLayout)
                 Button {
                     prepareSplit(.vertical)
                 } label: {
@@ -880,8 +909,22 @@ struct NoteEditorView: View {
                 }
                 toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode, action: selectPen)
                 toolStripButton("消しゴム", icon: "eraser", isActive: drawingTool == .eraser && !isReadOnlyMode, action: selectEraser)
-                toolStripButton("検索", icon: "magnifyingglass", isActive: showsNotebookSearch) { showsNotebookSearch = true }
-
+                toolStripButton("選択", icon: "lasso", isActive: drawingTool == .lasso && !isReadOnlyMode, action: selectLasso)
+                Menu {
+                    Toggle("直線補正", isOn: $isLineCorrectionEnabled)
+                    Toggle("円・楕円補正", isOn: $isEllipseCorrectionEnabled)
+                    Toggle("正方形・長方形補正", isOn: $isRectangleCorrectionEnabled)
+                    Toggle("三角形補正", isOn: $isTriangleCorrectionEnabled)
+                    Toggle("二次関数補正", isOn: $isParabolaCorrectionEnabled)
+                } label: {
+                    toolStripLabel(
+                        "補正設定",
+                        icon: "wand.and.stars",
+                        isActive: isLineCorrectionEnabled || isEllipseCorrectionEnabled
+                            || isRectangleCorrectionEnabled || isTriangleCorrectionEnabled
+                            || isParabolaCorrectionEnabled
+                    )
+                }
                 Menu {
                     Button("現在のページを認識", systemImage: "text.viewfinder", action: recognizeCurrentPage)
                     Button("全ページを認識", systemImage: "doc.text.magnifyingglass", action: recognizeAllPages)
@@ -930,6 +973,7 @@ struct NoteEditorView: View {
                 Menu {
                     Button("1画面", systemImage: "rectangle") { splitMode = .single }
                     Button("左右に2分割", systemImage: "rectangle.split.2x1") { prepareSplit(.horizontal) }
+                        .disabled(isPortraitLayout)
                     Button("上下に2分割", systemImage: "rectangle.split.1x2") { prepareSplit(.vertical) }
                     Divider()
                     Button("Google検索と2分割", systemImage: "globe") {
@@ -1035,7 +1079,7 @@ struct NoteEditorView: View {
         secondaryNotebook = nil
         secondaryFlashcardDeck = nil
         secondaryShowsWeb = true
-        splitMode = .horizontal
+        splitMode = isPortraitLayout ? .vertical : .horizontal
         splitRatio = 0.5
         activePane = .primary
         NotificationCenter.default.post(
@@ -1085,7 +1129,7 @@ struct NoteEditorView: View {
             secondaryNotebook = nil
             secondaryFlashcardDeck = nil
             secondaryShowsWeb = true
-            if splitMode == .single { splitMode = .horizontal }
+            if splitMode == .single { splitMode = isPortraitLayout ? .vertical : .horizontal }
             activePane = .secondary
             return
         }
@@ -1120,9 +1164,34 @@ struct NoteEditorView: View {
         }
     }
 
+    private func selectLasso() {
+        isReadOnlyMode = false
+        pendingShapeKindRaw = ""
+        if drawingTool == .lasso {
+            drawingToolRaw = DrawingToolKind.none.rawValue
+            showsDrawingToolbar = false
+        } else {
+            drawingToolRaw = DrawingToolKind.lasso.rawValue
+            showsDrawingToolbar = true
+        }
+    }
+
     private func prepareSplit(_ mode: SplitMode) {
-        pendingSplitMode = mode
+        pendingSplitMode = isPortraitLayout ? .vertical : mode
         showsSplitSourcePicker = true
+    }
+
+    private func updateOrientation(for size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        let portrait = size.height > size.width
+        isPortraitLayout = portrait
+        if portrait, splitMode == .horizontal {
+            splitMode = .vertical
+            splitRatio = 0.5
+        }
+        if portrait, pendingSplitMode == .horizontal {
+            pendingSplitMode = .vertical
+        }
     }
 
     private var displayedPrimaryNotebook: Notebook {
@@ -1177,7 +1246,7 @@ struct NoteEditorView: View {
     }
 
     private func completeSplitSelection(object: Any) {
-        splitMode = pendingSplitMode ?? .horizontal
+        splitMode = isPortraitLayout ? .vertical : (pendingSplitMode ?? .horizontal)
         splitRatio = 0.5
         activePane = .secondary
         NotificationCenter.default.post(name: .studiquoOpenNotebookTab, object: object)
@@ -1730,7 +1799,7 @@ private struct SplitSourcePicker: View {
                             newItemName = ""
                             showsNewDeckAlert = true
                         } label: {
-                            Label("新規暗記帳", systemImage: "rectangle.on.rectangle.angled")
+                            Label("新規暗記カード", systemImage: "rectangle.on.rectangle.angled")
                         }
                     } label: {
                         Label("新規作成", systemImage: "plus")
@@ -1743,8 +1812,8 @@ private struct SplitSourcePicker: View {
             Button("キャンセル", role: .cancel) {}
             Button("作成して開く", action: createNotebook)
         }
-        .alert("新規暗記帳", isPresented: $showsNewDeckAlert) {
-            TextField("暗記帳名", text: $newItemName)
+        .alert("新規暗記カード", isPresented: $showsNewDeckAlert) {
+            TextField("暗記カード名", text: $newItemName)
             Button("キャンセル", role: .cancel) {}
             Button("作成して開く", action: createDeck)
         }
@@ -1762,7 +1831,7 @@ private struct SplitSourcePicker: View {
 
     private func createDeck() {
         let title = newItemName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let deck = FlashcardDeck(title: title.isEmpty ? "新しい暗記帳" : title)
+        let deck = FlashcardDeck(title: title.isEmpty ? "新しい暗記カード" : title)
         modelContext.insert(deck)
         onSelectDeck(deck)
     }
@@ -1770,20 +1839,17 @@ private struct SplitSourcePicker: View {
 
 private struct FlashcardPaneView: View {
     @Bindable var deck: FlashcardDeck
-    @Environment(\.modelContext) private var modelContext
     @State private var index = 0
     @State private var showsAnswer = false
-    @State private var mode: FlashcardPaneMode = .study
-    @State private var question = ""
-    @State private var answer = ""
+    @State private var mode: FlashcardPaneMode
+
+    init(deck: FlashcardDeck) {
+        self.deck = deck
+        _mode = State(initialValue: deck.cards.isEmpty ? .create : .study)
+    }
 
     private var cards: [Flashcard] {
         deck.sortedCards
-    }
-
-    private var canCreateCard: Bool {
-        !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -1843,51 +1909,7 @@ private struct FlashcardPaneView: View {
     }
 
     private var creator: some View {
-        Form {
-            Section("新規暗記カード") {
-                TextField("問題", text: $question, axis: .vertical)
-                    .lineLimit(2...5)
-                TextField("答え", text: $answer, axis: .vertical)
-                    .lineLimit(2...5)
-                Button("このカードを保存して次へ", action: createCard)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canCreateCard)
-            }
-            Section("作成済みカード（\(cards.count)枚）") {
-                ForEach(Array(cards.enumerated()), id: \.element.persistentModelID) { cardIndex, card in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("\(cardIndex + 1). \(card.question)").font(.subheadline).lineLimit(1)
-                        Text(card.answer).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    .swipeActions {
-                        Button("削除", role: .destructive) { delete(card) }
-                    }
-                }
-            }
-        }
-    }
-
-    private func createCard() {
-        guard canCreateCard else { return }
-        let card = Flashcard(
-            question: question.trimmingCharacters(in: .whitespacesAndNewlines),
-            answer: answer.trimmingCharacters(in: .whitespacesAndNewlines),
-            order: deck.cards.count
-        )
-        card.deck = deck
-        deck.cards.append(card)
-        deck.updatedAt = .now
-        modelContext.insert(card)
-        question = ""
-        answer = ""
-    }
-
-    private func delete(_ card: Flashcard) {
-        deck.cards.removeAll { $0 === card }
-        modelContext.delete(card)
-        for (cardIndex, remaining) in deck.sortedCards.enumerated() { remaining.order = cardIndex }
-        deck.updatedAt = .now
-        index = min(index, max(0, deck.cards.count - 1))
+        FlashcardEditorContent(deck: deck)
     }
 }
 
@@ -2006,7 +2028,7 @@ private struct NotebookPaneView: View {
         switch pageViewMode {
         case .continuous:
             ContinuousPagesView(
-                pages: pages,
+                notebook: notebook,
                 currentPageIndex: $currentPageIndex,
                 usesDarkPageDisplay: usesDarkPageDisplay,
                 onAddPage: onQuickAddPage,
@@ -2112,6 +2134,54 @@ private struct TopAdderMinYPreferenceKey: PreferenceKey {
     }
 }
 
+/// Passively observes the actual UIKit scroll offset. SwiftUI geometry
+/// preferences do not update reliably while the top rubber band is stretched
+/// on device, which left the prepend-page action permanently at zero. KVO
+/// observes the existing scroll view without installing a competing gesture,
+/// so Apple Pencil drawing remains untouched.
+private struct TopOverscrollObserver: UIViewRepresentable {
+    let onChange: (CGFloat) -> Void
+
+    func makeUIView(context: Context) -> ObserverView {
+        let view = ObserverView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateUIView(_ uiView: ObserverView, context: Context) {
+        uiView.onChange = onChange
+        uiView.attachWhenReady()
+    }
+
+    final class ObserverView: UIView {
+        var onChange: ((CGFloat) -> Void)?
+        private weak var observedScrollView: UIScrollView?
+        private var observation: NSKeyValueObservation?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            attachWhenReady()
+        }
+
+        func attachWhenReady() {
+            DispatchQueue.main.async { [weak self] in self?.attach() }
+        }
+
+        private func attach() {
+            var candidate: UIView? = superview
+            while let view = candidate, !(view is UIScrollView) { candidate = view.superview }
+            guard let scrollView = candidate as? UIScrollView, scrollView !== observedScrollView else { return }
+            observation = nil
+            observedScrollView = scrollView
+            observation = scrollView.observe(\.contentOffset, options: [.initial, .new]) { [weak self, weak scrollView] _, _ in
+                guard let self, let scrollView else { return }
+                let overscroll = max(0, -(scrollView.contentOffset.y + scrollView.adjustedContentInset.top))
+                self.onChange?(overscroll)
+            }
+        }
+    }
+}
+
 private struct PagesContentHeightPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -2126,7 +2196,7 @@ private struct PagesContentHeightPreferenceKey: PreferenceKey {
 }
 
 private struct ContinuousPagesView: View {
-    let pages: [NotePage]
+    @Bindable var notebook: Notebook
     @Binding var currentPageIndex: Int
     let usesDarkPageDisplay: Bool
     let onAddPage: () -> Void
@@ -2138,8 +2208,9 @@ private struct ContinuousPagesView: View {
     @State private var pullHoldStartedAt: Date?
     @State private var topPullProgress: CGFloat = 0
     @State private var hasTriggeredTopPageAdd = false
-    @State private var topPullHoldStartedAt: Date?
     @State private var contentHeight: CGFloat = 0
+    @State private var pageNumberRevision = 0
+    @State private var knownFirstPageID = ""
     /// Rubber-band overscroll needed to fill the gauge. UIKit damps
     /// overscroll heavily, so this is deliberately smaller than the finger
     /// travel it corresponds to.
@@ -2149,37 +2220,62 @@ private struct ContinuousPagesView: View {
     private static let contentBottomPadding: CGFloat = 18
 
     var body: some View {
+        let pages = notebook.sortedPages
         GeometryReader { geometry in
             let availableWidth = max(240, geometry.size.width - 32)
 
             ScrollView(.vertical) {
                 LazyVStack(spacing: 18) {
-                    TopPageAdder(progress: topPullProgress)
+                    TopPageAdder(
+                        progress: topPullProgress,
+                        holdDuration: Self.pullHoldDuration,
+                        onThresholdReached: triggerTopPageAddition
+                    )
                         .contentShape(Rectangle())
                         .onTapGesture { onAddPageAtTop() }
                         .background(
-                            GeometryReader { proxy in
-                                Color.clear.preference(
-                                    key: TopAdderMinYPreferenceKey.self,
-                                    value: proxy.frame(in: .named("notePagesScroll")).minY
-                                )
+                            ZStack {
+                                // UIKit offset observation is the primary
+                                // source. Geometry is retained as a fallback
+                                // for split/zoom hosting arrangements where
+                                // the representable is not attached directly
+                                // beneath the page-list UIScrollView.
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: TopAdderMinYPreferenceKey.self,
+                                        value: proxy.frame(in: .named("notePagesScroll")).minY
+                                    )
+                                }
+                                TopOverscrollObserver { overscroll in
+                                    updateTopPull(overscroll: overscroll)
+                                }
                             }
                         )
                     ForEach(Array(pages.enumerated()), id: \.element.persistentModelID) { index, page in
                         let aspect = max(page.pageWidth / page.pageHeight, 0.1)
+                        // At 100%, fit the whole page within the current pane.
+                        // This intentionally leaves blank space beside a
+                        // portrait page when the pane is wider than the page.
+                        let fittedWidth = min(
+                            availableWidth,
+                            max(120, geometry.size.height - 48) * aspect
+                        )
 
                         VStack(spacing: 6) {
                             PageCanvasContainer(page: page, usesDarkPageDisplay: usesDarkPageDisplay)
-                                .frame(width: availableWidth, height: availableWidth / aspect)
+                                .frame(width: fittedWidth, height: fittedWidth / aspect)
                                 .clipShape(RoundedRectangle(cornerRadius: 3))
                                 .onTapGesture {
                                     currentPageIndex = index
                                     scrollTarget = index
                                 }
 
-                            Text("\(index + 1) / \(pages.count)")
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                            LivePageNumberLabel(
+                                notebook: notebook,
+                                page: page,
+                                displayIndex: index,
+                                revision: pageNumberRevision
+                            )
                         }
                         .id(index)
                     }
@@ -2209,6 +2305,7 @@ private struct ContinuousPagesView: View {
             .scrollIndicators(.visible)
             .onAppear {
                 scrollTarget = min(max(currentPageIndex, 0), pages.count - 1)
+                knownFirstPageID = pages.first.map { String(describing: $0.persistentModelID) } ?? ""
             }
             .onChange(of: scrollTarget) { _, target in
                 if let target, pages.indices.contains(target), target != currentPageIndex {
@@ -2221,7 +2318,36 @@ private struct ContinuousPagesView: View {
                     scrollTarget = index
                 }
             }
+            .onChange(of: pages.count) { oldCount, newCount in
+                pageNumberRevision &+= 1
+                let newFirstID = pages.first.map { String(describing: $0.persistentModelID) } ?? ""
+                let wasPrepended = !knownFirstPageID.isEmpty && newFirstID != knownFirstPageID
+                knownFirstPageID = newFirstID
+                guard newCount > oldCount, wasPrepended, newCount > 1 else { return }
+
+                // Keep the old first page (now index 1) visually in place for
+                // one layout pass, then slide to the newly inserted index 0.
+                // This makes the successful prepend obvious instead of
+                // appearing as if nothing changed beneath the user's finger.
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    currentPageIndex = 1
+                    scrollTarget = 1
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                    withAnimation(.easeInOut(duration: 0.48)) {
+                        currentPageIndex = 0
+                        scrollTarget = 0
+                    }
+                }
+            }
             .onPreferenceChange(PagesContentHeightPreferenceKey.self) { contentHeight = $0 }
+            .onPreferenceChange(TopAdderMinYPreferenceKey.self) { minY in
+                guard minY.isFinite else { return }
+                let geometryOverscroll = max(0, minY - Self.contentBottomPadding)
+                updateTopPull(overscroll: geometryOverscroll)
+            }
             .onPreferenceChange(BottomAdderMaxYPreferenceKey.self) { maxY in
                 // The gauge is driven purely by how far the scroll view has
                 // rubber-banded past its natural bottom — this view installs
@@ -2265,60 +2391,53 @@ private struct ContinuousPagesView: View {
                     if progress == 0 { hasTriggeredPageAdd = false }
                 }
             }
-            .onPreferenceChange(TopAdderMinYPreferenceKey.self) { minY in
-                // Mirrors the bottom gauge above, but for pulling past the
-                // top: the adder is the first thing in the stack, so at
-                // rest its top edge sits one top-padding below the
-                // viewport's top edge, and pulling down past the top
-                // rubber-bands it further down from there.
-                guard minY.isFinite, contentHeight > geometry.size.height else {
-                    if topPullProgress != 0 { topPullProgress = 0 }
-                    hasTriggeredTopPageAdd = false
-                    topPullHoldStartedAt = nil
-                    return
-                }
-
-                let restingMinY = Self.contentBottomPadding
-                let overscroll = max(0, minY - restingMinY)
-                let progress = min(overscroll / Self.pullThreshold, 1)
-                topPullProgress = progress
-
-                if progress >= 1 {
-                    attemptTopPageAddIfHeld()
-                } else {
-                    topPullHoldStartedAt = nil
-                    if progress == 0 { hasTriggeredTopPageAdd = false }
-                }
-            }
-            // A steady hold at the top can stop producing new scroll
-            // geometry entirely — no finger jitter, no rubber-band spring
-            // still settling — so `onPreferenceChange` above may never
-            // fire again to notice the hold duration has elapsed. Pulling
-            // to the *bottom* usually arrives with a bit of scroll
-            // momentum that keeps the rubber band gently springing for a
-            // moment, which is enough incidental jitter to re-fire that
-            // handler; a deliberate pull-then-hold at the top has no such
-            // momentum. Polling here catches the hold either way.
-            .onReceive(Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()) { _ in
-                guard topPullProgress >= 1 else { return }
-                attemptTopPageAddIfHeld()
-            }
         }
         .background(Color(.secondarySystemBackground))
     }
 
-    private func attemptTopPageAddIfHeld() {
+    private func updateTopPull(overscroll: CGFloat) {
+        // Exactly the same measured threshold as the bottom-page adder.
+        let progress = min(max(overscroll, 0) / Self.pullThreshold, 1)
+        if abs(topPullProgress - progress) > 0.001 { topPullProgress = progress }
+        if progress == 0 { hasTriggeredTopPageAdd = false }
+    }
+
+    private func triggerTopPageAddition() {
         guard !hasTriggeredTopPageAdd else { return }
-        if topPullHoldStartedAt == nil { topPullHoldStartedAt = Date() }
-        if let started = topPullHoldStartedAt, Date().timeIntervalSince(started) >= Self.pullHoldDuration {
-            hasTriggeredTopPageAdd = true
-            onAddPageAtTop()
-        }
+        hasTriggeredTopPageAdd = true
+        onAddPageAtTop()
+    }
+}
+
+/// Resolves both values from the current relationship every time the label
+/// renders. It deliberately does not trust a captured ForEach index or cached
+/// metadata, both of which can be stale for already-visible LazyVStack cells
+/// after a page is prepended or deleted.
+private struct LivePageNumberLabel: View {
+    @Bindable var notebook: Notebook
+    let page: NotePage
+    let displayIndex: Int
+    let revision: Int
+
+    var body: some View {
+        let pages = notebook.sortedPages
+        let pageID = page.persistentModelID
+        // `displayIndex` comes from the final sorted array used by this exact
+        // LazyVStack cell. Looking the model up again here can observe an
+        // intermediate order while a prepended page is animating into place,
+        // causing the new first page to be labelled as page 2.
+        let currentNumber = pages.isEmpty ? 0 : min(max(displayIndex + 1, 1), pages.count)
+        Text("\(currentNumber) / \(pages.count)")
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .id("live-page-number-\(pageID)-\(pages.count)-\(displayIndex)-\(revision)")
     }
 }
 
 private struct TopPageAdder: View {
     let progress: CGFloat
+    let holdDuration: TimeInterval
+    let onThresholdReached: () -> Void
 
     var body: some View {
         VStack(spacing: 8) {
@@ -2345,6 +2464,14 @@ private struct TopPageAdder: View {
         .frame(height: 92)
         .opacity(progress > 0.001 ? 1 : 0)
         .animation(.easeOut(duration: 0.12), value: progress)
+        .task(id: progress >= 1) {
+            guard progress >= 1 else { return }
+            // This task is cancelled automatically if the pull drops below
+            // full before the same 0.2-second hold used at the bottom elapses.
+            try? await Task.sleep(for: .seconds(holdDuration))
+            guard !Task.isCancelled, progress >= 1 else { return }
+            onThresholdReached()
+        }
     }
 }
 
@@ -2549,6 +2676,9 @@ struct PageCanvasContainer: View {
     @State private var canvasDisplaySize: CGSize = .zero
     @State private var backgroundImage: UIImage?
     @State private var loadedBackgroundImageData: Data?
+    @State private var recognizedSelectionText = ""
+    @State private var isRecognizingSelection = false
+    @State private var selectionRecognitionID = UUID()
     @AppStorage("drawingTool") private var drawingToolRaw = DrawingToolKind.pen.rawValue
     @AppStorage("drawingColor") private var drawingColorHex = "#1C1C1E"
     @AppStorage("drawingWidth") private var drawingWidth = 4.0
@@ -2560,6 +2690,11 @@ struct PageCanvasContainer: View {
     // have kept whatever was already stored under it). Defaults on, and
     // stays toggleable from the drawing bar.
     @AppStorage("scratchOutEnabledV2") private var isScratchOutEnabled = true
+    @AppStorage("lineCorrectionEnabled") private var isLineCorrectionEnabled = true
+    @AppStorage("ellipseCorrectionEnabled") private var isEllipseCorrectionEnabled = true
+    @AppStorage("rectangleCorrectionEnabled") private var isRectangleCorrectionEnabled = true
+    @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
+    @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
     /// Shares the armed shape kind with the toolbar in `NoteEditorView` via
     /// the same `@AppStorage` key — see the property there for why.
     @AppStorage("pendingShapeKind") private var pendingShapeKindRaw = ""
@@ -2600,6 +2735,11 @@ struct PageCanvasContainer: View {
                             eraserWidth: eraserWidth,
                             drawingVersion: drawingVersion,
                             isScratchOutEnabled: isScratchOutEnabled,
+                            isLineCorrectionEnabled: isLineCorrectionEnabled,
+                            isEllipseCorrectionEnabled: isEllipseCorrectionEnabled,
+                            isRectangleCorrectionEnabled: isRectangleCorrectionEnabled,
+                            isTriangleCorrectionEnabled: isTriangleCorrectionEnabled,
+                            isParabolaCorrectionEnabled: isParabolaCorrectionEnabled,
                             pendingShapeKind: pendingShapeKind,
                             onActivate: {
                                 NotificationCenter.default.post(
@@ -2610,6 +2750,9 @@ struct PageCanvasContainer: View {
                             onShapeCommitted: {
                                 pendingShapeKindRaw = ""
                                 drawingToolRaw = DrawingToolKind.pen.rawValue
+                            },
+                            onSelectionChanged: { selection in
+                                recognizeSelection(selection)
                             }
                         )
                             .allowsHitTesting(!isReadOnlyMode)
@@ -2674,6 +2817,27 @@ struct PageCanvasContainer: View {
         .onReceive(NotificationCenter.default.publisher(for: .studiquoRedoDrawing)) { notification in
             guard let targetPage = notification.object as? NotePage, targetPage === page else { return }
             redoDrawing()
+        }
+    }
+
+    private func recognizeSelection(_ selection: InkDrawing?) {
+        let requestID = UUID()
+        selectionRecognitionID = requestID
+        guard let selection, !selection.isEmpty else {
+            isRecognizingSelection = false
+            recognizedSelectionText = ""
+            NotificationCenter.default.post(name: .studiquoRecognizedSelection, object: "")
+            return
+        }
+        isRecognizingSelection = true
+        recognizedSelectionText = ""
+        Task {
+            let text = await HandwritingRecognitionService.recognize(drawing: selection)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard selectionRecognitionID == requestID else { return }
+            recognizedSelectionText = text
+            isRecognizingSelection = false
+            NotificationCenter.default.post(name: .studiquoRecognizedSelection, object: text)
         }
     }
 
@@ -3093,81 +3257,6 @@ private struct NotebookOutlineView: View {
             .navigationTitle("目次")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } }
-            }
-        }
-    }
-}
-
-private struct NotebookSearchView: View {
-    @Bindable var notebook: Notebook
-    @Binding var currentPageIndex: Int
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-    @State private var bookmarksOnly = false
-
-    private var results: [(index: Int, page: NotePage)] {
-        notebook.sortedPages.enumerated().compactMap { index, page in
-            guard !bookmarksOnly || page.isBookmarked else { return nil }
-            let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !needle.isEmpty else { return (index, page) }
-            let searchableText = ([page.title, page.recognizedText] + page.elements.filter { $0.kind == .text }.map(\.text)).joined(separator: " ")
-            return searchableText.localizedCaseInsensitiveContains(needle) ? (index, page) : nil
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List(results, id: \.page.persistentModelID) { result in
-                Button {
-                    currentPageIndex = result.index
-                    dismiss()
-                } label: {
-                    HStack(spacing: 14) {
-                        PageThumbnail(page: result.page)
-                            .frame(width: 62, height: 82)
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(result.page.title.isEmpty ? "ページ \(result.index + 1)" : result.page.title)
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                            Text("\(result.index + 1)ページ")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if !result.page.recognizedText.isEmpty {
-                                Text(result.page.recognizedText.replacingOccurrences(of: "\n", with: " "))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                        Spacer()
-                        if result.page.isBookmarked {
-                            Image(systemName: "bookmark.fill").foregroundStyle(.yellow)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            .searchable(text: $query, prompt: "ページ名・入力した文字を検索")
-            .navigationTitle("ノート内検索")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        bookmarksOnly.toggle()
-                    } label: {
-                        Label("ブックマーク", systemImage: bookmarksOnly ? "bookmark.fill" : "bookmark")
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("閉じる") { dismiss() }
-                }
-            }
-            .overlay {
-                if results.isEmpty {
-                    ContentUnavailableView(
-                        bookmarksOnly ? "該当するブックマークはありません" : "該当するページはありません",
-                        systemImage: "magnifyingglass"
-                    )
-                }
             }
         }
     }
