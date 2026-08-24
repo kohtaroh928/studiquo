@@ -18,10 +18,9 @@ struct ContentView: View {
     @State private var selectedFolder: String?
     @State private var sortOption: NotebookSortOption = .updatedNewest
     @State private var searchText = ""
-    @State private var isImportingPDF = false
+    @State private var isImportingFiles = false
     @State private var isImportingBackup = false
     @State private var backupURL: IdentifiableURL?
-    @State private var isShowingScanner = false
     @State private var openNotebooks: [Notebook] = []
     @State private var openStudyNotebooks: [Notebook] = []
     @State private var openFlashcardDecks: [FlashcardDeck] = []
@@ -42,6 +41,14 @@ struct ContentView: View {
     @State private var activeFlashcardDeck: FlashcardDeck?
     @State private var isShowingNewFlashcardDeckAlert = false
     @State private var newFlashcardDeckName = ""
+    @State private var homeSection: HomeSection = .notes
+
+    private enum HomeSection: String, CaseIterable, Identifiable {
+        case notes = "ノート"
+        case calendar = "カレンダー"
+        var id: String { rawValue }
+        var icon: String { self == .notes ? "note.text" : "calendar" }
+    }
 
     private var folderNames: [String] {
         folderNamesStorage.split(separator: "\n").map(String.init)
@@ -239,7 +246,7 @@ struct ContentView: View {
                         .environmentObject(editorSplitState)
                 }
             } else {
-                fullScreenHome
+                homeDashboard
             }
         }
         .alert("新規ノート", isPresented: $isShowingNewNotebookAlert) {
@@ -277,9 +284,9 @@ struct ContentView: View {
         } message: {
             Text("複数のタグはカンマで区切ってください。")
         }
-        .fileImporter(isPresented: $isImportingPDF, allowedContentTypes: [.pdf], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $isImportingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
-                urls.forEach(importPDF)
+                urls.forEach(importFile)
             }
         }
         .fileImporter(isPresented: $isImportingBackup, allowedContentTypes: [.json], allowsMultipleSelection: true) { result in
@@ -308,10 +315,6 @@ struct ContentView: View {
         }
         .sheet(item: $activeFlashcardDeck) { deck in
             FlashcardDeckView(deck: deck)
-        }
-        .fullScreenCover(isPresented: $isShowingScanner) {
-            DocumentScannerView(onComplete: createScannedNotebook)
-                .ignoresSafeArea()
         }
         .onChange(of: libraryMode) { _, _ in
             if selectedFolder == nil { selectedNotebook = nil }
@@ -349,6 +352,38 @@ struct ContentView: View {
         }
         .task {
             await rebuildLibraryMetadataIfNeeded()
+        }
+    }
+
+    private var homeDashboard: some View {
+        VStack(spacing: 0) {
+            if homeSection == .notes {
+                fullScreenHome
+            } else {
+                CalendarHomeView()
+            }
+            Divider()
+            HStack(spacing: 12) {
+                ForEach(HomeSection.allCases) { section in
+                    Button {
+                        homeSection = section
+                    } label: {
+                        Label(section.rawValue, systemImage: section.icon)
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .foregroundStyle(homeSection == section ? Color.white : Color.secondary)
+                            .background(
+                                homeSection == section ? Color.accentColor : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 12)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 8)
+            .background(.bar)
         }
     }
 
@@ -839,9 +874,9 @@ struct ContentView: View {
                 Label("新規暗記カードを作成", systemImage: "rectangle.on.rectangle.angled")
             }
             Button {
-                isImportingPDF = true
+                isImportingFiles = true
             } label: {
-                Label("PDFを読み込む", systemImage: "doc.badge.plus")
+                Label("ファイルから読み込む", systemImage: "folder.badge.plus")
             }
             Button {
                 isImportingBackup = true
@@ -852,11 +887,6 @@ struct ContentView: View {
                 showsAutomaticBackups = true
             } label: {
                 Label("自動バックアップを復元", systemImage: "clock.arrow.circlepath")
-            }
-            Button {
-                isShowingScanner = true
-            } label: {
-                Label("書類をスキャン", systemImage: "doc.viewfinder")
             }
         } label: {
             Image(systemName: "plus")
@@ -932,16 +962,29 @@ struct ContentView: View {
         libraryMode = .documents
     }
 
-    private func createScannedNotebook(from images: [UIImage]) {
-        guard !images.isEmpty else { return }
-        let notebook = Notebook(title: "スキャン \(Date.now.formatted(date: .numeric, time: .shortened))")
-        notebook.folderName = selectedFolder ?? ""
-        for (index, image) in images.enumerated() {
-            let size = image.size
-            let page = NotePage(order: index, backgroundImageData: image.jpegData(compressionQuality: 0.88), pageWidth: size.width, pageHeight: size.height)
-            page.notebook = notebook
-            notebook.pages.append(page)
+    private func importFile(from url: URL) {
+        let didStartAccessing = url.startAccessingSecurityScopedResource()
+        defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
+        let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
+        let fileExtension = url.pathExtension.lowercased()
+        if type?.conforms(to: .pdf) == true || fileExtension == "pdf" {
+            importPDF(from: url)
+            return
         }
+        let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "tif", "tiff", "gif", "webp"]
+        guard type?.conforms(to: .image) == true || imageExtensions.contains(fileExtension),
+              let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+              let image = UIImage(data: data) else { return }
+        let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
+        notebook.folderName = selectedFolder ?? ""
+        let page = NotePage(
+            order: 0,
+            backgroundImageData: image.jpegData(compressionQuality: 0.9),
+            pageWidth: image.size.width,
+            pageHeight: image.size.height
+        )
+        page.notebook = notebook
+        notebook.pages.append(page)
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
         selectedNotebook = notebook

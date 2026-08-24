@@ -26,7 +26,14 @@ enum ExportService {
     }
 
     static func makePDF(from notebook: Notebook) -> URL? {
-        let pages = notebook.sortedPages
+        makePDF(pages: notebook.sortedPages, filename: notebook.title)
+    }
+
+    static func makePDF(from page: NotePage, notebookTitle: String) -> URL? {
+        makePDF(pages: [page], filename: "\(notebookTitle)-page-\(page.order + 1)")
+    }
+
+    private static func makePDF(pages: [NotePage], filename: String) -> URL? {
         guard !pages.isEmpty else { return nil }
 
         let pdfRenderer = UIGraphicsPDFRenderer(bounds: .zero)
@@ -54,7 +61,8 @@ enum ExportService {
             }
         }
 
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(notebook.title).pdf")
+        let safeFilename = filename.replacingOccurrences(of: "/", with: "-")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeFilename).pdf")
         do {
             try data.write(to: url)
             return url
