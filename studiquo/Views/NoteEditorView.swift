@@ -3,13 +3,22 @@ import SwiftData
 import PencilKit
 import PhotosUI
 import WebKit
+import AudioToolbox
+import JavaScriptCore
+import UniformTypeIdentifiers
 
-private extension Notification.Name {
+extension Notification.Name {
     static let studiquoOpenPageLink = Notification.Name("StudiquoOpenPageLink")
     static let studiquoUndoDrawing = Notification.Name("StudiquoUndoDrawing")
     static let studiquoRedoDrawing = Notification.Name("StudiquoRedoDrawing")
     static let studiquoOpenNotebookTab = Notification.Name("StudiquoOpenNotebookTab")
     static let studiquoRecognizedSelection = Notification.Name("StudiquoRecognizedSelection")
+    static let studiquoSelectionDropped = Notification.Name("StudiquoSelectionDropped")
+}
+
+struct StudiquoSelectionDrop {
+    let text: String
+    let screenPoint: CGPoint
 }
 
 /// True while the enclosing pane is pinch-zoomed. The page list uses it to
@@ -81,16 +90,20 @@ struct NoteEditorView: View {
     @State private var splitRatio: CGFloat = 0.5
     @State private var isPortraitLayout = false
     @State private var recognizedSelectionDragText = ""
+    @State private var selectionTransferImage: UIImage?
+    @State private var selectionTransferSize: CGSize?
+    @State private var selectionTransferPoint: CGPoint?
     @State private var activePane: ActivePane = .primary
     @State private var pendingSplitMode: SplitMode?
     @State private var showsSplitSourcePicker = false
-    @State private var secondaryShowsFlashcards = false
     @State private var secondaryShowsWeb = false
     @State private var secondaryFlashcardDeck: FlashcardDeck?
     @State private var showsDeletePagePicker = false
     @State private var notebookPendingTrash: Notebook?
     @State private var notebookPendingNewPage: Notebook?
-    @State private var exportURL: IdentifiableURL?
+    @State private var pdfExportDocument: PDFExportDocument?
+    @State private var pdfExportFilename = "ノート.pdf"
+    @State private var showsPDFExporter = false
     @State private var showsPageSidebar = false
     @State private var usesDarkPageDisplay = false
     @State private var isShowingTextAlert = false
@@ -102,6 +115,13 @@ struct NoteEditorView: View {
     @State private var isFocusMode = false
     @State private var showsStudySession = false
     @State private var showsOutline = false
+    @State private var showsTimeTool = false
+    @State private var timeToolModel = TimeToolModel()
+    @State private var showsCalculator = false
+    @State private var calculatorExpression = ""
+    @State private var calculatorResult = "0"
+    @State private var calculatorCenter: CGPoint?
+    @State private var calculatorDragOrigin: CGPoint?
     @State private var drawingToolbarCenter: CGPoint?
     @State private var drawingToolbarDragOrigin: CGPoint?
     @State private var isDrawingToolbarVertical = false
@@ -133,6 +153,7 @@ struct NoteEditorView: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let editorFrame = geometry.frame(in: .global)
             ZStack {
                 HStack(spacing: 0) {
                     if showsPageSidebar {
@@ -161,6 +182,29 @@ struct NoteEditorView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .zIndex(1000)
                 }
+
+                if let image = selectionTransferImage,
+                   let size = selectionTransferSize,
+                   let point = selectionTransferPoint {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: size.width, height: size.height)
+                        .position(x: point.x - editorFrame.minX, y: point.y - editorFrame.minY)
+                        .allowsHitTesting(false)
+                        .zIndex(2000)
+                }
+
+                if showsCalculator {
+                    ScientificCalculatorPanel(
+                        expression: $calculatorExpression,
+                        result: $calculatorResult,
+                        center: $calculatorCenter,
+                        containerSize: geometry.size,
+                        onClose: { showsCalculator = false }
+                    )
+                        .zIndex(3000)
+                }
             }
             .clipped()
             .onAppear { updateOrientation(for: geometry.size) }
@@ -177,14 +221,24 @@ struct NoteEditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: .studiquoRecognizedSelection)) { notification in
             recognizedSelectionDragText = notification.object as? String ?? ""
         }
-        .sheet(item: $exportURL) { wrapped in
-            ShareSheet(items: [wrapped.url])
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoSelectionDragMoved"))) { notification in
+            selectionTransferImage = notification.object as? UIImage
+            selectionTransferPoint = (notification.userInfo?["point"] as? NSValue)?.cgPointValue
+            selectionTransferSize = (notification.userInfo?["size"] as? NSValue)?.cgSizeValue
         }
+        .modifier(PDFSaveModifier(
+            isPresented: $showsPDFExporter,
+            document: $pdfExportDocument,
+            filename: pdfExportFilename
+        ))
         .sheet(isPresented: $showsStudySession) {
             StudySessionView(notebook: notebook)
         }
         .sheet(isPresented: $showsOutline) {
             NotebookOutlineView(notebook: notebook, currentPageIndex: $primaryPageIndex)
+        }
+        .sheet(isPresented: $showsTimeTool) {
+            TimeToolView(model: timeToolModel)
         }
         .sheet(isPresented: $showsSplitSourcePicker) {
             SplitSourcePicker(
@@ -505,7 +559,7 @@ struct NoteEditorView: View {
     private var primaryPane: some View {
         Group {
             if let primaryFlashcardDeck {
-                FlashcardPaneView(deck: primaryFlashcardDeck)
+                FlashcardPaneView(deck: primaryFlashcardDeck, onHome: onHome)
             } else {
                 GeometryReader { geometry in
                     ZoomableWorkspace(size: geometry.size) {
@@ -534,7 +588,7 @@ struct NoteEditorView: View {
         if secondaryShowsWeb {
             WebSearchPane(browser: webBrowser)
         } else if let secondaryFlashcardDeck {
-            FlashcardPaneView(deck: secondaryFlashcardDeck)
+            FlashcardPaneView(deck: secondaryFlashcardDeck, onHome: onHome)
                 .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
                 .dropDestination(for: String.self) { items, _ in
                     guard let value = items.first else { return false }
@@ -856,23 +910,11 @@ struct NoteEditorView: View {
             .keyboardShortcut("n", modifiers: [.command, .shift])
 
             Menu {
-                Button {
-                    if let url = ExportService.makePDF(from: notebook) {
-                        exportURL = IdentifiableURL(url: url)
-                    }
-                } label: {
-                    Label("ノート全体をPDF", systemImage: "doc.richtext")
-                }
-                Button {
-                    if let page = currentPrimaryPage,
-                       let url = ExportService.makePNG(from: page, notebookTitle: notebook.title) {
-                        exportURL = IdentifiableURL(url: url)
-                    }
-                } label: {
-                    Label("現在ページを画像", systemImage: "photo")
-                }
+                Button("全ページ", systemImage: "doc.on.doc") { exportAllPagesAsPDF() }
+                Button("このページ", systemImage: "doc") { exportCurrentPageAsPDF() }
+                    .disabled(activePage == nil)
             } label: {
-                Label("書き出し", systemImage: "square.and.arrow.up")
+                Label("PDF出力", systemImage: "square.and.arrow.down.on.square")
             }
             .keyboardShortcut("e", modifiers: [.command, .shift])
         }
@@ -898,6 +940,31 @@ struct NoteEditorView: View {
 
                 Divider()
                     .frame(height: 26)
+
+                toolStripButton("時間", icon: "timer") {
+                    showsTimeTool = true
+                }
+                toolStripButton("関数電卓", icon: "function", isActive: showsCalculator) {
+                    showsCalculator.toggle()
+                }
+                if timeToolModel.showsToolbarTime {
+                    TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                        Button {
+                            timeToolModel.toggleFromToolbar()
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: timeToolModel.isRunning ? "pause.fill" : "play.fill")
+                                Text(timeToolModel.toolbarText(at: context.date))
+                            }
+                            .font(.caption.monospacedDigit().weight(.bold))
+                            .foregroundStyle(timeToolModel.mode == .timer ? .orange : .indigo)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(.regularMaterial, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
 
                 toolStripButton("元に戻す", icon: "arrow.uturn.backward") {
                     guard let page = currentPrimaryPage else { return }
@@ -1028,16 +1095,10 @@ struct NoteEditorView: View {
                     .disabled(primaryFlashcardDeck != nil)
 
                 Menu {
-                    Button("ノート全体をPDF", systemImage: "doc.richtext") {
-                        if let url = ExportService.makePDF(from: notebook) { exportURL = IdentifiableURL(url: url) }
-                    }
-                    Button("現在ページを画像", systemImage: "photo") {
-                        if let page = currentPrimaryPage,
-                           let url = ExportService.makePNG(from: page, notebookTitle: notebook.title) {
-                            exportURL = IdentifiableURL(url: url)
-                        }
-                    }
-                } label: { toolStripLabel("書き出し", icon: "square.and.arrow.up") }
+                    Button("全ページ", systemImage: "doc.on.doc") { exportAllPagesAsPDF() }
+                    Button("このページ", systemImage: "doc") { exportCurrentPageAsPDF() }
+                        .disabled(activePage == nil)
+                } label: { toolStripLabel("PDF出力", icon: "square.and.arrow.down.on.square") }
             }
             .padding(.horizontal, 14)
             .frame(height: 52)
@@ -1292,7 +1353,6 @@ struct NoteEditorView: View {
         notebookPendingTrash = nil
         if target === secondaryNotebook {
             secondaryNotebook = nil
-            secondaryShowsFlashcards = false
             splitMode = .single
             activePane = .primary
         } else if target === notebook {
@@ -1301,7 +1361,7 @@ struct NoteEditorView: View {
     }
 
     private func createCompanionNotebook() -> Notebook {
-        let companion = Notebook(title: "(notebook.title) ノート")
+        let companion = Notebook(title: "\(notebook.title) ノート")
         let page = NotePage(order: 0)
         page.notebook = companion
         companion.pages.append(page)
@@ -1338,13 +1398,27 @@ struct NoteEditorView: View {
     /// order down by one to make room for it at the front.
     private func quickAddPageAtTop(to target: Notebook) {
         let template = target.sortedPages.first?.pageTemplate ?? .blank
-        for page in target.pages { page.order += 1 }
+        for page in target.sortedPages { page.order += 1 }
         let newPage = NotePage(order: 0)
         newPage.pageTemplate = template
+        // A prepend always creates a genuinely empty model. Spell these out
+        // so future initializer changes cannot accidentally clone content
+        // from the previous first page.
+        newPage.drawingData = nil
+        newPage.backgroundImageData = nil
+        newPage.elements = []
+        newPage.title = ""
+        newPage.recognizedText = ""
+        newPage.flashcardQuestion = ""
+        newPage.flashcardAnswer = ""
+        modelContext.insert(newPage)
         newPage.notebook = target
-        target.pages.append(newPage)
+        if !target.pages.contains(where: { $0 === newPage }) {
+            target.pages.append(newPage)
+        }
         target.refreshLibraryMetadata()
         target.updatedAt = .now
+        try? modelContext.save()
         if target === secondaryNotebook {
             secondaryPageIndex = 0
             activePane = .secondary
@@ -1528,6 +1602,506 @@ struct NoteEditorView: View {
             recognitionProgress = ""
             isRecognizingHandwriting = false
         }
+    }
+
+    private func exportAllPagesAsPDF() {
+        guard let url = ExportService.makePDF(from: activeNotebook) else { return }
+        presentPDFExporter(url: url)
+    }
+
+    private func exportCurrentPageAsPDF() {
+        guard let page = activePage,
+              let url = ExportService.makePDF(from: page, notebookTitle: activeNotebook.title) else { return }
+        presentPDFExporter(url: url)
+    }
+
+    private func presentPDFExporter(url: URL) {
+        guard let data = try? Data(contentsOf: url) else { return }
+        pdfExportDocument = PDFExportDocument(data: data)
+        pdfExportFilename = url.lastPathComponent
+        showsPDFExporter = true
+    }
+}
+
+private struct PDFExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.pdf] }
+    let data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.data = data
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+private struct PDFSaveModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    @Binding var document: PDFExportDocument?
+    let filename: String
+
+    func body(content: Content) -> some View {
+        content.fileExporter(
+            isPresented: $isPresented,
+            document: document,
+            contentType: .pdf,
+            defaultFilename: filename
+        ) { _ in
+            document = nil
+        }
+    }
+}
+
+private struct ScientificCalculatorPanel: View {
+    @Binding var expression: String
+    @Binding var result: String
+    @Binding var center: CGPoint?
+    let containerSize: CGSize
+    let onClose: () -> Void
+    @State private var dragOrigin: CGPoint?
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 7), count: 4)
+    private let keys = [
+        "sin", "cos", "tan", "AC",
+        "ln", "log", "sqrt", "⌫",
+        "(", ")", "^", "÷",
+        "7", "8", "9", "×",
+        "4", "5", "6", "−",
+        "1", "2", "3", "+",
+        "π", "0", ".", "=",
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label("関数電卓", systemImage: "function")
+                    .font(.headline)
+                Spacer()
+                Text("DEG").font(.caption2.bold()).foregroundStyle(.secondary)
+                Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(Color.indigo.opacity(0.16))
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 8, coordinateSpace: .global)
+                    .onChanged { value in
+                        let initial = dragOrigin ?? resolvedCenter
+                        if dragOrigin == nil { dragOrigin = initial }
+                        center = clamped(CGPoint(
+                            x: initial.x + value.translation.width,
+                            y: initial.y + value.translation.height
+                        ))
+                    }
+                    .onEnded { _ in dragOrigin = nil }
+            )
+
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(expression.isEmpty ? "0" : expression)
+                    .font(.title3.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.6)
+                Text(result)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(14)
+            .background(Color(.secondarySystemBackground))
+
+            LazyVGrid(columns: columns, spacing: 7) {
+                ForEach(keys, id: \.self) { key in
+                    Button { handle(key) } label: {
+                        Text(key == "sqrt" ? "√" : key)
+                            .font(.system(size: 17, weight: .semibold, design: .rounded))
+                            .frame(maxWidth: .infinity, minHeight: 42)
+                            .background(keyColor(key), in: RoundedRectangle(cornerRadius: 10))
+                            .foregroundStyle(keyForeground(key))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(10)
+        }
+        .frame(width: 350, height: 500)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.indigo.opacity(0.35)))
+        .shadow(color: .black.opacity(0.22), radius: 16, y: 7)
+        .position(resolvedCenter)
+        .onAppear {
+            if center == nil { center = clamped(CGPoint(x: containerSize.width / 2, y: containerSize.height / 2)) }
+        }
+    }
+
+    private var resolvedCenter: CGPoint {
+        clamped(center ?? CGPoint(x: containerSize.width / 2, y: containerSize.height / 2))
+    }
+
+    private func clamped(_ point: CGPoint) -> CGPoint {
+        let halfWidth: CGFloat = min(175, containerSize.width / 2)
+        let halfHeight: CGFloat = min(250, containerSize.height / 2)
+        return CGPoint(
+            x: min(max(point.x, halfWidth), max(halfWidth, containerSize.width - halfWidth)),
+            y: min(max(point.y, halfHeight), max(halfHeight, containerSize.height - halfHeight))
+        )
+    }
+
+    private func keyColor(_ key: String) -> Color {
+        if key == "=" { return .indigo }
+        if ["÷", "×", "−", "+", "^"].contains(key) { return .orange.opacity(0.82) }
+        if ["sin", "cos", "tan", "ln", "log", "sqrt", "(", ")", "π"].contains(key) {
+            return .teal.opacity(0.18)
+        }
+        if key == "AC" || key == "⌫" { return .red.opacity(0.16) }
+        return Color(.tertiarySystemFill)
+    }
+
+    private func keyForeground(_ key: String) -> Color {
+        if key == "=" || ["÷", "×", "−", "+", "^"].contains(key) { return .white }
+        if key == "AC" || key == "⌫" { return .red }
+        return .primary
+    }
+
+    private func handle(_ key: String) {
+        switch key {
+        case "AC":
+            expression = ""
+            result = "0"
+        case "⌫":
+            if !expression.isEmpty { expression.removeLast() }
+        case "=":
+            evaluate()
+        case "sin", "cos", "tan", "ln", "log", "sqrt":
+            expression += "\(key)("
+        case "÷": expression += "/"
+        case "×": expression += "*"
+        case "−": expression += "-"
+        case "^": expression += "^"
+        case "π": expression += "π"
+        default: expression += key
+        }
+    }
+
+    private func evaluate() {
+        guard !expression.isEmpty else { return }
+        let transformed = expression
+            .replacingOccurrences(of: "π", with: "Math.PI")
+            .replacingOccurrences(of: "^", with: "**")
+        let script = """
+        const sin = x => Math.sin(x * Math.PI / 180);
+        const cos = x => Math.cos(x * Math.PI / 180);
+        const tan = x => Math.tan(x * Math.PI / 180);
+        const ln = x => Math.log(x);
+        const log = x => Math.log10(x);
+        const sqrt = x => Math.sqrt(x);
+        \(transformed)
+        """
+        guard let value = JSContext()?.evaluateScript(script), !value.isUndefined else {
+            result = "エラー"
+            return
+        }
+        let number = value.toDouble()
+        guard number.isFinite else { result = "エラー"; return }
+        result = number.rounded() == number
+            ? String(format: "%.0f", number)
+            : String(format: "%.10g", number)
+    }
+}
+
+private enum TimeToolMode: String, CaseIterable, Identifiable {
+    case stopwatch = "ストップウォッチ"
+    case timer = "タイマー"
+    var id: String { rawValue }
+}
+
+@MainActor
+@Observable
+private final class TimeToolModel {
+    var mode: TimeToolMode = .stopwatch
+    var stopwatchRunning = false
+    var stopwatchStartedAt: Date?
+    var stopwatchAccumulated: TimeInterval = 0
+    var timerDuration: TimeInterval
+    var timerRemaining: TimeInterval
+    var timerRunning = false
+    var timerEndDate: Date?
+    @ObservationIgnored private var alarmTask: Task<Void, Never>?
+
+    init() {
+        let saved = UserDefaults.standard.double(forKey: "studiquoLastTimerDuration")
+        let initial = saved > 0 ? saved : 300
+        timerDuration = initial
+        timerRemaining = initial
+    }
+
+    var isRunning: Bool {
+        mode == .stopwatch ? stopwatchRunning : timerRunning
+    }
+
+    var showsToolbarTime: Bool {
+        switch mode {
+        case .stopwatch:
+            stopwatchRunning || stopwatchAccumulated > 0
+        case .timer:
+            timerRunning || (timerRemaining > 0 && timerRemaining < timerDuration)
+        }
+    }
+
+    func stopwatchValue(at date: Date) -> TimeInterval {
+        stopwatchAccumulated + (stopwatchRunning ? date.timeIntervalSince(stopwatchStartedAt ?? date) : 0)
+    }
+
+    func timerValue(at date: Date) -> TimeInterval {
+        timerRunning ? max(0, timerEndDate?.timeIntervalSince(date) ?? timerRemaining) : timerRemaining
+    }
+
+    func toolbarText(at date: Date) -> String {
+        let value = mode == .stopwatch ? stopwatchValue(at: date) : timerValue(at: date)
+        let safe = max(0, value)
+        let hours = Int(safe) / 3600
+        let minutes = Int(safe) / 60 % 60
+        let seconds = Int(safe) % 60
+        return hours > 0
+            ? String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+            : String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    func setTimerDuration(_ duration: TimeInterval) {
+        let safe = max(0, duration)
+        timerDuration = safe
+        timerRemaining = safe
+        timerEndDate = nil
+        UserDefaults.standard.set(safe, forKey: "studiquoLastTimerDuration")
+    }
+
+    func startTimer() {
+        guard timerRemaining > 0 else { return }
+        timerRunning = true
+        let end = Date.now.addingTimeInterval(timerRemaining)
+        timerEndDate = end
+        alarmTask?.cancel()
+        alarmTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(max(0, end.timeIntervalSinceNow)))
+            } catch { return }
+            guard let self, self.timerRunning, self.timerEndDate == end else { return }
+            self.timerRemaining = 0
+            self.timerRunning = false
+            self.timerEndDate = nil
+            AudioServicesPlayAlertSound(SystemSoundID(1005))
+        }
+    }
+
+    func pauseTimer() {
+        timerRemaining = timerValue(at: .now)
+        timerRunning = false
+        timerEndDate = nil
+        alarmTask?.cancel()
+        alarmTask = nil
+    }
+
+    func resetTimer() {
+        timerRunning = false
+        timerEndDate = nil
+        timerRemaining = timerDuration
+        alarmTask?.cancel()
+        alarmTask = nil
+    }
+
+    func toggleFromToolbar() {
+        switch mode {
+        case .stopwatch:
+            if stopwatchRunning {
+                stopwatchAccumulated = stopwatchValue(at: .now)
+                stopwatchStartedAt = nil
+                stopwatchRunning = false
+            } else {
+                stopwatchStartedAt = .now
+                stopwatchRunning = true
+            }
+        case .timer:
+            if timerRunning { pauseTimer() }
+            else { startTimer() }
+        }
+    }
+}
+
+private struct TimeToolView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var model: TimeToolModel
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                Picker("時間ツール", selection: $model.mode) {
+                    ForEach(TimeToolMode.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+
+                Spacer()
+
+                TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                    let value = model.mode == .stopwatch
+                        ? model.stopwatchValue(at: context.date)
+                        : model.timerValue(at: context.date)
+                    Text(formattedTime(value, showsTenths: model.mode == .stopwatch))
+                        .font(.system(size: 52, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(model.mode == .stopwatch ? Color.indigo : Color.orange)
+                        .minimumScaleFactor(0.65)
+                }
+
+                if model.mode == .stopwatch { stopwatchControls }
+                else { timerControls }
+
+                Spacer()
+            }
+            .padding(24)
+            .background(
+                LinearGradient(
+                    colors: [Color.indigo.opacity(0.10), Color.orange.opacity(0.07), Color.clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .navigationTitle("時間")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("閉じる") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var stopwatchControls: some View {
+        HStack(spacing: 14) {
+            Button("リセット", systemImage: "arrow.counterclockwise", action: resetStopwatch)
+                .buttonStyle(.bordered)
+                .disabled(model.stopwatchRunning || model.stopwatchAccumulated == 0)
+            Button(model.stopwatchRunning ? "一時停止" : "スタート",
+                   systemImage: model.stopwatchRunning ? "pause.fill" : "play.fill",
+                   action: toggleStopwatch)
+                .buttonStyle(.borderedProminent)
+                .tint(model.stopwatchRunning ? .orange : .indigo)
+        }
+        .controlSize(.large)
+    }
+
+    private var timerControls: some View {
+        VStack(spacing: 18) {
+            if !model.timerRunning {
+                timerAdjustment
+            }
+            HStack(spacing: 14) {
+                Button("リセット", systemImage: "arrow.counterclockwise", action: resetTimer)
+                    .buttonStyle(.bordered)
+                Button(model.timerRunning ? "一時停止" : "スタート",
+                       systemImage: model.timerRunning ? "pause.fill" : "play.fill",
+                       action: toggleTimer)
+                    .buttonStyle(.borderedProminent)
+                    .tint(model.timerRunning ? .orange : .green)
+                    .disabled(!model.timerRunning && model.timerRemaining <= 0)
+            }
+            .controlSize(.large)
+        }
+    }
+
+    private var timerAdjustment: some View {
+        HStack(spacing: 8) {
+            timePicker("時間", range: 0...23, value: Binding(
+                get: { Int(model.timerRemaining) / 3600 },
+                set: { updateTimer(hours: $0) }
+            ))
+            timePicker("分", range: 0...59, value: Binding(
+                get: { Int(model.timerRemaining) / 60 % 60 },
+                set: { updateTimer(minutes: $0) }
+            ))
+            timePicker("秒", range: 0...59, value: Binding(
+                get: { Int(model.timerRemaining) % 60 },
+                set: { updateTimer(seconds: $0) }
+            ))
+        }
+        .frame(height: 105)
+    }
+
+    private func timePicker(_ label: String, range: ClosedRange<Int>, value: Binding<Int>) -> some View {
+        HStack(spacing: 2) {
+            Picker(label, selection: value) {
+                ForEach(range, id: \.self) { Text("\($0)").tag($0) }
+            }
+            .pickerStyle(.wheel)
+            .frame(width: 72)
+            Text(label).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func updateTimer(hours: Int? = nil, minutes: Int? = nil, seconds: Int? = nil) {
+        let current = Int(model.timerRemaining)
+        let h = hours ?? current / 3600
+        let m = minutes ?? current / 60 % 60
+        let s = seconds ?? current % 60
+        model.setTimerDuration(TimeInterval(h * 3600 + m * 60 + s))
+    }
+
+    private func toggleStopwatch() {
+        if model.stopwatchRunning {
+            model.stopwatchAccumulated = model.stopwatchValue(at: .now)
+            model.stopwatchStartedAt = nil
+        } else {
+            model.stopwatchStartedAt = .now
+            dismiss()
+        }
+        model.stopwatchRunning.toggle()
+    }
+
+    private func resetStopwatch() {
+        model.stopwatchRunning = false
+        model.stopwatchStartedAt = nil
+        model.stopwatchAccumulated = 0
+    }
+
+    private func toggleTimer() {
+        if model.timerRunning {
+            model.pauseTimer()
+        } else {
+            guard model.timerRemaining > 0 else { return }
+            model.startTimer()
+            dismiss()
+        }
+    }
+
+    private func resetTimer() {
+        model.resetTimer()
+    }
+
+    private func formattedTime(_ interval: TimeInterval, showsTenths: Bool) -> String {
+        let safe = max(0, interval)
+        let hours = Int(safe) / 3600
+        let minutes = Int(safe) / 60 % 60
+        let seconds = Int(safe) % 60
+        if showsTenths {
+            let tenths = Int(safe * 10) % 10
+            return hours > 0
+                ? String(format: "%02d:%02d:%02d.%d", hours, minutes, seconds, tenths)
+                : String(format: "%02d:%02d.%d", minutes, seconds, tenths)
+        }
+        return hours > 0
+            ? String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+            : String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
@@ -1839,17 +2413,13 @@ private struct SplitSourcePicker: View {
 
 private struct FlashcardPaneView: View {
     @Bindable var deck: FlashcardDeck
-    @State private var index = 0
-    @State private var showsAnswer = false
+    let onHome: () -> Void
     @State private var mode: FlashcardPaneMode
 
-    init(deck: FlashcardDeck) {
+    init(deck: FlashcardDeck, onHome: @escaping () -> Void) {
         self.deck = deck
+        self.onHome = onHome
         _mode = State(initialValue: deck.cards.isEmpty ? .create : .study)
-    }
-
-    private var cards: [Flashcard] {
-        deck.sortedCards
     }
 
     var body: some View {
@@ -1859,7 +2429,7 @@ private struct FlashcardPaneView: View {
                     .font(.headline)
                 Spacer()
                 if mode == .study {
-                    Text(cards.isEmpty ? "0 / 0" : "\(index + 1) / \(cards.count)")
+                    Text("\(deck.cards.count)枚")
                         .font(.caption.monospacedDigit())
                 }
             }
@@ -1876,33 +2446,8 @@ private struct FlashcardPaneView: View {
 
             if mode == .create {
                 creator
-            } else if cards.indices.contains(index) {
-                let card = cards[index]
-                VStack(spacing: 20) {
-                    Text(deck.reversesQuestionAndAnswer ? card.answer : card.question).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
-                    Divider()
-                    if showsAnswer {
-                        Text(deck.reversesQuestionAndAnswer ? card.question : card.answer)
-                            .multilineTextAlignment(.center)
-                    } else {
-                        Button("答えを見る") { showsAnswer = true }.buttonStyle(.borderedProminent)
-                    }
-                }
-                .padding(24)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
-                .padding()
-
-                HStack {
-                    Button { index = max(0, index - 1); showsAnswer = false } label: { Image(systemName: "chevron.left") }
-                        .disabled(index == 0)
-                    Spacer()
-                    Button { index = min(cards.count - 1, index + 1); showsAnswer = false } label: { Image(systemName: "chevron.right") }
-                        .disabled(index >= cards.count - 1)
-                }
-                .padding()
             } else {
-                ContentUnavailableView("暗記カードがありません", systemImage: "rectangle.on.rectangle.angled")
+                FlashcardStudyContent(deck: deck, onHome: onHome)
             }
         }
         .background(Color(.secondarySystemBackground))
@@ -2202,7 +2747,7 @@ private struct ContinuousPagesView: View {
     let onAddPage: () -> Void
     var onAddPageAtTop: () -> Void = {}
 
-    @State private var scrollTarget: Int?
+    @State private var scrollTarget: PersistentIdentifier?
     @State private var bottomPullProgress: CGFloat = 0
     @State private var hasTriggeredPageAdd = false
     @State private var pullHoldStartedAt: Date?
@@ -2263,11 +2808,12 @@ private struct ContinuousPagesView: View {
 
                         VStack(spacing: 6) {
                             PageCanvasContainer(page: page, usesDarkPageDisplay: usesDarkPageDisplay)
+                                .id(page.persistentModelID)
                                 .frame(width: fittedWidth, height: fittedWidth / aspect)
                                 .clipShape(RoundedRectangle(cornerRadius: 3))
                                 .onTapGesture {
                                     currentPageIndex = index
-                                    scrollTarget = index
+                                    scrollTarget = page.persistentModelID
                                 }
 
                             LivePageNumberLabel(
@@ -2277,7 +2823,7 @@ private struct ContinuousPagesView: View {
                                 revision: pageNumberRevision
                             )
                         }
-                        .id(index)
+                        .id(page.persistentModelID)
                     }
                     BottomPageAdder(progress: bottomPullProgress)
                         .contentShape(Rectangle())
@@ -2304,26 +2850,36 @@ private struct ContinuousPagesView: View {
             .scrollPosition(id: $scrollTarget, anchor: .center)
             .scrollIndicators(.visible)
             .onAppear {
-                scrollTarget = min(max(currentPageIndex, 0), pages.count - 1)
+                let index = min(max(currentPageIndex, 0), max(0, pages.count - 1))
+                scrollTarget = pages.indices.contains(index) ? pages[index].persistentModelID : nil
                 knownFirstPageID = pages.first.map { String(describing: $0.persistentModelID) } ?? ""
             }
             .onChange(of: scrollTarget) { _, target in
-                if let target, pages.indices.contains(target), target != currentPageIndex {
-                    currentPageIndex = target
+                if let target,
+                   let index = pages.firstIndex(where: { $0.persistentModelID == target }),
+                   index != currentPageIndex {
+                    currentPageIndex = index
                 }
             }
             .onChange(of: currentPageIndex) { _, index in
-                guard pages.indices.contains(index), scrollTarget != index else { return }
+                guard pages.indices.contains(index) else { return }
+                let target = pages[index].persistentModelID
+                guard scrollTarget != target else { return }
                 withAnimation(.easeInOut(duration: 0.25)) {
-                    scrollTarget = index
+                    scrollTarget = target
                 }
             }
             .onChange(of: pages.count) { oldCount, newCount in
                 pageNumberRevision &+= 1
+                let oldFirstID = knownFirstPageID
                 let newFirstID = pages.first.map { String(describing: $0.persistentModelID) } ?? ""
                 let wasPrepended = !knownFirstPageID.isEmpty && newFirstID != knownFirstPageID
                 knownFirstPageID = newFirstID
-                guard newCount > oldCount, wasPrepended, newCount > 1 else { return }
+                guard newCount > oldCount, wasPrepended, newCount > 1,
+                      let oldFirstPage = pages.first(where: {
+                          String(describing: $0.persistentModelID) == oldFirstID
+                      }),
+                      let newFirstPage = pages.first else { return }
 
                 // Keep the old first page (now index 1) visually in place for
                 // one layout pass, then slide to the newly inserted index 0.
@@ -2332,13 +2888,13 @@ private struct ContinuousPagesView: View {
                 var transaction = Transaction(animation: nil)
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
-                    currentPageIndex = 1
-                    scrollTarget = 1
+                    currentPageIndex = pages.firstIndex(where: { $0 === oldFirstPage }) ?? 1
+                    scrollTarget = oldFirstPage.persistentModelID
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                    withAnimation(.easeInOut(duration: 0.48)) {
+                    withAnimation(.easeInOut(duration: 0.55)) {
                         currentPageIndex = 0
-                        scrollTarget = 0
+                        scrollTarget = newFirstPage.persistentModelID
                     }
                 }
             }
@@ -2753,6 +3309,26 @@ struct PageCanvasContainer: View {
                             },
                             onSelectionChanged: { selection in
                                 recognizeSelection(selection)
+                            },
+                            selectionDragText: recognizedSelectionText,
+                            onSelectionDragMoved: { image, size, point in
+                                NotificationCenter.default.post(
+                                    name: Notification.Name("StudiquoSelectionDragMoved"),
+                                    object: image,
+                                    userInfo: {
+                                        guard let point, let size else { return nil }
+                                        return [
+                                            "point": NSValue(cgPoint: point),
+                                            "size": NSValue(cgSize: size),
+                                        ]
+                                    }()
+                                )
+                            },
+                            onSelectionDropped: { text, point in
+                                NotificationCenter.default.post(
+                                    name: .studiquoSelectionDropped,
+                                    object: StudiquoSelectionDrop(text: text, screenPoint: point)
+                                )
                             }
                         )
                             .allowsHitTesting(!isReadOnlyMode)

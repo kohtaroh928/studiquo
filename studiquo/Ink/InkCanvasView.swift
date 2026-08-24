@@ -9,7 +9,7 @@ import UIKit
 /// scribble-to-erase hit test) can run live, against the actual stroke, while
 /// the pencil is still down — matching the reference video instead of
 /// approximating it.
-final class InkCanvasView: UIView {
+final class InkCanvasView: UIView, UIDragInteractionDelegate {
     enum ShapeKind: String {
         case rectangle, ellipse, line
     }
@@ -73,6 +73,12 @@ final class InkCanvasView: UIView {
     /// uses this small drawing for on-device OCR and never scans the rest of
     /// the notebook.
     var onSelectionChanged: ((InkDrawing?) -> Void)?
+    var onSelectionDragMoved: ((UIImage?, CGSize?, CGPoint?) -> Void)?
+    var onSelectionDropped: ((String, CGPoint) -> Void)?
+    /// OCR text exported when the retained lasso selection is lifted into an
+    /// iPad system drag. Using UIDragInteraction lets the preview leave this
+    /// clipped page and cross into the other split pane.
+    var selectionDragText = ""
 
     private(set) var drawing = InkDrawing() {
         didSet { onDrawingChanged?(drawing) }
@@ -170,6 +176,7 @@ final class InkCanvasView: UIView {
     private var selectedStrokeIDs: Set<UUID> = []
     private var selectionDragStart: CGPoint?
     private var selectionDragOffset: CGPoint = .zero
+    private var isSelectionOutsideCanvas = false
     private var eraserCursorLocation: CGPoint?
 
     override init(frame: CGRect) {
@@ -201,6 +208,7 @@ final class InkCanvasView: UIView {
         eraserCursorLayer.isHidden = true
         layer.addSublayer(eraserCursorLayer)
         addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(handleEraserHover(_:))))
+        addInteraction(UIDragInteraction(delegate: self))
     }
 
     override func layoutSubviews() {
@@ -375,6 +383,25 @@ final class InkCanvasView: UIView {
         if let start = selectionDragStart {
             guard let location = locations.last else { return }
             selectionDragOffset = CGPoint(x: location.x - start.x, y: location.y - start.y)
+            if !bounds.contains(location) {
+                isSelectionOutsideCanvas = true
+                withoutImplicitAnimations {
+                    for id in selectedStrokeIDs {
+                        strokeLayers[id]?.setAffineTransform(.identity)
+                        strokeLayers[id]?.isHidden = true
+                    }
+                }
+                let preview = selectionPreview()
+                onSelectionDragMoved?(preview?.image, preview?.screenSize, convert(location, to: nil))
+                return
+            }
+            if isSelectionOutsideCanvas {
+                isSelectionOutsideCanvas = false
+                withoutImplicitAnimations {
+                    for id in selectedStrokeIDs { strokeLayers[id]?.isHidden = false }
+                }
+                onSelectionDragMoved?(nil, nil, nil)
+            }
             let transform = CGAffineTransform(translationX: selectionDragOffset.x, y: selectionDragOffset.y)
             withoutImplicitAnimations {
                 for id in selectedStrokeIDs { strokeLayers[id]?.setAffineTransform(transform) }
@@ -394,6 +421,15 @@ final class InkCanvasView: UIView {
 
     private func endLasso(at location: CGPoint) {
         if selectionDragStart != nil {
+            if isSelectionOutsideCanvas {
+                let screenPoint = convert(location, to: nil)
+                onSelectionDragMoved?(nil, nil, nil)
+                if !selectionDragText.isEmpty {
+                    onSelectionDropped?(selectionDragText, screenPoint)
+                }
+                clearLassoSelection()
+                return
+            }
             commitSelectionMove()
             return
         }
@@ -438,6 +474,7 @@ final class InkCanvasView: UIView {
         let offset = selectionDragOffset
         withoutImplicitAnimations {
             for id in selectedStrokeIDs { strokeLayers[id]?.setAffineTransform(.identity) }
+            for id in selectedStrokeIDs { strokeLayers[id]?.isHidden = false }
         }
         if abs(offset.x) > 0.01 || abs(offset.y) > 0.01 {
             var movedDrawing = drawing
@@ -478,7 +515,53 @@ final class InkCanvasView: UIView {
         selectedStrokeIDs = []
         selectionDragStart = nil
         selectionDragOffset = .zero
+        isSelectionOutsideCanvas = false
         if hadSelection { onSelectionChanged?(nil) }
+    }
+
+    private func selectionPreview() -> (image: UIImage, screenSize: CGSize)? {
+        let selected = InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) })
+        guard let first = selected.strokes.first else { return nil }
+        let inkBounds = selected.strokes.dropFirst().reduce(first.bounds) { $0.union($1.bounds) }
+        guard inkBounds.width > 0, inkBounds.height > 0 else { return nil }
+        let topLeft = convert(CGPoint(x: inkBounds.minX, y: inkBounds.minY), to: nil)
+        let bottomRight = convert(CGPoint(x: inkBounds.maxX, y: inkBounds.maxY), to: nil)
+        let screenSize = CGSize(
+            width: abs(bottomRight.x - topLeft.x),
+            height: abs(bottomRight.y - topLeft.y)
+        )
+        return (selected.image(from: inkBounds, scale: 2), screenSize)
+    }
+
+    // MARK: Cross-pane selection drag
+
+    func dragInteraction(_ interaction: UIDragInteraction, itemsForBeginning session: UIDragSession) -> [UIDragItem] {
+        let location = session.location(in: self)
+        guard !selectedStrokeIDs.isEmpty,
+              Self.point(location, isInside: selectionPolygon),
+              !selectionDragText.isEmpty else { return [] }
+        let provider = NSItemProvider(object: selectionDragText as NSString)
+        let item = UIDragItem(itemProvider: provider)
+        item.localObject = selectionDragText
+        return [item]
+    }
+
+    func dragInteraction(
+        _ interaction: UIDragInteraction,
+        previewForLifting item: UIDragItem,
+        session: UIDragSession
+    ) -> UITargetedDragPreview? {
+        let selected = InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) })
+        guard let first = selected.strokes.first else { return nil }
+        let inkBounds = selected.strokes.dropFirst().reduce(first.bounds) { $0.union($1.bounds) }
+        guard inkBounds.width > 0, inkBounds.height > 0 else { return nil }
+        let imageView = UIImageView(image: selected.image(from: inkBounds, scale: 2))
+        imageView.contentMode = .scaleAspectFit
+        imageView.frame = CGRect(origin: .zero, size: inkBounds.size)
+        imageView.backgroundColor = .clear
+        let parameters = UIDragPreviewParameters()
+        parameters.backgroundColor = .clear
+        return UITargetedDragPreview(view: imageView, parameters: parameters)
     }
 
     private static func point(_ point: CGPoint, isInside polygon: [CGPoint]) -> Bool {
@@ -1247,7 +1330,7 @@ final class InkCanvasView: UIView {
             previousVector = vector
             anchor = point
         }
-        return turns >= 2 && ratio >= 1.45
+        return turns >= 3 && ratio >= 2.0 && stroke.pathLength >= 40
     }
 
     private func strokeIsCoveredBy(_ stroke: InkStroke, scribble: InkStroke) -> Bool {
@@ -1259,10 +1342,13 @@ final class InkCanvasView: UIView {
         let samples = Self.linearlyResampled(stroke.points, maxSpacing: 6).map(\.location)
         guard !samples.isEmpty else { return false }
         let radius = max(14, stroke.width + scribble.width + 8)
-        let covered = samples.filter { sample in
+        // A scribble over any part of a stroke removes that stroke. Requiring
+        // a percentage of the *whole* stroke made long corrected lines nearly
+        // impossible to erase because a local scribble covered too little of
+        // their total length.
+        return samples.contains { sample in
             Self.distance(from: sample, to: scribblePoints) <= radius
-        }.count
-        return Double(covered) / Double(samples.count) >= 0.08
+        }
     }
 
     // MARK: Force

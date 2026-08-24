@@ -1,0 +1,455 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		016B81099692C515301DF851 /* AutomaticBackupRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E07F51CC4E628FD28EDB14AF /* AutomaticBackupRestoreView.swift */; };
+		06D7DF25FC24DDD4ED107B81 /* InkStroke.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F691B8700DBF685253CC68C /* InkStroke.swift */; };
+		0D89724BBFF4696AF778465B /* ZoomableScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDC01E89D39C3EE0C699993 /* ZoomableScrollView.swift */; };
+		0EC768EB9E335793E83BEAE3 /* NotePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6581B9D1E6989E8DB78A697D /* NotePage.swift */; };
+		1834357B91B260BFA4FE3503 /* StudySessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29C5C38F2FB3910257B0A83F /* StudySessionView.swift */; };
+		1F30ADCA4BF5249CA777E188 /* DocumentScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BF348C7AE37C087F4DCEB32 /* DocumentScannerView.swift */; };
+		27719BD05710FA42BCB9574B /* ExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E82CD894C235A73EE5F1EF3 /* ExportService.swift */; };
+		2C6D64972B433C71A6F0DE31 /* GestureDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F2E7D5BCB4CA937DAD1513C /* GestureDiagnostics.swift */; };
+		3064767E13940AD8E09C9D9E /* UIColor+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47219AA180A514965DB6F9E9 /* UIColor+Hex.swift */; };
+		4D67618426BAC5BA738498C0 /* InkCanvasRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CBC7EF870C0CC7DE59E803 /* InkCanvasRepresentable.swift */; };
+		71E2D0E0E5FF7BDAE8401657 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 06D2BF76D087D00DA60DA305 /* Assets.xcassets */; };
+		75B14A8BD15DA4B45DD0DC0C /* HandwritingRecognitionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D529A670FA1888A39A9940B /* HandwritingRecognitionService.swift */; };
+		8B51226031F8334CCC30A783 /* PageElement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 410FDF3E0A238AACD43C9E72 /* PageElement.swift */; };
+		9015CE26A39349BB067634C8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61FA74DEC17BE0E9F11CE689 /* ContentView.swift */; };
+		92368661B5922ACD96B4FF60 /* FlashcardDeck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A539BC5CFB57BD52A5C5896 /* FlashcardDeck.swift */; };
+		9FD6B900A6D4DBB4350AB842 /* PageRotationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0829D7C098E8731671D86AFD /* PageRotationService.swift */; };
+		A3F0CDD4F657BD0D48235981 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6154FD6A1924D91131FDE067 /* ShareSheet.swift */; };
+		B486437BE0FDEA362EFDFB4B /* FlashcardDeckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9494D3EB78D16D00933CFD6 /* FlashcardDeckView.swift */; };
+		CA1E00000000000000000001 /* CalendarEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA1E00000000000000000003 /* CalendarEvent.swift */; };
+		CA1E00000000000000000002 /* CalendarHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA1E00000000000000000004 /* CalendarHomeView.swift */; };
+		B6868B1B4934CD4EDF2DCBA6 /* InkCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE7183ECED28A3E0B3F3AD7C /* InkCanvasView.swift */; };
+		C3D37FA81122F418C860FBCF /* NotebookBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF9331A93B985B443B197EC2 /* NotebookBackupService.swift */; };
+		CEA1BB2CD5D56455169410CB /* PDFImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788D90871E4B5FF48F27CA79 /* PDFImportService.swift */; };
+		D2BF7116196BC8D573E55A83 /* NoteEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C430E1C93473F7072A91192 /* NoteEditorView.swift */; };
+		E8F666BFBB85A5A2FA483569 /* StudiquoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D278D8743BAC84335B164A4 /* StudiquoApp.swift */; };
+		E9BA03ABC2AB7C0132401B73 /* ProtectedNotebookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBB1C58C6EDD08FC6E72FBB2 /* ProtectedNotebookView.swift */; };
+		FF7075FDD1F58F72865BDA16 /* Notebook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24EA5885BAC03E9929EDABBB /* Notebook.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		06D2BF76D087D00DA60DA305 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		0829D7C098E8731671D86AFD /* PageRotationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageRotationService.swift; sourceTree = "<group>"; };
+		0D529A670FA1888A39A9940B /* HandwritingRecognitionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandwritingRecognitionService.swift; sourceTree = "<group>"; };
+		24EA5885BAC03E9929EDABBB /* Notebook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Notebook.swift; sourceTree = "<group>"; };
+		29C5C38F2FB3910257B0A83F /* StudySessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudySessionView.swift; sourceTree = "<group>"; };
+		2A539BC5CFB57BD52A5C5896 /* FlashcardDeck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlashcardDeck.swift; sourceTree = "<group>"; };
+		2BF348C7AE37C087F4DCEB32 /* DocumentScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentScannerView.swift; sourceTree = "<group>"; };
+		3F691B8700DBF685253CC68C /* InkStroke.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkStroke.swift; sourceTree = "<group>"; };
+		410FDF3E0A238AACD43C9E72 /* PageElement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageElement.swift; sourceTree = "<group>"; };
+		47219AA180A514965DB6F9E9 /* UIColor+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIColor+Hex.swift"; sourceTree = "<group>"; };
+		6154FD6A1924D91131FDE067 /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
+		61FA74DEC17BE0E9F11CE689 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		6581B9D1E6989E8DB78A697D /* NotePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotePage.swift; sourceTree = "<group>"; };
+		6F2E7D5BCB4CA937DAD1513C /* GestureDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureDiagnostics.swift; sourceTree = "<group>"; };
+		75CBC7EF870C0CC7DE59E803 /* InkCanvasRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkCanvasRepresentable.swift; sourceTree = "<group>"; };
+		788D90871E4B5FF48F27CA79 /* PDFImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFImportService.swift; sourceTree = "<group>"; };
+		7D278D8743BAC84335B164A4 /* StudiquoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudiquoApp.swift; sourceTree = "<group>"; };
+		7E82CD894C235A73EE5F1EF3 /* ExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportService.swift; sourceTree = "<group>"; };
+		8C430E1C93473F7072A91192 /* NoteEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteEditorView.swift; sourceTree = "<group>"; };
+		8CDC01E89D39C3EE0C699993 /* ZoomableScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomableScrollView.swift; sourceTree = "<group>"; };
+		A31FBBDEB806C0D12E76890B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		AE7183ECED28A3E0B3F3AD7C /* InkCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkCanvasView.swift; sourceTree = "<group>"; };
+		B9494D3EB78D16D00933CFD6 /* FlashcardDeckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlashcardDeckView.swift; sourceTree = "<group>"; };
+		CA1E00000000000000000003 /* CalendarEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarEvent.swift; sourceTree = "<group>"; };
+		CA1E00000000000000000004 /* CalendarHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarHomeView.swift; sourceTree = "<group>"; };
+		CFEB4D5E4CB1B58B8C1EA03F /* studiquo.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = studiquo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E07F51CC4E628FD28EDB14AF /* AutomaticBackupRestoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomaticBackupRestoreView.swift; sourceTree = "<group>"; };
+		EBB1C58C6EDD08FC6E72FBB2 /* ProtectedNotebookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedNotebookView.swift; sourceTree = "<group>"; };
+		FF9331A93B985B443B197EC2 /* NotebookBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookBackupService.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		4531E3DBFF99F0377AB403DD /* Ink */ = {
+			isa = PBXGroup;
+			children = (
+				75CBC7EF870C0CC7DE59E803 /* InkCanvasRepresentable.swift */,
+				AE7183ECED28A3E0B3F3AD7C /* InkCanvasView.swift */,
+				3F691B8700DBF685253CC68C /* InkStroke.swift */,
+				47219AA180A514965DB6F9E9 /* UIColor+Hex.swift */,
+			);
+			path = Ink;
+			sourceTree = "<group>";
+		};
+		5322DEA7CD1C8F80383CB8FE /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				E07F51CC4E628FD28EDB14AF /* AutomaticBackupRestoreView.swift */,
+				CA1E00000000000000000004 /* CalendarHomeView.swift */,
+				61FA74DEC17BE0E9F11CE689 /* ContentView.swift */,
+				2BF348C7AE37C087F4DCEB32 /* DocumentScannerView.swift */,
+				B9494D3EB78D16D00933CFD6 /* FlashcardDeckView.swift */,
+				8C430E1C93473F7072A91192 /* NoteEditorView.swift */,
+				EBB1C58C6EDD08FC6E72FBB2 /* ProtectedNotebookView.swift */,
+				6154FD6A1924D91131FDE067 /* ShareSheet.swift */,
+				29C5C38F2FB3910257B0A83F /* StudySessionView.swift */,
+				8CDC01E89D39C3EE0C699993 /* ZoomableScrollView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		54606551582CE50ACF5F0B74 = {
+			isa = PBXGroup;
+			children = (
+				8F22A7853FCA9025ACAC5A2E /* studiquo */,
+				571000D7910F715A296B1BD4 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		571000D7910F715A296B1BD4 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				CFEB4D5E4CB1B58B8C1EA03F /* studiquo.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8F22A7853FCA9025ACAC5A2E /* studiquo */ = {
+			isa = PBXGroup;
+			children = (
+				06D2BF76D087D00DA60DA305 /* Assets.xcassets */,
+				A31FBBDEB806C0D12E76890B /* Info.plist */,
+				7D278D8743BAC84335B164A4 /* StudiquoApp.swift */,
+				4531E3DBFF99F0377AB403DD /* Ink */,
+				A132A0F1A4A6B0D20F8C1080 /* Models */,
+				DDEE9F1DB12BE39EFFF9BF36 /* Services */,
+				5322DEA7CD1C8F80383CB8FE /* Views */,
+			);
+			path = studiquo;
+			sourceTree = "<group>";
+		};
+		A132A0F1A4A6B0D20F8C1080 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				CA1E00000000000000000003 /* CalendarEvent.swift */,
+				2A539BC5CFB57BD52A5C5896 /* FlashcardDeck.swift */,
+				24EA5885BAC03E9929EDABBB /* Notebook.swift */,
+				6581B9D1E6989E8DB78A697D /* NotePage.swift */,
+				410FDF3E0A238AACD43C9E72 /* PageElement.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		DDEE9F1DB12BE39EFFF9BF36 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				7E82CD894C235A73EE5F1EF3 /* ExportService.swift */,
+				6F2E7D5BCB4CA937DAD1513C /* GestureDiagnostics.swift */,
+				0D529A670FA1888A39A9940B /* HandwritingRecognitionService.swift */,
+				FF9331A93B985B443B197EC2 /* NotebookBackupService.swift */,
+				0829D7C098E8731671D86AFD /* PageRotationService.swift */,
+				788D90871E4B5FF48F27CA79 /* PDFImportService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		7256F23AC0F8F60A13FACF43 /* studiquo */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C3927C9C07E40FFF16FEDB9B /* Build configuration list for PBXNativeTarget "studiquo" */;
+			buildPhases = (
+				5DD2AF5D735B991E5BFC2FC2 /* Sources */,
+				40F492743929D3B9394684FE /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = studiquo;
+			packageProductDependencies = (
+			);
+			productName = studiquo;
+			productReference = CFEB4D5E4CB1B58B8C1EA03F /* studiquo.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		31B8AA1613F48A85A64DE6F8 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					7256F23AC0F8F60A13FACF43 = {
+						DevelopmentTeam = 972G4VGUA6;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 0BA36CBBBBCE737BFB501784 /* Build configuration list for PBXProject "studiquo" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 54606551582CE50ACF5F0B74;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 571000D7910F715A296B1BD4 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				7256F23AC0F8F60A13FACF43 /* studiquo */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		40F492743929D3B9394684FE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				71E2D0E0E5FF7BDAE8401657 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		5DD2AF5D735B991E5BFC2FC2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				016B81099692C515301DF851 /* AutomaticBackupRestoreView.swift in Sources */,
+				CA1E00000000000000000001 /* CalendarEvent.swift in Sources */,
+				CA1E00000000000000000002 /* CalendarHomeView.swift in Sources */,
+				9015CE26A39349BB067634C8 /* ContentView.swift in Sources */,
+				1F30ADCA4BF5249CA777E188 /* DocumentScannerView.swift in Sources */,
+				27719BD05710FA42BCB9574B /* ExportService.swift in Sources */,
+				92368661B5922ACD96B4FF60 /* FlashcardDeck.swift in Sources */,
+				B486437BE0FDEA362EFDFB4B /* FlashcardDeckView.swift in Sources */,
+				2C6D64972B433C71A6F0DE31 /* GestureDiagnostics.swift in Sources */,
+				75B14A8BD15DA4B45DD0DC0C /* HandwritingRecognitionService.swift in Sources */,
+				4D67618426BAC5BA738498C0 /* InkCanvasRepresentable.swift in Sources */,
+				B6868B1B4934CD4EDF2DCBA6 /* InkCanvasView.swift in Sources */,
+				06D7DF25FC24DDD4ED107B81 /* InkStroke.swift in Sources */,
+				D2BF7116196BC8D573E55A83 /* NoteEditorView.swift in Sources */,
+				0EC768EB9E335793E83BEAE3 /* NotePage.swift in Sources */,
+				FF7075FDD1F58F72865BDA16 /* Notebook.swift in Sources */,
+				C3D37FA81122F418C860FBCF /* NotebookBackupService.swift in Sources */,
+				CEA1BB2CD5D56455169410CB /* PDFImportService.swift in Sources */,
+				8B51226031F8334CCC30A783 /* PageElement.swift in Sources */,
+				9FD6B900A6D4DBB4350AB842 /* PageRotationService.swift in Sources */,
+				E9BA03ABC2AB7C0132401B73 /* ProtectedNotebookView.swift in Sources */,
+				A3F0CDD4F657BD0D48235981 /* ShareSheet.swift in Sources */,
+				E8F666BFBB85A5A2FA483569 /* StudiquoApp.swift in Sources */,
+				1834357B91B260BFA4FE3503 /* StudySessionView.swift in Sources */,
+				3064767E13940AD8E09C9D9E /* UIColor+Hex.swift in Sources */,
+				0D89724BBFF4696AF778465B /* ZoomableScrollView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		24B52925E75E80A198D9E1DB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 972G4VGUA6;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = studiquo/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "授業資料や書類をスキャンしてノートに取り込むためにカメラを使用します。";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "ロックしたノートを安全に開くためにFace IDを使用します。";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations~ipad" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.yabuko.studiquo;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Debug;
+		};
+		5411A868CDAEE74CB10FBC24 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		F32710DB74F78BD416A0B93A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 972G4VGUA6;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = studiquo/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "授業資料や書類をスキャンしてノートに取り込むためにカメラを使用します。";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "ロックしたノートを安全に開くためにFace IDを使用します。";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations~ipad" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.yabuko.studiquo;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+		F6D6B9E20F220A63BE4E42A5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0BA36CBBBBCE737BFB501784 /* Build configuration list for PBXProject "studiquo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F6D6B9E20F220A63BE4E42A5 /* Debug */,
+				5411A868CDAEE74CB10FBC24 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C3927C9C07E40FFF16FEDB9B /* Build configuration list for PBXNativeTarget "studiquo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				24B52925E75E80A198D9E1DB /* Debug */,
+				F32710DB74F78BD416A0B93A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 31B8AA1613F48A85A64DE6F8 /* Project object */;
+}

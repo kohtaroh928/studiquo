@@ -49,6 +49,9 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     var onActivate: () -> Void = {}
     var onShapeCommitted: () -> Void = {}
     var onSelectionChanged: (InkDrawing?) -> Void = { _ in }
+    var selectionDragText: String = ""
+    var onSelectionDragMoved: (UIImage?, CGSize?, CGPoint?) -> Void = { _, _, _ in }
+    var onSelectionDropped: (String, CGPoint) -> Void = { _, _ in }
 
     func makeUIView(context: Context) -> InkCanvasView {
         let view = InkCanvasView()
@@ -70,6 +73,12 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         }
         view.onSelectionChanged = { [coordinator = context.coordinator] selection in
             coordinator.parent.onSelectionChanged(selection)
+        }
+        view.onSelectionDragMoved = { [coordinator = context.coordinator] image, size, point in
+            coordinator.parent.onSelectionDragMoved(image, size, point)
+        }
+        view.onSelectionDropped = { [coordinator = context.coordinator] text, point in
+            coordinator.parent.onSelectionDropped(text, point)
         }
         return view
     }
@@ -121,6 +130,7 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         view.isEraser = selectedTool == .eraser
         view.isLasso = selectedTool == .lasso
         view.pendingShapeKind = pendingShapeKind
+        view.selectionDragText = selectionDragText
         view.isDrawingEnabled = selectedTool == .pen || selectedTool == .highlighter
             || selectedTool == .eraser || selectedTool == .lasso || pendingShapeKind != nil
     }
