@@ -190,13 +190,17 @@ struct NoteEditorView: View {
                         .offset(x: sidebarWidth(in: geometry.size))
                 }
 
-                if isAdjustingToolSize {
-                    toolSizePreview
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .allowsHitTesting(false)
-                        .zIndex(2500)
-                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
-                }
+                // Kept in the hierarchy and shown by opacity rather than
+                // inserted by an `if`, so toggling it doesn't re-lay out
+                // the ZStack — and so the toolbar beside it isn't rebuilt —
+                // on every show and hide.
+                toolSizePreview
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
+                    .opacity(isAdjustingToolSize ? 1 : 0)
+                    .scaleEffect(isAdjustingToolSize ? 1 : 0.92)
+                    .animation(.easeOut(duration: 0.15), value: isAdjustingToolSize)
+                    .zIndex(2500)
 
                 if !recognizedSelectionDragText.isEmpty {
                     recognizedSelectionDragChip
@@ -551,21 +555,37 @@ struct NoteEditorView: View {
         }
     }
 
-    private var currentToolSize: Binding<Double> {
-        Binding(
-            get: { drawingTool == .eraser ? eraserWidth : drawingWidth },
-            set: { value in
-                if drawingTool == .eraser {
-                    eraserWidth = value
-                } else {
-                    drawingWidth = value
-                }
-            }
-        )
+    /// Bound straight to `$eraserWidth` / `$drawingWidth` rather than to one
+    /// merged `Binding(get:set:)` computed property. A hand-built Binding is
+    /// rebuilt with fresh closures on every `body` pass, so each value change
+    /// during a drag made SwiftUI treat the `Slider` as a different view and
+    /// reconstruct it mid-interaction — losing the in-flight drag, and with
+    /// it the closing `onEditingChanged(false)` that hides the size preview.
+    /// The projected bindings of the `@AppStorage` properties are stable, so
+    /// the slider survives the whole drag and reports its own end.
+    @ViewBuilder
+    private var toolSizeSlider: some View {
+        if drawingTool == .eraser {
+            Slider(value: $eraserWidth, in: 6...72, step: 1, onEditingChanged: setToolSizeAdjusting)
+        } else {
+            Slider(value: $drawingWidth, in: 1...20, step: 1, onEditingChanged: setToolSizeAdjusting)
+        }
     }
 
-    private var currentToolSizeRange: ClosedRange<Double> {
-        drawingTool == .eraser ? 6...72 : 1...20
+    private func setToolSizeAdjusting(_ editing: Bool) {
+        if editing {
+            isAdjustingToolSize = true
+            return
+        }
+        // Deferred deliberately. Clearing the flag synchronously from
+        // inside the slider's own editing-ended callback rebuilds the
+        // slider while the lifting touch is still being delivered, and the
+        // rebuilt slider then picks that touch up as a new interaction and
+        // reports editing-began roughly a millisecond later — which is why
+        // the preview appeared never to hide. Waiting a turn lets the touch
+        // finish first, and it also lands after any such stray began, so
+        // the preview ends up hidden either way.
+        DispatchQueue.main.async { isAdjustingToolSize = false }
     }
 
     private var currentToolSizeLabel: String {
@@ -616,9 +636,7 @@ struct NoteEditorView: View {
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
-                    Slider(value: currentToolSize, in: currentToolSizeRange, step: 1) { editing in
-                        withAnimation(.easeOut(duration: 0.15)) { isAdjustingToolSize = editing }
-                    }
+                    toolSizeSlider
                 }
                 .padding(18)
                 .frame(width: 280)
@@ -629,9 +647,7 @@ struct NoteEditorView: View {
             HStack(spacing: 8) {
                 Image(systemName: "lineweight")
                     .foregroundStyle(.secondary)
-                Slider(value: currentToolSize, in: currentToolSizeRange, step: 1) { editing in
-                    withAnimation(.easeOut(duration: 0.15)) { isAdjustingToolSize = editing }
-                }
+                toolSizeSlider
                     .frame(width: 118)
                 Text("\(Int(currentToolSizeValue.rounded()))")
                     .font(.caption.monospacedDigit())
