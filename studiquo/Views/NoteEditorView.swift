@@ -376,13 +376,19 @@ struct NoteEditorView: View {
         return Group {
             if isDrawingToolbarVertical {
                 ScrollView(.vertical) {
-                    VStack(spacing: 8) { sharedDrawingToolbarControls(isVertical: true) }
+                    VStack(spacing: 8) {
+                        drawingToolbarMoveHandle(isVertical: true, in: size, center: center, barWidth: barWidth)
+                        sharedDrawingToolbarControls(isVertical: true)
+                    }
                         .padding(.vertical, 9)
                 }
                 .scrollIndicators(.hidden)
             } else {
                 ScrollView(.horizontal) {
-                    HStack(spacing: 8) { sharedDrawingToolbarControls(isVertical: false) }
+                    HStack(spacing: 8) {
+                        drawingToolbarMoveHandle(isVertical: false, in: size, center: center, barWidth: barWidth)
+                        sharedDrawingToolbarControls(isVertical: false)
+                    }
                         .padding(.horizontal, 9)
                 }
                 .scrollIndicators(.hidden)
@@ -395,30 +401,41 @@ struct NoteEditorView: View {
         .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
         .environment(\.layoutDirection, isLeftHandedMode ? .rightToLeft : .leftToRight)
         .position(center)
-        .highPriorityGesture(
-            DragGesture(minimumDistance: 8)
-                .onChanged { value in
-                    if drawingToolbarDragOrigin == nil { drawingToolbarDragOrigin = center }
-                    guard let origin = drawingToolbarDragOrigin else { return }
-                    let candidate = CGPoint(
-                        x: origin.x + value.translation.width,
-                        y: origin.y + value.translation.height
-                    )
-                    let edgeThreshold: CGFloat = 100
-                    isDrawingToolbarVertical = candidate.x <= edgeThreshold || candidate.x >= size.width - edgeThreshold
-                    drawingToolbarCenter = candidate
-                }
-                .onEnded { _ in
-                    drawingToolbarDragOrigin = nil
-                    guard isDrawingToolbarVertical, let current = drawingToolbarCenter else { return }
-                    let snappedX: CGFloat = current.x < size.width / 2 ? barWidth / 2 + 6 : size.width - barWidth / 2 - 6
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        drawingToolbarCenter = CGPoint(x: snappedX, y: current.y)
-                    }
-                }
-        )
         .accessibilityLabel("描画バー")
         .accessibilityHint("ドラッグして移動できます。左右端では縦並びになります")
+    }
+
+    private func drawingToolbarMoveHandle(isVertical: Bool, in size: CGSize, center: CGPoint, barWidth: CGFloat) -> some View {
+        Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: isVertical ? 28 : 34, height: isVertical ? 34 : 28)
+            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .gesture(
+                DragGesture(minimumDistance: 4)
+                    .onChanged { value in
+                        if drawingToolbarDragOrigin == nil { drawingToolbarDragOrigin = center }
+                        guard let origin = drawingToolbarDragOrigin else { return }
+                        let candidate = CGPoint(
+                            x: origin.x + value.translation.width,
+                            y: origin.y + value.translation.height
+                        )
+                        let edgeThreshold: CGFloat = 100
+                        isDrawingToolbarVertical = candidate.x <= edgeThreshold || candidate.x >= size.width - edgeThreshold
+                        drawingToolbarCenter = candidate
+                    }
+                    .onEnded { _ in
+                        drawingToolbarDragOrigin = nil
+                        guard isDrawingToolbarVertical, let current = drawingToolbarCenter else { return }
+                        let snappedX: CGFloat = current.x < size.width / 2 ? barWidth / 2 + 6 : size.width - barWidth / 2 - 6
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            drawingToolbarCenter = CGPoint(x: snappedX, y: current.y)
+                        }
+                    }
+            )
+            .accessibilityLabel("描画バーを移動")
+            .accessibilityHint("ここをドラッグして描画バーを移動します")
     }
 
     @ViewBuilder
