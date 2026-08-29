@@ -175,15 +175,19 @@ struct NoteEditorView: View {
                             .frame(width: min(260, geometry.size.width * 0.28))
                         Divider()
                     }
-                    workspace(in: CGSize(
-                        width: geometry.size.width - (showsPageSidebar ? min(260, geometry.size.width * 0.28) : 0),
-                        height: geometry.size.height
-                    ))
+                    workspace(in: workspaceSize(in: geometry.size))
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
 
                 if !isReadOnlyMode && showsDrawingToolbar {
-                    sharedDrawingToolbar(in: geometry.size)
+                    // Confined to the primary (notebook) pane's own area —
+                    // primaryPane is always the leading/top slice of
+                    // `workspace`, offset by the sidebar's width — rather
+                    // than the full editor, so splitting the screen doesn't
+                    // let the drawing bar drift into the other pane, where
+                    // it has nothing to draw on.
+                    sharedDrawingToolbar(in: primaryPaneSize(in: geometry.size))
+                        .offset(x: sidebarWidth(in: geometry.size))
                 }
 
                 if isAdjustingToolSize {
@@ -450,7 +454,12 @@ struct NoteEditorView: View {
             .frame(width: isVertical ? 28 : 34, height: isVertical ? 34 : 28)
             .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
             .contentShape(RoundedRectangle(cornerRadius: 8))
-            .gesture(
+            // The handle sits inside the toolbar's own ScrollView (so it
+            // scrolls into view along with the rest of the controls); a
+            // plain `.gesture` here lost the drag to the ScrollView's own
+            // pan recognizer far more often than not, so the bar simply
+            // didn't move. `.highPriorityGesture` claims it first instead.
+            .highPriorityGesture(
                 DragGesture(minimumDistance: 4)
                     .onChanged { value in
                         if drawingToolbarDragOrigin == nil { drawingToolbarDragOrigin = center }
@@ -587,22 +596,6 @@ struct NoteEditorView: View {
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
     }
 
-    /// Backstops the slider's own `onEditingChanged`, which on the size
-    /// slider specifically has been seen to skip the closing `false` call —
-    /// leaving the preview circle stuck on screen — for reasons that never
-    /// reproduced under inspection. A `simultaneousGesture` watches the same
-    /// touch independently of whatever the `Slider` does internally, so a
-    /// lift is caught here even when the slider's own callback isn't.
-    private var toolSizeTouchTracker: some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { _ in
-                if !isAdjustingToolSize { isAdjustingToolSize = true }
-            }
-            .onEnded { _ in
-                withAnimation(.easeOut(duration: 0.15)) { isAdjustingToolSize = false }
-            }
-    }
-
     @ViewBuilder
     private func toolSizeControl(isVertical: Bool) -> some View {
         if isVertical {
@@ -626,7 +619,6 @@ struct NoteEditorView: View {
                     Slider(value: currentToolSize, in: currentToolSizeRange, step: 1) { editing in
                         withAnimation(.easeOut(duration: 0.15)) { isAdjustingToolSize = editing }
                     }
-                    .simultaneousGesture(toolSizeTouchTracker)
                 }
                 .padding(18)
                 .frame(width: 280)
@@ -640,7 +632,6 @@ struct NoteEditorView: View {
                 Slider(value: currentToolSize, in: currentToolSizeRange, step: 1) { editing in
                     withAnimation(.easeOut(duration: 0.15)) { isAdjustingToolSize = editing }
                 }
-                    .simultaneousGesture(toolSizeTouchTracker)
                     .frame(width: 118)
                 Text("\(Int(currentToolSizeValue.rounded()))")
                     .font(.caption.monospacedDigit())
@@ -674,6 +665,29 @@ struct NoteEditorView: View {
             .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
             .draggable(recognizedSelectionDragText)
             .accessibilityLabel("認識した文字。暗記カードへドラッグできます")
+    }
+
+    private func sidebarWidth(in size: CGSize) -> CGFloat {
+        showsPageSidebar ? min(260, size.width * 0.28) : 0
+    }
+
+    private func workspaceSize(in size: CGSize) -> CGSize {
+        CGSize(width: size.width - sidebarWidth(in: size), height: size.height)
+    }
+
+    /// primaryPane is always the leading (horizontal split) or top
+    /// (vertical split) slice of `workspace` — matching the sizing done
+    /// there keeps the drawing toolbar's confinement in step with it.
+    private func primaryPaneSize(in size: CGSize) -> CGSize {
+        let workspace = workspaceSize(in: size)
+        switch splitMode {
+        case .single:
+            return workspace
+        case .horizontal:
+            return CGSize(width: max(260, workspace.width * splitRatio - 5), height: workspace.height)
+        case .vertical:
+            return CGSize(width: workspace.width, height: max(220, workspace.height * splitRatio - 5))
+        }
     }
 
     @ViewBuilder
@@ -719,6 +733,7 @@ struct NoteEditorView: View {
                         NotebookPaneView(
                             notebook: displayedPrimaryNotebook,
                             currentPageIndex: $primaryPageIndex,
+                            showsTitle: splitMode != .single,
                             usesDarkPageDisplay: usesDarkPageDisplay,
                             onRequestAddPage: { requestPageAddition(to: displayedPrimaryNotebook) },
                             onQuickAddPage: { quickAddPage(to: displayedPrimaryNotebook) },
@@ -1094,11 +1109,18 @@ struct NoteEditorView: View {
                 ) {
                     columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
                 }
-                Text(primaryFlashcardDeck?.title ?? displayedPrimaryNotebook.title)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                    .frame(maxWidth: 170, alignment: .leading)
-                    .accessibilityLabel("現在のノート \(primaryFlashcardDeck?.title ?? displayedPrimaryNotebook.title)")
+                // In split mode each pane shows its own title below its
+                // toolbar (see NotebookPaneView's showsTitle) instead —
+                // showing it a second time up here as well as down there
+                // was redundant, and this copy didn't exist for the
+                // secondary pane anyway.
+                if splitMode == .single {
+                    Text(primaryFlashcardDeck?.title ?? displayedPrimaryNotebook.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .frame(maxWidth: 170, alignment: .leading)
+                        .accessibilityLabel("現在のノート \(primaryFlashcardDeck?.title ?? displayedPrimaryNotebook.title)")
+                }
 
                 Divider()
                     .frame(height: 26)
