@@ -615,6 +615,14 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             guard let start = self.strokeStartLocation, let current = self.lastMovementLocation else { return }
             let distanceFromStart = hypot(current.x - start.x, current.y - start.y)
 
+            // A scribble is an erase gesture, not a shape to correct. Skip
+            // the hold-to-straighten lock so the scribble reaches the erase
+            // check on lift instead of being committed as a straightened line.
+            if !self.isHighlighter, self.isScratchOutEnabled,
+               self.isScribble(self.previewStroke()) {
+                return
+            }
+
             if self.isRectangleCorrectionEnabled,
                self.rectangleIfClosedLoop(self.previewStroke()) != nil {
                 self.isRectangleLocked = true
@@ -914,13 +922,29 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
         guard rawPoints.count > 1 else { return }
 
-        var stroke = InkStroke(
+        let rawStroke = InkStroke(
             points: rawPoints,
             colorHex: strokeColorHex,
             width: strokeWidth,
             opacity: isHighlighter ? 0.45 : 1,
             isHighlighter: isHighlighter
         )
+
+        // Scribble-to-erase is checked first, against the raw points, so a
+        // scribble erases even when the hold timer already locked a shape
+        // mid-stroke. A scribble that loops back near its own start is still
+        // a scribble, not a circle someone drew fast.
+        if !isHighlighter, isScratchOutEnabled, isScribble(rawStroke) {
+            let hit = drawing.strokes.filter { strokeIsCoveredBy($0, scribble: rawStroke) }
+            if !hit.isEmpty {
+                let hitIDs = Set(hit.map(\.id))
+                drawing.strokes.removeAll { hitIDs.contains($0.id) }
+                withoutImplicitAnimations { removeCommittedLayers(ids: hitIDs) }
+                return
+            }
+        }
+
+        var stroke = rawStroke
         if isStraightened, let start = strokeStartLocation, let end = lastMovementLocation {
             stroke.points = [
                 InkPoint(location: start, force: 0.5, timeOffset: 0),
@@ -938,21 +962,6 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         } else if isTriangleLocked || isParabolaLocked {
             stroke.points = lockedShapePoints()
         } else {
-            // Scribble-to-erase is checked before the closed-loop ellipse
-            // fallback below: a scribble that happens to loop back near its
-            // own start is still a scribble, not a circle someone drew
-            // fast, and erasing should win that tie — otherwise a crumple
-            // gesture that closes on itself got "cleaned up" into a circle
-            // instead of erasing what it was scribbled over.
-            if !isHighlighter, isScratchOutEnabled, isScribble(stroke) {
-                let hit = drawing.strokes.filter { strokeIsCoveredBy($0, scribble: stroke) }
-                if !hit.isEmpty {
-                    let hitIDs = Set(hit.map(\.id))
-                    drawing.strokes.removeAll { hitIDs.contains($0.id) }
-                    withoutImplicitAnimations { removeCommittedLayers(ids: hitIDs) }
-                    return
-                }
-            }
             // Closed shapes are intentionally not corrected on lift. Like
             // straight lines, they only snap after the Pencil has remained
             // down and still for `straightenHoldDuration`.
