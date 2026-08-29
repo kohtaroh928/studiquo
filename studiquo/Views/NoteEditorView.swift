@@ -97,6 +97,10 @@ struct NoteEditorView: View {
     @State private var pendingSplitMode: SplitMode?
     @State private var showsSplitSourcePicker = false
     @State private var secondaryShowsWeb = false
+    @State private var secondaryShowsAIChat = false
+    @State private var aiChatThreads: [AIChatThread] = []
+    @State private var selectedAIChatThread: AIChatThread?
+    @State private var aiChatDraft = ""
     @State private var secondaryFlashcardDeck: FlashcardDeck?
     @State private var showsDeletePagePicker = false
     @State private var notebookPendingTrash: Notebook?
@@ -250,12 +254,14 @@ struct NoteEditorView: View {
                 secondaryNotebook = selected
                 secondaryFlashcardDeck = nil
                 secondaryShowsWeb = false
+                secondaryShowsAIChat = false
                 secondaryPageIndex = 0
                 completeSplitSelection(object: selected)
             }, onSelectDeck: { deck in
                 secondaryNotebook = nil
                 secondaryFlashcardDeck = deck
                 secondaryShowsWeb = false
+                secondaryShowsAIChat = false
                 completeSplitSelection(object: deck)
             })
         }
@@ -329,7 +335,10 @@ struct NoteEditorView: View {
             secondaryPageIndex = clamped(secondaryPageIndex, pageCount: count ?? 0)
             secondaryNotebook?.refreshLibraryMetadata()
         }
-        .onAppear { splitState.isSplit = splitMode != .single }
+        .onAppear {
+            splitState.isSplit = splitMode != .single
+            loadAIChatThreads()
+        }
         .onChange(of: splitMode) { _, mode in splitState.isSplit = mode != .single }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
@@ -662,6 +671,15 @@ struct NoteEditorView: View {
     private var secondaryPane: some View {
         if secondaryShowsWeb {
             WebSearchPane(browser: webBrowser)
+        } else if secondaryShowsAIChat {
+            AIChatPane(
+                threads: aiChatThreads,
+                selectedThread: currentAIChatThread(),
+                draft: $aiChatDraft,
+                onSelectThread: { selectedAIChatThread = $0 },
+                onNewThread: { selectedAIChatThread = createAIChatThread() },
+                onSend: sendAIChatMessage
+            )
         } else if let secondaryFlashcardDeck {
             FlashcardPaneView(deck: secondaryFlashcardDeck, onHome: onHome)
                 .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
@@ -1114,15 +1132,11 @@ struct NoteEditorView: View {
 
                 Menu {
                     Button("1画面", systemImage: "rectangle") { splitMode = .single }
-                    Button("左右に2分割", systemImage: "rectangle.split.2x1") { prepareSplit(.horizontal) }
-                        .disabled(isPortraitLayout)
-                    Button("上下に2分割", systemImage: "rectangle.split.1x2") { prepareSplit(.vertical) }
-                    Divider()
                     Button("Google検索と2分割", systemImage: "globe") {
                         openWebSplit(title: "Google検索", homeURL: "https://www.google.com")
                     }
-                    Button("Claudeブラウザ版と2分割", systemImage: "message.fill") {
-                        openWebSplit(title: "Claude", homeURL: "https://claude.ai")
+                    Button("AIトークと2分割", systemImage: "sparkles") {
+                        openAIChatSplit()
                     }
                 } label: { toolStripLabel("画面分割", icon: splitMode.icon, isActive: splitMode != .single) }
 
@@ -1133,6 +1147,7 @@ struct NoteEditorView: View {
                                 secondaryNotebook = candidate
                                 secondaryFlashcardDeck = nil
                                 secondaryShowsWeb = false
+                                secondaryShowsAIChat = false
                                 secondaryPageIndex = 0
                             }
                         }
@@ -1140,6 +1155,7 @@ struct NoteEditorView: View {
                             secondaryNotebook = createCompanionNotebook()
                             secondaryFlashcardDeck = nil
                             secondaryShowsWeb = false
+                            secondaryShowsAIChat = false
                             secondaryPageIndex = 0
                         }
                     } label: { toolStripLabel("資料", icon: "folder", isActive: true) }
@@ -1215,6 +1231,7 @@ struct NoteEditorView: View {
         secondaryNotebook = nil
         secondaryFlashcardDeck = nil
         secondaryShowsWeb = true
+        secondaryShowsAIChat = false
         splitMode = isPortraitLayout ? .vertical : .horizontal
         splitRatio = 0.5
         activePane = .primary
@@ -1222,6 +1239,67 @@ struct NoteEditorView: View {
             name: Notification.Name("StudiquoOpenWebTab"),
             object: WebTabInfo(id: homeURL, title: title, homeURL: homeURL)
         )
+    }
+
+    private func openAIChatSplit() {
+        loadAIChatThreads()
+        selectedAIChatThread = selectedAIChatThread ?? aiChatThreads.first ?? createAIChatThread()
+        secondaryNotebook = nil
+        secondaryFlashcardDeck = nil
+        secondaryShowsWeb = false
+        secondaryShowsAIChat = true
+        splitMode = isPortraitLayout ? .vertical : .horizontal
+        splitRatio = 0.5
+        activePane = .primary
+    }
+
+    private func loadAIChatThreads() {
+        let descriptor = FetchDescriptor<AIChatThread>(
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        aiChatThreads = (try? modelContext.fetch(descriptor)) ?? []
+    }
+
+    private func currentAIChatThread() -> AIChatThread {
+        if let selectedAIChatThread { return selectedAIChatThread }
+        if let first = aiChatThreads.first {
+            selectedAIChatThread = first
+            return first
+        }
+        return createAIChatThread()
+    }
+
+    private func createAIChatThread() -> AIChatThread {
+        let thread = AIChatThread()
+        modelContext.insert(thread)
+        try? modelContext.save()
+        loadAIChatThreads()
+        return thread
+    }
+
+    private func sendAIChatMessage() {
+        let trimmed = aiChatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let thread = currentAIChatThread()
+        let userMessage = AIChatMessage(text: trimmed, role: .user)
+        userMessage.thread = thread
+        thread.messages.append(userMessage)
+
+        if thread.sortedMessages.filter({ $0.role == .user }).count == 1 {
+            thread.title = String(trimmed.prefix(24))
+        }
+
+        let placeholder = AIChatMessage(
+            text: "まだAI本体には接続していません。ここに将来、ノートや課題を読み取ったAIの返答が表示されます。",
+            role: .assistant
+        )
+        placeholder.thread = thread
+        thread.messages.append(placeholder)
+        thread.updatedAt = .now
+        aiChatDraft = ""
+        try? modelContext.save()
+        loadAIChatThreads()
+        selectedAIChatThread = thread
     }
 
     /// Routes a top tab-bar selection (or a drag-drop, see `handlePaneDrop`)
@@ -1247,6 +1325,7 @@ struct NoteEditorView: View {
                 secondaryNotebook = targetNotebook
                 secondaryFlashcardDeck = nil
                 secondaryShowsWeb = false
+                secondaryShowsAIChat = false
                 secondaryPageIndex = 0
             }
         case .flashcardDeck(let deck):
@@ -1257,6 +1336,7 @@ struct NoteEditorView: View {
                 secondaryFlashcardDeck = deck
                 secondaryNotebook = nil
                 secondaryShowsWeb = false
+                secondaryShowsAIChat = false
             }
         case .web(_, let homeURL):
             // WebSearchPane only ever renders in the secondary slot today;
@@ -1265,6 +1345,7 @@ struct NoteEditorView: View {
             secondaryNotebook = nil
             secondaryFlashcardDeck = nil
             secondaryShowsWeb = true
+            secondaryShowsAIChat = false
             if splitMode == .single { splitMode = isPortraitLayout ? .vertical : .horizontal }
             activePane = .secondary
             return
@@ -1347,6 +1428,7 @@ struct NoteEditorView: View {
                 secondaryFlashcardDeck = deck
                 secondaryNotebook = nil
                 secondaryShowsWeb = false
+                secondaryShowsAIChat = false
             }
             activePane = target == .primary ? .primary : .secondary
             return true
@@ -1375,6 +1457,7 @@ struct NoteEditorView: View {
             secondaryNotebook = targetNotebook
             secondaryFlashcardDeck = nil
             secondaryShowsWeb = false
+            secondaryShowsAIChat = false
             secondaryPageIndex = 0
         }
         activePane = target == .primary ? .primary : .secondary
@@ -2365,6 +2448,168 @@ private struct WebSearchPane: View {
             WebViewContainer(webView: browser.webView)
         }
         .background(Color(uiColor: .systemBackground))
+    }
+}
+
+private struct AIChatPane: View {
+    let threads: [AIChatThread]
+    let selectedThread: AIChatThread
+    @Binding var draft: String
+    let onSelectThread: (AIChatThread) -> Void
+    let onNewThread: () -> Void
+    let onSend: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                Button(action: onNewThread) {
+                    Label("新しいトーク", systemImage: "square.and.pencil")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.bordered)
+
+                Text("履歴")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 6)
+
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(threads) { thread in
+                            Button {
+                                onSelectThread(thread)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "message")
+                                        .foregroundStyle(.secondary)
+                                    Text(thread.title)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 0)
+                                }
+                                .font(.subheadline)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 9)
+                                .background(
+                                    thread.persistentModelID == selectedThread.persistentModelID
+                                    ? Color.accentColor.opacity(0.14)
+                                    : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 10)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding(12)
+            .frame(width: 190)
+            .background(Color(uiColor: .secondarySystemBackground))
+
+            Divider()
+
+            VStack(spacing: 0) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(selectedThread.title)
+                            .font(.headline)
+                            .lineLimit(1)
+                        Text("AIはまだ未接続です")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(Color.accentColor)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.regularMaterial)
+
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 14) {
+                            if selectedThread.sortedMessages.isEmpty {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "sparkles")
+                                        .font(.system(size: 34))
+                                        .foregroundStyle(Color.accentColor)
+                                    Text("何を手伝いましょうか？")
+                                        .font(.title3.weight(.semibold))
+                                    Text("ここはAIチャット画面の試作です。今は送信と履歴保存だけできます。")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .padding(.top, 60)
+                                .frame(maxWidth: .infinity)
+                            }
+
+                            ForEach(selectedThread.sortedMessages) { message in
+                                AIChatBubble(message: message)
+                                    .id(message.persistentModelID)
+                            }
+                        }
+                        .padding(18)
+                    }
+                    .onChange(of: selectedThread.sortedMessages.count) { _, _ in
+                        if let last = selectedThread.sortedMessages.last {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo(last.persistentModelID, anchor: .bottom)
+                            }
+                        }
+                    }
+                }
+
+                HStack(alignment: .bottom, spacing: 10) {
+                    TextField("メッセージを入力", text: $draft, axis: .vertical)
+                        .lineLimit(1...5)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                        .submitLabel(.send)
+                        .onSubmit(onSend)
+
+                    Button(action: onSend) {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 34, height: 34)
+                            .background(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.accentColor, in: Circle())
+                    }
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding(12)
+                .background(.regularMaterial)
+            }
+        }
+        .background(Color(uiColor: .systemBackground))
+    }
+}
+
+private struct AIChatBubble: View {
+    let message: AIChatMessage
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            if message.role == .user { Spacer(minLength: 40) }
+
+            Text(message.text)
+                .font(.body)
+                .foregroundStyle(message.role == .user ? .white : .primary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    message.role == .user
+                    ? Color.accentColor
+                    : Color(uiColor: .secondarySystemBackground),
+                    in: RoundedRectangle(cornerRadius: 18)
+                )
+                .frame(maxWidth: 520, alignment: message.role == .user ? .trailing : .leading)
+
+            if message.role == .assistant { Spacer(minLength: 40) }
+        }
+        .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     }
 }
 
