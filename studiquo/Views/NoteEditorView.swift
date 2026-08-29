@@ -129,6 +129,11 @@ struct NoteEditorView: View {
     @State private var drawingToolbarCenter: CGPoint?
     @State private var drawingToolbarDragOrigin: CGPoint?
     @State private var isDrawingToolbarVertical = false
+    /// True while a finger is on the size slider. The slider sits inside the
+    /// toolbar's own `ScrollView`, so without this its drag was ambiguous
+    /// with the ScrollView's pan gesture — moving the slider could instead
+    /// scroll the toolbar's contents out from under the thumb.
+    @State private var isAdjustingToolSize = false
     @State private var showsToolSizePopover = false
     @AppStorage("readOnlyMode") private var isReadOnlyMode = false
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
@@ -392,6 +397,7 @@ struct NoteEditorView: View {
                         .padding(.vertical, 9)
                 }
                 .scrollIndicators(.hidden)
+                .scrollDisabled(isAdjustingToolSize)
             } else {
                 ScrollView(.horizontal) {
                     HStack(spacing: 8) {
@@ -401,6 +407,7 @@ struct NoteEditorView: View {
                         .padding(.horizontal, 9)
                 }
                 .scrollIndicators(.hidden)
+                .scrollDisabled(isAdjustingToolSize)
             }
         }
         .buttonStyle(.borderless)
@@ -560,7 +567,9 @@ struct NoteEditorView: View {
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
-                    Slider(value: currentToolSize, in: currentToolSizeRange, step: 1)
+                    Slider(value: currentToolSize, in: currentToolSizeRange, step: 1) { editing in
+                        isAdjustingToolSize = editing
+                    }
                 }
                 .padding(18)
                 .frame(width: 280)
@@ -571,7 +580,9 @@ struct NoteEditorView: View {
             HStack(spacing: 8) {
                 Image(systemName: "lineweight")
                     .foregroundStyle(.secondary)
-                Slider(value: currentToolSize, in: currentToolSizeRange, step: 1)
+                Slider(value: currentToolSize, in: currentToolSizeRange, step: 1) { editing in
+                    isAdjustingToolSize = editing
+                }
                     .frame(width: 118)
                 Text("\(Int(currentToolSizeValue.rounded()))")
                     .font(.caption.monospacedDigit())
