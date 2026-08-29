@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "exportedAt": "2026-08-29T00:00:00Z",
+  "notebooks": [
+    {
+      "id": "sample-notebook",
+      "title": "数学",
+      "tags": ["授業"],
+      "pages": [
+        {
+          "id": "sample-page",
+          "title": "放物線",
+          "recognizedText": "二次関数と放物線のノート",
+          "elements": []
+        }
+      ]
+    }
+  ],
+  "flashcardDecks": [],
+  "calendarEvents": [],
+  "studyActivities": []
+}

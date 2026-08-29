@@ -936,10 +936,12 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         // a scribble, not a circle someone drew fast.
         if !isHighlighter, isScratchOutEnabled, isScribble(rawStroke) {
             let hit = drawing.strokes.filter { strokeIsCoveredBy($0, scribble: rawStroke) }
+            GestureDiagnostics.scratchOutRemoval(candidates: drawing.strokes.count, removed: hit.count)
             if !hit.isEmpty {
                 let hitIDs = Set(hit.map(\.id))
                 drawing.strokes.removeAll { hitIDs.contains($0.id) }
                 withoutImplicitAnimations { removeCommittedLayers(ids: hitIDs) }
+                onDrawingChanged?(drawing)
                 return
             }
         }
@@ -1339,11 +1341,13 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             previousVector = vector
             anchor = point
         }
-        return turns >= 3 && ratio >= 2.0 && stroke.pathLength >= 40
+        let qualifies = turns >= 2 && ratio >= 1.7 && stroke.pathLength >= 34
+        GestureDiagnostics.scratchOutCheck(points: stroke.points.count, turns: turns, lengthRatio: ratio, qualifies: qualifies)
+        return qualifies
     }
 
     private func strokeIsCoveredBy(_ stroke: InkStroke, scribble: InkStroke) -> Bool {
-        guard stroke.bounds.intersects(scribble.bounds) else { return false }
+        guard stroke.bounds.insetBy(dx: -18, dy: -18).intersects(scribble.bounds) else { return false }
         let scribblePoints = scribble.points.map(\.location)
         guard scribblePoints.count > 1 else { return false }
         // Resample the whole target path, including the middle of corrected

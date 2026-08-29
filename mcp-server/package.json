@@ -1,0 +1,21 @@
+{
+  "name": "studiquo-mcp-server",
+  "version": "0.2.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "start": "node src/index.js",
+    "smoke": "node src/smoke.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "^1.17.4",
+    "@modelcontextprotocol/server": "^1.17.4",
+    "agents": "^0.0.111",
+    "zod": "^4.0.17"
+  },
+  "devDependencies": {
+    "wrangler": "^4.30.0"
+  }
+}

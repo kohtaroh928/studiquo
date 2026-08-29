@@ -125,6 +125,7 @@ struct NoteEditorView: View {
     @State private var drawingToolbarCenter: CGPoint?
     @State private var drawingToolbarDragOrigin: CGPoint?
     @State private var isDrawingToolbarVertical = false
+    @State private var showsToolSizePopover = false
     @AppStorage("readOnlyMode") private var isReadOnlyMode = false
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
     @AppStorage("drawingToolbarPosition") private var drawingToolbarPosition = "bottom"
@@ -364,8 +365,8 @@ struct NoteEditorView: View {
     }
 
     private func sharedDrawingToolbar(in size: CGSize) -> some View {
-        let horizontalWidth = min(620, max(54, size.width - 16))
-        let verticalHeight = min(620, max(54, size.height - 16))
+        let horizontalWidth = min(760, max(54, size.width - 16))
+        let verticalHeight = min(680, max(54, size.height - 16))
         let barWidth: CGFloat = isDrawingToolbarVertical ? 54 : horizontalWidth
         let barHeight: CGFloat = isDrawingToolbarVertical ? verticalHeight : 54
         let defaultY = drawingToolbarPosition == "top" ? barHeight / 2 + 8 : size.height - barHeight / 2 - 8
@@ -443,6 +444,9 @@ struct NoteEditorView: View {
                 .background(isScratchOutEnabled ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 7))
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(isScratchOutEnabled ? Color.accentColor : .clear, lineWidth: 1.5))
         }
+        .accessibilityLabel("スクイブル消しゴム")
+        .accessibilityHint("オンにすると、ペンで線の上をぐしゃぐしゃとなぞって消せます")
+        .help(isScratchOutEnabled ? "スクイブル消しゴム：オン" : "スクイブル消しゴム：オフ")
 
         Menu {
             Toggle("直線", isOn: $isLineCorrectionEnabled)
@@ -482,24 +486,78 @@ struct NoteEditorView: View {
             }
         }
 
-        if drawingTool == .eraser {
-            Menu {
-                Picker("大きさ", selection: $eraserWidth) {
-                    Text("小さい").tag(10.0)
-                    Text("標準").tag(24.0)
-                    Text("大きい").tag(40.0)
-                    Text("特大").tag(60.0)
+        toolSizeControl(isVertical: isVertical)
+    }
+
+    private var currentToolSize: Binding<Double> {
+        Binding(
+            get: { drawingTool == .eraser ? eraserWidth : drawingWidth },
+            set: { value in
+                if drawingTool == .eraser {
+                    eraserWidth = value
+                } else {
+                    drawingWidth = value
                 }
-            } label: { Image(systemName: "lineweight").frame(width: 28, height: 28) }
+            }
+        )
+    }
+
+    private var currentToolSizeRange: ClosedRange<Double> {
+        drawingTool == .eraser ? 6...72 : 1...20
+    }
+
+    private var currentToolSizeLabel: String {
+        drawingTool == .eraser ? "消しゴムの大きさ" : "ペンの太さ"
+    }
+
+    private var currentToolSizeValue: Double {
+        drawingTool == .eraser ? eraserWidth : drawingWidth
+    }
+
+    @ViewBuilder
+    private func toolSizeControl(isVertical: Bool) -> some View {
+        if isVertical {
+            Button {
+                showsToolSizePopover.toggle()
+            } label: {
+                Image(systemName: "lineweight")
+                    .frame(width: 28, height: 28)
+                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+            }
+            .popover(isPresented: $showsToolSizePopover) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text(currentToolSizeLabel)
+                            .font(.headline)
+                        Spacer()
+                        Text("\(Int(currentToolSizeValue.rounded()))")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: currentToolSize, in: currentToolSizeRange, step: 1)
+                }
+                .padding(18)
+                .frame(width: 280)
+            }
+            .accessibilityLabel(currentToolSizeLabel)
+            .accessibilityValue("\(Int(currentToolSizeValue.rounded()))")
         } else {
-            Menu {
-                Picker("太さ", selection: $drawingWidth) {
-                    Text("細い").tag(2.0)
-                    Text("標準").tag(4.0)
-                    Text("太い").tag(8.0)
-                    Text("極太").tag(14.0)
-                }
-            } label: { Image(systemName: "lineweight").frame(width: 28, height: 28) }
+            HStack(spacing: 8) {
+                Image(systemName: "lineweight")
+                    .foregroundStyle(.secondary)
+                Slider(value: currentToolSize, in: currentToolSizeRange, step: 1)
+                    .frame(width: 118)
+                Text("\(Int(currentToolSizeValue.rounded()))")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, alignment: .trailing)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 36)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(currentToolSizeLabel)
+            .accessibilityValue("\(Int(currentToolSizeValue.rounded()))")
         }
     }
 
