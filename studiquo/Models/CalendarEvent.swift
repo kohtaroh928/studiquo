@@ -12,6 +12,9 @@ final class CalendarEvent {
     var externalID: String?
     var externalSource: String?
     var externalSourceName: String?
+    var notificationID: String?
+    var reminderMinutesBefore: Int
+    var notificationsEnabled: Bool
 
     init(
         title: String,
@@ -21,7 +24,10 @@ final class CalendarEvent {
         notes: String = "",
         externalID: String? = nil,
         externalSource: String? = nil,
-        externalSourceName: String? = nil
+        externalSourceName: String? = nil,
+        notificationID: String? = nil,
+        reminderMinutesBefore: Int = 30,
+        notificationsEnabled: Bool = true
     ) {
         self.title = title
         self.startDate = startDate
@@ -32,6 +38,9 @@ final class CalendarEvent {
         self.externalID = externalID
         self.externalSource = externalSource
         self.externalSourceName = externalSourceName
+        self.notificationID = notificationID
+        self.reminderMinutesBefore = reminderMinutesBefore
+        self.notificationsEnabled = notificationsEnabled
     }
 
     var kind: CalendarEventKind {

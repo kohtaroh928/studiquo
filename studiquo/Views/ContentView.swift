@@ -1316,7 +1316,7 @@ struct ContentView: View {
                 guard let title = action.title,
                       let startDate = action.startDate,
                       let endDate = action.endDate else { continue }
-                modelContext.insert(CalendarEvent(
+                let event = CalendarEvent(
                     title: title,
                     startDate: startDate,
                     endDate: endDate,
@@ -1324,7 +1324,9 @@ struct ContentView: View {
                     notes: action.notes ?? "",
                     externalSource: "mcp",
                     externalSourceName: "AI・MCP"
-                ))
+                )
+                modelContext.insert(event)
+                CalendarNotificationScheduler.schedule(for: event)
                 appliedCount += 1
             default:
                 continue
