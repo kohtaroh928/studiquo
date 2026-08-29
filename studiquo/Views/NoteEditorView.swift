@@ -186,6 +186,14 @@ struct NoteEditorView: View {
                     sharedDrawingToolbar(in: geometry.size)
                 }
 
+                if isAdjustingToolSize {
+                    toolSizePreview
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
+                        .zIndex(2500)
+                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                }
+
                 if !recognizedSelectionDragText.isEmpty {
                     recognizedSelectionDragChip
                         .padding(.top, 12)
@@ -547,6 +555,26 @@ struct NoteEditorView: View {
         drawingTool == .eraser ? eraserWidth : drawingWidth
     }
 
+    /// Shown centered over the page while the size slider is being dragged,
+    /// scaling with it, so the number on the slider translates into an
+    /// actual sense of how thick the pen or how big the eraser will be.
+    private var toolSizePreview: some View {
+        let diameter = max(currentToolSizeValue, 6)
+        return VStack(spacing: 10) {
+            Circle()
+                .fill(drawingTool == .eraser ? Color(.systemGray3) : Color(hex: drawingColorHex))
+                .frame(width: diameter, height: diameter)
+                .overlay(Circle().strokeBorder(Color.primary.opacity(0.25), lineWidth: 1))
+                .frame(width: 90, height: 90)
+            Text("\(Int(currentToolSizeValue.rounded()))")
+                .font(.title3.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+    }
+
     @ViewBuilder
     private func toolSizeControl(isVertical: Bool) -> some View {
         if isVertical {
@@ -568,7 +596,7 @@ struct NoteEditorView: View {
                             .foregroundStyle(.secondary)
                     }
                     Slider(value: currentToolSize, in: currentToolSizeRange, step: 1) { editing in
-                        isAdjustingToolSize = editing
+                        withAnimation(.easeOut(duration: 0.15)) { isAdjustingToolSize = editing }
                     }
                 }
                 .padding(18)
@@ -581,7 +609,7 @@ struct NoteEditorView: View {
                 Image(systemName: "lineweight")
                     .foregroundStyle(.secondary)
                 Slider(value: currentToolSize, in: currentToolSizeRange, step: 1) { editing in
-                    isAdjustingToolSize = editing
+                    withAnimation(.easeOut(duration: 0.15)) { isAdjustingToolSize = editing }
                 }
                     .frame(width: 118)
                 Text("\(Int(currentToolSizeValue.rounded()))")
@@ -1143,6 +1171,14 @@ struct NoteEditorView: View {
 
                 Menu {
                     Button("1画面", systemImage: "rectangle") { splitMode = .single }
+                    Button("左右に2分割", systemImage: "rectangle.split.2x1") {
+                        prepareSplit(.horizontal)
+                    }
+                    .disabled(isPortraitLayout)
+                    Button("上下に2分割", systemImage: "rectangle.split.1x2") {
+                        prepareSplit(.vertical)
+                    }
+                    Divider()
                     Button("Google検索と2分割", systemImage: "globe") {
                         openWebSplit(title: "Google検索", homeURL: "https://www.google.com")
                     }
@@ -1153,13 +1189,25 @@ struct NoteEditorView: View {
 
                 if splitMode != .single {
                     Menu {
-                        ForEach(notebooks) { candidate in
-                            Button(candidate.title) {
-                                secondaryNotebook = candidate
-                                secondaryFlashcardDeck = nil
-                                secondaryShowsWeb = false
-                                secondaryShowsAIChat = false
-                                secondaryPageIndex = 0
+                        Menu("ノート・PDF") {
+                            ForEach(notebooks) { candidate in
+                                Button(candidate.title) {
+                                    secondaryNotebook = candidate
+                                    secondaryFlashcardDeck = nil
+                                    secondaryShowsWeb = false
+                                    secondaryShowsAIChat = false
+                                    secondaryPageIndex = 0
+                                }
+                            }
+                        }
+                        Menu("暗記カード") {
+                            ForEach(flashcardDecks) { deck in
+                                Button(deck.title) {
+                                    secondaryFlashcardDeck = deck
+                                    secondaryNotebook = nil
+                                    secondaryShowsWeb = false
+                                    secondaryShowsAIChat = false
+                                }
                             }
                         }
                         Button("白紙ノートを作る", systemImage: "square.and.pencil") {
