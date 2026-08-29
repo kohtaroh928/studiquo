@@ -1,5 +1,27 @@
 import UIKit
 
+private extension Notification.Name {
+    static let studiquoInkSelectionTransfer = Notification.Name("StudiquoInkSelectionTransfer")
+}
+
+/// Broadcast when a lasso selection is dropped outside the canvas it was
+/// drawn on. Every `InkCanvasView` on screen — both split panes — observes
+/// this, and whichever one's bounds contain the drop point claims it by
+/// setting `wasAccepted`; the source canvas checks that flag afterward to
+/// know whether to actually remove the strokes it sent.
+private final class InkSelectionTransfer {
+    let drawing: InkDrawing
+    let screenPoint: CGPoint
+    let screenSize: CGSize
+    var wasAccepted = false
+
+    init(drawing: InkDrawing, screenPoint: CGPoint, screenSize: CGSize) {
+        self.drawing = drawing
+        self.screenPoint = screenPoint
+        self.screenSize = screenSize
+    }
+}
+
 /// A from-scratch drawing surface: this app's own engine, replacing
 /// PencilKit for the pen tool.
 ///
@@ -209,7 +231,15 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         layer.addSublayer(eraserCursorLayer)
         addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(handleEraserHover(_:))))
         addInteraction(UIDragInteraction(delegate: self))
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(receiveInkSelectionTransfer(_:)),
+            name: .studiquoInkSelectionTransfer,
+            object: nil
+        )
     }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -423,6 +453,19 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         if selectionDragStart != nil {
             if isSelectionOutsideCanvas {
                 let screenPoint = convert(location, to: nil)
+                let preview = selectionPreview()
+                if let preview {
+                    let transfer = InkSelectionTransfer(
+                        drawing: InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) }),
+                        screenPoint: screenPoint,
+                        screenSize: preview.screenSize
+                    )
+                    NotificationCenter.default.post(name: .studiquoInkSelectionTransfer, object: transfer)
+                    if transfer.wasAccepted {
+                        drawing.strokes.removeAll { selectedStrokeIDs.contains($0.id) }
+                        rebuildCommittedLayers()
+                    }
+                }
                 onSelectionDragMoved?(nil, nil, nil)
                 if !selectionDragText.isEmpty {
                     onSelectionDropped?(selectionDragText, screenPoint)
@@ -506,7 +549,16 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     private func clearLassoSelection() {
         let hadSelection = !selectedStrokeIDs.isEmpty
         withoutImplicitAnimations {
-            for id in selectedStrokeIDs { strokeLayers[id]?.setAffineTransform(.identity) }
+            // Dragging outside the canvas hides these layers (see
+            // `moveLasso`) so the ghost preview reads as "lifted off the
+            // page." If the drop lands nowhere that accepts it, that hide
+            // must still be undone here — otherwise the strokes stay
+            // invisible (though still present in `drawing`) until something
+            // else forces a full relayout.
+            for id in selectedStrokeIDs {
+                strokeLayers[id]?.setAffineTransform(.identity)
+                strokeLayers[id]?.isHidden = false
+            }
             selectionLayer.setAffineTransform(.identity)
             selectionLayer.path = nil
         }
@@ -517,6 +569,58 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         selectionDragOffset = .zero
         isSelectionOutsideCanvas = false
         if hadSelection { onSelectionChanged?(nil) }
+    }
+
+    /// Fires on every `InkCanvasView` when a lasso selection is dropped
+    /// outside its source canvas — this one claims it only if the drop point
+    /// actually lands inside its own bounds, converting the strokes' scale
+    /// and position from the source's coordinate space into its own so the
+    /// drawing lands where the ghost preview was released, not where it
+    /// happens to fall in raw source coordinates.
+    @objc private func receiveInkSelectionTransfer(_ notification: Notification) {
+        guard let transfer = notification.object as? InkSelectionTransfer,
+              !transfer.wasAccepted,
+              window != nil else { return }
+        let localCenter = convert(transfer.screenPoint, from: nil)
+        guard bounds.contains(localCenter),
+              let first = transfer.drawing.strokes.first else { return }
+
+        let sourceBounds = transfer.drawing.strokes.dropFirst().reduce(first.bounds) {
+            $0.union($1.bounds)
+        }
+        guard sourceBounds.width > 0, sourceBounds.height > 0 else { return }
+        let screenTopLeft = CGPoint(
+            x: transfer.screenPoint.x - transfer.screenSize.width / 2,
+            y: transfer.screenPoint.y - transfer.screenSize.height / 2
+        )
+        let screenBottomRight = CGPoint(
+            x: transfer.screenPoint.x + transfer.screenSize.width / 2,
+            y: transfer.screenPoint.y + transfer.screenSize.height / 2
+        )
+        let localTopLeft = convert(screenTopLeft, from: nil)
+        let localBottomRight = convert(screenBottomRight, from: nil)
+        let scaleX = abs(localBottomRight.x - localTopLeft.x) / sourceBounds.width
+        let scaleY = abs(localBottomRight.y - localTopLeft.y) / sourceBounds.height
+        let sourceCenter = CGPoint(x: sourceBounds.midX, y: sourceBounds.midY)
+        let widthScale = max(0.01, (scaleX + scaleY) / 2)
+
+        let transferred = transfer.drawing.strokes.map { stroke -> InkStroke in
+            var copy = stroke
+            copy.id = UUID()
+            copy.width *= widthScale
+            copy.points = stroke.points.map { point in
+                var moved = point
+                moved.location = CGPoint(
+                    x: localCenter.x + (point.location.x - sourceCenter.x) * scaleX,
+                    y: localCenter.y + (point.location.y - sourceCenter.y) * scaleY
+                )
+                return moved
+            }
+            return copy
+        }
+        drawing.strokes.append(contentsOf: transferred)
+        rebuildCommittedLayers()
+        transfer.wasAccepted = true
     }
 
     private func selectionPreview() -> (image: UIImage, screenSize: CGSize)? {
