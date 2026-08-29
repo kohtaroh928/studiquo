@@ -934,10 +934,10 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         // scribble erases even when the hold timer already locked a shape
         // mid-stroke. A scribble that loops back near its own start is still
         // a scribble, not a circle someone drew fast.
-        if !isHighlighter, isScratchOutEnabled, isScribble(rawStroke) {
+        if !isHighlighter, isScratchOutEnabled {
             let hit = drawing.strokes.filter { strokeIsCoveredBy($0, scribble: rawStroke) }
             GestureDiagnostics.scratchOutRemoval(candidates: drawing.strokes.count, removed: hit.count)
-            if !hit.isEmpty {
+            if !hit.isEmpty, isScribble(rawStroke) {
                 let hitIDs = Set(hit.map(\.id))
                 drawing.strokes.removeAll { hitIDs.contains($0.id) }
                 withoutImplicitAnimations { removeCommittedLayers(ids: hitIDs) }
@@ -1309,14 +1309,15 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     // MARK: Scribble-to-erase
 
-    /// A deliberate scribble doubles back over roughly the same small area
-    /// many times, so its path length is a large multiple of that area's
-    /// diagonal. Ordinary handwriting — even a looped character — traces its
-    /// shape once and has a much lower ratio.
+    /// A deliberate scratch-out gesture is messy, compact ink drawn over an
+    /// existing stroke. It might be a zig-zag, a tight circular scribble, or
+    /// a small back-and-forth hatch, so don't rely on just one signal.
     private func isScribble(_ stroke: InkStroke) -> Bool {
         let bounds = stroke.bounds
-        guard bounds.width >= 8, bounds.height >= 8, stroke.points.count >= 8 else { return false }
-        let diagonal = hypot(bounds.width, bounds.height)
+        guard max(bounds.width, bounds.height) >= 10,
+              stroke.points.count >= 6,
+              stroke.pathLength >= 28 else { return false }
+        let diagonal = max(hypot(bounds.width, bounds.height), 1)
         guard diagonal > 0 else { return false }
         let ratio = stroke.pathLength / diagonal
 
@@ -1332,16 +1333,19 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         for point in points.dropFirst() {
             let vector = CGPoint(x: point.x - anchor.x, y: point.y - anchor.y)
             let length = hypot(vector.x, vector.y)
-            guard length >= 6 else { continue }
+            guard length >= 4 else { continue }
             if let previous = previousVector {
                 let previousLength = hypot(previous.x, previous.y)
                 let dot = (previous.x * vector.x + previous.y * vector.y) / max(previousLength * length, 0.001)
-                if dot < -0.05 { turns += 1 }
+                if dot < 0.15 { turns += 1 }
             }
             previousVector = vector
             anchor = point
         }
-        let qualifies = turns >= 2 && ratio >= 1.7 && stroke.pathLength >= 34
+        let selfIntersections = Self.selfIntersectionCount(points, limit: 3)
+        let qualifies = (turns >= 2 && ratio >= 1.25)
+            || ratio >= 2.0
+            || selfIntersections >= 1
         GestureDiagnostics.scratchOutCheck(points: stroke.points.count, turns: turns, lengthRatio: ratio, qualifies: qualifies)
         return qualifies
     }
@@ -1362,6 +1366,32 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         return samples.contains { sample in
             Self.distance(from: sample, to: scribblePoints) <= radius
         }
+    }
+
+    private static func selfIntersectionCount(_ points: [CGPoint], limit: Int) -> Int {
+        guard points.count >= 5 else { return 0 }
+        var count = 0
+        let segments = Array(zip(points, points.dropFirst()))
+        for firstIndex in segments.indices {
+            let first = segments[firstIndex]
+            for secondIndex in segments.indices.dropFirst(firstIndex + 2) {
+                if firstIndex == 0 && secondIndex == segments.count - 1 { continue }
+                let second = segments[secondIndex]
+                if segmentsIntersect(first.0, first.1, second.0, second.1) {
+                    count += 1
+                    if count >= limit { return count }
+                }
+            }
+        }
+        return count
+    }
+
+    private static func segmentsIntersect(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint, _ d: CGPoint) -> Bool {
+        let denominator = (d.y - c.y) * (b.x - a.x) - (d.x - c.x) * (b.y - a.y)
+        guard abs(denominator) > 0.001 else { return false }
+        let ua = ((d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x)) / denominator
+        let ub = ((b.x - a.x) * (a.y - c.y) - (b.y - a.y) * (a.x - c.x)) / denominator
+        return ua > 0.02 && ua < 0.98 && ub > 0.02 && ub < 0.98
     }
 
     // MARK: Force
