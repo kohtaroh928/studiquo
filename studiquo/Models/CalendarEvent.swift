@@ -9,14 +9,29 @@ final class CalendarEvent {
     var kindRawValue: String
     var notes: String
     var createdAt: Date
+    var externalID: String?
+    var externalSource: String?
+    var externalSourceName: String?
 
-    init(title: String, startDate: Date, endDate: Date, kind: CalendarEventKind, notes: String = "") {
+    init(
+        title: String,
+        startDate: Date,
+        endDate: Date,
+        kind: CalendarEventKind,
+        notes: String = "",
+        externalID: String? = nil,
+        externalSource: String? = nil,
+        externalSourceName: String? = nil
+    ) {
         self.title = title
         self.startDate = startDate
         self.endDate = endDate
         self.kindRawValue = kind.rawValue
         self.notes = notes
         self.createdAt = .now
+        self.externalID = externalID
+        self.externalSource = externalSource
+        self.externalSourceName = externalSourceName
     }
 
     var kind: CalendarEventKind {

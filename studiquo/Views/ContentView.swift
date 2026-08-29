@@ -7,10 +7,13 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var allNotebooks: [Notebook]
     @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
+    @Query(sort: \CalendarEvent.startDate) private var calendarEvents: [CalendarEvent]
     @AppStorage("libraryFolderNames") private var folderNamesStorage = ""
     @AppStorage("libraryFolderCreatedAt") private var folderCreatedAtStorage = "{}"
     @AppStorage("favoriteFolderPaths") private var favoriteFolderPathsStorage = ""
     @AppStorage("notebookLibraryMetadataVersion") private var notebookLibraryMetadataVersion = 0
+    @AppStorage("mcpCloudURL") private var mcpCloudURL = "https://studiquo-mcp.studiquo-mcp-server.workers.dev"
+    @AppStorage("mcpCloudToken") private var mcpCloudToken = ""
 
     @State private var selectedNotebook: Notebook?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -42,6 +45,9 @@ struct ContentView: View {
     @State private var isShowingNewFlashcardDeckAlert = false
     @State private var newFlashcardDeckName = ""
     @State private var homeSection: HomeSection = .notes
+    @State private var showsMCPIntegration = false
+    @State private var isMCPSyncing = false
+    @State private var mcpStatus = ""
 
     private enum HomeSection: String, CaseIterable, Identifiable {
         case notes = "ノート"
@@ -202,6 +208,15 @@ struct ContentView: View {
                             .buttonStyle(.plain)
                         }
                     }
+                    Section("連携") {
+                        Button {
+                            ensureMCPToken()
+                            showsMCPIntegration = true
+                        } label: {
+                            Label("AI・MCP連携", systemImage: "sparkles")
+                        }
+                        .buttonStyle(.plain)
+                    }
                     Section {
                         ForEach(visibleFolderPaths, id: \.self) { folder in
                             Button {
@@ -316,6 +331,9 @@ struct ContentView: View {
         .sheet(item: $activeFlashcardDeck) { deck in
             FlashcardDeckView(deck: deck)
         }
+        .sheet(isPresented: $showsMCPIntegration) {
+            mcpIntegrationSheet
+        }
         .onChange(of: libraryMode) { _, _ in
             if selectedFolder == nil { selectedNotebook = nil }
             searchText = ""
@@ -384,6 +402,67 @@ struct ContentView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 8)
             .background(.bar)
+        }
+    }
+
+    private var mcpIntegrationSheet: some View {
+        NavigationStack {
+            Form {
+                Section("MCPクラウド連携") {
+                    Text("Studiquoのノート、OCRテキスト、暗記カード、カレンダーをAIから参照できるように同期します。AIが作った暗記カードや予定は、同期時にStudiquoへ取り込めます。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    TextField("MCPサーバーURL", text: $mcpCloudURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("接続トークン", text: $mcpCloudToken)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    HStack {
+                        Button {
+                            UIPasteboard.general.string = mcpCloudToken
+                            mcpStatus = "接続トークンをコピーしました。AIの接続画面で貼り付けてください。"
+                        } label: {
+                            Label("トークンをコピー", systemImage: "doc.on.doc")
+                        }
+                        Spacer()
+                        Button("再生成") {
+                            mcpCloudToken = Self.makeMCPToken()
+                            mcpStatus = "新しい接続トークンを作成しました。古いトークンでは接続できなくなります。"
+                        }
+                    }
+                }
+
+                Section {
+                    Button {
+                        Task { await syncMCPCloud() }
+                    } label: {
+                        if isMCPSyncing {
+                            Label("同期中...", systemImage: "arrow.triangle.2.circlepath")
+                        } else {
+                            Label("今すぐ同期", systemImage: "icloud.and.arrow.up")
+                        }
+                    }
+                    .disabled(isMCPSyncing || mcpCloudURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || mcpCloudToken.count < 32)
+                } footer: {
+                    Text("Claude・ChatGPTなどにはMCPサーバーURLを登録します。認証画面で、このトークンを入力するとStudiquoの同期済みデータにだけアクセスできます。")
+                }
+
+                if !mcpStatus.isEmpty {
+                    Section("状態") {
+                        Text(mcpStatus)
+                            .font(.footnote)
+                            .foregroundStyle(mcpStatus.hasPrefix("同期できません") ? .red : .secondary)
+                    }
+                }
+            }
+            .navigationTitle("AI・MCP連携")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("閉じる") { showsMCPIntegration = false }
+                }
+            }
+            .onAppear { ensureMCPToken() }
         }
     }
 
@@ -1092,6 +1171,168 @@ struct ContentView: View {
         selectedNotebook = nil
     }
 
+    private func ensureMCPToken() {
+        if mcpCloudToken.count < 32 {
+            mcpCloudToken = Self.makeMCPToken()
+        }
+    }
+
+    private static func makeMCPToken() -> String {
+        (0..<4).map { _ in UUID().uuidString.replacingOccurrences(of: "-", with: "") }.joined()
+    }
+
+    @MainActor
+    private func syncMCPCloud() async {
+        ensureMCPToken()
+        isMCPSyncing = true
+        mcpStatus = "StudiquoのデータをAI連携用に同期しています..."
+        defer { isMCPSyncing = false }
+
+        do {
+            let baseURL = try normalizedMCPBaseURL()
+            let snapshot = makeMCPSnapshot()
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let body = try encoder.encode(snapshot)
+
+            var uploadRequest = URLRequest(url: baseURL.appending(path: "api/snapshot"))
+            uploadRequest.httpMethod = "PUT"
+            uploadRequest.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
+            uploadRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            uploadRequest.httpBody = body
+
+            let (_, uploadResponse) = try await URLSession.shared.data(for: uploadRequest)
+            if let http = uploadResponse as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                throw MCPIntegrationError.server("サーバーが同期を受け付けませんでした（\(http.statusCode)）。")
+            }
+
+            let actions = try await fetchMCPActions(from: baseURL)
+            let appliedCount = applyMCPActions(actions)
+            if appliedCount > 0 {
+                try modelContext.save()
+                try await clearMCPActions(on: baseURL)
+            }
+            mcpStatus = appliedCount == 0
+                ? "同期しました。新しいAI変更はありません。"
+                : "同期し、\(appliedCount)件のAI変更をStudiquoに反映しました。"
+        } catch {
+            mcpStatus = "同期できませんでした：\(error.localizedDescription)"
+        }
+    }
+
+    private func normalizedMCPBaseURL() throws -> URL {
+        var value = mcpCloudURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !value.contains("://") { value = "https://\(value)" }
+        guard let url = URL(string: value) else { throw MCPIntegrationError.invalidURL }
+        return url
+    }
+
+    private func makeMCPSnapshot() -> MCPExportPayload {
+        MCPExportPayload(
+            version: 1,
+            exportedAt: .now,
+            notebooks: allNotebooks
+                .filter { !$0.isTrashed }
+                .map { notebook in
+                    MCPNotebook(
+                        id: modelID(notebook),
+                        title: notebook.title,
+                        tags: notebook.tags,
+                        pages: notebook.sortedPages.map { page in
+                            MCPPage(
+                                id: modelID(page),
+                                title: page.title.isEmpty ? "ページ \(page.order + 1)" : page.title,
+                                recognizedText: page.recognizedText,
+                                elements: page.elements.map { element in
+                                    MCPPageElement(kind: element.kind.rawValue, text: element.text)
+                                }
+                            )
+                        }
+                    )
+                },
+            flashcardDecks: flashcardDecks.map { deck in
+                MCPFlashcardDeck(
+                    id: modelID(deck),
+                    title: deck.title,
+                    cards: deck.sortedCards.map { card in
+                        MCPFlashcard(id: modelID(card), question: card.question, answer: card.answer)
+                    }
+                )
+            },
+            calendarEvents: calendarEvents.map { event in
+                MCPCalendarEvent(
+                    id: modelID(event),
+                    title: event.title,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    kind: event.kind.rawValue,
+                    notes: event.notes,
+                    sourceName: event.externalSourceName
+                )
+            },
+            studyActivities: []
+        )
+    }
+
+    private func modelID(_ model: any PersistentModel) -> String {
+        String(describing: model.persistentModelID)
+    }
+
+    private func fetchMCPActions(from baseURL: URL) async throws -> [MCPQueuedAction] {
+        var request = URLRequest(url: baseURL.appending(path: "api/actions"))
+        request.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw MCPIntegrationError.server("AI変更を確認できませんでした（\(http.statusCode)）。")
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode([MCPQueuedAction].self, from: data)
+    }
+
+    private func clearMCPActions(on baseURL: URL) async throws {
+        var request = URLRequest(url: baseURL.appending(path: "api/actions"))
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
+        _ = try await URLSession.shared.data(for: request)
+    }
+
+    @discardableResult
+    private func applyMCPActions(_ actions: [MCPQueuedAction]) -> Int {
+        var appliedCount = 0
+        for action in actions {
+            switch action.type {
+            case "create_flashcards":
+                guard let deckTitle = action.deckTitle,
+                      let cards = action.cards,
+                      !cards.isEmpty else { continue }
+                let deck = FlashcardDeck(title: deckTitle)
+                for (index, card) in cards.enumerated() {
+                    deck.cards.append(Flashcard(question: card.question, answer: card.answer, order: index))
+                }
+                modelContext.insert(deck)
+                appliedCount += 1
+            case "add_calendar_event":
+                guard let title = action.title,
+                      let startDate = action.startDate,
+                      let endDate = action.endDate else { continue }
+                modelContext.insert(CalendarEvent(
+                    title: title,
+                    startDate: startDate,
+                    endDate: endDate,
+                    kind: CalendarEventKind(rawValue: action.kind ?? "") ?? .other,
+                    notes: action.notes ?? "",
+                    externalSource: "mcp",
+                    externalSourceName: "AI・MCP"
+                ))
+                appliedCount += 1
+            default:
+                continue
+            }
+        }
+        return appliedCount
+    }
+
     @MainActor
     private func rebuildLibraryMetadataIfNeeded() async {
         let staleNotebooks = allNotebooks.filter { $0.libraryMetadataVersion < 1 }
@@ -1153,6 +1394,93 @@ struct ContentView: View {
             }
         }
     }
+}
+
+private enum MCPIntegrationError: LocalizedError {
+    case invalidURL
+    case server(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            "MCPサーバーURLを確認してください。"
+        case .server(let message):
+            message
+        }
+    }
+}
+
+private struct MCPExportPayload: Encodable {
+    let version: Int
+    let exportedAt: Date
+    let notebooks: [MCPNotebook]
+    let flashcardDecks: [MCPFlashcardDeck]
+    let calendarEvents: [MCPCalendarEvent]
+    let studyActivities: [MCPStudyActivity]
+}
+
+private struct MCPNotebook: Encodable {
+    let id: String
+    let title: String
+    let tags: [String]
+    let pages: [MCPPage]
+}
+
+private struct MCPPage: Encodable {
+    let id: String
+    let title: String
+    let recognizedText: String
+    let elements: [MCPPageElement]
+}
+
+private struct MCPPageElement: Encodable {
+    let kind: String
+    let text: String
+}
+
+private struct MCPFlashcardDeck: Encodable {
+    let id: String
+    let title: String
+    let cards: [MCPFlashcard]
+}
+
+private struct MCPFlashcard: Encodable {
+    let id: String
+    let question: String
+    let answer: String
+}
+
+private struct MCPCalendarEvent: Encodable {
+    let id: String
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let kind: String
+    let notes: String
+    let sourceName: String?
+}
+
+private struct MCPStudyActivity: Encodable {
+    let startedAt: Date
+    let endedAt: Date
+    let correctCount: Int
+    let totalCount: Int
+}
+
+private struct MCPQueuedAction: Decodable {
+    let type: String
+    let deckTitle: String?
+    let cards: [MCPQueuedCard]?
+    let title: String?
+    let startDate: Date?
+    let endDate: Date?
+    let kind: String?
+    let notes: String?
+}
+
+private struct MCPQueuedCard: Decodable {
+    let question: String
+    let answer: String
 }
 
 private struct NotebookRow: View {

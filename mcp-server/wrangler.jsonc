@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "studiquo-mcp",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-29",
+  "kv_namespaces": [
+    {
+      "binding": "STUDIQUO_DATA",
+      "id": "replace-with-production-kv-id",
+      "preview_id": "replace-with-preview-kv-id"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
