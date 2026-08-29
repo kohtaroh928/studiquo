@@ -397,25 +397,39 @@ struct NoteEditorView: View {
 
         return Group {
             if isDrawingToolbarVertical {
-                ScrollView(.vertical) {
-                    VStack(spacing: 8) {
-                        drawingToolbarMoveHandle(isVertical: true, in: size, center: center, barWidth: barWidth)
-                        sharedDrawingToolbarControls(isVertical: true)
+                VStack(spacing: 8) {
+                    ScrollView(.vertical) {
+                        VStack(spacing: 8) {
+                            drawingToolbarMoveHandle(isVertical: true, in: size, center: center, barWidth: barWidth)
+                            sharedDrawingToolbarControls(isVertical: true)
+                        }
+                            .padding(.top, 9)
                     }
-                        .padding(.vertical, 9)
+                    .scrollIndicators(.hidden)
+                    Divider().frame(width: 28, height: 1)
+                    // Fixed outside the ScrollView above: nested inside it, a
+                    // vertical drag on the slider was ambiguous with the
+                    // ScrollView's own pan gesture, so scrolling could win
+                    // and carry the thumb away — or, worse, cancel the
+                    // slider's gesture outright without ever reporting the
+                    // release, leaving the size preview stuck on screen.
+                    toolSizeControl(isVertical: true)
+                        .padding(.bottom, 9)
                 }
-                .scrollIndicators(.hidden)
-                .scrollDisabled(isAdjustingToolSize)
             } else {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        drawingToolbarMoveHandle(isVertical: false, in: size, center: center, barWidth: barWidth)
-                        sharedDrawingToolbarControls(isVertical: false)
+                HStack(spacing: 8) {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            drawingToolbarMoveHandle(isVertical: false, in: size, center: center, barWidth: barWidth)
+                            sharedDrawingToolbarControls(isVertical: false)
+                        }
+                            .padding(.leading, 9)
                     }
-                        .padding(.horizontal, 9)
+                    .scrollIndicators(.hidden)
+                    Divider().frame(width: 1, height: 24)
+                    toolSizeControl(isVertical: false)
+                        .padding(.trailing, 9)
                 }
-                .scrollIndicators(.hidden)
-                .scrollDisabled(isAdjustingToolSize)
             }
         }
         .buttonStyle(.borderless)
@@ -526,8 +540,6 @@ struct NoteEditorView: View {
                     .frame(width: 28, height: 28)
             }
         }
-
-        toolSizeControl(isVertical: isVertical)
     }
 
     private var currentToolSize: Binding<Double> {
