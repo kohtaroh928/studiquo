@@ -2,11 +2,13 @@ import SwiftUI
 import SwiftData
 import Security
 import UIKit
+import UserNotifications
 
 struct CalendarHomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \CalendarEvent.startDate) private var events: [CalendarEvent]
     @State private var selectedDate = Date.now
+    @State private var visibleMonth = Date.now
     @State private var showsNewEvent = false
     @State private var editingEvent: CalendarEvent?
     @State private var showsWasedaConnection = false
@@ -124,9 +126,12 @@ struct CalendarHomeView: View {
 
     private var calendarPanel: some View {
         VStack(spacing: 12) {
-            DatePicker("日付", selection: $selectedDate, displayedComponents: .date)
-                .datePickerStyle(.graphical)
-                .tint(.indigo)
+            StudiquoMonthCalendar(
+                selectedDate: $selectedDate,
+                visibleMonth: $visibleMonth,
+                events: events,
+                colorForKind: color(for:)
+            )
                 .padding(20)
                 .background(.background, in: RoundedRectangle(cornerRadius: 24))
                 .shadow(color: .indigo.opacity(0.10), radius: 14, y: 5)
@@ -179,8 +184,11 @@ struct CalendarHomeView: View {
                     event.kind = imported.kind
                     event.notes = imported.notes
                     event.externalSourceName = WasedaMoodleCalendar.sourceName
+                    event.notificationsEnabled = true
+                    if event.reminderMinutesBefore == 0 { event.reminderMinutesBefore = 30 }
+                    CalendarNotificationScheduler.schedule(for: event)
                 } else {
-                    modelContext.insert(CalendarEvent(
+                    let event = CalendarEvent(
                         title: imported.title,
                         startDate: imported.startDate,
                         endDate: imported.endDate,
@@ -189,7 +197,9 @@ struct CalendarHomeView: View {
                         externalID: imported.id,
                         externalSource: WasedaMoodleCalendar.sourceID,
                         externalSourceName: WasedaMoodleCalendar.sourceName
-                    ))
+                    )
+                    modelContext.insert(event)
+                    CalendarNotificationScheduler.schedule(for: event)
                 }
             }
 
@@ -248,13 +258,21 @@ struct CalendarHomeView: View {
                                             .font(.caption2.weight(.semibold))
                                             .foregroundStyle(.secondary)
                                     }
+                                    if event.notificationsEnabled {
+                                        Label(reminderLabel(for: event), systemImage: "bell.fill")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                                 Spacer()
                             }
                         }
                         .buttonStyle(.plain)
                         .swipeActions {
-                            Button("削除", role: .destructive) { modelContext.delete(event) }
+                            Button("削除", role: .destructive) {
+                                CalendarNotificationScheduler.cancel(for: event)
+                                modelContext.delete(event)
+                            }
                         }
                     }
                 }
@@ -271,6 +289,13 @@ struct CalendarHomeView: View {
         case .other: .orange
         }
     }
+
+    private func reminderLabel(for event: CalendarEvent) -> String {
+        if event.reminderMinutesBefore == 0 { return "開始時刻に通知" }
+        if event.reminderMinutesBefore >= 1440 { return "\(event.reminderMinutesBefore / 1440)日前に通知" }
+        if event.reminderMinutesBefore >= 60 { return "\(event.reminderMinutesBefore / 60)時間前に通知" }
+        return "\(event.reminderMinutesBefore)分前に通知"
+    }
 }
 
 private struct CalendarEventEditor: View {
@@ -282,6 +307,8 @@ private struct CalendarEventEditor: View {
     @State private var startDate: Date
     @State private var endDate: Date
     @State private var notes: String
+    @State private var notificationsEnabled: Bool
+    @State private var reminderMinutesBefore: Int
 
     init(event: CalendarEvent?, initialDate: Date) {
         self.event = event
@@ -292,6 +319,8 @@ private struct CalendarEventEditor: View {
         _startDate = State(initialValue: event?.startDate ?? defaultStart)
         _endDate = State(initialValue: event?.endDate ?? defaultStart.addingTimeInterval(3600))
         _notes = State(initialValue: event?.notes ?? "")
+        _notificationsEnabled = State(initialValue: event?.notificationsEnabled ?? true)
+        _reminderMinutesBefore = State(initialValue: event?.reminderMinutesBefore ?? 30)
     }
 
     var body: some View {
@@ -308,6 +337,20 @@ private struct CalendarEventEditor: View {
                 Section("日時") {
                     DatePicker("開始", selection: $startDate)
                     DatePicker("終了", selection: $endDate, in: startDate...)
+                }
+                Section {
+                    Toggle("予定を通知", isOn: $notificationsEnabled)
+                    if notificationsEnabled {
+                        Picker("通知タイミング", selection: $reminderMinutesBefore) {
+                            ForEach(EventReminderOption.allCases) { option in
+                                Text(option.title).tag(option.minutesBefore)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("通知")
+                } footer: {
+                    Text("通知はiPadの通知許可が必要です。保存時に許可を確認します。")
                 }
                 Section("メモ") {
                     TextField("教室、範囲、持ち物など", text: $notes, axis: .vertical)
@@ -336,17 +379,219 @@ private struct CalendarEventEditor: View {
             event.startDate = startDate
             event.endDate = endDate
             event.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+            event.notificationsEnabled = notificationsEnabled
+            event.reminderMinutesBefore = reminderMinutesBefore
+            CalendarNotificationScheduler.schedule(for: event)
         } else {
-            modelContext.insert(CalendarEvent(
+            let newEvent = CalendarEvent(
                 title: cleanTitle,
                 startDate: startDate,
                 endDate: endDate,
                 kind: kind,
-                notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
-            ))
+                notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
+                reminderMinutesBefore: reminderMinutesBefore,
+                notificationsEnabled: notificationsEnabled
+            )
+            modelContext.insert(newEvent)
+            CalendarNotificationScheduler.schedule(for: newEvent)
         }
         try? modelContext.save()
         dismiss()
+    }
+}
+
+private struct StudiquoMonthCalendar: View {
+    @Binding var selectedDate: Date
+    @Binding var visibleMonth: Date
+    let events: [CalendarEvent]
+    let colorForKind: (CalendarEventKind) -> Color
+
+    private let calendar = Calendar.current
+    private let weekdaySymbols = Calendar.current.shortStandaloneWeekdaySymbols
+
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Button {
+                    moveMonth(by: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .frame(width: 34, height: 34)
+                }
+
+                Spacer()
+
+                Text(monthTitle)
+                    .font(.title3.bold())
+
+                Spacer()
+
+                Button {
+                    moveMonth(by: 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .frame(width: 34, height: 34)
+                }
+            }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 8) {
+                ForEach(weekdaySymbols, id: \.self) { symbol in
+                    Text(symbol)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+
+                ForEach(monthDays, id: \.self) { date in
+                    if let date {
+                        dayButton(date)
+                    } else {
+                        Color.clear
+                            .frame(height: 46)
+                    }
+                }
+            }
+
+            Button {
+                selectedDate = .now
+                visibleMonth = .now
+            } label: {
+                Label("今日へ戻る", systemImage: "calendar")
+                    .font(.caption.weight(.semibold))
+            }
+        }
+    }
+
+    private var monthTitle: String {
+        visibleMonth.formatted(.dateTime.year().month(.wide))
+    }
+
+    private var monthDays: [Date?] {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: visibleMonth),
+              let dayRange = calendar.range(of: .day, in: .month, for: visibleMonth) else { return [] }
+
+        let firstWeekday = calendar.component(.weekday, from: monthInterval.start)
+        var days = Array(repeating: Optional<Date>.none, count: max(0, firstWeekday - 1))
+        days += dayRange.compactMap { day in
+            calendar.date(byAdding: .day, value: day - 1, to: monthInterval.start)
+        }.map(Optional.some)
+
+        while days.count % 7 != 0 {
+            days.append(nil)
+        }
+        return days
+    }
+
+    private func events(on date: Date) -> [CalendarEvent] {
+        events.filter { calendar.isDate($0.startDate, inSameDayAs: date) }
+    }
+
+    private func dayButton(_ date: Date) -> some View {
+        let dayEvents = events(on: date)
+        let isSelected = calendar.isDate(date, inSameDayAs: selectedDate)
+        let isToday = calendar.isDateInToday(date)
+
+        return Button {
+            selectedDate = date
+        } label: {
+            VStack(spacing: 4) {
+                Text("\(calendar.component(.day, from: date))")
+                    .font(.subheadline.weight(isSelected || isToday ? .bold : .medium))
+                    .foregroundStyle(isSelected ? .white : (isToday ? Color.accentColor : Color.primary))
+
+                HStack(spacing: 2) {
+                    ForEach(Array(dayEvents.prefix(3).enumerated()), id: \.offset) { _, event in
+                        Circle()
+                            .fill(colorForKind(event.kind))
+                            .frame(width: 5, height: 5)
+                    }
+                }
+                .frame(height: 7)
+            }
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(isSelected ? Color.accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(isToday && !isSelected ? Color.accentColor.opacity(0.7) : Color.clear, lineWidth: 1.5)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(dayAccessibilityLabel(date, events: dayEvents))
+    }
+
+    private func dayAccessibilityLabel(_ date: Date, events: [CalendarEvent]) -> String {
+        let dateText = date.formatted(.dateTime.month().day().weekday(.wide))
+        return events.isEmpty ? "\(dateText)、予定なし" : "\(dateText)、\(events.count)件の予定"
+    }
+
+    private func moveMonth(by value: Int) {
+        visibleMonth = calendar.date(byAdding: .month, value: value, to: visibleMonth) ?? visibleMonth
+    }
+}
+
+private enum EventReminderOption: Int, CaseIterable, Identifiable {
+    case atTime = 0
+    case fiveMinutes = 5
+    case tenMinutes = 10
+    case thirtyMinutes = 30
+    case oneHour = 60
+    case oneDay = 1440
+
+    var id: Int { rawValue }
+    var minutesBefore: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .atTime: "開始時刻"
+        case .fiveMinutes: "5分前"
+        case .tenMinutes: "10分前"
+        case .thirtyMinutes: "30分前"
+        case .oneHour: "1時間前"
+        case .oneDay: "1日前"
+        }
+    }
+}
+
+enum CalendarNotificationScheduler {
+    static func schedule(for event: CalendarEvent) {
+        cancel(for: event)
+        guard event.notificationsEnabled else { return }
+
+        let fireDate = event.startDate.addingTimeInterval(TimeInterval(-event.reminderMinutesBefore * 60))
+        guard fireDate > Date.now else { return }
+
+        let identifier = event.notificationID ?? "calendar-event-\(UUID().uuidString)"
+        event.notificationID = identifier
+        let title = event.title
+        let body = notificationBody(startDate: event.startDate, reminderMinutesBefore: event.reminderMinutesBefore)
+
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            guard granted else { return }
+
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+
+            let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+            UNUserNotificationCenter.current().add(request)
+        }
+    }
+
+    static func cancel(for event: CalendarEvent) {
+        guard let identifier = event.notificationID else { return }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [identifier])
+    }
+
+    private static func notificationBody(startDate: Date, reminderMinutesBefore: Int) -> String {
+        let time = startDate.formatted(date: .omitted, time: .shortened)
+        if reminderMinutesBefore == 0 {
+            return "\(time)から予定が始まります。"
+        }
+        return "\(reminderMinutesBefore)分後（\(time)）に予定があります。"
     }
 }
 
