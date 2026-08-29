@@ -587,6 +587,22 @@ struct NoteEditorView: View {
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
     }
 
+    /// Backstops the slider's own `onEditingChanged`, which on the size
+    /// slider specifically has been seen to skip the closing `false` call —
+    /// leaving the preview circle stuck on screen — for reasons that never
+    /// reproduced under inspection. A `simultaneousGesture` watches the same
+    /// touch independently of whatever the `Slider` does internally, so a
+    /// lift is caught here even when the slider's own callback isn't.
+    private var toolSizeTouchTracker: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { _ in
+                if !isAdjustingToolSize { isAdjustingToolSize = true }
+            }
+            .onEnded { _ in
+                withAnimation(.easeOut(duration: 0.15)) { isAdjustingToolSize = false }
+            }
+    }
+
     @ViewBuilder
     private func toolSizeControl(isVertical: Bool) -> some View {
         if isVertical {
@@ -610,6 +626,7 @@ struct NoteEditorView: View {
                     Slider(value: currentToolSize, in: currentToolSizeRange, step: 1) { editing in
                         withAnimation(.easeOut(duration: 0.15)) { isAdjustingToolSize = editing }
                     }
+                    .simultaneousGesture(toolSizeTouchTracker)
                 }
                 .padding(18)
                 .frame(width: 280)
@@ -623,6 +640,7 @@ struct NoteEditorView: View {
                 Slider(value: currentToolSize, in: currentToolSizeRange, step: 1) { editing in
                     withAnimation(.easeOut(duration: 0.15)) { isAdjustingToolSize = editing }
                 }
+                    .simultaneousGesture(toolSizeTouchTracker)
                     .frame(width: 118)
                 Text("\(Int(currentToolSizeValue.rounded()))")
                     .font(.caption.monospacedDigit())
