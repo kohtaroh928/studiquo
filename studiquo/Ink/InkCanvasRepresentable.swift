@@ -50,6 +50,7 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     var onShapeCommitted: () -> Void = {}
     var onSelectionChanged: (InkDrawing?) -> Void = { _ in }
     var selectionDragText: String = ""
+    var allowsSelectionTransfer: Bool = true
     var onSelectionDragMoved: (UIImage?, CGSize?, CGPoint?) -> Void = { _, _, _ in }
     var onSelectionDropped: (String, CGPoint) -> Void = { _, _ in }
 
@@ -131,6 +132,7 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         view.isLasso = selectedTool == .lasso
         view.pendingShapeKind = pendingShapeKind
         view.selectionDragText = selectionDragText
+        view.allowsSelectionTransfer = allowsSelectionTransfer
         view.isDrawingEnabled = selectedTool == .pen || selectedTool == .highlighter
             || selectedTool == .eraser || selectedTool == .lasso || pendingShapeKind != nil
     }
