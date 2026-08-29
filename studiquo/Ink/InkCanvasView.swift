@@ -101,6 +101,10 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// iPad system drag. Using UIDragInteraction lets the preview leave this
     /// clipped page and cross into the other split pane.
     var selectionDragText = ""
+    /// Turned off when both split panes show the same notebook: moving ink
+    /// from one canvas to the other would take it out of a page and put it
+    /// back into that same page, which has no coherent meaning.
+    var allowsSelectionTransfer = true
 
     private(set) var drawing = InkDrawing() {
         didSet { onDrawingChanged?(drawing) }
@@ -454,7 +458,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             if isSelectionOutsideCanvas {
                 let screenPoint = convert(location, to: nil)
                 let preview = selectionPreview()
-                if let preview {
+                if allowsSelectionTransfer, let preview {
                     let transfer = InkSelectionTransfer(
                         drawing: InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) }),
                         screenPoint: screenPoint,
@@ -578,7 +582,8 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// drawing lands where the ghost preview was released, not where it
     /// happens to fall in raw source coordinates.
     @objc private func receiveInkSelectionTransfer(_ notification: Notification) {
-        guard let transfer = notification.object as? InkSelectionTransfer,
+        guard allowsSelectionTransfer,
+              let transfer = notification.object as? InkSelectionTransfer,
               !transfer.wasAccepted,
               window != nil else { return }
         let localCenter = convert(transfer.screenPoint, from: nil)

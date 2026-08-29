@@ -14,6 +14,26 @@ extension Notification.Name {
     static let studiquoOpenNotebookTab = Notification.Name("StudiquoOpenNotebookTab")
     static let studiquoRecognizedSelection = Notification.Name("StudiquoRecognizedSelection")
     static let studiquoSelectionDropped = Notification.Name("StudiquoSelectionDropped")
+    /// Broadcasts freshly drawn or erased ink so that a second canvas
+    /// showing the *same* page — the split-screen-onto-one-notebook case —
+    /// updates live instead of holding a stale copy until it reloads.
+    static let studiquoDrawingSynced = Notification.Name("StudiquoDrawingSynced")
+}
+
+/// False while both split panes show the same notebook. Dragging a lasso
+/// selection from one canvas to another moves the ink — removing it from the
+/// source and adding it to the destination — which is incoherent when the
+/// two canvases are two views of one notebook, so the transfer is switched
+/// off there. Read by `PageCanvasContainer`, set once by `NoteEditorView`.
+private struct AllowsInkSelectionTransferKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var allowsInkSelectionTransfer: Bool {
+        get { self[AllowsInkSelectionTransferKey.self] }
+        set { self[AllowsInkSelectionTransferKey.self] = newValue }
+    }
 }
 
 struct StudiquoSelectionDrop {
@@ -176,6 +196,7 @@ struct NoteEditorView: View {
                         Divider()
                     }
                     workspace(in: workspaceSize(in: geometry.size))
+                        .environment(\.allowsInkSelectionTransfer, !panesShowSameNotebook)
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
 
@@ -681,6 +702,19 @@ struct NoteEditorView: View {
             .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
             .draggable(recognizedSelectionDragText)
             .accessibilityLabel("認識した文字。暗記カードへドラッグできます")
+    }
+
+    /// Both panes are two views onto one notebook. Ink drawn in either is
+    /// mirrored into the other (see `studiquoDrawingSynced`), so moving a
+    /// lasso selection across is switched off — it would be moving ink out
+    /// of a page and into that same page.
+    private var panesShowSameNotebook: Bool {
+        splitMode != .single
+            && primaryFlashcardDeck == nil
+            && secondaryFlashcardDeck == nil
+            && !secondaryShowsWeb
+            && !secondaryShowsAIChat
+            && secondaryNotebook === displayedPrimaryNotebook
     }
 
     private func sidebarWidth(in size: CGSize) -> CGFloat {
@@ -2776,7 +2810,12 @@ private struct SplitSourcePicker: View {
     @State private var showsNewDeckAlert = false
     @State private var newItemName = ""
 
-    private var available: [Notebook] { notebooks.filter { !$0.isTrashed && $0 !== primaryNotebook } }
+    /// The notebook already open in the primary pane is deliberately kept in
+    /// this list. Opening one notebook in both panes is a supported way to
+    /// work — two pages of it side by side — and ink drawn in either pane is
+    /// mirrored into the other, so excluding it only made that arrangement
+    /// harder to reach.
+    private var available: [Notebook] { notebooks.filter { !$0.isTrashed } }
 
     var body: some View {
         NavigationStack {
@@ -2786,7 +2825,15 @@ private struct SplitSourcePicker: View {
                         Button {
                             onSelectNotebook(notebook)
                         } label: {
-                            Label(notebook.title, systemImage: notebook.containsPDF ? "doc.richtext" : "note.text")
+                            HStack {
+                                Label(notebook.title, systemImage: notebook.containsPDF ? "doc.richtext" : "note.text")
+                                if notebook === primaryNotebook {
+                                    Spacer()
+                                    Text("表示中")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }
                 }
@@ -3665,9 +3712,16 @@ private struct SplitDivider: View {
 struct PageCanvasContainer: View {
     @Bindable var page: NotePage
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.allowsInkSelectionTransfer) private var allowsInkSelectionTransfer
     var usesDarkPageDisplay = false
     @State private var drawing = InkDrawing()
     @State private var hasLoadedDrawing = false
+    /// Distinguishes this canvas from any other canvas showing the same
+    /// page, so a sync broadcast isn't re-applied by the canvas that sent it.
+    @State private var canvasID = UUID()
+    /// Set while applying ink that arrived from the other pane, so the
+    /// change isn't echoed straight back out again.
+    @State private var isApplyingSyncedDrawing = false
     /// Incremented only when this view deliberately swaps `drawing` out, so
     /// InkCanvasRepresentable knows to push it into the canvas. Never bumped
     /// for ink the user just drew — that already lives in the canvas.
@@ -3758,6 +3812,7 @@ struct PageCanvasContainer: View {
                                 recognizeSelection(selection)
                             },
                             selectionDragText: recognizedSelectionText,
+                            allowsSelectionTransfer: allowsInkSelectionTransfer,
                             onSelectionDragMoved: { image, size, point in
                                 NotificationCenter.default.post(
                                     name: Notification.Name("StudiquoSelectionDragMoved"),
@@ -3818,12 +3873,29 @@ struct PageCanvasContainer: View {
         .onChange(of: page.backgroundImageData) { _, _ in updateBackgroundImageIfNeeded() }
         .onChange(of: drawing) { oldValue, newValue in
             guard hasLoadedDrawing else { return }
-            if isApplyingHistory {
+            if isApplyingSyncedDrawing {
+                // Recorded for undo like any other change, so a second
+                // canvas on this page keeps a history parallel to the one
+                // that drew it — both answer the same undo notification and
+                // must land on the same state — but deliberately not
+                // re-broadcast, which would bounce it back and forth.
+                isApplyingSyncedDrawing = false
+                if oldValue != newValue {
+                    undoHistory.append(oldValue)
+                    if undoHistory.count > 80 { undoHistory.removeFirst() }
+                    redoHistory.removeAll()
+                }
+            } else if isApplyingHistory {
                 isApplyingHistory = false
             } else if oldValue != newValue {
                 undoHistory.append(oldValue)
                 if undoHistory.count > 80 { undoHistory.removeFirst() }
                 redoHistory.removeAll()
+                NotificationCenter.default.post(
+                    name: .studiquoDrawingSynced,
+                    object: page,
+                    userInfo: ["drawing": newValue, "sender": canvasID]
+                )
             }
             // An erase must never be visibly undone by anything but the Undo
             // button. Flushing it to `page.drawingData` immediately (instead
@@ -3840,6 +3912,19 @@ struct PageCanvasContainer: View {
         .onReceive(NotificationCenter.default.publisher(for: .studiquoRedoDrawing)) { notification in
             guard let targetPage = notification.object as? NotePage, targetPage === page else { return }
             redoDrawing()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .studiquoDrawingSynced)) { notification in
+            guard hasLoadedDrawing,
+                  let targetPage = notification.object as? NotePage, targetPage === page,
+                  let sender = notification.userInfo?["sender"] as? UUID, sender != canvasID,
+                  let synced = notification.userInfo?["drawing"] as? InkDrawing,
+                  synced != drawing else { return }
+            isApplyingSyncedDrawing = true
+            drawing = synced
+            // Bumped so InkCanvasRepresentable actually pushes this into the
+            // canvas: ink normally travels canvas → state, and only a
+            // version change sends it back the other way.
+            drawingVersion += 1
         }
     }
 
