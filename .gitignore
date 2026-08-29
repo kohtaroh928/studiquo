@@ -20,3 +20,4 @@ xcuserdata/
 *.MP4
 *.mov
 *.mp4
+.env
