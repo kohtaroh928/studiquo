@@ -50,13 +50,14 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     var isRectangleCorrectionEnabled: Bool = true
     var isTriangleCorrectionEnabled: Bool = true
     var isParabolaCorrectionEnabled: Bool = true
+    var isCurveCorrectionEnabled: Bool = true
     /// When set, a pencil drag on the canvas defines this shape's bounding
     /// box instead of drawing freehand ink; lifting commits it and calls
     /// `onShapeCommitted`.
     var pendingShapeKind: InkCanvasView.ShapeKind?
     var onActivate: () -> Void = {}
     var onBackgroundTap: () -> Void = {}
-    var onShapeCommitted: () -> Void = {}
+    var onShapeCommitted: (InkCanvasView.ShapeKind, CGRect) -> Void = { _, _ in }
     var onSelectionChanged: (InkDrawing?) -> Void = { _ in }
     var selectionDragText: String = ""
     var allowsSelectionTransfer: Bool = true
@@ -64,6 +65,8 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     var onSelectionDropped: (String, CGPoint) -> Void = { _, _ in }
     /// The rectangle the snip tool just drew, in page units.
     var onSnipCaptured: (CGRect) -> Void = { _ in }
+    /// The eraser's path in page units, with its radius.
+    var onEraseSwept: ([CGPoint], CGFloat) -> Void = { _, _ in }
 
     func makeUIView(context: Context) -> InkCanvasView {
         let view = InkCanvasView()
@@ -83,8 +86,8 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         view.onStrokeEnded = { [coordinator = context.coordinator] in
             coordinator.unfreezeAncestorScrolling()
         }
-        view.onShapeCommitted = { [coordinator = context.coordinator] in
-            coordinator.parent.onShapeCommitted()
+        view.onShapeCommitted = { [coordinator = context.coordinator] kind, rect in
+            coordinator.parent.onShapeCommitted(kind, rect)
         }
         view.onSelectionChanged = { [coordinator = context.coordinator] selection in
             coordinator.parent.onSelectionChanged(selection)
@@ -97,6 +100,9 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         }
         view.onSnipCaptured = { [coordinator = context.coordinator] rect in
             coordinator.parent.onSnipCaptured(rect)
+        }
+        view.onEraseSwept = { [coordinator = context.coordinator] path, radius in
+            coordinator.parent.onEraseSwept(path, radius)
         }
         return view
     }
@@ -145,6 +151,7 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         view.isRectangleCorrectionEnabled = isRectangleCorrectionEnabled
         view.isTriangleCorrectionEnabled = isTriangleCorrectionEnabled
         view.isParabolaCorrectionEnabled = isParabolaCorrectionEnabled
+        view.isCurveCorrectionEnabled = isCurveCorrectionEnabled
         view.isHighlighter = selectedTool == .highlighter
         view.isEraser = selectedTool == .eraser
         view.isLasso = selectedTool == .lasso
