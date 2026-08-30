@@ -2,6 +2,10 @@ import SwiftUI
 
 enum DrawingToolKind: String, CaseIterable {
     case pen, highlighter, eraser, lasso
+    /// Drags a rectangle over the page and lifts that region out as an
+    /// image — a question printed on an imported PDF, or a proof written by
+    /// hand — so it can be dropped into the AI chat.
+    case snip
     /// No tool selected: the canvas doesn't intercept touches at all, so
     /// both finger and Pencil input fall through to the page scroller.
     case none
@@ -9,7 +13,7 @@ enum DrawingToolKind: String, CaseIterable {
     /// The tools shown as selectable buttons in the drawing toolbar. `.none`
     /// isn't one of them — it's reached only by tapping the active tool
     /// again to deselect it.
-    static let toolbarCases: [DrawingToolKind] = [.pen, .highlighter, .eraser, .lasso]
+    static let toolbarCases: [DrawingToolKind] = [.pen, .highlighter, .eraser, .lasso, .snip]
 
     var icon: String {
         switch self {
@@ -17,6 +21,7 @@ enum DrawingToolKind: String, CaseIterable {
         case .highlighter: "highlighter"
         case .eraser: "eraser"
         case .lasso: "lasso"
+        case .snip: "rectangle.dashed"
         case .none: "hand.point.up.left"
         }
     }
@@ -36,6 +41,9 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     /// canvas — see `updateUIView`. Live drawing flows the other way, via
     /// `onDrawingChanged`, and never needs this.
     var drawingVersion: Int = 0
+    /// Display points per page unit — see `InkCanvasView.contentScale`. The
+    /// owner derives it from how large the page is currently drawn.
+    var contentScale: CGFloat = 1
     var isScratchOutEnabled: Bool
     var isLineCorrectionEnabled: Bool = true
     var isEllipseCorrectionEnabled: Bool = true
@@ -47,12 +55,15 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     /// `onShapeCommitted`.
     var pendingShapeKind: InkCanvasView.ShapeKind?
     var onActivate: () -> Void = {}
+    var onBackgroundTap: () -> Void = {}
     var onShapeCommitted: () -> Void = {}
     var onSelectionChanged: (InkDrawing?) -> Void = { _ in }
     var selectionDragText: String = ""
     var allowsSelectionTransfer: Bool = true
     var onSelectionDragMoved: (UIImage?, CGSize?, CGPoint?) -> Void = { _, _, _ in }
     var onSelectionDropped: (String, CGPoint) -> Void = { _, _ in }
+    /// The rectangle the snip tool just drew, in page units.
+    var onSnipCaptured: (CGRect) -> Void = { _ in }
 
     func makeUIView(context: Context) -> InkCanvasView {
         let view = InkCanvasView()
@@ -61,6 +72,9 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         applyConfiguration(to: view)
         view.onDrawingChanged = { [coordinator = context.coordinator] newValue in
             coordinator.parent.drawing = newValue
+        }
+        view.onBackgroundTap = { [coordinator = context.coordinator] in
+            coordinator.parent.onBackgroundTap()
         }
         view.onStrokeBegan = { [coordinator = context.coordinator] in
             coordinator.parent.onActivate()
@@ -80,6 +94,9 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         }
         view.onSelectionDropped = { [coordinator = context.coordinator] text, point in
             coordinator.parent.onSelectionDropped(text, point)
+        }
+        view.onSnipCaptured = { [coordinator = context.coordinator] rect in
+            coordinator.parent.onSnipCaptured(rect)
         }
         return view
     }
@@ -118,6 +135,7 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     }
 
     private func applyConfiguration(to view: InkCanvasView) {
+        view.contentScale = contentScale
         view.strokeColorHex = color.toHex()
         view.strokeWidth = width
         view.eraserWidth = eraserWidth
@@ -130,11 +148,13 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         view.isHighlighter = selectedTool == .highlighter
         view.isEraser = selectedTool == .eraser
         view.isLasso = selectedTool == .lasso
+        view.isSnipping = selectedTool == .snip
         view.pendingShapeKind = pendingShapeKind
         view.selectionDragText = selectionDragText
         view.allowsSelectionTransfer = allowsSelectionTransfer
         view.isDrawingEnabled = selectedTool == .pen || selectedTool == .highlighter
-            || selectedTool == .eraser || selectedTool == .lasso || pendingShapeKind != nil
+            || selectedTool == .eraser || selectedTool == .lasso || selectedTool == .snip
+            || pendingShapeKind != nil
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }

@@ -110,6 +110,29 @@ struct InkDrawing: Equatable, Codable {
         })
     }
 
+    /// Uniformly rescales the whole drawing, stroke widths included.
+    ///
+    /// `transformed(by:)` deliberately leaves widths alone because its caller
+    /// is page rotation, which must not change how thick a line is. Moving
+    /// ink between coordinate spaces has to carry the widths across too, or
+    /// a converted page comes back with hairlines.
+    func scaled(by factor: CGFloat) -> InkDrawing {
+        guard factor > 0, abs(factor - 1) > 0.0001 else { return self }
+        return InkDrawing(strokes: strokes.map { stroke in
+            var copy = stroke
+            copy.width = stroke.width * factor
+            copy.points = stroke.points.map { point in
+                var updated = point
+                updated.location = CGPoint(
+                    x: point.location.x * factor,
+                    y: point.location.y * factor
+                )
+                return updated
+            }
+            return copy
+        })
+    }
+
     /// Loads either format transparently: the new JSON encoding, or — for
     /// pages drawn before the engine switch — the old PencilKit binary
     /// format, converted on the fly so existing ink isn't lost.

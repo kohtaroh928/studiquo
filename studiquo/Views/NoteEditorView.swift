@@ -6,6 +6,9 @@ import WebKit
 import AudioToolbox
 import JavaScriptCore
 import UniformTypeIdentifiers
+import VisionKit
+import Speech
+import AVFoundation
 
 extension Notification.Name {
     static let studiquoOpenPageLink = Notification.Name("StudiquoOpenPageLink")
@@ -13,7 +16,20 @@ extension Notification.Name {
     static let studiquoRedoDrawing = Notification.Name("StudiquoRedoDrawing")
     static let studiquoOpenNotebookTab = Notification.Name("StudiquoOpenNotebookTab")
     static let studiquoRecognizedSelection = Notification.Name("StudiquoRecognizedSelection")
+    /// A plain tap landed on the page background. Raised by the ink canvas —
+    /// a recogniser there sees both finger and pencil taps without taking
+    /// touches away from drawing, which a SwiftUI tap-catcher laid over the
+    /// canvas would have done.
+    static let studiquoCanvasTapped = Notification.Name("StudiquoCanvasTapped")
     static let studiquoSelectionDropped = Notification.Name("StudiquoSelectionDropped")
+    /// Carries a `PageSnippet` the snip tool just cut out of a page.
+    static let studiquoPageSnipped = Notification.Name("StudiquoPageSnipped")
+    /// Editor → ContentView: this conversation is open, give it a tab.
+    static let studiquoOpenAIChatTab = Notification.Name("StudiquoOpenAIChatTab")
+    /// Editor → ContentView: this conversation is gone, drop its tab.
+    static let studiquoCloseAIChatTab = Notification.Name("StudiquoCloseAIChatTab")
+    /// ContentView → editor: bring this conversation to the front.
+    static let studiquoSelectAIChatTab = Notification.Name("StudiquoSelectAIChatTab")
     /// Broadcasts freshly drawn or erased ink so that a second canvas
     /// showing the *same* page — the split-screen-onto-one-notebook case —
     /// updates live instead of holding a stale copy until it reloads.
@@ -33,6 +49,76 @@ extension EnvironmentValues {
     var allowsInkSelectionTransfer: Bool {
         get { self[AllowsInkSelectionTransferKey.self] }
         set { self[AllowsInkSelectionTransferKey.self] = newValue }
+    }
+}
+
+private struct AIChatAttachment: Identifiable, Hashable {
+    enum Kind: String {
+        case file
+        case folder
+        case camera
+        /// A rectangle cut out of a page — see `PageSnippet`.
+        case snippet
+
+        var label: String {
+            switch self {
+            case .file: return L("ファイル")
+            case .folder: return L("フォルダー")
+            case .camera: return L("撮影画像")
+            case .snippet: return L("切り抜き")
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .file: return "doc"
+            case .folder: return "folder"
+            case .camera: return "camera"
+            case .snippet: return "rectangle.dashed"
+            }
+        }
+    }
+
+    /// What a dropped snippet is, as far as the marker is concerned.
+    ///
+    /// One question and one answer is what turns an ordinary chat message
+    /// into a marking request; anything else is just a picture to talk about.
+    enum ProofRole: String, CaseIterable, Identifiable {
+        case none
+        case question
+        case answer
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .none: return L("画像として送る")
+            case .question: return L("問題")
+            case .answer: return L("解答")
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .none: return .secondary
+            case .question: return .indigo
+            case .answer: return .teal
+            }
+        }
+    }
+
+    let id = UUID()
+    let name: String
+    let path: String
+    let kind: Kind
+    var snippet: PageSnippet?
+    var imageData: Data?
+    var proofRole: ProofRole = .none
+
+    var image: UIImage? {
+        if let snippet { return snippet.image }
+        if let imageData { return UIImage(data: imageData) }
+        return nil
     }
 }
 
@@ -77,6 +163,17 @@ struct WebTabInfo: Identifiable, Equatable {
     var homeURL: String
 }
 
+/// One AI conversation, as the tab bar sees it.
+///
+/// Each thread gets its own tab rather than all of them sharing one "AI" tab:
+/// a conversation about integration and a conversation about a proof are as
+/// separate as two notebooks, and switching between them should not mean
+/// hunting through a history list.
+struct AIChatTabInfo: Identifiable, Equatable {
+    let id: PersistentIdentifier
+    var title: String
+}
+
 /// Shared between ContentView (which owns the tab bar) and the live
 /// NoteEditorView (which owns the split layout). ContentView needs to know
 /// whether a split is currently on screen to decide how a tab tap should be
@@ -109,6 +206,15 @@ struct NoteEditorView: View {
     @State private var splitMode: SplitMode = .single
     @State private var splitRatio: CGFloat = 0.5
     @State private var isPortraitLayout = false
+    /// Orientation at the previous layout pass; `nil` until the first one.
+    /// Lets `updateOrientation` tell a genuine rotation apart from a plain
+    /// re-layout — see the collapse rule there.
+    @State private var lastKnownPortrait: Bool?
+    /// The page the pencil last touched. Undo/redo target this rather than
+    /// whichever page the scroll position happens to have centred, which in
+    /// continuous mode is regularly a different page from the one just
+    /// drawn on.
+    @State private var lastActivePage: NotePage?
     @State private var recognizedSelectionDragText = ""
     @State private var selectionTransferImage: UIImage?
     @State private var selectionTransferSize: CGSize?
@@ -118,9 +224,17 @@ struct NoteEditorView: View {
     @State private var showsSplitSourcePicker = false
     @State private var secondaryShowsWeb = false
     @State private var secondaryShowsAIChat = false
+    @State private var showsTemporaryAIChat = false
     @State private var aiChatThreads: [AIChatThread] = []
     @State private var selectedAIChatThread: AIChatThread?
-    @State private var aiChatDraft = ""
+    @State private var aiChatDrafts: [String: String] = [:]
+    @State private var aiChatAttachments: [String: [AIChatAttachment]] = [:]
+    /// Regions cut out with the snip tool, waiting to be dragged into a chat.
+    @State private var snippetTray: [PageSnippet] = []
+    @State private var pendingProofQuestionSnippet: PageSnippet?
+    @State private var pendingProofAnswerSnippet: PageSnippet?
+    @State private var aiChatRespondingThreadIDs: Set<String> = []
+    @State private var aiChatTasks: [String: Task<Void, Never>] = [:]
     @State private var secondaryFlashcardDeck: FlashcardDeck?
     @State private var showsDeletePagePicker = false
     @State private var notebookPendingTrash: Notebook?
@@ -146,9 +260,8 @@ struct NoteEditorView: View {
     @State private var calculatorResult = "0"
     @State private var calculatorCenter: CGPoint?
     @State private var calculatorDragOrigin: CGPoint?
-    @State private var drawingToolbarCenter: CGPoint?
-    @State private var drawingToolbarDragOrigin: CGPoint?
-    @State private var isDrawingToolbarVertical = false
+    // The pen bar's position now lives inside `FloatingDrawingToolbar`, so a
+    // drag no longer invalidates this whole view.
     /// True while a finger is on the size slider. The slider sits inside the
     /// toolbar's own `ScrollView`, so without this its drag was ambiguous
     /// with the ScrollView's pan gesture — moving the slider could instead
@@ -200,27 +313,17 @@ struct NoteEditorView: View {
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
 
-                if !isReadOnlyMode && showsDrawingToolbar {
-                    // Confined to the primary (notebook) pane's own area —
-                    // primaryPane is always the leading/top slice of
-                    // `workspace`, offset by the sidebar's width — rather
-                    // than the full editor, so splitting the screen doesn't
-                    // let the drawing bar drift into the other pane, where
-                    // it has nothing to draw on.
-                    sharedDrawingToolbar(in: primaryPaneSize(in: geometry.size))
-                        .offset(x: sidebarWidth(in: geometry.size))
-                }
-
                 // Kept in the hierarchy and shown by opacity rather than
                 // inserted by an `if`, so toggling it doesn't re-lay out
                 // the ZStack — and so the toolbar beside it isn't rebuilt —
                 // on every show and hide.
+                let showsSizePreview = isAdjustingToolSize && showsToolSizeControl
                 toolSizePreview
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .allowsHitTesting(false)
-                    .opacity(isAdjustingToolSize ? 1 : 0)
-                    .scaleEffect(isAdjustingToolSize ? 1 : 0.92)
-                    .animation(.easeOut(duration: 0.15), value: isAdjustingToolSize)
+                    .opacity(showsSizePreview ? 1 : 0)
+                    .scaleEffect(showsSizePreview ? 1 : 0.92)
+                    .animation(.easeOut(duration: 0.15), value: showsSizePreview)
                     .zIndex(2500)
 
                 if !recognizedSelectionDragText.isEmpty {
@@ -251,6 +354,11 @@ struct NoteEditorView: View {
                         onClose: { showsCalculator = false }
                     )
                         .zIndex(3000)
+                }
+
+                if showsTemporaryAIChat {
+                    temporaryAIChatPanel(in: geometry.size)
+                        .zIndex(3100)
                 }
             }
             .clipped()
@@ -366,6 +474,7 @@ struct NoteEditorView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoPageActivated"))) { notification in
             guard let page = notification.object as? NotePage else { return }
+            lastActivePage = page
             if page.notebook === secondaryNotebook { activePane = .secondary }
             else if page.notebook === notebook { activePane = .primary }
         }
@@ -413,115 +522,102 @@ struct NoteEditorView: View {
                 .padding()
             }
         }
+        .modifier(SnippetTrayModifier(
+            snippets: $snippetTray,
+            pendingQuestion: $pendingProofQuestionSnippet,
+            pendingAnswer: $pendingProofAnswerSnippet,
+            onAskAI: askAIAboutSnippet,
+            onProofRoleSelected: handleProofSnippet
+        ))
+        .modifier(AIChatTabSyncModifier(
+            openThreadID: selectedAIChatThread?.persistentModelID,
+            onAnnounce: { if let thread = selectedAIChatThread { announceAIChatTab(thread) } },
+            onSelect: openAIChatThread
+        ))
     }
 
-    private func sharedDrawingToolbar(in size: CGSize) -> some View {
-        let horizontalWidth = min(760, max(54, size.width - 16))
-        let verticalHeight = min(680, max(54, size.height - 16))
-        let barWidth: CGFloat = isDrawingToolbarVertical ? 54 : horizontalWidth
-        let barHeight: CGFloat = isDrawingToolbarVertical ? verticalHeight : 54
-        let defaultY = drawingToolbarPosition == "top" ? barHeight / 2 + 8 : size.height - barHeight / 2 - 8
-        let proposedCenter = drawingToolbarCenter ?? CGPoint(x: size.width / 2, y: defaultY)
-        let center = clampedDrawingToolbarCenter(proposedCenter, in: size, width: barWidth, height: barHeight)
-
-        return Group {
-            if isDrawingToolbarVertical {
-                VStack(spacing: 8) {
-                    ScrollView(.vertical) {
-                        VStack(spacing: 8) {
-                            drawingToolbarMoveHandle(isVertical: true, in: size, center: center, barWidth: barWidth)
-                            sharedDrawingToolbarControls(isVertical: true)
-                        }
-                            .padding(.top, 9)
-                    }
-                    .scrollIndicators(.hidden)
-                    Divider().frame(width: 28, height: 1)
-                    // Fixed outside the ScrollView above: nested inside it, a
-                    // vertical drag on the slider was ambiguous with the
-                    // ScrollView's own pan gesture, so scrolling could win
-                    // and carry the thumb away — or, worse, cancel the
-                    // slider's gesture outright without ever reporting the
-                    // release, leaving the size preview stuck on screen.
-                    toolSizeControl(isVertical: true)
-                        .padding(.bottom, 9)
-                }
-            } else {
-                HStack(spacing: 8) {
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 8) {
-                            drawingToolbarMoveHandle(isVertical: false, in: size, center: center, barWidth: barWidth)
-                            sharedDrawingToolbarControls(isVertical: false)
-                        }
-                            .padding(.leading, 9)
-                    }
-                    .scrollIndicators(.hidden)
-                    Divider().frame(width: 1, height: 24)
-                    toolSizeControl(isVertical: false)
-                        .padding(.trailing, 9)
-                }
+    /// The floating pen bar, rendered by a child view that owns its own
+    /// position state.
+    ///
+    /// Dragging it used to write `drawingToolbarCenter` on `NoteEditorView`,
+    /// which re-ran this whole screen's `body` — page canvases, split panes
+    /// and all — on every touch sample. That is why the bar lagged behind the
+    /// finger. Keeping the live position inside `FloatingDrawingToolbar`
+    /// confines each drag update to the bar itself, and only the settled
+    /// position is handed back here.
+    private func sharedDrawingToolbar(in size: CGSize, identity: String) -> some View {
+        FloatingDrawingToolbar(
+            identity: identity,
+            paneSize: size,
+            prefersTopEdge: drawingToolbarPosition == "top",
+            isLeftHanded: isLeftHandedMode,
+            isAdjustingToolSize: isAdjustingToolSize,
+            showsSizeControl: showsToolSizeControl,
+            controls: { isVertical in
+                AnyView(sharedDrawingToolbarControls(isVertical: isVertical))
+            },
+            sizeControl: { isVertical in
+                AnyView(toolSizeControl(isVertical: isVertical))
             }
-        }
-        .buttonStyle(.borderless)
-        .frame(width: barWidth, height: barHeight)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(0.16), lineWidth: 1))
-        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
-        .environment(\.layoutDirection, isLeftHandedMode ? .rightToLeft : .leftToRight)
-        .position(center)
-        .accessibilityLabel("描画バー")
-        .accessibilityHint("ドラッグして移動できます。左右端では縦並びになります")
+        )
     }
 
-    private func drawingToolbarMoveHandle(isVertical: Bool, in size: CGSize, center: CGPoint, barWidth: CGFloat) -> some View {
-        Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .frame(width: isVertical ? 28 : 34, height: isVertical ? 34 : 28)
-            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-            // The handle sits inside the toolbar's own ScrollView (so it
-            // scrolls into view along with the rest of the controls); a
-            // plain `.gesture` here lost the drag to the ScrollView's own
-            // pan recognizer far more often than not, so the bar simply
-            // didn't move. `.highPriorityGesture` claims it first instead.
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 4)
-                    .onChanged { value in
-                        if drawingToolbarDragOrigin == nil { drawingToolbarDragOrigin = center }
-                        guard let origin = drawingToolbarDragOrigin else { return }
-                        let candidate = CGPoint(
-                            x: origin.x + value.translation.width,
-                            y: origin.y + value.translation.height
-                        )
-                        let edgeThreshold: CGFloat = 100
-                        isDrawingToolbarVertical = candidate.x <= edgeThreshold || candidate.x >= size.width - edgeThreshold
-                        drawingToolbarCenter = candidate
+    private func temporaryAIChatPanel(in size: CGSize) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label("AIトーク", systemImage: "sparkles")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        showsTemporaryAIChat = false
                     }
-                    .onEnded { _ in
-                        drawingToolbarDragOrigin = nil
-                        guard isDrawingToolbarVertical, let current = drawingToolbarCenter else { return }
-                        let snappedX: CGFloat = current.x < size.width / 2 ? barWidth / 2 + 6 : size.width - barWidth / 2 - 6
-                        withAnimation(.easeOut(duration: 0.18)) {
-                            drawingToolbarCenter = CGPoint(x: snappedX, y: current.y)
-                        }
-                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(.regularMaterial)
+
+            AIChatPane(
+                threads: aiChatThreads,
+                selectedThread: selectedAIChatThread,
+                draft: activeAIChatDraft,
+                attachments: activeAIChatAttachments,
+                onSelectThread: { selectedAIChatThread = $0 },
+                onNewThread: {
+                    selectedAIChatThread = nil
+                    aiChatDrafts["new"] = ""
+                    aiChatAttachments["new"] = []
+                },
+                onDeleteThread: deleteAIChatThread,
+                onSend: { sendAIChatMessage() },
+                respondingThreadIDs: aiChatRespondingThreadIDs,
+                onCancel: cancelAIChatResponse,
+                onGradeProof: gradeProof
             )
-            .accessibilityLabel("描画バーを移動")
-            .accessibilityHint("ここをドラッグして描画バーを移動します")
+        }
+        .frame(width: min(520, max(360, size.width * 0.42)), height: min(620, max(420, size.height * 0.74)))
+        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 18))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        .transition(.move(edge: .trailing).combined(with: .opacity))
     }
 
     @ViewBuilder
     private func sharedDrawingToolbarControls(isVertical: Bool) -> some View {
         Button {
-            if let activePage {
-                NotificationCenter.default.post(name: .studiquoUndoDrawing, object: activePage)
-            }
+            postDrawingHistoryRequest(.studiquoUndoDrawing)
         } label: { Image(systemName: "arrow.uturn.backward").frame(width: 28, height: 28) }
 
         Button {
-            if let activePage {
-                NotificationCenter.default.post(name: .studiquoRedoDrawing, object: activePage)
-            }
+            postDrawingHistoryRequest(.studiquoRedoDrawing)
         } label: { Image(systemName: "arrow.uturn.forward").frame(width: 28, height: 28) }
 
         Divider().frame(width: isVertical ? 28 : nil, height: isVertical ? 1 : 24)
@@ -537,15 +633,9 @@ struct NoteEditorView: View {
         .accessibilityHint("オンにすると、ペンで線の上をぐしゃぐしゃとなぞって消せます")
         .help(isScratchOutEnabled ? "スクイブル消しゴム：オン" : "スクイブル消しゴム：オフ")
 
-        Menu {
-            Toggle("直線", isOn: $isLineCorrectionEnabled)
-            Toggle("円・楕円", isOn: $isEllipseCorrectionEnabled)
-            Toggle("正方形・長方形", isOn: $isRectangleCorrectionEnabled)
-            Toggle("三角形", isOn: $isTriangleCorrectionEnabled)
-            Toggle("二次関数", isOn: $isParabolaCorrectionEnabled)
-        } label: {
-            Image(systemName: "wand.and.stars").frame(width: 28, height: 28)
-        }
+        // Shape correction is configured from the "補正設定" menu in the top
+        // tool strip. It was duplicated here too, which only crowded a bar
+        // whose whole job is the handful of controls used mid-stroke.
 
         ForEach(DrawingToolKind.toolbarCases, id: \.rawValue) { tool in
             Button {
@@ -576,6 +666,28 @@ struct NoteEditorView: View {
         }
     }
 
+    /// The lasso has no thickness to set — it traces a selection rather than
+    /// laying down ink — so the size slider (and the preview it drives) is
+    /// dropped from the bar entirely while it's the active tool, instead of
+    /// sitting there adjusting a pen the user isn't holding.
+    private var showsToolSizeControl: Bool {
+        drawingTool != .lasso
+    }
+
+    private var shouldShowDrawingToolbarInPrimaryPane: Bool {
+        !isReadOnlyMode && showsDrawingToolbar && primaryFlashcardDeck == nil
+    }
+
+    private var shouldShowDrawingToolbarInSecondaryPane: Bool {
+        splitMode != .single
+            && !isReadOnlyMode
+            && showsDrawingToolbar
+            && secondaryNotebook != nil
+            && secondaryFlashcardDeck == nil
+            && !secondaryShowsWeb
+            && !secondaryShowsAIChat
+    }
+
     /// Bound straight to `$eraserWidth` / `$drawingWidth` rather than to one
     /// merged `Binding(get:set:)` computed property. A hand-built Binding is
     /// rebuilt with fresh closures on every `body` pass, so each value change
@@ -587,9 +699,11 @@ struct NoteEditorView: View {
     @ViewBuilder
     private var toolSizeSlider: some View {
         if drawingTool == .eraser {
-            Slider(value: $eraserWidth, in: 6...72, step: 1, onEditingChanged: setToolSizeAdjusting)
+            Slider(value: $eraserWidth, in: ToolSizeScale.eraser.range, step: ToolSizeScale.eraser.step,
+                   onEditingChanged: setToolSizeAdjusting)
         } else {
-            Slider(value: $drawingWidth, in: 1...20, step: 1, onEditingChanged: setToolSizeAdjusting)
+            Slider(value: $drawingWidth, in: ToolSizeScale.pen.range, step: ToolSizeScale.pen.step,
+                   onEditingChanged: setToolSizeAdjusting)
         }
     }
 
@@ -613,8 +727,19 @@ struct NoteEditorView: View {
         drawingTool == .eraser ? "消しゴムの大きさ" : "ペンの太さ"
     }
 
+    /// The stored value, in points — what the ink is actually drawn with.
     private var currentToolSizeValue: Double {
         drawingTool == .eraser ? eraserWidth : drawingWidth
+    }
+
+    /// The number shown beside the slider, always 0–100.
+    ///
+    /// The scale is presentational: a pen is only usable across a few points
+    /// of real width and a 100pt nib would be a blot, so 0–100 is mapped onto
+    /// each tool's own sensible point range rather than used as a width.
+    private var currentToolSizePercent: Int {
+        (drawingTool == .eraser ? ToolSizeScale.eraser : ToolSizeScale.pen)
+            .percent(forPoints: currentToolSizeValue)
     }
 
     /// Shown centered over the page while the size slider is being dragged,
@@ -628,7 +753,7 @@ struct NoteEditorView: View {
                 .frame(width: diameter, height: diameter)
                 .overlay(Circle().strokeBorder(Color.primary.opacity(0.25), lineWidth: 1))
                 .frame(width: 90, height: 90)
-            Text("\(Int(currentToolSizeValue.rounded()))")
+            Text("\(currentToolSizePercent)")
                 .font(.title3.weight(.semibold).monospacedDigit())
                 .foregroundStyle(.secondary)
         }
@@ -653,7 +778,7 @@ struct NoteEditorView: View {
                         Text(currentToolSizeLabel)
                             .font(.headline)
                         Spacer()
-                        Text("\(Int(currentToolSizeValue.rounded()))")
+                        Text("\(currentToolSizePercent)")
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
@@ -663,24 +788,24 @@ struct NoteEditorView: View {
                 .frame(width: 280)
             }
             .accessibilityLabel(currentToolSizeLabel)
-            .accessibilityValue("\(Int(currentToolSizeValue.rounded()))")
+            .accessibilityValue("\(currentToolSizePercent)")
         } else {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: "lineweight")
                     .foregroundStyle(.secondary)
                 toolSizeSlider
-                    .frame(width: 118)
-                Text("\(Int(currentToolSizeValue.rounded()))")
+                    .frame(width: 96)
+                Text("\(currentToolSizePercent)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(width: 24, alignment: .trailing)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 7)
             .frame(height: 36)
             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
             .accessibilityElement(children: .combine)
             .accessibilityLabel(currentToolSizeLabel)
-            .accessibilityValue("\(Int(currentToolSizeValue.rounded()))")
+            .accessibilityValue("\(currentToolSizePercent)")
         }
     }
 
@@ -779,16 +904,22 @@ struct NoteEditorView: View {
                 FlashcardPaneView(deck: primaryFlashcardDeck, onHome: onHome)
             } else {
                 GeometryReader { geometry in
-                    ZoomableWorkspace(size: geometry.size) {
-                        NotebookPaneView(
-                            notebook: displayedPrimaryNotebook,
-                            currentPageIndex: $primaryPageIndex,
-                            showsTitle: splitMode != .single,
-                            usesDarkPageDisplay: usesDarkPageDisplay,
-                            onRequestAddPage: { requestPageAddition(to: displayedPrimaryNotebook) },
-                            onQuickAddPage: { quickAddPage(to: displayedPrimaryNotebook) },
-                            onQuickAddPageAtTop: { quickAddPageAtTop(to: displayedPrimaryNotebook) }
-                        )
+                    ZStack {
+                        ZoomableWorkspace(size: geometry.size) {
+                            NotebookPaneView(
+                                notebook: displayedPrimaryNotebook,
+                                currentPageIndex: $primaryPageIndex,
+                                showsTitle: splitMode != .single,
+                                usesDarkPageDisplay: usesDarkPageDisplay,
+                                onRequestAddPage: { requestPageAddition(to: displayedPrimaryNotebook) },
+                                onQuickAddPage: { quickAddPage(to: displayedPrimaryNotebook) },
+                                onQuickAddPageAtTop: { quickAddPageAtTop(to: displayedPrimaryNotebook) }
+                            )
+                        }
+
+                        if shouldShowDrawingToolbarInPrimaryPane {
+                            sharedDrawingToolbar(in: geometry.size, identity: "primary")
+                        }
                     }
                 }
             }
@@ -808,11 +939,22 @@ struct NoteEditorView: View {
         } else if secondaryShowsAIChat {
             AIChatPane(
                 threads: aiChatThreads,
-                selectedThread: currentAIChatThread(),
-                draft: $aiChatDraft,
-                onSelectThread: { selectedAIChatThread = $0 },
-                onNewThread: { selectedAIChatThread = createAIChatThread() },
-                onSend: sendAIChatMessage
+                selectedThread: selectedAIChatThread,
+                draft: activeAIChatDraft,
+                attachments: activeAIChatAttachments,
+                onSelectThread: { thread in
+                    selectedAIChatThread = thread
+                },
+                onNewThread: {
+                    selectedAIChatThread = nil
+                    aiChatDrafts["new"] = ""
+                    aiChatAttachments["new"] = []
+                },
+                onDeleteThread: deleteAIChatThread,
+                onSend: { sendAIChatMessage() },
+                respondingThreadIDs: aiChatRespondingThreadIDs,
+                onCancel: cancelAIChatResponse,
+                onGradeProof: gradeProof
             )
         } else if let secondaryFlashcardDeck {
             FlashcardPaneView(deck: secondaryFlashcardDeck, onHome: onHome)
@@ -823,15 +965,21 @@ struct NoteEditorView: View {
                 }
         } else if let secondaryNotebook {
             GeometryReader { geometry in
-                ZoomableWorkspace(size: geometry.size) {
-                    NotebookPaneView(
-                        notebook: secondaryNotebook,
-                        currentPageIndex: $secondaryPageIndex,
-                        showsTitle: true,
-                        onRequestAddPage: { requestPageAddition(to: secondaryNotebook) },
-                        onQuickAddPage: { quickAddPage(to: secondaryNotebook) },
-                        onQuickAddPageAtTop: { quickAddPageAtTop(to: secondaryNotebook) }
-                    )
+                ZStack {
+                    ZoomableWorkspace(size: geometry.size) {
+                        NotebookPaneView(
+                            notebook: secondaryNotebook,
+                            currentPageIndex: $secondaryPageIndex,
+                            showsTitle: true,
+                            onRequestAddPage: { requestPageAddition(to: secondaryNotebook) },
+                            onQuickAddPage: { quickAddPage(to: secondaryNotebook) },
+                            onQuickAddPageAtTop: { quickAddPageAtTop(to: secondaryNotebook) }
+                        )
+                    }
+
+                    if shouldShowDrawingToolbarInSecondaryPane {
+                        sharedDrawingToolbar(in: geometry.size, identity: "secondary")
+                    }
                 }
             }
             .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
@@ -1130,7 +1278,7 @@ struct NoteEditorView: View {
             }
 
             Button {
-                requestPageAddition(to: displayedPrimaryNotebook)
+                requestPageAddition(to: activeNotebook)
             } label: {
                 Label("ページ追加", systemImage: "plus.rectangle.on.rectangle")
             }
@@ -1152,13 +1300,10 @@ struct NoteEditorView: View {
         ScrollView(.horizontal) {
             HStack(spacing: 14) {
                 toolStripButton("ホームへ戻る", icon: "house.fill", action: onHome)
-                toolStripButton(
-                    columnVisibility == .detailOnly ? "サイドバーを表示" : "サイドバーを隠す",
-                    icon: "sidebar.left",
-                    isActive: columnVisibility != .detailOnly
-                ) {
-                    columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-                }
+                // The sidebar toggle used to sit here. Opening another note
+                // is now the "+" in the tab bar above, which lists the same
+                // notes and decks the home screen does — so the sidebar had
+                // nothing left to offer that the tabs don't.
                 // In split mode each pane shows its own title below its
                 // toolbar (see NotebookPaneView's showsTitle) instead —
                 // showing it a second time up here as well as down there
@@ -1178,8 +1323,11 @@ struct NoteEditorView: View {
                 toolStripButton("時間", icon: "timer") {
                     showsTimeTool = true
                 }
-                toolStripButton("関数電卓", icon: "function", isActive: showsCalculator) {
+                toolStripButton("関数電卓", icon: "123.rectangle.fill", isActive: showsCalculator) {
                     showsCalculator.toggle()
+                }
+                toolStripButton("AIトーク", icon: "sparkles", isActive: secondaryShowsAIChat || showsTemporaryAIChat) {
+                    presentAIChat()
                 }
                 if timeToolModel.showsToolbarTime {
                     TimelineView(.periodic(from: .now, by: 0.1)) { context in
@@ -1201,16 +1349,17 @@ struct NoteEditorView: View {
                 }
 
                 toolStripButton("元に戻す", icon: "arrow.uturn.backward") {
-                    guard let page = currentPrimaryPage else { return }
-                    NotificationCenter.default.post(name: .studiquoUndoDrawing, object: page)
+                    postDrawingHistoryRequest(.studiquoUndoDrawing)
                 }
                 toolStripButton("やり直す", icon: "arrow.uturn.forward") {
-                    guard let page = currentPrimaryPage else { return }
-                    NotificationCenter.default.post(name: .studiquoRedoDrawing, object: page)
+                    postDrawingHistoryRequest(.studiquoRedoDrawing)
                 }
                 toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode, action: selectPen)
+                    .disabled(primaryFlashcardDeck != nil)
                 toolStripButton("消しゴム", icon: "eraser", isActive: drawingTool == .eraser && !isReadOnlyMode, action: selectEraser)
+                    .disabled(primaryFlashcardDeck != nil)
                 toolStripButton("選択", icon: "lasso", isActive: drawingTool == .lasso && !isReadOnlyMode, action: selectLasso)
+                    .disabled(primaryFlashcardDeck != nil)
                 Menu {
                     Toggle("直線補正", isOn: $isLineCorrectionEnabled)
                     Toggle("円・楕円補正", isOn: $isEllipseCorrectionEnabled)
@@ -1284,9 +1433,6 @@ struct NoteEditorView: View {
                     Button("Google検索と2分割", systemImage: "globe") {
                         openWebSplit(title: "Google検索", homeURL: "https://www.google.com")
                     }
-                    Button("AIトークと2分割", systemImage: "sparkles") {
-                        openAIChatSplit()
-                    }
                 } label: { toolStripLabel("画面分割", icon: splitMode.icon, isActive: splitMode != .single) }
 
                 if splitMode != .single {
@@ -1341,10 +1487,13 @@ struct NoteEditorView: View {
                         || (activePane == .secondary && secondaryFlashcardDeck != nil)
                 )
 
+                // Targets whichever pane was last touched, so in a split the
+                // page lands in the note the user was actually working in
+                // rather than always in the left/top one.
                 toolStripButton("ページ追加", icon: "plus.rectangle.on.rectangle") {
-                    requestPageAddition(to: displayedPrimaryNotebook)
+                    requestPageAddition(to: activeNotebook)
                 }
-                    .disabled(primaryFlashcardDeck != nil)
+                    .disabled(activePaneShowsFlashcards)
 
                 Menu {
                     Button("全ページ", systemImage: "doc.on.doc") { exportAllPagesAsPDF() }
@@ -1402,9 +1551,51 @@ struct NoteEditorView: View {
         )
     }
 
+    /// Tells the tab bar that this conversation is open, and what to call it.
+    ///
+    /// Sent again after each exchange because a thread is titled from its
+    /// first message — without the repeat, every tab would read
+    /// "新しいトーク" forever.
+    private func announceAIChatTab(_ thread: AIChatThread) {
+        NotificationCenter.default.post(
+            name: .studiquoOpenAIChatTab,
+            object: AIChatTabInfo(id: thread.persistentModelID, title: thread.title)
+        )
+    }
+
+    /// Brings a conversation to the front, opening the chat pane if the
+    /// editor is not already showing one.
+    private func openAIChatThread(_ id: PersistentIdentifier) {
+        loadAIChatThreads()
+        guard let thread = aiChatThreads.first(where: { $0.persistentModelID == id }) else { return }
+        selectedAIChatThread = thread
+        if splitMode == .single || secondaryShowsAIChat {
+            openAIChatSplit()
+        } else {
+            presentTemporaryAIChat()
+        }
+    }
+
+    private func presentAIChat() {
+        if splitMode == .single || secondaryShowsAIChat {
+            openAIChatSplit()
+        } else {
+            presentTemporaryAIChat()
+        }
+    }
+
+    private func presentTemporaryAIChat() {
+        loadAIChatThreads()
+        selectedAIChatThread = selectedAIChatThread ?? aiChatThreads.first
+        if let thread = selectedAIChatThread { announceAIChatTab(thread) }
+        showsTemporaryAIChat = true
+    }
+
     private func openAIChatSplit() {
         loadAIChatThreads()
-        selectedAIChatThread = selectedAIChatThread ?? aiChatThreads.first ?? createAIChatThread()
+        selectedAIChatThread = selectedAIChatThread ?? aiChatThreads.first
+        if let thread = selectedAIChatThread { announceAIChatTab(thread) }
+        showsTemporaryAIChat = false
         secondaryNotebook = nil
         secondaryFlashcardDeck = nil
         secondaryShowsWeb = false
@@ -1418,31 +1609,62 @@ struct NoteEditorView: View {
         let descriptor = FetchDescriptor<AIChatThread>(
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
-        aiChatThreads = (try? modelContext.fetch(descriptor)) ?? []
+        aiChatThreads = ((try? modelContext.fetch(descriptor)) ?? [])
+            .filter { !$0.sortedMessages.isEmpty }
     }
 
-    private func currentAIChatThread() -> AIChatThread {
+    private var activeAIChatDraft: Binding<String> {
+        Binding(
+            get: {
+                aiChatDrafts[activeAIChatDraftKey] ?? ""
+            },
+            set: { newValue in
+                aiChatDrafts[activeAIChatDraftKey] = newValue
+            }
+        )
+    }
+
+    private var activeAIChatAttachments: Binding<[AIChatAttachment]> {
+        Binding(
+            get: {
+                aiChatAttachments[activeAIChatDraftKey] ?? []
+            },
+            set: { newValue in
+                aiChatAttachments[activeAIChatDraftKey] = newValue
+            }
+        )
+    }
+
+    private var activeAIChatDraftKey: String {
+        selectedAIChatThread.map(aiChatThreadKey) ?? "new"
+    }
+
+    private func aiChatThreadKey(_ thread: AIChatThread) -> String {
+        String(describing: thread.persistentModelID)
+    }
+
+    private func aiChatThreadForSending() -> AIChatThread {
         if let selectedAIChatThread { return selectedAIChatThread }
-        if let first = aiChatThreads.first {
-            selectedAIChatThread = first
-            return first
-        }
-        return createAIChatThread()
-    }
-
-    private func createAIChatThread() -> AIChatThread {
         let thread = AIChatThread()
         modelContext.insert(thread)
-        try? modelContext.save()
-        loadAIChatThreads()
+        selectedAIChatThread = thread
         return thread
     }
 
-    private func sendAIChatMessage() {
-        let trimmed = aiChatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func sendAIChatMessage(
+        draftKey overrideDraftKey: String? = nil,
+        text overrideText: String? = nil,
+        attachments overrideAttachments: [AIChatAttachment]? = nil
+    ) {
+        let draftKey = overrideDraftKey ?? activeAIChatDraftKey
+        let trimmed = (overrideText ?? aiChatDrafts[draftKey] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let thread = currentAIChatThread()
-        let userMessage = AIChatMessage(text: trimmed, role: .user)
+        let attachments = overrideAttachments ?? aiChatAttachments[draftKey] ?? []
+        let thread = aiChatThreadForSending()
+        let threadKey = aiChatThreadKey(thread)
+        guard !aiChatRespondingThreadIDs.contains(threadKey) else { return }
+
+        let userMessage = AIChatMessage(text: messageText(trimmed, with: attachments), role: .user)
         userMessage.thread = thread
         thread.messages.append(userMessage)
 
@@ -1450,17 +1672,256 @@ struct NoteEditorView: View {
             thread.title = String(trimmed.prefix(24))
         }
 
-        let placeholder = AIChatMessage(
-            text: "まだAI本体には接続していません。ここに将来、ノートや課題を読み取ったAIの返答が表示されます。",
-            role: .assistant
-        )
-        placeholder.thread = thread
-        thread.messages.append(placeholder)
+        // The reply is appended empty and filled in as the stream arrives, so
+        // the answer appears as it is written instead of after a blank wait.
+        let reply = AIChatMessage(text: "", role: .assistant)
+        reply.thread = thread
+        thread.messages.append(reply)
         thread.updatedAt = .now
-        aiChatDraft = ""
+        aiChatDrafts[draftKey] = ""
+        aiChatDrafts[aiChatThreadKey(thread)] = ""
+        aiChatAttachments[draftKey] = []
+        aiChatAttachments[aiChatThreadKey(thread)] = []
         try? modelContext.save()
         loadAIChatThreads()
         selectedAIChatThread = thread
+        announceAIChatTab(thread)
+
+        let history = thread.sortedMessages
+            .filter { $0 !== reply }
+            .map { AITurn(role: $0.role == .user ? .user : .assistant, text: $0.text) }
+            .filter { !$0.text.isEmpty }
+        let context = aiChatNoteContext()
+        let images = attachments.compactMap(\.image)
+        let expectsImages = attachments.contains { $0.kind == .snippet || $0.kind == .camera }
+
+        aiChatRespondingThreadIDs.insert(threadKey)
+        aiChatTasks[threadKey] = Task { @MainActor in
+            defer {
+                aiChatRespondingThreadIDs.remove(threadKey)
+                aiChatTasks[threadKey] = nil
+            }
+            do {
+                try await AI.provider.streamChat(
+                    turns: history,
+                    noteContext: context,
+                    images: images,
+                    expectsImages: expectsImages
+                ) { delta in
+                    reply.text += delta
+                }
+                if reply.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    reply.text = L("返答が空でした。もう一度試してください。")
+                }
+            } catch is CancellationError {
+                reply.text += reply.text.isEmpty ? L("（中断しました）") : L("（中断しました）")
+            } catch {
+                reply.text = (error as? LocalizedError)?.errorDescription
+                    ?? error.localizedDescription
+            }
+            thread.updatedAt = .now
+            try? modelContext.save()
+        }
+    }
+
+    private func askAIAboutSnippet(_ snippet: PageSnippet) {
+        presentAIChat()
+        let key = activeAIChatDraftKey
+        let snippetAttachment = AIChatAttachment(
+            name: snippet.sourceLabel,
+            path: "",
+            kind: .snippet,
+            snippet: snippet
+        )
+        // Do not rely on SwiftUI state propagation here. The "AIに質問する"
+        // button sends immediately after adding the crop, and reading the
+        // binding on the same pass can see the pre-update attachment list,
+        // which means the Worker receives text but no image. Pass the crop
+        // straight into the send path instead.
+        sendAIChatMessage(
+            draftKey: key,
+            text: L("この切り抜きについて説明してください。"),
+            attachments: [snippetAttachment]
+        )
+    }
+
+    private func handleProofSnippet(_ snippet: PageSnippet, role: AIChatAttachment.ProofRole) {
+        switch role {
+        case .question:
+            pendingProofQuestionSnippet = snippet
+        case .answer:
+            pendingProofAnswerSnippet = snippet
+        case .none:
+            return
+        }
+
+        if let question = pendingProofQuestionSnippet,
+           let answer = pendingProofAnswerSnippet {
+            presentAIChat()
+            gradeProof(ProofSubmission(
+                questionText: "",
+                questionImage: question.image,
+                answerText: "",
+                answerImage: answer.image
+            ))
+            pendingProofQuestionSnippet = nil
+            pendingProofAnswerSnippet = nil
+        }
+    }
+
+    /// Marks a proof, from whatever the student handed over.
+    ///
+    /// It runs as a normal exchange in the thread — a question from the
+    /// student, an answer from the AI — so the marking stays in the
+    /// conversation and can be asked about afterwards ("なぜここが減点なの？").
+    ///
+    /// Two calls, deliberately. A rubric is derived from the question alone
+    /// first, and only then is the student's work looked at. Asking for a
+    /// score in one shot makes the result drift between runs; fixing the
+    /// criteria before the answer is visible is what makes two runs of the
+    /// same page agree.
+    private func gradeProof(_ submission: ProofSubmission) {
+        guard submission.hasQuestion, submission.hasAnswer else { return }
+        let thread = aiChatThreadForSending()
+        let threadKey = aiChatThreadKey(thread)
+        guard !aiChatRespondingThreadIDs.contains(threadKey) else { return }
+
+        let userMessage = AIChatMessage(text: Self.submissionSummary(submission), role: .user)
+        userMessage.thread = thread
+        thread.messages.append(userMessage)
+
+        if thread.sortedMessages.filter({ $0.role == .user }).count == 1 {
+            thread.title = L("証明の添削")
+        }
+
+        let reply = AIChatMessage(text: L("採点基準を作っています…"), role: .assistant)
+        reply.thread = thread
+        thread.messages.append(reply)
+        thread.updatedAt = .now
+        try? modelContext.save()
+        loadAIChatThreads()
+        selectedAIChatThread = thread
+        announceAIChatTab(thread)
+
+        aiChatRespondingThreadIDs.insert(threadKey)
+        aiChatTasks[threadKey] = Task { @MainActor in
+            defer {
+                aiChatRespondingThreadIDs.remove(threadKey)
+                aiChatTasks[threadKey] = nil
+            }
+            do {
+                let rubric = try await AI.provider.buildRubric(for: submission)
+                try Task.checkCancellation()
+                reply.text = L("答案を読んでいます…")
+                let review = try await AI.provider.grade(submission, rubric: rubric)
+                reply.text = Self.markingReport(review)
+            } catch is CancellationError {
+                reply.text = L("（中断しました）")
+            } catch {
+                reply.text = (error as? LocalizedError)?.errorDescription
+                    ?? error.localizedDescription
+            }
+            thread.updatedAt = .now
+            try? modelContext.save()
+        }
+    }
+
+    /// What the student's side of the exchange says, so the thread reads as a
+    /// conversation rather than starting with an answer to an invisible
+    /// question.
+    private static func submissionSummary(_ submission: ProofSubmission) -> String {
+        var lines = [L("証明の添削をお願いします。")]
+        lines.append("")
+        lines.append(L("【問題】"))
+        lines.append(submission.questionText.isEmpty ? L("（画像）") : submission.questionText)
+        lines.append("")
+        lines.append(L("【解答】"))
+        lines.append(submission.answerText.isEmpty ? L("（画像）") : submission.answerText)
+        return lines.joined(separator: "\n")
+    }
+
+    /// Lays the marking out as text, so it renders in an ordinary chat
+    /// bubble and stays in the thread's history like any other reply.
+    private static func markingReport(_ review: ProofReviewResult) -> String {
+        var lines = ["【\(review.score) / \(review.maxScore)点】", "", review.verdict, ""]
+        lines.append(L("■ 採点内訳"))
+        for item in review.criteria {
+            lines.append("・\(item.name)　\(item.earnedPoints)/\(item.maxPoints)点")
+            if !item.comment.isEmpty { lines.append("　　\(item.comment)") }
+        }
+        if !review.issues.isEmpty {
+            lines.append("")
+            lines.append(L("■ 指摘"))
+            for issue in review.issues {
+                lines.append("・[\(issue.kind.title)] \(issue.excerpt)")
+                lines.append("　　\(issue.explanation)")
+                if !issue.suggestion.isEmpty { lines.append(L("　　→ \(issue.suggestion)")) }
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func cancelAIChatResponse() {
+        guard let selectedAIChatThread else { return }
+        let threadKey = aiChatThreadKey(selectedAIChatThread)
+        aiChatTasks[threadKey]?.cancel()
+        aiChatTasks[threadKey] = nil
+        aiChatRespondingThreadIDs.remove(threadKey)
+    }
+
+    private func deleteAIChatThread(_ thread: AIChatThread) {
+        NotificationCenter.default.post(
+            name: .studiquoCloseAIChatTab,
+            object: thread.persistentModelID
+        )
+        let threadKey = aiChatThreadKey(thread)
+        aiChatTasks[threadKey]?.cancel()
+        aiChatTasks[threadKey] = nil
+        aiChatRespondingThreadIDs.remove(threadKey)
+        aiChatDrafts[threadKey] = nil
+        aiChatAttachments[threadKey] = nil
+
+        if selectedAIChatThread?.persistentModelID == thread.persistentModelID {
+            selectedAIChatThread = nil
+        }
+
+        modelContext.delete(thread)
+        try? modelContext.save()
+        loadAIChatThreads()
+
+        if selectedAIChatThread == nil {
+            selectedAIChatThread = aiChatThreads.first
+        }
+    }
+
+    private func messageText(_ text: String, with attachments: [AIChatAttachment]) -> String {
+        guard !attachments.isEmpty else { return text }
+        let attachmentLines = attachments.map { attachment in
+            "- \(attachment.kind.label): \(attachment.name)"
+        }.joined(separator: "\n")
+        return """
+        \(text)
+
+        \(L("添付された資料"))
+        \(attachmentLines)
+        """
+    }
+
+    /// Hands the model the text of the page the student is looking at, so
+    /// "この問題" and the like have something to refer to. Handwriting reaches
+    /// it once the page has been through text recognition; typed elements are
+    /// always available.
+    private func aiChatNoteContext() -> String {
+        guard let page = drawingHistoryPage ?? currentPrimaryPage else { return "" }
+        var parts: [String] = []
+        let recognized = page.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !recognized.isEmpty { parts.append(recognized) }
+        let typed = page.elements
+            .filter { $0.kind == .text }
+            .map(\.text)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        parts.append(contentsOf: typed)
+        return parts.joined(separator: "\n")
     }
 
     /// Routes a top tab-bar selection (or a drag-drop, see `handlePaneDrop`)
@@ -1563,13 +2024,38 @@ struct NoteEditorView: View {
         guard size.width > 0, size.height > 0 else { return }
         let portrait = size.height > size.width
         isPortraitLayout = portrait
-        if portrait, splitMode == .horizontal {
-            splitMode = .vertical
-            splitRatio = 0.5
+        let wasPortrait = lastKnownPortrait
+        lastKnownPortrait = portrait
+
+        // Turning the iPad upright used to fold a side-by-side split into a
+        // stacked one, which squeezed both notes into half-height strips
+        // that were near-unusable. Rotating into portrait now returns to a
+        // single note instead.
+        //
+        // Only the *transition* collapses it: reacting to `portrait` alone
+        // would also tear down a split the user deliberately opened while
+        // already upright, on the very next layout pass. `wasPortrait` is
+        // nil until the first pass, so launching in portrait isn't mistaken
+        // for a rotation into it.
+        if portrait, wasPortrait == false, splitMode != .single {
+            collapseSplit()
         }
         if portrait, pendingSplitMode == .horizontal {
             pendingSplitMode = .vertical
         }
+    }
+
+    /// Returns to a single pane and discards whatever the secondary pane was
+    /// showing, so the closed split leaves nothing half-alive behind it.
+    private func collapseSplit() {
+        splitMode = .single
+        splitRatio = 0.5
+        secondaryNotebook = nil
+        secondaryFlashcardDeck = nil
+        secondaryShowsWeb = false
+        secondaryShowsAIChat = false
+        pendingSplitMode = nil
+        activePane = .primary
     }
 
     private var displayedPrimaryNotebook: Notebook {
@@ -1635,6 +2121,12 @@ struct NoteEditorView: View {
 
     private var activeNotebook: Notebook {
         activePane == .secondary ? (secondaryNotebook ?? displayedPrimaryNotebook) : displayedPrimaryNotebook
+    }
+
+    /// True when the pane the user last touched is a flashcard deck, which
+    /// has no pages for the page-level tools to act on.
+    private var activePaneShowsFlashcards: Bool {
+        activePane == .secondary ? secondaryFlashcardDeck != nil : primaryFlashcardDeck != nil
     }
 
     private var activePageIndexBinding: Binding<Int> {
@@ -1776,6 +2268,34 @@ struct NoteEditorView: View {
         let pages = displayedPrimaryNotebook.sortedPages
         guard pages.indices.contains(primaryPageIndex) else { return nil }
         return pages[primaryPageIndex]
+    }
+
+    /// Which page undo/redo act on. Only the canvas that was actually drawn
+    /// on holds the matching stroke history, and in continuous scrolling the
+    /// page under the pencil is often *not* the one the scroll position has
+    /// centred — so targeting `currentPrimaryPage` regularly sent the
+    /// notification to a canvas with an empty history, and the button did
+    /// nothing. The last activated page is checked against the notebooks on
+    /// screen so a page left over from a previously open note is ignored.
+    private var drawingHistoryPage: NotePage? {
+        if let lastActivePage,
+           lastActivePage.notebook === displayedPrimaryNotebook
+            || lastActivePage.notebook === secondaryNotebook {
+            return lastActivePage
+        }
+        return activePage ?? currentPrimaryPage
+    }
+
+    /// Every undo/redo carries a fresh id so the shared history can tell one
+    /// press apart from the next, and so two canvases showing the same page
+    /// don't both pop the stack for a single press.
+    private func postDrawingHistoryRequest(_ name: Notification.Name) {
+        guard let page = drawingHistoryPage else { return }
+        NotificationCenter.default.post(
+            name: name,
+            object: page,
+            userInfo: ["request": UUID()]
+        )
     }
 
     private func addTextElement() {
@@ -1942,7 +2462,7 @@ struct NoteEditorView: View {
     }
 }
 
-private struct PDFExportDocument: FileDocument {
+struct PDFExportDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.pdf] }
     let data: Data
 
@@ -1962,7 +2482,7 @@ private struct PDFExportDocument: FileDocument {
     }
 }
 
-private struct PDFSaveModifier: ViewModifier {
+struct PDFSaveModifier: ViewModifier {
     @Binding var isPresented: Bool
     @Binding var document: PDFExportDocument?
     let filename: String
@@ -2432,6 +2952,218 @@ private struct TimeToolView: View {
 /// at 5× zoom — because the page list's own `UIScrollView` owns the touch and
 /// a SwiftUI gesture layered outside it can't take that ownership. See
 /// `ZoomableScrollView` for the full explanation.
+/// The draggable pen bar.
+///
+/// Deliberately a separate view: its position is `@State` here rather than on
+/// `NoteEditorView`, so a drag invalidates only this small subtree instead of
+/// the entire editor. The bar tracks the finger exactly as a result.
+private struct FloatingDrawingToolbar: View {
+    let identity: String
+    let paneSize: CGSize
+    let prefersTopEdge: Bool
+    let isLeftHanded: Bool
+    let isAdjustingToolSize: Bool
+    let showsSizeControl: Bool
+    let controls: (Bool) -> AnyView
+    let sizeControl: (Bool) -> AnyView
+
+    /// `nil` until the bar has been moved, so it keeps following the pane's
+    /// default edge while it is left where it started.
+    @State private var center: CGPoint?
+    @State private var dragOrigin: CGPoint?
+    @State private var isVertical = false
+
+    private var barWidth: CGFloat {
+        isVertical ? 54 : min(760, max(54, paneSize.width - 16))
+    }
+
+    private var barHeight: CGFloat {
+        isVertical ? min(680, max(54, paneSize.height - 16)) : max(42, 54 * horizontalScale)
+    }
+
+    /// The full horizontal control row is about this wide at normal size.
+    /// In split panes the available width is often smaller, so the row is
+    /// scaled down instead of becoming horizontally scrollable.
+    private var idealHorizontalContentWidth: CGFloat { showsSizeControl ? 720 : 470 }
+
+    private var horizontalScale: CGFloat {
+        guard !isVertical else { return 1 }
+        return min(1, max(0.36, (barWidth - 18) / idealHorizontalContentWidth))
+    }
+
+    private var resolvedCenter: CGPoint {
+        let defaultY = prefersTopEdge
+            ? barHeight / 2 + 8
+            : paneSize.height - barHeight / 2 - 8
+        let proposed = center ?? CGPoint(x: paneSize.width / 2, y: defaultY)
+        return clamped(proposed)
+    }
+
+    private func clamped(_ point: CGPoint) -> CGPoint {
+        let halfWidth = barWidth / 2 + 6
+        let halfHeight = barHeight / 2 + 6
+        return CGPoint(
+            x: min(max(point.x, halfWidth), max(halfWidth, paneSize.width - halfWidth)),
+            y: min(max(point.y, halfHeight), max(halfHeight, paneSize.height - halfHeight))
+        )
+    }
+
+    var body: some View {
+        Group {
+            if isVertical {
+                ScrollView(.vertical) {
+                    VStack(spacing: 8) {
+                        moveHandle
+                        controls(true)
+                        if showsSizeControl {
+                            Divider().frame(width: 28, height: 1)
+                            sizeControl(true)
+                        }
+                    }
+                    .padding(.vertical, 9)
+                }
+                .scrollIndicators(.hidden)
+                .scrollDisabled(isAdjustingToolSize)
+            } else {
+                HStack(spacing: 8) {
+                    moveHandle
+                    controls(false)
+                    if showsSizeControl {
+                        Divider().frame(width: 1, height: 24)
+                        sizeControl(false)
+                    }
+                }
+                .padding(.horizontal, 9)
+                .frame(width: idealHorizontalContentWidth, height: 54)
+                .scaleEffect(horizontalScale, anchor: .center)
+                .frame(width: max(1, barWidth - 10), height: barHeight)
+                .clipped()
+            }
+        }
+        .buttonStyle(.borderless)
+        .frame(width: barWidth, height: barHeight)
+        .clipped()
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(0.16), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+        .environment(\.layoutDirection, isLeftHanded ? .rightToLeft : .leftToRight)
+        .position(resolvedCenter)
+        .gesture(toolbarDragGesture)
+        .id(identity)
+        .accessibilityLabel("描画バー")
+        .accessibilityHint("ドラッグすると、ノートの好きな位置へ動かせます。左右の端に寄せると縦並びになります")
+    }
+
+    private var moveHandle: some View {
+        Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: isVertical ? 30 : 34, height: isVertical ? 34 : 30)
+            .background(Color.primary.opacity(0.09), in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 2)
+                    .onChanged { value in
+                        let origin = dragOrigin ?? resolvedCenter
+                        if dragOrigin == nil { dragOrigin = origin }
+                        let candidate = CGPoint(
+                            x: origin.x + value.translation.width,
+                            y: origin.y + value.translation.height
+                        )
+                        // Written without an implicit animation: an animated
+                        // position chases the finger a frame or two behind,
+                        // which is the lag this bar is meant not to have.
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            let edgeThreshold: CGFloat = 100
+                            isVertical = candidate.x <= edgeThreshold
+                                || candidate.x >= paneSize.width - edgeThreshold
+                            center = candidate
+                        }
+                    }
+                    .onEnded { _ in
+                        dragOrigin = nil
+                        guard isVertical, let current = center else { return }
+                        let snappedX: CGFloat = current.x < paneSize.width / 2
+                            ? barWidth / 2 + 6
+                            : paneSize.width - barWidth / 2 - 6
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            center = CGPoint(x: snappedX, y: current.y)
+                        }
+                    }
+            )
+            .accessibilityLabel("描画バーを移動")
+            .accessibilityHint("ここをドラッグして描画バーを移動します")
+    }
+
+    private var toolbarDragGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                guard !isAdjustingToolSize else {
+                    dragOrigin = nil
+                    return
+                }
+                moveToolbar(with: value)
+            }
+            .onEnded { _ in
+                finishToolbarDrag()
+            }
+    }
+
+    private func moveToolbar(with value: DragGesture.Value) {
+        let origin = dragOrigin ?? resolvedCenter
+        if dragOrigin == nil { dragOrigin = origin }
+        let candidate = CGPoint(
+            x: origin.x + value.translation.width,
+            y: origin.y + value.translation.height
+        )
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            let edgeThreshold: CGFloat = 100
+            isVertical = candidate.x <= edgeThreshold
+                || candidate.x >= paneSize.width - edgeThreshold
+            center = candidate
+        }
+    }
+
+    private func finishToolbarDrag() {
+        dragOrigin = nil
+        guard isVertical, let current = center else { return }
+        let snappedX: CGFloat = current.x < paneSize.width / 2
+            ? barWidth / 2 + 6
+            : paneSize.width - barWidth / 2 - 6
+        withAnimation(.easeOut(duration: 0.18)) {
+            center = CGPoint(x: snappedX, y: current.y)
+        }
+    }
+}
+
+/// Maps the 0–100 the size slider shows onto the point widths the ink engine
+/// works in. Each tool gets its own point range, so "50" means a sensible
+/// middle for both a pen and an eraser even though those are very different
+/// numbers of points.
+enum ToolSizeScale {
+    case pen, eraser
+
+    var minimumPoints: Double { self == .pen ? 0.5 : 4 }
+    var maximumPoints: Double { self == .pen ? 24 : 90 }
+
+    var range: ClosedRange<Double> { minimumPoints...maximumPoints }
+
+    /// One step per unit of the displayed 0–100 scale.
+    var step: Double { (maximumPoints - minimumPoints) / 100 }
+
+    func percent(forPoints points: Double) -> Int {
+        let span = maximumPoints - minimumPoints
+        guard span > 0 else { return 0 }
+        let ratio = (points - minimumPoints) / span
+        return Int((min(max(ratio, 0), 1) * 100).rounded())
+    }
+}
+
 private struct ZoomableWorkspace<Content: View>: View {
     let size: CGSize
     private let content: Content
@@ -2612,139 +3344,1047 @@ private struct WebSearchPane: View {
     }
 }
 
-private struct AIChatPane: View {
-    let threads: [AIChatThread]
-    let selectedThread: AIChatThread
-    @Binding var draft: String
-    let onSelectThread: (AIChatThread) -> Void
-    let onNewThread: () -> Void
-    let onSend: () -> Void
+@MainActor
+private final class SpeechInputController: ObservableObject {
+    @Published var isRecording = false
+    @Published var isCallMode = false
+    @Published var statusText = ""
 
-    var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
-                Button(action: onNewThread) {
-                    Label("新しいトーク", systemImage: "square.and.pencil")
-                        .frame(maxWidth: .infinity, alignment: .leading)
+    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
+    private let audioEngine = AVAudioEngine()
+    private var request: SFSpeechAudioBufferRecognitionRequest?
+    private var task: SFSpeechRecognitionTask?
+    private var baseText = ""
+
+    func toggleDictation(draft: Binding<String>) {
+        if isRecording {
+            stop()
+        } else {
+            start(draft: draft, callMode: false)
+        }
+    }
+
+    func toggleCall(draft: Binding<String>) {
+        if isRecording && isCallMode {
+            stop()
+        } else {
+            start(draft: draft, callMode: true)
+        }
+    }
+
+    func stop() {
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        request?.endAudio()
+        task?.cancel()
+        request = nil
+        task = nil
+        isRecording = false
+        isCallMode = false
+        statusText = ""
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func start(draft: Binding<String>, callMode: Bool) {
+        Task {
+            let authorized = await requestAuthorization()
+            guard authorized else {
+                statusText = L("マイクまたは音声認識の許可が必要です。")
+                return
+            }
+            do {
+                try beginRecognition(draft: draft, callMode: callMode)
+            } catch {
+                statusText = L("音声入力を開始できませんでした：\(error.localizedDescription)")
+                stop()
+            }
+        }
+    }
+
+    private func requestAuthorization() async -> Bool {
+        let speechAllowed = await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status == .authorized)
+            }
+        }
+
+        let micAllowed = await withCheckedContinuation { continuation in
+            AVAudioSession.sharedInstance().requestRecordPermission { allowed in
+                continuation.resume(returning: allowed)
+            }
+        }
+
+        return speechAllowed && micAllowed
+    }
+
+    private func beginRecognition(draft: Binding<String>, callMode: Bool) throws {
+        stop()
+        baseText = draft.wrappedValue
+
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
+        try session.setActive(true, options: .notifyOthersOnDeactivation)
+
+        let newRequest = SFSpeechAudioBufferRecognitionRequest()
+        newRequest.shouldReportPartialResults = true
+        request = newRequest
+
+        let input = audioEngine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak newRequest] buffer, _ in
+            newRequest?.append(buffer)
+        }
+
+        audioEngine.prepare()
+        try audioEngine.start()
+
+        isRecording = true
+        isCallMode = callMode
+        statusText = callMode ? L("通話モードで聞き取っています…") : L("文字起こし中…")
+
+        task = recognizer?.recognitionTask(with: newRequest) { [weak self] result, error in
+            Task { @MainActor in
+                guard let self else { return }
+                if let text = result?.bestTranscription.formattedString {
+                    let separator = self.baseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n"
+                    draft.wrappedValue = self.baseText + separator + text
                 }
-                .buttonStyle(.bordered)
-
-                Text("履歴")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 6)
-
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 6) {
-                        ForEach(threads) { thread in
-                            Button {
-                                onSelectThread(thread)
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "message")
-                                        .foregroundStyle(.secondary)
-                                    Text(thread.title)
-                                        .lineLimit(1)
-                                    Spacer(minLength: 0)
-                                }
-                                .font(.subheadline)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 9)
-                                .background(
-                                    thread.persistentModelID == selectedThread.persistentModelID
-                                    ? Color.accentColor.opacity(0.14)
-                                    : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 10)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                if error != nil || result?.isFinal == true {
+                    self.stop()
                 }
             }
-            .padding(12)
-            .frame(width: 190)
-            .background(Color(uiColor: .secondarySystemBackground))
+        }
+    }
+}
 
-            Divider()
+private struct AIChatPane: View {
+    let threads: [AIChatThread]
+    let selectedThread: AIChatThread?
+    @Binding var draft: String
+    @Binding var attachments: [AIChatAttachment]
+    let onSelectThread: (AIChatThread) -> Void
+    let onNewThread: () -> Void
+    let onDeleteThread: (AIChatThread) -> Void
+    let onSend: () -> Void
+    let respondingThreadIDs: Set<String>
+    let onCancel: () -> Void
+    /// Runs the two-stage marker over whatever the marking box collected.
+    let onGradeProof: (ProofSubmission) -> Void
 
-            VStack(spacing: 0) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(selectedThread.title)
-                            .font(.headline)
-                            .lineLimit(1)
-                        Text("AIはまだ未接続です")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "sparkles")
-                        .foregroundStyle(Color.accentColor)
+    /// Whether the app knows where its AI server is. The API key itself lives
+    /// on that server, so there is nothing for the student to enter.
+    @State private var hasKey = AI.provider.isConfigured
+    @State private var isHistorySidebarVisible = true
+    @State private var pendingDeleteThread: AIChatThread?
+    @State private var attachmentPickerMode: AttachmentPickerMode?
+    @State private var isDropTargeted = false
+    /// The marking box, opened from the composer's + menu.
+    @State private var isMarkingBoxOpen = false
+    @State private var markingQuestionText = ""
+    @State private var markingAnswerText = ""
+    @State private var markingQuestionSnippet: PageSnippet?
+    @State private var markingAnswerSnippet: PageSnippet?
+    @State private var showsCameraScanner = false
+    @StateObject private var speechInput = SpeechInputController()
+
+    private enum AttachmentPickerMode: Identifiable {
+        case files
+        case folder
+
+        var id: String {
+            switch self {
+            case .files: return "files"
+            case .folder: return "folder"
+            }
+        }
+
+        var allowedContentTypes: [UTType] {
+            switch self {
+            case .files: return [.item]
+            case .folder: return [.folder]
+            }
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            HStack(spacing: 0) {
+                if isHistorySidebarVisible {
+                    historySidebar
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+
+                    Divider()
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(.regularMaterial)
 
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 14) {
-                            if selectedThread.sortedMessages.isEmpty {
-                                VStack(spacing: 12) {
-                                    Image(systemName: "sparkles")
-                                        .font(.system(size: 34))
-                                        .foregroundStyle(Color.accentColor)
-                                    Text("何を手伝いましょうか？")
-                                        .font(.title3.weight(.semibold))
-                                    Text("ここはAIチャット画面の試作です。今は送信と履歴保存だけできます。")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .multilineTextAlignment(.center)
+                VStack(spacing: 0) {
+                    HStack {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                isHistorySidebarVisible.toggle()
+                            }
+                        } label: {
+                            Image(systemName: "sidebar.left")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(isHistorySidebarVisible ? L("履歴を閉じる") : L("履歴を開く"))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(selectedThread?.title ?? L("新しいトーク"))
+                                .font(.headline)
+                                .lineLimit(1)
+                            Text(hasKey ? AI.provider.displayName : L("AIサーバー未設定"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: hasKey ? "sparkles" : "exclamationmark.triangle")
+                            .foregroundStyle(hasKey ? Color.accentColor : Color.orange)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(.regularMaterial)
+
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 14) {
+                                if messages.isEmpty {
+                                    VStack(spacing: 12) {
+                                        Image(systemName: "sparkles")
+                                            .font(.system(size: 34))
+                                            .foregroundStyle(Color.accentColor)
+                                        Text("何を手伝いましょうか？")
+                                            .font(.title3.weight(.semibold))
+                                        Text(hasKey
+                                             ? L("開いているページの内容も踏まえて答えます。わからないところを聞いてみてください。")
+                                             : L("AIサーバーのURLが設定されていません。ホーム画面の設定からMCPクラウド連携を確認してください。"))
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                            .multilineTextAlignment(.center)
+                                            .padding(.horizontal, 30)
+                                    }
+                                    .padding(.top, 60)
+                                    .frame(maxWidth: .infinity)
                                 }
-                                .padding(.top, 60)
-                                .frame(maxWidth: .infinity)
-                            }
 
-                            ForEach(selectedThread.sortedMessages) { message in
-                                AIChatBubble(message: message)
-                                    .id(message.persistentModelID)
+                                ForEach(messages) { message in
+                                    AIChatBubble(message: message)
+                                        .id(message.persistentModelID)
+                                }
                             }
+                            .padding(18)
                         }
-                        .padding(18)
-                    }
-                    .onChange(of: selectedThread.sortedMessages.count) { _, _ in
-                        if let last = selectedThread.sortedMessages.last {
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                proxy.scrollTo(last.persistentModelID, anchor: .bottom)
+                        .onChange(of: messages.count) { _, _ in
+                            if let last = messages.last {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    proxy.scrollTo(last.persistentModelID, anchor: .bottom)
+                                }
                             }
                         }
                     }
-                }
 
-                HStack(alignment: .bottom, spacing: 10) {
-                    TextField("メッセージを入力", text: $draft, axis: .vertical)
-                        .lineLimit(1...5)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 11)
-                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
-                        .submitLabel(.send)
-                        .onSubmit(onSend)
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !attachments.isEmpty {
+                            ScrollView(.horizontal) {
+                                HStack(spacing: 8) {
+                                    ForEach(attachments) { attachment in
+                                        attachmentChip(attachment)
+                                    }
+                                }
+                                .padding(.horizontal, 2)
+                            }
+                            .scrollIndicators(.hidden)
+                        }
 
-                    Button(action: onSend) {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 34, height: 34)
-                            .background(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.accentColor, in: Circle())
+                        if isMarkingBoxOpen { markingBox }
+
+                        HStack(alignment: .bottom, spacing: 10) {
+                            Menu {
+                                Button {
+                                    attachmentPickerMode = .files
+                                } label: {
+                                    Label(L("ファイルを追加"), systemImage: "doc.badge.plus")
+                                }
+
+                                Button {
+                                    attachmentPickerMode = .folder
+                                } label: {
+                                    Label(L("フォルダーを追加"), systemImage: "folder.badge.plus")
+                                }
+
+                                Button {
+                                    showsCameraScanner = true
+                                } label: {
+                                    Label(L("カメラで撮影"), systemImage: "camera")
+                                }
+                                .disabled(!VNDocumentCameraViewController.isSupported)
+
+                                Divider()
+
+                                Button {
+                                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                                        isMarkingBoxOpen = true
+                                    }
+                                } label: {
+                                    Label(L("AI採点"), systemImage: "checkmark.seal")
+                                }
+                            } label: {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                    .frame(width: 34, height: 34)
+                                    .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                            }
+                            .accessibilityLabel(L("ファイルやフォルダーを追加"))
+
+                            TextField("メッセージを入力", text: $draft, axis: .vertical)
+                                .lineLimit(1...5)
+                                .textFieldStyle(.plain)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 11)
+                                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                                .submitLabel(.send)
+                                .onSubmit(onSend)
+
+                            Button {
+                                speechInput.toggleDictation(draft: $draft)
+                            } label: {
+                                Image(systemName: speechInput.isRecording && !speechInput.isCallMode ? "waveform.circle.fill" : "waveform")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(speechInput.isRecording && !speechInput.isCallMode ? Color.accentColor : .primary)
+                                    .frame(width: 34, height: 34)
+                                    .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(L("文字起こし"))
+
+                            Button {
+                                speechInput.toggleCall(draft: $draft)
+                            } label: {
+                                Image(systemName: speechInput.isRecording && speechInput.isCallMode ? "phone.circle.fill" : "phone")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(speechInput.isRecording && speechInput.isCallMode ? Color.green : .primary)
+                                    .frame(width: 34, height: 34)
+                                    .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(L("通話"))
+
+                            // Turns into a stop button while a reply is streaming, so
+                            // a long answer can be cut short.
+                            Button(action: isResponding ? onCancel : onSend) {
+                                Image(systemName: isResponding ? "stop.fill" : "arrow.up")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 34, height: 34)
+                                    .background(sendButtonColor, in: Circle())
+                            }
+                            .disabled(!isResponding && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .accessibilityLabel(isResponding ? L("生成を止める") : L("送信"))
+                        }
+
+                        if !speechInput.statusText.isEmpty {
+                            Text(speechInput.statusText)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .padding(.leading, 44)
+                        }
                     }
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .padding(12)
+                    .background(.regularMaterial)
                 }
-                .padding(12)
-                .background(.regularMaterial)
+            }
+
+            if let pendingDeleteThread {
+                deleteConfirmationCard(for: pendingDeleteThread)
             }
         }
         .background(Color(uiColor: .systemBackground))
+        // The whole pane accepts crops, not just the composer — aiming a
+        // drag at a text field on a split screen is fiddly, and there is
+        // nothing else here a page snippet could mean.
+        .dropDestination(for: PageSnippet.self) { snippets, _ in
+            for snippet in snippets { accept(snippet) }
+            return !snippets.isEmpty
+        } isTargeted: { targeted in
+            withAnimation(.easeOut(duration: 0.15)) { isDropTargeted = targeted }
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                    .padding(4)
+                    .allowsHitTesting(false)
+            }
+        }
+        .fileImporter(
+            isPresented: attachmentPickerBinding,
+            allowedContentTypes: attachmentPickerMode?.allowedContentTypes ?? [.item],
+            allowsMultipleSelection: attachmentPickerMode == .files
+        ) { result in
+            guard let mode = attachmentPickerMode else { return }
+            if case .success(let urls) = result {
+                let kind: AIChatAttachment.Kind = mode == .folder ? .folder : .file
+                attachments.append(contentsOf: urls.map {
+                    AIChatAttachment(name: $0.lastPathComponent, path: $0.path, kind: kind)
+                })
+            }
+            attachmentPickerMode = nil
+        }
+        .sheet(isPresented: $showsCameraScanner) {
+            DocumentScannerView { images in
+                attachments.append(contentsOf: images.enumerated().compactMap { index, image in
+                    guard let data = image.pngData() else { return nil }
+                    return AIChatAttachment(
+                        name: L("撮影画像 \(index + 1)"),
+                        path: "",
+                        kind: .camera,
+                        imageData: data
+                    )
+                })
+            }
+        }
+    }
+
+    private var historySidebar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onNewThread) {
+                Label("新しいトーク", systemImage: "square.and.pencil")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.bordered)
+
+            Text("履歴")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.top, 6)
+
+            List {
+                ForEach(threads) { thread in
+                    Button {
+                        onSelectThread(thread)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "message")
+                                .foregroundStyle(.secondary)
+                            Text(thread.title)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                            if isResponding(thread) {
+                                ProgressView()
+                                    .controlSize(.mini)
+                            }
+                        }
+                        .font(.subheadline)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 9)
+                        .background(
+                            isSelected(thread)
+                            ? Color.accentColor.opacity(0.14)
+                            : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 10)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            pendingDeleteThread = thread
+                        } label: {
+                            Label(L("削除"), systemImage: "trash")
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+        }
+        .padding(12)
+        .frame(width: 210)
+        .background(Color(uiColor: .secondarySystemBackground))
+    }
+
+    private var messages: [AIChatMessage] {
+        selectedThread?.sortedMessages ?? []
+    }
+
+    private var isResponding: Bool {
+        guard let selectedThread else { return false }
+        return isResponding(selectedThread)
+    }
+
+    private func isResponding(_ thread: AIChatThread) -> Bool {
+        respondingThreadIDs.contains(String(describing: thread.persistentModelID))
+    }
+
+    private func isSelected(_ thread: AIChatThread) -> Bool {
+        selectedThread?.persistentModelID == thread.persistentModelID
+    }
+
+    private func deleteConfirmationCard(for thread: AIChatThread) -> some View {
+        ZStack {
+            Color.black.opacity(0.18)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    pendingDeleteThread = nil
+                }
+
+            VStack(spacing: 14) {
+                Image(systemName: "trash")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(.red)
+
+                VStack(spacing: 6) {
+                    Text(L("このトークを削除しますか？"))
+                        .font(.headline)
+                    Text(L("削除すると、このトーク履歴は元に戻せません。"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                HStack(spacing: 10) {
+                    Button {
+                        pendingDeleteThread = nil
+                    } label: {
+                        Text(L("いいえ"))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button(role: .destructive) {
+                        onDeleteThread(thread)
+                        pendingDeleteThread = nil
+                    } label: {
+                        Text(L("はい"))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: 320)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+            .padding(24)
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        .zIndex(20)
+    }
+
+    private var attachmentPickerBinding: Binding<Bool> {
+        Binding(
+            get: { attachmentPickerMode != nil },
+            set: { isPresented in
+                if !isPresented {
+                    attachmentPickerMode = nil
+                }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func attachmentChip(_ attachment: AIChatAttachment) -> some View {
+        if attachment.kind == .snippet, let snippet = attachment.snippet {
+            snippetChip(attachment, snippet: snippet)
+        } else {
+            HStack(spacing: 6) {
+                Image(systemName: attachment.kind.icon)
+                    .foregroundStyle(.secondary)
+                Text(attachment.name)
+                    .lineLimit(1)
+                Button {
+                    attachments.removeAll { $0.id == attachment.id }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("添付を削除"))
+            }
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+        }
+    }
+
+    /// A dropped crop, with the role picker that decides whether this is a
+    /// marking request or just an image to talk about.
+    private func snippetChip(_ attachment: AIChatAttachment, snippet: PageSnippet) -> some View {
+        VStack(spacing: 4) {
+            Group {
+                if let image = snippet.image {
+                    Image(uiImage: image).resizable().scaledToFit()
+                } else {
+                    Color.secondary.opacity(0.2)
+                }
+            }
+            .frame(width: 104, height: 66)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+
+            Menu {
+                Picker(L("役割"), selection: roleBinding(for: attachment)) {
+                    ForEach(AIChatAttachment.ProofRole.allCases) { role in
+                        Text(role.label).tag(role)
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Text(attachment.proofRole.label)
+                    Image(systemName: "chevron.down")
+                }
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(attachment.proofRole.tint)
+            }
+        }
+        .padding(6)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 11))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11)
+                .stroke(attachment.proofRole == .none ? .clear : attachment.proofRole.tint, lineWidth: 1.5)
+        }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                attachments.removeAll { $0.id == attachment.id }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .background(Circle().fill(Color(uiColor: .systemBackground)))
+            }
+            .buttonStyle(.plain)
+            .offset(x: 4, y: -4)
+            .accessibilityLabel(L("添付を削除"))
+        }
+    }
+
+    private func roleBinding(for attachment: AIChatAttachment) -> Binding<AIChatAttachment.ProofRole> {
+        Binding(
+            get: { attachments.first { $0.id == attachment.id }?.proofRole ?? .none },
+            set: { newRole in
+                guard let index = attachments.firstIndex(where: { $0.id == attachment.id }) else { return }
+                // Only one crop can be the question and only one the answer,
+                // so claiming a role takes it off whoever held it.
+                if newRole != .none {
+                    for other in attachments.indices where attachments[other].proofRole == newRole {
+                        attachments[other].proofRole = .none
+                    }
+                }
+                attachments[index].proofRole = newRole
+                // Tagging a crop is the same intent as opening the box from
+                // the menu, so the box comes out to receive it.
+                if newRole != .none { adoptTaggedSnippets() }
+            }
+        )
+    }
+
+    /// Moves crops the student has tagged into the marking box's slots.
+    private func adoptTaggedSnippets() {
+        if let question = attachments.first(where: { $0.proofRole == .question })?.snippet {
+            markingQuestionSnippet = question
+        }
+        if let answer = attachments.first(where: { $0.proofRole == .answer })?.snippet {
+            markingAnswerSnippet = answer
+        }
+        attachments.removeAll { $0.kind == .snippet && $0.proofRole != .none }
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { isMarkingBoxOpen = true }
+    }
+
+    /// Files a dropped crop.
+    ///
+    /// While the marking box is open a drop fills its empty slot, which is
+    /// what makes "問題をドラッグ、解答をドラッグ、採点" work without any
+    /// tagging. Otherwise it lands in the composer as a taggable chip.
+    private func accept(_ snippet: PageSnippet) {
+        if isMarkingBoxOpen {
+            if markingQuestionSnippet == nil {
+                markingQuestionSnippet = snippet
+            } else {
+                markingAnswerSnippet = snippet
+            }
+            return
+        }
+        let taken = Set(attachments.map(\.proofRole))
+        let role: AIChatAttachment.ProofRole =
+            !taken.contains(.question) ? .question : (!taken.contains(.answer) ? .answer : .none)
+        attachments.append(AIChatAttachment(
+            name: snippet.sourceLabel,
+            path: "",
+            kind: .snippet,
+            snippet: snippet,
+            proofRole: role
+        ))
+    }
+
+    // MARK: Marking box
+
+    private var markingSubmission: ProofSubmission {
+        ProofSubmission(
+            questionText: markingQuestionText.trimmingCharacters(in: .whitespacesAndNewlines),
+            questionImage: markingQuestionSnippet?.image,
+            answerText: markingAnswerText.trimmingCharacters(in: .whitespacesAndNewlines),
+            answerImage: markingAnswerSnippet?.image
+        )
+    }
+
+    /// Where a proof is handed over for marking.
+    ///
+    /// Each half takes typing or a dropped crop, because a question is
+    /// usually printed in a PDF while the working is often quicker to type
+    /// than to photograph — and either can be the other way round.
+    private var markingBox: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(Color.accentColor)
+                Text("AI採点")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { closeMarkingBox() }
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("採点をやめる"))
+            }
+
+            markingSlot(
+                title: L("問題"),
+                placeholder: L("問題文を入力、またはページを切り抜いてドラッグ"),
+                tint: .indigo,
+                text: $markingQuestionText,
+                snippet: $markingQuestionSnippet
+            )
+            markingSlot(
+                title: L("解答"),
+                placeholder: L("自分の証明を入力、またはページを切り抜いてドラッグ"),
+                tint: .teal,
+                text: $markingAnswerText,
+                snippet: $markingAnswerSnippet
+            )
+
+            Button {
+                let submission = markingSubmission
+                onGradeProof(submission)
+                withAnimation(.easeOut(duration: 0.2)) { closeMarkingBox() }
+            } label: {
+                Label(L("採点する"), systemImage: "checkmark.seal")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .background(canMark ? Color.accentColor : Color.secondary.opacity(0.3),
+                                in: RoundedRectangle(cornerRadius: 11))
+                    .foregroundStyle(canMark ? .white : .secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canMark)
+        }
+        .padding(12)
+        .background(Color(uiColor: .tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private var canMark: Bool {
+        !isResponding && markingSubmission.hasQuestion && markingSubmission.hasAnswer
+    }
+
+    private func closeMarkingBox() {
+        isMarkingBoxOpen = false
+        markingQuestionText = ""
+        markingAnswerText = ""
+        markingQuestionSnippet = nil
+        markingAnswerSnippet = nil
+    }
+
+    private func markingSlot(
+        title: String,
+        placeholder: String,
+        tint: Color,
+        text: Binding<String>,
+        snippet: Binding<PageSnippet?>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(tint)
+
+            if let image = snippet.wrappedValue?.image {
+                ZStack(alignment: .topTrailing) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 90)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(tint.opacity(0.35), lineWidth: 1))
+
+                    Button {
+                        snippet.wrappedValue = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white, Color.black.opacity(0.55))
+                            .background(Circle().fill(Color.black.opacity(0.25)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("画像を外す"))
+                    .offset(x: 7, y: -7)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 2)
+            }
+
+            TextField(placeholder, text: text, axis: .vertical)
+                .lineLimit(1...6)
+                .font(.subheadline)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 9))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(9)
+        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 11))
+        .dropDestination(for: PageSnippet.self) { items, _ in
+            guard let dropped = items.first else { return false }
+            snippet.wrappedValue = dropped
+            return true
+        }
+    }
+
+    private var sendButtonColor: Color {
+        if isResponding { return .red }
+        return draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .accentColor
+    }
+}
+
+/// Shows what the snip tool has cut out, and takes delivery of new crops.
+///
+/// A tray rather than a chip pinned to the page: the question is usually on a
+/// different page from the answer, so a crop has to survive scrolling away
+/// from where it was taken. It lives in its own modifier because the editor's
+/// body is already at the limit of what the type-checker will chew through.
+/// Keeps the tab bar's AI tabs in step with the conversation on screen.
+///
+/// Split out of the editor's body for the same reason the snippet tray was:
+/// that body is long enough that two more chained modifiers put the
+/// type-checker over its budget.
+private struct AIChatTabSyncModifier: ViewModifier {
+    let openThreadID: PersistentIdentifier?
+    let onAnnounce: () -> Void
+    let onSelect: (PersistentIdentifier) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: openThreadID) { _, id in
+                if id != nil { onAnnounce() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .studiquoSelectAIChatTab)) { note in
+                guard let id = note.object as? PersistentIdentifier else { return }
+                onSelect(id)
+            }
+    }
+}
+
+private struct SnippetTrayModifier: ViewModifier {
+    @Binding var snippets: [PageSnippet]
+    @Binding var pendingQuestion: PageSnippet?
+    @Binding var pendingAnswer: PageSnippet?
+    let onAskAI: (PageSnippet) -> Void
+    let onProofRoleSelected: (PageSnippet, AIChatAttachment.ProofRole) -> Void
+    @State private var isSelectingProofSnippets = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .bottomLeading) { tray }
+            .onReceive(NotificationCenter.default.publisher(for: .studiquoPageSnipped)) { note in
+                guard let snippet = note.object as? PageSnippet else { return }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    snippets.append(snippet)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var tray: some View {
+        if !snippets.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "rectangle.dashed")
+                    Text("切り抜き")
+                        .font(.caption.weight(.semibold))
+                    Spacer(minLength: 8)
+                    Button {
+                        withAnimation {
+                            snippets.removeAll()
+                            pendingQuestion = nil
+                            pendingAnswer = nil
+                            isSelectingProofSnippets = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    ForEach(snippets) { snippet in
+                        thumbnail(snippet)
+                    }
+                }
+
+                if let latest = snippets.last {
+                    HStack(spacing: 8) {
+                        Button {
+                            onAskAI(latest)
+                            withAnimation { snippets.removeAll { $0.id == latest.id } }
+                        } label: {
+                            Label("AIに質問する", systemImage: "sparkles")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                pendingQuestion = nil
+                                pendingAnswer = nil
+                                isSelectingProofSnippets = true
+                            }
+                        } label: {
+                            Label("AIに採点する", systemImage: "checkmark.seal")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .font(.caption.weight(.semibold))
+
+                    if isSelectingProofSnippets {
+                        Text(pendingQuestion == nil ? "問題の切り抜き画像をタップしてください" : "解答の切り抜き画像をタップしてください")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(10)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+            .padding(.leading, 14)
+            .padding(.bottom, 14)
+            .transition(.move(edge: .leading).combined(with: .opacity))
+        }
+    }
+
+    private func thumbnail(_ snippet: PageSnippet) -> some View {
+        Group {
+            if let image = snippet.image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                Color.secondary.opacity(0.2)
+            }
+        }
+        .frame(width: 92, height: 62)
+        .background(Color(uiColor: .systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(alignment: .bottomTrailing) {
+            Text(snippet.sourceLabel)
+                .font(.system(size: 9, weight: .semibold))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(.thinMaterial, in: Capsule())
+                .padding(3)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                withAnimation { snippets.removeAll { $0.id == snippet.id } }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.black.opacity(0.55))
+            }
+            .buttonStyle(.plain)
+            .offset(x: 6, y: -6)
+            .accessibilityLabel(L("切り抜きを削除"))
+        }
+        .draggable(snippet) {
+            // The lift preview. Without an explicit one the drag picks up the
+            // chrome above as well, which reads as dragging the whole tray.
+            Group {
+                if let image = snippet.image {
+                    Image(uiImage: image).resizable().scaledToFit()
+                } else {
+                    Color.secondary
+                }
+            }
+            .frame(width: 120, height: 80)
+        }
+        .contextMenu {
+            Button(role: .destructive) {
+                withAnimation { snippets.removeAll { $0.id == snippet.id } }
+            } label: {
+                Label(L("削除"), systemImage: "trash")
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if pendingQuestion?.id == snippet.id || pendingAnswer?.id == snippet.id {
+                Text(pendingQuestion?.id == snippet.id ? L("問題") : L("解答"))
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(pendingQuestion?.id == snippet.id ? Color.indigo : Color.teal, in: Capsule())
+                    .padding(3)
+            }
+        }
+        .onTapGesture {
+            guard isSelectingProofSnippets else { return }
+            selectProofSnippet(snippet)
+        }
+    }
+
+    private func selectProofSnippet(_ snippet: PageSnippet) {
+        if pendingQuestion == nil || pendingQuestion?.id == snippet.id {
+            pendingQuestion = snippet
+            if pendingAnswer?.id == snippet.id { pendingAnswer = nil }
+            return
+        }
+
+        pendingAnswer = snippet
+        if let question = pendingQuestion {
+            onProofRoleSelected(question, .question)
+            onProofRoleSelected(snippet, .answer)
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                snippets.removeAll { $0.id == question.id || $0.id == snippet.id }
+                pendingQuestion = nil
+                pendingAnswer = nil
+                isSelectingProofSnippets = false
+            }
+        }
     }
 }
 
@@ -2752,25 +4392,25 @@ private struct AIChatBubble: View {
     let message: AIChatMessage
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            if message.role == .user { Spacer(minLength: 40) }
-
+        if message.role == .assistant {
             Text(message.text)
                 .font(.body)
-                .foregroundStyle(message.role == .user ? .white : .primary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    message.role == .user
-                    ? Color.accentColor
-                    : Color(uiColor: .secondarySystemBackground),
-                    in: RoundedRectangle(cornerRadius: 18)
-                )
-                .frame(maxWidth: 520, alignment: message.role == .user ? .trailing : .leading)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(alignment: .bottom, spacing: 8) {
+                Spacer(minLength: 40)
 
-            if message.role == .assistant { Spacer(minLength: 40) }
+                Text(message.text)
+                    .font(.body)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 18))
+                    .frame(maxWidth: 520, alignment: .trailing)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     }
 }
 
@@ -3040,11 +4680,10 @@ private struct NotebookPaneView: View {
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                     Spacer()
-                    Button(action: onRequestAddPage) {
-                        Image(systemName: "plus.rectangle")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("このノートにページを追加")
+                    // No add-page button here. The tool strip's "ページ追加"
+                    // already adds to whichever pane was last touched, so a
+                    // second per-pane button was redundant clutter on a
+                    // header that only needs to say which note this is.
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 38)
@@ -3709,6 +5348,78 @@ private struct SplitDivider: View {
     }
 }
 
+/// Per-page undo/redo stacks, kept outside the canvas views that use them.
+///
+/// They used to be `@State` on `PageCanvasContainer`. In continuous
+/// scrolling those views sit in a `LazyVStack`, so scrolling a page out of
+/// sight and back destroys and rebuilds the canvas — taking its whole
+/// history with it and leaving Undo with nothing to pop. Keyed by page here,
+/// the history outlives any individual canvas.
+@MainActor
+final class DrawingHistoryStore {
+    static let shared = DrawingHistoryStore()
+
+    private var undoStacks: [PersistentIdentifier: [InkDrawing]] = [:]
+    private var redoStacks: [PersistentIdentifier: [InkDrawing]] = [:]
+    /// Pages in least-recently-touched-first order, so the memory held by
+    /// notebooks the user has moved on from is eventually released.
+    private var recency: [PersistentIdentifier] = []
+    /// The last undo/redo request acted on. Two canvases can show the same
+    /// page (a split of one notebook), and both answer the notification —
+    /// without this the second one would pop the shared stack a second time
+    /// and skip a step. The loser instead picks the new drawing up from the
+    /// sync broadcast, exactly as it does for freshly drawn ink.
+    private var lastHandledRequest: UUID?
+
+    private static let depthLimit = 80
+    private static let pageLimit = 12
+
+    private init() {}
+
+    func recordChange(from oldValue: InkDrawing, for page: PersistentIdentifier) {
+        var stack = undoStacks[page] ?? []
+        stack.append(oldValue)
+        if stack.count > Self.depthLimit { stack.removeFirst() }
+        undoStacks[page] = stack
+        redoStacks[page] = []
+        touch(page)
+    }
+
+    func popUndo(requestID: UUID, page: PersistentIdentifier, current: InkDrawing) -> InkDrawing? {
+        guard claim(requestID) else { return nil }
+        guard var stack = undoStacks[page], let previous = stack.popLast() else { return nil }
+        undoStacks[page] = stack
+        redoStacks[page, default: []].append(current)
+        touch(page)
+        return previous
+    }
+
+    func popRedo(requestID: UUID, page: PersistentIdentifier, current: InkDrawing) -> InkDrawing? {
+        guard claim(requestID) else { return nil }
+        guard var stack = redoStacks[page], let next = stack.popLast() else { return nil }
+        redoStacks[page] = stack
+        undoStacks[page, default: []].append(current)
+        touch(page)
+        return next
+    }
+
+    private func claim(_ requestID: UUID) -> Bool {
+        guard lastHandledRequest != requestID else { return false }
+        lastHandledRequest = requestID
+        return true
+    }
+
+    private func touch(_ page: PersistentIdentifier) {
+        recency.removeAll { $0 == page }
+        recency.append(page)
+        while recency.count > Self.pageLimit {
+            let evicted = recency.removeFirst()
+            undoStacks[evicted] = nil
+            redoStacks[evicted] = nil
+        }
+    }
+}
+
 struct PageCanvasContainer: View {
     @Bindable var page: NotePage
     @Environment(\.modelContext) private var modelContext
@@ -3726,8 +5437,6 @@ struct PageCanvasContainer: View {
     /// InkCanvasRepresentable knows to push it into the canvas. Never bumped
     /// for ink the user just drew — that already lives in the canvas.
     @State private var drawingVersion = 0
-    @State private var undoHistory: [InkDrawing] = []
-    @State private var redoHistory: [InkDrawing] = []
     @State private var isApplyingHistory = false
     @State private var drawingSaveTask: Task<Void, Never>?
     @State private var canvasDisplaySize: CGSize = .zero
@@ -3791,6 +5500,7 @@ struct PageCanvasContainer: View {
                             width: drawingWidth,
                             eraserWidth: eraserWidth,
                             drawingVersion: drawingVersion,
+                            contentScale: displaySize.width / max(page.pageWidth, 1),
                             isScratchOutEnabled: isScratchOutEnabled,
                             isLineCorrectionEnabled: isLineCorrectionEnabled,
                             isEllipseCorrectionEnabled: isEllipseCorrectionEnabled,
@@ -3801,6 +5511,12 @@ struct PageCanvasContainer: View {
                             onActivate: {
                                 NotificationCenter.default.post(
                                     name: Notification.Name("StudiquoPageActivated"),
+                                    object: page
+                                )
+                            },
+                            onBackgroundTap: {
+                                NotificationCenter.default.post(
+                                    name: .studiquoCanvasTapped,
                                     object: page
                                 )
                             },
@@ -3831,6 +5547,21 @@ struct PageCanvasContainer: View {
                                     name: .studiquoSelectionDropped,
                                     object: StudiquoSelectionDrop(text: text, screenPoint: point)
                                 )
+                            },
+                            onSnipCaptured: { rect in
+                                // The canvas knows only where the rectangle
+                                // is; the page's background and elements live
+                                // out here, so the crop is rendered here too.
+                                guard let snippet = PageSnippetRenderer.snippet(
+                                    of: page,
+                                    rect: rect,
+                                    label: L("\(page.order + 1)ページ"),
+                                    drawing: drawing
+                                ) else { return }
+                                NotificationCenter.default.post(
+                                    name: .studiquoPageSnipped,
+                                    object: snippet
+                                )
                             }
                         )
                             .allowsHitTesting(!isReadOnlyMode)
@@ -3849,9 +5580,11 @@ struct PageCanvasContainer: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
             .onAppear {
                 canvasDisplaySize = displaySize
+                normalizeInkCoordinateSpace(displayWidth: displaySize.width)
             }
             .onChange(of: displaySize) { _, newSize in
                 canvasDisplaySize = newSize
+                normalizeInkCoordinateSpace(displayWidth: newSize.width)
                 if hasLoadedDrawing { convertLegacyShapesIfNeeded() }
             }
         }
@@ -3865,32 +5598,23 @@ struct PageCanvasContainer: View {
             } else {
                 GestureDiagnostics.inkLoaded(strokes: 0, hadData: page.drawingData != nil)
             }
-            undoHistory.removeAll()
-            redoHistory.removeAll()
             hasLoadedDrawing = true
+            normalizeInkCoordinateSpace(displayWidth: canvasDisplaySize.width)
             convertLegacyShapesIfNeeded()
         }
         .onChange(of: page.backgroundImageData) { _, _ in updateBackgroundImageIfNeeded() }
         .onChange(of: drawing) { oldValue, newValue in
             guard hasLoadedDrawing else { return }
             if isApplyingSyncedDrawing {
-                // Recorded for undo like any other change, so a second
-                // canvas on this page keeps a history parallel to the one
-                // that drew it — both answer the same undo notification and
-                // must land on the same state — but deliberately not
-                // re-broadcast, which would bounce it back and forth.
+                // The canvas that originated this already recorded it in the
+                // shared per-page history, so recording it again here would
+                // double-count the step. Nor is it re-broadcast, which would
+                // bounce it back and forth.
                 isApplyingSyncedDrawing = false
-                if oldValue != newValue {
-                    undoHistory.append(oldValue)
-                    if undoHistory.count > 80 { undoHistory.removeFirst() }
-                    redoHistory.removeAll()
-                }
             } else if isApplyingHistory {
                 isApplyingHistory = false
             } else if oldValue != newValue {
-                undoHistory.append(oldValue)
-                if undoHistory.count > 80 { undoHistory.removeFirst() }
-                redoHistory.removeAll()
+                DrawingHistoryStore.shared.recordChange(from: oldValue, for: page.persistentModelID)
                 NotificationCenter.default.post(
                     name: .studiquoDrawingSynced,
                     object: page,
@@ -3902,16 +5626,20 @@ struct PageCanvasContainer: View {
             // of the normal debounce used to batch rapid pen samples) closes
             // the window where switching tools right after erasing could
             // observe/reload the pre-erase drawing.
-            scheduleDrawingSave(newValue, delay: drawingTool.wrappedValue == .eraser ? .zero : .milliseconds(180))
+            let removedWholeStrokes = newValue.strokes.count < oldValue.strokes.count
+            let mustSaveImmediately = drawingTool.wrappedValue == .eraser || removedWholeStrokes
+            scheduleDrawingSave(newValue, delay: mustSaveImmediately ? .zero : .milliseconds(180))
         }
         .onDisappear { scheduleDrawingSave(drawing, delay: .zero) }
         .onReceive(NotificationCenter.default.publisher(for: .studiquoUndoDrawing)) { notification in
-            guard let targetPage = notification.object as? NotePage, targetPage === page else { return }
-            undoDrawing()
+            guard let targetPage = notification.object as? NotePage, targetPage === page,
+                  let requestID = notification.userInfo?["request"] as? UUID else { return }
+            undoDrawing(requestID: requestID)
         }
         .onReceive(NotificationCenter.default.publisher(for: .studiquoRedoDrawing)) { notification in
-            guard let targetPage = notification.object as? NotePage, targetPage === page else { return }
-            redoDrawing()
+            guard let targetPage = notification.object as? NotePage, targetPage === page,
+                  let requestID = notification.userInfo?["request"] as? UUID else { return }
+            redoDrawing(requestID: requestID)
         }
         .onReceive(NotificationCenter.default.publisher(for: .studiquoDrawingSynced)) { notification in
             guard hasLoadedDrawing,
@@ -4070,20 +5798,60 @@ struct PageCanvasContainer: View {
         }
     }
 
-    private func undoDrawing() {
-        guard let previous = undoHistory.popLast() else { return }
-        redoHistory.append(drawing)
+    /// Moves this page's ink into page coordinates, once.
+    ///
+    /// Strokes used to be written in whatever size the canvas happened to be
+    /// on screen. `page.inkReferenceWidth` records the space the stored data
+    /// is in; a page that predates the field carries `0`, and the width it is
+    /// being shown at right now is the best available guess — exact for the
+    /// common case of reopening a note at the size it was written at.
+    private func normalizeInkCoordinateSpace(displayWidth: CGFloat) {
+        guard hasLoadedDrawing, displayWidth > 1, page.pageWidth > 1 else { return }
+        let target = page.pageWidth
+        let source = page.inkReferenceWidth > 1 ? page.inkReferenceWidth : Double(displayWidth)
+        guard abs(source - target) > 0.5 else {
+            if page.inkReferenceWidth != target { page.inkReferenceWidth = target }
+            return
+        }
+        page.inkReferenceWidth = target
+        guard !drawing.isEmpty else { return }
         isApplyingHistory = true
-        drawing = previous
+        drawing = drawing.scaled(by: CGFloat(target / source))
         drawingVersion += 1
+        scheduleDrawingSave(drawing, delay: .zero)
     }
 
-    private func redoDrawing() {
-        guard let next = redoHistory.popLast() else { return }
-        undoHistory.append(drawing)
+    private func undoDrawing(requestID: UUID) {
+        guard let previous = DrawingHistoryStore.shared.popUndo(
+            requestID: requestID,
+            page: page.persistentModelID,
+            current: drawing
+        ) else { return }
+        applyHistory(previous)
+    }
+
+    private func redoDrawing(requestID: UUID) {
+        guard let next = DrawingHistoryStore.shared.popRedo(
+            requestID: requestID,
+            page: page.persistentModelID,
+            current: drawing
+        ) else { return }
+        applyHistory(next)
+    }
+
+    /// Swaps in a state from the history and tells any other canvas on this
+    /// page to follow. The other canvas is deliberately shut out of the pop
+    /// itself (see `DrawingHistoryStore.claim`), so this broadcast is how it
+    /// stays in step.
+    private func applyHistory(_ value: InkDrawing) {
         isApplyingHistory = true
-        drawing = next
+        drawing = value
         drawingVersion += 1
+        NotificationCenter.default.post(
+            name: .studiquoDrawingSynced,
+            object: page,
+            userInfo: ["drawing": value, "sender": canvasID]
+        )
     }
 
     private func fitSize(container: CGSize, aspect: CGFloat) -> CGSize {
@@ -4100,14 +5868,66 @@ private struct PageElementsLayer: View {
     @Bindable var page: NotePage
     let isDark: Bool
 
+    /// At most one element carries the resize/rotate chrome at a time, so
+    /// the state lives here rather than in each element.
+    @State private var selectedElementID: PersistentIdentifier?
+
+    /// The rotation handle needs the touch point in page coordinates to work
+    /// out an angle from the element's centre; a named space is the only way
+    /// to read it from inside a view the page has already rotated.
+    static let coordinateSpace = "studiquoPageElements"
+
     var body: some View {
         GeometryReader { geometry in
             ForEach(page.elements) { element in
-                EditablePageElement(element: element, pageSize: geometry.size, isDark: isDark)
-                    .zIndex(element.layerIndex)
+                EditablePageElement(
+                    element: element,
+                    pageSize: geometry.size,
+                    isDark: isDark,
+                    selectedElementID: $selectedElementID
+                )
+                // A selected element floats above the rest so its handles
+                // are never buried under a neighbour that happens to sit on
+                // a higher layer.
+                .zIndex(selectedElementID == element.persistentModelID ? 1_000_000 : element.layerIndex)
             }
         }
+        .coordinateSpace(name: Self.coordinateSpace)
     }
+}
+
+/// Which edge or corner a resize handle is pinned to, as unit offsets from
+/// the element's centre.
+private enum ResizeAnchor: String, CaseIterable, Identifiable {
+    case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
+
+    var id: String { rawValue }
+
+    var unitX: CGFloat {
+        switch self {
+        case .topLeft, .left, .bottomLeft: -1
+        case .top, .bottom: 0
+        case .topRight, .right, .bottomRight: 1
+        }
+    }
+
+    var unitY: CGFloat {
+        switch self {
+        case .topLeft, .top, .topRight: -1
+        case .left, .right: 0
+        case .bottomLeft, .bottom, .bottomRight: 1
+        }
+    }
+}
+
+/// An element's position and size at the moment a handle drag began, so each
+/// drag update is computed from the starting frame rather than accumulating
+/// rounding error across the drag.
+private struct ElementFrame {
+    var centerX: Double
+    var centerY: Double
+    var width: Double
+    var height: Double
 }
 
 private struct EditablePageElement: View {
@@ -4116,12 +5936,15 @@ private struct EditablePageElement: View {
     let pageSize: CGSize
     let isDark: Bool
 
+    @Binding var selectedElementID: PersistentIdentifier?
+
     @State private var dragOrigin: CGPoint?
     @State private var sizeOrigin: CGSize?
     @State private var isEditingText = false
     @State private var editedText = ""
     @State private var rotationOrigin: Double?
     @State private var isStudyTapeRevealed = false
+    @State private var handleOrigin: ElementFrame?
 
     private var elementSize: CGSize {
         CGSize(
@@ -4130,15 +5953,41 @@ private struct EditablePageElement: View {
         )
     }
 
+    private var isSelected: Bool {
+        selectedElementID == element.persistentModelID
+    }
+
+    /// Study tape and page links answer a tap with their own behaviour
+    /// (reveal, navigate), so they keep it rather than trading it for a
+    /// selection box.
+    private var supportsSelection: Bool {
+        element.kind != .studyTape && element.kind != .pageLink
+    }
+
     var body: some View {
         elementContent
             .frame(width: elementSize.width, height: elementSize.height)
             .contentShape(Rectangle())
+            .overlay { if isSelected { selectionChrome } }
             .rotationEffect(.degrees(element.rotation))
             .position(x: pageSize.width * element.centerX, y: pageSize.height * element.centerY)
-            .gesture(moveGesture)
-            .simultaneousGesture(resizeGesture)
-            .simultaneousGesture(rotationGesture)
+            .onTapGesture {
+                guard supportsSelection else { return }
+                selectedElementID = isSelected ? nil : element.persistentModelID
+            }
+            // Tapping the page anywhere outside the box puts the element down
+            // and clears the handles, so a photo can be "committed" in place
+            // without hunting for the exact element again. The canvas raises
+            // this for both a finger and a pencil tap.
+            .onReceive(NotificationCenter.default.publisher(for: .studiquoCanvasTapped)) { notification in
+                guard isSelected,
+                      let page = notification.object as? NotePage,
+                      page === element.page else { return }
+                selectedElementID = nil
+            }
+            .gesture(isSelected ? moveGesture : nil)
+            .simultaneousGesture(isSelected ? resizeGesture : nil)
+            .simultaneousGesture(isSelected ? rotationGesture : nil)
             .contextMenu {
                 if element.kind == .text {
                     Button {
@@ -4244,6 +6093,181 @@ private struct EditablePageElement: View {
         return (target, parts.count > 1 ? parts[1] : "ページへ移動")
     }
 
+    /// The Word-style selection box: a blue outline, eight resize handles
+    /// and a rotation grip above the top edge. It lives inside the element's
+    /// `rotationEffect`, so the whole box turns with the photo and each
+    /// handle stays attached to the edge it resizes.
+    private var selectionChrome: some View {
+        let handleDiameter: CGFloat = 13
+        // An overlay only hit-tests within its own bounds. Sized tightly to
+        // the element, the rotation grip above the top edge — and the outer
+        // half of every handle straddling the border — drew fine but could
+        // not be touched at all. The chrome is therefore given room around
+        // the element, with the outline pinned back to the element's size.
+        let margin: CGFloat = 60
+
+        return ZStack {
+            Rectangle()
+                .strokeBorder(Color.accentColor, lineWidth: 1.5)
+                .frame(width: elementSize.width, height: elementSize.height)
+
+            ForEach(ResizeAnchor.allCases) { anchor in
+                Circle()
+                    .fill(.white)
+                    .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: 1.5))
+                    .frame(width: handleDiameter, height: handleDiameter)
+                    // Enlarged past the dot that's drawn so the handles stay
+                    // grabbable with a fingertip, but not so far that the
+                    // top-centre one swallows touches meant for the rotation
+                    // grip above it.
+                    .contentShape(Circle().inset(by: -6))
+                    .offset(
+                        x: anchor.unitX * elementSize.width / 2,
+                        y: anchor.unitY * elementSize.height / 2
+                    )
+                    .highPriorityGesture(resizeHandleGesture(anchor))
+            }
+
+            // Drawn last, and held well clear of the top-centre resize
+            // handle: at a shorter stem the two hit areas overlapped, and
+            // the resize handle took every touch aimed at the grip.
+            VStack(spacing: 0) {
+                Image(systemName: "arrow.trianglehead.clockwise")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(Color.accentColor, in: Circle())
+                    // Sized for a fingertip. At the old 20pt it was a pencil
+                    // target, and a finger kept missing it — Apple's own
+                    // minimum for a touch target is 44pt, which the enlarged
+                    // hit shape below reaches.
+                    .contentShape(Circle().inset(by: -6))
+                    // High priority so the grip beats both the element's own
+                    // move gesture and the long press that opens its context
+                    // menu — otherwise a slow, deliberate drag on a handle
+                    // dragged the whole element or popped the menu instead.
+                    .highPriorityGesture(rotationHandleGesture)
+                    .accessibilityLabel("回転")
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(width: 1.5, height: 20)
+            }
+            .offset(y: -elementSize.height / 2 - 27)
+
+            // Delete, parked just off the top-right corner where it cannot be
+            // confused with a resize handle. Previously the only way to
+            // remove a photo was to find it in the long-press menu.
+            Button(role: .destructive) {
+                deleteElement()
+            } label: {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(Color.red, in: Circle())
+                    .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+            }
+            .buttonStyle(.plain)
+            .contentShape(Circle().inset(by: -6))
+            .offset(
+                x: elementSize.width / 2 + 26,
+                y: -elementSize.height / 2 - 20
+            )
+            .accessibilityLabel("この写真を削除")
+        }
+        .frame(
+            width: elementSize.width + margin * 2,
+            height: elementSize.height + margin * 2
+        )
+        .allowsHitTesting(!element.isLocked)
+    }
+
+    private func resizeHandleGesture(_ anchor: ResizeAnchor) -> some Gesture {
+        // `minimumDistance: 0` claims the touch the instant it lands, which
+        // is what stops the element's context-menu long press from winning a
+        // slow, deliberate drag on a handle — that press would otherwise pop
+        // the menu and hand the movement to the element's own drag gesture,
+        // so the box moved instead of resizing.
+        //
+        // Measured in the global space rather than the element's own: the
+        // element is inside a `rotationEffect`, and a raw screen delta is
+        // the one reading that stays predictable when it's turned. The
+        // rotation is undone explicitly below.
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { value in
+                guard !element.isLocked else { return }
+                if handleOrigin == nil {
+                    handleOrigin = ElementFrame(
+                        centerX: element.centerX,
+                        centerY: element.centerY,
+                        width: element.width,
+                        height: element.height
+                    )
+                }
+                guard let origin = handleOrigin else { return }
+                applyResize(anchor: anchor, from: origin, translation: value.translation)
+            }
+            .onEnded { _ in
+                handleOrigin = nil
+                markUpdated()
+            }
+    }
+
+    private func applyResize(anchor: ResizeAnchor, from origin: ElementFrame, translation: CGSize) {
+        let pageWidth = max(pageSize.width, 1)
+        let pageHeight = max(pageSize.height, 1)
+        let radians = element.rotation * .pi / 180
+
+        // Screen-space drag rotated back into the element's own axes, so a
+        // handle on a tilted photo still grows the edge it is attached to
+        // instead of the one that happens to face that way on screen.
+        let localDX = translation.width * cos(radians) + translation.height * sin(radians)
+        let localDY = -translation.width * sin(radians) + translation.height * cos(radians)
+
+        let originWidth = origin.width * pageWidth
+        let originHeight = origin.height * pageHeight
+
+        var newWidth = originWidth
+        var newHeight = originHeight
+        if anchor.unitX != 0 {
+            newWidth = min(max(originWidth + anchor.unitX * localDX, 32), pageWidth)
+        }
+        if anchor.unitY != 0 {
+            newHeight = min(max(originHeight + anchor.unitY * localDY, 24), pageHeight)
+        }
+
+        // The opposite edge stays pinned: the centre moves by half of
+        // whatever the dragged side gained, along the element's own axes.
+        let shiftX = anchor.unitX * (newWidth - originWidth) / 2
+        let shiftY = anchor.unitY * (newHeight - originHeight) / 2
+        let pageShiftX = shiftX * cos(radians) - shiftY * sin(radians)
+        let pageShiftY = shiftX * sin(radians) + shiftY * cos(radians)
+
+        element.width = newWidth / pageWidth
+        element.height = newHeight / pageHeight
+        element.centerX = min(max(origin.centerX + pageShiftX / pageWidth, 0.02), 0.98)
+        element.centerY = min(max(origin.centerY + pageShiftY / pageHeight, 0.02), 0.98)
+        markUpdated()
+    }
+
+    /// Follows the finger around the element's centre. The grip sits above
+    /// the box, so pointing straight up has to read as zero degrees — hence
+    /// the quarter-turn added to `atan2`'s result.
+    private var rotationHandleGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(PageElementsLayer.coordinateSpace))
+            .onChanged { value in
+                guard !element.isLocked else { return }
+                let center = CGPoint(
+                    x: pageSize.width * element.centerX,
+                    y: pageSize.height * element.centerY
+                )
+                let angle = atan2(value.location.y - center.y, value.location.x - center.x)
+                element.rotation = angle * 180 / .pi + 90
+                markUpdated()
+            }
+            .onEnded { _ in markUpdated() }
+    }
+
     private var moveGesture: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
@@ -4307,6 +6331,7 @@ private struct EditablePageElement: View {
 
     private func deleteElement() {
         guard let page = element.page else { return }
+        if isSelected { selectedElementID = nil }
         page.elements.removeAll { $0 === element }
         modelContext.delete(element)
         page.notebook?.updatedAt = .now

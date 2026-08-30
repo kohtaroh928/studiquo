@@ -1,10 +1,14 @@
 import SwiftUI
 import SwiftData
 
+/// The full-screen counterpart to `ProtectedNotebookView`: shown in
+/// `ContentView`'s detail pane, below the same tab bar notebooks use, when a
+/// deck is selected from Home. Unlike a notebook's editor it has no ink
+/// canvas anywhere in its view tree, so the drawing toolbar simply never
+/// applies here — there is nothing to wire a "disable drawing" flag into.
 struct FlashcardDeckView: View {
     @Bindable var deck: FlashcardDeck
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.dismiss) private var dismiss
+    var onHome: () -> Void = {}
     @State private var mode: Mode = .edit
 
     private enum Mode: String, CaseIterable, Identifiable {
@@ -14,21 +18,31 @@ struct FlashcardDeckView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                Picker("モード", selection: $mode) {
-                    ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
+        VStack(spacing: 0) {
+            HStack(spacing: 14) {
+                Button(action: onHome) {
+                    Label("ホームへ戻る", systemImage: "house.fill")
                 }
-                .pickerStyle(.segmented)
-                .padding()
+                .buttonStyle(.plain)
+                Divider().frame(height: 20)
+                Label(deck.title, systemImage: "rectangle.on.rectangle.angled")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(.bar)
+            Divider()
 
-                if mode == .edit { editor }
-                else { study }
+            Picker("モード", selection: $mode) {
+                ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
             }
-            .navigationTitle(deck.title)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } }
-            }
+            .pickerStyle(.segmented)
+            .padding()
+
+            if mode == .edit { editor }
+            else { study }
         }
     }
 
@@ -37,7 +51,7 @@ struct FlashcardDeckView: View {
     }
 
     private var study: some View {
-        FlashcardStudyContent(deck: deck, onHome: { dismiss() })
+        FlashcardStudyContent(deck: deck, onHome: onHome)
     }
 }
 
@@ -52,6 +66,7 @@ struct FlashcardStudyContent: View {
     @State private var correctCount = 0
     @State private var incorrectCards: [Flashcard] = []
     @State private var visibleIncorrectCount = 10
+    @StateObject private var adGate = InterstitialAdGate.shared
 
     private enum Phase: Equatable { case setup, studying, results }
 
@@ -76,6 +91,9 @@ struct FlashcardStudyContent: View {
                 endPoint: .bottomTrailing
             )
         )
+        .fullScreenCover(isPresented: $adGate.isShowingAd) {
+            InterstitialAdPlaceholder { adGate.dismiss() }
+        }
     }
 
     private var setupView: some View {
@@ -123,15 +141,42 @@ struct FlashcardStudyContent: View {
                         .foregroundStyle(.orange)
                         .font(.subheadline)
                 } else {
-                    Text("全 \(deck.cards.count) カード")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        deckStat("カード数", "\(deck.cards.count)", "rectangle.stack", .indigo)
+                        deckStat("学習回数", "\(deck.studySessionCount)", "arrow.triangle.2.circlepath", .teal)
+                        deckStat("平均正解率", deck.accuracyText, "target", accuracyColor)
+                    }
                 }
             }
             .padding(20)
             .frame(maxWidth: 620)
             .frame(maxWidth: .infinity)
         }
+    }
+
+    /// Colour-codes the average so a weak deck is obvious at a glance.
+    private var accuracyColor: Color {
+        guard let accuracy = deck.averageAccuracy else { return .secondary }
+        if accuracy >= 80 { return .green }
+        if accuracy >= 50 { return .orange }
+        return .red
+    }
+
+    private func deckStat(_ title: String, _ value: String, _ icon: String, _ color: Color) -> some View {
+        VStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.subheadline)
+                .foregroundStyle(color)
+            Text(value)
+                .font(.title3.weight(.bold).monospacedDigit())
+                .foregroundStyle(color)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
     }
 
     private func studySetting<Content: View>(
@@ -306,19 +351,27 @@ struct FlashcardStudyContent: View {
         let card = cards[index]
         card.reviewCount += 1
         card.lastReviewedAt = .now
+        deck.totalAnswered += 1
         if correct {
             correctCount += 1
             card.mastery += 1
+            deck.totalCorrect += 1
         } else {
             incorrectCards.append(card)
             card.mastery = max(0, card.mastery - 1)
         }
         deck.updatedAt = .now
+        deck.lastStudiedAt = .now
         if index + 1 < cards.count {
             index += 1
             showsAnswer = false
         } else {
+            deck.studySessionCount += 1
             phase = .results
+            // Every second completed pass earns an interstitial. Counted here
+            // rather than on entering the deck so a pass that is abandoned
+            // half-way never triggers one.
+            adGate.registerCompletedPass()
         }
     }
 }

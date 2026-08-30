@@ -61,18 +61,20 @@ struct StudiquoApp: App {
             Notebook.self, NotePage.self, PageElement.self,
             FlashcardDeck.self, Flashcard.self, CalendarEvent.self, StudyActivity.self,
             AIChatThread.self, AIChatMessage.self,
+            TextDocument.self, SlideDeck.self, Slide.self,
         ])
         do {
-            let cloudConfiguration = ModelConfiguration(
-                schema: schema,
-                cloudKitDatabase: .automatic
-            )
-            sharedModelContainer = try ModelContainer(for: schema, configurations: cloudConfiguration)
-        } catch {
-            // Development simulators and devices without an iCloud account
-            // must remain usable and must keep the existing local store.
+            // Keep app launch synchronous but light. Creating a CloudKit-backed
+            // SwiftData container here can block the first frame long enough
+            // to look like a white launch. The app's current data features are
+            // local-first, so the on-device store is the safest fast path.
             let localConfiguration = ModelConfiguration(schema: schema, cloudKitDatabase: .none)
-            sharedModelContainer = try! ModelContainer(for: schema, configurations: localConfiguration)
+            sharedModelContainer = try ModelContainer(for: schema, configurations: localConfiguration)
+        } catch {
+            // If the persistent store cannot be opened after a schema change,
+            // still show the app instead of leaving the user on a blank screen.
+            let fallback = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+            sharedModelContainer = try! ModelContainer(for: schema, configurations: fallback)
         }
     }
 

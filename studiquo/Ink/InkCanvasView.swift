@@ -55,6 +55,13 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             if !isLasso { clearLassoSelection() }
         }
     }
+    /// Rectangular region select. Unlike the lasso, which picks out strokes,
+    /// this cuts out a picture of whatever the page shows there — printed
+    /// PDF text included — so it works on imported material the app never
+    /// drew.
+    var isSnipping = false {
+        didSet { if !isSnipping { cancelSnip() } }
+    }
     var eraserWidth: CGFloat = 24 {
         didSet {
             if let eraserCursorLocation { showEraserCursor(at: eraserCursorLocation) }
@@ -84,6 +91,8 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     var onDrawingChanged: ((InkDrawing) -> Void)?
     var onStrokeBegan: (() -> Void)?
+    /// A tap that produced no stroke — see the recogniser in `commonInit`.
+    var onBackgroundTap: (() -> Void)?
     /// Fired once the pencil lifts (or the touch is cancelled), whatever the
     /// outcome — a committed stroke, an erase, or nothing. The representable
     /// uses this to let ancestor scroll views move again once it's safe.
@@ -91,6 +100,10 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// Fired after a dragged shape is committed, so the owner can return to
     /// the pen tool instead of leaving the shape tool silently armed.
     var onShapeCommitted: (() -> Void)?
+    /// The rectangle the snip tool just drew, in page units. The canvas
+    /// reports the geometry only — it holds ink, not the page background, so
+    /// it is in no position to render the crop itself.
+    var onSnipCaptured: ((CGRect) -> Void)?
     /// Supplies only the currently lasso-selected strokes. The SwiftUI owner
     /// uses this small drawing for on-device OCR and never scans the rest of
     /// the notebook.
@@ -105,6 +118,41 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// from one canvas to the other would take it out of a page and put it
     /// back into that same page, which has no coherent meaning.
     var allowsSelectionTransfer = true
+
+    /// Display points per page unit.
+    ///
+    /// Stroke data lives in the page's own coordinate space, not in whatever
+    /// size this view happens to be. Touches are divided by this on the way
+    /// in and the ink layers are scaled by it on the way out, so the same
+    /// page renders identically at any width — full screen, in a split pane,
+    /// or rasterised for export. Before this existed, ink was stored in
+    /// on-screen points and splitting the editor threw every stroke off the
+    /// page.
+    var contentScale: CGFloat = 1 {
+        didSet {
+            guard abs(contentScale - oldValue) > 0.0001 else { return }
+            setNeedsLayout()
+        }
+    }
+
+    /// The page-space size this view covers at the current scale.
+    private var canvasSize: CGSize {
+        let scale = max(contentScale, 0.0001)
+        return CGSize(width: bounds.width / scale, height: bounds.height / scale)
+    }
+
+    /// Screen point -> page point. Every touch location must go through this.
+    private func pagePoint(_ point: CGPoint) -> CGPoint {
+        let scale = max(contentScale, 0.0001)
+        return CGPoint(x: point.x / scale, y: point.y / scale)
+    }
+
+    /// Page point -> this view's own coordinates, for the two places that
+    /// have to hand ink positions to UIKit (`convert(_:to:)` for the drag
+    /// preview, and the incoming cross-pane transfer).
+    private func viewPoint(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x * contentScale, y: point.y * contentScale)
+    }
 
     private(set) var drawing = InkDrawing() {
         didSet { onDrawingChanged?(drawing) }
@@ -134,7 +182,14 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// Dashed freehand outline while lassoing, retained around the selected
     /// strokes until their following move finishes.
     private let selectionLayer = CAShapeLayer()
+    /// The snip tool's marquee. Kept separate from `selectionLayer` so
+    /// switching between the two tools can't leave one tool's outline behind
+    /// on the other's canvas.
+    private let snipLayer = CAShapeLayer()
     private let eraserCursorLayer = CAShapeLayer()
+
+    private var snipStart: CGPoint?
+    private var snipCurrent: CGPoint?
 
     /// Wholesale rebuild — for loading a page and undo/redo, where every
     /// stroke is legitimately new to this view. NOT used for a normal
@@ -228,12 +283,23 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         selectionLayer.lineJoin = .round
         selectionLayer.lineDashPattern = [6, 4]
         layer.addSublayer(selectionLayer)
+        snipLayer.fillColor = UIColor.systemBlue.withAlphaComponent(0.12).cgColor
+        snipLayer.strokeColor = UIColor.systemBlue.cgColor
+        snipLayer.lineWidth = 1.5
+        snipLayer.lineDashPattern = [6, 4]
+        layer.addSublayer(snipLayer)
         eraserCursorLayer.fillColor = UIColor.systemGray.withAlphaComponent(0.10).cgColor
         eraserCursorLayer.strokeColor = UIColor.systemGray.withAlphaComponent(0.85).cgColor
         eraserCursorLayer.lineWidth = 1.2
         eraserCursorLayer.isHidden = true
         layer.addSublayer(eraserCursorLayer)
         addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(handleEraserHover(_:))))
+        // A tap on the page, distinct from a stroke. Used to put a selected
+        // photo or text box down; it never cancels drawing, because a tap by
+        // definition involves no movement.
+        let backgroundTap = UITapGestureRecognizer(target: self, action: #selector(handleBackgroundTap(_:)))
+        backgroundTap.cancelsTouchesInView = false
+        addGestureRecognizer(backgroundTap)
         addInteraction(UIDragInteraction(delegate: self))
         NotificationCenter.default.addObserver(
             self,
@@ -247,21 +313,42 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        committedContainer.frame = bounds
-        liveLayer.frame = bounds
-        selectionLayer.frame = bounds
-        eraserCursorLayer.frame = bounds
+        // The ink layers are laid out in page units and then scaled up to
+        // fill the view, so every path in them — strokes, the lasso marquee,
+        // the eraser cursor — can be built from page coordinates directly.
+        let pageBounds = CGRect(origin: .zero, size: canvasSize)
+        let scale = CATransform3DMakeScale(max(contentScale, 0.0001), max(contentScale, 0.0001), 1)
+        for inkLayer in [committedContainer, liveLayer, selectionLayer, snipLayer, eraserCursorLayer] {
+            // Anchored top-left so the scale grows away from the page origin
+            // rather than out from the middle of the view.
+            inkLayer.anchorPoint = .zero
+            inkLayer.bounds = pageBounds
+            inkLayer.position = .zero
+            inkLayer.transform = scale
+        }
     }
 
     // MARK: Touch handling
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // The snip tool is pencil-only. A finger must stay free for page
+        // scrolling, otherwise a normal scroll can accidentally become a
+        // question/answer crop.
+        if isSnipping, let touch = touches.first, touch.type == .pencil {
+            onStrokeBegan?()
+            let location = pagePoint(touch.location(in: self))
+            snipStart = location
+            snipCurrent = location
+            updateSnipPreview()
+            return
+        }
+
         guard isDrawingEnabled, let touch = touches.first, touch.type == .pencil else { return }
         guard rawPoints.isEmpty, shapeDragStart == nil else { return } // ignore a second finger/pencil mid-stroke
 
         if let kind = pendingShapeKind {
             onStrokeBegan?()
-            let location = touch.location(in: self)
+            let location = pagePoint(touch.location(in: self))
             shapeDragStart = location
             shapeDragCurrent = location
             updateShapePreview(kind: kind)
@@ -270,7 +357,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
         if isLasso {
             onStrokeBegan?()
-            beginLasso(at: touch.location(in: self))
+            beginLasso(at: pagePoint(touch.location(in: self)))
             return
         }
 
@@ -286,7 +373,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         lockedShapeBounds = nil
         lockedShapeFixedCorner = nil
         lockedNormalizedPoints = nil
-        let location = touch.location(in: self)
+        let location = pagePoint(touch.location(in: self))
         strokeStartLocation = location
         lastMovementLocation = location
         rawPoints = [InkPoint(location: location, force: normalizedForce(touch), timeOffset: 0)]
@@ -301,10 +388,16 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if isSnipping, snipStart != nil, let touch = touches.first, touch.type == .pencil {
+            snipCurrent = pagePoint(touch.location(in: self))
+            updateSnipPreview()
+            return
+        }
+
         guard let touch = touches.first, touch.type == .pencil else { return }
 
         if let kind = pendingShapeKind, shapeDragStart != nil {
-            shapeDragCurrent = touch.location(in: self)
+            shapeDragCurrent = pagePoint(touch.location(in: self))
             updateShapePreview(kind: kind)
             return
         }
@@ -312,7 +405,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
         if isLasso {
             let samples = event?.coalescedTouches(for: touch) ?? [touch]
-            moveLasso(to: samples.map { $0.location(in: self) })
+            moveLasso(to: samples.map { pagePoint($0.location(in: self)) })
             return
         }
 
@@ -323,7 +416,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             appendSample(sample)
         }
         if isEraser {
-            let path = [previousEraserLocation].compactMap { $0 } + samples.map { $0.location(in: self) }
+            let path = [previousEraserLocation].compactMap { $0 } + samples.map { pagePoint($0.location(in: self)) }
             if let location = path.last { showEraserCursor(at: location) }
             eraseParts(along: path)
         } else if !isStraightened && !isEllipseLocked && !isRectangleLocked
@@ -333,10 +426,19 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if isSnipping, snipStart != nil {
+            if let touch = touches.first, touch.type == .pencil {
+                snipCurrent = pagePoint(touch.location(in: self))
+            }
+            finishSnip()
+            onStrokeEnded?()
+            return
+        }
+
         guard let touch = touches.first, touch.type == .pencil else { return }
 
         if let kind = pendingShapeKind, let start = shapeDragStart {
-            let end = touch.location(in: self)
+            let end = pagePoint(touch.location(in: self))
             commitShape(kind: kind, from: start, to: end)
             shapeDragStart = nil
             shapeDragCurrent = nil
@@ -347,7 +449,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         }
 
         if isLasso {
-            endLasso(at: touch.location(in: self))
+            endLasso(at: pagePoint(touch.location(in: self)))
             onStrokeEnded?()
             return
         }
@@ -356,7 +458,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         let previousEraserLocation = rawPoints.last?.location
         appendSample(touch)
         if isEraser {
-            let path = [previousEraserLocation, Optional(touch.location(in: self))].compactMap { $0 }
+            let path = [previousEraserLocation, Optional(pagePoint(touch.location(in: self)))].compactMap { $0 }
             eraseParts(along: path)
             hideEraserCursor()
         }
@@ -367,9 +469,37 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         touchesEnded(touches, with: event)
     }
 
+    // MARK: Rectangular snip
+
+    private var snipRect: CGRect? {
+        guard let start = snipStart, let current = snipCurrent else { return nil }
+        return CGRect(x: min(start.x, current.x), y: min(start.y, current.y),
+                      width: abs(current.x - start.x), height: abs(current.y - start.y))
+    }
+
+    private func updateSnipPreview() {
+        guard let rect = snipRect else { return }
+        withoutImplicitAnimations { snipLayer.path = UIBezierPath(rect: rect).cgPath }
+    }
+
+    private func finishSnip() {
+        defer { cancelSnip() }
+        guard let rect = snipRect else { return }
+        // A tap, or a sliver, is a miss rather than a selection — reporting
+        // it would hand the AI a few blank pixels.
+        guard rect.width >= 16, rect.height >= 16 else { return }
+        onSnipCaptured?(rect.intersection(CGRect(origin: .zero, size: canvasSize)))
+    }
+
+    private func cancelSnip() {
+        snipStart = nil
+        snipCurrent = nil
+        withoutImplicitAnimations { snipLayer.path = nil }
+    }
+
     private func appendSample(_ touch: UITouch) {
         guard let start = strokeStartedAt else { return }
-        let location = touch.location(in: self)
+        let location = pagePoint(touch.location(in: self))
         rawPoints.append(InkPoint(
             location: location,
             force: normalizedForce(touch),
@@ -417,7 +547,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         if let start = selectionDragStart {
             guard let location = locations.last else { return }
             selectionDragOffset = CGPoint(x: location.x - start.x, y: location.y - start.y)
-            if !bounds.contains(location) {
+            if !CGRect(origin: .zero, size: canvasSize).contains(location) {
                 isSelectionOutsideCanvas = true
                 withoutImplicitAnimations {
                     for id in selectedStrokeIDs {
@@ -581,13 +711,17 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// and position from the source's coordinate space into its own so the
     /// drawing lands where the ghost preview was released, not where it
     /// happens to fall in raw source coordinates.
+    @objc private func handleBackgroundTap(_ recognizer: UITapGestureRecognizer) {
+        onBackgroundTap?()
+    }
+
     @objc private func receiveInkSelectionTransfer(_ notification: Notification) {
         guard allowsSelectionTransfer,
               let transfer = notification.object as? InkSelectionTransfer,
               !transfer.wasAccepted,
               window != nil else { return }
-        let localCenter = convert(transfer.screenPoint, from: nil)
-        guard bounds.contains(localCenter),
+        let localCenter = pagePoint(convert(transfer.screenPoint, from: nil))
+        guard CGRect(origin: .zero, size: canvasSize).contains(localCenter),
               let first = transfer.drawing.strokes.first else { return }
 
         let sourceBounds = transfer.drawing.strokes.dropFirst().reduce(first.bounds) {
@@ -602,8 +736,8 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             x: transfer.screenPoint.x + transfer.screenSize.width / 2,
             y: transfer.screenPoint.y + transfer.screenSize.height / 2
         )
-        let localTopLeft = convert(screenTopLeft, from: nil)
-        let localBottomRight = convert(screenBottomRight, from: nil)
+        let localTopLeft = pagePoint(convert(screenTopLeft, from: nil))
+        let localBottomRight = pagePoint(convert(screenBottomRight, from: nil))
         let scaleX = abs(localBottomRight.x - localTopLeft.x) / sourceBounds.width
         let scaleY = abs(localBottomRight.y - localTopLeft.y) / sourceBounds.height
         let sourceCenter = CGPoint(x: sourceBounds.midX, y: sourceBounds.midY)
@@ -633,8 +767,8 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         guard let first = selected.strokes.first else { return nil }
         let inkBounds = selected.strokes.dropFirst().reduce(first.bounds) { $0.union($1.bounds) }
         guard inkBounds.width > 0, inkBounds.height > 0 else { return nil }
-        let topLeft = convert(CGPoint(x: inkBounds.minX, y: inkBounds.minY), to: nil)
-        let bottomRight = convert(CGPoint(x: inkBounds.maxX, y: inkBounds.maxY), to: nil)
+        let topLeft = convert(viewPoint(CGPoint(x: inkBounds.minX, y: inkBounds.minY)), to: nil)
+        let bottomRight = convert(viewPoint(CGPoint(x: inkBounds.maxX, y: inkBounds.maxY)), to: nil)
         let screenSize = CGSize(
             width: abs(bottomRight.x - topLeft.x),
             height: abs(bottomRight.y - topLeft.y)
@@ -645,7 +779,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     // MARK: Cross-pane selection drag
 
     func dragInteraction(_ interaction: UIDragInteraction, itemsForBeginning session: UIDragSession) -> [UIDragItem] {
-        let location = session.location(in: self)
+        let location = pagePoint(session.location(in: self))
         guard !selectedStrokeIDs.isEmpty,
               Self.point(location, isInside: selectionPolygon),
               !selectionDragText.isEmpty else { return [] }
@@ -1043,14 +1177,16 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         // scribble erases even when the hold timer already locked a shape
         // mid-stroke. A scribble that loops back near its own start is still
         // a scribble, not a circle someone drew fast.
-        if !isHighlighter, isScratchOutEnabled {
+        if !isHighlighter, isScratchOutEnabled, isScribble(rawStroke, emitsDiagnostics: true) {
+            // Classify first, then run the comparatively expensive hit test.
+            // Keeping these stages ordered also prevents an ordinary line
+            // which merely touches old ink from entering the erase path.
             let hit = drawing.strokes.filter { strokeIsCoveredBy($0, scribble: rawStroke) }
             GestureDiagnostics.scratchOutRemoval(candidates: drawing.strokes.count, removed: hit.count)
-            if !hit.isEmpty, isScribble(rawStroke) {
+            if !hit.isEmpty {
                 let hitIDs = Set(hit.map(\.id))
                 drawing.strokes.removeAll { hitIDs.contains($0.id) }
                 withoutImplicitAnimations { removeCommittedLayers(ids: hitIDs) }
-                onDrawingChanged?(drawing)
                 return
             }
         }
@@ -1088,7 +1224,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         guard isEraser else { hideEraserCursor(); return }
         switch recognizer.state {
         case .began, .changed:
-            showEraserCursor(at: recognizer.location(in: self))
+            showEraserCursor(at: pagePoint(recognizer.location(in: self)))
         default:
             hideEraserCursor()
         }
@@ -1421,42 +1557,19 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// A deliberate scratch-out gesture is messy, compact ink drawn over an
     /// existing stroke. It might be a zig-zag, a tight circular scribble, or
     /// a small back-and-forth hatch, so don't rely on just one signal.
-    private func isScribble(_ stroke: InkStroke) -> Bool {
-        let bounds = stroke.bounds
-        guard max(bounds.width, bounds.height) >= 10,
-              stroke.points.count >= 6,
-              stroke.pathLength >= 28 else { return false }
-        let diagonal = max(hypot(bounds.width, bounds.height), 1)
-        guard diagonal > 0 else { return false }
-        let ratio = stroke.pathLength / diagonal
-
-        // Coalesced Pencil samples can be less than a point apart. Comparing
-        // every Nth stored sample therefore often produced vectors too short
-        // to count, even for an obvious back-and-forth scribble. Build
-        // direction vectors only after the Pencil has travelled a meaningful
-        // distance so recognition is independent of the sampling rate.
-        var turns = 0
-        var previousVector: CGPoint?
-        let points = stroke.points.map(\.location)
-        var anchor = points[0]
-        for point in points.dropFirst() {
-            let vector = CGPoint(x: point.x - anchor.x, y: point.y - anchor.y)
-            let length = hypot(vector.x, vector.y)
-            guard length >= 4 else { continue }
-            if let previous = previousVector {
-                let previousLength = hypot(previous.x, previous.y)
-                let dot = (previous.x * vector.x + previous.y * vector.y) / max(previousLength * length, 0.001)
-                if dot < 0.15 { turns += 1 }
-            }
-            previousVector = vector
-            anchor = point
+    private func isScribble(_ stroke: InkStroke, emitsDiagnostics: Bool = false) -> Bool {
+        let analysis = ScribbleClassifier.analyze(stroke.points.map(\.location))
+        if emitsDiagnostics {
+            GestureDiagnostics.scratchOutCheck(
+                points: stroke.points.count,
+                directionChanges: analysis.directionChanges,
+                reversals: analysis.axisReversals,
+                intersections: analysis.selfIntersections,
+                lengthRatio: analysis.lengthRatio,
+                qualifies: analysis.qualifies
+            )
         }
-        let selfIntersections = Self.selfIntersectionCount(points, limit: 3)
-        let qualifies = (turns >= 2 && ratio >= 1.25)
-            || ratio >= 2.0
-            || selfIntersections >= 1
-        GestureDiagnostics.scratchOutCheck(points: stroke.points.count, turns: turns, lengthRatio: ratio, qualifies: qualifies)
-        return qualifies
+        return analysis.qualifies
     }
 
     private func strokeIsCoveredBy(_ stroke: InkStroke, scribble: InkStroke) -> Bool {
@@ -1475,32 +1588,6 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         return samples.contains { sample in
             Self.distance(from: sample, to: scribblePoints) <= radius
         }
-    }
-
-    private static func selfIntersectionCount(_ points: [CGPoint], limit: Int) -> Int {
-        guard points.count >= 5 else { return 0 }
-        var count = 0
-        let segments = Array(zip(points, points.dropFirst()))
-        for firstIndex in segments.indices {
-            let first = segments[firstIndex]
-            for secondIndex in segments.indices.dropFirst(firstIndex + 2) {
-                if firstIndex == 0 && secondIndex == segments.count - 1 { continue }
-                let second = segments[secondIndex]
-                if segmentsIntersect(first.0, first.1, second.0, second.1) {
-                    count += 1
-                    if count >= limit { return count }
-                }
-            }
-        }
-        return count
-    }
-
-    private static func segmentsIntersect(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint, _ d: CGPoint) -> Bool {
-        let denominator = (d.y - c.y) * (b.x - a.x) - (d.x - c.x) * (b.y - a.y)
-        guard abs(denominator) > 0.001 else { return false }
-        let ua = ((d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x)) / denominator
-        let ub = ((b.x - a.x) * (a.y - c.y) - (b.y - a.y) * (a.x - c.x)) / denominator
-        return ua > 0.02 && ua < 0.98 && ub > 0.02 && ub < 0.98
     }
 
     // MARK: Force
