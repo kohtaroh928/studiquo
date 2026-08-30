@@ -362,6 +362,13 @@ private struct StudyNotificationList: View {
 
 /// What the tab bar's "+" opens: the same notes and decks the home screen
 /// lists, so a second tab can be opened without leaving the editor.
+/// A locked PDF that has just been opened, carried into the "remove
+/// password?" prompt. The password lives only as long as this value.
+private struct PendingRemoval {
+    let url: URL
+    let password: String
+}
+
 private struct TabPickerView: View {
     let notebooks: [Notebook]
     let decks: [FlashcardDeck]
@@ -489,7 +496,11 @@ private struct TabPickerView: View {
                 }
             }
         }
-        .presentationDetents([.large, .medium])
+        // A fixed portrait sheet. It used to offer both a large and a medium
+        // detent, so the list could be dragged into a half-height panel that
+        // showed two or three notes at a time.
+        .modifier(FixedSheetSize(shape: .portrait))
+        .presentationDragIndicator(.hidden)
     }
 }
 
@@ -600,6 +611,19 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var isImportingFiles = false
     @State private var isImportingBackup = false
+    /// A locked PDF waiting for its password before it can be imported.
+    @State private var pdfPendingImport: URL?
+    /// A locked PDF the student chose to strip the password from and save.
+    @State private var pdfPendingUnlock: URL?
+    @State private var pdfPasswordEntry = ""
+    @State private var pdfPasswordError: String?
+    /// The finished password-free copy, handed to a share sheet.
+    @State private var pdfUnlockedResult: IdentifiableURL?
+    /// Shows the PDF-only picker for the password-removal tool.
+    @State private var isPickingPDFToUnlock = false
+    /// Set after a locked PDF is opened during import, to offer removing its
+    /// password (holds the password just long enough to write the copy).
+    @State private var pdfRemovalOffer: PendingRemoval?
     @State private var backupURL: IdentifiableURL?
     @State private var openNotebooks: [Notebook] = []
     @State private var openStudyNotebooks: [Notebook] = []
@@ -613,6 +637,7 @@ struct ContentView: View {
     @State private var showsAutomaticBackups = false
     @State private var newNotebookName = ""
     @State private var isShowingNewNotebookAlert = false
+    @State private var newNotebookTemplate: PageTemplate = .ruled
     @State private var notebookToRename: Notebook?
     @State private var renameText = ""
     @State private var showsEmptyTrashConfirmation = false
@@ -843,7 +868,10 @@ struct ContentView: View {
         cachedStudyNotifications.filter { !readStudyNotificationIDs.contains($0.id) }.count
     }
 
-    var body: some View {
+    /// The app's split-view layout. The calendar hides the sidebar and
+    /// removes its reveal toggle (see `CalendarHomeView`), so the “すべて・
+    /// お気に入り” list is gone there rather than one tap away.
+    private var librarySplitView: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             List {
                 if selectedNotebook != nil || selectedFlashcardDeck != nil
@@ -966,10 +994,43 @@ struct ContentView: View {
                 homeDashboard
             }
         }
-        .alert("新規ノート", isPresented: $isShowingNewNotebookAlert) {
-            TextField("ノート名", text: $newNotebookName)
-            Button("キャンセル", role: .cancel) { newNotebookName = "" }
-            Button("作成") { createBlankNotebook() }
+    }
+
+    /// The calendar is shown full-width (no split view) only from the home
+    /// dashboard — never while a notebook or deck is open in the editor.
+    private var isCalendarFullScreen: Bool {
+        homeSection == .calendar
+            && selectedNotebook == nil && selectedFlashcardDeck == nil
+            && selectedTextDocument == nil && selectedSlideDeck == nil
+    }
+
+    var body: some View {
+        Group {
+            if isCalendarFullScreen {
+                // A plain navigation stack, not the split view — so the
+                // calendar has no library sidebar and no toggle to reveal one.
+                // Its toolbar (通知・連携・＋予定) still needs a bar to live in,
+                // which the stack provides.
+                NavigationStack { homeDashboard }
+            } else {
+                librarySplitView
+            }
+        }
+        .sheet(isPresented: $isShowingNewNotebookAlert) {
+            NewNotebookSheet(
+                name: $newNotebookName,
+                selectedTemplate: $newNotebookTemplate,
+                onCancel: {
+                    newNotebookName = ""
+                    newNotebookTemplate = .ruled
+                    isShowingNewNotebookAlert = false
+                },
+                onCreate: {
+                    createBlankNotebook(template: newNotebookTemplate)
+                    newNotebookTemplate = .ruled
+                    isShowingNewNotebookAlert = false
+                }
+            )
         }
         .alert("新規フォルダ", isPresented: $isShowingNewFolderAlert) {
             TextField("フォルダ名", text: $newFolderName)
@@ -1017,17 +1078,30 @@ struct ContentView: View {
         }
         .sheet(isPresented: $isImportingFiles) {
             FileImportPicker { urls in
-                urls.forEach(importFile)
+                // Dismiss the picker first, then import on the next runloop
+                // turn. Importing a locked PDF raises a password alert, and
+                // presenting that in the same transaction that dismisses this
+                // sheet made the alert get dropped — which is why a protected
+                // PDF slipped through with no prompt and came in blank.
                 isImportingFiles = false
+                let picked = urls
+                DispatchQueue.main.async { picked.forEach(importFile) }
             } onCancel: {
                 isImportingFiles = false
             }
+        }
+        .fileImporter(isPresented: $isPickingPDFToUnlock, allowedContentTypes: [.pdf]) { result in
+            guard case .success(let url) = result else { return }
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+            beginPasswordRemoval(for: url)
         }
         .fileImporter(isPresented: $isImportingBackup, allowedContentTypes: [.json], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
                 for url in urls {
                     if let notebook = NotebookBackupService.restore(from: url) {
                         modelContext.insert(notebook)
+                        openNotebookTab(notebook)
                         selectedNotebook = notebook
                     }
                 }
@@ -1036,10 +1110,44 @@ struct ContentView: View {
         .sheet(item: $backupURL) { wrapped in
             ShareSheet(items: [wrapped.url])
         }
+        .sheet(item: $pdfUnlockedResult) { wrapped in
+            ShareSheet(items: [wrapped.url])
+        }
+        .alert("PDFのパスワード", isPresented: pdfPasswordPromptShown) {
+            SecureField("パスワード", text: $pdfPasswordEntry)
+            Button("OK", action: submitPDFPassword)
+            Button("キャンセル", role: .cancel, action: cancelPDFPassword)
+        } message: {
+            Text(pdfPasswordError ?? "このPDFにはパスワードがかかっています。開くパスワードを入力してください。")
+        }
+        .confirmationDialog(
+            "パスワードを削除しますか？",
+            isPresented: pdfRemovalOfferShown,
+            titleVisibility: .visible
+        ) {
+            Button("パスワードなしで保存") {
+                guard let offer = pdfRemovalOffer else { return }
+                pdfRemovalOffer = nil
+                do {
+                    let output = try PDFPasswordService.removePassword(
+                        from: offer.url,
+                        password: offer.password,
+                        to: PDFPasswordService.destinationURL(for: offer.url)
+                    )
+                    pdfUnlockedResult = IdentifiableURL(url: output)
+                } catch {
+                    pdfPasswordError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                }
+            }
+            Button("そのまま", role: .cancel) { pdfRemovalOffer = nil }
+        } message: {
+            Text("このPDFはノートに取り込みました。パスワードを削除したPDFも保存できます。")
+        }
         .sheet(isPresented: $showsAutomaticBackups) {
             AutomaticBackupRestoreView { url in
                 if let notebook = NotebookBackupService.restore(from: url) {
                     modelContext.insert(notebook)
+                    openNotebookTab(notebook)
                     selectedNotebook = notebook
                 }
             }
@@ -1170,26 +1278,19 @@ struct ContentView: View {
                 columnVisibility = .detailOnly
                 return
             }
-            if !openNotebooks.contains(where: { $0 === notebook }) {
-                openNotebooks.append(notebook)
-                if openNotebooks.count > 6 { openNotebooks.removeFirst() }
-            }
+            openNotebookTab(notebook)
             columnVisibility = .detailOnly
         }
         .onChange(of: selectedFlashcardDeck) { _, deck in
             guard let deck else { return }
-            if !openFlashcardDecks.contains(where: { $0 === deck }) {
-                openFlashcardDecks.append(deck)
-                if openFlashcardDecks.count > 6 { openFlashcardDecks.removeFirst() }
-            }
+            openFlashcardDeckTab(deck)
             columnVisibility = .detailOnly
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenNotebookTab"))) { notification in
             if let deck = notification.object as? FlashcardDeck {
-                if !openFlashcardDecks.contains(where: { $0 === deck }) { openFlashcardDecks.append(deck) }
-            } else if let notebook = notification.object as? Notebook,
-                      !openNotebooks.contains(where: { $0 === notebook }) {
-                openNotebooks.append(notebook)
+                openFlashcardDeckTab(deck)
+            } else if let notebook = notification.object as? Notebook {
+                openNotebookTab(notebook)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .studiquoOpenAIChatTab)) { notification in
@@ -1258,6 +1359,10 @@ struct ContentView: View {
                                 homeSection == section ? Color.accentColor : Color.clear,
                                 in: RoundedRectangle(cornerRadius: 12)
                             )
+                            // The whole pill responds, not just the label glyphs —
+                            // an unselected tab's background is clear and would
+                            // otherwise ignore taps on its empty area.
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -1266,17 +1371,20 @@ struct ContentView: View {
             .padding(.vertical, 8)
             .background(.bar)
         }
+        // The calendar's sidebar is removed by showing it outside the split
+        // view entirely (see `isCalendarFullScreen`), so there is no
+        // `columnVisibility` to manage here — notes keeps its sidebar as is.
     }
 
     private var notebookTabBar: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
-                ForEach(openNotebooks) { notebook in
+                ForEach(openNotebooks.filter { !$0.isTrashed }) { notebook in
                     HStack(spacing: 5) {
                         Button {
                             selectNotebookTab(notebook)
                         } label: {
-                            Label(notebook.title, systemImage: notebook.isLocked ? "lock.fill" : "note.text")
+                            Label(notebook.title, systemImage: notebookTabIcon(for: notebook))
                                 .lineLimit(1)
                         }
                         .buttonStyle(.plain)
@@ -1293,7 +1401,7 @@ struct ContentView: View {
                     .background(selectedNotebook === notebook ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
                     .draggable("notebook:\(notebookID(notebook))")
                 }
-                ForEach(openStudyNotebooks) { notebook in
+                ForEach(openStudyNotebooks.filter { !$0.isTrashed }) { notebook in
                     HStack(spacing: 5) {
                         Button {
                             studyNotebook = notebook
@@ -1347,7 +1455,7 @@ struct ContentView: View {
                     .draggable("web:\(tab.title)|\(tab.homeURL)")
                 }
 
-                ForEach(openTextDocuments) { document in
+                ForEach(openTextDocuments.filter { !$0.isTrashed }) { document in
                     HStack(spacing: 5) {
                         Button { openTextDocument(document) } label: {
                             Label(document.title, systemImage: "doc.text").lineLimit(1)
@@ -1371,7 +1479,7 @@ struct ContentView: View {
                     )
                     .draggable("document:\(textDocumentID(document))")
                 }
-                ForEach(openSlideDecks) { deck in
+                ForEach(openSlideDecks.filter { !$0.isTrashed }) { deck in
                     HStack(spacing: 5) {
                         Button { openSlideDeck(deck) } label: {
                             Label(deck.title, systemImage: "rectangle.on.rectangle").lineLimit(1)
@@ -1419,6 +1527,7 @@ struct ContentView: View {
                         selectedAIChatTabID == tab.id ? Color.purple.opacity(0.22) : Color.purple.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 8)
                     )
+                    .draggable("ai:\(String(describing: tab.id))")
                 }
 
                 // Replaces the old sidebar toggle in the editor's tool strip:
@@ -1456,6 +1565,7 @@ struct ContentView: View {
     }
 
     private func selectNotebookTab(_ notebook: Notebook) {
+        openNotebookTab(notebook)
         // With no split on screen there is only one pane, so just swap the
         // selected notebook — that rebuilds the editor and is the reliable
         // path. Routing through the pane-switch notification is reserved for
@@ -1471,7 +1581,24 @@ struct ContentView: View {
         )
     }
 
+    private func openNotebookTab(_ notebook: Notebook) {
+        if !openNotebooks.contains(where: { $0.persistentModelID == notebook.persistentModelID }) {
+            openNotebooks.append(notebook)
+        }
+        if openNotebooks.count > 6,
+           let removeIndex = openNotebooks.firstIndex(where: { $0.persistentModelID != notebook.persistentModelID }) {
+            openNotebooks.remove(at: removeIndex)
+        }
+    }
+
+    private func notebookTabIcon(for notebook: Notebook) -> String {
+        if notebook.isLocked { return "lock.fill" }
+        if notebook.containsPDF { return "doc.richtext" }
+        return "note.text"
+    }
+
     private func selectFlashcardTab(_ deck: FlashcardDeck) {
+        openFlashcardDeckTab(deck)
         guard editorSplitState.isSplit, selectedNotebook != nil else {
             clearOpenSelection()
             selectedFlashcardDeck = deck
@@ -1481,6 +1608,16 @@ struct ContentView: View {
             name: Notification.Name("StudiquoSwitchPaneTarget"),
             object: PaneSwitchTarget.flashcardDeck(deck)
         )
+    }
+
+    private func openFlashcardDeckTab(_ deck: FlashcardDeck) {
+        if !openFlashcardDecks.contains(where: { $0.persistentModelID == deck.persistentModelID }) {
+            openFlashcardDecks.append(deck)
+        }
+        if openFlashcardDecks.count > 6,
+           let removeIndex = openFlashcardDecks.firstIndex(where: { $0.persistentModelID != deck.persistentModelID }) {
+            openFlashcardDecks.remove(at: removeIndex)
+        }
     }
 
     private func selectWebTab(_ tab: WebTabInfo) {
@@ -1502,14 +1639,19 @@ struct ContentView: View {
 
     private func openFlashcardDeck(_ deck: FlashcardDeck) {
         clearOpenSelection()
+        openFlashcardDeckTab(deck)
         selectedFlashcardDeck = deck
     }
 
     private func openTextDocument(_ document: TextDocument) {
         clearOpenSelection()
         selectedTextDocument = document
-        if !openTextDocuments.contains(where: { $0 === document }) {
+        if !openTextDocuments.contains(where: { $0.persistentModelID == document.persistentModelID }) {
             openTextDocuments.append(document)
+        }
+        if openTextDocuments.count > 6,
+           let removeIndex = openTextDocuments.firstIndex(where: { $0.persistentModelID != document.persistentModelID }) {
+            openTextDocuments.remove(at: removeIndex)
         }
         columnVisibility = .detailOnly
     }
@@ -1517,8 +1659,12 @@ struct ContentView: View {
     private func openSlideDeck(_ deck: SlideDeck) {
         clearOpenSelection()
         selectedSlideDeck = deck
-        if !openSlideDecks.contains(where: { $0 === deck }) {
+        if !openSlideDecks.contains(where: { $0.persistentModelID == deck.persistentModelID }) {
             openSlideDecks.append(deck)
+        }
+        if openSlideDecks.count > 6,
+           let removeIndex = openSlideDecks.firstIndex(where: { $0.persistentModelID != deck.persistentModelID }) {
+            openSlideDecks.remove(at: removeIndex)
         }
         columnVisibility = .detailOnly
     }
@@ -1573,6 +1719,7 @@ struct ContentView: View {
         guard parts.count == 2 else { return false }
         if parts[0] == "deck", let deck = flashcardDecks.first(where: { deckID($0) == parts[1] }) {
             selectedNotebook = nil
+            openFlashcardDeckTab(deck)
             selectedFlashcardDeck = deck
             return true
         }
@@ -1581,6 +1728,7 @@ struct ContentView: View {
             studyNotebook = notebook
         } else {
             selectedFlashcardDeck = nil
+            openNotebookTab(notebook)
             selectedNotebook = notebook
         }
         return true
@@ -2045,7 +2193,10 @@ struct ContentView: View {
                 .buttonStyle(.plain)
             }
             .swipeActions {
-                Button("削除", role: .destructive) { modelContext.delete(deck) }
+                Button("削除", role: .destructive) {
+                    closeDeckTabs(deck)
+                    modelContext.delete(deck)
+                }
             }
             .draggable("deck:\(deckID(deck))")
         }
@@ -2097,8 +2248,7 @@ struct ContentView: View {
             }
             .swipeActions {
                 Button("削除", role: .destructive) {
-                    openTextDocuments.removeAll { $0 === document }
-                    if selectedTextDocument === document { selectedTextDocument = nil }
+                    closeDocumentTabs(document)
                     modelContext.delete(document)
                 }
             }
@@ -2136,8 +2286,7 @@ struct ContentView: View {
             }
             .swipeActions {
                 Button("削除", role: .destructive) {
-                    openSlideDecks.removeAll { $0 === deck }
-                    if selectedSlideDeck === deck { selectedSlideDeck = nil }
+                    closeSlideDeckTabs(deck)
                     modelContext.delete(deck)
                 }
             }
@@ -2273,6 +2422,11 @@ struct ContentView: View {
             } label: {
                 Label("単語帳を読み込む（Quizlet・CSV）", systemImage: "rectangle.stack.badge.plus")
             }
+            Button {
+                presentPDFUnlockPicker()
+            } label: {
+                Label("PDFのパスワードを削除", systemImage: "lock.open.rotation")
+            }
             Divider()
             Button {
                 backupURL = exportMCPSnapshot().map(IdentifiableURL.init(url:))
@@ -2339,27 +2493,42 @@ struct ContentView: View {
         }
     }
 
-    private func createBlankNotebook() {
+    private func createBlankNotebook(template: PageTemplate = .blank) {
         let title = newNotebookName.trimmingCharacters(in: .whitespacesAndNewlines)
         let notebook = Notebook(title: title.isEmpty ? L("無題のノート") : title)
         let page = NotePage(order: 0)
+        page.pageTemplate = template
         page.notebook = notebook
         notebook.pages.append(page)
         notebook.refreshLibraryMetadata()
         notebook.folderName = selectedFolder ?? ""
         modelContext.insert(notebook)
         newNotebookName = ""
+        openNotebookTab(notebook)
         selectedNotebook = notebook
         libraryMode = .documents
     }
 
-    private func importPDF(from url: URL) {
+    private func importPDF(from url: URL, password: String? = nil) {
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
 
+        // A password-protected PDF opens to blank pages unless it is unlocked
+        // first. Hold it aside and ask for the password, exactly as PDF
+        // Expert does when a locked file is opened.
+        if password == nil, PDFPasswordService.needsPassword(url) {
+            // Copy it somewhere stable first: the prompt is presented in a
+            // later runloop turn, by which point the picker's own temp copy
+            // may be gone.
+            pdfPasswordEntry = ""
+            pdfPasswordError = nil
+            pdfPendingImport = stableCopy(of: url)
+            return
+        }
+
         let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
         notebook.folderName = selectedFolder ?? ""
-        for (index, pageData) in PDFImportService.extractPages(from: url).enumerated() {
+        for (index, pageData) in PDFImportService.extractPages(from: url, password: password).enumerated() {
             let page = NotePage(order: index, backgroundImageData: pageData.imageData, pageWidth: pageData.width, pageHeight: pageData.height)
             page.recognizedText = pageData.text
             page.textRecognitionDate = .now
@@ -2369,8 +2538,116 @@ struct ContentView: View {
         guard !notebook.pages.isEmpty else { return }
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
+        openNotebookTab(notebook)
         selectedNotebook = notebook
         libraryMode = .documents
+    }
+
+    /// Copies a picked file into the app's temp area so it outlives the
+    /// document picker's own short-lived copy. Returns the original URL if
+    /// the copy fails, which is still usually valid in the same session.
+    private var pdfPasswordPromptShown: Binding<Bool> {
+        Binding(
+            get: { pdfPendingImport != nil || pdfPendingUnlock != nil },
+            set: { if !$0 { cancelPDFPassword() } }
+        )
+    }
+
+    private var pdfRemovalOfferShown: Binding<Bool> {
+        Binding(
+            get: { pdfRemovalOffer != nil },
+            set: { if !$0 { pdfRemovalOffer = nil } }
+        )
+    }
+
+    private func stableCopy(of url: URL) -> URL {
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(url.pathExtension.isEmpty ? "pdf" : url.pathExtension)
+        do {
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: url, to: destination)
+            return destination
+        } catch {
+            return url
+        }
+    }
+
+    /// The password prompt shared by both flows — importing a locked PDF, and
+    /// stripping the password to save a copy. Which one is pending decides
+    /// what "OK" does.
+    private func submitPDFPassword() {
+        let password = pdfPasswordEntry
+        if let url = pdfPendingImport {
+            // Verify before committing to the import so a wrong password
+            // keeps the prompt up with an error rather than making a blank
+            // notebook.
+            do {
+                _ = try PDFPasswordService.unlock(url, password: password)
+            } catch {
+                pdfPasswordError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                return
+            }
+            pdfPendingImport = nil
+            pdfPasswordEntry = ""
+            importPDF(from: url, password: password)
+            // The file is unlocked and its password is now known — offer to
+            // keep a password-free copy, the way PDF Expert does once you've
+            // opened a protected file. The password is held only long enough
+            // to write that copy if the student says yes.
+            pdfRemovalOffer = PendingRemoval(url: url, password: password)
+            return
+        }
+        if let url = pdfPendingUnlock {
+            do {
+                let output = try PDFPasswordService.removePassword(
+                    from: url,
+                    password: password,
+                    to: PDFPasswordService.destinationURL(for: url)
+                )
+                pdfPendingUnlock = nil
+                pdfPasswordEntry = ""
+                pdfUnlockedResult = IdentifiableURL(url: output)
+            } catch {
+                pdfPasswordError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    private func cancelPDFPassword() {
+        pdfPendingImport = nil
+        pdfPendingUnlock = nil
+        pdfPasswordEntry = ""
+        pdfPasswordError = nil
+    }
+
+    /// Entry point for the "PDFのパスワードを削除" menu item: takes a picked
+    /// PDF and either strips it straight away (owner-restricted only) or asks
+    /// for the open password first.
+    private func beginPasswordRemoval(for url: URL) {
+        let source = stableCopy(of: url)
+        guard PDFPasswordService.isProtected(source) else {
+            pdfPasswordError = PDFPasswordService.ServiceError.notProtected.errorDescription
+            pdfPendingUnlock = source // keeps the alert up to show the message
+            return
+        }
+        if PDFPasswordService.needsPassword(source) {
+            pdfPasswordEntry = ""
+            pdfPasswordError = nil
+            pdfPendingUnlock = source
+        } else {
+            // No open password, only owner restrictions — nothing to type.
+            do {
+                let output = try PDFPasswordService.removePassword(
+                    from: source, password: "",
+                    to: PDFPasswordService.destinationURL(for: source)
+                )
+                pdfUnlockedResult = IdentifiableURL(url: output)
+            } catch {
+                pdfPendingUnlock = source
+                pdfPasswordError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
     }
 
     private func importFile(from url: URL) {
@@ -2404,6 +2681,7 @@ struct ContentView: View {
         notebook.pages.append(page)
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
+        openNotebookTab(notebook)
         selectedNotebook = notebook
         libraryMode = .documents
     }
@@ -2679,6 +2957,15 @@ struct ContentView: View {
         return fields
     }
 
+    private func presentPDFUnlockPicker() {
+        // Same delayed presentation as the file importer: opening a picker in
+        // the transaction that closes the menu is dropped on iPadOS.
+        isPickingPDFToUnlock = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            isPickingPDFToUnlock = true
+        }
+    }
+
     private func presentFileImporter() {
         // Presenting a document picker in the same transaction that dismisses
         // a toolbar Menu is ignored on iPadOS. Wait for the menu dismissal to
@@ -2767,10 +3054,35 @@ struct ContentView: View {
         selectedNotebook = copy
     }
 
+    /// Drops a notebook from every open tab and clears any selection or sheet
+    /// pointing at it. Called wherever a notebook is trashed or deleted, so a
+    /// removed note never lingers as a tab whose content is gone.
+    private func closeNotebookTabs(_ notebook: Notebook) {
+        openNotebooks.removeAll { $0 === notebook }
+        openStudyNotebooks.removeAll { $0 === notebook }
+        if selectedNotebook === notebook { selectedNotebook = nil }
+        if studyNotebook === notebook { studyNotebook = nil }
+    }
+
+    private func closeDeckTabs(_ deck: FlashcardDeck) {
+        openFlashcardDecks.removeAll { $0 === deck }
+        if selectedFlashcardDeck === deck { selectedFlashcardDeck = nil }
+    }
+
+    private func closeDocumentTabs(_ document: TextDocument) {
+        openTextDocuments.removeAll { $0 === document }
+        if selectedTextDocument === document { selectedTextDocument = openTextDocuments.last }
+    }
+
+    private func closeSlideDeckTabs(_ deck: SlideDeck) {
+        openSlideDecks.removeAll { $0 === deck }
+        if selectedSlideDeck === deck { selectedSlideDeck = openSlideDecks.last }
+    }
+
     private func moveToTrash(_ notebook: Notebook) {
         notebook.isTrashed = true
         notebook.trashedAt = .now
-        if selectedNotebook === notebook { selectedNotebook = nil }
+        closeNotebookTabs(notebook)
     }
 
     private func restore(_ notebook: Notebook) {
@@ -2781,13 +3093,15 @@ struct ContentView: View {
     }
 
     private func permanentlyDelete(_ notebook: Notebook) {
-        if selectedNotebook === notebook { selectedNotebook = nil }
+        closeNotebookTabs(notebook)
         modelContext.delete(notebook)
     }
 
     private func emptyTrash() {
-        allNotebooks.filter(\.isTrashed).forEach(modelContext.delete)
-        selectedNotebook = nil
+        for notebook in allNotebooks where notebook.isTrashed {
+            closeNotebookTabs(notebook)
+            modelContext.delete(notebook)
+        }
     }
 
     @MainActor

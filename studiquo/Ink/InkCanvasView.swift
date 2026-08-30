@@ -33,7 +33,10 @@ private final class InkSelectionTransfer {
 /// approximating it.
 final class InkCanvasView: UIView, UIDragInteractionDelegate {
     enum ShapeKind: String {
-        case rectangle, ellipse, line
+        // A straight line is what the line-correction already produces from
+        // an ordinary pencil stroke, so a separate tool for it was one more
+        // thing in the menu that did nothing new.
+        case rectangle, ellipse
     }
 
     // MARK: Configuration
@@ -47,6 +50,11 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     var isRectangleCorrectionEnabled = true
     var isTriangleCorrectionEnabled = true
     var isParabolaCorrectionEnabled = true
+    /// Fits the stroke to the closest ordinary function — cubic, sine,
+    /// exponential, logarithm, reciprocal — for curves a parabola cannot
+    /// describe. Convex arcs are caught by the parabola check before this
+    /// one runs, so they stay quadratic.
+    var isCurveCorrectionEnabled = true
     var isEraser = false {
         didSet { if !isEraser { hideEraserCursor() } }
     }
@@ -97,13 +105,25 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// outcome — a committed stroke, an erase, or nothing. The representable
     /// uses this to let ancestor scroll views move again once it's safe.
     var onStrokeEnded: (() -> Void)?
-    /// Fired after a dragged shape is committed, so the owner can return to
-    /// the pen tool instead of leaving the shape tool silently armed.
-    var onShapeCommitted: (() -> Void)?
+    /// Fired after a dragged shape is committed, with the kind and its
+    /// bounding box in page units.
+    ///
+    /// The canvas no longer draws the shape itself. A shape the student can
+    /// still move, resize and rotate afterwards has to be a page element, and
+    /// elements live outside this view — so the canvas reports the geometry
+    /// and the owner builds the element. The owner also uses this to return
+    /// to the pen instead of leaving the shape tool silently armed.
+    var onShapeCommitted: ((ShapeKind, CGRect) -> Void)?
     /// The rectangle the snip tool just drew, in page units. The canvas
     /// reports the geometry only — it holds ink, not the page background, so
     /// it is in no position to render the crop itself.
     var onSnipCaptured: ((CGRect) -> Void)?
+    /// Where the eraser has just passed, in page units, with its radius.
+    ///
+    /// Shapes are page elements now, and elements are not this view's to
+    /// erase — so the sweep is reported and the owner decides which of them
+    /// the eraser touched.
+    var onEraseSwept: (([CGPoint], CGFloat) -> Void)?
     /// Supplies only the currently lasso-selected strokes. The SwiftUI owner
     /// uses this small drawing for on-device OCR and never scans the rest of
     /// the notebook.
@@ -381,6 +401,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         if isEraser {
             showEraserCursor(at: location)
             eraseParts(along: [location])
+            onEraseSwept?([location], eraserWidth / 2)
         } else {
             updateLiveLayer()
             startHoldTimer()
@@ -419,6 +440,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             let path = [previousEraserLocation].compactMap { $0 } + samples.map { pagePoint($0.location(in: self)) }
             if let location = path.last { showEraserCursor(at: location) }
             eraseParts(along: path)
+            onEraseSwept?(path, eraserWidth / 2)
         } else if !isStraightened && !isEllipseLocked && !isRectangleLocked
                     && !isTriangleLocked && !isParabolaLocked {
             updateLiveLayer()
@@ -444,7 +466,6 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             shapeDragCurrent = nil
             liveLayer.path = nil
             onStrokeEnded?()
-            onShapeCommitted?()
             return
         }
 
@@ -884,6 +905,12 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                 self.prepareLockedNormalizedShape(points: parabola.points, at: current)
                 self.emitNormalizedShapePreview()
                 self.triggerCorrectionFeedback(at: current)
+            } else if self.isCurveCorrectionEnabled,
+                      let curve = self.curveIfRecognized(self.previewStroke()) {
+                self.isParabolaLocked = true
+                self.prepareLockedNormalizedShape(points: curve.points, at: current)
+                self.emitNormalizedShapePreview()
+                self.triggerCorrectionFeedback(at: current)
             } else if self.isLineCorrectionEnabled,
                       distanceFromStart > 16, !self.looksLikeClosedLoop() {
                 self.isStraightened = true
@@ -1095,18 +1122,17 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// shape.
     private func commitShape(kind: ShapeKind, from start: CGPoint, to end: CGPoint) {
         guard hypot(end.x - start.x, end.y - start.y) > 8 else { return }
-        let stroke = InkStroke(points: shapePoints(kind: kind, from: start, to: end), colorHex: strokeColorHex, width: strokeWidth)
-        drawing.strokes.append(stroke)
-        withoutImplicitAnimations { addCommittedLayer(for: stroke) }
+        let rect = CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        onShapeCommitted?(kind, rect)
     }
 
     private func shapePoints(kind: ShapeKind, from start: CGPoint, to end: CGPoint) -> [InkPoint] {
         switch kind {
-        case .line:
-            return [
-                InkPoint(location: start, force: 0.6, timeOffset: 0),
-                InkPoint(location: end, force: 0.6, timeOffset: 1),
-            ]
         case .rectangle:
             let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
             let corners = [
@@ -1503,6 +1529,211 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         var result = stroke
         result.points = fitted
         return result
+    }
+
+    // MARK: General curve fitting
+
+    /// One candidate shape for a stroke: how to evaluate it, and how many
+    /// coefficients it cost to fit.
+    private struct CurveCandidate {
+        let evaluate: (CGFloat) -> CGFloat
+        let rmse: CGFloat
+        let terms: Int
+
+        /// What the candidates are ranked by.
+        ///
+        /// Raw error alone always favours the most flexible model — a cubic
+        /// can shadow a straight line and win by a rounding error. The
+        /// penalty per coefficient means a more complicated function has to
+        /// fit *noticeably* better before it is preferred, which is what
+        /// keeps a gentle arc from being redrawn as a wave.
+        var score: CGFloat { rmse + 0.006 * CGFloat(terms) }
+    }
+
+    /// Redraws a stroke as the ordinary function it most nearly traces.
+    ///
+    /// Only strokes that pass a vertical-line test are eligible: `y = f(x)`
+    /// cannot describe a shape that doubles back, and forcing one onto a loop
+    /// produces nonsense. Convex arcs never reach here — the parabola check
+    /// runs first and claims them.
+    private func curveIfRecognized(_ stroke: InkStroke) -> InkStroke? {
+        let raw = stroke.points.map(\.location)
+        guard raw.count >= 12 else { return nil }
+        let minX = raw.map(\.x).min() ?? 0, maxX = raw.map(\.x).max() ?? 0
+        let minY = raw.map(\.y).min() ?? 0, maxY = raw.map(\.y).max() ?? 0
+        let width = maxX - minX, height = maxY - minY
+        guard width >= 40, height >= 12 else { return nil }
+
+        // Left to right, however it was drawn, and thinned so the grid
+        // searches below stay cheap enough to run inside the hold timer.
+        let ordered = raw.sorted { $0.x < $1.x }
+        let stride = max(1, ordered.count / 60)
+        let sampled = Swift.stride(from: 0, to: ordered.count, by: stride).map { ordered[$0] }
+        guard sampled.count >= 10 else { return nil }
+
+        // The vertical-line test: after sorting by x, a function's y values
+        // follow the original stroke order. If the stroke doubled back, the
+        // sorted sequence zig-zags instead.
+        guard Self.passesVerticalLineTest(raw) else { return nil }
+
+        // Anything close to straight belongs to the line correction. Without
+        // this the fitter claimed it first and drew a barely-bent curve where
+        // the student plainly wanted a ruler line — a curve of very large
+        // radius fits a straight stroke about as well as a line does, so
+        // error alone never settles it. Straightness has to be ruled out
+        // before the families are even tried.
+        guard Self.bend(of: raw) > 0.055 else { return nil }
+
+        let midX = (minX + maxX) / 2
+        let points = sampled.map { point in
+            (x: (point.x - midX) / (width / 2), y: (point.y - minY) / height)
+        }
+
+        var best: CurveCandidate?
+        func consider(_ candidate: CurveCandidate?) {
+            guard let candidate else { return }
+            if best == nil || candidate.score < best!.score { best = candidate }
+        }
+
+        // Polynomials.
+        consider(Self.fit(points, basis: [{ $0 * $0 }, { $0 }, { _ in 1 }]))
+        consider(Self.fit(points, basis: [{ $0 * $0 * $0 }, { $0 * $0 }, { $0 }, { _ in 1 }]))
+
+        // Waves. The frequency is searched over; amplitude and phase fall out
+        // of the linear fit as the sine and cosine coefficients.
+        for step in 0...30 {
+            let omega = 0.6 + CGFloat(step) * 0.25
+            consider(Self.fit(points, basis: [
+                { sin(omega * $0) }, { cos(omega * $0) }, { _ in 1 },
+            ]))
+        }
+
+        // Growth and decay.
+        for step in 0...24 {
+            let k = -6 + CGFloat(step) * 0.5
+            guard abs(k) > 0.4 else { continue }
+            consider(Self.fit(points, basis: [{ exp(k * $0) }, { _ in 1 }]))
+        }
+
+        // Logarithms and square roots, shifted so the domain covers [-1, 1].
+        for shift in [CGFloat(1.02), 1.05, 1.1, 1.25, 1.5, 2, 3, 5] {
+            consider(Self.fit(points, basis: [{ log($0 + shift) }, { _ in 1 }]))
+            consider(Self.fit(points, basis: [{ sqrt($0 + shift) }, { _ in 1 }]))
+        }
+
+        // Reciprocals, with the pole kept outside the drawn range.
+        for magnitude in [CGFloat(1.02), 1.05, 1.15, 1.35, 1.7, 2.4, 4] {
+            for pole in [magnitude, -magnitude] {
+                consider(Self.fit(points, basis: [{ 1 / ($0 - pole) }, { _ in 1 }]))
+            }
+        }
+
+        guard let winner = best, winner.rmse <= 0.11 else { return nil }
+        // A second, stricter guard in the fitted space: if a plain line
+        // explains the stroke nearly as well, it is a line.
+        if let line = Self.fit(points, basis: [{ $0 }, { _ in 1 }]),
+           line.rmse <= winner.rmse * 1.6 {
+            return nil
+        }
+
+        let fitted = (0...96).map { index -> InkPoint in
+            let nx = -1 + 2 * CGFloat(index) / 96
+            let ny = winner.evaluate(nx)
+            return InkPoint(
+                location: CGPoint(x: midX + nx * width / 2, y: minY + ny * height),
+                force: 0.5,
+                timeOffset: Double(index) / 96
+            )
+        }
+        var result = stroke
+        result.points = fitted
+        return result
+    }
+
+    /// How far the stroke strays from the straight line joining its ends,
+    /// as a fraction of that line's length.
+    ///
+    /// Scale-free on purpose: a 40pt flick and a full-page sweep with the
+    /// same shape should be judged the same way.
+    private static func bend(of points: [CGPoint]) -> CGFloat {
+        guard let first = points.first, let last = points.last else { return 0 }
+        let dx = last.x - first.x, dy = last.y - first.y
+        let length = hypot(dx, dy)
+        guard length > 1 else { return 0 }
+        let deviation = points.reduce(CGFloat.zero) { worst, point in
+            let cross = abs(dx * (point.y - first.y) - dy * (point.x - first.x))
+            return max(worst, cross / length)
+        }
+        return deviation / length
+    }
+
+    /// Whether the stroke advances in one direction along x.
+    ///
+    /// A little backtracking is normal — a hand shakes, and the pencil
+    /// reports every wobble — so this measures the share of steps going the
+    /// dominant way rather than demanding strict monotonicity.
+    private static func passesVerticalLineTest(_ points: [CGPoint]) -> Bool {
+        let deltas = zip(points, points.dropFirst()).map { $1.x - $0.x }
+        let travelled = deltas.reduce(CGFloat.zero) { $0 + abs($1) }
+        guard travelled > 0 else { return false }
+        let net = abs(deltas.reduce(CGFloat.zero, +))
+        return net / travelled >= 0.86
+    }
+
+    /// Least squares over a fixed set of basis functions.
+    ///
+    /// Every family above is linear in its coefficients once its shape
+    /// parameter is chosen, so one solver covers all of them and the grid
+    /// searches only have to supply the basis.
+    private static func fit(
+        _ points: [(x: CGFloat, y: CGFloat)],
+        basis: [(CGFloat) -> CGFloat]
+    ) -> CurveCandidate? {
+        let terms = basis.count
+        var normal = [[CGFloat]](repeating: [CGFloat](repeating: 0, count: terms + 1), count: terms)
+        for point in points {
+            let row = basis.map { $0(point.x) }
+            guard row.allSatisfy({ $0.isFinite }) else { return nil }
+            for i in 0..<terms {
+                for j in 0..<terms { normal[i][j] += row[i] * row[j] }
+                normal[i][terms] += row[i] * point.y
+            }
+        }
+        guard let coefficients = solve(normal) else { return nil }
+
+        let evaluate: (CGFloat) -> CGFloat = { x in
+            zip(coefficients, basis).reduce(CGFloat.zero) { $0 + $1.0 * $1.1(x) }
+        }
+        var total = CGFloat.zero
+        for point in points {
+            let error = point.y - evaluate(point.x)
+            guard error.isFinite else { return nil }
+            total += error * error
+        }
+        return CurveCandidate(
+            evaluate: evaluate,
+            rmse: sqrt(total / CGFloat(points.count)),
+            terms: terms
+        )
+    }
+
+    /// Gauss-Jordan with partial pivoting, on an augmented matrix.
+    private static func solve(_ matrix: [[CGFloat]]) -> [CGFloat]? {
+        var m = matrix
+        let n = m.count
+        for column in 0..<n {
+            guard let pivot = (column..<n).max(by: { abs(m[$0][column]) < abs(m[$1][column]) }),
+                  abs(m[pivot][column]) > 1e-9 else { return nil }
+            m.swapAt(column, pivot)
+            let divisor = m[column][column]
+            for index in column...n { m[column][index] /= divisor }
+            for row in 0..<n where row != column {
+                let factor = m[row][column]
+                guard factor != 0 else { continue }
+                for index in column...n { m[row][index] -= factor * m[column][index] }
+            }
+        }
+        return (0..<n).map { m[$0][n] }
     }
 
     private static func convexHull(_ points: [CGPoint]) -> [CGPoint] {

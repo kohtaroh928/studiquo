@@ -797,7 +797,16 @@ struct CalendarHomeView: View {
     }
 
     private var todayStudySeconds: TimeInterval {
-        studyActivities.filter { Calendar.current.isDateInToday($0.startedAt) }.reduce(0) { $0 + $1.duration }
+        studySeconds(on: .now)
+    }
+
+    /// Total recorded study time on a given day, past days included, so
+    /// tapping any date shows how long that day was spent studying.
+    private func studySeconds(on day: Date) -> TimeInterval {
+        let calendar = Calendar.current
+        return studyActivities
+            .filter { calendar.isDate($0.startedAt, inSameDayAs: day) }
+            .reduce(0) { $0 + $1.duration }
     }
 
     private var currentStudyStreak: Int {
@@ -1098,7 +1107,19 @@ struct CalendarHomeView: View {
                 eventLegend(.classLesson)
                 eventLegend(.other)
             }
-            .padding(.bottom, 12)
+            .padding(.bottom, 8)
+
+            // The selected day's study time, below the event-kind legend.
+            selectedDayStudyRow
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+
+            // Past study time as a bar chart — week / month / year — under the
+            // calendar, scrolling horizontally when a month's worth of bars
+            // does not fit.
+            StudyTimeBarChart(activities: studyActivities, referenceDate: selectedDate)
+                .padding(.horizontal)
+                .padding(.bottom, 16)
         }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -1216,11 +1237,225 @@ struct CalendarHomeView: View {
         case .other: .orange
         }
     }
+
+    /// The study-time line under the selected day's header.
+    private var selectedDayStudyRow: some View {
+        let seconds = studySeconds(on: selectedDate)
+        return HStack(spacing: 10) {
+            Image(systemName: "clock.fill")
+                .font(.footnote)
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(Color.blue.gradient, in: Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(selectedDate.formatted(.dateTime.month().day()))の勉強時間")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(seconds > 0 ? formattedDuration(seconds) : L("記録なし"))
+                    .font(.subheadline.bold())
+                    .monospacedDigit()
+                    .foregroundStyle(seconds > 0 ? .primary : .secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
 }
 
 /// A month grid built from scratch rather than `DatePicker(.graphical)`,
 /// which has no supported way to decorate individual days — there's no hook
 /// to draw the "something is happening here" dot this view exists for.
+/// A bar chart of past study time, switchable between week, month and year.
+///
+/// - **週**: the seven days of the selected date's week, one bar each.
+/// - **月**: every day of the selected date's month.
+/// - **年**: the twelve months of the selected date's year, each bar the
+///   month's *average* daily study time.
+///
+/// Every mode shows its own average beneath the title. The bars scroll
+/// horizontally when they outrun the width — which a month's worth does.
+private struct StudyTimeBarChart: View {
+    let activities: [StudyActivity]
+    /// Which week/month/year to chart — the day tapped in the calendar.
+    let referenceDate: Date
+
+    enum Span: String, CaseIterable, Identifiable {
+        case week = "週", month = "月", year = "年"
+        var id: String { rawValue }
+    }
+
+    @State private var span: Span = .week
+
+    private var calendar: Calendar { .current }
+
+    private struct Bar: Identifiable {
+        let id = UUID()
+        let label: String
+        let seconds: TimeInterval
+        /// The bar for the selected day / current month, drawn in full colour.
+        let isHighlighted: Bool
+    }
+
+    private func seconds(on day: Date) -> TimeInterval {
+        activities
+            .filter { calendar.isDate($0.startedAt, inSameDayAs: day) }
+            .reduce(0) { $0 + $1.duration }
+    }
+
+    private func seconds(inMonthOf day: Date) -> (total: TimeInterval, days: Int) {
+        guard let interval = calendar.dateInterval(of: .month, for: day),
+              let dayCount = calendar.range(of: .day, in: .month, for: day)?.count else {
+            return (0, 1)
+        }
+        let total = activities
+            .filter { $0.startedAt >= interval.start && $0.startedAt < interval.end }
+            .reduce(0) { $0 + $1.duration }
+        return (total, max(dayCount, 1))
+    }
+
+    private var bars: [Bar] {
+        switch span {
+        case .week:
+            guard let start = calendar.dateInterval(of: .weekOfYear, for: referenceDate)?.start else { return [] }
+            let symbols = orderedWeekdaySymbols
+            return (0..<7).compactMap { offset in
+                guard let day = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
+                return Bar(
+                    label: symbols[offset],
+                    seconds: seconds(on: day),
+                    isHighlighted: calendar.isDate(day, inSameDayAs: referenceDate)
+                )
+            }
+        case .month:
+            guard let interval = calendar.dateInterval(of: .month, for: referenceDate),
+                  let dayCount = calendar.range(of: .day, in: .month, for: referenceDate)?.count else { return [] }
+            return (0..<dayCount).compactMap { offset in
+                guard let day = calendar.date(byAdding: .day, value: offset, to: interval.start) else { return nil }
+                return Bar(
+                    label: "\(calendar.component(.day, from: day))",
+                    seconds: seconds(on: day),
+                    isHighlighted: calendar.isDate(day, inSameDayAs: referenceDate)
+                )
+            }
+        case .year:
+            let year = calendar.component(.year, from: referenceDate)
+            let selectedMonth = calendar.component(.month, from: referenceDate)
+            return (1...12).compactMap { month in
+                guard let day = calendar.date(from: DateComponents(year: year, month: month, day: 1)) else { return nil }
+                let stats = seconds(inMonthOf: day)
+                return Bar(
+                    label: "\(month)",
+                    seconds: stats.total / Double(stats.days), // the month's daily average
+                    isHighlighted: month == selectedMonth
+                )
+            }
+        }
+    }
+
+    /// Weekday short symbols rotated to the locale's first weekday, so the
+    /// labels line up with the bars.
+    private var orderedWeekdaySymbols: [String] {
+        let symbols = calendar.veryShortWeekdaySymbols
+        let shift = calendar.firstWeekday - 1
+        return Array(symbols[shift...] + symbols[..<shift])
+    }
+
+    private var averageSeconds: TimeInterval {
+        guard !bars.isEmpty else { return 0 }
+        return bars.reduce(0) { $0 + $1.seconds } / Double(bars.count)
+    }
+
+    private var averageLabel: String {
+        switch span {
+        case .week: return L("1日あたり平均 \(durationText(averageSeconds))")
+        case .month: return L("1日あたり平均 \(durationText(averageSeconds))")
+        case .year: return L("1ヶ月あたり平均 \(durationText(averageSeconds))")
+        }
+    }
+
+    private func durationText(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        return minutes >= 60 ? L("\(minutes / 60)時間\(minutes % 60)分") : L("\(minutes)分")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("勉強時間の記録")
+                        .font(.headline)
+                    Text(averageLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Picker("期間", selection: $span) {
+                    ForEach(Span.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 168)
+            }
+
+            chart
+                .frame(height: 172)
+        }
+        .padding(16)
+        .background(.background, in: RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .indigo.opacity(0.08), radius: 10, y: 4)
+    }
+
+    private var chart: some View {
+        let maxSeconds = max(bars.map(\.seconds).max() ?? 0, 1)
+        // Every span fits the width — a month's days are packed in rather than
+        // scrolled, so the whole record is visible at a glance. Bars get
+        // narrower with more of them (7 for a week, up to 31 for a month).
+        let spacing: CGFloat = bars.count > 12 ? 3 : 6
+
+        return GeometryReader { geo in
+            let barWidth = max(6, (geo.size.width - spacing * CGFloat(bars.count + 1)) / CGFloat(max(bars.count, 1)))
+            HStack(alignment: .bottom, spacing: spacing) {
+                ForEach(bars) { bar in
+                    barColumn(bar, maxSeconds: maxSeconds, width: barWidth, plotHeight: 132,
+                              dense: bars.count > 12)
+                }
+            }
+            .padding(.horizontal, spacing)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .bottomLeading)
+        }
+    }
+
+    private func barColumn(_ bar: Bar, maxSeconds: TimeInterval, width: CGFloat, plotHeight: CGFloat, dense: Bool) -> some View {
+        let height = bar.seconds > 0 ? max(3, plotHeight * CGFloat(bar.seconds / maxSeconds)) : 0
+        return VStack(spacing: dense ? 3 : 5) {
+            Spacer(minLength: 0)
+            RoundedRectangle(cornerRadius: dense ? 1.5 : 3)
+                .fill(bar.isHighlighted ? Color.blue : Color.blue.opacity(0.4))
+                .frame(width: width, height: height)
+            Text(bar.label)
+                // In the packed month view, thinning the labels keeps day
+                // numbers from colliding: show every fifth day plus the
+                // highlighted one.
+                .font(.system(size: dense ? 8 : 9))
+                .foregroundStyle(bar.isHighlighted ? Color.blue : .secondary)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(width: max(width, dense ? 6 : 14))
+                .opacity(labelVisible(bar, dense: dense) ? 1 : 0)
+        }
+    }
+
+    /// Whether to draw a bar's label. All of them outside the month view; a
+    /// readable subset inside it.
+    private func labelVisible(_ bar: Bar, dense: Bool) -> Bool {
+        guard dense else { return true }
+        if bar.isHighlighted { return true }
+        guard let day = Int(bar.label) else { return true }
+        return day % 5 == 0 || day == 1
+    }
+}
+
 private struct MonthCalendarGrid: View {
     @Binding var selectedDate: Date
     @Binding var displayedMonth: Date

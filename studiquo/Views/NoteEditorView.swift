@@ -24,6 +24,9 @@ extension Notification.Name {
     static let studiquoSelectionDropped = Notification.Name("StudiquoSelectionDropped")
     /// Carries a `PageSnippet` the snip tool just cut out of a page.
     static let studiquoPageSnipped = Notification.Name("StudiquoPageSnipped")
+    /// Carries the `PersistentIdentifier` of an element that should come up
+    /// already showing its resize/rotate chrome.
+    static let studiquoSelectPageElement = Notification.Name("StudiquoSelectPageElement")
     /// Editor → ContentView: this conversation is open, give it a tab.
     static let studiquoOpenAIChatTab = Notification.Name("StudiquoOpenAIChatTab")
     /// Editor → ContentView: this conversation is gone, drop its tab.
@@ -57,6 +60,7 @@ private struct AIChatAttachment: Identifiable, Hashable {
         case file
         case folder
         case camera
+        case notebook
         /// A rectangle cut out of a page — see `PageSnippet`.
         case snippet
 
@@ -65,6 +69,7 @@ private struct AIChatAttachment: Identifiable, Hashable {
             case .file: return L("ファイル")
             case .folder: return L("フォルダー")
             case .camera: return L("撮影画像")
+            case .notebook: return L("ノート・PDF")
             case .snippet: return L("切り抜き")
             }
         }
@@ -74,6 +79,7 @@ private struct AIChatAttachment: Identifiable, Hashable {
             case .file: return "doc"
             case .folder: return "folder"
             case .camera: return "camera"
+            case .notebook: return "doc.richtext"
             case .snippet: return "rectangle.dashed"
             }
         }
@@ -113,6 +119,7 @@ private struct AIChatAttachment: Identifiable, Hashable {
     let kind: Kind
     var snippet: PageSnippet?
     var imageData: Data?
+    var contextText: String = ""
     var proofRole: ProofRole = .none
 
     var image: UIImage? {
@@ -222,6 +229,7 @@ struct NoteEditorView: View {
     @State private var activePane: ActivePane = .primary
     @State private var pendingSplitMode: SplitMode?
     @State private var showsSplitSourcePicker = false
+    @State private var primaryShowsAIChat = false
     @State private var secondaryShowsWeb = false
     @State private var secondaryShowsAIChat = false
     @State private var showsTemporaryAIChat = false
@@ -229,6 +237,7 @@ struct NoteEditorView: View {
     @State private var selectedAIChatThread: AIChatThread?
     @State private var aiChatDrafts: [String: String] = [:]
     @State private var aiChatAttachments: [String: [AIChatAttachment]] = [:]
+    @State private var aiChatContextOverrides: [String: String] = [:]
     /// Regions cut out with the snip tool, waiting to be dragged into a chat.
     @State private var snippetTray: [PageSnippet] = []
     @State private var pendingProofQuestionSnippet: PageSnippet?
@@ -260,6 +269,10 @@ struct NoteEditorView: View {
     @State private var calculatorResult = "0"
     @State private var calculatorCenter: CGPoint?
     @State private var calculatorDragOrigin: CGPoint?
+    @State private var temporaryAIChatCenter: CGPoint?
+    @State private var temporaryAIChatDragOrigin: CGPoint?
+    @State private var temporaryAIChatSize: CGSize?
+    @State private var temporaryAIChatResizeOrigin: CGSize?
     // The pen bar's position now lives inside `FloatingDrawingToolbar`, so a
     // drag no longer invalidates this whole view.
     /// True while a finger is on the size slider. The slider sits inside the
@@ -287,6 +300,7 @@ struct NoteEditorView: View {
     @AppStorage("rectangleCorrectionEnabled") private var isRectangleCorrectionEnabled = true
     @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
     @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
+    @AppStorage("curveCorrectionEnabled") private var isCurveCorrectionEnabled = true
     /// Armed shape kind ("" for none) for the drag-to-create shape tool.
     /// Shared via the same `@AppStorage` key with `PageCanvasContainer`, the
     /// same pattern `drawingToolRaw` already uses to reach the active page's
@@ -431,29 +445,24 @@ struct NoteEditorView: View {
         } message: {
             Text("ホーム画面のゴミ箱から復元できます。")
         }
-        .confirmationDialog(
-            "新しいページのスタイル",
+        .sheet(
             isPresented: Binding(
                 get: { notebookPendingNewPage != nil },
                 set: { if !$0 { notebookPendingNewPage = nil } }
-            ),
-            titleVisibility: .visible
+            )
         ) {
-            ForEach(PageTemplate.allCases) { template in
-                Button {
-                    addPendingPage(template: template)
-                } label: {
-                    Label(template.name, systemImage: template.icon)
+            PageTemplatePickerSheet(
+                title: "ページ追加",
+                subtitle: "追加するページの用紙を選んでください。",
+                selectedTemplate: notebookPendingNewPage?.sortedPages.last?.pageTemplate ?? .ruled,
+                selectedPaperColorHex: notebookPendingNewPage?.sortedPages.last?.paperColorHex
+                    ?? PaperColorChoice.white.hex,
+                confirmTitle: "追加",
+                onCancel: { notebookPendingNewPage = nil },
+                onSelect: { template, colorHex in
+                    addPendingPage(template: template, paperColorHex: colorHex)
                 }
-            }
-            Button("キャンセル", role: .cancel) { notebookPendingNewPage = nil }
-        } message: {
-            Text("追加するページの用紙を選んでください。")
-        }
-        .alert("テキストを追加", isPresented: $isShowingTextAlert) {
-            TextField("文字を入力", text: $textToInsert, axis: .vertical)
-            Button("キャンセル", role: .cancel) { textToInsert = "" }
-            Button("追加") { addTextElement() }
+            )
         }
         .onChange(of: selectedPhotoItem) { _, item in
             guard let item else { return }
@@ -563,51 +572,213 @@ struct NoteEditorView: View {
     }
 
     private func temporaryAIChatPanel(in size: CGSize) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Label("AIトーク", systemImage: "sparkles")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        showsTemporaryAIChat = false
-                    }
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(.regularMaterial)
+        let panelSize = resolvedTemporaryAIChatSize(in: size)
 
-            AIChatPane(
-                threads: aiChatThreads,
-                selectedThread: selectedAIChatThread,
-                draft: activeAIChatDraft,
-                attachments: activeAIChatAttachments,
-                onSelectThread: { selectedAIChatThread = $0 },
-                onNewThread: {
-                    selectedAIChatThread = nil
-                    aiChatDrafts["new"] = ""
-                    aiChatAttachments["new"] = []
-                },
-                onDeleteThread: deleteAIChatThread,
-                onSend: { sendAIChatMessage() },
-                respondingThreadIDs: aiChatRespondingThreadIDs,
-                onCancel: cancelAIChatResponse,
-                onGradeProof: gradeProof
-            )
+        return ZStack(alignment: .bottomTrailing) {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Label("AIトーク", systemImage: "sparkles")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(temporaryAIChatDragGesture(in: size, panelSize: panelSize))
+                    Spacer()
+                    Button {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            showsTemporaryAIChat = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(.regularMaterial)
+
+                AIChatPane(
+                    threads: aiChatThreads,
+                    selectedThread: selectedAIChatThread,
+                    draft: activeAIChatDraft,
+                    attachments: activeAIChatAttachments,
+                    onSelectThread: { selectedAIChatThread = $0 },
+                    onNewThread: {
+                        selectedAIChatThread = nil
+                        aiChatDrafts["new"] = ""
+                        aiChatAttachments["new"] = []
+                        aiChatContextOverrides["new"] = nil
+                    },
+                    onDeleteThread: deleteAIChatThread,
+                    onSend: { sendAIChatMessage() },
+                    respondingThreadIDs: aiChatRespondingThreadIDs,
+                    onCancel: cancelAIChatResponse,
+                    onGradeProof: gradeProof,
+                    onInsertAssistantMessage: insertAIResponseOnPage,
+                    onAttachDroppedTab: attachmentForDroppedTab,
+                    onPaneDrop: { handlePaneDrop($0, target: .secondary) }
+                )
+            }
+
+            temporaryAIChatResizeHandles(in: size, panelSize: panelSize)
         }
-        .frame(width: min(520, max(360, size.width * 0.42)), height: min(620, max(420, size.height * 0.74)))
+        .frame(width: panelSize.width, height: panelSize.height)
         .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 18))
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
         .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
-        .padding(18)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        .position(resolvedTemporaryAIChatCenter(in: size, panelSize: panelSize))
+        .transaction { transaction in
+            if temporaryAIChatDragOrigin != nil || temporaryAIChatResizeOrigin != nil {
+                transaction.animation = nil
+            }
+        }
         .transition(.move(edge: .trailing).combined(with: .opacity))
+        .onAppear {
+            if temporaryAIChatCenter == nil {
+                temporaryAIChatCenter = clampedTemporaryAIChatCenter(
+                    CGPoint(x: size.width - panelSize.width / 2 - 18, y: size.height - panelSize.height / 2 - 18),
+                    in: size,
+                    panelSize: panelSize
+                )
+            }
+        }
+    }
+
+    private func temporaryAIChatResizeHandles(in containerSize: CGSize, panelSize: CGSize) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: 18)
+                .contentShape(Rectangle())
+                .gesture(temporaryAIChatResizeGesture(in: containerSize, panelSize: panelSize, axes: [.horizontal]))
+                .accessibilityLabel("AIトークの幅を変更")
+                .frame(maxWidth: .infinity, maxHeight: max(44, panelSize.height - 54), alignment: .trailing)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+
+            Rectangle()
+                .fill(Color.clear)
+                .frame(height: 18)
+                .contentShape(Rectangle())
+                .gesture(temporaryAIChatResizeGesture(in: containerSize, panelSize: panelSize, axes: [.vertical]))
+                .accessibilityLabel("AIトークの高さを変更")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.secondary.opacity(0.34))
+                .frame(width: 30, height: 4)
+                .rotationEffect(.degrees(-45))
+                .padding(12)
+                .contentShape(Rectangle())
+                .gesture(temporaryAIChatResizeGesture(in: containerSize, panelSize: panelSize, axes: [.horizontal, .vertical]))
+                .accessibilityLabel("AIトークの大きさを変更")
+        }
+    }
+
+    private func temporaryAIChatResizeGesture(
+        in containerSize: CGSize,
+        panelSize: CGSize,
+        axes: Axis.Set
+    ) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .global)
+            .onChanged { value in
+                let initial = temporaryAIChatResizeOrigin ?? panelSize
+                if temporaryAIChatResizeOrigin == nil { temporaryAIChatResizeOrigin = initial }
+                let resized = clampedTemporaryAIChatSize(
+                    CGSize(
+                        width: initial.width + (axes.contains(.horizontal) ? value.translation.width : 0),
+                        height: initial.height + (axes.contains(.vertical) ? value.translation.height : 0)
+                    ),
+                    in: containerSize
+                )
+                temporaryAIChatSize = resized
+                temporaryAIChatCenter = clampedTemporaryAIChatCenter(
+                    resolvedTemporaryAIChatCenter(in: containerSize, panelSize: resized),
+                    in: containerSize,
+                    panelSize: resized
+                )
+            }
+            .onEnded { _ in temporaryAIChatResizeOrigin = nil }
+    }
+
+    private func temporaryAIChatDragGesture(in containerSize: CGSize, panelSize: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { value in
+                let initial = temporaryAIChatDragOrigin ?? temporaryAIChatCenter
+                    ?? resolvedTemporaryAIChatCenter(in: containerSize, panelSize: panelSize)
+                if temporaryAIChatDragOrigin == nil { temporaryAIChatDragOrigin = initial }
+                temporaryAIChatCenter = clampedTemporaryAIChatCenter(
+                    CGPoint(
+                        x: initial.x + value.translation.width,
+                        y: initial.y + value.translation.height
+                    ),
+                    in: containerSize,
+                    panelSize: panelSize,
+                    margin: 18
+                )
+            }
+            .onEnded { _ in
+                if let center = temporaryAIChatCenter {
+                    temporaryAIChatCenter = clampedTemporaryAIChatCenter(
+                        center,
+                        in: containerSize,
+                        panelSize: panelSize
+                    )
+                }
+                temporaryAIChatDragOrigin = nil
+            }
+    }
+
+    private func resolvedTemporaryAIChatSize(in containerSize: CGSize) -> CGSize {
+        clampedTemporaryAIChatSize(
+            temporaryAIChatSize ?? CGSize(
+                width: min(520, max(360, containerSize.width * 0.42)),
+                height: min(620, max(420, containerSize.height * 0.74))
+            ),
+            in: containerSize
+        )
+    }
+
+    private func clampedTemporaryAIChatSize(_ panelSize: CGSize, in containerSize: CGSize) -> CGSize {
+        let maxWidth = max(320, containerSize.width - 24)
+        let maxHeight = max(360, containerSize.height - 24)
+        return CGSize(
+            width: min(max(panelSize.width, min(320, maxWidth)), maxWidth),
+            height: min(max(panelSize.height, min(360, maxHeight)), maxHeight)
+        )
+    }
+
+    private func resolvedTemporaryAIChatCenter(in containerSize: CGSize, panelSize: CGSize) -> CGPoint {
+        clampedTemporaryAIChatCenter(
+            temporaryAIChatCenter ?? CGPoint(
+                x: containerSize.width - panelSize.width / 2 - 18,
+                y: containerSize.height - panelSize.height / 2 - 18
+            ),
+            in: containerSize,
+            panelSize: panelSize
+        )
+    }
+
+    private func clampedTemporaryAIChatCenter(
+        _ point: CGPoint,
+        in containerSize: CGSize,
+        panelSize: CGSize,
+        margin: CGFloat = 0
+    ) -> CGPoint {
+        let halfWidth = min(panelSize.width / 2, containerSize.width / 2) - margin
+        let halfHeight = min(panelSize.height / 2, containerSize.height / 2) - margin
+        let minX = max(0, halfWidth)
+        let minY = max(0, halfHeight)
+        let maxX = max(minX, containerSize.width - minX)
+        let maxY = max(minY, containerSize.height - minY)
+        return CGPoint(
+            x: min(max(point.x, minX), maxX),
+            y: min(max(point.y, minY), maxY)
+        )
     }
 
     @ViewBuilder
@@ -626,8 +797,7 @@ struct NoteEditorView: View {
             Image(systemName: "scribble.variable")
                 .foregroundStyle(isScratchOutEnabled ? Color.accentColor : .secondary)
                 .frame(width: 28, height: 28)
-                .background(isScratchOutEnabled ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(isScratchOutEnabled ? Color.accentColor : .clear, lineWidth: 1.5))
+                .background(toolChipBackground(cornerRadius: 7, isActive: isScratchOutEnabled))
         }
         .accessibilityLabel("スクイブル消しゴム")
         .accessibilityHint("オンにすると、ペンで線の上をぐしゃぐしゃとなぞって消せます")
@@ -645,8 +815,7 @@ struct NoteEditorView: View {
                 Image(systemName: tool.icon)
                     .foregroundStyle(drawingTool == tool ? Color.accentColor : Color.primary)
                     .frame(width: 28, height: 28)
-                    .background(drawingTool == tool ? Color.accentColor.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 7))
-                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(drawingTool == tool ? Color.accentColor : .clear, lineWidth: 1.5))
+                    .background(toolChipBackground(cornerRadius: 7, isActive: drawingTool == tool))
             }
         }
 
@@ -780,7 +949,7 @@ struct NoteEditorView: View {
                         Spacer()
                         Text("\(currentToolSizePercent)")
                             .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary)
                     }
                     toolSizeSlider
                 }
@@ -792,12 +961,12 @@ struct NoteEditorView: View {
         } else {
             HStack(spacing: 6) {
                 Image(systemName: "lineweight")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
                 toolSizeSlider
                     .frame(width: 96)
                 Text("\(currentToolSizePercent)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.primary)
                     .frame(width: 24, alignment: .trailing)
             }
             .padding(.horizontal, 7)
@@ -900,7 +1069,31 @@ struct NoteEditorView: View {
     @ViewBuilder
     private var primaryPane: some View {
         Group {
-            if let primaryFlashcardDeck {
+            if primaryShowsAIChat {
+                AIChatPane(
+                    threads: aiChatThreads,
+                    selectedThread: selectedAIChatThread,
+                    draft: activeAIChatDraft,
+                    attachments: activeAIChatAttachments,
+                    onSelectThread: { thread in
+                        selectedAIChatThread = thread
+                    },
+                    onNewThread: {
+                        selectedAIChatThread = nil
+                        aiChatDrafts["new"] = ""
+                        aiChatAttachments["new"] = []
+                        aiChatContextOverrides["new"] = nil
+                    },
+                    onDeleteThread: deleteAIChatThread,
+                    onSend: { sendAIChatMessage() },
+                    respondingThreadIDs: aiChatRespondingThreadIDs,
+                    onCancel: cancelAIChatResponse,
+                    onGradeProof: gradeProof,
+                    onInsertAssistantMessage: insertAIResponseOnPage,
+                    onAttachDroppedTab: attachmentForDroppedTab,
+                    onPaneDrop: { handlePaneDrop($0, target: .primary) }
+                )
+            } else if let primaryFlashcardDeck {
                 FlashcardPaneView(deck: primaryFlashcardDeck, onHome: onHome)
             } else {
                 GeometryReader { geometry in
@@ -909,9 +1102,15 @@ struct NoteEditorView: View {
                             NotebookPaneView(
                                 notebook: displayedPrimaryNotebook,
                                 currentPageIndex: $primaryPageIndex,
-                                showsTitle: splitMode != .single,
+                                showsTitle: splitMode != .single || displayedPrimaryNotebook.containsPDF,
                                 usesDarkPageDisplay: usesDarkPageDisplay,
                                 onRequestAddPage: { requestPageAddition(to: displayedPrimaryNotebook) },
+                                onSummarizeCurrentPDFPage: {
+                                    summarizePDFPage(in: displayedPrimaryNotebook, pageIndex: primaryPageIndex)
+                                },
+                                onSummarizeAllPDFPages: {
+                                    summarizePDFDocument(displayedPrimaryNotebook)
+                                },
                                 onQuickAddPage: { quickAddPage(to: displayedPrimaryNotebook) },
                                 onQuickAddPageAtTop: { quickAddPageAtTop(to: displayedPrimaryNotebook) }
                             )
@@ -949,12 +1148,16 @@ struct NoteEditorView: View {
                     selectedAIChatThread = nil
                     aiChatDrafts["new"] = ""
                     aiChatAttachments["new"] = []
+                    aiChatContextOverrides["new"] = nil
                 },
                 onDeleteThread: deleteAIChatThread,
                 onSend: { sendAIChatMessage() },
                 respondingThreadIDs: aiChatRespondingThreadIDs,
                 onCancel: cancelAIChatResponse,
-                onGradeProof: gradeProof
+                onGradeProof: gradeProof,
+                onInsertAssistantMessage: insertAIResponseOnPage,
+                onAttachDroppedTab: attachmentForDroppedTab,
+                onPaneDrop: { handlePaneDrop($0, target: .secondary) }
             )
         } else if let secondaryFlashcardDeck {
             FlashcardPaneView(deck: secondaryFlashcardDeck, onHome: onHome)
@@ -972,6 +1175,12 @@ struct NoteEditorView: View {
                             currentPageIndex: $secondaryPageIndex,
                             showsTitle: true,
                             onRequestAddPage: { requestPageAddition(to: secondaryNotebook) },
+                            onSummarizeCurrentPDFPage: {
+                                summarizePDFPage(in: secondaryNotebook, pageIndex: secondaryPageIndex)
+                            },
+                            onSummarizeAllPDFPages: {
+                                summarizePDFDocument(secondaryNotebook)
+                            },
                             onQuickAddPage: { quickAddPage(to: secondaryNotebook) },
                             onQuickAddPageAtTop: { quickAddPageAtTop(to: secondaryNotebook) }
                         )
@@ -996,6 +1205,10 @@ struct NoteEditorView: View {
                 Button("白紙ノートを作る") {
                     secondaryNotebook = createCompanionNotebook()
                 }
+            }
+            .dropDestination(for: String.self) { items, _ in
+                guard let value = items.first else { return false }
+                return handlePaneDrop(value, target: .secondary)
             }
         }
     }
@@ -1160,7 +1373,7 @@ struct NoteEditorView: View {
             }
 
             Menu {
-                ForEach([PageElementKind.rectangle, .ellipse, .line]) { kind in
+                ForEach([PageElementKind.rectangle, .ellipse]) { kind in
                     Button {
                         addShapeElement(kind)
                     } label: {
@@ -1320,14 +1533,26 @@ struct NoteEditorView: View {
                 Divider()
                     .frame(height: 26)
 
+                toolStripButton("元に戻す", icon: "arrow.uturn.backward") {
+                    postDrawingHistoryRequest(.studiquoUndoDrawing)
+                }
+                toolStripButton("やり直す", icon: "arrow.uturn.forward") {
+                    postDrawingHistoryRequest(.studiquoRedoDrawing)
+                }
+                toolStripButton("AIトーク", icon: "sparkles", isActive: primaryShowsAIChat || secondaryShowsAIChat || showsTemporaryAIChat) {
+                    presentAIChat()
+                }
+                toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode, action: selectPen)
+                    .disabled(primaryFlashcardDeck != nil)
+                toolStripButton("消しゴム", icon: "eraser", isActive: drawingTool == .eraser && !isReadOnlyMode, action: selectEraser)
+                    .disabled(primaryFlashcardDeck != nil)
+                toolStripButton("選択", icon: "lasso", isActive: drawingTool == .lasso && !isReadOnlyMode, action: selectLasso)
+                    .disabled(primaryFlashcardDeck != nil)
                 toolStripButton("時間", icon: "timer") {
                     showsTimeTool = true
                 }
                 toolStripButton("関数電卓", icon: "123.rectangle.fill", isActive: showsCalculator) {
                     showsCalculator.toggle()
-                }
-                toolStripButton("AIトーク", icon: "sparkles", isActive: secondaryShowsAIChat || showsTemporaryAIChat) {
-                    presentAIChat()
                 }
                 if timeToolModel.showsToolbarTime {
                     TimelineView(.periodic(from: .now, by: 0.1)) { context in
@@ -1347,32 +1572,32 @@ struct NoteEditorView: View {
                         .buttonStyle(.plain)
                     }
                 }
+                Menu {
+                    ForEach([PageElementKind.rectangle, .ellipse]) { kind in
+                        Button { addShapeElement(kind) } label: { Label(kind.title, systemImage: kind.icon) }
+                    }
+                    Button { addShapeElement(.studyTape) } label: { Label("暗記テープ", systemImage: "rectangle.fill") }
+                } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "") }
 
-                toolStripButton("元に戻す", icon: "arrow.uturn.backward") {
-                    postDrawingHistoryRequest(.studiquoUndoDrawing)
+                toolStripButton("テキスト", icon: "textformat", action: addTextElement)
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                    toolStripLabel("写真", icon: "photo")
                 }
-                toolStripButton("やり直す", icon: "arrow.uturn.forward") {
-                    postDrawingHistoryRequest(.studiquoRedoDrawing)
-                }
-                toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode, action: selectPen)
-                    .disabled(primaryFlashcardDeck != nil)
-                toolStripButton("消しゴム", icon: "eraser", isActive: drawingTool == .eraser && !isReadOnlyMode, action: selectEraser)
-                    .disabled(primaryFlashcardDeck != nil)
-                toolStripButton("選択", icon: "lasso", isActive: drawingTool == .lasso && !isReadOnlyMode, action: selectLasso)
-                    .disabled(primaryFlashcardDeck != nil)
+                toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
                 Menu {
                     Toggle("直線補正", isOn: $isLineCorrectionEnabled)
                     Toggle("円・楕円補正", isOn: $isEllipseCorrectionEnabled)
                     Toggle("正方形・長方形補正", isOn: $isRectangleCorrectionEnabled)
                     Toggle("三角形補正", isOn: $isTriangleCorrectionEnabled)
                     Toggle("二次関数補正", isOn: $isParabolaCorrectionEnabled)
+                    Toggle("曲線補正", isOn: $isCurveCorrectionEnabled)
                 } label: {
                     toolStripLabel(
                         "補正設定",
                         icon: "wand.and.stars",
                         isActive: isLineCorrectionEnabled || isEllipseCorrectionEnabled
                             || isRectangleCorrectionEnabled || isTriangleCorrectionEnabled
-                            || isParabolaCorrectionEnabled
+                            || isParabolaCorrectionEnabled || isCurveCorrectionEnabled
                     )
                 }
                 Menu {
@@ -1387,7 +1612,6 @@ struct NoteEditorView: View {
                 } label: { toolStripLabel("文字認識", icon: "character.cursor.ibeam", isActive: isRecognizingHandwriting) }
 
                 toolStripButton("ページ一覧", icon: "rectangle.split.1x2", isActive: showsPageSidebar) { showsPageSidebar.toggle() }
-                toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
 
                 Menu {
                     ForEach(PageTemplate.allCases) { template in
@@ -1407,18 +1631,6 @@ struct NoteEditorView: View {
                         isActive: currentPrimaryPage?.pageTemplate != .blank || currentPrimaryPage?.paperColorHex != "#FFFFFF"
                     )
                 }
-
-                toolStripButton("テキスト", icon: "textformat") { isShowingTextAlert = true }
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    toolStripLabel("写真", icon: "photo")
-                }
-
-                Menu {
-                    ForEach([PageElementKind.rectangle, .ellipse, .line]) { kind in
-                        Button { addShapeElement(kind) } label: { Label(kind.title, systemImage: kind.icon) }
-                    }
-                    Button { addShapeElement(.studyTape) } label: { Label("暗記テープ", systemImage: "rectangle.fill") }
-                } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "") }
 
                 Menu {
                     Button("1画面", systemImage: "rectangle") { splitMode = .single }
@@ -1518,19 +1730,26 @@ struct NoteEditorView: View {
         Button(action: action) { toolStripLabel(title, icon: icon, isActive: isActive) }
     }
 
+    /// The highlight behind an active tool icon.
+    ///
+    /// Fill and border come from the same rounded rectangle, and the stroke
+    /// is drawn at double width then clipped to that shape. Drawn as a
+    /// separate inset `strokeBorder` the fill showed through outside the
+    /// line — widest at the corners, which is what made them look cut off.
+    private func toolChipBackground(cornerRadius: CGFloat, isActive: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return shape
+            .fill(isActive ? Color.accentColor.opacity(0.18) : Color.clear)
+            .overlay(shape.stroke(isActive ? Color.accentColor : Color.clear, lineWidth: 3))
+            .clipShape(shape)
+    }
+
     private func toolStripLabel(_ title: String, icon: String, isActive: Bool = false) -> some View {
         Image(systemName: icon)
             .font(.system(size: 18, weight: .medium))
             .foregroundStyle(isActive ? Color.accentColor : Color.primary)
             .frame(width: 34, height: 34)
-            .background(
-                isActive ? Color.accentColor.opacity(0.18) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 8)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isActive ? Color.accentColor : Color.clear, lineWidth: 1.5)
-            }
+            .background(toolChipBackground(cornerRadius: 8, isActive: isActive))
             .contentShape(Rectangle())
             .accessibilityLabel(title)
             .accessibilityAddTraits(isActive ? .isSelected : [])
@@ -1569,7 +1788,10 @@ struct NoteEditorView: View {
         loadAIChatThreads()
         guard let thread = aiChatThreads.first(where: { $0.persistentModelID == id }) else { return }
         selectedAIChatThread = thread
-        if splitMode == .single || secondaryShowsAIChat {
+        if isAIChatVisibleInSplit {
+            showsTemporaryAIChat = false
+            announceAIChatTab(thread)
+        } else if splitMode == .single {
             openAIChatSplit()
         } else {
             presentTemporaryAIChat()
@@ -1577,7 +1799,12 @@ struct NoteEditorView: View {
     }
 
     private func presentAIChat() {
-        if splitMode == .single || secondaryShowsAIChat {
+        if splitMode != .single, secondaryShowsAIChat {
+            showsTemporaryAIChat = false
+            collapseSplit()
+            return
+        }
+        if splitMode == .single && !secondaryShowsAIChat {
             openAIChatSplit()
         } else {
             presentTemporaryAIChat()
@@ -1588,6 +1815,10 @@ struct NoteEditorView: View {
         loadAIChatThreads()
         selectedAIChatThread = selectedAIChatThread ?? aiChatThreads.first
         if let thread = selectedAIChatThread { announceAIChatTab(thread) }
+        guard !isAIChatVisibleInSplit else {
+            showsTemporaryAIChat = false
+            return
+        }
         showsTemporaryAIChat = true
     }
 
@@ -1603,6 +1834,10 @@ struct NoteEditorView: View {
         splitMode = isPortraitLayout ? .vertical : .horizontal
         splitRatio = 0.5
         activePane = .primary
+    }
+
+    private var isAIChatVisibleInSplit: Bool {
+        splitMode != .single && (primaryShowsAIChat || secondaryShowsAIChat)
     }
 
     private func loadAIChatThreads() {
@@ -1682,6 +1917,17 @@ struct NoteEditorView: View {
         aiChatDrafts[aiChatThreadKey(thread)] = ""
         aiChatAttachments[draftKey] = []
         aiChatAttachments[aiChatThreadKey(thread)] = []
+        let contextOverride = aiChatContextOverrides[draftKey] ?? aiChatContextOverrides[threadKey] ?? ""
+        let attachmentContext = attachments
+            .map { attachment -> String in
+                let text = attachment.contextText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return "" }
+                return "【\(attachment.name)】\n\(text)"
+            }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+        aiChatContextOverrides[draftKey] = nil
+        aiChatContextOverrides[threadKey] = nil
         try? modelContext.save()
         loadAIChatThreads()
         selectedAIChatThread = thread
@@ -1691,7 +1937,10 @@ struct NoteEditorView: View {
             .filter { $0 !== reply }
             .map { AITurn(role: $0.role == .user ? .user : .assistant, text: $0.text) }
             .filter { !$0.text.isEmpty }
-        let context = aiChatNoteContext()
+        let context = [aiChatNoteContext(), contextOverride, attachmentContext]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
         let images = attachments.compactMap(\.image)
         let expectsImages = attachments.contains { $0.kind == .snippet || $0.kind == .camera }
 
@@ -1742,6 +1991,163 @@ struct NoteEditorView: View {
             draftKey: key,
             text: L("この切り抜きについて説明してください。"),
             attachments: [snippetAttachment]
+        )
+    }
+
+    private func summarizePDFPage(in notebook: Notebook, pageIndex: Int) {
+        let source = readablePDFTextForAI(in: notebook, pageIndex: pageIndex)
+        guard !source.isEmpty else { return }
+        presentAIForPDFSummary()
+        let key = activeAIChatDraftKey
+        aiChatContextOverrides[key] = pdfContextPrompt(source)
+        sendAIChatMessage(
+            draftKey: key,
+            text: """
+            いま表示しているPDFのこのページだけを、わかりやすく要約してください。
+
+            条件:
+            - 重要ポイントを短く整理する
+            - 難しい語句はかんたんに説明する
+            - 復習で見るべき点も最後に書く
+            - ページ番号を入れる
+            """
+        )
+    }
+
+    private func summarizePDFDocument(_ notebook: Notebook) {
+        let source = readablePDFTextForAI(in: notebook)
+        guard !source.isEmpty else { return }
+        presentAIForPDFSummary()
+        let key = activeAIChatDraftKey
+        aiChatContextOverrides[key] = pdfContextPrompt(source)
+        sendAIChatMessage(
+            draftKey: key,
+            text: """
+            このPDF全体を、初めて読む人にもわかるように要約してください。
+
+            条件:
+            - まず全体像を短く説明する
+            - 次に章・流れごとに要点を整理する
+            - 重要語句を抜き出して説明する
+            - 最後に復習チェックポイントを作る
+            - 根拠になるページ番号をできるだけ入れる
+            """
+        )
+    }
+
+    private func presentAIForPDFSummary() {
+        if isAIChatVisibleInSplit {
+            showsTemporaryAIChat = false
+        } else if splitMode == .single {
+            openAIChatSplit()
+        } else {
+            presentTemporaryAIChat()
+        }
+    }
+
+    private func pdfContextPrompt(_ source: String) -> String {
+        """
+        以下はユーザーが開いているPDF本文です。回答では必要に応じてページ番号を示してください。
+
+        【PDF本文】
+        \(source)
+        """
+    }
+
+    private func insertAIResponseOnPage(_ text: String) {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !activePaneShowsFlashcards, let page = activePage ?? currentPrimaryPage else { return }
+        let lineCount = max(1, value.components(separatedBy: .newlines).count)
+        let estimatedRows = min(18, max(6, lineCount + value.count / 44))
+        let element = PageElement(
+            kind: .text,
+            text: value,
+            centerY: 0.46,
+            width: 0.78,
+            height: min(0.58, max(0.28, Double(estimatedRows) * 0.032)),
+            colorHex: selectedElementColorHex
+        )
+        element.layerIndex = nextLayerIndex(on: page)
+        element.page = page
+        page.elements.append(element)
+        recordElementAddition(element, on: page)
+        page.notebook?.updatedAt = .now
+        try? modelContext.save()
+        NotificationCenter.default.post(
+            name: .studiquoSelectPageElement,
+            object: element.persistentModelID
+        )
+    }
+
+    private func readablePDFTextForAI(in notebook: Notebook, pageIndex: Int? = nil, limit: Int = 24_000) -> String {
+        let pages = notebook.sortedPages
+        var remaining = limit
+        var chunks: [String] = []
+        for (index, page) in pages.enumerated() {
+            if let pageIndex, index != pageIndex { continue }
+            guard page.backgroundImageData != nil else { continue }
+            let text = page.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            let heading = "p.\(index + 1)"
+            let full = "\(heading)\n\(text)"
+            guard remaining > 0 else { break }
+            if full.count <= remaining {
+                chunks.append(full)
+                remaining -= full.count
+            } else {
+                chunks.append(String(full.prefix(remaining)))
+                break
+            }
+        }
+        return chunks.joined(separator: "\n\n")
+    }
+
+    private func readableNotebookTextForAI(in notebook: Notebook, limit: Int = 24_000) -> String {
+        var remaining = limit
+        var chunks: [String] = []
+        for (index, page) in notebook.sortedPages.enumerated() {
+            guard remaining > 0 else { break }
+            var parts: [String] = []
+            let recognized = page.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !recognized.isEmpty { parts.append(recognized) }
+            let typed = page.elements
+                .filter { $0.kind == .text }
+                .map(\.text)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            parts.append(contentsOf: typed)
+            let text = parts.joined(separator: "\n")
+            guard !text.isEmpty else { continue }
+            let full = "p.\(index + 1)\n\(text)"
+            if full.count <= remaining {
+                chunks.append(full)
+                remaining -= full.count
+            } else {
+                chunks.append(String(full.prefix(remaining)))
+                break
+            }
+        }
+        return chunks.joined(separator: "\n\n")
+    }
+
+    private func attachmentForDroppedTab(_ value: String) -> AIChatAttachment? {
+        let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2,
+              parts[0] == "notebook",
+              let targetNotebook = notebooks.first(where: {
+                  String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
+              }) else { return nil }
+
+        let pdfText = readablePDFTextForAI(in: targetNotebook)
+        let noteText = pdfText.isEmpty ? readableNotebookTextForAI(in: targetNotebook) : pdfText
+        let contextText = noteText.isEmpty
+            ? L("この資料には、AIが読める抽出済みテキストがまだありません。")
+            : noteText
+        return AIChatAttachment(
+            name: targetNotebook.title,
+            path: "",
+            kind: .notebook,
+            contextText: contextText
         )
     }
 
@@ -1880,6 +2286,7 @@ struct NoteEditorView: View {
         aiChatRespondingThreadIDs.remove(threadKey)
         aiChatDrafts[threadKey] = nil
         aiChatAttachments[threadKey] = nil
+        aiChatContextOverrides[threadKey] = nil
 
         if selectedAIChatThread?.persistentModelID == thread.persistentModelID {
             selectedAIChatThread = nil
@@ -1942,6 +2349,7 @@ struct NoteEditorView: View {
             if pane == .primary {
                 primaryOverrideNotebook = targetNotebook
                 primaryFlashcardDeck = nil
+                primaryShowsAIChat = false
                 primaryPageIndex = 0
             } else {
                 secondaryNotebook = targetNotebook
@@ -1954,6 +2362,7 @@ struct NoteEditorView: View {
             if pane == .primary {
                 primaryFlashcardDeck = deck
                 primaryOverrideNotebook = nil
+                primaryShowsAIChat = false
             } else {
                 secondaryFlashcardDeck = deck
                 secondaryNotebook = nil
@@ -2050,6 +2459,7 @@ struct NoteEditorView: View {
     private func collapseSplit() {
         splitMode = .single
         splitRatio = 0.5
+        primaryShowsAIChat = false
         secondaryNotebook = nil
         secondaryFlashcardDeck = nil
         secondaryShowsWeb = false
@@ -2071,6 +2481,7 @@ struct NoteEditorView: View {
             if target == .primary {
                 primaryFlashcardDeck = deck
                 primaryOverrideNotebook = nil
+                primaryShowsAIChat = false
             } else {
                 secondaryFlashcardDeck = deck
                 secondaryNotebook = nil
@@ -2092,6 +2503,29 @@ struct NoteEditorView: View {
             return true
         }
 
+        if parts[0] == "ai" {
+            loadAIChatThreads()
+            guard let thread = aiChatThreads.first(where: {
+                String(describing: $0.persistentModelID) == parts[1]
+            }) else { return false }
+            selectedAIChatThread = thread
+            announceAIChatTab(thread)
+            showsTemporaryAIChat = false
+            if target == .primary {
+                primaryOverrideNotebook = nil
+                primaryFlashcardDeck = nil
+                primaryShowsAIChat = true
+                activePane = .primary
+            } else {
+                secondaryNotebook = nil
+                secondaryFlashcardDeck = nil
+                secondaryShowsWeb = false
+                secondaryShowsAIChat = true
+                activePane = .secondary
+            }
+            return true
+        }
+
         guard parts[0] == "notebook",
               let targetNotebook = notebooks.first(where: {
                   String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
@@ -2099,6 +2533,7 @@ struct NoteEditorView: View {
         if target == .primary {
             primaryOverrideNotebook = targetNotebook
             primaryFlashcardDeck = nil
+            primaryShowsAIChat = false
             primaryPageIndex = 0
         } else {
             secondaryNotebook = targetNotebook
@@ -2144,6 +2579,7 @@ struct NoteEditorView: View {
         guard target.pages.count > 1, let page = activePage else { return }
         let deletedIndex = activePane == .secondary ? secondaryPageIndex : primaryPageIndex
         let pageID = page.persistentModelID
+        recordPageRemoval(page, in: target)
         target.pages.removeAll { $0.persistentModelID == pageID }
         page.notebook = nil
         modelContext.delete(page)
@@ -2239,14 +2675,16 @@ struct NoteEditorView: View {
         }
     }
 
-    private func addPendingPage(template: PageTemplate) {
+    private func addPendingPage(template: PageTemplate, paperColorHex: String) {
         guard let target = notebookPendingNewPage else { return }
         let newPage = NotePage(order: target.pages.count)
         newPage.pageTemplate = template
+        newPage.paperColorHex = paperColorHex
         newPage.notebook = target
         target.pages.append(newPage)
         target.refreshLibraryMetadata()
         target.updatedAt = .now
+        recordPageAddition(newPage, in: target)
         if target === secondaryNotebook {
             secondaryPageIndex = target.pages.count - 1
             activePane = .secondary
@@ -2255,6 +2693,104 @@ struct NoteEditorView: View {
             activePane = .primary
         }
         notebookPendingNewPage = nil
+    }
+
+    /// Makes a freshly added page undoable.
+    ///
+    /// The page is carried in a slot rather than captured directly: undo
+    /// deletes it, and redo has to insert a new one, so anything holding a
+    /// direct reference would be pointing at a deleted object the second time
+    /// around.
+    private func recordPageAddition(_ page: NotePage, in notebook: Notebook) {
+        let slot = PageSlot(page)
+        let snapshot = NotePageSnapshot(page)
+        let context = modelContext
+        NoteActionHistory.shared.record(
+            undo: { [weak notebook] in
+                guard let notebook, let page = slot.page else { return }
+                notebook.pages.removeAll { $0 === page }
+                context.delete(page)
+                slot.page = nil
+                notebook.refreshLibraryMetadata()
+            },
+            redo: { [weak notebook] in
+                guard let notebook else { return }
+                let restored = snapshot.makePage(in: context, notebook: notebook)
+                notebook.pages.append(restored)
+                slot.page = restored
+                notebook.refreshLibraryMetadata()
+            }
+        )
+    }
+
+    /// The mirror image, for a page about to be deleted. Call before removing
+    /// it, while there is still something to snapshot.
+    private func recordPageRemoval(_ page: NotePage, in notebook: Notebook) {
+        let slot = PageSlot(page)
+        let snapshot = NotePageSnapshot(page)
+        let context = modelContext
+        NoteActionHistory.shared.record(
+            undo: { [weak notebook] in
+                guard let notebook else { return }
+                let restored = snapshot.makePage(in: context, notebook: notebook)
+                notebook.pages.append(restored)
+                slot.page = restored
+                notebook.refreshLibraryMetadata()
+            },
+            redo: { [weak notebook] in
+                guard let notebook, let page = slot.page else { return }
+                notebook.pages.removeAll { $0 === page }
+                context.delete(page)
+                slot.page = nil
+                notebook.refreshLibraryMetadata()
+            }
+        )
+    }
+
+    /// Makes a newly placed element — a shape, a photo, a text box, a tape —
+    /// undoable.
+    private func recordElementAddition(_ element: PageElement, on page: NotePage) {
+        let slot = ElementSlot(element)
+        let snapshot = PageElementSnapshot(element)
+        let context = modelContext
+        NoteActionHistory.shared.record(
+            undo: { [weak page] in
+                guard let page, let element = slot.element else { return }
+                page.elements.removeAll { $0 === element }
+                context.delete(element)
+                slot.element = nil
+            },
+            redo: { [weak page] in
+                guard let page else { return }
+                let restored = snapshot.makeElement()
+                restored.page = page
+                page.elements.append(restored)
+                context.insert(restored)
+                slot.element = restored
+            }
+        )
+    }
+
+    private func recordElementRemoval(_ element: PageElement, on page: NotePage) {
+        let slot = ElementSlot(element)
+        let snapshot = PageElementSnapshot(element)
+        let context = modelContext
+        NoteActionHistory.shared.record(
+            undo: { [weak page] in
+                guard let page else { return }
+                let restored = snapshot.makeElement()
+                restored.page = page
+                page.elements.append(restored)
+                context.insert(restored)
+                slot.element = restored
+            },
+            redo: { [weak page] in
+                guard let page, let element = slot.element else { return }
+                page.elements.removeAll { $0 === element }
+                context.delete(element)
+                slot.element = nil
+            }
+        )
     }
 
     private func applyTemplate(_ template: PageTemplate) {
@@ -2289,8 +2825,38 @@ struct NoteEditorView: View {
     /// Every undo/redo carries a fresh id so the shared history can tell one
     /// press apart from the next, and so two canvases showing the same page
     /// don't both pop the stack for a single press.
+    /// Sends one undo (or redo) to whichever history holds the more recent
+    /// step.
+    ///
+    /// Strokes and everything else are tracked separately — see
+    /// `NoteActionHistory` for why — but the button has to behave as though
+    /// there is a single history, so the two are compared by time here and
+    /// only one of them acts.
     private func postDrawingHistoryRequest(_ name: Notification.Name) {
-        guard let page = drawingHistoryPage else { return }
+        let isUndo = name == .studiquoUndoDrawing
+        let page = drawingHistoryPage
+        let inkDate = page.flatMap {
+            isUndo
+                ? DrawingHistoryStore.shared.lastUndoDate(for: $0.persistentModelID)
+                : DrawingHistoryStore.shared.lastRedoDate(for: $0.persistentModelID)
+        }
+        let actionDate = isUndo
+            ? NoteActionHistory.shared.lastUndoDate
+            : NoteActionHistory.shared.lastRedoDate
+
+        if let actionDate, inkDate == nil || actionDate > inkDate! {
+            let request = UUID()
+            if isUndo {
+                NoteActionHistory.shared.undo(requestID: request)
+            } else {
+                NoteActionHistory.shared.redo(requestID: request)
+            }
+            notebook.updatedAt = .now
+            try? modelContext.save()
+            return
+        }
+
+        guard let page else { return }
         NotificationCenter.default.post(
             name: name,
             object: page,
@@ -2299,14 +2865,19 @@ struct NoteEditorView: View {
     }
 
     private func addTextElement() {
+        guard !activePaneShowsFlashcards, let page = activePage ?? currentPrimaryPage else { return }
         let value = textToInsert.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, let page = currentPrimaryPage else { return }
         let element = PageElement(kind: .text, text: value, width: 0.42, height: 0.12, colorHex: selectedElementColorHex)
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.elements.append(element)
-        notebook.updatedAt = .now
+        recordElementAddition(element, on: page)
+        page.notebook?.updatedAt = .now
         textToInsert = ""
+        NotificationCenter.default.post(
+            name: .studiquoSelectPageElement,
+            object: element.persistentModelID
+        )
     }
 
     private func addRecognizedTextElement(from page: NotePage) {
@@ -2350,7 +2921,7 @@ struct NoteEditorView: View {
     /// isn't a drawn shape, so it still gets placed immediately.
     private func addShapeElement(_ kind: PageElementKind) {
         guard let page = currentPrimaryPage else { return }
-        if [.rectangle, .ellipse, .line].contains(kind) {
+        if [.rectangle, .ellipse].contains(kind) {
             isReadOnlyMode = false
             pendingShapeKindRaw = kind.rawValue
             drawingToolRaw = DrawingToolKind.none.rawValue
@@ -2402,6 +2973,7 @@ struct NoteEditorView: View {
     }
 
     private func removeElement(_ element: PageElement, from page: NotePage) {
+        recordElementRemoval(element, on: page)
         page.elements.removeAll { $0 === element }
         modelContext.delete(element)
         notebook.updatedAt = .now
@@ -3013,7 +3585,6 @@ private struct FloatingDrawingToolbar: View {
             if isVertical {
                 ScrollView(.vertical) {
                     VStack(spacing: 8) {
-                        moveHandle
                         controls(true)
                         if showsSizeControl {
                             Divider().frame(width: 28, height: 1)
@@ -3026,7 +3597,6 @@ private struct FloatingDrawingToolbar: View {
                 .scrollDisabled(isAdjustingToolSize)
             } else {
                 HStack(spacing: 8) {
-                    moveHandle
                     controls(false)
                     if showsSizeControl {
                         Divider().frame(width: 1, height: 24)
@@ -3055,51 +3625,16 @@ private struct FloatingDrawingToolbar: View {
         .accessibilityHint("ドラッグすると、ノートの好きな位置へ動かせます。左右の端に寄せると縦並びになります")
     }
 
-    private var moveHandle: some View {
-        Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .frame(width: isVertical ? 30 : 34, height: isVertical ? 34 : 30)
-            .background(Color.primary.opacity(0.09), in: RoundedRectangle(cornerRadius: 8))
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 2)
-                    .onChanged { value in
-                        let origin = dragOrigin ?? resolvedCenter
-                        if dragOrigin == nil { dragOrigin = origin }
-                        let candidate = CGPoint(
-                            x: origin.x + value.translation.width,
-                            y: origin.y + value.translation.height
-                        )
-                        // Written without an implicit animation: an animated
-                        // position chases the finger a frame or two behind,
-                        // which is the lag this bar is meant not to have.
-                        var transaction = Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
-                            let edgeThreshold: CGFloat = 100
-                            isVertical = candidate.x <= edgeThreshold
-                                || candidate.x >= paneSize.width - edgeThreshold
-                            center = candidate
-                        }
-                    }
-                    .onEnded { _ in
-                        dragOrigin = nil
-                        guard isVertical, let current = center else { return }
-                        let snappedX: CGFloat = current.x < paneSize.width / 2
-                            ? barWidth / 2 + 6
-                            : paneSize.width - barWidth / 2 - 6
-                        withAnimation(.easeOut(duration: 0.18)) {
-                            center = CGPoint(x: snappedX, y: current.y)
-                        }
-                    }
-            )
-            .accessibilityLabel("描画バーを移動")
-            .accessibilityHint("ここをドラッグして描画バーを移動します")
-    }
-
+    /// Dragging the bar around the page.
+    ///
+    /// Measured in global coordinates on purpose. A `DragGesture` reports its
+    /// translation in the dragged view's *own* space by default, and this bar
+    /// moves as it is dragged — so each frame's translation was measured
+    /// against a frame that had already shifted by the previous one. That
+    /// feedback is what made the bar shudder under the pencil instead of
+    /// tracking it.
     private var toolbarDragGesture: some Gesture {
-        DragGesture(minimumDistance: 8)
+        DragGesture(minimumDistance: 6, coordinateSpace: .global)
             .onChanged { value in
                 guard !isAdjustingToolSize else {
                     dragOrigin = nil
@@ -3470,6 +4005,9 @@ private struct AIChatPane: View {
     let onCancel: () -> Void
     /// Runs the two-stage marker over whatever the marking box collected.
     let onGradeProof: (ProofSubmission) -> Void
+    let onInsertAssistantMessage: (String) -> Void
+    let onAttachDroppedTab: (String) -> AIChatAttachment?
+    let onPaneDrop: (String) -> Bool
 
     /// Whether the app knows where its AI server is. The API key itself lives
     /// on that server, so there is nothing for the student to enter.
@@ -3478,6 +4016,7 @@ private struct AIChatPane: View {
     @State private var pendingDeleteThread: AIChatThread?
     @State private var attachmentPickerMode: AttachmentPickerMode?
     @State private var isDropTargeted = false
+    @State private var isComposerDropTargeted = false
     /// The marking box, opened from the composer's + menu.
     @State private var isMarkingBoxOpen = false
     @State private var markingQuestionText = ""
@@ -3569,7 +4108,10 @@ private struct AIChatPane: View {
                                 }
 
                                 ForEach(messages) { message in
-                                    AIChatBubble(message: message)
+                                    AIChatBubble(
+                                        message: message,
+                                        onInsertOnPage: { onInsertAssistantMessage(message.text) }
+                                    )
                                         .id(message.persistentModelID)
                                 }
                             }
@@ -3619,8 +4161,6 @@ private struct AIChatPane: View {
                                     Label(L("カメラで撮影"), systemImage: "camera")
                                 }
                                 .disabled(!VNDocumentCameraViewController.isSupported)
-
-                                Divider()
 
                                 Button {
                                     withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
@@ -3693,6 +4233,33 @@ private struct AIChatPane: View {
                     }
                     .padding(12)
                     .background(.regularMaterial)
+                    .scaleEffect(isComposerDropTargeted ? 1.04 : 1.0)
+                    .animation(.spring(response: 0.24, dampingFraction: 0.78), value: isComposerDropTargeted)
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let value = items.first else { return false }
+                        if let attachment = onAttachDroppedTab(value) {
+                            attachments.append(attachment)
+                            return true
+                        }
+                        return onPaneDrop(value)
+                    } isTargeted: { targeted in
+                        withAnimation(.spring(response: 0.24, dampingFraction: 0.78)) {
+                            isComposerDropTargeted = targeted
+                        }
+                    }
+                    .overlay {
+                        if isComposerDropTargeted {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 22)
+                                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2.5, dash: [7, 5]))
+                                    .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 22))
+                                Image(systemName: "plus")
+                                    .font(.system(size: 26, weight: .bold))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                            .allowsHitTesting(false)
+                        }
+                    }
                 }
             }
 
@@ -3709,6 +4276,10 @@ private struct AIChatPane: View {
             return !snippets.isEmpty
         } isTargeted: { targeted in
             withAnimation(.easeOut(duration: 0.15)) { isDropTargeted = targeted }
+        }
+        .dropDestination(for: String.self) { items, _ in
+            guard let value = items.first else { return false }
+            return onPaneDrop(value)
         }
         .overlay {
             if isDropTargeted {
@@ -4390,6 +4961,7 @@ private struct SnippetTrayModifier: ViewModifier {
 
 private struct AIChatBubble: View {
     let message: AIChatMessage
+    let onInsertOnPage: () -> Void
 
     var body: some View {
         if message.role == .assistant {
@@ -4397,6 +4969,11 @@ private struct AIChatBubble: View {
                 .font(.body)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contextMenu {
+                    Button(action: onInsertOnPage) {
+                        Label(L("ページに貼り付け"), systemImage: "text.badge.plus")
+                    }
+                }
         } else {
             HStack(alignment: .bottom, spacing: 8) {
                 Spacer(minLength: 40)
@@ -4665,6 +5242,8 @@ private struct NotebookPaneView: View {
     var showsTitle = false
     var usesDarkPageDisplay = false
     let onRequestAddPage: () -> Void
+    var onSummarizeCurrentPDFPage: () -> Void = {}
+    var onSummarizeAllPDFPages: () -> Void = {}
     var onQuickAddPage: () -> Void = {}
     var onQuickAddPageAtTop: () -> Void = {}
     @State private var pageViewMode: PageViewMode = .continuous
@@ -4680,10 +5259,25 @@ private struct NotebookPaneView: View {
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                     Spacer()
-                    // No add-page button here. The tool strip's "ページ追加"
-                    // already adds to whichever pane was last touched, so a
-                    // second per-pane button was redundant clutter on a
-                    // header that only needs to say which note this is.
+                    if notebook.containsPDF {
+                        Menu {
+                            Button(action: onSummarizeCurrentPDFPage) {
+                                Label(L("このページ"), systemImage: "doc")
+                            }
+                            .disabled(!currentPageHasReadablePDFText(in: pages))
+                            Button(action: onSummarizeAllPDFPages) {
+                                Label(L("全て"), systemImage: "doc.on.doc")
+                            }
+                            .disabled(!notebookHasReadablePDFText)
+                        } label: {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 32, height: 32)
+                                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                        }
+                        .accessibilityLabel(L("PDF要約"))
+                    }
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 38)
@@ -4699,6 +5293,20 @@ private struct NotebookPaneView: View {
             pageNavigator(pages: pages)
         }
         .background(Color(.secondarySystemBackground))
+    }
+
+    private var notebookHasReadablePDFText: Bool {
+        notebook.pages.contains {
+            $0.backgroundImageData != nil
+                && !$0.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    private func currentPageHasReadablePDFText(in pages: [NotePage]) -> Bool {
+        guard pages.indices.contains(currentPageIndex) else { return false }
+        let page = pages[currentPageIndex]
+        return page.backgroundImageData != nil
+            && !page.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     @ViewBuilder
@@ -5364,6 +5972,11 @@ final class DrawingHistoryStore {
     /// Pages in least-recently-touched-first order, so the memory held by
     /// notebooks the user has moved on from is eventually released.
     private var recency: [PersistentIdentifier] = []
+    /// When each page's newest undoable (and redoable) step happened, so the
+    /// button can tell whether a stroke or some other edit came last — see
+    /// `NoteActionHistory`.
+    private var undoDates: [PersistentIdentifier: [Date]] = [:]
+    private var redoDates: [PersistentIdentifier: [Date]] = [:]
     /// The last undo/redo request acted on. Two canvases can show the same
     /// page (a split of one notebook), and both answer the notification —
     /// without this the second one would pop the shared stack a second time
@@ -5376,12 +5989,22 @@ final class DrawingHistoryStore {
 
     private init() {}
 
+    func lastUndoDate(for page: PersistentIdentifier) -> Date? { undoDates[page]?.last }
+    func lastRedoDate(for page: PersistentIdentifier) -> Date? { redoDates[page]?.last }
+
     func recordChange(from oldValue: InkDrawing, for page: PersistentIdentifier) {
         var stack = undoStacks[page] ?? []
         stack.append(oldValue)
-        if stack.count > Self.depthLimit { stack.removeFirst() }
+        var dates = undoDates[page] ?? []
+        dates.append(.now)
+        if stack.count > Self.depthLimit {
+            stack.removeFirst()
+            dates.removeFirst()
+        }
         undoStacks[page] = stack
+        undoDates[page] = dates
         redoStacks[page] = []
+        redoDates[page] = []
         touch(page)
     }
 
@@ -5389,7 +6012,9 @@ final class DrawingHistoryStore {
         guard claim(requestID) else { return nil }
         guard var stack = undoStacks[page], let previous = stack.popLast() else { return nil }
         undoStacks[page] = stack
+        undoDates[page]?.removeLast()
         redoStacks[page, default: []].append(current)
+        redoDates[page, default: []].append(.now)
         touch(page)
         return previous
     }
@@ -5398,7 +6023,9 @@ final class DrawingHistoryStore {
         guard claim(requestID) else { return nil }
         guard var stack = redoStacks[page], let next = stack.popLast() else { return nil }
         redoStacks[page] = stack
+        redoDates[page]?.removeLast()
         undoStacks[page, default: []].append(current)
+        undoDates[page, default: []].append(.now)
         touch(page)
         return next
     }
@@ -5416,6 +6043,8 @@ final class DrawingHistoryStore {
             let evicted = recency.removeFirst()
             undoStacks[evicted] = nil
             redoStacks[evicted] = nil
+            undoDates[evicted] = nil
+            redoDates[evicted] = nil
         }
     }
 }
@@ -5461,6 +6090,7 @@ struct PageCanvasContainer: View {
     @AppStorage("rectangleCorrectionEnabled") private var isRectangleCorrectionEnabled = true
     @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
     @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
+    @AppStorage("curveCorrectionEnabled") private var isCurveCorrectionEnabled = true
     /// Shares the armed shape kind with the toolbar in `NoteEditorView` via
     /// the same `@AppStorage` key — see the property there for why.
     @AppStorage("pendingShapeKind") private var pendingShapeKindRaw = ""
@@ -5507,6 +6137,7 @@ struct PageCanvasContainer: View {
                             isRectangleCorrectionEnabled: isRectangleCorrectionEnabled,
                             isTriangleCorrectionEnabled: isTriangleCorrectionEnabled,
                             isParabolaCorrectionEnabled: isParabolaCorrectionEnabled,
+                            isCurveCorrectionEnabled: isCurveCorrectionEnabled,
                             pendingShapeKind: pendingShapeKind,
                             onActivate: {
                                 NotificationCenter.default.post(
@@ -5520,7 +6151,8 @@ struct PageCanvasContainer: View {
                                     object: page
                                 )
                             },
-                            onShapeCommitted: {
+                            onShapeCommitted: { kind, rect in
+                                addShapeElement(kind: kind, pageRect: rect, on: page)
                                 pendingShapeKindRaw = ""
                                 drawingToolRaw = DrawingToolKind.pen.rawValue
                             },
@@ -5562,6 +6194,9 @@ struct PageCanvasContainer: View {
                                     name: .studiquoPageSnipped,
                                     object: snippet
                                 )
+                            },
+                            onEraseSwept: { path, radius in
+                                eraseShapeElements(along: path, radius: radius, on: page)
                             }
                         )
                             .allowsHitTesting(!isReadOnlyMode)
@@ -5805,6 +6440,163 @@ struct PageCanvasContainer: View {
     /// is in; a page that predates the field carries `0`, and the width it is
     /// being shown at right now is the best available guess — exact for the
     /// common case of reopening a note at the size it was written at.
+    /// Turns a dragged shape into a page element rather than ink.
+    ///
+    /// Drawn as strokes a shape was final the moment the pencil lifted — the
+    /// only way to change it was to erase it and draw it again. As an element
+    /// it gets the same blue frame a photo does, so it can be moved, resized,
+    /// rotated and deleted afterwards.
+    private func addShapeElement(kind: InkCanvasView.ShapeKind, pageRect: CGRect, on page: NotePage) {
+        let elementKind: PageElementKind
+        switch kind {
+        case .rectangle: elementKind = .rectangle
+        case .ellipse: elementKind = .ellipse
+        }
+        let pageWidth = max(page.pageWidth, 1)
+        let pageHeight = max(page.pageHeight, 1)
+        let element = PageElement(
+            kind: elementKind,
+            centerX: pageRect.midX / pageWidth,
+            centerY: pageRect.midY / pageHeight,
+            width: max(pageRect.width / pageWidth, 0.02),
+            height: max(pageRect.height / pageHeight, 0.02),
+            colorHex: drawingColorHex
+        )
+        element.layerIndex = (page.elements.map(\.layerIndex).max() ?? 0) + 1
+        element.page = page
+        page.elements.append(element)
+        modelContext.insert(element)
+        recordShapeAddition(element, on: page)
+        try? modelContext.save()
+        // Comes up already selected, so the handles are there to drag without
+        // having to find and tap the shape first.
+        NotificationCenter.default.post(
+            name: .studiquoSelectPageElement,
+            object: element.persistentModelID
+        )
+    }
+
+    /// Lets the eraser rub out drawn shapes.
+    ///
+    /// Shapes became page elements so they could be moved and rotated after
+    /// the fact, and elements are not ink — so the eraser passed straight
+    /// through them. This closes that gap: a shape erases like a pen stroke
+    /// even though it is stored as something else.
+    ///
+    /// The test is against the shape's *outline*, not its box, so sweeping
+    /// through the middle of a circle leaves it alone — exactly as it would
+    /// if the circle had been drawn with the pen.
+    private func eraseShapeElements(along path: [CGPoint], radius: CGFloat, on page: NotePage) {
+        guard !path.isEmpty else { return }
+        let doomed = page.elements.filter { element in
+            guard element.kind == .rectangle || element.kind == .ellipse, !element.isLocked else {
+                return false
+            }
+            let outline = shapeOutline(for: element, on: page)
+            return path.contains { point in
+                outline.contains { hypot($0.x - point.x, $0.y - point.y) <= radius + 4 }
+            }
+        }
+        guard !doomed.isEmpty else { return }
+        for element in doomed {
+            recordShapeRemoval(element, on: page)
+            page.elements.removeAll { $0 === element }
+            modelContext.delete(element)
+        }
+        try? modelContext.save()
+    }
+
+    /// The undo entry for a shape the eraser has just taken out.
+    private func recordShapeRemoval(_ element: PageElement, on page: NotePage) {
+        let slot = ElementSlot(element)
+        let snapshot = PageElementSnapshot(element)
+        let context = modelContext
+        NoteActionHistory.shared.record(
+            undo: { [weak page] in
+                guard let page else { return }
+                let restored = snapshot.makeElement()
+                restored.page = page
+                page.elements.append(restored)
+                context.insert(restored)
+                slot.element = restored
+            },
+            redo: { [weak page] in
+                guard let page, let element = slot.element else { return }
+                page.elements.removeAll { $0 === element }
+                context.delete(element)
+                slot.element = nil
+            }
+        )
+    }
+
+    /// The element's outline as points in page units, rotation included.
+    private func shapeOutline(for element: PageElement, on page: NotePage) -> [CGPoint] {
+        let center = CGPoint(x: element.centerX * page.pageWidth, y: element.centerY * page.pageHeight)
+        let halfWidth = element.width * page.pageWidth / 2
+        let halfHeight = element.height * page.pageHeight / 2
+        let angle = CGFloat(element.rotation) * .pi / 180
+
+        let local: [CGPoint]
+        switch element.kind {
+        case .ellipse:
+            local = (0..<64).map { step in
+                let theta = CGFloat(step) / 64 * 2 * .pi
+                return CGPoint(x: cos(theta) * halfWidth, y: sin(theta) * halfHeight)
+            }
+        default:
+            let corners = [
+                CGPoint(x: -halfWidth, y: -halfHeight), CGPoint(x: halfWidth, y: -halfHeight),
+                CGPoint(x: halfWidth, y: halfHeight), CGPoint(x: -halfWidth, y: halfHeight),
+            ]
+            local = corners.indices.flatMap { index -> [CGPoint] in
+                let from = corners[index], to = corners[(index + 1) % corners.count]
+                return (0..<16).map { step in
+                    let t = CGFloat(step) / 16
+                    return CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t)
+                }
+            }
+        }
+
+        guard angle != 0 else {
+            return local.map { CGPoint(x: center.x + $0.x, y: center.y + $0.y) }
+        }
+        let cosine = cos(angle), sine = sin(angle)
+        return local.map { point in
+            CGPoint(
+                x: center.x + point.x * cosine - point.y * sine,
+                y: center.y + point.x * sine + point.y * cosine
+            )
+        }
+    }
+
+    /// Puts a drawn shape on the undo stack.
+    ///
+    /// Shapes used to be ink, and the ink history covered them for free. Now
+    /// that they are elements — so they can be moved and rotated afterwards —
+    /// they need recording explicitly, or the undo button would ignore the
+    /// last thing the student did.
+    private func recordShapeAddition(_ element: PageElement, on page: NotePage) {
+        let slot = ElementSlot(element)
+        let snapshot = PageElementSnapshot(element)
+        let context = modelContext
+        NoteActionHistory.shared.record(
+            undo: { [weak page] in
+                guard let page, let element = slot.element else { return }
+                page.elements.removeAll { $0 === element }
+                context.delete(element)
+                slot.element = nil
+            },
+            redo: { [weak page] in
+                guard let page else { return }
+                let restored = snapshot.makeElement()
+                restored.page = page
+                page.elements.append(restored)
+                context.insert(restored)
+                slot.element = restored
+            }
+        )
+    }
+
     private func normalizeInkCoordinateSpace(displayWidth: CGFloat) {
         guard hasLoadedDrawing, displayWidth > 1, page.pageWidth > 1 else { return }
         let target = page.pageWidth
@@ -5893,6 +6685,11 @@ private struct PageElementsLayer: View {
             }
         }
         .coordinateSpace(name: Self.coordinateSpace)
+        .onReceive(NotificationCenter.default.publisher(for: .studiquoSelectPageElement)) { note in
+            guard let id = note.object as? PersistentIdentifier,
+                  page.elements.contains(where: { $0.persistentModelID == id }) else { return }
+            selectedElementID = id
+        }
     }
 }
 
@@ -6031,7 +6828,10 @@ private struct EditablePageElement: View {
             .alert("テキストを編集", isPresented: $isEditingText) {
                 TextField("文字を入力", text: $editedText, axis: .vertical)
                 Button("キャンセル", role: .cancel) {}
-                Button("保存") { element.text = editedText }
+                Button("保存") {
+                    element.text = editedText
+                    markUpdated()
+                }
             }
     }
 
@@ -6040,11 +6840,12 @@ private struct EditablePageElement: View {
         let color = Color(hex: element.colorHex)
         switch element.kind {
         case .text:
-            Text(element.text)
-                .font(.system(size: max(12, elementSize.height * 0.42)))
-                .foregroundStyle(isDark && element.colorHex == "#1C1C1E" ? .white : color)
+            let textSize = min(20, max(12, elementSize.height * 0.16))
+            Text(element.text.isEmpty ? "テキスト" : element.text)
+                .font(.system(size: textSize))
+                .foregroundStyle(element.text.isEmpty ? Color.secondary : (isDark && element.colorHex == "#1C1C1E" ? .white : color))
                 .multilineTextAlignment(.leading)
-                .padding(6)
+                .padding(10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .background(.thinMaterial.opacity(0.25))
                 .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.accentColor.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4])))
@@ -6155,8 +6956,7 @@ private struct EditablePageElement: View {
             .offset(y: -elementSize.height / 2 - 27)
 
             // Delete, parked just off the top-right corner where it cannot be
-            // confused with a resize handle. Previously the only way to
-            // remove a photo was to find it in the long-press menu.
+            // confused with a resize handle.
             Button(role: .destructive) {
                 deleteElement()
             } label: {
@@ -6173,7 +6973,7 @@ private struct EditablePageElement: View {
                 x: elementSize.width / 2 + 26,
                 y: -elementSize.height / 2 - 20
             )
-            .accessibilityLabel("この写真を削除")
+            .accessibilityLabel("この要素を削除")
         }
         .frame(
             width: elementSize.width + margin * 2,
@@ -6680,7 +7480,7 @@ private struct PageThumbnail: View {
     }
 }
 
-private struct PageTemplateBackground: View {
+struct PageTemplateBackground: View {
     let template: PageTemplate
     let isDark: Bool
     var paperColorHex = "#FFFFFF"
