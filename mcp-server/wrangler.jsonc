@@ -6,10 +6,21 @@
   "kv_namespaces": [
     {
       "binding": "STUDIQUO_DATA",
-      "id": "replace-with-production-kv-id",
-      "preview_id": "replace-with-preview-kv-id"
+      // The existing STUDIQUO_DATA namespace in this account. `preview_id` is
+      // only used by `wrangler dev`; it points at the same namespace, so local
+      // runs read and write the same data a deployed Worker does.
+      "id": "e117147925524e4080947d43af2cc09d",
+      "preview_id": "e117147925524e4080947d43af2cc09d"
     }
   ],
+  "vars": {
+    // Marking asks for structured output, and Gemini emits that only once the
+    // whole document is ready — nothing streams in the meantime. On the
+    // stronger model a two-image request stayed silent past two minutes, and
+    // Cloudflare cut the idle outbound connection with a 524 before any
+    // result existed. The faster model finishes inside the budget.
+    "GEMINI_GRADING_MODEL": "gemini-3.5-flash"
+  },
   "observability": {
     "enabled": true
   }

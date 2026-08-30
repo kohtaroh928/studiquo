@@ -7,7 +7,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "start": "node src/index.js",
-    "smoke": "node src/smoke.js"
+    "smoke": "node src/smoke.js",
+    "test:ai": "node --test src/ai.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^1.17.4",

@@ -21,6 +21,15 @@ final class CalendarEvent {
     /// Minutes before `startDate` to send a reminder notification, or
     /// `EventReminderOption.none.rawValue` (-1) for no reminder.
     var reminderMinutesBefore: Int = EventReminderOption.thirtyMinutes.rawValue
+    /// When the reminder should fire, as an absolute moment.
+    ///
+    /// Reminders used to be a fixed offset chosen from a list, which could
+    /// only ever express the handful of intervals that list happened to
+    /// contain. The editor now asks for the date and time directly (bounded
+    /// so it always lands before the event) and stores it here;
+    /// `reminderMinutesBefore` is kept alongside it, in step, for anything
+    /// still reading the old field. `nil` means no reminder.
+    var reminderDate: Date?
 
     init(title: String, startDate: Date, endDate: Date, kind: CalendarEventKind, notes: String = "") {
         self.title = title

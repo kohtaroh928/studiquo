@@ -10,6 +10,14 @@ final class FlashcardDeck {
     var folderName: String = ""
     var reversesQuestionAndAnswer: Bool = false
     var orderModeRawValue: String = FlashcardOrderMode.creation.rawValue
+    /// How many times the deck has been studied end to end.
+    var studySessionCount: Int = 0
+    /// Every graded answer ever given in this deck, and how many were right.
+    /// Kept as running totals rather than derived from the cards so the
+    /// average survives cards being edited or deleted.
+    var totalAnswered: Int = 0
+    var totalCorrect: Int = 0
+    var lastStudiedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \Flashcard.deck)
     var cards: [Flashcard] = []
@@ -27,6 +35,17 @@ final class FlashcardDeck {
     var orderMode: FlashcardOrderMode {
         get { FlashcardOrderMode(rawValue: orderModeRawValue) ?? .creation }
         set { orderModeRawValue = newValue.rawValue }
+    }
+
+    /// Percent, 0–100. `nil` until the deck has been answered at least once,
+    /// so the UI can say "—" instead of a misleading 0%.
+    var averageAccuracy: Int? {
+        guard totalAnswered > 0 else { return nil }
+        return Int((Double(totalCorrect) / Double(totalAnswered) * 100).rounded())
+    }
+
+    var accuracyText: String {
+        averageAccuracy.map { "\($0)%" } ?? "—"
     }
 }
 

@@ -28,9 +28,37 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
     var onZoomChange: (CGFloat) -> Void = { _ in }
     @ViewBuilder var content: () -> Content
 
+    /// Re-frames the hosted content the moment its own bounds change.
+    ///
+    /// `updateUIView` alone was not enough: on a device rotation UIKit resizes
+    /// this scroll view during its layout pass, but SwiftUI's update for the
+    /// new size arrives separately — and often runs *before* the bounds have
+    /// actually changed. The hosted view was therefore left at the previous
+    /// (portrait) width for a beat after turning to landscape, which showed
+    /// as a band of empty space down the right-hand side that only closed
+    /// once some later update happened to re-run `updateUIView`. Reacting in
+    /// `layoutSubviews` puts the resize in the same pass as the rotation, so
+    /// the content is already the right width on the first frame.
+    final class BoundsTrackingScrollView: UIScrollView {
+        var onBoundsSizeChange: ((CGSize) -> Void)?
+        private var lastBoundsSize: CGSize = .zero
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard bounds.size != lastBoundsSize else { return }
+            lastBoundsSize = bounds.size
+            onBoundsSizeChange?(bounds.size)
+        }
+    }
+
     func makeUIView(context: Context) -> UIScrollView {
-        let scrollView = UIScrollView()
+        let scrollView = BoundsTrackingScrollView()
         scrollView.delegate = context.coordinator
+        scrollView.onBoundsSizeChange = { [weak scrollView] size in
+            guard let scrollView,
+                  let host = context.coordinator.hostingController else { return }
+            Self.resizeContent(host: host, in: scrollView, to: size)
+        }
         scrollView.minimumZoomScale = minimumZoomScale
         scrollView.maximumZoomScale = maximumZoomScale
         scrollView.bouncesZoom = true
@@ -68,14 +96,6 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         context.coordinator.hostingController = host
         scrollView.addSubview(host.view)
 
-        // Double-tap to reset, matching the old behaviour.
-        let doubleTap = UITapGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handleDoubleTap(_:))
-        )
-        doubleTap.numberOfTapsRequired = 2
-        scrollView.addGestureRecognizer(doubleTap)
-
         return scrollView
     }
 
@@ -84,7 +104,16 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         guard let host = context.coordinator.hostingController else { return }
         host.rootView = content()
 
-        let viewportSize = scrollView.bounds.size
+        Self.resizeContent(host: host, in: scrollView, to: scrollView.bounds.size)
+    }
+
+    /// Shared by `updateUIView` and the scroll view's own layout pass so both
+    /// routes apply exactly the same guards.
+    private static func resizeContent(
+        host: UIHostingController<Content>,
+        in scrollView: UIScrollView,
+        to viewportSize: CGSize
+    ) {
         guard viewportSize.width > 0, viewportSize.height > 0 else { return }
 
         // Never re-frame the hosted view mid-gesture: UIScrollView drives it
@@ -98,16 +127,15 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         // view and a frame write fights that.
         guard scrollView.zoomScale <= scrollView.minimumZoomScale + 0.001 else { return }
 
-        if host.view.bounds.size != viewportSize {
-            host.view.frame = CGRect(origin: .zero, size: viewportSize)
-            scrollView.contentSize = viewportSize
-            GestureDiagnostics.zoomViewLayout(
-                bounds: viewportSize,
-                hostFrame: host.view.frame,
-                contentSize: scrollView.contentSize,
-                zoom: scrollView.zoomScale
-            )
-        }
+        guard host.view.bounds.size != viewportSize else { return }
+        host.view.frame = CGRect(origin: .zero, size: viewportSize)
+        scrollView.contentSize = viewportSize
+        GestureDiagnostics.zoomViewLayout(
+            bounds: viewportSize,
+            hostFrame: host.view.frame,
+            contentSize: scrollView.contentSize,
+            zoom: scrollView.zoomScale
+        )
     }
 
     func makeCoordinator() -> Coordinator {
@@ -158,12 +186,5 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
             )
         }
 
-        @objc func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
-            guard let scrollView = recognizer.view as? UIScrollView else { return }
-            let target: CGFloat = scrollView.zoomScale > scrollView.minimumZoomScale
-                ? scrollView.minimumZoomScale
-                : min(2, scrollView.maximumZoomScale)
-            scrollView.setZoomScale(target, animated: true)
-        }
     }
 }

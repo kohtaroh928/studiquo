@@ -1,6 +1,7 @@
 import { createMcpHandler } from "agents/mcp/server";
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import { handleAI } from "./ai.js";
 
 function json(value, status = 200) {
   return Response.json(value, { status, headers: { "cache-control": "no-store" } });
@@ -171,7 +172,7 @@ async function handleMCP(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/health") return json({ ok: true, service: "studiquo-mcp" });
 
@@ -208,6 +209,12 @@ export default {
         await env.STUDIQUO_DATA.delete(`actions:${key}`);
         return json({ cleared: true });
       }
+
+      // Gemini proxy. Deliberately not gated on a synced snapshot the way
+      // /mcp is — the AI features work on a fresh install, before the user
+      // has ever run a sync.
+      const ai = await handleAI(url, request, env, key, ctx);
+      if (ai) return ai;
 
       return json({ error: "Not found" }, 404);
     }

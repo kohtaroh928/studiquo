@@ -20,6 +20,38 @@ final class NotePage {
     var flashcardMastery: Int = 0
     var flashcardReviewCount: Int = 0
     var flashcardLastReviewedAt: Date?
+    /// Width, in the coordinate space `drawingData`'s stroke points are
+    /// expressed in.
+    ///
+    /// Ink used to be stored in whatever size the canvas happened to be on
+    /// screen when it was drawn, so opening the same page at a different
+    /// width — splitting the editor, most obviously — drew every stroke at
+    /// the wrong scale and spilled it past the edge of the page. It also made
+    /// PDF export and thumbnails, which render against the page rectangle,
+    /// disagree with what was on screen.
+    ///
+    /// Strokes are now kept in page units, so this settles at `pageWidth`.
+    /// `0` marks a page written before the change, whose ink is converted the
+    /// first time it is opened (see `normalizeInkCoordinateSpace`).
+    var inkReferenceWidth: Double = 0
+
+    // MARK: Proof marking
+
+    /// The exercise this page is an answer to, and the answer it is marked
+    /// against. Held per page so "添削" is a single tap on every re-run.
+    var proofQuestion: String = ""
+    var proofModelAnswer: String = ""
+    /// The cached marking scheme, JSON-encoded `ProofRubric`. Built from the
+    /// model answer alone, before the student's work is read — see
+    /// `ProofGradingService`. Rebuilt whenever the model answer changes.
+    var proofRubricData: Data?
+    /// Which model answer `proofRubricData` was derived from, so an edited
+    /// answer invalidates the cached scheme instead of silently marking
+    /// against the old one.
+    var proofRubricSourceHash: Int = 0
+    /// The most recent marking result, JSON-encoded `ProofReviewResult`.
+    @Attribute(.externalStorage) var proofReviewData: Data?
+    var proofReviewedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \PageElement.page)
     var elements: [PageElement] = []

@@ -3,26 +3,34 @@ import UIKit
 
 enum ExportService {
     static func makePNG(from page: NotePage, notebookTitle: String) -> URL? {
+        guard let data = makeImage(from: page).pngData() else { return nil }
+        let safeTitle = notebookTitle.replacingOccurrences(of: "/", with: "-")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeTitle)-page-\(page.order + 1).png")
+        try? data.write(to: url, options: .atomic)
+        return url
+    }
+
+    /// The page exactly as it is drawn — background, ink and elements — at
+    /// page size. Used both for PNG export and for handing a handwritten
+    /// answer to the proof marker, which reads the image rather than any
+    /// recognised text.
+    static func makeImage(from page: NotePage, drawing drawingOverride: InkDrawing? = nil) -> UIImage {
         let size = CGSize(width: page.pageWidth, height: page.pageHeight)
-        let image = UIGraphicsImageRenderer(size: size).image { context in
+        return UIGraphicsImageRenderer(size: size).image { context in
             if let bgData = page.backgroundImageData, let bgImage = UIImage(data: bgData) {
                 bgImage.draw(in: CGRect(origin: .zero, size: size))
             } else {
                 UIColor(hex: page.paperColorHex).setFill()
                 context.fill(CGRect(origin: .zero, size: size))
             }
-            if let data = page.drawingData, let drawing = InkDrawing.load(from: data) {
+            let drawing = drawingOverride ?? page.drawingData.flatMap(InkDrawing.load(from:))
+            if let drawing {
                 drawing.image(from: CGRect(origin: .zero, size: size), scale: 2).draw(in: CGRect(origin: .zero, size: size))
             }
             for element in page.elements.sorted(by: { $0.layerIndex < $1.layerIndex }) {
                 draw(element: element, pageSize: size)
             }
         }
-        guard let data = image.pngData() else { return nil }
-        let safeTitle = notebookTitle.replacingOccurrences(of: "/", with: "-")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeTitle)-page-\(page.order + 1).png")
-        try? data.write(to: url, options: .atomic)
-        return url
     }
 
     static func makePDF(from notebook: Notebook) -> URL? {

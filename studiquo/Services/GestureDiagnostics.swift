@@ -121,12 +121,23 @@ enum GestureDiagnostics {
         """)
     }
 
-    static func scratchOutCheck(points: Int, turns: Int, lengthRatio: CGFloat, qualifies: Bool) {
-        emit("INK scratchCheck points=\(points) turns=\(turns) ratio=\(String(format: "%.2f", lengthRatio)) qualifies=\(qualifies)")
+    static func scratchOutCheck(
+        points: Int,
+        directionChanges: Int,
+        reversals: Int,
+        intersections: Int,
+        lengthRatio: CGFloat,
+        qualifies: Bool
+    ) {
+        emit("INK scratchCheck points=\(points) turns=\(directionChanges) reversals=\(reversals) intersections=\(intersections) ratio=\(String(format: "%.2f", lengthRatio)) qualifies=\(qualifies)")
     }
 
     static func scratchOutRemoval(candidates: Int, removed: Int) {
         emit("INK scratchRemoval candidates=\(candidates) removed=\(removed)")
+    }
+
+    static func pageSnippetCreated(bytes: Int, pixelWidth: Int, pixelHeight: Int, usedLiveDrawing: Bool) {
+        emit("SNIP created bytes=\(bytes) pixels=\(pixelWidth)x\(pixelHeight) liveDrawing=\(usedLiveDrawing)")
     }
 
     static func inkLoaded(strokes: Int, hadData: Bool) {

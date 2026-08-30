@@ -22,7 +22,13 @@ enum UniversityCalendar {
     /// Domain suffix → display name. Matching the university's own domain
     /// rather than the LMS host means a school's Moodle keeps working even
     /// when it lives on a subdomain this table has never seen.
-    static let directory: [(domain: String, name: String)] = [
+    ///
+    /// A school missing from the table is never blocked from connecting —
+    /// its items are simply labelled with the feed's host instead of a
+    /// name (see `displayName(forURL:)`).
+    static let directory: [(domain: String, name: String)] = japaneseDirectory + internationalDirectory
+
+    private static let japaneseDirectory: [(domain: String, name: String)] = [
         ("waseda.jp", "早稲田大学"),
         ("keio.jp", "慶應義塾大学"),
         ("u-tokyo.ac.jp", "東京大学"),
@@ -118,6 +124,239 @@ enum UniversityCalendar {
         ("juntendo.ac.jp", "順天堂大学"),
         ("fukuoka-u.ac.jp", "福岡大学"),
         ("seinan-gu.ac.jp", "西南学院大学"),
+    ]
+
+    /// Overseas schools, so an exchange student or an applicant abroad gets
+    /// the same recognised-name treatment as a domestic one. Entries are
+    /// ordered most-specific-first within a family (`ens.psl.eu` ahead of
+    /// `psl.eu`), because `universityName(forURL:)` takes the first suffix
+    /// match it finds.
+    private static let internationalDirectory: [(domain: String, name: String)] = [
+        // United States
+        ("harvard.edu", "Harvard University"),
+        ("mit.edu", "Massachusetts Institute of Technology"),
+        ("stanford.edu", "Stanford University"),
+        ("berkeley.edu", "UC Berkeley"),
+        ("ucla.edu", "UCLA"),
+        ("ucsd.edu", "UC San Diego"),
+        ("ucdavis.edu", "UC Davis"),
+        ("uci.edu", "UC Irvine"),
+        ("ucsb.edu", "UC Santa Barbara"),
+        ("yale.edu", "Yale University"),
+        ("princeton.edu", "Princeton University"),
+        ("columbia.edu", "Columbia University"),
+        ("uchicago.edu", "University of Chicago"),
+        ("cornell.edu", "Cornell University"),
+        ("upenn.edu", "University of Pennsylvania"),
+        ("caltech.edu", "California Institute of Technology"),
+        ("jhu.edu", "Johns Hopkins University"),
+        ("northwestern.edu", "Northwestern University"),
+        ("duke.edu", "Duke University"),
+        ("brown.edu", "Brown University"),
+        ("dartmouth.edu", "Dartmouth College"),
+        ("rice.edu", "Rice University"),
+        ("vanderbilt.edu", "Vanderbilt University"),
+        ("emory.edu", "Emory University"),
+        ("georgetown.edu", "Georgetown University"),
+        ("nd.edu", "University of Notre Dame"),
+        ("cmu.edu", "Carnegie Mellon University"),
+        ("gatech.edu", "Georgia Institute of Technology"),
+        ("nyu.edu", "New York University"),
+        ("bu.edu", "Boston University"),
+        ("usc.edu", "University of Southern California"),
+        ("umich.edu", "University of Michigan"),
+        ("msu.edu", "Michigan State University"),
+        ("utexas.edu", "University of Texas at Austin"),
+        ("washington.edu", "University of Washington"),
+        ("illinois.edu", "University of Illinois Urbana-Champaign"),
+        ("wisc.edu", "University of Wisconsin–Madison"),
+        ("umn.edu", "University of Minnesota"),
+        ("purdue.edu", "Purdue University"),
+        ("umd.edu", "University of Maryland"),
+        ("psu.edu", "Penn State University"),
+        ("osu.edu", "Ohio State University"),
+        ("ufl.edu", "University of Florida"),
+        ("unc.edu", "University of North Carolina at Chapel Hill"),
+        ("virginia.edu", "University of Virginia"),
+        ("rutgers.edu", "Rutgers University"),
+        ("pitt.edu", "University of Pittsburgh"),
+        ("colorado.edu", "University of Colorado Boulder"),
+        ("arizona.edu", "University of Arizona"),
+        ("asu.edu", "Arizona State University"),
+
+        // United Kingdom and Ireland
+        ("ox.ac.uk", "University of Oxford"),
+        ("cam.ac.uk", "University of Cambridge"),
+        ("imperial.ac.uk", "Imperial College London"),
+        ("ucl.ac.uk", "University College London"),
+        ("lse.ac.uk", "London School of Economics"),
+        ("kcl.ac.uk", "King's College London"),
+        ("qmul.ac.uk", "Queen Mary University of London"),
+        ("ed.ac.uk", "University of Edinburgh"),
+        ("gla.ac.uk", "University of Glasgow"),
+        ("st-andrews.ac.uk", "University of St Andrews"),
+        ("manchester.ac.uk", "University of Manchester"),
+        ("bristol.ac.uk", "University of Bristol"),
+        ("warwick.ac.uk", "University of Warwick"),
+        ("leeds.ac.uk", "University of Leeds"),
+        ("soton.ac.uk", "University of Southampton"),
+        ("bham.ac.uk", "University of Birmingham"),
+        ("sheffield.ac.uk", "University of Sheffield"),
+        ("nottingham.ac.uk", "University of Nottingham"),
+        ("durham.ac.uk", "Durham University"),
+        ("york.ac.uk", "University of York"),
+        ("lancaster.ac.uk", "Lancaster University"),
+        ("exeter.ac.uk", "University of Exeter"),
+        ("bath.ac.uk", "University of Bath"),
+        ("tcd.ie", "Trinity College Dublin"),
+        ("ucd.ie", "University College Dublin"),
+
+        // Canada
+        ("utoronto.ca", "University of Toronto"),
+        ("mcgill.ca", "McGill University"),
+        ("ubc.ca", "University of British Columbia"),
+        ("ualberta.ca", "University of Alberta"),
+        ("uwaterloo.ca", "University of Waterloo"),
+        ("mcmaster.ca", "McMaster University"),
+        ("queensu.ca", "Queen's University"),
+        ("umontreal.ca", "Université de Montréal"),
+        ("sfu.ca", "Simon Fraser University"),
+        ("uottawa.ca", "University of Ottawa"),
+        ("ucalgary.ca", "University of Calgary"),
+        ("uwo.ca", "Western University"),
+
+        // Australia and New Zealand
+        ("unimelb.edu.au", "University of Melbourne"),
+        ("sydney.edu.au", "University of Sydney"),
+        ("anu.edu.au", "Australian National University"),
+        ("unsw.edu.au", "UNSW Sydney"),
+        ("uq.edu.au", "University of Queensland"),
+        ("monash.edu", "Monash University"),
+        ("adelaide.edu.au", "University of Adelaide"),
+        ("uwa.edu.au", "University of Western Australia"),
+        ("uts.edu.au", "University of Technology Sydney"),
+        ("auckland.ac.nz", "University of Auckland"),
+        ("otago.ac.nz", "University of Otago"),
+
+        // Continental Europe
+        ("ethz.ch", "ETH Zürich"),
+        ("epfl.ch", "EPFL"),
+        ("uzh.ch", "University of Zurich"),
+        ("unige.ch", "University of Geneva"),
+        ("unil.ch", "University of Lausanne"),
+        ("tum.de", "Technical University of Munich"),
+        ("lmu.de", "LMU Munich"),
+        ("uni-heidelberg.de", "Heidelberg University"),
+        ("hu-berlin.de", "Humboldt University of Berlin"),
+        ("fu-berlin.de", "Freie Universität Berlin"),
+        ("tu-berlin.de", "Technische Universität Berlin"),
+        ("rwth-aachen.de", "RWTH Aachen University"),
+        ("kit.edu", "Karlsruhe Institute of Technology"),
+        ("uni-freiburg.de", "University of Freiburg"),
+        ("uni-goettingen.de", "University of Göttingen"),
+        ("uni-bonn.de", "University of Bonn"),
+        ("uni-tuebingen.de", "University of Tübingen"),
+        ("ens.psl.eu", "École Normale Supérieure"),
+        ("psl.eu", "Université PSL"),
+        ("sorbonne-universite.fr", "Sorbonne Université"),
+        ("polytechnique.edu", "École Polytechnique"),
+        ("universite-paris-saclay.fr", "Université Paris-Saclay"),
+        ("sciencespo.fr", "Sciences Po"),
+        ("tudelft.nl", "Delft University of Technology"),
+        ("uva.nl", "University of Amsterdam"),
+        ("vu.nl", "Vrije Universiteit Amsterdam"),
+        ("leidenuniv.nl", "Leiden University"),
+        ("uu.nl", "Utrecht University"),
+        ("ru.nl", "Radboud University"),
+        ("rug.nl", "University of Groningen"),
+        ("wur.nl", "Wageningen University & Research"),
+        ("tue.nl", "Eindhoven University of Technology"),
+        ("kuleuven.be", "KU Leuven"),
+        ("ugent.be", "Ghent University"),
+        ("ulb.be", "Université libre de Bruxelles"),
+        ("univie.ac.at", "University of Vienna"),
+        ("tuwien.ac.at", "TU Wien"),
+        ("ku.dk", "University of Copenhagen"),
+        ("dtu.dk", "Technical University of Denmark"),
+        ("uio.no", "University of Oslo"),
+        ("ntnu.no", "NTNU"),
+        ("kth.se", "KTH Royal Institute of Technology"),
+        ("ki.se", "Karolinska Institutet"),
+        ("uu.se", "Uppsala University"),
+        ("lu.se", "Lund University"),
+        ("chalmers.se", "Chalmers University of Technology"),
+        ("helsinki.fi", "University of Helsinki"),
+        ("aalto.fi", "Aalto University"),
+        ("unibo.it", "University of Bologna"),
+        ("polimi.it", "Politecnico di Milano"),
+        ("uniroma1.it", "Sapienza University of Rome"),
+        ("unipd.it", "University of Padua"),
+        ("unimi.it", "University of Milan"),
+        ("ucm.es", "Complutense University of Madrid"),
+        ("uam.es", "Autonomous University of Madrid"),
+        ("ub.edu", "University of Barcelona"),
+        ("upf.edu", "Pompeu Fabra University"),
+        ("ulisboa.pt", "University of Lisbon"),
+        ("up.pt", "University of Porto"),
+        ("uw.edu.pl", "University of Warsaw"),
+        ("uj.edu.pl", "Jagiellonian University"),
+        ("cuni.cz", "Charles University"),
+        ("elte.hu", "Eötvös Loránd University"),
+
+        // Asia and the Middle East
+        ("nus.edu.sg", "National University of Singapore"),
+        ("ntu.edu.sg", "Nanyang Technological University"),
+        ("smu.edu.sg", "Singapore Management University"),
+        ("hku.hk", "University of Hong Kong"),
+        ("ust.hk", "HKUST"),
+        ("cuhk.edu.hk", "Chinese University of Hong Kong"),
+        ("cityu.edu.hk", "City University of Hong Kong"),
+        ("polyu.edu.hk", "Hong Kong Polytechnic University"),
+        ("tsinghua.edu.cn", "Tsinghua University"),
+        ("pku.edu.cn", "Peking University"),
+        ("fudan.edu.cn", "Fudan University"),
+        ("sjtu.edu.cn", "Shanghai Jiao Tong University"),
+        ("zju.edu.cn", "Zhejiang University"),
+        ("ustc.edu.cn", "University of Science and Technology of China"),
+        ("nju.edu.cn", "Nanjing University"),
+        ("snu.ac.kr", "Seoul National University"),
+        ("kaist.ac.kr", "KAIST"),
+        ("yonsei.ac.kr", "Yonsei University"),
+        ("korea.ac.kr", "Korea University"),
+        ("postech.ac.kr", "POSTECH"),
+        ("skku.edu", "Sungkyunkwan University"),
+        ("ntu.edu.tw", "National Taiwan University"),
+        ("nycu.edu.tw", "National Yang Ming Chiao Tung University"),
+        ("iisc.ac.in", "Indian Institute of Science"),
+        ("iitb.ac.in", "IIT Bombay"),
+        ("iitd.ac.in", "IIT Delhi"),
+        ("iitm.ac.in", "IIT Madras"),
+        ("iitk.ac.in", "IIT Kanpur"),
+        ("chula.ac.th", "Chulalongkorn University"),
+        ("mahidol.ac.th", "Mahidol University"),
+        ("ui.ac.id", "Universitas Indonesia"),
+        ("um.edu.my", "University of Malaya"),
+        ("upd.edu.ph", "University of the Philippines Diliman"),
+        ("huji.ac.il", "Hebrew University of Jerusalem"),
+        ("tau.ac.il", "Tel Aviv University"),
+        ("technion.ac.il", "Technion"),
+        ("boun.edu.tr", "Boğaziçi University"),
+        ("ku.edu.tr", "Koç University"),
+        ("kaust.edu.sa", "KAUST"),
+        ("kfupm.edu.sa", "KFUPM"),
+
+        // Latin America and Africa
+        ("unam.mx", "UNAM"),
+        ("tec.mx", "Tecnológico de Monterrey"),
+        ("usp.br", "University of São Paulo"),
+        ("unicamp.br", "Unicamp"),
+        ("puc-rio.br", "PUC-Rio"),
+        ("uchile.cl", "University of Chile"),
+        ("uc.cl", "Pontificia Universidad Católica de Chile"),
+        ("uba.ar", "University of Buenos Aires"),
+        ("uct.ac.za", "University of Cape Town"),
+        ("wits.ac.za", "University of the Witwatersrand"),
+        ("up.ac.za", "University of Pretoria"),
     ]
 
     /// Best-effort label for the feed's owner. `nil` for a school that isn't
@@ -461,8 +700,57 @@ enum UniversityCalendar {
     }
 }
 
+/// Google Calendar, connected through the private iCal address Google issues
+/// for a calendar (Settings → that calendar → "Integrate calendar" → "Secret
+/// address in iCal format").
+///
+/// Deliberately not OAuth: the secret URL needs no Google Cloud project, no
+/// consent screen, and no token refresh, and it reuses the iCal fetching and
+/// parsing this app already does for university feeds. The trade-off is that
+/// the link is read-only and has to be re-issued if the user resets it.
+enum GoogleCalendar {
+    static let externalSource = "google-calendar"
+
+    private static let service = "com.yabuko.studiquo.google-calendar"
+    private static let account = "calendar-url"
+
+    static func loadURL() -> String {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data,
+              let value = String(data: data, encoding: .utf8) else { return "" }
+        return value
+    }
+
+    static func saveURL(_ value: String) {
+        let base: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(base as CFDictionary)
+        guard !value.isEmpty else { return }
+        var item = base
+        item[kSecValueData as String] = Data(value.utf8)
+        SecItemAdd(item as CFDictionary, nil)
+    }
+
+    static func removeURL() { saveURL("") }
+}
+
 struct CalendarHomeView: View {
-    var onShowNotifications: () -> Void = {}
+    /// Owned by `ContentView`, which builds the panel — the calendar just
+    /// needs somewhere to anchor it, so the drop-down appears under this
+    /// screen's own bell rather than the one on the notes home.
+    @Binding var showsNotifications: Bool
+    let notificationPanel: () -> AnyView
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \CalendarEvent.startDate) private var events: [CalendarEvent]
     @Query(sort: \StudyActivity.startedAt, order: .reverse) private var studyActivities: [StudyActivity]
@@ -472,8 +760,12 @@ struct CalendarHomeView: View {
     @State private var editingEvent: CalendarEvent?
     @State private var showsUniversityConnection = false
     @State private var universityCalendarURL = UniversityCalendar.loadURL()
+    @State private var googleCalendarURL = GoogleCalendar.loadURL()
+    @State private var googleStatus = ""
+    @State private var isGoogleSyncing = false
     @State private var universityStatus = ""
     @State private var isUniversitySyncing = false
+    @State private var cachedEventKindsByDay: [Date: Set<CalendarEventKind>] = [:]
 
     /// Includes anything running *through* the day, not just starting on it,
     /// so a multi-day entry stays visible for its whole span.
@@ -487,7 +779,7 @@ struct CalendarHomeView: View {
     /// Which event kinds land on each day, so the calendar grid can mark a
     /// day without the cost of re-scanning every event per cell. A multi-day
     /// entry marks every day it spans, not just the one it starts on.
-    private var eventKindsByDay: [Date: Set<CalendarEventKind>] {
+    private func makeEventKindsByDay() -> [Date: Set<CalendarEventKind>] {
         let calendar = Calendar.current
         var result: [Date: Set<CalendarEventKind>] = [:]
         for event in events {
@@ -552,17 +844,27 @@ struct CalendarHomeView: View {
                 displayedMonth = newValue
             }
         }
+        .onAppear {
+            refreshEventKindsByDay()
+        }
+        .onChange(of: events.count) { _, _ in
+            refreshEventKindsByDay()
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 14) {
-                    Button(action: onShowNotifications) {
+                    Button { showsNotifications = true } label: {
                         Image(systemName: "bell")
                     }
                     .accessibilityLabel("通知")
-                    Button { showsUniversityConnection = true } label: {
-                        Image(systemName: universityCalendarURL.isEmpty ? "link.badge.plus" : "link.circle.fill")
+                    .popover(isPresented: $showsNotifications, arrowEdge: .top) {
+                        notificationPanel()
                     }
-                    .accessibilityLabel("大学のカレンダー連携")
+                    Button { showsUniversityConnection = true } label: {
+                        Image(systemName: universityCalendarURL.isEmpty && googleCalendarURL.isEmpty
+                              ? "link.badge.plus" : "link.circle.fill")
+                    }
+                    .accessibilityLabel("カレンダー連携")
                     Button {
                         showsNewEvent = true
                     } label: {
@@ -595,7 +897,7 @@ struct CalendarHomeView: View {
                     } header: {
                         Text("カレンダーURL")
                     } footer: {
-                        Text("在学中の大学のLMS（Moodleなど）で発行した購読用リンクを貼り付けてください。課題・小テスト・授業の期限を取り込みます。URLはこの端末の安全な領域に保存され、締切当日の朝8時に通知でお知らせします。")
+                        Text("在学中の大学のLMS（Moodle・Canvas・Blackboardなど）で発行した購読用リンクを貼り付けてください。国内・海外どちらの大学にも対応しています。課題・小テスト・授業の期限を取り込みます。URLはこの端末の安全な領域に保存され、締切当日の朝8時に通知でお知らせします。")
                     }
                     if let detected = UniversityCalendar.universityName(forURL: universityCalendarURL) {
                         Section {
@@ -604,6 +906,31 @@ struct CalendarHomeView: View {
                             Text("認識された大学")
                         }
                     }
+                    Section {
+                        SecureField("Googleカレンダーの非公開iCal URL", text: $googleCalendarURL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button("Googleカレンダーを同期", systemImage: "arrow.triangle.2.circlepath") {
+                            Task { await syncGoogleCalendar() }
+                        }
+                        .disabled(isGoogleSyncing || googleCalendarURL.isEmpty)
+                        if isGoogleSyncing { ProgressView() }
+                        if !googleStatus.isEmpty {
+                            Text(googleStatus).foregroundStyle(.secondary)
+                        }
+                        if !GoogleCalendar.loadURL().isEmpty {
+                            Button("Googleカレンダーの連携を解除", role: .destructive) {
+                                GoogleCalendar.removeURL()
+                                googleCalendarURL = ""
+                                googleStatus = L("連携を解除しました。")
+                            }
+                        }
+                    } header: {
+                        Text("Googleカレンダー")
+                    } footer: {
+                        Text("Googleカレンダーを開き、左の「マイカレンダー」で対象カレンダーの︙→「設定と共有」→「カレンダーの統合」にある『iCal 形式の非公開 URL』をコピーして貼り付けてください。読み取り専用で取り込みます。URLを知る人は誰でも予定を見られるため、他人に共有しないでください。")
+                    }
+
                     if !UniversityCalendar.loadURL().isEmpty {
                         Section {
                             Button("連携を解除", role: .destructive) {
@@ -616,7 +943,7 @@ struct CalendarHomeView: View {
                         }
                     }
                 }
-                .navigationTitle("大学連携")
+                .navigationTitle("カレンダー連携")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
@@ -667,6 +994,7 @@ struct CalendarHomeView: View {
                 modelContext.delete(event)
             }
             try modelContext.save()
+            refreshEventKindsByDay()
 
             UniversityCalendar.saveURL(universityCalendarURL)
             UniversityCalendar.storedName = university
@@ -678,6 +1006,61 @@ struct CalendarHomeView: View {
         } catch {
             universityStatus = error.localizedDescription
         }
+    }
+
+    /// Same import path as a university feed, tagged with its own source so
+    /// the two never overwrite each other's events.
+    private func syncGoogleCalendar() async {
+        isGoogleSyncing = true
+        googleStatus = ""
+        defer { isGoogleSyncing = false }
+        do {
+            let imported = try await UniversityCalendar.fetch(from: googleCalendarURL)
+
+            var existing: [String: CalendarEvent] = [:]
+            for event in events {
+                guard event.externalSource == GoogleCalendar.externalSource,
+                      let id = event.externalID else { continue }
+                existing[id] = event
+            }
+
+            let incomingIDs = Set(imported.map(\.id))
+            for item in imported {
+                let event = existing[item.id] ?? {
+                    let created = CalendarEvent(title: item.title, startDate: item.startDate,
+                                                endDate: item.endDate, kind: .other, notes: item.notes)
+                    modelContext.insert(created)
+                    return created
+                }()
+                event.title = item.title
+                event.startDate = item.startDate
+                event.endDate = item.endDate
+                event.notes = item.notes
+                event.externalID = item.id
+                event.externalSource = GoogleCalendar.externalSource
+                event.externalSourceName = L("Googleカレンダー")
+            }
+            // Anything that vanished upstream goes here too, so a deleted
+            // Google event does not linger in the app forever.
+            for event in existing.values where !incomingIDs.contains(event.externalID ?? "") {
+                EventReminderNotifications.cancel(for: event)
+                modelContext.delete(event)
+            }
+            try modelContext.save()
+            refreshEventKindsByDay()
+
+            GoogleCalendar.saveURL(googleCalendarURL)
+            await UniversityCalendar.requestNotificationPermission()
+            googleStatus = imported.isEmpty
+                ? L("接続しましたが、取り込める予定がありませんでした。")
+                : L("Googleカレンダーの予定を\(imported.count)件同期しました。")
+        } catch {
+            googleStatus = error.localizedDescription
+        }
+    }
+
+    private func refreshEventKindsByDay() {
+        cachedEventKindsByDay = makeEventKindsByDay()
     }
 
     private var calendarPanel: some View {
@@ -702,7 +1085,7 @@ struct CalendarHomeView: View {
             MonthCalendarGrid(
                 selectedDate: $selectedDate,
                 displayedMonth: $displayedMonth,
-                eventKindsByDay: eventKindsByDay,
+                eventKindsByDay: cachedEventKindsByDay,
                 colorFor: color(for:)
             )
                 .padding(20)
@@ -961,13 +1344,25 @@ enum EventReminderNotifications {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [identifier])
 
-        let option = EventReminderOption(minutesBefore: event.reminderMinutesBefore)
-        guard option != .none else { return }
-
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
 
-        let fireDate = event.startDate.addingTimeInterval(-Double(option.rawValue) * 60)
+        // An absolute reminder date wins; events saved before the editor
+        // switched to one fall back to their stored offset.
+        let requested: Date?
+        if let explicit = event.reminderDate {
+            requested = explicit
+        } else {
+            let option = EventReminderOption(minutesBefore: event.reminderMinutesBefore)
+            requested = option == .none
+                ? nil
+                : event.startDate.addingTimeInterval(-Double(option.rawValue) * 60)
+        }
+        guard let requested else { return }
+
+        // Never fire at or after the event itself, even if the start time was
+        // dragged earlier after the reminder was set.
+        let fireDate = min(requested, event.startDate.addingTimeInterval(-60))
         guard fireDate > .now else { return }
 
         let content = UNMutableNotificationContent()
@@ -999,7 +1394,10 @@ private struct CalendarEventEditor: View {
     @State private var startDate: Date
     @State private var endDate: Date
     @State private var notes: String
-    @State private var reminderOption: EventReminderOption
+    /// The moment the reminder fires, picked outright rather than chosen from
+    /// a list of offsets. `nil` means no reminder.
+    @State private var reminderDate: Date?
+    @State private var remindersEnabled: Bool
 
     init(event: CalendarEvent?, initialDate: Date) {
         self.event = event
@@ -1010,9 +1408,32 @@ private struct CalendarEventEditor: View {
         _startDate = State(initialValue: event?.startDate ?? defaultStart)
         _endDate = State(initialValue: event?.endDate ?? defaultStart.addingTimeInterval(3600))
         _notes = State(initialValue: event?.notes ?? "")
-        _reminderOption = State(initialValue: EventReminderOption(
-            minutesBefore: event?.reminderMinutesBefore ?? EventReminderOption.thirtyMinutes.rawValue
-        ))
+
+        let start = event?.startDate ?? defaultStart
+        if let existing = event?.reminderDate {
+            _reminderDate = State(initialValue: existing)
+            _remindersEnabled = State(initialValue: true)
+        } else {
+            // Falls back to the offset the old picker stored, so an event
+            // created before this screen changed keeps its reminder.
+            let storedMinutes = event?.reminderMinutesBefore ?? 30
+            let enabled = storedMinutes >= 0
+            _remindersEnabled = State(initialValue: enabled)
+            _reminderDate = State(
+                initialValue: start.addingTimeInterval(-Double(enabled ? storedMinutes : 30) * 60)
+            )
+        }
+    }
+
+    /// The latest instant a reminder may fire: one minute before the event.
+    /// A notification at or after the thing it is reminding you about is
+    /// useless, so the picker is bounded rather than merely validated.
+    private var latestReminderDate: Date {
+        startDate.addingTimeInterval(-60)
+    }
+
+    private var effectiveReminderDate: Date {
+        min(reminderDate ?? latestReminderDate, latestReminderDate)
     }
 
     var body: some View {
@@ -1030,14 +1451,27 @@ private struct CalendarEventEditor: View {
                     DatePicker("開始", selection: $startDate)
                     DatePicker("終了", selection: $endDate, in: startDate...)
                 }
-                Section("通知タイミング") {
-                    Picker("通知タイミング", selection: $reminderOption) {
-                        ForEach(EventReminderOption.allCases) { option in
-                            Text(option.title).tag(option)
-                        }
+                Section {
+                    Toggle("通知する", isOn: $remindersEnabled)
+                    if remindersEnabled {
+                        DatePicker(
+                            "通知日時",
+                            selection: Binding(
+                                get: { effectiveReminderDate },
+                                set: { reminderDate = min($0, latestReminderDate) }
+                            ),
+                            in: ...latestReminderDate,
+                            displayedComponents: [.date, .hourAndMinute]
+                        )
+
+                        Text(reminderSummary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.inline)
+                } header: {
+                    Text("通知")
+                } footer: {
+                    Text("通知は予定の開始時刻より前にしか設定できません。開始時刻を早めると、通知日時も自動でその前に繰り上がります。")
                 }
                 Section("メモ") {
                     TextField("教室、範囲、持ち物など", text: $notes, axis: .vertical)
@@ -1057,6 +1491,19 @@ private struct CalendarEventEditor: View {
         }
     }
 
+    /// Kept in step with `reminderDate` so anything still reading the old
+    /// offset field (and the summary line below) stays correct.
+    private var minutesBeforeStart: Int {
+        max(1, Int(abs(startDate.timeIntervalSince(effectiveReminderDate)) / 60))
+    }
+
+    private var reminderSummary: String {
+        let minutes = minutesBeforeStart
+        if minutes < 60 { return L("予定の\(minutes)分前に通知します。") }
+        if minutes < 60 * 24 { return L("予定の約\(minutes / 60)時間前に通知します。") }
+        return L("予定の約\(minutes / (60 * 24))日前に通知します。")
+    }
+
     private func save() {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanTitle.isEmpty else { return }
@@ -1067,7 +1514,8 @@ private struct CalendarEventEditor: View {
             event.startDate = startDate
             event.endDate = endDate
             event.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-            event.reminderMinutesBefore = reminderOption.rawValue
+            event.reminderDate = remindersEnabled ? effectiveReminderDate : nil
+            event.reminderMinutesBefore = remindersEnabled ? minutesBeforeStart : -1
             savedEvent = event
         } else {
             let created = CalendarEvent(
@@ -1077,7 +1525,8 @@ private struct CalendarEventEditor: View {
                 kind: kind,
                 notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
             )
-            created.reminderMinutesBefore = reminderOption.rawValue
+            created.reminderDate = remindersEnabled ? effectiveReminderDate : nil
+            created.reminderMinutesBefore = remindersEnabled ? minutesBeforeStart : -1
             modelContext.insert(created)
             savedEvent = created
         }
