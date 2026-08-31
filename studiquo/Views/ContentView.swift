@@ -31,10 +31,6 @@ private struct MCPStudyActivity: Codable {
     let totalCount: Int
 }
 
-struct FriendChatTabInfo: Identifiable, Equatable {
-    let id: UUID
-    var title: String
-}
 private struct MCPCalendarEvent: Codable {
     let title: String
     let startDate: Date
@@ -747,8 +743,6 @@ struct ContentView: View {
     /// while the conversations themselves are owned by the open editor.
     @State private var openAIChatTabs: [AIChatTabInfo] = []
     @State private var selectedAIChatTabID: PersistentIdentifier?
-    @State private var openFriendChatTabs: [FriendChatTabInfo] = []
-    @State private var selectedFriendChatID: UUID?
     @StateObject private var editorSplitState = EditorSplitState()
     @StateObject private var friendStore = FriendStore()
     @State private var showsAutomaticBackups = false
@@ -784,7 +778,6 @@ struct ContentView: View {
     @State private var isMCPCloudSyncing = false
     @State private var isMCPCloudTokenVisible = false
     @State private var showsNotifications = false
-    @State private var showsFriendChats = false
     @State private var showsAppSettings = false
     @State private var showsProfile = false
     @AppStorage("profileImage") private var profileImageData = Data()
@@ -1439,10 +1432,6 @@ struct ContentView: View {
                 openWebTabs.append(tab)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenFriendChatTab"))) { notification in
-            guard let tab = notification.object as? FriendChatTabInfo else { return }
-            openFriendChatTab(tab)
-        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenFriendAttachment"))) { notification in
             guard let request = notification.object as? FriendAttachmentOpenRequest else { return }
             openFriendAttachment(request.attachment)
@@ -1683,28 +1672,6 @@ struct ContentView: View {
                     .draggable("ai:\(String(describing: tab.id))")
                 }
 
-                ForEach(openFriendChatTabs) { tab in
-                    HStack(spacing: 5) {
-                        Button {
-                            selectFriendChatTab(tab)
-                        } label: {
-                            Label(tab.title, systemImage: "person.crop.circle").lineLimit(1)
-                        }
-                        .buttonStyle(.plain)
-                        Button { closeFriendChatTab(tab.id) } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 11)
-                    .frame(height: 34)
-                    .background(
-                        selectedFriendChatID == tab.id ? Color.green.opacity(0.22) : Color.green.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
-                    .draggable("friend:\(tab.id.uuidString)")
-                }
-
                 // Replaces the old sidebar toggle in the editor's tool strip:
                 // opening a second note is a tab operation, so the control
                 // for it belongs on the tab bar.
@@ -1737,20 +1704,6 @@ struct ContentView: View {
     private func closeAIChatTab(_ id: PersistentIdentifier) {
         openAIChatTabs.removeAll { $0.id == id }
         if selectedAIChatTabID == id { selectedAIChatTabID = openAIChatTabs.last?.id }
-    }
-
-    private func openFriendChatTab(_ tab: FriendChatTabInfo) {
-        if let index = openFriendChatTabs.firstIndex(where: { $0.id == tab.id }) {
-            openFriendChatTabs[index] = tab
-        } else {
-            openFriendChatTabs.append(tab)
-        }
-        selectedFriendChatID = tab.id
-    }
-
-    private func closeFriendChatTab(_ id: UUID) {
-        openFriendChatTabs.removeAll { $0.id == id }
-        if selectedFriendChatID == id { selectedFriendChatID = openFriendChatTabs.last?.id }
     }
 
     private func selectNotebookTab(_ notebook: Notebook) {
@@ -1821,19 +1774,6 @@ struct ContentView: View {
         NotificationCenter.default.post(
             name: Notification.Name("StudiquoSwitchPaneTarget"),
             object: PaneSwitchTarget.ai(tab.id)
-        )
-    }
-
-    private func selectFriendChatTab(_ tab: FriendChatTabInfo) {
-        selectedFriendChatID = tab.id
-        guard selectedNotebook != nil else {
-            returnToHome()
-            homeSection = .friends
-            return
-        }
-        NotificationCenter.default.post(
-            name: Notification.Name("StudiquoSwitchPaneTarget"),
-            object: PaneSwitchTarget.friend(tab.id)
         )
     }
 
@@ -1916,6 +1856,13 @@ struct ContentView: View {
     }
 
     private func openFriendAttachment(_ attachment: FriendMessageAttachment) {
+        if let sourcePath = attachment.sourcePath, !sourcePath.isEmpty {
+            let url = URL(filePath: sourcePath)
+            if FileManager.default.fileExists(atPath: url.path) {
+                backupURL = IdentifiableURL(url: url)
+                return
+            }
+        }
         let parts = attachment.id.split(separator: "-", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return }
         switch parts[0] {
@@ -2300,7 +2247,6 @@ struct ContentView: View {
                 HStack(spacing: 14) {
                     if isHomeScreen {
                         notificationBell
-                        friendChatButton
                     }
                     if libraryMode == .studyCards && selectedFolder == nil {
                         Button {
@@ -2414,47 +2360,6 @@ struct ContentView: View {
         .accessibilityValue(unreadStudyNotificationCount == 0 ? L("未読なし") : L("未読\(unreadStudyNotificationCount)件"))
         .popover(isPresented: $showsNotifications, arrowEdge: .top) {
             notificationPanel
-        }
-    }
-
-    private var friendChatButton: some View {
-        Button { showsFriendChats = true } label: {
-            Image(systemName: "person.crop.circle")
-                .font(.body.weight(.semibold))
-                .frame(width: 30, height: 30)
-                .overlay(alignment: .topTrailing) {
-                    if friendStore.totalUnreadCount > 0 {
-                        Text("\(min(friendStore.totalUnreadCount, 9))")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(minWidth: 15, minHeight: 15)
-                            .background(.red, in: Circle())
-                            .offset(x: 6, y: -2)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("フレンドチャット")
-        .popover(isPresented: $showsFriendChats, arrowEdge: .top) {
-            FriendChatListPopover(
-                store: friendStore,
-                onOpen: { friend in
-                    showsFriendChats = false
-                    openFriendChatTab(FriendChatTabInfo(id: friend.id, title: friend.name))
-                    if selectedNotebook != nil {
-                        NotificationCenter.default.post(
-                            name: Notification.Name("StudiquoSwitchPaneTarget"),
-                            object: PaneSwitchTarget.friend(friend.id)
-                        )
-                    } else {
-                        homeSection = .friends
-                    }
-                },
-                onAddFriend: {
-                    showsFriendChats = false
-                    homeSection = .friends
-                }
-            )
         }
     }
 
