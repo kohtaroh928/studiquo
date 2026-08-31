@@ -256,6 +256,7 @@ struct NoteEditorView: View {
     @State private var secondaryShowsAIChat = false
     @State private var primaryFriendChatID: UUID?
     @State private var secondaryFriendChatID: UUID?
+    @State private var showsFriendChatPicker = false
     @State private var showsTemporaryAIChat = false
     @State private var aiChatThreads: [AIChatThread] = []
     @State private var selectedAIChatThread: AIChatThread?
@@ -1568,8 +1569,16 @@ struct NoteEditorView: View {
                 toolStripButton("AIトーク", icon: "sparkles", isActive: primaryShowsAIChat || secondaryShowsAIChat || showsTemporaryAIChat) {
                     presentAIChat()
                 }
-                toolStripButton("フレンドチャット", icon: "person.crop.circle", isActive: isFriendChatVisibleInSplit) {
+                Button {
                     presentFriendChat()
+                } label: {
+                    toolStripLabel("フレンドチャット", icon: "person.crop.circle", isActive: isFriendChatVisibleInSplit)
+                }
+                .popover(isPresented: $showsFriendChatPicker, arrowEdge: .top) {
+                    NoteFriendChatPickerPopover(store: friendStore) { friend in
+                        showsFriendChatPicker = false
+                        openFriendChat(friend)
+                    }
                 }
                 toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode, action: selectPen)
                     .disabled(primaryFlashcardDeck != nil)
@@ -1801,11 +1810,10 @@ struct NoteEditorView: View {
     }
 
     private func presentFriendChat() {
-        guard let friend = friendStore.friends.first else { return }
-        NotificationCenter.default.post(
-            name: Notification.Name("StudiquoOpenFriendChatTab"),
-            object: FriendChatTabInfo(id: friend.id, title: friend.name)
-        )
+        showsFriendChatPicker = true
+    }
+
+    private func openFriendChat(_ friend: FriendRecord) {
         if isFriendChatVisibleInSplit {
             collapseSplit()
             return
@@ -2610,11 +2618,7 @@ struct NoteEditorView: View {
                 secondaryFriendChatID = nil
             }
         case .friend(let id):
-            guard let friend = friendStore.friends.first(where: { $0.id == id }) else { return }
-            NotificationCenter.default.post(
-                name: Notification.Name("StudiquoOpenFriendChatTab"),
-                object: FriendChatTabInfo(id: friend.id, title: friend.name)
-            )
+            guard friendStore.friends.contains(where: { $0.id == id }) else { return }
             if pane == .primary {
                 primaryOverrideNotebook = nil
                 primaryFlashcardDeck = nil
@@ -2794,12 +2798,6 @@ struct NoteEditorView: View {
                 secondaryShowsAIChat = false
                 secondaryFriendChatID = friendID
                 activePane = .secondary
-            }
-            if let friend = friendStore.friends.first(where: { $0.id == friendID }) {
-                NotificationCenter.default.post(
-                    name: Notification.Name("StudiquoOpenFriendChatTab"),
-                    object: FriendChatTabInfo(id: friend.id, title: friend.name)
-                )
             }
             return true
         }
@@ -4586,6 +4584,9 @@ private struct AIChatPane: View {
                     .animation(.spring(response: 0.24, dampingFraction: 0.78), value: isComposerDropTargeted)
                     .dropDestination(for: String.self) { items, _ in
                         guard let value = items.first else { return false }
+                        if isPaneSwitchDrop(value), onPaneDrop(value) {
+                            return true
+                        }
                         if let attachment = onAttachDroppedTab(value) {
                             attachments.append(attachment)
                             return true
@@ -4674,6 +4675,14 @@ private struct AIChatPane: View {
                 }
             )
         }
+    }
+
+    private func isPaneSwitchDrop(_ value: String) -> Bool {
+        value.hasPrefix("notebook:")
+            || value.hasPrefix("deck:")
+            || value.hasPrefix("web:")
+            || value.hasPrefix("ai:")
+            || value.hasPrefix("friend:")
     }
 
     private var historySidebar: some View {
@@ -8047,6 +8056,94 @@ private enum ElementColorPreset: String, CaseIterable, Identifiable {
         case .pink: "#FF2D55"
         case .white: "#FFFFFF"
         }
+    }
+}
+
+private struct NoteFriendChatPickerPopover: View {
+    @ObservedObject var store: FriendStore
+    let onSelect: (FriendRecord) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("フレンド")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("閉じる")
+                }
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+                .background(.bar)
+
+                Divider()
+
+                if store.friends.isEmpty {
+                    ContentUnavailableView(
+                        "フレンドがいません",
+                        systemImage: "person.2",
+                        description: Text("ホームのフレンド画面から追加できます。")
+                    )
+                    .frame(maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(store.friends) { friend in
+                                Button {
+                                    onSelect(friend)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "person.crop.circle.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(Color.accentColor)
+                                            .frame(width: 32)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(friend.name)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(.primary)
+                                            if let latest = store.messages(for: friend).last {
+                                                Text(latest.text)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                            } else {
+                                                Text("チャットを開く")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+                                        Spacer()
+                                        if let count = store.unreadCounts[friend.id], count > 0 {
+                                            Text("\(min(count, 99))")
+                                                .font(.caption2.weight(.bold))
+                                                .foregroundStyle(.white)
+                                                .frame(minWidth: 20, minHeight: 20)
+                                                .background(.red, in: Circle())
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationBarHidden(true)
+        }
+        .frame(minWidth: 320, idealWidth: 360, minHeight: 280, idealHeight: 460)
+        .presentationCompactAdaptation(.popover)
     }
 }
 

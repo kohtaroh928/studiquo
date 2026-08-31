@@ -104,6 +104,7 @@ struct FriendMessage: Identifiable, Codable, Hashable {
     var text: String
     var sentAt: Date
     var isMine: Bool
+    var isCanceled: Bool?
 }
 
 struct FriendAttachmentOpenRequest {
@@ -191,7 +192,7 @@ final class FriendStore: ObservableObject {
         guard friends.contains(where: { $0.id == friend.id }), !cleaned.isEmpty else { return }
         messages.append(FriendMessage(
             id: UUID(), friendID: friend.id,
-            text: String(cleaned.prefix(Self.maximumMessageLength)), sentAt: Date(), isMine: true
+            text: String(cleaned.prefix(Self.maximumMessageLength)), sentAt: Date(), isMine: true, isCanceled: false
         ))
         if messages.count > Self.maximumMessages {
             messages.removeFirst(messages.count - Self.maximumMessages)
@@ -199,7 +200,7 @@ final class FriendStore: ObservableObject {
         if friend.isDemo == true {
             Task {
                 try? await Task.sleep(for: .seconds(1))
-                messages.append(FriendMessage(id: UUID(), friendID: friend.id, text: "メッセージを受け取りました！これはデモ返信です。", sentAt: Date(), isMine: false))
+                messages.append(FriendMessage(id: UUID(), friendID: friend.id, text: "メッセージを受け取りました！これはデモ返信です。", sentAt: Date(), isMine: false, isCanceled: false))
             }
         } else if let roomID = friend.roomID {
             Task {
@@ -212,6 +213,14 @@ final class FriendStore: ObservableObject {
     func markRead(_ friend: FriendRecord) {
         unreadCounts[friend.id] = 0
         activeFriendID = friend.id
+    }
+
+    func cancel(_ message: FriendMessage) {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }),
+              messages[index].isMine,
+              messages[index].isCanceled != true else { return }
+        messages[index].text = ""
+        messages[index].isCanceled = true
     }
 
     func stopReading(_ friend: FriendRecord) {
@@ -232,7 +241,7 @@ final class FriendStore: ObservableObject {
         let previousIncomingCount = latestIncomingCounts[friend.id]
         messages.removeAll { $0.friendID == friend.id }
         let mapped = remote.map {
-            FriendMessage(id: UUID(), friendID: friend.id, text: $0.text, sentAt: Date(timeIntervalSince1970: $0.sentAt / 1_000), isMine: $0.isMine)
+            FriendMessage(id: UUID(), friendID: friend.id, text: $0.text, sentAt: Date(timeIntervalSince1970: $0.sentAt / 1_000), isMine: $0.isMine, isCanceled: false)
         }
         messages.append(contentsOf: mapped)
         let incomingCount = mapped.filter { !$0.isMine }.count
@@ -344,13 +353,20 @@ struct FriendChatView: View {
     @State private var isDropTargeted = false
     @State private var isImportingFiles = false
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showsCameraScanner = false
+    @State private var partialCopyText: PartialCopyText?
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(spacing: 10) {
-                    ForEach(store.messages(for: friend)) { message in
-                        messageRow(message)
+                    ForEach(chatRows) { row in
+                        switch row {
+                        case .date(let id, let date):
+                            dateSeparator(date, id: id)
+                        case .message(let message):
+                            messageRow(message)
+                        }
                     }
                 }.padding()
             }
@@ -396,9 +412,6 @@ struct FriendChatView: View {
                         Button { isImportingFiles = true } label: {
                             Label("ファイルから追加", systemImage: "doc.badge.plus")
                         }
-                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                            Label("写真から追加", systemImage: "photo.badge.plus")
-                        }
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 17, weight: .semibold))
@@ -407,27 +420,45 @@ struct FriendChatView: View {
                     }
                     .accessibilityLabel("追加")
 
+                    Button {
+                        showsCameraScanner = true
+                    } label: {
+                        Image(systemName: "camera")
+                            .font(.system(size: 17, weight: .semibold))
+                            .frame(width: 34, height: 34)
+                            .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("カメラで撮影")
+
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 17, weight: .semibold))
+                            .frame(width: 34, height: 34)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("写真から追加")
+
                     TextField("メッセージ", text: $draft, axis: .vertical)
                         .lineLimit(1...5)
                         .textFieldStyle(.plain)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
-                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
                         .submitLabel(.send)
                         .onSubmit(send)
 
                     Button(action: send) {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
+                        Image(systemName: canSend ? "arrow.up.circle.fill" : "mic")
+                            .font(.system(size: 30, weight: .semibold))
+                            .foregroundStyle(canSend ? Color.accentColor : .primary)
                             .frame(width: 34, height: 34)
-                            .background(canSend ? Color.accentColor : .gray, in: Circle())
                     }
                     .disabled(!canSend)
                 }
             }
             .padding(12)
-            .background(.regularMaterial)
+            .background(Color(uiColor: .systemBackground))
             .dropDestination(for: String.self) { items, _ in
                 guard let value = items.first, !value.contains(":") else { return false }
                 draft = draft.isEmpty ? value : "\(draft)\n\(value)"
@@ -438,6 +469,7 @@ struct FriendChatView: View {
         }
         .navigationTitle(friend.name)
         .navigationBarTitleDisplayMode(.inline)
+        .background(Color(red: 0.84, green: 0.94, blue: 1.0))
         .overlay {
             if isDropTargeted {
                 RoundedRectangle(cornerRadius: 12)
@@ -462,7 +494,8 @@ struct FriendChatView: View {
                         id: "file-\(url.path)-\(UUID().uuidString)",
                         title: url.lastPathComponent,
                         kind: "ファイル",
-                        icon: "doc"
+                        icon: "doc",
+                        sourcePath: url.path
                     )
                     attachments.append(attachment)
                 }
@@ -471,21 +504,63 @@ struct FriendChatView: View {
         .onChange(of: selectedPhoto) { _, item in
             guard let item else { return }
             Task {
-                let name = (try? await item.loadTransferable(type: Data.self)).map { _ in "写真" } ?? "写真"
-                let attachment = FriendMessageAttachment(
-                    id: "photo-\(UUID().uuidString)",
-                    title: name,
-                    kind: "写真",
-                    icon: "photo"
-                )
-                attachments.append(attachment)
+                if let data = try? await item.loadTransferable(type: Data.self),
+                   let attachment = savePhotoAttachment(data: data, title: "写真", icon: "photo") {
+                    attachments.append(attachment)
+                }
                 selectedPhoto = nil
             }
+        }
+        .sheet(isPresented: $showsCameraScanner) {
+            DocumentScannerView { images in
+                for (index, image) in images.enumerated() {
+                    guard let data = image.jpegData(compressionQuality: 0.82),
+                          let attachment = savePhotoAttachment(
+                            data: data,
+                            title: images.count == 1 ? "撮影した写真" : "撮影した写真 \(index + 1)",
+                            icon: "camera"
+                          ) else { continue }
+                    attachments.append(attachment)
+                }
+            }
+        }
+        .sheet(item: $partialCopyText) { item in
+            NavigationStack {
+                ScrollView {
+                    Text(item.text)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                }
+                .navigationTitle("部分コピー")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("閉じる") { partialCopyText = nil }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
         }
     }
 
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+    }
+
+    private var chatRows: [FriendChatRow] {
+        var rows: [FriendChatRow] = []
+        var previousDay: Date?
+        let calendar = Calendar.current
+        for message in store.messages(for: friend) {
+            let day = calendar.startOfDay(for: message.sentAt)
+            if previousDay.map({ !calendar.isDate($0, inSameDayAs: day) }) ?? true {
+                rows.append(.date(id: "date-\(day.timeIntervalSince1970)", date: day))
+                previousDay = day
+            }
+            rows.append(.message(message))
+        }
+        return rows
     }
 
     private func send() {
@@ -497,61 +572,148 @@ struct FriendChatView: View {
         attachments = []
     }
 
+    private func savePhotoAttachment(data: Data, title: String, icon: String) -> FriendMessageAttachment? {
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: "\(UUID().uuidString).jpg")
+        do {
+            try data.write(to: url, options: [.atomic])
+            return FriendMessageAttachment(
+                id: "photo-\(url.path)-\(UUID().uuidString)",
+                title: title,
+                kind: "写真",
+                icon: icon,
+                sourcePath: url.path
+            )
+        } catch {
+            return nil
+        }
+    }
+
     private func messageRow(_ message: FriendMessage) -> some View {
         let parts = FriendMessageParts(text: message.text)
-        return HStack(alignment: .bottom, spacing: 8) {
+        return HStack(alignment: .top, spacing: 8) {
+            if message.isMine { Spacer(minLength: 54) }
             if !message.isMine {
                 Image(systemName: "person.crop.circle.fill")
                     .font(.title2)
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 30)
+                    .padding(.top, 4)
             }
-            if message.isMine { Spacer(minLength: 44) }
             VStack(alignment: message.isMine ? .trailing : .leading, spacing: 4) {
-                if !parts.body.isEmpty {
-                    Text(parts.body)
-                        .padding(10)
-                        .background(message.isMine ? Color.accentColor : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-                        .foregroundStyle(message.isMine ? .white : .primary)
-                }
-                ForEach(parts.attachments) { attachment in
-                    Button {
-                        NotificationCenter.default.post(
-                            name: Notification.Name("StudiquoOpenFriendAttachment"),
-                            object: FriendAttachmentOpenRequest(attachment: attachment)
-                        )
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: attachment.icon)
-                                .font(.title3)
-                                .foregroundStyle(Color.accentColor)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(attachment.title)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                Text(attachment.kind)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                if message.isCanceled == true {
+                    canceledMessageBubble()
+                } else if !parts.body.isEmpty {
+                    messageBubble(text: parts.body, isMine: message.isMine)
+                        .contextMenu {
+                            Button {
+                                UIPasteboard.general.string = parts.body
+                            } label: {
+                                Label("全てコピー", systemImage: "doc.on.doc")
                             }
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
+                            Button {
+                                partialCopyText = PartialCopyText(text: parts.body)
+                            } label: {
+                                Label("部分コピー", systemImage: "text.cursor")
+                            }
+                            if message.isMine {
+                                Divider()
+                                Button(role: .destructive) {
+                                    store.cancel(message)
+                                } label: {
+                                    Label("送信取消", systemImage: "arrow.uturn.backward.circle")
+                                }
+                            }
                         }
-                        .padding(10)
-                        .frame(maxWidth: 260)
-                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(.plain)
                 }
-                Text(Self.timeFormatter.string(from: message.sentAt))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                if message.isCanceled != true {
+                    ForEach(parts.attachments) { attachment in
+                        Button {
+                            NotificationCenter.default.post(
+                                name: Notification.Name("StudiquoOpenFriendAttachment"),
+                                object: FriendAttachmentOpenRequest(attachment: attachment)
+                            )
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: attachment.icon)
+                                    .font(.title3)
+                                    .foregroundStyle(Color.accentColor)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(attachment.title)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    Text(attachment.kind)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(10)
+                            .frame(maxWidth: 260)
+                            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            if message.isMine {
+                                Button(role: .destructive) {
+                                    store.cancel(message)
+                                } label: {
+                                    Label("送信取消", systemImage: "arrow.uturn.backward.circle")
+                                }
+                            }
+                        }
+                    }
+                }
+                messageTime(message.sentAt, isMine: message.isMine)
             }
-            if !message.isMine { Spacer(minLength: 44) }
+            if !message.isMine { Spacer(minLength: 54) }
         }
         .frame(maxWidth: .infinity, alignment: message.isMine ? .trailing : .leading)
+    }
+
+    private func dateSeparator(_ date: Date, id: String) -> some View {
+        Text(Self.dateFormatter.string(from: date))
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 5)
+            .background(Color.black.opacity(0.16), in: Capsule())
+            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier(id)
+    }
+
+    private func canceledMessageBubble() -> some View {
+        Text("送信を取り消しました")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        .frame(maxWidth: 280, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(uiColor: .tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func messageBubble(text: String, isMine: Bool) -> some View {
+        Text(text)
+            .font(.body.weight(.semibold))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .background(isMine ? Color(red: 0.37, green: 0.92, blue: 0.40) : .white, in: RoundedRectangle(cornerRadius: 20))
+            .foregroundStyle(.primary)
+            .frame(maxWidth: 280, alignment: isMine ? .trailing : .leading)
+    }
+
+    private func messageTime(_ sentAt: Date, isMine: Bool) -> some View {
+        Text(Self.timeFormatter.string(from: sentAt))
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: 280, alignment: isMine ? .trailing : .leading)
     }
 
     private static let timeFormatter: DateFormatter = {
@@ -560,6 +722,30 @@ struct FriendChatView: View {
         formatter.dateFormat = "H:mm"
         return formatter
     }()
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.dateFormat = "M/d(E)"
+        return formatter
+    }()
+}
+
+private enum FriendChatRow: Identifiable {
+    case date(id: String, date: Date)
+    case message(FriendMessage)
+
+    var id: String {
+        switch self {
+        case .date(let id, _): id
+        case .message(let message): message.id.uuidString
+        }
+    }
+}
+
+private struct PartialCopyText: Identifiable {
+    let id = UUID()
+    let text: String
 }
 
 struct FriendMessageAttachment: Identifiable, Hashable, Codable {
@@ -567,6 +753,8 @@ struct FriendMessageAttachment: Identifiable, Hashable, Codable {
     let title: String
     let kind: String
     let icon: String
+    var sourcePath: String? = nil
+    var imageData: Data? = nil
 
     var messageLine: String {
         let payload = [
@@ -574,6 +762,7 @@ struct FriendMessageAttachment: Identifiable, Hashable, Codable {
             "title": title,
             "kind": kind,
             "icon": icon,
+            "sourcePath": sourcePath ?? "",
         ]
         guard let data = try? JSONEncoder().encode(payload),
               let encoded = String(data: data, encoding: .utf8)?.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
@@ -601,7 +790,13 @@ private struct FriendMessageParts {
                    let title = payload["title"],
                    let kind = payload["kind"],
                    let icon = payload["icon"] {
-                    parsed.append(FriendMessageAttachment(id: id, title: title, kind: kind, icon: icon))
+                    parsed.append(FriendMessageAttachment(
+                        id: id,
+                        title: title,
+                        kind: kind,
+                        icon: icon,
+                        sourcePath: payload["sourcePath"].flatMap { $0.isEmpty ? nil : $0 }
+                    ))
                     continue
                 }
             }
