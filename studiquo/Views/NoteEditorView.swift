@@ -170,6 +170,7 @@ enum PaneSwitchTarget {
     case flashcardDeck(FlashcardDeck)
     case web(title: String, homeURL: String)
     case ai(PersistentIdentifier)
+    case friend(UUID)
 }
 
 /// A web split, once opened, is announced under this name so ContentView can
@@ -221,6 +222,7 @@ struct NoteEditorView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var splitState: EditorSplitState
+    @EnvironmentObject private var friendStore: FriendStore
     // The browser view observes this model directly. Keeping the reference in
     // State prevents every loading-progress change from rebuilding all pages.
     @State private var webBrowser = WebBrowserModel()
@@ -252,6 +254,8 @@ struct NoteEditorView: View {
     @State private var primaryShowsAIChat = false
     @State private var secondaryShowsWeb = false
     @State private var secondaryShowsAIChat = false
+    @State private var primaryFriendChatID: UUID?
+    @State private var secondaryFriendChatID: UUID?
     @State private var showsTemporaryAIChat = false
     @State private var aiChatThreads: [AIChatThread] = []
     @State private var selectedAIChatThread: AIChatThread?
@@ -309,12 +313,6 @@ struct NoteEditorView: View {
     @AppStorage("drawingColor") private var drawingColorHex = "#1C1C1E"
     @AppStorage("drawingWidth") private var drawingWidth = 4.0
     @AppStorage("eraserWidth") private var eraserWidth = 24.0
-    // Key deliberately renamed from the old "scratchOutEnabled" so a fresh
-    // default actually reaches existing installs (an @AppStorage default is
-    // only used the first time a key is read, so reusing the old key would
-    // have kept whatever was already stored under it). Defaults on, and
-    // stays toggleable from the drawing bar.
-    @AppStorage("scratchOutEnabledV2") private var isScratchOutEnabled = true
     @AppStorage("lineCorrectionEnabled") private var isLineCorrectionEnabled = true
     @AppStorage("ellipseCorrectionEnabled") private var isEllipseCorrectionEnabled = true
     @AppStorage("rectangleCorrectionEnabled") private var isRectangleCorrectionEnabled = true
@@ -814,16 +812,6 @@ struct NoteEditorView: View {
 
         Divider().frame(width: isVertical ? 28 : nil, height: isVertical ? 1 : 24)
 
-        Button { isScratchOutEnabled.toggle() } label: {
-            Image(systemName: "scribble.variable")
-                .foregroundStyle(isScratchOutEnabled ? Color.accentColor : .secondary)
-                .frame(width: 28, height: 28)
-                .background(toolChipBackground(cornerRadius: 7, isActive: isScratchOutEnabled))
-        }
-        .accessibilityLabel("スクイブル消しゴム")
-        .accessibilityHint("オンにすると、ペンで線の上をぐしゃぐしゃとなぞって消せます")
-        .help(isScratchOutEnabled ? "スクイブル消しゴム：オン" : "スクイブル消しゴム：オフ")
-
         // Shape correction is configured from the "補正設定" menu in the top
         // tool strip. It was duplicated here too, which only crowded a bar
         // whose whole job is the handful of controls used mid-stroke.
@@ -1029,6 +1017,8 @@ struct NoteEditorView: View {
             && secondaryFlashcardDeck == nil
             && !secondaryShowsWeb
             && !secondaryShowsAIChat
+            && primaryFriendChatID == nil
+            && secondaryFriendChatID == nil
             && secondaryNotebook === displayedPrimaryNotebook
     }
 
@@ -1115,6 +1105,12 @@ struct NoteEditorView: View {
                     onSelectAppAttachment: appAttachmentOptions,
                     onPaneDrop: { handlePaneDrop($0, target: .primary) }
                 )
+            } else if let primaryFriend = primaryFriendChat {
+                FriendChatView(
+                    friend: primaryFriend,
+                    store: friendStore,
+                    appAttachments: friendMessageAttachmentOptions()
+                )
             } else if let primaryFlashcardDeck {
                 FlashcardPaneView(deck: primaryFlashcardDeck, onHome: onHome)
             } else {
@@ -1149,7 +1145,7 @@ struct NoteEditorView: View {
         .simultaneousGesture(TapGesture().onEnded { activePane = .primary })
         .dropDestination(for: String.self) { items, _ in
             guard let value = items.first else { return false }
-            guard splitMode != .single || value.hasPrefix("ai:") else { return false }
+            guard splitMode != .single || value.hasPrefix("ai:") || value.hasPrefix("friend:") else { return false }
             return handlePaneDrop(value, target: .primary)
         }
     }
@@ -1182,6 +1178,12 @@ struct NoteEditorView: View {
                 onAttachDroppedTab: attachmentForDroppedTab,
                 onSelectAppAttachment: appAttachmentOptions,
                 onPaneDrop: { handlePaneDrop($0, target: .secondary) }
+            )
+        } else if let secondaryFriend = secondaryFriendChat {
+            FriendChatView(
+                friend: secondaryFriend,
+                store: friendStore,
+                appAttachments: friendMessageAttachmentOptions()
             )
         } else if let secondaryFlashcardDeck {
             FlashcardPaneView(deck: secondaryFlashcardDeck, onHome: onHome)
@@ -1566,6 +1568,9 @@ struct NoteEditorView: View {
                 toolStripButton("AIトーク", icon: "sparkles", isActive: primaryShowsAIChat || secondaryShowsAIChat || showsTemporaryAIChat) {
                     presentAIChat()
                 }
+                toolStripButton("フレンドチャット", icon: "person.crop.circle", isActive: isFriendChatVisibleInSplit) {
+                    presentFriendChat()
+                }
                 toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode, action: selectPen)
                     .disabled(primaryFlashcardDeck != nil)
                 toolStripButton("消しゴム", icon: "eraser", isActive: drawingTool == .eraser && !isReadOnlyMode, action: selectEraser)
@@ -1785,6 +1790,7 @@ struct NoteEditorView: View {
         secondaryFlashcardDeck = nil
         secondaryShowsWeb = true
         secondaryShowsAIChat = false
+        secondaryFriendChatID = nil
         splitMode = isPortraitLayout ? .vertical : .horizontal
         splitRatio = 0.5
         activePane = .primary
@@ -1792,6 +1798,26 @@ struct NoteEditorView: View {
             name: Notification.Name("StudiquoOpenWebTab"),
             object: WebTabInfo(id: homeURL, title: title, homeURL: homeURL)
         )
+    }
+
+    private func presentFriendChat() {
+        guard let friend = friendStore.friends.first else { return }
+        NotificationCenter.default.post(
+            name: Notification.Name("StudiquoOpenFriendChatTab"),
+            object: FriendChatTabInfo(id: friend.id, title: friend.name)
+        )
+        if isFriendChatVisibleInSplit {
+            collapseSplit()
+            return
+        }
+        secondaryNotebook = nil
+        secondaryFlashcardDeck = nil
+        secondaryShowsWeb = false
+        secondaryShowsAIChat = false
+        secondaryFriendChatID = friend.id
+        splitMode = isPortraitLayout ? .vertical : .horizontal
+        splitRatio = 0.5
+        activePane = .primary
     }
 
     /// Tells the tab bar that this conversation is open, and what to call it.
@@ -1862,6 +1888,57 @@ struct NoteEditorView: View {
 
     private var isAIChatVisibleInSplit: Bool {
         splitMode != .single && (primaryShowsAIChat || secondaryShowsAIChat)
+    }
+
+    private var primaryFriendChat: FriendRecord? {
+        guard let primaryFriendChatID else { return nil }
+        return friendStore.friends.first { $0.id == primaryFriendChatID }
+    }
+
+    private var secondaryFriendChat: FriendRecord? {
+        guard let secondaryFriendChatID else { return nil }
+        return friendStore.friends.first { $0.id == secondaryFriendChatID }
+    }
+
+    private var isFriendChatVisibleInSplit: Bool {
+        splitMode != .single && (primaryFriendChatID != nil || secondaryFriendChatID != nil)
+    }
+
+    private func friendMessageAttachmentOptions() -> [FriendMessageAttachment] {
+        var options: [FriendMessageAttachment] = []
+        options.append(contentsOf: notebooks.filter { !$0.isTrashed }.map {
+            FriendMessageAttachment(
+                id: "notebook-\(String(describing: $0.persistentModelID))",
+                title: $0.title,
+                kind: $0.containsPDF ? "PDF" : "ノート",
+                icon: $0.containsPDF ? "doc.richtext" : "note.text"
+            )
+        })
+        options.append(contentsOf: flashcardDecks.filter { !$0.isTrashed }.map {
+            FriendMessageAttachment(
+                id: "deck-\(String(describing: $0.persistentModelID))",
+                title: $0.title,
+                kind: "暗記カード",
+                icon: "rectangle.on.rectangle.angled"
+            )
+        })
+        options.append(contentsOf: textDocuments.filter { !$0.isTrashed }.map {
+            FriendMessageAttachment(
+                id: "document-\(String(describing: $0.persistentModelID))",
+                title: $0.title,
+                kind: "文書",
+                icon: "doc.text"
+            )
+        })
+        options.append(contentsOf: slideDecks.filter { !$0.isTrashed }.map {
+            FriendMessageAttachment(
+                id: "slide-\(String(describing: $0.persistentModelID))",
+                title: $0.title,
+                kind: "スライド",
+                icon: "rectangle.on.rectangle"
+            )
+        })
+        return options
     }
 
     private func loadAIChatThreads() {
@@ -2475,12 +2552,14 @@ struct NoteEditorView: View {
                 primaryOverrideNotebook = targetNotebook
                 primaryFlashcardDeck = nil
                 primaryShowsAIChat = false
+                primaryFriendChatID = nil
                 primaryPageIndex = 0
             } else {
                 secondaryNotebook = targetNotebook
                 secondaryFlashcardDeck = nil
                 secondaryShowsWeb = false
                 secondaryShowsAIChat = false
+                secondaryFriendChatID = nil
                 secondaryPageIndex = 0
             }
         case .flashcardDeck(let deck):
@@ -2488,11 +2567,13 @@ struct NoteEditorView: View {
                 primaryFlashcardDeck = deck
                 primaryOverrideNotebook = nil
                 primaryShowsAIChat = false
+                primaryFriendChatID = nil
             } else {
                 secondaryFlashcardDeck = deck
                 secondaryNotebook = nil
                 secondaryShowsWeb = false
                 secondaryShowsAIChat = false
+                secondaryFriendChatID = nil
             }
         case .web(_, let homeURL):
             // WebSearchPane only ever renders in the secondary slot today;
@@ -2502,6 +2583,7 @@ struct NoteEditorView: View {
             secondaryFlashcardDeck = nil
             secondaryShowsWeb = true
             secondaryShowsAIChat = false
+            secondaryFriendChatID = nil
             if splitMode == .single { splitMode = isPortraitLayout ? .vertical : .horizontal }
             activePane = .secondary
             return
@@ -2519,11 +2601,31 @@ struct NoteEditorView: View {
                 primaryOverrideNotebook = nil
                 primaryFlashcardDeck = nil
                 primaryShowsAIChat = true
+                primaryFriendChatID = nil
             } else {
                 secondaryNotebook = nil
                 secondaryFlashcardDeck = nil
                 secondaryShowsWeb = false
                 secondaryShowsAIChat = true
+                secondaryFriendChatID = nil
+            }
+        case .friend(let id):
+            guard let friend = friendStore.friends.first(where: { $0.id == id }) else { return }
+            NotificationCenter.default.post(
+                name: Notification.Name("StudiquoOpenFriendChatTab"),
+                object: FriendChatTabInfo(id: friend.id, title: friend.name)
+            )
+            if pane == .primary {
+                primaryOverrideNotebook = nil
+                primaryFlashcardDeck = nil
+                primaryShowsAIChat = false
+                primaryFriendChatID = id
+            } else {
+                secondaryNotebook = nil
+                secondaryFlashcardDeck = nil
+                secondaryShowsWeb = false
+                secondaryShowsAIChat = false
+                secondaryFriendChatID = id
             }
         }
     }
@@ -2605,10 +2707,12 @@ struct NoteEditorView: View {
         splitMode = .single
         splitRatio = 0.5
         primaryShowsAIChat = false
+        primaryFriendChatID = nil
         secondaryNotebook = nil
         secondaryFlashcardDeck = nil
         secondaryShowsWeb = false
         secondaryShowsAIChat = false
+        secondaryFriendChatID = nil
         pendingSplitMode = nil
         activePane = .primary
     }
@@ -2675,6 +2779,31 @@ struct NoteEditorView: View {
             return true
         }
 
+        if parts[0] == "friend", let friendID = UUID(uuidString: parts[1]) {
+            guard friendStore.friends.contains(where: { $0.id == friendID }) else { return false }
+            if target == .primary {
+                primaryOverrideNotebook = nil
+                primaryFlashcardDeck = nil
+                primaryShowsAIChat = false
+                primaryFriendChatID = friendID
+                activePane = .primary
+            } else {
+                secondaryNotebook = nil
+                secondaryFlashcardDeck = nil
+                secondaryShowsWeb = false
+                secondaryShowsAIChat = false
+                secondaryFriendChatID = friendID
+                activePane = .secondary
+            }
+            if let friend = friendStore.friends.first(where: { $0.id == friendID }) {
+                NotificationCenter.default.post(
+                    name: Notification.Name("StudiquoOpenFriendChatTab"),
+                    object: FriendChatTabInfo(id: friend.id, title: friend.name)
+                )
+            }
+            return true
+        }
+
         guard parts[0] == "notebook",
               let targetNotebook = notebooks.first(where: {
                   String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
@@ -2683,12 +2812,14 @@ struct NoteEditorView: View {
             primaryOverrideNotebook = targetNotebook
             primaryFlashcardDeck = nil
             primaryShowsAIChat = false
+            primaryFriendChatID = nil
             primaryPageIndex = 0
         } else {
             secondaryNotebook = targetNotebook
             secondaryFlashcardDeck = nil
             secondaryShowsWeb = false
             secondaryShowsAIChat = false
+            secondaryFriendChatID = nil
             secondaryPageIndex = 0
         }
         activePane = target == .primary ? .primary : .secondary
@@ -6306,12 +6437,6 @@ struct PageCanvasContainer: View {
     @AppStorage("drawingWidth") private var drawingWidth = 4.0
     @AppStorage("eraserWidth") private var eraserWidth = 24.0
     @AppStorage("readOnlyMode") private var isReadOnlyMode = false
-    // Key deliberately renamed from the old "scratchOutEnabled" so a fresh
-    // default actually reaches existing installs (an @AppStorage default is
-    // only used the first time a key is read, so reusing the old key would
-    // have kept whatever was already stored under it). Defaults on, and
-    // stays toggleable from the drawing bar.
-    @AppStorage("scratchOutEnabledV2") private var isScratchOutEnabled = true
     @AppStorage("lineCorrectionEnabled") private var isLineCorrectionEnabled = true
     @AppStorage("ellipseCorrectionEnabled") private var isEllipseCorrectionEnabled = true
     @AppStorage("rectangleCorrectionEnabled") private var isRectangleCorrectionEnabled = true
@@ -6358,7 +6483,6 @@ struct PageCanvasContainer: View {
                             eraserWidth: eraserWidth,
                             drawingVersion: drawingVersion,
                             contentScale: displaySize.width / max(page.pageWidth, 1),
-                            isScratchOutEnabled: isScratchOutEnabled,
                             isLineCorrectionEnabled: isLineCorrectionEnabled,
                             isEllipseCorrectionEnabled: isEllipseCorrectionEnabled,
                             isRectangleCorrectionEnabled: isRectangleCorrectionEnabled,

@@ -30,6 +30,11 @@ private struct MCPStudyActivity: Codable {
     let correctCount: Int
     let totalCount: Int
 }
+
+struct FriendChatTabInfo: Identifiable, Equatable {
+    let id: UUID
+    var title: String
+}
 private struct MCPCalendarEvent: Codable {
     let title: String
     let startDate: Date
@@ -360,6 +365,96 @@ private struct StudyNotificationList: View {
     }
 }
 
+private struct FriendChatListPopover: View {
+    @ObservedObject var store: FriendStore
+    let onOpen: (FriendRecord) -> Void
+    let onAddFriend: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Text("フレンド")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Button(action: onAddFriend) {
+                        Image(systemName: "person.badge.plus")
+                    }
+                    .accessibilityLabel("フレンドを追加")
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("閉じる")
+                    .padding(.leading, 16)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+                .background(.bar)
+
+                Divider()
+
+                if store.friends.isEmpty {
+                    ContentUnavailableView(
+                        "フレンドがいません",
+                        systemImage: "person.2",
+                        description: Text("フレンド画面から招待できます。")
+                    )
+                    .frame(maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(store.friends) { friend in
+                                Button { onOpen(friend) } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "person.crop.circle.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(Color.accentColor)
+                                            .frame(width: 32)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(friend.name)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(.primary)
+                                            if let latest = store.messages(for: friend).last {
+                                                Text(latest.text)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                            } else {
+                                                Text("チャットを開く")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+                                        Spacer()
+                                        if let count = store.unreadCounts[friend.id], count > 0 {
+                                            Text("\(min(count, 99))")
+                                                .font(.caption2.weight(.bold))
+                                                .foregroundStyle(.white)
+                                                .frame(minWidth: 20, minHeight: 20)
+                                                .background(.red, in: Circle())
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationBarHidden(true)
+        }
+        .frame(minWidth: 380, idealWidth: 430, minHeight: 320, idealHeight: 520)
+        .presentationCompactAdaptation(.popover)
+    }
+}
+
 /// What the tab bar's "+" opens: the same notes and decks the home screen
 /// lists, so a second tab can be opened without leaving the editor.
 /// A locked PDF that has just been opened, carried into the "remove
@@ -652,6 +747,8 @@ struct ContentView: View {
     /// while the conversations themselves are owned by the open editor.
     @State private var openAIChatTabs: [AIChatTabInfo] = []
     @State private var selectedAIChatTabID: PersistentIdentifier?
+    @State private var openFriendChatTabs: [FriendChatTabInfo] = []
+    @State private var selectedFriendChatID: UUID?
     @StateObject private var editorSplitState = EditorSplitState()
     @StateObject private var friendStore = FriendStore()
     @State private var showsAutomaticBackups = false
@@ -687,6 +784,7 @@ struct ContentView: View {
     @State private var isMCPCloudSyncing = false
     @State private var isMCPCloudTokenVisible = false
     @State private var showsNotifications = false
+    @State private var showsFriendChats = false
     @State private var showsAppSettings = false
     @State private var showsProfile = false
     @AppStorage("profileImage") private var profileImageData = Data()
@@ -993,6 +1091,7 @@ struct ContentView: View {
                     )
                         .id(selectedNotebook.persistentModelID)
                         .environmentObject(editorSplitState)
+                        .environmentObject(friendStore)
                 }
             } else if let selectedFlashcardDeck {
                 VStack(spacing: 0) {
@@ -1575,6 +1674,28 @@ struct ContentView: View {
                     .draggable("ai:\(String(describing: tab.id))")
                 }
 
+                ForEach(openFriendChatTabs) { tab in
+                    HStack(spacing: 5) {
+                        Button {
+                            selectFriendChatTab(tab)
+                        } label: {
+                            Label(tab.title, systemImage: "person.crop.circle").lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        Button { closeFriendChatTab(tab.id) } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 11)
+                    .frame(height: 34)
+                    .background(
+                        selectedFriendChatID == tab.id ? Color.green.opacity(0.22) : Color.green.opacity(0.10),
+                        in: RoundedRectangle(cornerRadius: 8)
+                    )
+                    .draggable("friend:\(tab.id.uuidString)")
+                }
+
                 // Replaces the old sidebar toggle in the editor's tool strip:
                 // opening a second note is a tab operation, so the control
                 // for it belongs on the tab bar.
@@ -1607,6 +1728,20 @@ struct ContentView: View {
     private func closeAIChatTab(_ id: PersistentIdentifier) {
         openAIChatTabs.removeAll { $0.id == id }
         if selectedAIChatTabID == id { selectedAIChatTabID = openAIChatTabs.last?.id }
+    }
+
+    private func openFriendChatTab(_ tab: FriendChatTabInfo) {
+        if let index = openFriendChatTabs.firstIndex(where: { $0.id == tab.id }) {
+            openFriendChatTabs[index] = tab
+        } else {
+            openFriendChatTabs.append(tab)
+        }
+        selectedFriendChatID = tab.id
+    }
+
+    private func closeFriendChatTab(_ id: UUID) {
+        openFriendChatTabs.removeAll { $0.id == id }
+        if selectedFriendChatID == id { selectedFriendChatID = openFriendChatTabs.last?.id }
     }
 
     private func selectNotebookTab(_ notebook: Notebook) {
@@ -1677,6 +1812,19 @@ struct ContentView: View {
         NotificationCenter.default.post(
             name: Notification.Name("StudiquoSwitchPaneTarget"),
             object: PaneSwitchTarget.ai(tab.id)
+        )
+    }
+
+    private func selectFriendChatTab(_ tab: FriendChatTabInfo) {
+        selectedFriendChatID = tab.id
+        guard selectedNotebook != nil else {
+            returnToHome()
+            homeSection = .friends
+            return
+        }
+        NotificationCenter.default.post(
+            name: Notification.Name("StudiquoSwitchPaneTarget"),
+            object: PaneSwitchTarget.friend(tab.id)
         )
     }
 
@@ -2085,6 +2233,7 @@ struct ContentView: View {
                 HStack(spacing: 14) {
                     if isHomeScreen {
                         notificationBell
+                        friendChatButton
                     }
                     if libraryMode == .studyCards && selectedFolder == nil {
                         Button {
@@ -2198,6 +2347,47 @@ struct ContentView: View {
         .accessibilityValue(unreadStudyNotificationCount == 0 ? L("未読なし") : L("未読\(unreadStudyNotificationCount)件"))
         .popover(isPresented: $showsNotifications, arrowEdge: .top) {
             notificationPanel
+        }
+    }
+
+    private var friendChatButton: some View {
+        Button { showsFriendChats = true } label: {
+            Image(systemName: "person.crop.circle")
+                .font(.body.weight(.semibold))
+                .frame(width: 30, height: 30)
+                .overlay(alignment: .topTrailing) {
+                    if friendStore.totalUnreadCount > 0 {
+                        Text("\(min(friendStore.totalUnreadCount, 9))")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(minWidth: 15, minHeight: 15)
+                            .background(.red, in: Circle())
+                            .offset(x: 6, y: -2)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("フレンドチャット")
+        .popover(isPresented: $showsFriendChats, arrowEdge: .top) {
+            FriendChatListPopover(
+                store: friendStore,
+                onOpen: { friend in
+                    showsFriendChats = false
+                    openFriendChatTab(FriendChatTabInfo(id: friend.id, title: friend.name))
+                    if selectedNotebook != nil {
+                        NotificationCenter.default.post(
+                            name: Notification.Name("StudiquoSwitchPaneTarget"),
+                            object: PaneSwitchTarget.friend(friend.id)
+                        )
+                    } else {
+                        homeSection = .friends
+                    }
+                },
+                onAddFriend: {
+                    showsFriendChats = false
+                    homeSection = .friends
+                }
+            )
         }
     }
 

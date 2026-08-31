@@ -1,6 +1,7 @@
 import CoreImage.CIFilterBuiltins
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct UserProfileView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
@@ -109,6 +110,8 @@ struct FriendMessage: Identifiable, Codable, Hashable {
 final class FriendStore: ObservableObject {
     @Published var friends: [FriendRecord] = [] { didSet { persist(friends, key: friendsKey) } }
     @Published var messages: [FriendMessage] = [] { didSet { persist(messages, key: messagesKey) } }
+    @Published var unreadCounts: [UUID: Int] = [:]
+    @Published var activeFriendID: UUID?
     @Published var myCode: String
     @Published var errorMessage = ""
     private let friendsKey = "studiquoFriends"
@@ -117,6 +120,7 @@ final class FriendStore: ObservableObject {
     private static let maximumFriends = 500
     private static let maximumMessages = 10_000
     private static let maximumMessageLength = 2_000
+    private var latestIncomingCounts: [UUID: Int] = [:]
 
     init() {
         myCode = UserDefaults.standard.string(forKey: "studiquoFriendCode") ?? "準備中"
@@ -198,6 +202,42 @@ final class FriendStore: ObservableObject {
                 do { _ = try await FriendChatService.send(cleaned, roomID: roomID) }
                 catch { errorMessage = "メッセージを送信できませんでした。" }
             }
+        }
+    }
+
+    func markRead(_ friend: FriendRecord) {
+        unreadCounts[friend.id] = 0
+        activeFriendID = friend.id
+    }
+
+    func stopReading(_ friend: FriendRecord) {
+        if activeFriendID == friend.id { activeFriendID = nil }
+    }
+
+    var totalUnreadCount: Int {
+        unreadCounts.values.reduce(0, +)
+    }
+
+    func messages(for friend: FriendRecord) -> [FriendMessage] {
+        messages.filter { $0.friendID == friend.id }.sorted { $0.sentAt < $1.sentAt }
+    }
+
+    func refreshMessages(for friend: FriendRecord) async {
+        guard friend.isDemo != true, let roomID = friend.roomID else { return }
+        guard let remote = try? await FriendChatService.messages(roomID: roomID), !remote.isEmpty else { return }
+        let previousIncomingCount = latestIncomingCounts[friend.id]
+        messages.removeAll { $0.friendID == friend.id }
+        let mapped = remote.map {
+            FriendMessage(id: UUID(), friendID: friend.id, text: $0.text, sentAt: Date(timeIntervalSince1970: $0.sentAt / 1_000), isMine: $0.isMine)
+        }
+        messages.append(contentsOf: mapped)
+        let incomingCount = mapped.filter { !$0.isMine }.count
+        let newIncoming = max(0, incomingCount - (previousIncomingCount ?? incomingCount))
+        latestIncomingCounts[friend.id] = incomingCount
+        if activeFriendID == friend.id {
+            unreadCounts[friend.id] = 0
+        } else if newIncoming > 0 {
+            unreadCounts[friend.id, default: 0] += newIncoming
         }
     }
 
@@ -290,16 +330,21 @@ private struct AddFriendView: View {
     }
 }
 
-private struct FriendChatView: View {
+struct FriendChatView: View {
     let friend: FriendRecord
     @ObservedObject var store: FriendStore
+    var appAttachments: [FriendMessageAttachment] = []
     @State private var draft = ""
+    @State private var attachments: [FriendMessageAttachment] = []
+    @State private var isDropTargeted = false
+    @State private var isImportingFiles = false
+    @State private var selectedPhoto: PhotosPickerItem?
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(spacing: 10) {
-                    ForEach(store.messages.filter { $0.friendID == friend.id }) { message in
+                    ForEach(store.messages(for: friend)) { message in
                         Text(message.text).padding(10).background(message.isMine ? Color.accentColor : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
                             .foregroundStyle(message.isMine ? .white : .primary)
                             .frame(maxWidth: .infinity, alignment: message.isMine ? .trailing : .leading)
@@ -307,26 +352,156 @@ private struct FriendChatView: View {
                 }.padding()
             }
             Divider()
-            HStack {
-                TextField("メッセージ", text: $draft, axis: .vertical).textFieldStyle(.roundedBorder)
-                Button { store.send(draft, to: friend); draft = "" } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }.disabled(draft.isEmpty)
-            }.padding()
+            VStack(alignment: .leading, spacing: 8) {
+                if !attachments.isEmpty {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            ForEach(attachments) { attachment in
+                                HStack(spacing: 6) {
+                                    Image(systemName: attachment.icon).foregroundStyle(.secondary)
+                                    Text(attachment.title).lineLimit(1)
+                                    Button {
+                                        attachments.removeAll { $0.id == attachment.id }
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                            }
+                        }
+                    }
+                    .scrollIndicators(.hidden)
+                }
+                HStack(alignment: .bottom, spacing: 10) {
+                    Menu {
+                        Menu("ホーム画面から追加") {
+                            ForEach(appAttachments) { item in
+                                Button {
+                                    attachments.append(item)
+                                    appendAttachmentText(item)
+                                } label: {
+                                    Label(item.title, systemImage: item.icon)
+                                }
+                            }
+                            if appAttachments.isEmpty {
+                                Text("追加できる資料がありません")
+                            }
+                        }
+                        Button { isImportingFiles = true } label: {
+                            Label("ファイルから追加", systemImage: "doc.badge.plus")
+                        }
+                        PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                            Label("写真から追加", systemImage: "photo.badge.plus")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 17, weight: .semibold))
+                            .frame(width: 34, height: 34)
+                            .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                    }
+                    .accessibilityLabel("追加")
+
+                    TextField("メッセージ", text: $draft, axis: .vertical)
+                        .lineLimit(1...5)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                        .submitLabel(.send)
+                        .onSubmit(send)
+
+                    Button(action: send) {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 34, height: 34)
+                            .background(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : Color.accentColor, in: Circle())
+                    }
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding(12)
+            .background(.regularMaterial)
+            .dropDestination(for: String.self) { items, _ in
+                guard let value = items.first, !value.contains(":") else { return false }
+                draft = draft.isEmpty ? value : "\(draft)\n\(value)"
+                return true
+            } isTargeted: { targeted in
+                withAnimation(.easeOut(duration: 0.15)) { isDropTargeted = targeted }
+            }
         }
         .navigationTitle(friend.name)
         .navigationBarTitleDisplayMode(.inline)
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                    .padding(4)
+                    .allowsHitTesting(false)
+            }
+        }
         .task {
-            guard friend.isDemo != true, let roomID = friend.roomID else { return }
+            store.markRead(friend)
+            guard friend.isDemo != true else { return }
             while !Task.isCancelled {
-                if let remote = try? await FriendChatService.messages(roomID: roomID), !remote.isEmpty {
-                    store.messages.removeAll { $0.friendID == friend.id }
-                    store.messages.append(contentsOf: remote.map {
-                        FriendMessage(id: UUID(), friendID: friend.id, text: $0.text, sentAt: Date(timeIntervalSince1970: $0.sentAt / 1_000), isMine: $0.isMine)
-                    })
-                }
+                await store.refreshMessages(for: friend)
                 try? await Task.sleep(for: .seconds(2))
             }
         }
+        .onDisappear { store.stopReading(friend) }
+        .fileImporter(isPresented: $isImportingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result {
+                for url in urls {
+                    let attachment = FriendMessageAttachment(
+                        id: "file-\(url.path)-\(UUID().uuidString)",
+                        title: url.lastPathComponent,
+                        kind: "ファイル",
+                        icon: "doc"
+                    )
+                    attachments.append(attachment)
+                    appendAttachmentText(attachment)
+                }
+            }
+        }
+        .onChange(of: selectedPhoto) { _, item in
+            guard let item else { return }
+            Task {
+                let name = (try? await item.loadTransferable(type: Data.self)).map { _ in "写真" } ?? "写真"
+                let attachment = FriendMessageAttachment(
+                    id: "photo-\(UUID().uuidString)",
+                    title: name,
+                    kind: "写真",
+                    icon: "photo"
+                )
+                attachments.append(attachment)
+                appendAttachmentText(attachment)
+                selectedPhoto = nil
+            }
+        }
     }
+
+    private func appendAttachmentText(_ attachment: FriendMessageAttachment) {
+        let line = "【\(attachment.kind)】\(attachment.title)"
+        draft = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? line : "\(draft)\n\(line)"
+    }
+
+    private func send() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        store.send(text, to: friend)
+        draft = ""
+        attachments = []
+    }
+}
+
+struct FriendMessageAttachment: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let kind: String
+    let icon: String
 }
 
 private struct QRCodeView: View {
