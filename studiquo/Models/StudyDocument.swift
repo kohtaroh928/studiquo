@@ -20,6 +20,7 @@ final class TextDocument {
     var folderName: String = ""
     var isFavorite: Bool = false
     var isTrashed: Bool = false
+    var trashedAt: Date?
     /// Archived `NSAttributedString` (see `DocumentBody`).
     @Attribute(.externalStorage) var bodyData: Data?
     /// Kept in sync on every save so the library can show a preview and the
@@ -154,6 +155,7 @@ final class SlideDeck {
     var folderName: String = ""
     var isFavorite: Bool = false
     var isTrashed: Bool = false
+    var trashedAt: Date?
     var themeRawValue: String = SlideTheme.classic.rawValue
     var aspectRawValue: String = SlideAspect.widescreen.rawValue
     /// Deck-wide typography, the way a PowerPoint theme carries a font pair

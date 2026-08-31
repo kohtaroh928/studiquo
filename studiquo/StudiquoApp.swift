@@ -80,7 +80,7 @@ struct StudiquoApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AccountGateView()
                 .tint(Color(red: 0.16, green: 0.33, blue: 0.63))
                 .environment(\.locale, resolvedLocale)
         }

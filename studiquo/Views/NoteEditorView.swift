@@ -61,6 +61,9 @@ private struct AIChatAttachment: Identifiable, Hashable {
         case folder
         case camera
         case notebook
+        case flashcards
+        case document
+        case slideDeck
         /// A rectangle cut out of a page — see `PageSnippet`.
         case snippet
 
@@ -70,16 +73,22 @@ private struct AIChatAttachment: Identifiable, Hashable {
             case .folder: return L("フォルダー")
             case .camera: return L("撮影画像")
             case .notebook: return L("ノート・PDF")
+            case .flashcards: return L("暗記カード")
+            case .document: return L("文書")
+            case .slideDeck: return L("スライド")
             case .snippet: return L("切り抜き")
             }
         }
 
-        var icon: String {
-            switch self {
-            case .file: return "doc"
+    var icon: String {
+        switch self {
+        case .file: return "doc"
             case .folder: return "folder"
             case .camera: return "camera"
             case .notebook: return "doc.richtext"
+            case .flashcards: return "rectangle.on.rectangle.angled"
+            case .document: return "doc.text"
+            case .slideDeck: return "rectangle.on.rectangle"
             case .snippet: return "rectangle.dashed"
             }
         }
@@ -160,6 +169,7 @@ enum PaneSwitchTarget {
     case notebook(Notebook)
     case flashcardDeck(FlashcardDeck)
     case web(title: String, homeURL: String)
+    case ai(PersistentIdentifier)
 }
 
 /// A web split, once opened, is announced under this name so ContentView can
@@ -181,6 +191,14 @@ struct AIChatTabInfo: Identifiable, Equatable {
     var title: String
 }
 
+private struct AppAttachmentOption: Identifiable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let icon: String
+    let attachment: AIChatAttachment
+}
+
 /// Shared between ContentView (which owns the tab bar) and the live
 /// NoteEditorView (which owns the split layout). ContentView needs to know
 /// whether a split is currently on screen to decide how a tab tap should be
@@ -198,6 +216,8 @@ struct NoteEditorView: View {
     var onHome: () -> Void
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var notebooks: [Notebook]
     @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
+    @Query(sort: \TextDocument.updatedAt, order: .reverse) private var textDocuments: [TextDocument]
+    @Query(sort: \SlideDeck.updatedAt, order: .reverse) private var slideDecks: [SlideDeck]
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var splitState: EditorSplitState
@@ -620,6 +640,7 @@ struct NoteEditorView: View {
                     onGradeProof: gradeProof,
                     onInsertAssistantMessage: insertAIResponseOnPage,
                     onAttachDroppedTab: attachmentForDroppedTab,
+                    onSelectAppAttachment: appAttachmentOptions,
                     onPaneDrop: { handlePaneDrop($0, target: .secondary) }
                 )
             }
@@ -1091,6 +1112,7 @@ struct NoteEditorView: View {
                     onGradeProof: gradeProof,
                     onInsertAssistantMessage: insertAIResponseOnPage,
                     onAttachDroppedTab: attachmentForDroppedTab,
+                    onSelectAppAttachment: appAttachmentOptions,
                     onPaneDrop: { handlePaneDrop($0, target: .primary) }
                 )
             } else if let primaryFlashcardDeck {
@@ -1126,7 +1148,8 @@ struct NoteEditorView: View {
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { activePane = .primary })
         .dropDestination(for: String.self) { items, _ in
-            guard splitMode != .single, let value = items.first else { return false }
+            guard let value = items.first else { return false }
+            guard splitMode != .single || value.hasPrefix("ai:") else { return false }
             return handlePaneDrop(value, target: .primary)
         }
     }
@@ -1157,6 +1180,7 @@ struct NoteEditorView: View {
                 onGradeProof: gradeProof,
                 onInsertAssistantMessage: insertAIResponseOnPage,
                 onAttachDroppedTab: attachmentForDroppedTab,
+                onSelectAppAttachment: appAttachmentOptions,
                 onPaneDrop: { handlePaneDrop($0, target: .secondary) }
             )
         } else if let secondaryFlashcardDeck {
@@ -1799,7 +1823,7 @@ struct NoteEditorView: View {
     }
 
     private func presentAIChat() {
-        if splitMode != .single, secondaryShowsAIChat {
+        if isAIChatVisibleInSplit {
             showsTemporaryAIChat = false
             collapseSplit()
             return
@@ -2151,6 +2175,101 @@ struct NoteEditorView: View {
         )
     }
 
+    private func appAttachmentOptions() -> [AppAttachmentOption] {
+        let noteOptions = notebooks
+            .filter { !$0.isTrashed }
+            .compactMap { notebookAttachmentOption($0) }
+        let deckOptions = flashcardDecks
+            .filter { !$0.isTrashed }
+            .map { deckAttachmentOption($0) }
+        let documentOptions = textDocuments
+            .filter { !$0.isTrashed }
+            .map { documentAttachmentOption($0) }
+        let slideOptions = slideDecks
+            .filter { !$0.isTrashed }
+            .map { slideDeckAttachmentOption($0) }
+        return noteOptions + deckOptions + documentOptions + slideOptions
+    }
+
+    private func notebookAttachmentOption(_ notebook: Notebook) -> AppAttachmentOption? {
+        let pdfText = readablePDFTextForAI(in: notebook)
+        let noteText = pdfText.isEmpty ? readableNotebookTextForAI(in: notebook) : pdfText
+        let contextText = noteText.isEmpty
+            ? L("この資料には、AIが読める抽出済みテキストがまだありません。")
+            : noteText
+        let attachment = AIChatAttachment(
+            name: notebook.title,
+            path: "",
+            kind: .notebook,
+            contextText: contextText
+        )
+        return AppAttachmentOption(
+            id: "notebook:\(String(describing: notebook.persistentModelID))",
+            title: notebook.title,
+            subtitle: notebook.containsPDF ? L("PDF") : L("ノート"),
+            icon: notebook.containsPDF ? "doc.richtext" : "note.text",
+            attachment: attachment
+        )
+    }
+
+    private func deckAttachmentOption(_ deck: FlashcardDeck) -> AppAttachmentOption {
+        let lines = deck.sortedCards.enumerated().map { index, card in
+            """
+            \(index + 1). Q: \(card.question)
+               A: \(card.answer)
+            """
+        }
+        let contextText = lines.isEmpty
+            ? L("この暗記カードにはカードがまだありません。")
+            : lines.joined(separator: "\n\n")
+        return AppAttachmentOption(
+            id: "deck:\(String(describing: deck.persistentModelID))",
+            title: deck.title,
+            subtitle: L("暗記カード \(deck.cards.count)枚"),
+            icon: "rectangle.on.rectangle.angled",
+            attachment: AIChatAttachment(name: deck.title, path: "", kind: .flashcards, contextText: contextText)
+        )
+    }
+
+    private func documentAttachmentOption(_ document: TextDocument) -> AppAttachmentOption {
+        let text = document.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let contextText = text.isEmpty ? L("この文書には本文がまだありません。") : text
+        return AppAttachmentOption(
+            id: "document:\(String(describing: document.persistentModelID))",
+            title: document.title,
+            subtitle: L("文書"),
+            icon: "doc.text",
+            attachment: AIChatAttachment(name: document.title, path: "", kind: .document, contextText: contextText)
+        )
+    }
+
+    private func slideDeckAttachmentOption(_ deck: SlideDeck) -> AppAttachmentOption {
+        let slides = deck.sortedSlides.enumerated().map { index, slide in
+            var parts = ["スライド \(index + 1)"]
+            if !slide.titleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                parts.append("タイトル: \(slide.titleText)")
+            }
+            if !slide.bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                parts.append("本文: \(slide.bodyText)")
+            }
+            if !slide.secondaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                parts.append("補足: \(slide.secondaryText)")
+            }
+            if !slide.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                parts.append("発表ノート: \(slide.notes)")
+            }
+            return parts.joined(separator: "\n")
+        }
+        let contextText = slides.isEmpty ? L("このスライドには内容がまだありません。") : slides.joined(separator: "\n\n")
+        return AppAttachmentOption(
+            id: "slide:\(String(describing: deck.persistentModelID))",
+            title: deck.title,
+            subtitle: L("スライド \(deck.slides.count)枚"),
+            icon: "rectangle.on.rectangle",
+            attachment: AIChatAttachment(name: deck.title, path: "", kind: .slideDeck, contextText: contextText)
+        )
+    }
+
     private func handleProofSnippet(_ snippet: PageSnippet, role: AIChatAttachment.ProofRole) {
         switch role {
         case .question:
@@ -2236,14 +2355,20 @@ struct NoteEditorView: View {
     /// conversation rather than starting with an answer to an invisible
     /// question.
     private static func submissionSummary(_ submission: ProofSubmission) -> String {
-        var lines = [L("証明の添削をお願いします。")]
-        lines.append("")
-        lines.append(L("【問題】"))
-        lines.append(submission.questionText.isEmpty ? L("（画像）") : submission.questionText)
-        lines.append("")
-        lines.append(L("【解答】"))
-        lines.append(submission.answerText.isEmpty ? L("（画像）") : submission.answerText)
-        return lines.joined(separator: "\n")
+        // Text halves are quoted; image halves are described in words rather
+        // than left as a bare "（画像）" placeholder, so the student's bubble
+        // reads like a request.
+        func describe(text: String, image: Bool, label: String) -> String {
+            if !text.isEmpty { return "【\(label)】\n\(text)" }
+            if image { return L("【\(label)】画像を添付しました。") }
+            return ""
+        }
+        var lines = [L("この証明を添削してください。"), ""]
+        let question = describe(text: submission.questionText, image: submission.questionImage != nil, label: L("問題"))
+        let answer = describe(text: submission.answerText, image: submission.answerImage != nil, label: L("解答"))
+        if !question.isEmpty { lines.append(question); lines.append("") }
+        if !answer.isEmpty { lines.append(answer) }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Lays the marking out as text, so it renders in an ordinary chat
@@ -2380,6 +2505,26 @@ struct NoteEditorView: View {
             if splitMode == .single { splitMode = isPortraitLayout ? .vertical : .horizontal }
             activePane = .secondary
             return
+        case .ai(let id):
+            loadAIChatThreads()
+            guard let thread = aiChatThreads.first(where: { $0.persistentModelID == id }) else { return }
+            selectedAIChatThread = thread
+            announceAIChatTab(thread)
+            showsTemporaryAIChat = false
+            if isAIChatVisibleInSplit {
+                activePane = primaryShowsAIChat ? .primary : .secondary
+                return
+            }
+            if pane == .primary {
+                primaryOverrideNotebook = nil
+                primaryFlashcardDeck = nil
+                primaryShowsAIChat = true
+            } else {
+                secondaryNotebook = nil
+                secondaryFlashcardDeck = nil
+                secondaryShowsWeb = false
+                secondaryShowsAIChat = true
+            }
         }
     }
 
@@ -2511,6 +2656,10 @@ struct NoteEditorView: View {
             selectedAIChatThread = thread
             announceAIChatTab(thread)
             showsTemporaryAIChat = false
+            if isAIChatVisibleInSplit {
+                activePane = primaryShowsAIChat ? .primary : .secondary
+                return true
+            }
             if target == .primary {
                 primaryOverrideNotebook = nil
                 primaryFlashcardDeck = nil
@@ -3992,6 +4141,65 @@ private final class SpeechInputController: ObservableObject {
     }
 }
 
+private struct AppAttachmentPicker: View {
+    let options: [AppAttachmentOption]
+    let onSelect: (AppAttachmentOption) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    private var filteredOptions: [AppAttachmentOption] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return options }
+        return options.filter {
+            $0.title.localizedCaseInsensitiveContains(query)
+            || $0.subtitle.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(filteredOptions) { option in
+                Button {
+                    onSelect(option)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: option.icon)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .frame(width: 28)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(option.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            Text(option.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+            }
+            .overlay {
+                if options.isEmpty {
+                    ContentUnavailableView(
+                        L("追加できる資料がありません"),
+                        systemImage: "tray",
+                        description: Text(L("ホーム画面で資料を作成すると、ここからAIトークに追加できます。"))
+                    )
+                }
+            }
+            .navigationTitle(L("資料を追加"))
+            .searchable(text: $searchText, prompt: L("資料を検索"))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L("閉じる")) { dismiss() }
+                }
+            }
+        }
+    }
+}
+
 private struct AIChatPane: View {
     let threads: [AIChatThread]
     let selectedThread: AIChatThread?
@@ -4007,6 +4215,7 @@ private struct AIChatPane: View {
     let onGradeProof: (ProofSubmission) -> Void
     let onInsertAssistantMessage: (String) -> Void
     let onAttachDroppedTab: (String) -> AIChatAttachment?
+    let onSelectAppAttachment: () -> [AppAttachmentOption]
     let onPaneDrop: (String) -> Bool
 
     /// Whether the app knows where its AI server is. The API key itself lives
@@ -4019,6 +4228,7 @@ private struct AIChatPane: View {
     @State private var isComposerDropTargeted = false
     /// The marking box, opened from the composer's + menu.
     @State private var isMarkingBoxOpen = false
+    @State private var showsAppAttachmentPicker = false
     @State private var markingQuestionText = ""
     @State private var markingAnswerText = ""
     @State private var markingQuestionSnippet: PageSnippet?
@@ -4143,6 +4353,14 @@ private struct AIChatPane: View {
 
                         HStack(alignment: .bottom, spacing: 10) {
                             Menu {
+                                Button {
+                                    showsAppAttachmentPicker = true
+                                } label: {
+                                    Label(L("アプリ内の資料を追加"), systemImage: "square.grid.2x2")
+                                }
+
+                                Divider()
+
                                 Button {
                                     attachmentPickerMode = .files
                                 } label: {
@@ -4315,6 +4533,15 @@ private struct AIChatPane: View {
                     )
                 })
             }
+        }
+        .sheet(isPresented: $showsAppAttachmentPicker) {
+            AppAttachmentPicker(
+                options: onSelectAppAttachment(),
+                onSelect: { option in
+                    attachments.append(option.attachment)
+                    showsAppAttachmentPicker = false
+                }
+            )
         }
     }
 

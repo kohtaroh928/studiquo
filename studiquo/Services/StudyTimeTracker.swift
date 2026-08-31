@@ -31,16 +31,40 @@ final class StudyTimeTracker {
 
     private init() {}
 
+    /// Whether the app is frontmost, and whether the student is actually in a
+    /// study surface (an open note, deck, document or slide). Time is only
+    /// counted when both hold — opening the app to the library or calendar and
+    /// leaving it there used to inflate "勉強時間" and the streak.
+    private var sceneActive = false
+    private var isStudying = false
+
+    /// User setting: when off, no time is recorded at all.
+    private var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: "studyTimeTrackingEnabled") as? Bool ?? true
+    }
+
     func configure(context: ModelContext) {
         self.context = context
     }
 
     /// Drive from `scenePhase`: the app is only "in use" while active.
     func handle(scenePhase: ScenePhase) {
-        switch scenePhase {
-        case .active: begin()
-        case .inactive, .background: end()
-        @unknown default: end()
+        sceneActive = scenePhase == .active
+        reconcile()
+    }
+
+    /// Drive from the UI: true while a study surface is on screen.
+    func setStudying(_ studying: Bool) {
+        isStudying = studying
+        reconcile()
+    }
+
+    /// Starts or stops accrual so it matches the current conditions.
+    private func reconcile() {
+        if isEnabled && sceneActive && isStudying {
+            begin()
+        } else {
+            end()
         }
     }
 

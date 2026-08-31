@@ -7,6 +7,10 @@ final class FlashcardDeck {
     var createdAt: Date
     var updatedAt: Date
     var isFavorite: Bool = false
+    /// Soft-delete flag, matching notes/documents/slides: a swiped deck goes
+    /// to the trash and can be restored, rather than vanishing for good.
+    var isTrashed: Bool = false
+    var trashedAt: Date?
     var folderName: String = ""
     var reversesQuestionAndAnswer: Bool = false
     var orderModeRawValue: String = FlashcardOrderMode.creation.rawValue

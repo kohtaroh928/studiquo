@@ -523,6 +523,8 @@ private enum AppLanguage: String, CaseIterable, Identifiable {
 /// so switching it here updates every screen immediately — no restart.
 private struct AppSettingsView: View {
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.system.rawValue
+    @AppStorage("studyTimeTrackingEnabled") private var studyTimeTrackingEnabled = true
+    @AppStorage("leftHandedMode") private var isLeftHandedMode = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -540,6 +542,22 @@ private struct AppSettingsView: View {
                     Text("言語")
                 } footer: {
                     Text("選んだ言語はすぐに反映されます。")
+                }
+
+                Section {
+                    Toggle("勉強時間を記録する", isOn: $studyTimeTrackingEnabled)
+                } header: {
+                    Text("学習記録")
+                } footer: {
+                    Text("ノート・暗記帳・文書・スライドを開いている間の時間だけを記録します。オフにすると勉強時間と連続学習日数の記録を止めます。")
+                }
+
+                Section {
+                    Toggle("左利きモード", isOn: $isLeftHandedMode)
+                } header: {
+                    Text("描画")
+                } footer: {
+                    Text("描画バーの並びを左利き向けに反転します。")
                 }
             }
             .navigationTitle("設定")
@@ -586,6 +604,7 @@ enum MCPCloudCredentials {
         SecItemDelete(base as CFDictionary)
         var item = base
         item[kSecValueData as String] = Data(value.utf8)
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         SecItemAdd(item as CFDictionary, nil)
     }
 }
@@ -634,6 +653,7 @@ struct ContentView: View {
     @State private var openAIChatTabs: [AIChatTabInfo] = []
     @State private var selectedAIChatTabID: PersistentIdentifier?
     @StateObject private var editorSplitState = EditorSplitState()
+    @StateObject private var friendStore = FriendStore()
     @State private var showsAutomaticBackups = false
     @State private var newNotebookName = ""
     @State private var isShowingNewNotebookAlert = false
@@ -668,6 +688,8 @@ struct ContentView: View {
     @State private var isMCPCloudTokenVisible = false
     @State private var showsNotifications = false
     @State private var showsAppSettings = false
+    @State private var showsProfile = false
+    @AppStorage("profileImage") private var profileImageData = Data()
     @State private var showsTabPicker = false
     @State private var cachedStudyNotifications: [StudyNotification] = []
     @Environment(\.scenePhase) private var scenePhase
@@ -676,9 +698,12 @@ struct ContentView: View {
     private enum HomeSection: String, CaseIterable, Identifiable {
         case notes = "ノート"
         case calendar = "カレンダー"
+        case friends = "フレンド"
         var id: String { rawValue }
-        var icon: String { self == .notes ? "note.text" : "calendar" }
-        var title: String { self == .notes ? L("ノート") : L("カレンダー") }
+        var icon: String {
+            switch self { case .notes: "note.text"; case .calendar: "calendar"; case .friends: "person.2" }
+        }
+        var title: String { L(rawValue) }
     }
 
     private var folderNames: [String] {
@@ -996,21 +1021,17 @@ struct ContentView: View {
         }
     }
 
-    /// The calendar is shown full-width (no split view) only from the home
-    /// dashboard — never while a notebook or deck is open in the editor.
-    private var isCalendarFullScreen: Bool {
-        homeSection == .calendar
-            && selectedNotebook == nil && selectedFlashcardDeck == nil
-            && selectedTextDocument == nil && selectedSlideDeck == nil
+    /// Calendar and friends are shown full-width from the home dashboard —
+    /// neither inherits the notebook library sidebar.
+    private var isAuxiliaryHomeFullScreen: Bool {
+        homeSection == .calendar || homeSection == .friends
     }
 
     var body: some View {
         Group {
-            if isCalendarFullScreen {
-                // A plain navigation stack, not the split view — so the
-                // calendar has no library sidebar and no toggle to reveal one.
-                // Its toolbar (通知・連携・＋予定) still needs a bar to live in,
-                // which the stack provides.
+            if isAuxiliaryHomeFullScreen {
+                // A plain navigation stack keeps auxiliary home screens out
+                // of the notebook split view while still providing a toolbar.
                 NavigationStack { homeDashboard }
             } else {
                 librarySplitView
@@ -1245,10 +1266,13 @@ struct ContentView: View {
         .sheet(isPresented: $showsAppSettings) {
             AppSettingsView()
         }
+        .sheet(isPresented: $showsProfile) {
+            UserProfileView()
+        }
         .sheet(isPresented: $showsTabPicker) {
             TabPickerView(
                 notebooks: allNotebooks.filter { !$0.isTrashed },
-                decks: flashcardDecks,
+                decks: flashcardDecks.filter { !$0.isTrashed },
                 documents: textDocuments.filter { !$0.isTrashed },
                 slideDecks: slideDecks.filter { !$0.isTrashed },
                 onSelectNotebook: { notebook in
@@ -1328,9 +1352,28 @@ struct ContentView: View {
         .onAppear {
             StudyTimeTracker.shared.configure(context: modelContext)
             StudyTimeTracker.shared.handle(scenePhase: scenePhase)
+            StudyTimeTracker.shared.setStudying(isStudySurfaceOpen)
         }
         .onChange(of: scenePhase) { _, phase in
             StudyTimeTracker.shared.handle(scenePhase: phase)
+        }
+        // Count study time only while an actual study surface is open — not
+        // while browsing the library or the calendar.
+        .onChange(of: studySurfaceKey) { _, _ in
+            StudyTimeTracker.shared.setStudying(isStudySurfaceOpen)
+        }
+        .onChange(of: homeSection) { _, section in
+            // Calendar and friends are independent home destinations. Clear
+            // every editor selection so the notebook split view can never
+            // leak its sidebar into either screen.
+            if section == .calendar || section == .friends {
+                returnToHome()
+            }
+        }
+        .onOpenURL { url in
+            friendStore.add(url: url)
+            returnToHome()
+            homeSection = .friends
         }
     }
 
@@ -1338,10 +1381,17 @@ struct ContentView: View {
         VStack(spacing: 0) {
             if homeSection == .notes {
                 fullScreenHome
-            } else {
+            } else if homeSection == .calendar {
                 CalendarHomeView(
                     showsNotifications: $showsNotifications,
                     notificationPanel: { AnyView(notificationPanel) }
+                )
+            } else {
+                FriendsHomeView(
+                    store: friendStore,
+                    myStudySeconds: studyActivities
+                        .filter { Calendar.current.isDateInToday($0.startedAt) }
+                        .reduce(0) { $0 + $1.duration }
                 )
             }
             Divider()
@@ -1371,9 +1421,8 @@ struct ContentView: View {
             .padding(.vertical, 8)
             .background(.bar)
         }
-        // The calendar's sidebar is removed by showing it outside the split
-        // view entirely (see `isCalendarFullScreen`), so there is no
-        // `columnVisibility` to manage here — notes keeps its sidebar as is.
+        // Calendar and friends live outside the split view entirely; notes
+        // remains the only home section that can own a library sidebar.
     }
 
     private var notebookTabBar: some View {
@@ -1507,11 +1556,7 @@ struct ContentView: View {
                 ForEach(openAIChatTabs) { tab in
                     HStack(spacing: 5) {
                         Button {
-                            selectedAIChatTabID = tab.id
-                            NotificationCenter.default.post(
-                                name: .studiquoSelectAIChatTab,
-                                object: tab.id
-                            )
+                            selectAIChatTab(tab)
                         } label: {
                             Label(tab.title, systemImage: "sparkles").lineLimit(1)
                         }
@@ -1585,10 +1630,6 @@ struct ContentView: View {
         if !openNotebooks.contains(where: { $0.persistentModelID == notebook.persistentModelID }) {
             openNotebooks.append(notebook)
         }
-        if openNotebooks.count > 6,
-           let removeIndex = openNotebooks.firstIndex(where: { $0.persistentModelID != notebook.persistentModelID }) {
-            openNotebooks.remove(at: removeIndex)
-        }
     }
 
     private func notebookTabIcon(for notebook: Notebook) -> String {
@@ -1614,10 +1655,6 @@ struct ContentView: View {
         if !openFlashcardDecks.contains(where: { $0.persistentModelID == deck.persistentModelID }) {
             openFlashcardDecks.append(deck)
         }
-        if openFlashcardDecks.count > 6,
-           let removeIndex = openFlashcardDecks.firstIndex(where: { $0.persistentModelID != deck.persistentModelID }) {
-            openFlashcardDecks.remove(at: removeIndex)
-        }
     }
 
     private func selectWebTab(_ tab: WebTabInfo) {
@@ -1625,6 +1662,21 @@ struct ContentView: View {
         NotificationCenter.default.post(
             name: Notification.Name("StudiquoSwitchPaneTarget"),
             object: PaneSwitchTarget.web(title: tab.title, homeURL: tab.homeURL)
+        )
+    }
+
+    private func selectAIChatTab(_ tab: AIChatTabInfo) {
+        selectedAIChatTabID = tab.id
+        guard selectedNotebook != nil else {
+            NotificationCenter.default.post(
+                name: .studiquoSelectAIChatTab,
+                object: tab.id
+            )
+            return
+        }
+        NotificationCenter.default.post(
+            name: Notification.Name("StudiquoSwitchPaneTarget"),
+            object: PaneSwitchTarget.ai(tab.id)
         )
     }
 
@@ -1649,10 +1701,6 @@ struct ContentView: View {
         if !openTextDocuments.contains(where: { $0.persistentModelID == document.persistentModelID }) {
             openTextDocuments.append(document)
         }
-        if openTextDocuments.count > 6,
-           let removeIndex = openTextDocuments.firstIndex(where: { $0.persistentModelID != document.persistentModelID }) {
-            openTextDocuments.remove(at: removeIndex)
-        }
         columnVisibility = .detailOnly
     }
 
@@ -1661,10 +1709,6 @@ struct ContentView: View {
         selectedSlideDeck = deck
         if !openSlideDecks.contains(where: { $0.persistentModelID == deck.persistentModelID }) {
             openSlideDecks.append(deck)
-        }
-        if openSlideDecks.count > 6,
-           let removeIndex = openSlideDecks.firstIndex(where: { $0.persistentModelID != deck.persistentModelID }) {
-            openSlideDecks.remove(at: removeIndex)
         }
         columnVisibility = .detailOnly
     }
@@ -1995,6 +2039,9 @@ struct ContentView: View {
                 favoriteRows
             } else {
                 notebookRows(visibleNotebooks)
+                if libraryMode == .trash && selectedFolder == nil {
+                    trashedItemRows
+                }
             }
         }
         .navigationTitle(selectedFolder.map(folderDisplayName) ?? (isHomeScreen ? L("ホーム") : libraryMode.title))
@@ -2049,7 +2096,7 @@ struct ContentView: View {
                         Button("空にする", role: .destructive) {
                             showsEmptyTrashConfirmation = true
                         }
-                        .disabled(visibleNotebooks.isEmpty)
+                        .disabled(isTrashEmpty)
                     } else {
                         createMenu
                     }
@@ -2057,6 +2104,21 @@ struct ContentView: View {
                         Label("設定", systemImage: "gearshape")
                     }
                     .accessibilityLabel("設定")
+                    Button { showsProfile = true } label: {
+                        if let image = UIImage(data: profileImageData) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 28, height: 28)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(.secondary.opacity(0.35), lineWidth: 0.5))
+                        } else {
+                            Image(systemName: "person.crop.circle")
+                                .font(.title3)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("プロフィール")
                 }
             }
         }
@@ -2073,13 +2135,26 @@ struct ContentView: View {
                     systemImage: "rectangle.on.rectangle.angled",
                     description: Text("右上の＋から新しい暗記帳を作成してください")
                 )
+            } else if isHomeScreen
+                        && searchText.isEmpty
+                        && visibleNotebooks.isEmpty
+                        && displayedFlashcardDecks.isEmpty
+                        && displayedTextDocuments.isEmpty
+                        && displayedSlideDecks.isEmpty {
+                // The home screen used to show nothing at all when empty.
+                ContentUnavailableView {
+                    Label("まだ何もありません", systemImage: "square.and.pencil")
+                } description: {
+                    Text("右上の＋から、ノート・暗記帳・文書・スライドを作成できます。")
+                }
             } else if selectedFolder == nil
                         && !isHomeScreen
                         && visibleNotebooks.isEmpty
                         && displayedFlashcardDecks.isEmpty
                         && displayedTextDocuments.isEmpty
                         && displayedSlideDecks.isEmpty
-                        && !(libraryMode == .favorites && hasFavoriteNonNotebookItems) {
+                        && !(libraryMode == .favorites && hasFavoriteNonNotebookItems)
+                        && !(libraryMode == .trash && !isTrashEmpty) {
                 ContentUnavailableView(
                     searchText.isEmpty ? (selectedFolder == nil ? libraryMode.emptyTitle : "このフォルダは空です") : "見つかりません",
                     systemImage: searchText.isEmpty ? (selectedFolder == nil ? libraryMode.icon : "folder") : "magnifyingglass",
@@ -2158,10 +2233,11 @@ struct ContentView: View {
     }
 
     private var displayedFlashcardDecks: [FlashcardDeck] {
+        let visible = flashcardDecks.filter { !$0.isTrashed }
         if libraryMode == .documents {
-            return flashcardDecks.filter { $0.folderName == (selectedFolder ?? "") }
+            return visible.filter { $0.folderName == (selectedFolder ?? "") }
         }
-        return flashcardDecks
+        return visible
     }
 
     @ViewBuilder
@@ -2193,10 +2269,7 @@ struct ContentView: View {
                 .buttonStyle(.plain)
             }
             .swipeActions {
-                Button("削除", role: .destructive) {
-                    closeDeckTabs(deck)
-                    modelContext.delete(deck)
-                }
+                Button("ゴミ箱", role: .destructive) { trashDeck(deck) }
             }
             .draggable("deck:\(deckID(deck))")
         }
@@ -2247,10 +2320,7 @@ struct ContentView: View {
                 .buttonStyle(.plain)
             }
             .swipeActions {
-                Button("削除", role: .destructive) {
-                    closeDocumentTabs(document)
-                    modelContext.delete(document)
-                }
+                Button("ゴミ箱", role: .destructive) { trashDocument(document) }
             }
             .draggable("document:\(textDocumentID(document))")
         }
@@ -2285,18 +2355,67 @@ struct ContentView: View {
                 .buttonStyle(.plain)
             }
             .swipeActions {
-                Button("削除", role: .destructive) {
-                    closeSlideDeckTabs(deck)
-                    modelContext.delete(deck)
-                }
+                Button("ゴミ箱", role: .destructive) { trashSlideDeck(deck) }
             }
             .draggable("slide:\(slideDeckID(deck))")
         }
     }
 
+    /// Trashed decks, documents and slides — shown in the trash alongside
+    /// trashed notes, each restorable or removable for good.
+    @ViewBuilder
+    private var trashedItemRows: some View {
+        let decks = flashcardDecks.filter { $0.isTrashed }
+        let documents = textDocuments.filter { $0.isTrashed }
+        let slides = slideDecks.filter { $0.isTrashed }
+        ForEach(decks) { deck in
+            trashedRow(title: deck.title, subtitle: "\(deck.cards.count)枚の暗記カード",
+                       icon: "rectangle.on.rectangle.angled", tint: .indigo,
+                       restore: { restoreDeck(deck) }, delete: { permanentlyDeleteDeck(deck) })
+        }
+        ForEach(documents) { document in
+            trashedRow(title: document.title, subtitle: "\(document.wordCount)語の文書",
+                       icon: "doc.text", tint: .teal,
+                       restore: { restoreDocument(document) }, delete: { permanentlyDeleteDocument(document) })
+        }
+        ForEach(slides) { deck in
+            trashedRow(title: deck.title, subtitle: "\(deck.slides.count)枚のスライド",
+                       icon: "rectangle.on.rectangle", tint: .orange,
+                       restore: { restoreSlideDeck(deck) }, delete: { permanentlyDeleteSlideDeck(deck) })
+        }
+    }
+
+    private func trashedRow(title: String, subtitle: String, icon: String, tint: Color,
+                            restore: @escaping () -> Void, delete: @escaping () -> Void) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon).font(.title2).foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline).lineLimit(1)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .contentShape(Rectangle())
+        .swipeActions(edge: .leading) {
+            Button { restore() } label: { Label("復元", systemImage: "arrow.uturn.backward") }
+                .tint(.blue)
+        }
+        .swipeActions {
+            Button("完全に削除", role: .destructive, action: delete)
+        }
+    }
+
+    private func restoreDeck(_ deck: FlashcardDeck) { deck.isTrashed = false; deck.trashedAt = nil }
+    private func restoreDocument(_ document: TextDocument) { document.isTrashed = false; document.trashedAt = nil }
+    private func restoreSlideDeck(_ deck: SlideDeck) { deck.isTrashed = false; deck.trashedAt = nil }
+
+    private func permanentlyDeleteDeck(_ deck: FlashcardDeck) { closeDeckTabs(deck); modelContext.delete(deck) }
+    private func permanentlyDeleteDocument(_ document: TextDocument) { closeDocumentTabs(document); modelContext.delete(document) }
+    private func permanentlyDeleteSlideDeck(_ deck: SlideDeck) { closeSlideDeckTabs(deck); modelContext.delete(deck) }
+
     private var hasFavoriteNonNotebookItems: Bool {
         !favoriteFolderPaths.isEmpty
-            || flashcardDecks.contains(where: \.isFavorite)
+            || flashcardDecks.contains { !$0.isTrashed && $0.isFavorite }
             || textDocuments.contains { !$0.isTrashed && $0.isFavorite }
             || slideDecks.contains { !$0.isTrashed && $0.isFavorite }
     }
@@ -2561,10 +2680,14 @@ struct ContentView: View {
     }
 
     private func stableCopy(of url: URL) -> URL {
-        let destination = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension(url.pathExtension.isEmpty ? "pdf" : url.pathExtension)
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let filename = url.lastPathComponent.isEmpty
+            ? UUID().uuidString + "." + (url.pathExtension.isEmpty ? "pdf" : url.pathExtension)
+            : url.lastPathComponent
+        let destination = folder.appendingPathComponent(filename)
         do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try? FileManager.default.removeItem(at: destination)
             try FileManager.default.copyItem(at: url, to: destination)
             return destination
@@ -2854,6 +2977,9 @@ struct ContentView: View {
         let rawEndpoint = mcpCloudEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let baseURL = URL(string: rawEndpoint),
+              baseURL.scheme?.lowercased() == "https",
+              baseURL.host?.isEmpty == false,
+              baseURL.user == nil, baseURL.password == nil,
               let snapshotData = makeMCPSnapshotData(),
               mcpCloudToken.count >= 32 else {
             mcpCloudStatus = L("URLまたはトークンを確認してください。")
@@ -3079,6 +3205,45 @@ struct ContentView: View {
         if selectedSlideDeck === deck { selectedSlideDeck = openSlideDecks.last }
     }
 
+    /// Soft-deletes a deck/document/slide, matching notes: it goes to the
+    /// trash (recoverable) and its tab is closed, rather than being erased.
+    private func trashDeck(_ deck: FlashcardDeck) {
+        closeDeckTabs(deck)
+        deck.isTrashed = true
+        deck.trashedAt = .now
+    }
+
+    private func trashDocument(_ document: TextDocument) {
+        closeDocumentTabs(document)
+        document.isTrashed = true
+        document.trashedAt = .now
+    }
+
+    private func trashSlideDeck(_ deck: SlideDeck) {
+        closeSlideDeckTabs(deck)
+        deck.isTrashed = true
+        deck.trashedAt = .now
+    }
+
+    /// True while a note, deck, document or slide is open for study.
+    private var isStudySurfaceOpen: Bool {
+        selectedNotebook != nil || selectedFlashcardDeck != nil
+            || selectedTextDocument != nil || selectedSlideDeck != nil
+            || studyNotebook != nil
+    }
+
+    /// A value that changes whenever what is open changes, so the tracker can
+    /// be told to start or stop.
+    private var studySurfaceKey: String {
+        [selectedNotebook?.persistentModelID.hashValue,
+         selectedFlashcardDeck?.persistentModelID.hashValue,
+         selectedTextDocument?.persistentModelID.hashValue,
+         selectedSlideDeck?.persistentModelID.hashValue,
+         studyNotebook?.persistentModelID.hashValue]
+            .map { $0.map(String.init) ?? "-" }
+            .joined(separator: ":")
+    }
+
     private func moveToTrash(_ notebook: Notebook) {
         notebook.isTrashed = true
         notebook.trashedAt = .now
@@ -3102,6 +3267,17 @@ struct ContentView: View {
             closeNotebookTabs(notebook)
             modelContext.delete(notebook)
         }
+        for deck in flashcardDecks where deck.isTrashed { permanentlyDeleteDeck(deck) }
+        for document in textDocuments where document.isTrashed { permanentlyDeleteDocument(document) }
+        for deck in slideDecks where deck.isTrashed { permanentlyDeleteSlideDeck(deck) }
+    }
+
+    /// Whether the trash holds anything at all — notes or any other item.
+    private var isTrashEmpty: Bool {
+        visibleNotebooks.isEmpty
+            && !flashcardDecks.contains(where: \.isTrashed)
+            && !textDocuments.contains(where: \.isTrashed)
+            && !slideDecks.contains(where: \.isTrashed)
     }
 
     @MainActor

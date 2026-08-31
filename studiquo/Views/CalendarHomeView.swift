@@ -452,17 +452,21 @@ enum UniversityCalendar {
 
     static func fetch(from rawURL: String) async throws -> [Event] {
         guard let url = URL(string: normalizedURLString(rawURL)),
-              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
-              url.host?.contains(".") == true else {
+              url.scheme?.lowercased() == "https",
+              url.host?.contains(".") == true,
+              url.user == nil, url.password == nil else {
             throw SyncError.invalidURL
         }
-        let (data, response) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             throw SyncError.downloadFailed
         }
         // Feeds are UTF-8 in practice; fall back to Latin-1 so a mis-declared
         // one still parses instead of silently importing nothing.
-        guard let text = String(data: data, encoding: .utf8)
+        guard data.count <= 10 * 1_024 * 1_024,
+              let text = String(data: data, encoding: .utf8)
                 ?? String(data: data, encoding: .isoLatin1),
               text.contains("BEGIN:VCALENDAR") else {
             throw SyncError.notACalendar
@@ -1362,16 +1366,27 @@ private struct StudyTimeBarChart: View {
         return Array(symbols[shift...] + symbols[..<shift])
     }
 
+    /// Average over the periods that actually had study, not over every bar.
+    /// Dividing by all 31 days of a month made a real hour read as "0分".
     private var averageSeconds: TimeInterval {
-        guard !bars.isEmpty else { return 0 }
-        return bars.reduce(0) { $0 + $1.seconds } / Double(bars.count)
+        let active = bars.filter { $0.seconds > 0 }
+        guard !active.isEmpty else { return 0 }
+        return active.reduce(0) { $0 + $1.seconds } / Double(active.count)
+    }
+
+    private var totalSeconds: TimeInterval {
+        bars.reduce(0) { $0 + $1.seconds }
     }
 
     private var averageLabel: String {
         switch span {
-        case .week: return L("1日あたり平均 \(durationText(averageSeconds))")
-        case .month: return L("1日あたり平均 \(durationText(averageSeconds))")
-        case .year: return L("1ヶ月あたり平均 \(durationText(averageSeconds))")
+        case .week, .month:
+            // Bars are per-day, so their sum is the period's real total.
+            return L("合計 \(durationText(totalSeconds)) ・ 学習日平均 \(durationText(averageSeconds))")
+        case .year:
+            // Bars are each a month's daily average; averaging the active
+            // months gives a representative monthly figure.
+            return L("学習した月の平均 \(durationText(averageSeconds))")
         }
     }
 

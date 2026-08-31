@@ -119,11 +119,12 @@ enum PDFPasswordService {
         return destination
     }
 
-    /// A temp URL for the stripped copy, named after the original with a
-    /// suffix so it is recognisable in a share sheet.
+    /// A temp URL for the stripped copy. It lives in its own temporary folder
+    /// so the visible filename can stay exactly the same as the original PDF.
     static func destinationURL(for source: URL) -> URL {
-        let base = source.deletingPathExtension().lastPathComponent
-        return FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(base)_パスワードなし.pdf")
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder.appendingPathComponent(source.lastPathComponent)
     }
 }
