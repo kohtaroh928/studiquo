@@ -44,7 +44,6 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     /// Display points per page unit — see `InkCanvasView.contentScale`. The
     /// owner derives it from how large the page is currently drawn.
     var contentScale: CGFloat = 1
-    var isScratchOutEnabled: Bool
     var isLineCorrectionEnabled: Bool = true
     var isEllipseCorrectionEnabled: Bool = true
     var isRectangleCorrectionEnabled: Bool = true
@@ -145,7 +144,6 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         view.strokeColorHex = color.toHex()
         view.strokeWidth = width
         view.eraserWidth = eraserWidth
-        view.isScratchOutEnabled = isScratchOutEnabled
         view.isLineCorrectionEnabled = isLineCorrectionEnabled
         view.isEllipseCorrectionEnabled = isEllipseCorrectionEnabled
         view.isRectangleCorrectionEnabled = isRectangleCorrectionEnabled

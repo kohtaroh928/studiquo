@@ -44,7 +44,6 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     var strokeColorHex: String = "#1C1C1E"
     var strokeWidth: CGFloat = 4
     var isHighlighter = false
-    var isScratchOutEnabled = true
     var isLineCorrectionEnabled = true
     var isEllipseCorrectionEnabled = true
     var isRectangleCorrectionEnabled = true
@@ -885,7 +884,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             // lift. Uses the same loose motion test as the erase path so a
             // brief pause mid-scribble can't turn it into a line or ellipse.
             let preview = self.previewStroke()
-            if !self.isHighlighter, self.isScratchOutEnabled,
+            if !self.isHighlighter,
                Self.hasScratchMotion(preview.points.map(\.location)),
                self.drawing.strokes.contains(where: { self.strokeIsCoveredBy($0, scribble: preview) }) {
                 return
@@ -1216,9 +1215,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         // that it lands *on top of existing ink* and doubles back over it. So
         // the rule is simply: not a correction, overlaps ink, and turns back
         // on itself.
-        let correctionLocked = isStraightened || isEllipseLocked
-            || isRectangleLocked || isTriangleLocked || isParabolaLocked
-        if !isHighlighter, isScratchOutEnabled, !correctionLocked {
+        if !isHighlighter {
             let hit = drawing.strokes.filter { strokeIsCoveredBy($0, scribble: rawStroke) }
             let looksLikeScratchOut = !hit.isEmpty && Self.hasScratchMotion(rawStroke.points.map(\.location))
             GestureDiagnostics.scratchOutRemoval(candidates: drawing.strokes.count, removed: looksLikeScratchOut ? hit.count : 0)
@@ -1810,12 +1807,12 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         let analysis = ScribbleClassifier.analyze(points)
         // Two independent things separate a scratch-out from ordinary writing:
         // the path piles up far more length than its size (a high length
-        // ratio), and it turns back on itself. A gentle scratch-out only
-        // reverses once but still doubles its own length, so one reversal is
-        // enough as long as the ratio is clearly high; a normal curve or "U"
-        // stays under that ratio and is left alone.
-        guard analysis.lengthRatio >= 1.6 else { return false }
-        return analysis.axisReversals >= 1 || analysis.selfIntersections >= 2
+        // ratio), and it turns back on itself many times. Requiring both a
+        // dense, balled-up path (ratio) and roughly 4 back-and-forth passes
+        // (6 axis reversals) means only a genuinely messy scribble — not a
+        // couple of repeated strokes — reaches the erase check.
+        guard analysis.lengthRatio >= 2.2 else { return false }
+        return analysis.axisReversals >= 6 || analysis.selfIntersections >= 5
     }
 
     private func strokeIsCoveredBy(_ stroke: InkStroke, scribble: InkStroke) -> Bool {

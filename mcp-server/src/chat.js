@@ -37,11 +37,11 @@ function code() {
   return Array.from(bytes, value => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[value % 32]).join("");
 }
 
-async function ensureUser(env, key, name = "Studiquoユーザー") {
+async function ensureUser(env, key, name = null) {
   const storageKey = `chat:user:${key}`;
   let user = await env.STUDIQUO_DATA.get(storageKey, "json");
   if (user) {
-    const cleaned = String(name).trim().slice(0, 80);
+    const cleaned = name == null ? "" : String(name).trim().slice(0, 80);
     if (cleaned && cleaned !== user.name) {
       user.name = cleaned;
       await env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
@@ -50,7 +50,7 @@ async function ensureUser(env, key, name = "Studiquoユーザー") {
   }
   let friendCode;
   do { friendCode = code(); } while (await env.STUDIQUO_DATA.get(`chat:code:${friendCode}`));
-  user = { key, name: String(name).trim().slice(0, 80) || "Studiquoユーザー", code: friendCode, friends: [] };
+  user = { key, name: String(name ?? "").trim().slice(0, 80) || "Studiquoユーザー", code: friendCode, friends: [] };
   await Promise.all([
     env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user)),
     env.STUDIQUO_DATA.put(`chat:code:${friendCode}`, key),
