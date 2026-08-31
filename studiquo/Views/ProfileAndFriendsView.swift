@@ -106,6 +106,10 @@ struct FriendMessage: Identifiable, Codable, Hashable {
     var isMine: Bool
 }
 
+struct FriendAttachmentOpenRequest {
+    let attachment: FriendMessageAttachment
+}
+
 @MainActor
 final class FriendStore: ObservableObject {
     @Published var friends: [FriendRecord] = [] { didSet { persist(friends, key: friendsKey) } }
@@ -250,6 +254,7 @@ final class FriendStore: ObservableObject {
 struct FriendsHomeView: View {
     @ObservedObject var store: FriendStore
     let myStudySeconds: TimeInterval
+    var appAttachments: [FriendMessageAttachment] = []
     @State private var showsAdd = false
 
     var body: some View {
@@ -261,7 +266,7 @@ struct FriendsHomeView: View {
                 Section("フレンド") {
                     ForEach(store.friends) { friend in
                         NavigationLink {
-                            FriendChatView(friend: friend, store: store)
+                            FriendChatView(friend: friend, store: store, appAttachments: appAttachments)
                         } label: {
                             HStack {
                                 Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(.tint)
@@ -345,9 +350,7 @@ struct FriendChatView: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(store.messages(for: friend)) { message in
-                        Text(message.text).padding(10).background(message.isMine ? Color.accentColor : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-                            .foregroundStyle(message.isMine ? .white : .primary)
-                            .frame(maxWidth: .infinity, alignment: message.isMine ? .trailing : .leading)
+                        messageRow(message)
                     }
                 }.padding()
             }
@@ -378,11 +381,10 @@ struct FriendChatView: View {
                 }
                 HStack(alignment: .bottom, spacing: 10) {
                     Menu {
-                        Menu("ホーム画面から追加") {
+                        Menu("アプリ内の資料を追加") {
                             ForEach(appAttachments) { item in
                                 Button {
                                     attachments.append(item)
-                                    appendAttachmentText(item)
                                 } label: {
                                     Label(item.title, systemImage: item.icon)
                                 }
@@ -419,9 +421,9 @@ struct FriendChatView: View {
                             .font(.system(size: 15, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 34, height: 34)
-                            .background(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : Color.accentColor, in: Circle())
+                            .background(canSend ? Color.accentColor : .gray, in: Circle())
                     }
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!canSend)
                 }
             }
             .padding(12)
@@ -463,7 +465,6 @@ struct FriendChatView: View {
                         icon: "doc"
                     )
                     attachments.append(attachment)
-                    appendAttachmentText(attachment)
                 }
             }
         }
@@ -478,30 +479,137 @@ struct FriendChatView: View {
                     icon: "photo"
                 )
                 attachments.append(attachment)
-                appendAttachmentText(attachment)
                 selectedPhoto = nil
             }
         }
     }
 
-    private func appendAttachmentText(_ attachment: FriendMessageAttachment) {
-        let line = "【\(attachment.kind)】\(attachment.title)"
-        draft = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? line : "\(draft)\n\(line)"
+    private var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
     }
 
     private func send() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let attachmentText = attachments.map(\.messageLine).joined(separator: "\n")
+        let text = [body, attachmentText].filter { !$0.isEmpty }.joined(separator: "\n")
         store.send(text, to: friend)
         draft = ""
         attachments = []
     }
+
+    private func messageRow(_ message: FriendMessage) -> some View {
+        let parts = FriendMessageParts(text: message.text)
+        return HStack(alignment: .bottom, spacing: 8) {
+            if !message.isMine {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 30)
+            }
+            if message.isMine { Spacer(minLength: 44) }
+            VStack(alignment: message.isMine ? .trailing : .leading, spacing: 4) {
+                if !parts.body.isEmpty {
+                    Text(parts.body)
+                        .padding(10)
+                        .background(message.isMine ? Color.accentColor : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(message.isMine ? .white : .primary)
+                }
+                ForEach(parts.attachments) { attachment in
+                    Button {
+                        NotificationCenter.default.post(
+                            name: Notification.Name("StudiquoOpenFriendAttachment"),
+                            object: FriendAttachmentOpenRequest(attachment: attachment)
+                        )
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: attachment.icon)
+                                .font(.title3)
+                                .foregroundStyle(Color.accentColor)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(attachment.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Text(attachment.kind)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: 260)
+                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Text(Self.timeFormatter.string(from: message.sentAt))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            if !message.isMine { Spacer(minLength: 44) }
+        }
+        .frame(maxWidth: .infinity, alignment: message.isMine ? .trailing : .leading)
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.dateFormat = "H:mm"
+        return formatter
+    }()
 }
 
-struct FriendMessageAttachment: Identifiable, Hashable {
+struct FriendMessageAttachment: Identifiable, Hashable, Codable {
     let id: String
     let title: String
     let kind: String
     let icon: String
+
+    var messageLine: String {
+        let payload = [
+            "id": id,
+            "title": title,
+            "kind": kind,
+            "icon": icon,
+        ]
+        guard let data = try? JSONEncoder().encode(payload),
+              let encoded = String(data: data, encoding: .utf8)?.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return "【\(kind)】\(title)"
+        }
+        return "[studiquo-attachment:\(encoded)]"
+    }
+}
+
+private struct FriendMessageParts {
+    let body: String
+    let attachments: [FriendMessageAttachment]
+
+    init(text: String) {
+        var lines: [String] = []
+        var parsed: [FriendMessageAttachment] = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if line.hasPrefix("[studiquo-attachment:"),
+               line.hasSuffix("]") {
+                let encoded = String(line.dropFirst("[studiquo-attachment:".count).dropLast())
+                if let decoded = encoded.removingPercentEncoding,
+                   let data = decoded.data(using: .utf8),
+                   let payload = try? JSONDecoder().decode([String: String].self, from: data),
+                   let id = payload["id"],
+                   let title = payload["title"],
+                   let kind = payload["kind"],
+                   let icon = payload["icon"] {
+                    parsed.append(FriendMessageAttachment(id: id, title: title, kind: kind, icon: icon))
+                    continue
+                }
+            }
+            lines.append(line)
+        }
+        body = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        attachments = parsed
+    }
 }
 
 private struct QRCodeView: View {
