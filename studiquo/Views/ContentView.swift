@@ -1439,6 +1439,14 @@ struct ContentView: View {
                 openWebTabs.append(tab)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenFriendChatTab"))) { notification in
+            guard let tab = notification.object as? FriendChatTabInfo else { return }
+            openFriendChatTab(tab)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenFriendAttachment"))) { notification in
+            guard let request = notification.object as? FriendAttachmentOpenRequest else { return }
+            openFriendAttachment(request.attachment)
+        }
         .onAppear {
             if selectedNotebook == nil { columnVisibility = .detailOnly }
             refreshStudyNotifications()
@@ -1490,7 +1498,8 @@ struct ContentView: View {
                     store: friendStore,
                     myStudySeconds: studyActivities
                         .filter { Calendar.current.isDateInToday($0.startedAt) }
-                        .reduce(0) { $0 + $1.duration }
+                        .reduce(0) { $0 + $1.duration },
+                    appAttachments: friendMessageAttachmentOptions()
                 )
             }
             Divider()
@@ -1904,6 +1913,64 @@ struct ContentView: View {
 
     private func slideDeckID(_ deck: SlideDeck) -> String {
         String(describing: deck.persistentModelID)
+    }
+
+    private func openFriendAttachment(_ attachment: FriendMessageAttachment) {
+        let parts = attachment.id.split(separator: "-", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return }
+        switch parts[0] {
+        case "notebook":
+            guard let notebook = allNotebooks.first(where: { notebookID($0) == parts[1] && !$0.isTrashed }) else { return }
+            selectNotebookTab(notebook)
+        case "deck":
+            guard let deck = flashcardDecks.first(where: { deckID($0) == parts[1] && !$0.isTrashed }) else { return }
+            selectFlashcardTab(deck)
+        case "document":
+            guard let document = textDocuments.first(where: { textDocumentID($0) == parts[1] && !$0.isTrashed }) else { return }
+            openTextDocument(document)
+        case "slide":
+            guard let deck = slideDecks.first(where: { slideDeckID($0) == parts[1] && !$0.isTrashed }) else { return }
+            openSlideDeck(deck)
+        default:
+            return
+        }
+    }
+
+    private func friendMessageAttachmentOptions() -> [FriendMessageAttachment] {
+        var options: [FriendMessageAttachment] = []
+        options.append(contentsOf: allNotebooks.filter { !$0.isTrashed }.map {
+            FriendMessageAttachment(
+                id: "notebook-\(String(describing: $0.persistentModelID))",
+                title: $0.title,
+                kind: $0.containsPDF ? "PDF" : "ノート",
+                icon: $0.containsPDF ? "doc.richtext" : "note.text"
+            )
+        })
+        options.append(contentsOf: flashcardDecks.filter { !$0.isTrashed }.map {
+            FriendMessageAttachment(
+                id: "deck-\(String(describing: $0.persistentModelID))",
+                title: $0.title,
+                kind: "暗記カード",
+                icon: "rectangle.on.rectangle.angled"
+            )
+        })
+        options.append(contentsOf: textDocuments.filter { !$0.isTrashed }.map {
+            FriendMessageAttachment(
+                id: "document-\(String(describing: $0.persistentModelID))",
+                title: $0.title,
+                kind: "文書",
+                icon: "doc.text"
+            )
+        })
+        options.append(contentsOf: slideDecks.filter { !$0.isTrashed }.map {
+            FriendMessageAttachment(
+                id: "slide-\(String(describing: $0.persistentModelID))",
+                title: $0.title,
+                kind: "スライド",
+                icon: "rectangle.on.rectangle"
+            )
+        })
+        return options
     }
 
     private func handleTabDrop(_ value: String) -> Bool {
