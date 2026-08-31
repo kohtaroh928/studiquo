@@ -879,11 +879,15 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             guard let start = self.strokeStartLocation, let current = self.lastMovementLocation else { return }
             let distanceFromStart = hypot(current.x - start.x, current.y - start.y)
 
-            // A scribble is an erase gesture, not a shape to correct. Skip
-            // the hold-to-straighten lock so the scribble reaches the erase
-            // check on lift instead of being committed as a straightened line.
+            // A scribble is an erase gesture, not a shape to correct. If the
+            // stroke so far turns back on itself over existing ink, don't let
+            // the hold lock it into a shape — leave it for the erase check on
+            // lift. Uses the same loose motion test as the erase path so a
+            // brief pause mid-scribble can't turn it into a line or ellipse.
+            let preview = self.previewStroke()
             if !self.isHighlighter, self.isScratchOutEnabled,
-               self.isScribble(self.previewStroke()) {
+               Self.hasScratchMotion(preview.points.map(\.location)),
+               self.drawing.strokes.contains(where: { self.strokeIsCoveredBy($0, scribble: preview) }) {
                 return
             }
 
@@ -1199,17 +1203,26 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             isHighlighter: isHighlighter
         )
 
-        // Scribble-to-erase is checked first, against the raw points, so a
-        // scribble erases even when the hold timer already locked a shape
-        // mid-stroke. A scribble that loops back near its own start is still
-        // a scribble, not a circle someone drew fast.
-        if !isHighlighter, isScratchOutEnabled, isScribble(rawStroke, emitsDiagnostics: true) {
-            // Classify first, then run the comparatively expensive hit test.
-            // Keeping these stages ordered also prevents an ordinary line
-            // which merely touches old ink from entering the erase path.
+        // Scratch-out erase.
+        //
+        // Shape correction only ever engages when the pencil is *held still*
+        // (see `startHoldTimer`), so a stroke the user drew and lifted quickly
+        // has no correction lock — and that alone tells us it is not a shape.
+        // That lets the scribble test be generous instead of trying to
+        // recognise a scribble from its shape in isolation, which is what kept
+        // real scratch-outs from erasing.
+        //
+        // The one thing that separates a scratch-out from ordinary writing is
+        // that it lands *on top of existing ink* and doubles back over it. So
+        // the rule is simply: not a correction, overlaps ink, and turns back
+        // on itself.
+        let correctionLocked = isStraightened || isEllipseLocked
+            || isRectangleLocked || isTriangleLocked || isParabolaLocked
+        if !isHighlighter, isScratchOutEnabled, !correctionLocked {
             let hit = drawing.strokes.filter { strokeIsCoveredBy($0, scribble: rawStroke) }
-            GestureDiagnostics.scratchOutRemoval(candidates: drawing.strokes.count, removed: hit.count)
-            if !hit.isEmpty {
+            let looksLikeScratchOut = !hit.isEmpty && Self.hasScratchMotion(rawStroke.points.map(\.location))
+            GestureDiagnostics.scratchOutRemoval(candidates: drawing.strokes.count, removed: looksLikeScratchOut ? hit.count : 0)
+            if looksLikeScratchOut {
                 let hitIDs = Set(hit.map(\.id))
                 drawing.strokes.removeAll { hitIDs.contains($0.id) }
                 withoutImplicitAnimations { removeCommittedLayers(ids: hitIDs) }
@@ -1785,22 +1798,24 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     // MARK: Scribble-to-erase
 
-    /// A deliberate scratch-out gesture is messy, compact ink drawn over an
-    /// existing stroke. It might be a zig-zag, a tight circular scribble, or
-    /// a small back-and-forth hatch, so don't rely on just one signal.
-    private func isScribble(_ stroke: InkStroke, emitsDiagnostics: Bool = false) -> Bool {
-        let analysis = ScribbleClassifier.analyze(stroke.points.map(\.location))
-        if emitsDiagnostics {
-            GestureDiagnostics.scratchOutCheck(
-                points: stroke.points.count,
-                directionChanges: analysis.directionChanges,
-                reversals: analysis.axisReversals,
-                intersections: analysis.selfIntersections,
-                lengthRatio: analysis.lengthRatio,
-                qualifies: analysis.qualifies
-            )
-        }
-        return analysis.qualifies
+    /// Whether a stroke turns back on itself the way a scratch-out does, as
+    /// opposed to ordinary writing or a single clean loop.
+    ///
+    /// Deliberately loose: this only decides erase *after* the stroke is known
+    /// to overlap existing ink and to not be a correction, so it needs to
+    /// catch as many real scratch-outs as possible. A single loop (one
+    /// self-crossing, no axis reversal) is still excluded so drawing an "O"
+    /// over a line does not wipe it out.
+    static func hasScratchMotion(_ points: [CGPoint]) -> Bool {
+        let analysis = ScribbleClassifier.analyze(points)
+        // Two independent things separate a scratch-out from ordinary writing:
+        // the path piles up far more length than its size (a high length
+        // ratio), and it turns back on itself. A gentle scratch-out only
+        // reverses once but still doubles its own length, so one reversal is
+        // enough as long as the ratio is clearly high; a normal curve or "U"
+        // stays under that ratio and is left alone.
+        guard analysis.lengthRatio >= 1.6 else { return false }
+        return analysis.axisReversals >= 1 || analysis.selfIntersections >= 2
     }
 
     private func strokeIsCoveredBy(_ stroke: InkStroke, scribble: InkStroke) -> Bool {
@@ -1811,7 +1826,11 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         // lines that are stored with only two endpoints.
         let samples = Self.linearlyResampled(stroke.points, maxSpacing: 6).map(\.location)
         guard !samples.isEmpty else { return false }
-        let radius = max(14, stroke.width + scribble.width + 8)
+        // Kept constant in *screen* points by dividing out the page/display
+        // scale, so a scratch-out is no harder to land in a split pane (where
+        // page units are larger than screen points) than full screen.
+        let scale = max(contentScale, 0.0001)
+        let radius = max(14, stroke.width + scribble.width + 8) / scale
         // A scribble over any part of a stroke removes that stroke. Requiring
         // a percentage of the *whole* stroke made long corrected lines nearly
         // impossible to erase because a local scribble covered too little of

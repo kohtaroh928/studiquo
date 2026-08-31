@@ -2,7 +2,8 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "studiquo-mcp",
   "main": "src/worker.js",
-  "compatibility_date": "2026-08-29",
+  "compatibility_date": "2026-08-27",
+  "compatibility_flags": ["nodejs_compat"],
   "kv_namespaces": [
     {
       "binding": "STUDIQUO_DATA",
@@ -13,6 +14,14 @@
       "preview_id": "e117147925524e4080947d43af2cc09d"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "CHAT_ROOM", "class_name": "ChatRoom" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1-chat", "new_sqlite_classes": ["ChatRoom"] }
+  ],
   "vars": {
     // Marking asks for structured output, and Gemini emits that only once the
     // whole document is ready — nothing streams in the meantime. On the
@@ -22,6 +31,8 @@
     "GEMINI_GRADING_MODEL": "gemini-3.5-flash"
   },
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.05 }
   }
 }

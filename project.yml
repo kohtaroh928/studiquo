@@ -10,11 +10,8 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: studiquo
-    info:
-      path: studiquo/Info.plist
-      properties:
-        UILaunchScreen:
-          UIColorName: LaunchBackground
+    entitlements:
+      path: studiquo/studiquo.entitlements
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "2"
@@ -27,6 +24,19 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_NSFaceIDUsageDescription: "ロックしたノートを安全に開くためにFace IDを使用します。"
         INFOPLIST_KEY_NSCameraUsageDescription: "授業資料や書類をスキャンしてノートに取り込むためにカメラを使用します。"
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "AIトークの通話機能と文字起こし機能で音声を入力するためにマイクを使用します。"
         ENABLE_PREVIEWS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    info:
+      path: studiquo/Info.plist
+      properties:
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        NSFaceIDUsageDescription: "ロックしたノートを安全に開くためにFace IDを使用します。"
+        NSCameraUsageDescription: "授業資料やQRコードを読み取るためにカメラを使用します。"
+        NSMicrophoneUsageDescription: "AIトークの通話機能と文字起こし機能で音声を入力するためにマイクを使用します。"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.yabuko.studiquo.friend
+            CFBundleURLSchemes:
+              - studiquo

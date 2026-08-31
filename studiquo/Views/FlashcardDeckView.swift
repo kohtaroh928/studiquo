@@ -35,11 +35,29 @@ struct FlashcardDeckView: View {
             .background(.bar)
             Divider()
 
-            Picker("モード", selection: $mode) {
-                ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
+            HStack {
+                if mode == .edit {
+                    Button {
+                        mode = .study
+                    } label: {
+                        Label("暗記する", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.indigo)
+                    .disabled(deck.cards.isEmpty)
+                } else {
+                    Button {
+                        mode = .edit
+                    } label: {
+                        Label("カード作成へ戻る", systemImage: "rectangle.stack.badge.plus")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                Spacer()
             }
-            .pickerStyle(.segmented)
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color(uiColor: .secondarySystemBackground))
 
             if mode == .edit { editor }
             else { study }
@@ -209,35 +227,31 @@ struct FlashcardStudyContent: View {
                 }
 
                 VStack(spacing: 20) {
-                    Text(deck.reversesQuestionAndAnswer ? card.answer : card.question)
-                        .font(.title2.bold())
-                        .multilineTextAlignment(.center)
-                    if showsAnswer {
-                        Divider()
-                        Text(deck.reversesQuestionAndAnswer ? card.question : card.answer)
-                            .font(.title3)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.teal)
-                    }
+                    Text(showsAnswer
+                         ? (deck.reversesQuestionAndAnswer ? card.question : card.answer)
+                         : (deck.reversesQuestionAndAnswer ? card.answer : card.question))
+                    .font(showsAnswer ? .title3 : .title2.bold())
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(showsAnswer ? .teal : .primary)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.background, in: RoundedRectangle(cornerRadius: 24))
                 .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.indigo.opacity(0.22), lineWidth: 2))
                 .shadow(color: .indigo.opacity(0.12), radius: 14, y: 6)
+                .contentShape(RoundedRectangle(cornerRadius: 24))
+                .onTapGesture {
+                    showsAnswer.toggle()
+                }
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
 
                 if showsAnswer {
                     HStack(spacing: 12) {
                         gradeButton("不正解", icon: "xmark", color: .red) { grade(correct: false) }
                         gradeButton("正解", icon: "checkmark", color: .green) { grade(correct: true) }
                     }
-                } else {
-                    Button("答えを見る", systemImage: "eye.fill") {
-                        withAnimation { showsAnswer = true }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.indigo)
-                    .controlSize(.large)
                 }
             }
             .padding(18)

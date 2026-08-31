@@ -16,40 +16,29 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.yabuko.studiquo.friend</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>studiquo</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSCameraUsageDescription</key>
-	<string>AIトークに読み込む資料を撮影するためにカメラを使用します。</string>
+	<string>授業資料やQRコードを読み取るためにカメラを使用します。</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>ロックしたノートを安全に開くためにFace IDを使用します。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>AIトークの通話機能と文字起こし機能で音声を入力するためにマイクを使用します。</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>AIトークの通話機能と文字起こし機能で話した内容を文字に変換するために音声認識を使用します。</string>
-	<key>UTExportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.studiquo.page-snippet</string>
-			<key>UTTypeDescription</key>
-			<string>Studiquo page snippet</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict/>
-		</dict>
-	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
 		<string>LaunchBackground</string>
 	</dict>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
 </dict>
 </plist>

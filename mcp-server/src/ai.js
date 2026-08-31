@@ -48,7 +48,30 @@ const DEFAULT_GLOBAL_CHAT_LIMIT = 1500;
 const DEFAULT_GLOBAL_GRADING_LIMIT = 150;
 
 function json(value, status = 200) {
-  return Response.json(value, { status, headers: { "cache-control": "no-store" } });
+  return Response.json(value, { status, headers: {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+  } });
+}
+
+async function readJSONLimited(request, maximumBytes = 20_000_000) {
+  const declaredSize = Number(request.headers.get("content-length") ?? 0);
+  if (declaredSize > maximumBytes || !request.body) return null;
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let text = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    if (received > maximumBytes) { await reader.cancel(); return null; }
+    text += decoder.decode(value, { stream: true });
+  }
+  text += decoder.decode();
+  try { return JSON.parse(text); } catch { return null; }
 }
 
 function model(env, kind) {
@@ -163,7 +186,7 @@ const CHAT_SYSTEM = `あなたは学習アプリ「Studiquo」に組み込まれ
  * instead of Gemini's full candidate envelope.
  */
 async function handleChat(request, env, key, ctx) {
-  const payload = await request.json().catch(() => null);
+  const payload = await readJSONLimited(request);
   const turns = Array.isArray(payload?.messages) ? payload.messages : [];
   if (turns.length === 0) return json({ error: "messages is required." }, 400);
   const requestedImages = Array.isArray(payload?.images)
@@ -199,7 +222,10 @@ async function handleChat(request, env, key, ctx) {
     system += `\n\n参考として、学生がいま開いているノートの本文を渡します。質問がこの内容に関係する場合はこれを踏まえて答えてください。関係しない場合は無視してください。\n\n<note>\n${context.slice(0, 8000)}\n</note>`;
   }
 
-  const recentTurns = turns.slice(-20);
+  const recentTurns = turns.slice(-20).map(turn => ({
+    role: turn?.role === "assistant" ? "assistant" : "user",
+    text: String(turn?.text ?? "").slice(0, 20_000),
+  }));
   const contents = recentTurns.map((turn, index) => {
     const parts = [{ text: String(turn.text ?? "") }];
     if (images.length && index === recentTurns.length - 1 && turn.role !== "assistant") {
@@ -295,6 +321,7 @@ async function handleChat(request, env, key, ctx) {
     headers: {
       "content-type": "text/event-stream",
       "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
       "x-studiquo-images-received": String(images.length),
     },
   });
@@ -414,13 +441,13 @@ async function handleRubric(request, env, key, ctx) {
   ))) {
     return json({ error: "今日の添削回数の上限に達しました。明日また使えます。" }, 429);
   }
-  const payload = await request.json().catch(() => null);
-  const question = String(payload?.question ?? "").trim();
-  const modelAnswer = String(payload?.modelAnswer ?? "").trim();
+  const payload = await readJSONLimited(request);
+  const question = String(payload?.question ?? "").trim().slice(0, 20_000);
+  const modelAnswer = String(payload?.modelAnswer ?? "").trim().slice(0, 30_000);
   const questionImage = String(payload?.questionImageBase64 ?? "");
   // Either a picture of the exercise or a typed model answer is enough to
   // build a scheme from; with neither there is nothing to mark against.
-  if (!questionImage && !modelAnswer) {
+  if ((questionImage && !isPNGBase64(questionImage)) || (!questionImage && !modelAnswer)) {
     return json({ error: "questionImageBase64 or modelAnswer is required." }, 400);
   }
 
@@ -540,13 +567,16 @@ async function handleGrade(request, env, key, ctx) {
   ))) {
     return json({ error: "今日の添削回数の上限に達しました。明日また使えます。" }, 429);
   }
-  const payload = await request.json().catch(() => null);
-  const question = String(payload?.question ?? "").trim();
-  const answerText = String(payload?.answerText ?? "").trim();
+  const payload = await readJSONLimited(request);
+  const question = String(payload?.question ?? "").trim().slice(0, 20_000);
+  const answerText = String(payload?.answerText ?? "").trim().slice(0, 30_000);
   const image = String(payload?.imageBase64 ?? "");
   const questionImage = String(payload?.questionImageBase64 ?? "");
-  const criteria = Array.isArray(payload?.criteria) ? payload.criteria : [];
+  const criteria = Array.isArray(payload?.criteria) ? payload.criteria.slice(0, 20) : [];
   // The answer may be a photograph of handwriting or typed out in the chat.
+  if ((image && !isPNGBase64(image)) || (questionImage && !isPNGBase64(questionImage))) {
+    return json({ error: "Invalid image data." }, 400);
+  }
   if (!image && !answerText) {
     return json({ error: "imageBase64 or answerText is required." }, 400);
   }
@@ -600,6 +630,7 @@ export async function handleAI(url, request, env, key, ctx) {
   } catch (error) {
     // Without this, a missing GEMINI_API_KEY surfaced as a bare 500 with no
     // hint of the cause.
-    return json({ error: error?.message ?? "AI request failed." }, 500);
+    console.error(JSON.stringify({ message: "AI request failed", error: error instanceof Error ? error.message : String(error) }));
+    return json({ error: "AI request failed." }, 500);
   }
 }

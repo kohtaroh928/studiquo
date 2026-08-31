@@ -1,10 +1,23 @@
-import { createMcpHandler } from "agents/mcp/server";
-import { McpServer } from "@modelcontextprotocol/server";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import * as z from "zod/v4";
 import { handleAI } from "./ai.js";
+import { associationFile, handlePasskeys } from "./passkeys.js";
+import { handleChat } from "./chat.js";
+export { ChatRoom } from "./chat-room.js";
 
 function json(value, status = 200) {
-  return Response.json(value, { status, headers: { "cache-control": "no-store" } });
+  return Response.json(value, { status, headers: securityHeaders() });
+}
+
+function securityHeaders(extra = {}) {
+  return {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+    ...extra,
+  };
 }
 
 function bearer(request) {
@@ -35,6 +48,7 @@ async function queueAction(env, key, action) {
   const storageKey = `actions:${key}`;
   const existing = await env.STUDIQUO_DATA.get(storageKey, "json");
   const actions = Array.isArray(existing) ? existing : [];
+  if (actions.length >= 1_000) throw new Error("Too many pending actions. Sync the app before adding more.");
   actions.push(action);
   await env.STUDIQUO_DATA.put(storageKey, JSON.stringify(actions));
 }
@@ -68,7 +82,7 @@ function createServer(env, key) {
     {
       description: "Search notebook titles, page titles, and on-device OCR text.",
       inputSchema: z.object({
-        query: z.string().min(1),
+        query: z.string().min(1).max(500),
         limit: z.number().int().min(1).max(100).default(20)
       })
     },
@@ -128,8 +142,8 @@ function createServer(env, key) {
       inputSchema: z.object({
         deckTitle: z.string().min(1).max(100),
         cards: z.array(z.object({
-          question: z.string().min(1),
-          answer: z.string().min(1)
+          question: z.string().min(1).max(4_000),
+          answer: z.string().min(1).max(8_000)
         })).min(1).max(200)
       })
     },
@@ -162,19 +176,31 @@ function createServer(env, key) {
 
 async function handleMCP(request, env) {
   const token = bearer(request);
-  if (!token || token.length < 32) return json({ error: "A 32+ character bearer token is required." }, 401);
+  if (!token || token.length < 32 || token.length > 256) return json({ error: "A valid bearer token is required." }, 401);
   const key = await userKey(token);
   if (!(await env.STUDIQUO_DATA.get(`snapshot:${key}`))) {
     return json({ error: "Run sync in Studiquo before connecting an AI client." }, 401);
   }
-  const handler = createMcpHandler(() => createServer(env, key));
-  return handler.fetch(request);
+  const server = createServer(env, key);
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+  await server.connect(transport);
+  return transport.handleRequest(request);
 }
 
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    if (url.pathname === "/health") return json({ ok: true, service: "studiquo-mcp" });
+    try {
+      const url = new URL(request.url);
+      if (url.pathname === "/health") return json({ ok: true, service: "studiquo-mcp" });
+      if (url.pathname === "/.well-known/apple-app-site-association") return associationFile();
+
+      const passkeys = await handlePasskeys(url, request, env);
+      if (passkeys) return passkeys;
+      const chat = await handleChat(url, request, env);
+      if (chat) return chat;
 
     if (url.pathname === "/mcp") {
       return handleMCP(request, env);
@@ -182,12 +208,14 @@ export default {
 
     if (url.pathname.startsWith("/api/")) {
       const token = bearer(request);
-      if (!token || token.length < 32) return json({ error: "A 32+ character bearer token is required." }, 401);
+      if (!token || token.length < 32 || token.length > 256) return json({ error: "A valid bearer token is required." }, 401);
       const key = await userKey(token);
 
       if (url.pathname === "/api/snapshot" && request.method === "PUT") {
-        const body = await request.text();
-        if (body.length > 8_000_000) return json({ error: "Snapshot is too large." }, 413);
+        const declaredSize = Number(request.headers.get("content-length") ?? 0);
+        if (declaredSize > 8_000_000) return json({ error: "Snapshot is too large." }, 413);
+        const body = await readTextLimited(request, 8_000_000);
+        if (body == null) return json({ error: "Snapshot is too large." }, 413);
         let parsed;
         try {
           parsed = JSON.parse(body);
@@ -219,6 +247,28 @@ export default {
       return json({ error: "Not found" }, 404);
     }
 
-    return json({ error: "Not found" }, 404);
+      return json({ error: "Not found" }, 404);
+    } catch (error) {
+      console.error(JSON.stringify({ message: "request failed", error: error instanceof Error ? error.message : String(error) }));
+      return json({ error: "Internal server error." }, 500);
+    }
   }
 };
+
+async function readTextLimited(request, maximumBytes) {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let result = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) return result + decoder.decode();
+    received += value.byteLength;
+    if (received > maximumBytes) {
+      await reader.cancel();
+      return null;
+    }
+    result += decoder.decode(value, { stream: true });
+  }
+}

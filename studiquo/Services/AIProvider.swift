@@ -86,7 +86,9 @@ final class WorkerAIProvider: AIProvider {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if raw.isEmpty { raw = Self.defaultEndpoint }
         raw = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return URL(string: raw)
+        guard let url = URL(string: raw), url.scheme?.lowercased() == "https",
+              url.host?.isEmpty == false, url.user == nil, url.password == nil else { return nil }
+        return url
     }
 
     var isConfigured: Bool { baseURL != nil }

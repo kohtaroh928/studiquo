@@ -50,7 +50,7 @@ enum ClaudeChatService {
         guard !trimmed.isEmpty else { return }
         var item = base
         item[kSecValueData as String] = Data(trimmed.utf8)
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         SecItemAdd(item as CFDictionary, nil)
     }
 
