@@ -19,7 +19,7 @@ import PDFKit
 /// Writing the document back out without any encryption options produces a
 /// plain copy in both cases.
 enum PDFPasswordService {
-    enum ServiceError: LocalizedError {
+    enum ServiceError: LocalizedError, Equatable {
         case cannotRead
         case wrongPassword
         case notProtected
@@ -60,17 +60,16 @@ enum PDFPasswordService {
 
     /// Unlocks `url` with `password`, returning the open document.
     ///
-    /// Throws `notProtected` when there was nothing to unlock, so a caller
-    /// prompting for a password can tell the student the prompt was
-    /// unnecessary rather than silently doing nothing.
+    /// Returns the document untouched when there was nothing to unlock — no
+    /// user password, only owner restrictions, which `removePassword` strips
+    /// but which this call has no password to check.
     static func unlock(_ url: URL, password: String) throws -> PDFDocument {
         guard let document = PDFDocument(url: url) else { throw ServiceError.cannotRead }
-        guard document.isLocked else {
-            // Already readable. It may still be owner-restricted, which
-            // `removePassword` strips — but there is no user password to check
-            // here, so an unlock request against it is a no-op to report.
-            return document
-        }
+        // Whether a real password is needed is decided through `needsPassword`
+        // rather than `PDFDocument.isLocked` — the latter proved unreliable,
+        // misreporting `false` for some encrypted files (see `needsPassword`),
+        // which let a wrong password through unchecked here.
+        guard needsPassword(url) else { return document }
         guard document.unlock(withPassword: password) else { throw ServiceError.wrongPassword }
         return document
     }
@@ -117,6 +116,28 @@ enum PDFPasswordService {
         }
         context.closePDF()
         return destination
+    }
+
+    /// What the "remove password" flow should do next for `url`, decided
+    /// purely from the file's protection state so the routing itself is
+    /// testable without any view state.
+    ///
+    /// Keeping this a single switch point (rather than nested guards each
+    /// touching their own piece of view state) is what stops the
+    /// not-protected case from ever being wired to the same pending state as
+    /// a real password prompt again.
+    enum RemovalOutcome: Equatable {
+        /// Nothing to remove — a dead end to report, not a password prompt.
+        case notProtected
+        /// A user password gates the file; prompt for it.
+        case needsPassword
+        /// Only owner restrictions; strip immediately with an empty password.
+        case readyToStripImmediately
+    }
+
+    static func removalOutcome(for url: URL) -> RemovalOutcome {
+        guard isProtected(url) else { return .notProtected }
+        return needsPassword(url) ? .needsPassword : .readyToStripImmediately
     }
 
     /// A temp URL for the stripped copy. It lives in its own temporary folder

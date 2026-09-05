@@ -1,3 +1,5 @@
+import AuthenticationServices
+import GoogleSignInSwift
 import SwiftUI
 
 struct AccountGateView: View {
@@ -6,10 +8,10 @@ struct AccountGateView: View {
     var body: some View {
         Group {
             switch authentication.state {
-            case .needsAccount:
-                AccountFormView(mode: .create)
             case .needsLogin:
-                AccountFormView(mode: .login)
+                LoginView()
+            case .verifyingEmail:
+                EmailVerificationView()
             case .onboarding:
                 OnboardingView()
             case .authenticated:
@@ -21,14 +23,12 @@ struct AccountGateView: View {
     }
 }
 
-private struct AccountFormView: View {
-    enum Mode { case create, login }
-    let mode: Mode
+private struct LoginView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
     @State private var email = ""
     @State private var password = ""
-    @State private var confirmation = ""
     @State private var showsReset = false
+    @State private var showsCreateAccount = false
 
     var body: some View {
         NavigationStack {
@@ -39,26 +39,21 @@ private struct AccountFormView: View {
                     .foregroundStyle(.tint)
                 VStack(spacing: 8) {
                     Text("Studiquo").font(.largeTitle.bold())
-                    Text(mode == .create ? "学習を始めるためのアカウントを作成" : "おかえりなさい")
-                        .foregroundStyle(.secondary)
+                    Text("おかえりなさい").foregroundStyle(.secondary)
                 }
                 VStack(spacing: 14) {
                     TextField("メールアドレス", text: $email)
                         .textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never)
                         .accountFieldStyle()
-                    SecureField("パスワード（8文字以上）", text: $password)
-                        .textContentType(mode == .create ? .newPassword : .password)
+                    SecureField("パスワード", text: $password)
+                        .textContentType(.password)
                         .accountFieldStyle()
-                    if mode == .create {
-                        SecureField("パスワードをもう一度入力", text: $confirmation)
-                            .textContentType(.newPassword).accountFieldStyle()
-                    }
                     if !authentication.errorMessage.isEmpty {
                         Text(authentication.errorMessage).font(.footnote).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Button(mode == .create ? "アカウントを作成" : "ログイン") { submit() }
+                    Button("ログイン") { Task { _ = await authentication.login(email: email, password: password) } }
                         .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
-                        .disabled(email.isEmpty || password.isEmpty || (mode == .create && confirmation.isEmpty))
+                        .disabled(email.isEmpty || password.isEmpty || authentication.isLoginBusy)
                     Button {
                         Task { await authentication.loginWithPasskey() }
                     } label: {
@@ -68,60 +63,129 @@ private struct AccountFormView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .disabled(authentication.isPasskeyBusy)
-                    if mode == .login {
-                        Button("パスワードを忘れた場合") { showsReset = true }.font(.subheadline)
+                    SignInWithAppleButton(.signIn) { request in
+                        request.requestedScopes = [.email]
+                    } onCompletion: { result in
+                        Task { await authentication.loginWithApple(result: result) }
                     }
+                    .signInWithAppleButtonStyle(.black)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .disabled(authentication.isAppleSignInBusy)
+                    GoogleSignInButton {
+                        Task { await authentication.loginWithGoogle() }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .disabled(authentication.isGoogleSignInBusy)
+                    Button("パスワードを忘れた場合") { showsReset = true }.font(.subheadline)
+                    Button("アカウントをお持ちでない方はこちら") { showsCreateAccount = true }.font(.subheadline)
                 }
                 .frame(maxWidth: 480)
                 Spacer()
             }
             .padding(32)
-            .sheet(isPresented: $showsReset) { PasswordResetView() }
-        }
-    }
-
-    private func submit() {
-        if mode == .create {
-            guard password == confirmation else {
-                authentication.errorMessage = "確認用パスワードが一致しません。"
-                return
-            }
-            _ = authentication.createAccount(email: email, password: password)
-        } else {
-            _ = authentication.login(email: email, password: password)
+            .navigationDestination(isPresented: $showsReset) { CreateAccountView(isPasswordReset: true) }
+            .navigationDestination(isPresented: $showsCreateAccount) { CreateAccountView() }
         }
     }
 }
 
-private struct PasswordResetView: View {
+private struct CreateAccountView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
     @Environment(\.dismiss) private var dismiss
+    var isPasswordReset = false
     @State private var email = ""
     @State private var password = ""
-    @State private var confirmation = ""
+
+    var body: some View {
+        VStack(spacing: 28) {
+            Spacer()
+            Image(systemName: isPasswordReset ? "key.fill" : "person.crop.circle.badge.plus")
+                .font(.system(size: 54))
+                .foregroundStyle(.tint)
+            VStack(spacing: 8) {
+                Text(isPasswordReset ? "パスワードを再設定" : "アカウントを作成").font(.largeTitle.bold())
+                Text(isPasswordReset ? "登録済みのメールアドレスと新しいパスワードを入力" : "学習を始めるためのアカウントを作成").foregroundStyle(.secondary)
+            }
+            VStack(spacing: 14) {
+                TextField("メールアドレス", text: $email)
+                    .textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never)
+                    .accountFieldStyle()
+                SecureField(isPasswordReset ? "新しいパスワード（8文字以上）" : "パスワード（8文字以上）", text: $password)
+                    .textContentType(.newPassword)
+                    .accountFieldStyle()
+                if !authentication.errorMessage.isEmpty {
+                    Text(authentication.errorMessage).font(.footnote).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Button("確認コードを送信") {
+                    Task { _ = await authentication.beginAccountCreation(email: email, password: password) }
+                }
+                .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+                .disabled(email.isEmpty || password.isEmpty || authentication.isEmailVerifyBusy)
+            }
+            .frame(maxWidth: 480)
+            Spacer()
+        }
+        .padding(32)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } } }
+    }
+}
+
+private struct EmailVerificationView: View {
+    @EnvironmentObject private var authentication: AuthenticationStore
+    @State private var code = ""
+    @State private var didResend = false
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("本人確認") {
-                    TextField("登録したメールアドレス", text: $email).keyboardType(.emailAddress).textInputAutocapitalization(.never)
+            VStack(spacing: 24) {
+                Spacer()
+                Image(systemName: "envelope.badge.fill")
+                    .font(.system(size: 48))
+                    .foregroundStyle(.tint)
+                VStack(spacing: 8) {
+                    Text("メールアドレスを確認").font(.title2.bold())
+                    Text("\(authentication.pendingSignUpEmail) に届いた6桁のコードを入力してください。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
-                Section("新しいパスワード") {
-                    SecureField("8文字以上", text: $password)
-                    SecureField("もう一度入力", text: $confirmation)
-                }
-                if !authentication.errorMessage.isEmpty { Text(authentication.errorMessage).foregroundStyle(.red) }
-                Button("パスワードを再設定") {
-                    guard password == confirmation else {
-                        authentication.errorMessage = "確認用パスワードが一致しません。"
-                        return
+                TextField("確認コード", text: $code)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.center)
+                    .font(.title2.monospacedDigit())
+                    .accountFieldStyle()
+                    .frame(maxWidth: 240)
+                    .onChange(of: code) { _, newValue in
+                        code = String(newValue.filter(\.isNumber).prefix(6))
                     }
-                    if authentication.resetPassword(email: email, newPassword: password) { dismiss() }
+                if !authentication.errorMessage.isEmpty {
+                    Text(authentication.errorMessage).font(.footnote).foregroundStyle(.red)
+                } else if didResend {
+                    Text("コードを再送信しました。").font(.footnote).foregroundStyle(.secondary)
                 }
-                .disabled(email.isEmpty || password.isEmpty || confirmation.isEmpty)
+                Button("確認") {
+                    Task {
+                        didResend = false
+                        if await authentication.confirmEmailVerification(code: code) { code = "" }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(code.count != 6 || authentication.isEmailVerifyBusy)
+                Button("コードを再送信") {
+                    Task {
+                        didResend = await authentication.requestEmailVerification()
+                    }
+                }
+                .font(.subheadline)
+                .disabled(authentication.isEmailVerifyBusy)
+                Button("キャンセル", role: .destructive) { authentication.cancelAccountCreation() }
+                    .font(.subheadline)
+                Spacer()
             }
-            .navigationTitle("パスワード再設定")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } } }
+            .padding(32)
+            .frame(maxWidth: 480)
         }
     }
 }

@@ -20,7 +20,7 @@ enum PageRotationService {
             page.drawingData = try? drawing.transformed(by: transform).data()
         }
 
-        for element in page.elements {
+        for element in page.allElements {
             let oldX = element.centerX
             element.centerX = 1 - element.centerY
             element.centerY = oldX

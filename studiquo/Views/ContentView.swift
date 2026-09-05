@@ -509,7 +509,7 @@ private struct TabPickerView: View {
                                     .foregroundStyle(notebook.containsPDF ? .red : .blue)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(notebook.title).lineLimit(1)
-                                    Text("\(notebook.pages.count)ページ")
+                                    Text("\(notebook.sortedPages.count)ページ")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -534,7 +534,7 @@ private struct TabPickerView: View {
                                     .foregroundStyle(.indigo)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(deck.title).lineLimit(1)
-                                    Text("\(deck.cards.count)枚")
+                                    Text("\(deck.sortedCards.count)枚")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -665,8 +665,56 @@ private struct AppSettingsView: View {
 enum MCPCloudCredentials {
     private static let service = "com.yabuko.studiquo.mcp"
     private static let account = "cloud-token"
+    /// How long a generated token stays valid before the server starts rejecting it.
+    /// Keep in sync with `VALIDITY_SECONDS` in mcp-server/src/token.js.
+    static let validityPeriod: TimeInterval = 90 * 24 * 60 * 60
 
     static func loadOrCreateToken() -> String {
+        if let value = currentToken(), value.count >= 32, !isExpired(value) { return value }
+        return generateAndSaveNewToken()
+    }
+
+    /// True once the token's embedded issue date is older than `validityPeriod`,
+    /// or if the token predates this format and carries no issue date at all.
+    static func isExpired(_ token: String) -> Bool {
+        guard let issuedAt = issuedAt(of: token) else { return true }
+        return Date().timeIntervalSince(issuedAt) > validityPeriod
+    }
+
+    /// Tokens are `"<issued-at epoch seconds>.<random secret>"` so the server
+    /// can enforce expiry without having to remember when it first saw a token.
+    private static func issuedAt(of token: String) -> Date? {
+        guard let dot = token.firstIndex(of: "."),
+              let epochSeconds = Double(token[token.startIndex..<dot]) else { return nil }
+        return Date(timeIntervalSince1970: epochSeconds)
+    }
+
+    /// Mints a token with a fresh issue date, saves it, and returns it. Every
+    /// place that hands the user a "new" token (auto-rotation, the manual
+    /// "generate a new token" button) must go through this, not build its own
+    /// UUID string, or the result won't carry the issue date the server checks.
+    static func generateAndSaveNewToken() -> String {
+        let value = makeToken()
+        save(value)
+        return value
+    }
+
+    private static func makeToken() -> String {
+        let issuedAt = Int(Date().timeIntervalSince1970)
+        return "\(issuedAt).\(makeRandomValue())"
+    }
+
+    /// A random secret half for a "<issued-at epoch>.<random>" token — used
+    /// both when minting this device's own token above, and by
+    /// AppleSignInService/GoogleSignInService when they ask the server to
+    /// mint one from a random half they supply.
+    static func makeRandomValue() -> String {
+        UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+    }
+
+    /// Reads the token without generating a new one; nil if none exists yet.
+    static func currentToken() -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -675,15 +723,9 @@ enum MCPCloudCredentials {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var item: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-           let data = item as? Data,
-           let value = String(data: data, encoding: .utf8), value.count >= 32 {
-            return value
-        }
-        let value = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-            + UUID().uuidString.replacingOccurrences(of: "-", with: "")
-        save(value)
-        return value
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     static func save(_ value: String) {
@@ -697,6 +739,41 @@ enum MCPCloudCredentials {
         item[kSecValueData as String] = Data(value.utf8)
         item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         SecItemAdd(item as CFDictionary, nil)
+    }
+
+    /// Deletes the local token without telling the server. Prefer `revoke()`,
+    /// which also asks the server to reject the old value if it's ever replayed.
+    static func clear() {
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account] as CFDictionary)
+    }
+
+    /// Forgets this device's cloud token and tells the server to reject it
+    /// going forward, so a copy made before logout (e.g. from a compromised
+    /// backup) can't keep syncing after the user signs out. Best-effort: the
+    /// local token is cleared first regardless of whether the network call
+    /// succeeds, so logout is never blocked on connectivity.
+    static func revoke() async {
+        guard let token = currentToken() else { return }
+        clear()
+        guard let endpoint = configuredEndpoint() else { return }
+        var request = URLRequest(url: endpoint.appending(path: "api/session/revoke"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
+    /// The Worker endpoint every cloud request (sync, AI, sign-in, revoke)
+    /// should target: the user's custom endpoint from settings if they've set
+    /// one and it's a valid https URL, otherwise the built-in default.
+    static func configuredEndpoint() -> URL? {
+        var raw = (UserDefaults.standard.string(forKey: "mcpCloudEndpoint") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty { raw = WorkerAIProvider.defaultEndpoint }
+        raw = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: raw), url.scheme?.lowercased() == "https",
+              url.host?.isEmpty == false, url.user == nil, url.password == nil else { return nil }
+        return url
     }
 }
 
@@ -727,6 +804,12 @@ struct ContentView: View {
     @State private var pdfPendingUnlock: URL?
     @State private var pdfPasswordEntry = ""
     @State private var pdfPasswordError: String?
+    /// Set when `stableCopy` couldn't preserve a picked PDF long enough to
+    /// prompt for its password — a dead end distinct from a wrong password.
+    @State private var pdfPrepareError: String?
+    /// Set when password removal was requested on a PDF that isn't
+    /// protected — a dead end, not a password prompt to retry.
+    @State private var pdfNotProtectedError: String?
     /// The finished password-free copy, handed to a share sheet.
     @State private var pdfUnlockedResult: IdentifiableURL?
     /// Shows the PDF-only picker for the password-removal tool.
@@ -735,6 +818,8 @@ struct ContentView: View {
     /// password (holds the password just long enough to write the copy).
     @State private var pdfRemovalOffer: PendingRemoval?
     @State private var backupURL: IdentifiableURL?
+    @State private var previewURL: IdentifiableURL?
+    @State private var isDownloadingFriendAttachment = false
     @State private var openNotebooks: [Notebook] = []
     @State private var openStudyNotebooks: [Notebook] = []
     @State private var openFlashcardDecks: [FlashcardDeck] = []
@@ -1223,6 +1308,30 @@ struct ContentView: View {
         .sheet(item: $backupURL) { wrapped in
             ShareSheet(items: [wrapped.url])
         }
+        // Downloading a friend's attachment (see downloadAndPreviewFriendAttachment)
+        // used to give no feedback at all while in flight — tapping it just
+        // looked like nothing happened until the preview eventually opened,
+        // or silently did nothing at all if it failed.
+        .overlay {
+            if isDownloadingFriendAttachment {
+                ProgressView("読み込み中…")
+                    .padding(20)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            }
+        }
+        .fullScreenCover(item: $previewURL) { wrapped in
+            NavigationStack {
+                DocumentPreview(url: wrapped.url)
+                    .ignoresSafeArea()
+                    .navigationTitle(wrapped.url.lastPathComponent)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("閉じる") { previewURL = nil }
+                        }
+                    }
+            }
+        }
         .sheet(item: $pdfUnlockedResult) { wrapped in
             ShareSheet(items: [wrapped.url])
         }
@@ -1232,6 +1341,22 @@ struct ContentView: View {
             Button("キャンセル", role: .cancel, action: cancelPDFPassword)
         } message: {
             Text(pdfPasswordError ?? "このPDFにはパスワードがかかっています。開くパスワードを入力してください。")
+        }
+        .alert("PDFを準備できませんでした", isPresented: Binding(
+            get: { pdfPrepareError != nil },
+            set: { if !$0 { pdfPrepareError = nil } }
+        )) {
+            Button("OK", role: .cancel) { pdfPrepareError = nil }
+        } message: {
+            Text(pdfPrepareError ?? "")
+        }
+        .alert("パスワードは設定されていません", isPresented: Binding(
+            get: { pdfNotProtectedError != nil },
+            set: { if !$0 { pdfNotProtectedError = nil } }
+        )) {
+            Button("OK", role: .cancel) { pdfNotProtectedError = nil }
+        } message: {
+            Text(pdfNotProtectedError ?? "")
         }
         .confirmationDialog(
             "パスワードを削除しますか？",
@@ -1325,9 +1450,7 @@ struct ContentView: View {
                             }
                         }
                         Button("新しいトークンを生成", systemImage: "arrow.clockwise") {
-                            mcpCloudToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-                                + UUID().uuidString.replacingOccurrences(of: "-", with: "")
-                            MCPCloudCredentials.save(mcpCloudToken)
+                            mcpCloudToken = MCPCloudCredentials.generateAndSaveNewToken()
                         }
                     }
                     Section {
@@ -1435,6 +1558,14 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenFriendAttachment"))) { notification in
             guard let request = notification.object as? FriendAttachmentOpenRequest else { return }
             openFriendAttachment(request.attachment)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenTextDocumentTab"))) { notification in
+            guard let document = notification.object as? TextDocument else { return }
+            openTextDocument(document)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenSlideDeckTab"))) { notification in
+            guard let deck = notification.object as? SlideDeck else { return }
+            openSlideDeck(deck)
         }
         .onAppear {
             if selectedNotebook == nil { columnVisibility = .detailOnly }
@@ -1859,27 +1990,69 @@ struct ContentView: View {
         if let sourcePath = attachment.sourcePath, !sourcePath.isEmpty {
             let url = URL(filePath: sourcePath)
             if FileManager.default.fileExists(atPath: url.path) {
-                backupURL = IdentifiableURL(url: url)
+                previewURL = IdentifiableURL(url: url)
                 return
             }
         }
-        let parts = attachment.id.split(separator: "-", maxSplits: 1).map(String.init)
-        guard parts.count == 2 else { return }
-        switch parts[0] {
+        guard let sourceKind = attachment.resolvedSourceKind,
+              let sourceID = attachment.resolvedSourceID else { return }
+        switch sourceKind {
         case "notebook":
-            guard let notebook = allNotebooks.first(where: { notebookID($0) == parts[1] && !$0.isTrashed }) else { return }
+            guard let notebook = allNotebooks.first(where: { notebookID($0) == sourceID && !$0.isTrashed }) else { return }
             selectNotebookTab(notebook)
-        case "deck":
-            guard let deck = flashcardDecks.first(where: { deckID($0) == parts[1] && !$0.isTrashed }) else { return }
+        case "deck", "flashcards":
+            guard let deck = flashcardDecks.first(where: { deckID($0) == sourceID && !$0.isTrashed }) else { return }
             selectFlashcardTab(deck)
         case "document":
-            guard let document = textDocuments.first(where: { textDocumentID($0) == parts[1] && !$0.isTrashed }) else { return }
+            guard let document = textDocuments.first(where: { textDocumentID($0) == sourceID && !$0.isTrashed }) else { return }
             openTextDocument(document)
         case "slide":
-            guard let deck = slideDecks.first(where: { slideDeckID($0) == parts[1] && !$0.isTrashed }) else { return }
+            guard let deck = slideDecks.first(where: { slideDeckID($0) == sourceID && !$0.isTrashed }) else { return }
             openSlideDeck(deck)
+        case "photo", "pdf", "file":
+            // No local copy on this device (e.g. this is the recipient, who
+            // never had the file locally) — fetch it from the room.
+            guard let roomID = attachment.remoteRoomID else { return }
+            downloadAndPreviewFriendAttachment(sourceKind: sourceKind, sourceID: sourceID, roomID: roomID, title: attachment.title)
         default:
             return
+        }
+    }
+
+    private func downloadAndPreviewFriendAttachment(sourceKind: String, sourceID: String, roomID: String, title: String) {
+        isDownloadingFriendAttachment = true
+        Task {
+            guard let data = await friendStore.downloadAttachment(roomID: roomID, id: sourceID) else {
+                await MainActor.run {
+                    isDownloadingFriendAttachment = false
+                    friendStore.errorMessage = "添付ファイルを読み込めませんでした。"
+                }
+                return
+            }
+            let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let ext: String
+            if sourceKind == "photo" {
+                ext = "jpg"
+            } else {
+                let titleExtension = (title as NSString).pathExtension
+                ext = titleExtension.isEmpty ? (sourceKind == "pdf" ? "pdf" : "dat") : titleExtension
+            }
+            let destination = directory.appending(path: "\(sourceID).\(ext)")
+            if !FileManager.default.fileExists(atPath: destination.path) {
+                guard (try? data.write(to: destination, options: [.atomic])) != nil else {
+                    await MainActor.run {
+                        isDownloadingFriendAttachment = false
+                        friendStore.errorMessage = "添付ファイルを読み込めませんでした。"
+                    }
+                    return
+                }
+            }
+            await MainActor.run {
+                isDownloadingFriendAttachment = false
+                previewURL = IdentifiableURL(url: destination)
+            }
         }
     }
 
@@ -1890,7 +2063,9 @@ struct ContentView: View {
                 id: "notebook-\(String(describing: $0.persistentModelID))",
                 title: $0.title,
                 kind: $0.containsPDF ? "PDF" : "ノート",
-                icon: $0.containsPDF ? "doc.richtext" : "note.text"
+                icon: $0.containsPDF ? "doc.richtext" : "note.text",
+                sourceKind: "notebook",
+                sourceID: String(describing: $0.persistentModelID)
             )
         })
         options.append(contentsOf: flashcardDecks.filter { !$0.isTrashed }.map {
@@ -1898,7 +2073,9 @@ struct ContentView: View {
                 id: "deck-\(String(describing: $0.persistentModelID))",
                 title: $0.title,
                 kind: "暗記カード",
-                icon: "rectangle.on.rectangle.angled"
+                icon: "rectangle.on.rectangle.angled",
+                sourceKind: "deck",
+                sourceID: String(describing: $0.persistentModelID)
             )
         })
         options.append(contentsOf: textDocuments.filter { !$0.isTrashed }.map {
@@ -1906,7 +2083,9 @@ struct ContentView: View {
                 id: "document-\(String(describing: $0.persistentModelID))",
                 title: $0.title,
                 kind: "文書",
-                icon: "doc.text"
+                icon: "doc.text",
+                sourceKind: "document",
+                sourceID: String(describing: $0.persistentModelID)
             )
         })
         options.append(contentsOf: slideDecks.filter { !$0.isTrashed }.map {
@@ -1914,7 +2093,9 @@ struct ContentView: View {
                 id: "slide-\(String(describing: $0.persistentModelID))",
                 title: $0.title,
                 kind: "スライド",
-                icon: "rectangle.on.rectangle"
+                icon: "rectangle.on.rectangle",
+                sourceKind: "slide",
+                sourceID: String(describing: $0.persistentModelID)
             )
         })
         return options
@@ -2391,7 +2572,7 @@ struct ContentView: View {
     }
 
     private var studyCardCount: Int {
-        flashcardDecks.reduce(0) { $0 + $1.cards.count }
+        flashcardDecks.reduce(0) { $0 + $1.sortedCards.count }
     }
 
     private var displayedFlashcardDecks: [FlashcardDeck] {
@@ -2413,7 +2594,7 @@ struct ContentView: View {
                             .foregroundStyle(.indigo)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(deck.title).font(.headline).lineLimit(1)
-                            Text("\(deck.cards.count)枚 ・ 学習\(deck.studySessionCount)回 ・ 正解率\(deck.accuracyText)")
+                            Text("\(deck.sortedCards.count)枚 ・ 学習\(deck.studySessionCount)回 ・ 正解率\(deck.accuracyText)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -2499,7 +2680,7 @@ struct ContentView: View {
                             .foregroundStyle(.orange)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(deck.title).font(.headline).lineLimit(1)
-                            Text("\(deck.slides.count)枚 ・ \(deck.theme.title)")
+                            Text("\(deck.sortedSlides.count)枚 ・ \(deck.theme.title)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -2531,7 +2712,7 @@ struct ContentView: View {
         let documents = textDocuments.filter { $0.isTrashed }
         let slides = slideDecks.filter { $0.isTrashed }
         ForEach(decks) { deck in
-            trashedRow(title: deck.title, subtitle: "\(deck.cards.count)枚の暗記カード",
+            trashedRow(title: deck.title, subtitle: "\(deck.sortedCards.count)枚の暗記カード",
                        icon: "rectangle.on.rectangle.angled", tint: .indigo,
                        restore: { restoreDeck(deck) }, delete: { permanentlyDeleteDeck(deck) })
         }
@@ -2541,7 +2722,7 @@ struct ContentView: View {
                        restore: { restoreDocument(document) }, delete: { permanentlyDeleteDocument(document) })
         }
         ForEach(slides) { deck in
-            trashedRow(title: deck.title, subtitle: "\(deck.slides.count)枚のスライド",
+            trashedRow(title: deck.title, subtitle: "\(deck.sortedSlides.count)枚のスライド",
                        icon: "rectangle.on.rectangle", tint: .orange,
                        restore: { restoreSlideDeck(deck) }, delete: { permanentlyDeleteSlideDeck(deck) })
         }
@@ -2780,7 +2961,7 @@ struct ContentView: View {
         let page = NotePage(order: 0)
         page.pageTemplate = template
         page.notebook = notebook
-        notebook.pages.append(page)
+        notebook.addPage(page)
         notebook.refreshLibraryMetadata()
         notebook.folderName = selectedFolder ?? ""
         modelContext.insert(notebook)
@@ -2801,9 +2982,13 @@ struct ContentView: View {
             // Copy it somewhere stable first: the prompt is presented in a
             // later runloop turn, by which point the picker's own temp copy
             // may be gone.
+            guard let stableURL = PDFStableCopyService.copy(url) else {
+                pdfPrepareError = L("PDFの準備に失敗しました。もう一度お試しください。")
+                return
+            }
             pdfPasswordEntry = ""
             pdfPasswordError = nil
-            pdfPendingImport = stableCopy(of: url)
+            pdfPendingImport = stableURL
             return
         }
 
@@ -2814,9 +2999,9 @@ struct ContentView: View {
             page.recognizedText = pageData.text
             page.textRecognitionDate = .now
             page.notebook = notebook
-            notebook.pages.append(page)
+            notebook.addPage(page)
         }
-        guard !notebook.pages.isEmpty else { return }
+        guard !notebook.sortedPages.isEmpty else { return }
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
         openNotebookTab(notebook)
@@ -2824,9 +3009,6 @@ struct ContentView: View {
         libraryMode = .documents
     }
 
-    /// Copies a picked file into the app's temp area so it outlives the
-    /// document picker's own short-lived copy. Returns the original URL if
-    /// the copy fails, which is still usually valid in the same session.
     private var pdfPasswordPromptShown: Binding<Bool> {
         Binding(
             get: { pdfPendingImport != nil || pdfPendingUnlock != nil },
@@ -2839,23 +3021,6 @@ struct ContentView: View {
             get: { pdfRemovalOffer != nil },
             set: { if !$0 { pdfRemovalOffer = nil } }
         )
-    }
-
-    private func stableCopy(of url: URL) -> URL {
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let filename = url.lastPathComponent.isEmpty
-            ? UUID().uuidString + "." + (url.pathExtension.isEmpty ? "pdf" : url.pathExtension)
-            : url.lastPathComponent
-        let destination = folder.appendingPathComponent(filename)
-        do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.copyItem(at: url, to: destination)
-            return destination
-        } catch {
-            return url
-        }
     }
 
     /// The password prompt shared by both flows — importing a locked PDF, and
@@ -2910,17 +3075,18 @@ struct ContentView: View {
     /// PDF and either strips it straight away (owner-restricted only) or asks
     /// for the open password first.
     private func beginPasswordRemoval(for url: URL) {
-        let source = stableCopy(of: url)
-        guard PDFPasswordService.isProtected(source) else {
-            pdfPasswordError = PDFPasswordService.ServiceError.notProtected.errorDescription
-            pdfPendingUnlock = source // keeps the alert up to show the message
+        guard let source = PDFStableCopyService.copy(url) else {
+            pdfPrepareError = L("PDFの準備に失敗しました。もう一度お試しください。")
             return
         }
-        if PDFPasswordService.needsPassword(source) {
+        switch PDFPasswordService.removalOutcome(for: source) {
+        case .notProtected:
+            pdfNotProtectedError = PDFPasswordService.ServiceError.notProtected.errorDescription
+        case .needsPassword:
             pdfPasswordEntry = ""
             pdfPasswordError = nil
             pdfPendingUnlock = source
-        } else {
+        case .readyToStripImmediately:
             // No open password, only owner restrictions — nothing to type.
             do {
                 let output = try PDFPasswordService.removePassword(
@@ -2963,7 +3129,7 @@ struct ContentView: View {
             pageHeight: image.size.height
         )
         page.notebook = notebook
-        notebook.pages.append(page)
+        notebook.addPage(page)
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
         openNotebookTab(notebook)
@@ -3069,7 +3235,7 @@ struct ContentView: View {
                 for (index, value) in cards.enumerated() {
                     let card = Flashcard(question: value.question, answer: value.answer, order: index)
                     card.deck = deck
-                    deck.cards.append(card)
+                    deck.addCard(card)
                 }
                 modelContext.insert(deck)
                 openFlashcardDeck(deck)
@@ -3101,7 +3267,7 @@ struct ContentView: View {
                     slide.bodyText = (source.bullets ?? []).joined(separator: "\n")
                     slide.notes = source.notes ?? ""
                     slide.deck = deck
-                    deck.slides.append(slide)
+                    deck.addSlide(slide)
                     modelContext.insert(slide)
                 }
                 modelContext.insert(deck)
@@ -3134,6 +3300,19 @@ struct ContentView: View {
         try? modelContext.save()
     }
 
+    /// Surfaces the server's own error text (e.g. "token has expired") instead
+    /// of a generic network error, so an expired/revoked token visibly prompts
+    /// the user to reconnect rather than just failing silently.
+    private static func mcpCloudServerError(status: Int, body: Data) -> Error {
+        struct ServerMessage: Decodable { let error: String? }
+        let reason = (try? JSONDecoder().decode(ServerMessage.self, from: body))?.error
+        return NSError(
+            domain: "MCPCloudSync",
+            code: status,
+            userInfo: [NSLocalizedDescriptionKey: reason ?? "サーバーエラー（HTTP \(status)）"]
+        )
+    }
+
     @MainActor
     private func syncMCPCloud() async {
         let rawEndpoint = mcpCloudEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3156,16 +3335,22 @@ struct ContentView: View {
             upload.httpBody = snapshotData
             upload.setValue("application/json", forHTTPHeaderField: "Content-Type")
             upload.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
-            let (_, uploadResponse) = try await URLSession.shared.data(for: upload)
-            guard let uploadHTTP = uploadResponse as? HTTPURLResponse, 200..<300 ~= uploadHTTP.statusCode else {
+            let (uploadData, uploadResponse) = try await URLSession.shared.data(for: upload)
+            guard let uploadHTTP = uploadResponse as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
+            }
+            guard 200..<300 ~= uploadHTTP.statusCode else {
+                throw Self.mcpCloudServerError(status: uploadHTTP.statusCode, body: uploadData)
             }
 
             var download = URLRequest(url: baseURL.appending(path: "api/actions"))
             download.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
             let (actionData, actionResponse) = try await URLSession.shared.data(for: download)
-            guard let actionHTTP = actionResponse as? HTTPURLResponse, 200..<300 ~= actionHTTP.statusCode else {
+            guard let actionHTTP = actionResponse as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
+            }
+            guard 200..<300 ~= actionHTTP.statusCode else {
+                throw Self.mcpCloudServerError(status: actionHTTP.statusCode, body: actionData)
             }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
@@ -3209,7 +3394,7 @@ struct ContentView: View {
         for (index, row) in rows.enumerated() {
             let card = Flashcard(question: row.0, answer: row.1, order: index)
             card.deck = deck
-            deck.cards.append(card)
+            deck.addCard(card)
         }
         modelContext.insert(deck)
         try? modelContext.save()
@@ -3329,13 +3514,13 @@ struct ContentView: View {
             page.templateRawValue = original.templateRawValue
             page.isBookmarked = original.isBookmarked
             page.title = original.title
-            for originalElement in original.elements {
+            for originalElement in original.allElements {
                 let element = cloneElement(originalElement)
                 element.page = page
-                page.elements.append(element)
+                page.addElement(element)
             }
             page.notebook = copy
-            copy.pages.append(page)
+            copy.addPage(page)
         }
         copy.refreshLibraryMetadata()
         modelContext.insert(copy)

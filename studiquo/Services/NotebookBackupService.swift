@@ -64,7 +64,7 @@ enum NotebookBackupService {
                     flashcardAnswer: page.flashcardAnswer,
                     flashcardMastery: page.flashcardMastery,
                     flashcardReviewCount: page.flashcardReviewCount,
-                    elements: page.elements.map { element in
+                    elements: page.allElements.map { element in
                         ElementArchive(kind: element.kindRawValue, text: element.text, imageData: element.imageData, centerX: element.centerX, centerY: element.centerY, width: element.width, height: element.height, rotation: element.rotation, colorHex: element.colorHex, isLocked: element.isLocked, layerIndex: element.layerIndex)
                     }
                 )
@@ -141,12 +141,12 @@ enum NotebookBackupService {
                 element.isLocked = storedElement.isLocked
                 element.layerIndex = storedElement.layerIndex
                 element.page = page
-                page.elements.append(element)
+                page.addElement(element)
             }
             page.notebook = notebook
-            notebook.pages.append(page)
+            notebook.addPage(page)
         }
         notebook.refreshLibraryMetadata()
-        return notebook.pages.isEmpty ? nil : notebook
+        return notebook.sortedPages.isEmpty ? nil : notebook
     }
 }

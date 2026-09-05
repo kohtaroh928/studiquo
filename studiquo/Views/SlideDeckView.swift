@@ -44,7 +44,7 @@ struct SlideDeckView: View {
         .background(Color(.secondarySystemBackground))
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
-            if deck.slides.isEmpty { addSlide(layout: .titleSlide) }
+            if deck.sortedSlides.isEmpty { addSlide(layout: .titleSlide) }
             if selectedSlideID == nil { selectedSlideID = slides.first?.persistentModelID }
         }
         .fullScreenCover(isPresented: $isPresenting) {
@@ -334,9 +334,9 @@ struct SlideDeckView: View {
     // MARK: Slide operations
 
     private func addSlide(layout: SlideLayout) {
-        let slide = Slide(order: deck.slides.count, layout: layout)
+        let slide = Slide(order: deck.sortedSlides.count, layout: layout)
         slide.deck = deck
-        deck.slides.append(slide)
+        deck.addSlide(slide)
         deck.renumberSlides()
         deck.updatedAt = .now
         modelContext.insert(slide)
@@ -353,7 +353,7 @@ struct SlideDeckView: View {
         copy.imageData = slide.imageData
         copy.deck = deck
         for later in deck.sortedSlides where later.order > slide.order { later.order += 1 }
-        deck.slides.append(copy)
+        deck.addSlide(copy)
         deck.renumberSlides()
         deck.updatedAt = .now
         modelContext.insert(copy)
@@ -363,7 +363,7 @@ struct SlideDeckView: View {
 
     private func delete(_ slide: Slide) {
         let removedOrder = slide.order
-        deck.slides.removeAll { $0.persistentModelID == slide.persistentModelID }
+        deck.slides?.removeAll { $0.persistentModelID == slide.persistentModelID }
         slide.deck = nil
         modelContext.delete(slide)
         deck.renumberSlides()

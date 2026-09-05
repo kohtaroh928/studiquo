@@ -3,11 +3,11 @@ import SwiftData
 
 @Model
 final class NotePage {
-    var order: Int
+    var order: Int = 0
     @Attribute(.externalStorage) var drawingData: Data?
     @Attribute(.externalStorage) var backgroundImageData: Data?
-    var pageWidth: Double
-    var pageHeight: Double
+    var pageWidth: Double = 612
+    var pageHeight: Double = 792
     var notebook: Notebook?
     var templateRawValue: String = PageTemplate.blank.rawValue
     var isBookmarked: Bool = false
@@ -54,7 +54,7 @@ final class NotePage {
     var proofReviewedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \PageElement.page)
-    var elements: [PageElement] = []
+    var elements: [PageElement]?
 
     init(order: Int, backgroundImageData: Data? = nil, pageWidth: Double = 612, pageHeight: Double = 792) {
         self.order = order
@@ -66,6 +66,20 @@ final class NotePage {
     var pageTemplate: PageTemplate {
         get { PageTemplate(rawValue: templateRawValue) ?? .blank }
         set { templateRawValue = newValue.rawValue }
+    }
+
+    /// Non-optional read access to the CloudKit-required optional
+    /// relationship. Callers sort/filter this themselves — unlike the other
+    /// to-many relationships, elements don't have one canonical order.
+    var allElements: [PageElement] {
+        elements ?? []
+    }
+
+    /// Appends to the CloudKit-required optional relationship, creating the
+    /// backing array on first use.
+    func addElement(_ element: PageElement) {
+        if elements == nil { elements = [] }
+        elements?.append(element)
     }
 }
 

@@ -3,9 +3,9 @@ import SwiftData
 
 @Model
 final class Notebook {
-    var title: String
-    var createdAt: Date
-    var updatedAt: Date
+    var title: String = ""
+    var createdAt: Date = Date.now
+    var updatedAt: Date = Date.now
     var isFavorite: Bool = false
     var isTrashed: Bool = false
     var trashedAt: Date?
@@ -17,7 +17,7 @@ final class Notebook {
     var libraryMetadataVersion: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \NotePage.notebook)
-    var pages: [NotePage] = []
+    var pages: [NotePage]?
 
     init(title: String) {
         self.title = title
@@ -26,8 +26,15 @@ final class Notebook {
         self.libraryMetadataVersion = 1
     }
 
+    /// Appends to the CloudKit-required optional relationship, creating the
+    /// backing array on first use.
+    func addPage(_ page: NotePage) {
+        if pages == nil { pages = [] }
+        pages?.append(page)
+    }
+
     var sortedPages: [NotePage] {
-        pages.sorted { $0.order < $1.order }
+        (pages ?? []).sorted { $0.order < $1.order }
     }
 
     var containsPDF: Bool {
@@ -39,8 +46,8 @@ final class Notebook {
     }
 
     func refreshLibraryMetadata() {
-        cachedPageCount = pages.count
-        cachedContainsPDF = pages.contains { $0.backgroundImageData != nil }
+        cachedPageCount = sortedPages.count
+        cachedContainsPDF = sortedPages.contains { $0.backgroundImageData != nil }
         libraryMetadataVersion = 1
     }
 

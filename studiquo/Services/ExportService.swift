@@ -27,7 +27,7 @@ enum ExportService {
             if let drawing {
                 drawing.image(from: CGRect(origin: .zero, size: size), scale: 2).draw(in: CGRect(origin: .zero, size: size))
             }
-            for element in page.elements.sorted(by: { $0.layerIndex < $1.layerIndex }) {
+            for element in page.allElements.sorted(by: { $0.layerIndex < $1.layerIndex }) {
                 draw(element: element, pageSize: size)
             }
         }
@@ -63,7 +63,7 @@ enum ExportService {
                     drawingImage.draw(in: CGRect(origin: .zero, size: size))
                 }
 
-                for element in page.elements.sorted(by: { $0.layerIndex < $1.layerIndex }) {
+                for element in page.allElements.sorted(by: { $0.layerIndex < $1.layerIndex }) {
                     draw(element: element, pageSize: size)
                 }
             }

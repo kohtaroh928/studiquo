@@ -12,6 +12,8 @@
  * response schema, and the app only supplies content.
  */
 
+import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
+
 const API_ROOT = "https://generativelanguage.googleapis.com/v1beta/models";
 
 /** Overridable with `wrangler` vars so a model change needs no code change. */
@@ -47,31 +49,8 @@ const DEFAULT_GRADING_LIMIT = 20;
 const DEFAULT_GLOBAL_CHAT_LIMIT = 1500;
 const DEFAULT_GLOBAL_GRADING_LIMIT = 150;
 
-function json(value, status = 200) {
-  return Response.json(value, { status, headers: {
-    "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
-    "referrer-policy": "no-referrer",
-    "x-content-type-options": "nosniff",
-  } });
-}
-
 async function readJSONLimited(request, maximumBytes = 20_000_000) {
-  const declaredSize = Number(request.headers.get("content-length") ?? 0);
-  if (declaredSize > maximumBytes || !request.body) return null;
-  const reader = request.body.getReader();
-  const decoder = new TextDecoder();
-  let received = 0;
-  let text = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    received += value.byteLength;
-    if (received > maximumBytes) { await reader.cancel(); return null; }
-    text += decoder.decode(value, { stream: true });
-  }
-  text += decoder.decode();
-  try { return JSON.parse(text); } catch { return null; }
+  return readJSONLimitedShared(request, maximumBytes);
 }
 
 function model(env, kind) {

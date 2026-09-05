@@ -4,48 +4,24 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
+import { isRevoked } from "./revocation.js";
+import { isExpired } from "./token.js";
+import { checkRateLimit, clientKey } from "./rate-limit.js";
+import { bearerToken, sha256Hex } from "./auth.js";
+import { json, readJSONLimited } from "./http.js";
+import { mintSession, hasRealSession } from "./session.js";
 
 const RP_ID = "studiquo-mcp.studiquo-mcp-server.workers.dev";
 const ORIGIN = `https://${RP_ID}`;
 const APP_ID = "972G4VGUA6.com.yabuko.studiquo";
 
-function json(value, status = 200) {
-  return Response.json(value, { status, headers: {
-    "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
-    "referrer-policy": "no-referrer",
-    "x-content-type-options": "nosniff",
-  } });
-}
-
-function tokenFrom(request) {
-  const match = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") ?? "");
-  const token = match?.[1]?.trim() ?? "";
-  return token.length >= 32 && token.length <= 256 ? token : null;
-}
-
-async function digest(value) {
-  const data = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(data), byte => byte.toString(16).padStart(2, "0")).join("");
-}
+// Shared budget for every rate-limited endpoint below. Change this one value
+// (and the matching `simple.limit` entries in wrangler.jsonc) to retune all
+// four at once.
+const RATE_LIMIT_PER_MINUTE = 5;
 
 async function body(request) {
-  const declared = Number(request.headers.get("content-length") ?? 0);
-  if (declared > 100_000) return null;
-  if (!request.body) return null;
-  const reader = request.body.getReader();
-  const decoder = new TextDecoder();
-  let received = 0;
-  let text = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    received += value.byteLength;
-    if (received > 100_000) { await reader.cancel(); return null; }
-    text += decoder.decode(value, { stream: true });
-  }
-  text += decoder.decode();
-  try { return JSON.parse(text); } catch { return null; }
+  return readJSONLimited(request, 100_000);
 }
 
 function transactionID() {
@@ -60,11 +36,16 @@ export async function handlePasskeys(url, request, env) {
   if (!url.pathname.startsWith("/api/passkeys/")) return null;
 
   if (url.pathname === "/api/passkeys/register/options" && request.method === "POST") {
-    const token = tokenFrom(request);
+    const token = bearerToken(request);
     const payload = await body(request);
     const email = String(payload?.email ?? "").trim().toLowerCase();
     if (!token || email.length > 254 || !email.includes("@")) return json({ error: "Invalid request." }, 400);
-    const userKey = await digest(token);
+    if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
+    if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
+    const userKey = await sha256Hex(token);
+    const allowed = await checkRateLimit(env, env.RATE_LIMIT_PASSKEY_REGISTER_OPTIONS, "passkey-register-options", userKey, RATE_LIMIT_PER_MINUTE);
+    if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
+    if (await isRevoked(env, userKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
     const existing = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
     const options = await generateRegistrationOptions({
       rpName: "Studiquo",
@@ -89,13 +70,20 @@ export async function handlePasskeys(url, request, env) {
   }
 
   if (url.pathname === "/api/passkeys/register/verify" && request.method === "POST") {
-    const token = tokenFrom(request);
+    const token = bearerToken(request);
+    if (token) {
+      const allowed = await checkRateLimit(env, env.RATE_LIMIT_PASSKEY_REGISTER_VERIFY, "passkey-register-verify", await sha256Hex(token), RATE_LIMIT_PER_MINUTE);
+      if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
+    }
     const payload = await body(request);
     const transaction = String(payload?.transaction ?? "");
     const pending = await env.STUDIQUO_DATA.get(`passkeys:challenge:${transaction}`, "json");
-    if (!token || !pending || pending.kind !== "registration" || pending.userKey !== await digest(token)) {
+    if (!token || !pending || pending.kind !== "registration" || pending.userKey !== await sha256Hex(token)) {
       return json({ error: "Registration expired." }, 400);
     }
+    if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
+    if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
+    if (await isRevoked(env, pending.userKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
     await env.STUDIQUO_DATA.delete(`passkeys:challenge:${transaction}`);
     try {
       const verification = await verifyRegistrationResponse({
@@ -128,6 +116,9 @@ export async function handlePasskeys(url, request, env) {
   }
 
   if (url.pathname === "/api/passkeys/login/options" && request.method === "POST") {
+    const allowed = await checkRateLimit(env, env.RATE_LIMIT_PASSKEY_LOGIN_OPTIONS, "passkey-login-options", clientKey(request), RATE_LIMIT_PER_MINUTE);
+    if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
+
     const options = await generateAuthenticationOptions({
       rpID: RP_ID,
       userVerification: "required",
@@ -141,9 +132,16 @@ export async function handlePasskeys(url, request, env) {
   }
 
   if (url.pathname === "/api/passkeys/login/verify" && request.method === "POST") {
+    const allowed = await checkRateLimit(env, env.RATE_LIMIT_PASSKEY_LOGIN_VERIFY, "passkey-login-verify", clientKey(request), RATE_LIMIT_PER_MINUTE);
+    if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
+
     const payload = await body(request);
     const transaction = String(payload?.transaction ?? "");
     const credentialID = String(payload?.credential?.id ?? "");
+    const randomValue = payload?.randomValue;
+    if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
+      return json({ error: "randomValue is required." }, 400);
+    }
     const [pending, record] = await Promise.all([
       env.STUDIQUO_DATA.get(`passkeys:challenge:${transaction}`, "json"),
       env.STUDIQUO_DATA.get(`passkeys:credential:${credentialID}`, "json"),
@@ -167,7 +165,13 @@ export async function handlePasskeys(url, request, env) {
       if (!verification.verified) return json({ error: "Passkey verification failed." }, 401);
       record.counter = verification.authenticationInfo.newCounter;
       await env.STUDIQUO_DATA.put(`passkeys:credential:${record.id}`, JSON.stringify(record));
-      return json({ authenticated: true, email: record.email });
+      // A successful passkey assertion is itself the proof of identity, same
+      // as a verified Apple/Google token — mint a real session the same way
+      // those exchanges do, rather than leaving the client to keep reusing
+      // whatever bearer token it happened to already hold.
+      const token = await mintSession(env, `email:${record.email}`, randomValue);
+      if (!token) return json({ error: "Invalid randomValue." }, 400);
+      return json({ authenticated: true, email: record.email, token });
     } catch {
       return json({ error: "Passkey verification failed." }, 401);
     }

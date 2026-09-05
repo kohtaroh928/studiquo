@@ -14,9 +14,9 @@ import SwiftUI
 /// them.
 @Model
 final class TextDocument {
-    var title: String
-    var createdAt: Date
-    var updatedAt: Date
+    var title: String = "無題の文書"
+    var createdAt: Date = Date.now
+    var updatedAt: Date = Date.now
     var folderName: String = ""
     var isFavorite: Bool = false
     var isTrashed: Bool = false
@@ -149,9 +149,9 @@ enum DocumentParagraphStyle: String, CaseIterable, Identifiable {
 /// and means a theme can restyle every slide at once.
 @Model
 final class SlideDeck {
-    var title: String
-    var createdAt: Date
-    var updatedAt: Date
+    var title: String = "無題のスライド"
+    var createdAt: Date = Date.now
+    var updatedAt: Date = Date.now
     var folderName: String = ""
     var isFavorite: Bool = false
     var isTrashed: Bool = false
@@ -168,12 +168,19 @@ final class SlideDeck {
     var bodyIsItalic: Bool = false
 
     @Relationship(deleteRule: .cascade, inverse: \Slide.deck)
-    var slides: [Slide] = []
+    var slides: [Slide]?
 
     init(title: String = "無題のスライド") {
         self.title = title
         self.createdAt = .now
         self.updatedAt = .now
+    }
+
+    /// Appends to the CloudKit-required optional relationship, creating the
+    /// backing array on first use.
+    func addSlide(_ slide: Slide) {
+        if slides == nil { slides = [] }
+        slides?.append(slide)
     }
 
     var theme: SlideTheme {
@@ -192,7 +199,7 @@ final class SlideDeck {
     }
 
     var sortedSlides: [Slide] {
-        slides.sorted { $0.order < $1.order }
+        (slides ?? []).sorted { $0.order < $1.order }
     }
 
     func renumberSlides() {
@@ -202,7 +209,7 @@ final class SlideDeck {
 
 @Model
 final class Slide {
-    var order: Int
+    var order: Int = 0
     var layoutRawValue: String = SlideLayout.titleAndBody.rawValue
     var titleText: String = ""
     /// One bullet per line, the way a content placeholder behaves.

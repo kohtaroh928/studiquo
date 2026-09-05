@@ -126,6 +126,7 @@ private struct AIChatAttachment: Identifiable, Hashable {
     let name: String
     let path: String
     let kind: Kind
+    var sourceID: String? = nil
     var snippet: PageSnippet?
     var imageData: Data?
     var contextText: String = ""
@@ -171,6 +172,37 @@ enum PaneSwitchTarget {
     case web(title: String, homeURL: String)
     case ai(PersistentIdentifier)
     case friend(UUID)
+}
+
+private enum TemporaryChatMaterial: Identifiable {
+    case file(URL)
+    case image(String, UIImage)
+    case notebook(Notebook)
+    case flashcardDeck(FlashcardDeck)
+    case document(TextDocument)
+    case slideDeck(SlideDeck)
+
+    var id: String {
+        switch self {
+        case .file(let url): return "file-\(url.path)"
+        case .image(let title, _): return "image-\(title)"
+        case .notebook(let notebook): return "notebook-\(notebook.persistentModelID)"
+        case .flashcardDeck(let deck): return "deck-\(deck.persistentModelID)"
+        case .document(let document): return "document-\(document.persistentModelID)"
+        case .slideDeck(let deck): return "slide-\(deck.persistentModelID)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .file(let url): return url.lastPathComponent
+        case .image(let title, _): return title
+        case .notebook(let notebook): return notebook.title
+        case .flashcardDeck(let deck): return deck.title
+        case .document(let document): return document.title
+        case .slideDeck(let deck): return deck.title
+        }
+    }
 }
 
 /// A web split, once opened, is announced under this name so ContentView can
@@ -234,6 +266,7 @@ struct NoteEditorView: View {
     @State private var secondaryNotebook: Notebook?
     @State private var splitMode: SplitMode = .single
     @State private var splitRatio: CGFloat = 0.5
+    @State private var isDraggingSplitDivider = false
     @State private var isPortraitLayout = false
     /// Orientation at the previous layout pass; `nil` until the first one.
     /// Lets `updateOrientation` tell a genuine rotation apart from a plain
@@ -251,12 +284,17 @@ struct NoteEditorView: View {
     @State private var activePane: ActivePane = .primary
     @State private var pendingSplitMode: SplitMode?
     @State private var showsSplitSourcePicker = false
+    @State private var primaryShowsWeb = false
     @State private var primaryShowsAIChat = false
     @State private var secondaryShowsWeb = false
     @State private var secondaryShowsAIChat = false
     @State private var primaryFriendChatID: UUID?
     @State private var secondaryFriendChatID: UUID?
     @State private var showsFriendChatPicker = false
+    @State private var primaryTemporaryChatMaterial: TemporaryChatMaterial?
+    @State private var secondaryTemporaryChatMaterial: TemporaryChatMaterial?
+    @State private var primaryTemporaryChatMaterialPageIndex = 0
+    @State private var secondaryTemporaryChatMaterialPageIndex = 0
     @State private var showsTemporaryAIChat = false
     @State private var aiChatThreads: [AIChatThread] = []
     @State private var selectedAIChatThread: AIChatThread?
@@ -491,7 +529,7 @@ struct NoteEditorView: View {
             guard let item else { return }
             Task { await applyBackgroundImage(from: item) }
         }
-        .onChange(of: notebook.pages.count) { _, count in
+        .onChange(of: notebook.sortedPages.count) { _, count in
             primaryPageIndex = clamped(primaryPageIndex, pageCount: count)
             notebook.refreshLibraryMetadata()
         }
@@ -510,7 +548,7 @@ struct NoteEditorView: View {
             guard let target = notification.object as? PaneSwitchTarget else { return }
             routeTabSelection(target)
         }
-        .onChange(of: secondaryNotebook?.pages.count) { _, count in
+        .onChange(of: secondaryNotebook?.sortedPages.count) { _, count in
             secondaryPageIndex = clamped(secondaryPageIndex, pageCount: count ?? 0)
             secondaryNotebook?.refreshLibraryMetadata()
         }
@@ -640,6 +678,7 @@ struct NoteEditorView: View {
                     onInsertAssistantMessage: insertAIResponseOnPage,
                     onAttachDroppedTab: attachmentForDroppedTab,
                     onSelectAppAttachment: appAttachmentOptions,
+                    onOpenAttachment: { openAIChatAttachment($0, target: .secondary) },
                     onPaneDrop: { handlePaneDrop($0, target: .secondary) }
                 )
             }
@@ -854,7 +893,13 @@ struct NoteEditorView: View {
     }
 
     private var shouldShowDrawingToolbarInPrimaryPane: Bool {
-        !isReadOnlyMode && showsDrawingToolbar && primaryFlashcardDeck == nil
+        !isReadOnlyMode
+            && showsDrawingToolbar
+            && primaryFlashcardDeck == nil
+            && !primaryShowsWeb
+            && !primaryShowsAIChat
+            && primaryFriendChatID == nil
+            && primaryTemporaryChatMaterial == nil
     }
 
     private var shouldShowDrawingToolbarInSecondaryPane: Bool {
@@ -1016,6 +1061,7 @@ struct NoteEditorView: View {
         splitMode != .single
             && primaryFlashcardDeck == nil
             && secondaryFlashcardDeck == nil
+            && !primaryShowsWeb
             && !secondaryShowsWeb
             && !secondaryShowsAIChat
             && primaryFriendChatID == nil
@@ -1054,34 +1100,97 @@ struct NoteEditorView: View {
 
         case .horizontal:
             HStack(spacing: 0) {
-                primaryPane
+                splitPaneContent(.primary)
                     .frame(width: max(260, size.width * splitRatio - 5))
 
-                SplitDivider(axis: .horizontal) { translation in
-                    splitRatio = limitedRatio(splitRatio + translation / max(size.width, 1))
+                SplitDivider(axis: .horizontal, onSwap: swapSplitPanes, onEditingChanged: { isDraggingSplitDivider = $0 }) { translation in
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        splitRatio = limitedRatio(splitRatio + translation / max(size.width, 1))
+                    }
                 }
 
-                secondaryPane
+                splitPaneContent(.secondary)
             }
 
         case .vertical:
             VStack(spacing: 0) {
-                primaryPane
+                splitPaneContent(.primary)
                     .frame(height: max(220, size.height * splitRatio - 5))
 
-                SplitDivider(axis: .vertical) { translation in
-                    splitRatio = limitedRatio(splitRatio + translation / max(size.height, 1))
+                SplitDivider(axis: .vertical, onSwap: swapSplitPanes, onEditingChanged: { isDraggingSplitDivider = $0 }) { translation in
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        splitRatio = limitedRatio(splitRatio + translation / max(size.height, 1))
+                    }
                 }
 
-                secondaryPane
+                splitPaneContent(.secondary)
             }
         }
     }
 
     @ViewBuilder
+    private func splitPaneContent(_ pane: ActivePane) -> some View {
+        if SplitPaneResizeRenderPolicy.shouldUseLightweightPlaceholder(isDragging: isDraggingSplitDivider) {
+            splitDragPlaceholder(for: pane)
+        } else if pane == .primary {
+            primaryPane
+        } else {
+            secondaryPane
+        }
+    }
+
+    private func splitDragPlaceholder(for pane: ActivePane) -> some View {
+        let label = splitDragPlaceholderLabel(for: pane)
+        return ZStack {
+            Color(uiColor: .systemBackground)
+            VStack(spacing: 10) {
+                Image(systemName: label.icon)
+                    .font(.title2)
+                    .foregroundStyle(Color.accentColor)
+                Text(label.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text("サイズ調整中")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(18)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        }
+    }
+
+    private func splitDragPlaceholderLabel(for pane: ActivePane) -> (title: String, icon: String) {
+        if pane == .primary {
+            if let material = primaryTemporaryChatMaterial { return (material.title, "doc.viewfinder") }
+            if primaryShowsWeb { return ("Web", "globe") }
+            if primaryShowsAIChat { return ("AIトーク", "sparkles") }
+            if let friend = primaryFriendChat { return (friend.name, "person.crop.circle") }
+            if let deck = primaryFlashcardDeck { return (deck.title, "rectangle.on.rectangle.angled") }
+            return (displayedPrimaryNotebook.title, displayedPrimaryNotebook.containsPDF ? "doc.richtext" : "note.text")
+        }
+
+        if let material = secondaryTemporaryChatMaterial { return (material.title, "doc.viewfinder") }
+        if secondaryShowsWeb { return ("Web", "globe") }
+        if secondaryShowsAIChat { return ("AIトーク", "sparkles") }
+        if let friend = secondaryFriendChat { return (friend.name, "person.crop.circle") }
+        if let deck = secondaryFlashcardDeck { return (deck.title, "rectangle.on.rectangle.angled") }
+        if let notebook = secondaryNotebook { return (notebook.title, notebook.containsPDF ? "doc.richtext" : "note.text") }
+        return ("未選択", "rectangle.dashed")
+    }
+
+    @ViewBuilder
     private var primaryPane: some View {
         Group {
-            if primaryShowsAIChat {
+            if let material = primaryTemporaryChatMaterial {
+                temporaryChatMaterialView(material, pane: .primary)
+            } else if primaryShowsWeb {
+                WebSearchPane(browser: webBrowser)
+            } else if primaryShowsAIChat {
                 AIChatPane(
                     threads: aiChatThreads,
                     selectedThread: selectedAIChatThread,
@@ -1104,13 +1213,17 @@ struct NoteEditorView: View {
                     onInsertAssistantMessage: insertAIResponseOnPage,
                     onAttachDroppedTab: attachmentForDroppedTab,
                     onSelectAppAttachment: appAttachmentOptions,
+                    onOpenAttachment: { openAIChatAttachment($0, target: .primary) },
                     onPaneDrop: { handlePaneDrop($0, target: .primary) }
                 )
             } else if let primaryFriend = primaryFriendChat {
                 FriendChatView(
                     friend: primaryFriend,
                     store: friendStore,
-                    appAttachments: friendMessageAttachmentOptions()
+                    appAttachments: friendMessageAttachmentOptions(),
+                    onAttachDroppedTab: friendAttachmentForDroppedTab,
+                    onPaneDrop: { handlePaneDrop($0, target: .primary) },
+                    onOpenAttachment: { openFriendAttachment($0, target: .primary) }
                 )
             } else if let primaryFlashcardDeck {
                 FlashcardPaneView(deck: primaryFlashcardDeck, onHome: onHome)
@@ -1153,7 +1266,9 @@ struct NoteEditorView: View {
 
     @ViewBuilder
     private var secondaryPane: some View {
-        if secondaryShowsWeb {
+        if let material = secondaryTemporaryChatMaterial {
+            temporaryChatMaterialView(material, pane: .secondary)
+        } else if secondaryShowsWeb {
             WebSearchPane(browser: webBrowser)
         } else if secondaryShowsAIChat {
             AIChatPane(
@@ -1178,13 +1293,17 @@ struct NoteEditorView: View {
                 onInsertAssistantMessage: insertAIResponseOnPage,
                 onAttachDroppedTab: attachmentForDroppedTab,
                 onSelectAppAttachment: appAttachmentOptions,
+                onOpenAttachment: { openAIChatAttachment($0, target: .secondary) },
                 onPaneDrop: { handlePaneDrop($0, target: .secondary) }
             )
         } else if let secondaryFriend = secondaryFriendChat {
             FriendChatView(
                 friend: secondaryFriend,
                 store: friendStore,
-                appAttachments: friendMessageAttachmentOptions()
+                appAttachments: friendMessageAttachmentOptions(),
+                onAttachDroppedTab: friendAttachmentForDroppedTab,
+                onPaneDrop: { handlePaneDrop($0, target: .secondary) },
+                onOpenAttachment: { openFriendAttachment($0, target: .secondary) }
             )
         } else if let secondaryFlashcardDeck {
             FlashcardPaneView(deck: secondaryFlashcardDeck, onHome: onHome)
@@ -1238,6 +1357,73 @@ struct NoteEditorView: View {
                 return handlePaneDrop(value, target: .secondary)
             }
         }
+    }
+
+    @ViewBuilder
+    private func temporaryChatMaterialView(_ material: TemporaryChatMaterial, pane: ActivePane) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "doc.on.doc")
+                    .foregroundStyle(Color.accentColor)
+                Text(material.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+                Button {
+                    closeTemporaryChatMaterial(in: pane)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("閉じる")
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(.regularMaterial)
+
+            switch material {
+            case .file(let url):
+                DocumentPreview(url: url)
+            case .image(_, let image):
+                GeometryReader { geometry in
+                    ScrollView([.horizontal, .vertical]) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(
+                                maxWidth: geometry.size.width,
+                                maxHeight: geometry.size.height
+                            )
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    }
+                    .background(Color(uiColor: .systemBackground))
+                }
+            case .notebook(let notebook):
+                NotebookPaneView(
+                    notebook: notebook,
+                    currentPageIndex: pane == .primary
+                        ? $primaryTemporaryChatMaterialPageIndex
+                        : $secondaryTemporaryChatMaterialPageIndex,
+                    showsTitle: false,
+                    usesDarkPageDisplay: usesDarkPageDisplay,
+                    onRequestAddPage: {},
+                    onSummarizeCurrentPDFPage: {},
+                    onSummarizeAllPDFPages: {},
+                    onQuickAddPage: {},
+                    onQuickAddPageAtTop: {}
+                )
+            case .flashcardDeck(let deck):
+                FlashcardPaneView(deck: deck, onHome: {})
+            case .document(let document):
+                TextDocumentView(document: document)
+            case .slideDeck(let deck):
+                SlideDeckView(deck: deck)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(uiColor: .systemBackground))
     }
 
     @ToolbarContentBuilder
@@ -1442,8 +1628,8 @@ struct NoteEditorView: View {
             }
 
             Menu {
-                if let page = currentPrimaryPage, !page.elements.isEmpty {
-                    ForEach(page.elements.sorted(by: { $0.layerIndex > $1.layerIndex })) { element in
+                if let page = currentPrimaryPage, !page.allElements.isEmpty {
+                    ForEach(page.allElements.sorted(by: { $0.layerIndex > $1.layerIndex })) { element in
                         Menu {
                             Button {
                                 element.isLocked.toggle()
@@ -1722,11 +1908,11 @@ struct NoteEditorView: View {
                     Button("現在のページを削除", systemImage: "doc.badge.minus", role: .destructive) {
                         deleteCurrentPage()
                     }
-                    .disabled(activeNotebook.pages.count <= 1 || activePage == nil)
+                    .disabled(activeNotebook.sortedPages.count <= 1 || activePage == nil)
                     Button("選択して削除", systemImage: "checklist") {
                         showsDeletePagePicker = true
                     }
-                    .disabled(activeNotebook.pages.count <= 1)
+                    .disabled(activeNotebook.sortedPages.count <= 1)
                     Divider()
                     Button("ノートを削除", systemImage: "trash", role: .destructive) {
                         notebookPendingTrash = activeNotebook
@@ -1919,7 +2105,9 @@ struct NoteEditorView: View {
                 id: "notebook-\(String(describing: $0.persistentModelID))",
                 title: $0.title,
                 kind: $0.containsPDF ? "PDF" : "ノート",
-                icon: $0.containsPDF ? "doc.richtext" : "note.text"
+                icon: $0.containsPDF ? "doc.richtext" : "note.text",
+                sourceKind: "notebook",
+                sourceID: String(describing: $0.persistentModelID)
             )
         })
         options.append(contentsOf: flashcardDecks.filter { !$0.isTrashed }.map {
@@ -1927,7 +2115,9 @@ struct NoteEditorView: View {
                 id: "deck-\(String(describing: $0.persistentModelID))",
                 title: $0.title,
                 kind: "暗記カード",
-                icon: "rectangle.on.rectangle.angled"
+                icon: "rectangle.on.rectangle.angled",
+                sourceKind: "deck",
+                sourceID: String(describing: $0.persistentModelID)
             )
         })
         options.append(contentsOf: textDocuments.filter { !$0.isTrashed }.map {
@@ -1935,7 +2125,9 @@ struct NoteEditorView: View {
                 id: "document-\(String(describing: $0.persistentModelID))",
                 title: $0.title,
                 kind: "文書",
-                icon: "doc.text"
+                icon: "doc.text",
+                sourceKind: "document",
+                sourceID: String(describing: $0.persistentModelID)
             )
         })
         options.append(contentsOf: slideDecks.filter { !$0.isTrashed }.map {
@@ -1943,10 +2135,161 @@ struct NoteEditorView: View {
                 id: "slide-\(String(describing: $0.persistentModelID))",
                 title: $0.title,
                 kind: "スライド",
-                icon: "rectangle.on.rectangle"
+                icon: "rectangle.on.rectangle",
+                sourceKind: "slide",
+                sourceID: String(describing: $0.persistentModelID)
             )
         })
         return options
+    }
+
+    private func friendAttachmentForDroppedTab(_ value: String) -> FriendMessageAttachment? {
+        let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+
+        switch parts[0] {
+        case "notebook":
+            guard let notebook = notebooks.first(where: {
+                String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
+            }) else { return nil }
+            return FriendMessageAttachment(
+                id: "notebook-\(String(describing: notebook.persistentModelID))",
+                title: notebook.title,
+                kind: notebook.containsPDF ? "PDF" : "ノート",
+                icon: notebook.containsPDF ? "doc.richtext" : "note.text",
+                sourceKind: "notebook",
+                sourceID: String(describing: notebook.persistentModelID)
+            )
+        case "deck", "flashcards":
+            guard let deck = flashcardDecks.first(where: {
+                String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
+            }) else { return nil }
+            return FriendMessageAttachment(
+                id: "deck-\(String(describing: deck.persistentModelID))",
+                title: deck.title,
+                kind: "暗記カード",
+                icon: "rectangle.on.rectangle.angled",
+                sourceKind: "deck",
+                sourceID: String(describing: deck.persistentModelID)
+            )
+        case "document":
+            guard let document = textDocuments.first(where: {
+                String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
+            }) else { return nil }
+            return FriendMessageAttachment(
+                id: "document-\(String(describing: document.persistentModelID))",
+                title: document.title,
+                kind: "文書",
+                icon: "doc.text",
+                sourceKind: "document",
+                sourceID: String(describing: document.persistentModelID)
+            )
+        case "slide":
+            guard let deck = slideDecks.first(where: {
+                String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
+            }) else { return nil }
+            return FriendMessageAttachment(
+                id: "slide-\(String(describing: deck.persistentModelID))",
+                title: deck.title,
+                kind: "スライド",
+                icon: "rectangle.on.rectangle",
+                sourceKind: "slide",
+                sourceID: String(describing: deck.persistentModelID)
+            )
+        default:
+            return nil
+        }
+    }
+
+    private func openFriendAttachment(_ attachment: FriendMessageAttachment, target: ActivePane) {
+        if let sourcePath = attachment.sourcePath, !sourcePath.isEmpty {
+            let url = URL(filePath: sourcePath)
+            if FileManager.default.fileExists(atPath: url.path) {
+                setTemporaryChatMaterial(.file(url), in: target)
+                return
+            }
+        }
+
+        if let sourceKind = attachment.resolvedSourceKind,
+           let sourceID = attachment.resolvedSourceID,
+           let material = temporaryMaterial(kind: sourceKind, rawID: sourceID) {
+            setTemporaryChatMaterial(material, in: target)
+        }
+    }
+
+    private func openAIChatAttachment(_ attachment: AIChatAttachment, target: ActivePane) {
+        if let image = attachment.image {
+            setTemporaryChatMaterial(.image(attachment.name, image), in: target)
+            return
+        }
+        if !attachment.path.isEmpty {
+            let url = URL(filePath: attachment.path)
+            if FileManager.default.fileExists(atPath: url.path) {
+                setTemporaryChatMaterial(.file(url), in: target)
+                return
+            }
+        }
+        guard let sourceID = attachment.sourceID,
+              let material = temporaryMaterial(fromTabID: sourceID) else { return }
+        setTemporaryChatMaterial(material, in: target)
+    }
+
+    private func setTemporaryChatMaterial(_ material: TemporaryChatMaterial, in pane: ActivePane) {
+        if pane == .primary {
+            primaryTemporaryChatMaterial = material
+            primaryTemporaryChatMaterialPageIndex = 0
+        } else {
+            secondaryTemporaryChatMaterial = material
+            secondaryTemporaryChatMaterialPageIndex = 0
+        }
+        activePane = pane
+    }
+
+    private func closeTemporaryChatMaterial(in pane: ActivePane) {
+        if pane == .primary {
+            primaryTemporaryChatMaterial = nil
+        } else {
+            secondaryTemporaryChatMaterial = nil
+        }
+    }
+
+    private func temporaryMaterial(fromFriendAttachmentID id: String) -> TemporaryChatMaterial? {
+        let parts = id.split(separator: "-", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        return temporaryMaterial(kind: parts[0], rawID: parts[1])
+    }
+
+    private func temporaryMaterial(fromTabID id: String) -> TemporaryChatMaterial? {
+        let parts = id.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        return temporaryMaterial(kind: parts[0], rawID: parts[1])
+    }
+
+    private func temporaryMaterial(kind: String, rawID: String) -> TemporaryChatMaterial? {
+        switch kind {
+        case "notebook":
+            guard let notebook = notebooks.first(where: {
+                String(describing: $0.persistentModelID) == rawID && !$0.isTrashed
+            }) else { return nil }
+            return .notebook(notebook)
+        case "deck", "flashcards":
+            guard let deck = flashcardDecks.first(where: {
+                String(describing: $0.persistentModelID) == rawID && !$0.isTrashed
+            }) else { return nil }
+            return .flashcardDeck(deck)
+        case "document":
+            guard let document = textDocuments.first(where: {
+                String(describing: $0.persistentModelID) == rawID && !$0.isTrashed
+            }) else { return nil }
+            return .document(document)
+        case "slide":
+            guard let deck = slideDecks.first(where: {
+                String(describing: $0.persistentModelID) == rawID && !$0.isTrashed
+            }) else { return nil }
+            return .slideDeck(deck)
+        default:
+            return nil
+        }
     }
 
     private func loadAIChatThreads() {
@@ -2010,7 +2353,7 @@ struct NoteEditorView: View {
 
         let userMessage = AIChatMessage(text: messageText(trimmed, with: attachments), role: .user)
         userMessage.thread = thread
-        thread.messages.append(userMessage)
+        thread.addMessage(userMessage)
 
         if thread.sortedMessages.filter({ $0.role == .user }).count == 1 {
             thread.title = String(trimmed.prefix(24))
@@ -2020,7 +2363,7 @@ struct NoteEditorView: View {
         // the answer appears as it is written instead of after a blank wait.
         let reply = AIChatMessage(text: "", role: .assistant)
         reply.thread = thread
-        thread.messages.append(reply)
+        thread.addMessage(reply)
         thread.updatedAt = .now
         aiChatDrafts[draftKey] = ""
         aiChatDrafts[aiChatThreadKey(thread)] = ""
@@ -2178,7 +2521,7 @@ struct NoteEditorView: View {
         )
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
-        page.elements.append(element)
+        page.addElement(element)
         recordElementAddition(element, on: page)
         page.notebook?.updatedAt = .now
         try? modelContext.save()
@@ -2219,7 +2562,7 @@ struct NoteEditorView: View {
             var parts: [String] = []
             let recognized = page.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !recognized.isEmpty { parts.append(recognized) }
-            let typed = page.elements
+            let typed = page.allElements
                 .filter { $0.kind == .text }
                 .map(\.text)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -2240,24 +2583,7 @@ struct NoteEditorView: View {
     }
 
     private func attachmentForDroppedTab(_ value: String) -> AIChatAttachment? {
-        let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
-        guard parts.count == 2,
-              parts[0] == "notebook",
-              let targetNotebook = notebooks.first(where: {
-                  String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
-              }) else { return nil }
-
-        let pdfText = readablePDFTextForAI(in: targetNotebook)
-        let noteText = pdfText.isEmpty ? readableNotebookTextForAI(in: targetNotebook) : pdfText
-        let contextText = noteText.isEmpty
-            ? L("この資料には、AIが読める抽出済みテキストがまだありません。")
-            : noteText
-        return AIChatAttachment(
-            name: targetNotebook.title,
-            path: "",
-            kind: .notebook,
-            contextText: contextText
-        )
+        appAttachmentOptions().first { $0.id == value }?.attachment
     }
 
     private func appAttachmentOptions() -> [AppAttachmentOption] {
@@ -2286,6 +2612,7 @@ struct NoteEditorView: View {
             name: notebook.title,
             path: "",
             kind: .notebook,
+            sourceID: "notebook:\(String(describing: notebook.persistentModelID))",
             contextText: contextText
         )
         return AppAttachmentOption(
@@ -2310,9 +2637,15 @@ struct NoteEditorView: View {
         return AppAttachmentOption(
             id: "deck:\(String(describing: deck.persistentModelID))",
             title: deck.title,
-            subtitle: L("暗記カード \(deck.cards.count)枚"),
+            subtitle: L("暗記カード \(deck.sortedCards.count)枚"),
             icon: "rectangle.on.rectangle.angled",
-            attachment: AIChatAttachment(name: deck.title, path: "", kind: .flashcards, contextText: contextText)
+            attachment: AIChatAttachment(
+                name: deck.title,
+                path: "",
+                kind: .flashcards,
+                sourceID: "deck:\(String(describing: deck.persistentModelID))",
+                contextText: contextText
+            )
         )
     }
 
@@ -2324,7 +2657,13 @@ struct NoteEditorView: View {
             title: document.title,
             subtitle: L("文書"),
             icon: "doc.text",
-            attachment: AIChatAttachment(name: document.title, path: "", kind: .document, contextText: contextText)
+            attachment: AIChatAttachment(
+                name: document.title,
+                path: "",
+                kind: .document,
+                sourceID: "document:\(String(describing: document.persistentModelID))",
+                contextText: contextText
+            )
         )
     }
 
@@ -2349,9 +2688,15 @@ struct NoteEditorView: View {
         return AppAttachmentOption(
             id: "slide:\(String(describing: deck.persistentModelID))",
             title: deck.title,
-            subtitle: L("スライド \(deck.slides.count)枚"),
+            subtitle: L("スライド \(deck.sortedSlides.count)枚"),
             icon: "rectangle.on.rectangle",
-            attachment: AIChatAttachment(name: deck.title, path: "", kind: .slideDeck, contextText: contextText)
+            attachment: AIChatAttachment(
+                name: deck.title,
+                path: "",
+                kind: .slideDeck,
+                sourceID: "slide:\(String(describing: deck.persistentModelID))",
+                contextText: contextText
+            )
         )
     }
 
@@ -2398,7 +2743,7 @@ struct NoteEditorView: View {
 
         let userMessage = AIChatMessage(text: Self.submissionSummary(submission), role: .user)
         userMessage.thread = thread
-        thread.messages.append(userMessage)
+        thread.addMessage(userMessage)
 
         if thread.sortedMessages.filter({ $0.role == .user }).count == 1 {
             thread.title = L("証明の添削")
@@ -2406,7 +2751,7 @@ struct NoteEditorView: View {
 
         let reply = AIChatMessage(text: L("採点基準を作っています…"), role: .assistant)
         reply.thread = thread
-        thread.messages.append(reply)
+        thread.addMessage(reply)
         thread.updatedAt = .now
         try? modelContext.save()
         loadAIChatThreads()
@@ -2533,7 +2878,7 @@ struct NoteEditorView: View {
         var parts: [String] = []
         let recognized = page.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !recognized.isEmpty { parts.append(recognized) }
-        let typed = page.elements
+        let typed = page.allElements
             .filter { $0.kind == .text }
             .map(\.text)
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -2554,11 +2899,13 @@ struct NoteEditorView: View {
     }
 
     private func applyPaneTarget(_ target: PaneSwitchTarget, to pane: ActivePane) {
+        closeTemporaryChatMaterial(in: pane)
         switch target {
         case .notebook(let targetNotebook):
             if pane == .primary {
                 primaryOverrideNotebook = targetNotebook
                 primaryFlashcardDeck = nil
+                primaryShowsWeb = false
                 primaryShowsAIChat = false
                 primaryFriendChatID = nil
                 primaryPageIndex = 0
@@ -2574,6 +2921,7 @@ struct NoteEditorView: View {
             if pane == .primary {
                 primaryFlashcardDeck = deck
                 primaryOverrideNotebook = nil
+                primaryShowsWeb = false
                 primaryShowsAIChat = false
                 primaryFriendChatID = nil
             } else {
@@ -2584,16 +2932,22 @@ struct NoteEditorView: View {
                 secondaryFriendChatID = nil
             }
         case .web(_, let homeURL):
-            // WebSearchPane only ever renders in the secondary slot today;
-            // route there regardless so a web tab never silently no-ops.
             webBrowser.openHomeIfNeeded(homeURL)
-            secondaryNotebook = nil
-            secondaryFlashcardDeck = nil
-            secondaryShowsWeb = true
-            secondaryShowsAIChat = false
-            secondaryFriendChatID = nil
+            if pane == .primary {
+                primaryOverrideNotebook = nil
+                primaryFlashcardDeck = nil
+                primaryShowsWeb = true
+                primaryShowsAIChat = false
+                primaryFriendChatID = nil
+            } else {
+                secondaryNotebook = nil
+                secondaryFlashcardDeck = nil
+                secondaryShowsWeb = true
+                secondaryShowsAIChat = false
+                secondaryFriendChatID = nil
+            }
             if splitMode == .single { splitMode = isPortraitLayout ? .vertical : .horizontal }
-            activePane = .secondary
+            activePane = pane
             return
         case .ai(let id):
             loadAIChatThreads()
@@ -2608,6 +2962,7 @@ struct NoteEditorView: View {
             if pane == .primary {
                 primaryOverrideNotebook = nil
                 primaryFlashcardDeck = nil
+                primaryShowsWeb = false
                 primaryShowsAIChat = true
                 primaryFriendChatID = nil
             } else {
@@ -2622,6 +2977,7 @@ struct NoteEditorView: View {
             if pane == .primary {
                 primaryOverrideNotebook = nil
                 primaryFlashcardDeck = nil
+                primaryShowsWeb = false
                 primaryShowsAIChat = false
                 primaryFriendChatID = id
             } else {
@@ -2632,6 +2988,57 @@ struct NoteEditorView: View {
                 secondaryFriendChatID = id
             }
         }
+    }
+
+    private func swapSplitPanes() {
+        guard splitMode != .single else { return }
+
+        let primaryNotebook = primaryOverrideNotebook
+            ?? (
+                primaryFlashcardDeck == nil
+                && !primaryShowsWeb
+                && !primaryShowsAIChat
+                && primaryFriendChatID == nil
+                && primaryTemporaryChatMaterial == nil
+                    ? displayedPrimaryNotebook
+                    : nil
+            )
+        let oldPrimaryPageIndex = primaryPageIndex
+        let oldPrimaryFlashcardDeck = primaryFlashcardDeck
+        let oldPrimaryShowsWeb = primaryShowsWeb
+        let oldPrimaryShowsAIChat = primaryShowsAIChat
+        let oldPrimaryFriendChatID = primaryFriendChatID
+        let oldPrimaryTemporaryChatMaterial = primaryTemporaryChatMaterial
+        let oldPrimaryTemporaryPageIndex = primaryTemporaryChatMaterialPageIndex
+
+        let oldSecondaryNotebook = secondaryNotebook
+        let oldSecondaryPageIndex = secondaryPageIndex
+        let oldSecondaryFlashcardDeck = secondaryFlashcardDeck
+        let oldSecondaryShowsWeb = secondaryShowsWeb
+        let oldSecondaryShowsAIChat = secondaryShowsAIChat
+        let oldSecondaryFriendChatID = secondaryFriendChatID
+        let oldSecondaryTemporaryChatMaterial = secondaryTemporaryChatMaterial
+        let oldSecondaryTemporaryPageIndex = secondaryTemporaryChatMaterialPageIndex
+
+        primaryOverrideNotebook = oldSecondaryNotebook
+        primaryPageIndex = oldSecondaryPageIndex
+        primaryFlashcardDeck = oldSecondaryFlashcardDeck
+        primaryShowsWeb = oldSecondaryShowsWeb
+        primaryShowsAIChat = oldSecondaryShowsAIChat
+        primaryFriendChatID = oldSecondaryFriendChatID
+        primaryTemporaryChatMaterial = oldSecondaryTemporaryChatMaterial
+        primaryTemporaryChatMaterialPageIndex = oldSecondaryTemporaryPageIndex
+
+        secondaryNotebook = primaryNotebook
+        secondaryPageIndex = oldPrimaryPageIndex
+        secondaryFlashcardDeck = oldPrimaryFlashcardDeck
+        secondaryShowsWeb = oldPrimaryShowsWeb
+        secondaryShowsAIChat = oldPrimaryShowsAIChat
+        secondaryFriendChatID = oldPrimaryFriendChatID
+        secondaryTemporaryChatMaterial = oldPrimaryTemporaryChatMaterial
+        secondaryTemporaryChatMaterialPageIndex = oldPrimaryTemporaryPageIndex
+
+        activePane = activePane == .primary ? .secondary : .primary
     }
 
     private var drawingTool: DrawingToolKind {
@@ -2711,6 +3118,7 @@ struct NoteEditorView: View {
         splitMode = .single
         splitRatio = 0.5
         primaryShowsAIChat = false
+        primaryShowsWeb = false
         primaryFriendChatID = nil
         secondaryNotebook = nil
         secondaryFlashcardDeck = nil
@@ -2734,6 +3142,7 @@ struct NoteEditorView: View {
             if target == .primary {
                 primaryFlashcardDeck = deck
                 primaryOverrideNotebook = nil
+                primaryShowsWeb = false
                 primaryShowsAIChat = false
             } else {
                 secondaryFlashcardDeck = deck
@@ -2746,13 +3155,10 @@ struct NoteEditorView: View {
         }
 
         if parts[0] == "web" {
-            // WebSearchPane only ever renders in the secondary slot; reject
-            // (rather than silently redirect) a drop aimed at primary.
-            guard target == .secondary else { return false }
             let webParts = parts[1].split(separator: "|", maxSplits: 1).map(String.init)
             let title = webParts.first ?? "Web"
             let homeURL = webParts.count > 1 ? webParts[1] : parts[1]
-            applyPaneTarget(.web(title: title, homeURL: homeURL), to: .secondary)
+            applyPaneTarget(.web(title: title, homeURL: homeURL), to: target == .primary ? .primary : .secondary)
             return true
         }
 
@@ -2771,6 +3177,7 @@ struct NoteEditorView: View {
             if target == .primary {
                 primaryOverrideNotebook = nil
                 primaryFlashcardDeck = nil
+                primaryShowsWeb = false
                 primaryShowsAIChat = true
                 activePane = .primary
             } else {
@@ -2788,6 +3195,7 @@ struct NoteEditorView: View {
             if target == .primary {
                 primaryOverrideNotebook = nil
                 primaryFlashcardDeck = nil
+                primaryShowsWeb = false
                 primaryShowsAIChat = false
                 primaryFriendChatID = friendID
                 activePane = .primary
@@ -2809,6 +3217,7 @@ struct NoteEditorView: View {
         if target == .primary {
             primaryOverrideNotebook = targetNotebook
             primaryFlashcardDeck = nil
+            primaryShowsWeb = false
             primaryShowsAIChat = false
             primaryFriendChatID = nil
             primaryPageIndex = 0
@@ -2854,17 +3263,17 @@ struct NoteEditorView: View {
 
     private func deleteCurrentPage() {
         let target = activeNotebook
-        guard target.pages.count > 1, let page = activePage else { return }
+        guard target.sortedPages.count > 1, let page = activePage else { return }
         let deletedIndex = activePane == .secondary ? secondaryPageIndex : primaryPageIndex
         let pageID = page.persistentModelID
         recordPageRemoval(page, in: target)
-        target.pages.removeAll { $0.persistentModelID == pageID }
+        target.pages?.removeAll { $0.persistentModelID == pageID }
         page.notebook = nil
         modelContext.delete(page)
         for (order, remaining) in target.sortedPages.enumerated() { remaining.order = order }
         target.refreshLibraryMetadata()
         target.updatedAt = .now
-        let nextIndex = min(deletedIndex, target.pages.count - 1)
+        let nextIndex = min(deletedIndex, target.sortedPages.count - 1)
         if activePane == .secondary { secondaryPageIndex = nextIndex }
         else { primaryPageIndex = nextIndex }
         try? modelContext.save()
@@ -2889,7 +3298,7 @@ struct NoteEditorView: View {
         let companion = Notebook(title: "\(notebook.title) ノート")
         let page = NotePage(order: 0)
         page.notebook = companion
-        companion.pages.append(page)
+        companion.addPage(page)
         companion.refreshLibraryMetadata()
         modelContext.insert(companion)
         return companion
@@ -2903,17 +3312,17 @@ struct NoteEditorView: View {
     /// template — matching GoodNotes' pull-past-the-bottom gesture, which
     /// never interrupts with a style picker.
     private func quickAddPage(to target: Notebook) {
-        let newPage = NotePage(order: target.pages.count)
+        let newPage = NotePage(order: target.sortedPages.count)
         newPage.pageTemplate = target.sortedPages.last?.pageTemplate ?? .blank
         newPage.notebook = target
-        target.pages.append(newPage)
+        target.addPage(newPage)
         target.refreshLibraryMetadata()
         target.updatedAt = .now
         if target === secondaryNotebook {
-            secondaryPageIndex = target.pages.count - 1
+            secondaryPageIndex = target.sortedPages.count - 1
             activePane = .secondary
         } else {
-            primaryPageIndex = target.pages.count - 1
+            primaryPageIndex = target.sortedPages.count - 1
             activePane = .primary
         }
     }
@@ -2938,8 +3347,8 @@ struct NoteEditorView: View {
         newPage.flashcardAnswer = ""
         modelContext.insert(newPage)
         newPage.notebook = target
-        if !target.pages.contains(where: { $0 === newPage }) {
-            target.pages.append(newPage)
+        if !target.sortedPages.contains(where: { $0 === newPage }) {
+            target.addPage(newPage)
         }
         target.refreshLibraryMetadata()
         target.updatedAt = .now
@@ -2955,19 +3364,19 @@ struct NoteEditorView: View {
 
     private func addPendingPage(template: PageTemplate, paperColorHex: String) {
         guard let target = notebookPendingNewPage else { return }
-        let newPage = NotePage(order: target.pages.count)
+        let newPage = NotePage(order: target.sortedPages.count)
         newPage.pageTemplate = template
         newPage.paperColorHex = paperColorHex
         newPage.notebook = target
-        target.pages.append(newPage)
+        target.addPage(newPage)
         target.refreshLibraryMetadata()
         target.updatedAt = .now
         recordPageAddition(newPage, in: target)
         if target === secondaryNotebook {
-            secondaryPageIndex = target.pages.count - 1
+            secondaryPageIndex = target.sortedPages.count - 1
             activePane = .secondary
         } else {
-            primaryPageIndex = target.pages.count - 1
+            primaryPageIndex = target.sortedPages.count - 1
             activePane = .primary
         }
         notebookPendingNewPage = nil
@@ -2986,7 +3395,7 @@ struct NoteEditorView: View {
         NoteActionHistory.shared.record(
             undo: { [weak notebook] in
                 guard let notebook, let page = slot.page else { return }
-                notebook.pages.removeAll { $0 === page }
+                notebook.pages?.removeAll { $0 === page }
                 context.delete(page)
                 slot.page = nil
                 notebook.refreshLibraryMetadata()
@@ -2994,7 +3403,7 @@ struct NoteEditorView: View {
             redo: { [weak notebook] in
                 guard let notebook else { return }
                 let restored = snapshot.makePage(in: context, notebook: notebook)
-                notebook.pages.append(restored)
+                notebook.addPage(restored)
                 slot.page = restored
                 notebook.refreshLibraryMetadata()
             }
@@ -3011,13 +3420,13 @@ struct NoteEditorView: View {
             undo: { [weak notebook] in
                 guard let notebook else { return }
                 let restored = snapshot.makePage(in: context, notebook: notebook)
-                notebook.pages.append(restored)
+                notebook.addPage(restored)
                 slot.page = restored
                 notebook.refreshLibraryMetadata()
             },
             redo: { [weak notebook] in
                 guard let notebook, let page = slot.page else { return }
-                notebook.pages.removeAll { $0 === page }
+                notebook.pages?.removeAll { $0 === page }
                 context.delete(page)
                 slot.page = nil
                 notebook.refreshLibraryMetadata()
@@ -3034,7 +3443,7 @@ struct NoteEditorView: View {
         NoteActionHistory.shared.record(
             undo: { [weak page] in
                 guard let page, let element = slot.element else { return }
-                page.elements.removeAll { $0 === element }
+                page.elements?.removeAll { $0 === element }
                 context.delete(element)
                 slot.element = nil
             },
@@ -3042,7 +3451,7 @@ struct NoteEditorView: View {
                 guard let page else { return }
                 let restored = snapshot.makeElement()
                 restored.page = page
-                page.elements.append(restored)
+                page.addElement(restored)
                 context.insert(restored)
                 slot.element = restored
             }
@@ -3058,13 +3467,13 @@ struct NoteEditorView: View {
                 guard let page else { return }
                 let restored = snapshot.makeElement()
                 restored.page = page
-                page.elements.append(restored)
+                page.addElement(restored)
                 context.insert(restored)
                 slot.element = restored
             },
             redo: { [weak page] in
                 guard let page, let element = slot.element else { return }
-                page.elements.removeAll { $0 === element }
+                page.elements?.removeAll { $0 === element }
                 context.delete(element)
                 slot.element = nil
             }
@@ -3148,7 +3557,7 @@ struct NoteEditorView: View {
         let element = PageElement(kind: .text, text: value, width: 0.42, height: 0.12, colorHex: selectedElementColorHex)
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
-        page.elements.append(element)
+        page.addElement(element)
         recordElementAddition(element, on: page)
         page.notebook?.updatedAt = .now
         textToInsert = ""
@@ -3164,7 +3573,7 @@ struct NoteEditorView: View {
         let element = PageElement(kind: .text, text: value, centerY: 0.45, width: 0.62, height: 0.3, colorHex: selectedElementColorHex)
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
-        page.elements.append(element)
+        page.addElement(element)
         notebook.updatedAt = .now
     }
 
@@ -3176,7 +3585,7 @@ struct NoteEditorView: View {
         let element = PageElement(kind: .image, imageData: data, width: 0.42, height: 0.28)
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
-        page.elements.append(element)
+        page.addElement(element)
         notebook.updatedAt = .now
     }
 
@@ -3214,7 +3623,7 @@ struct NoteEditorView: View {
         )
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
-        page.elements.append(element)
+        page.addElement(element)
         notebook.updatedAt = .now
     }
 
@@ -3224,12 +3633,12 @@ struct NoteEditorView: View {
         let element = PageElement(kind: .pageLink, text: "\(pageIndex)|\(label)", width: 0.38, height: 0.08, colorHex: "#1565C0")
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
-        page.elements.append(element)
+        page.addElement(element)
         notebook.updatedAt = .now
     }
 
     private func nextLayerIndex(on page: NotePage) -> Double {
-        (page.elements.map(\.layerIndex).max() ?? -1) + 1
+        (page.allElements.map(\.layerIndex).max() ?? -1) + 1
     }
 
     private func elementLayerTitle(_ element: PageElement) -> String {
@@ -3241,18 +3650,18 @@ struct NoteEditorView: View {
     }
 
     private func moveElementToFront(_ element: PageElement, on page: NotePage) {
-        element.layerIndex = (page.elements.map(\.layerIndex).max() ?? 0) + 1
+        element.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
         notebook.updatedAt = .now
     }
 
     private func moveElementToBack(_ element: PageElement, on page: NotePage) {
-        element.layerIndex = (page.elements.map(\.layerIndex).min() ?? 0) - 1
+        element.layerIndex = (page.allElements.map(\.layerIndex).min() ?? 0) - 1
         notebook.updatedAt = .now
     }
 
     private func removeElement(_ element: PageElement, from page: NotePage) {
         recordElementRemoval(element, on: page)
-        page.elements.removeAll { $0 === element }
+        page.elements?.removeAll { $0 === element }
         modelContext.delete(element)
         notebook.updatedAt = .now
     }
@@ -4345,6 +4754,7 @@ private struct AIChatPane: View {
     let onInsertAssistantMessage: (String) -> Void
     let onAttachDroppedTab: (String) -> AIChatAttachment?
     let onSelectAppAttachment: () -> [AppAttachmentOption]
+    let onOpenAttachment: (AIChatAttachment) -> Void
     let onPaneDrop: (String) -> Bool
 
     /// Whether the app knows where its AI server is. The API key itself lives
@@ -4584,12 +4994,12 @@ private struct AIChatPane: View {
                     .animation(.spring(response: 0.24, dampingFraction: 0.78), value: isComposerDropTargeted)
                     .dropDestination(for: String.self) { items, _ in
                         guard let value = items.first else { return false }
-                        if isPaneSwitchDrop(value), onPaneDrop(value) {
-                            return true
-                        }
                         if let attachment = onAttachDroppedTab(value) {
                             attachments.append(attachment)
                             return true
+                        }
+                        if isPaneSwitchDrop(value) {
+                            return false
                         }
                         return onPaneDrop(value)
                     } isTargeted: { targeted in
@@ -4833,24 +5243,29 @@ private struct AIChatPane: View {
         if attachment.kind == .snippet, let snippet = attachment.snippet {
             snippetChip(attachment, snippet: snippet)
         } else {
-            HStack(spacing: 6) {
-                Image(systemName: attachment.kind.icon)
-                    .foregroundStyle(.secondary)
-                Text(attachment.name)
-                    .lineLimit(1)
-                Button {
-                    attachments.removeAll { $0.id == attachment.id }
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
+            Button {
+                onOpenAttachment(attachment)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: attachment.kind.icon)
                         .foregroundStyle(.secondary)
+                    Text(attachment.name)
+                        .lineLimit(1)
+                    Button {
+                        attachments.removeAll { $0.id == attachment.id }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("添付を削除"))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L("添付を削除"))
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
             }
-            .font(.caption)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+            .buttonStyle(.plain)
         }
     }
 
@@ -5428,7 +5843,7 @@ private struct SplitSourcePicker: View {
                         } label: {
                             VStack(alignment: .leading) {
                                 Label(deck.title, systemImage: "rectangle.on.rectangle.angled")
-                                Text("\(deck.cards.count)枚")
+                                Text("\(deck.sortedCards.count)枚")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
@@ -5476,7 +5891,7 @@ private struct SplitSourcePicker: View {
         let notebook = Notebook(title: title.isEmpty ? "新しいノート" : title)
         let page = NotePage(order: 0)
         page.notebook = notebook
-        notebook.pages.append(page)
+        notebook.addPage(page)
         modelContext.insert(notebook)
         onSelectNotebook(notebook)
     }
@@ -5497,7 +5912,7 @@ private struct FlashcardPaneView: View {
     init(deck: FlashcardDeck, onHome: @escaping () -> Void) {
         self.deck = deck
         self.onHome = onHome
-        _mode = State(initialValue: deck.cards.isEmpty ? .create : .study)
+        _mode = State(initialValue: deck.sortedCards.isEmpty ? .create : .study)
     }
 
     var body: some View {
@@ -5507,7 +5922,7 @@ private struct FlashcardPaneView: View {
                     .font(.headline)
                 Spacer()
                 if mode == .study {
-                    Text("\(deck.cards.count)枚")
+                    Text("\(deck.sortedCards.count)枚")
                         .font(.caption.monospacedDigit())
                 }
             }
@@ -5578,7 +5993,7 @@ private struct PageDeletionPicker: View {
                 ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("削除", role: .destructive, action: deleteSelected)
-                        .disabled(selectedIDs.isEmpty || selectedIDs.count >= notebook.pages.count)
+                        .disabled(selectedIDs.isEmpty || selectedIDs.count >= notebook.sortedPages.count)
                 }
             }
         }
@@ -5587,9 +6002,9 @@ private struct PageDeletionPicker: View {
     private func pageID(_ page: NotePage) -> String { String(describing: page.persistentModelID) }
 
     private func deleteSelected() {
-        guard !selectedIDs.isEmpty, selectedIDs.count < notebook.pages.count else { return }
-        let removed = notebook.pages.filter { selectedIDs.contains(pageID($0)) }
-        notebook.pages.removeAll { selectedIDs.contains(pageID($0)) }
+        guard !selectedIDs.isEmpty, selectedIDs.count < notebook.sortedPages.count else { return }
+        let removed = notebook.sortedPages.filter { selectedIDs.contains(pageID($0)) }
+        notebook.pages?.removeAll { selectedIDs.contains(pageID($0)) }
         removed.forEach {
             $0.notebook = nil
             modelContext.delete($0)
@@ -5597,7 +6012,7 @@ private struct PageDeletionPicker: View {
         for (order, page) in notebook.sortedPages.enumerated() { page.order = order }
         notebook.refreshLibraryMetadata()
         notebook.updatedAt = .now
-        currentPageIndex = min(currentPageIndex, notebook.pages.count - 1)
+        currentPageIndex = min(currentPageIndex, notebook.sortedPages.count - 1)
         try? modelContext.save()
         dismiss()
     }
@@ -5621,7 +6036,7 @@ private struct NotebookPaneView: View {
         VStack(spacing: 0) {
             if showsTitle {
                 HStack {
-                    Image(systemName: notebook.pages.contains(where: { $0.backgroundImageData != nil }) ? "doc.richtext" : "note.text")
+                    Image(systemName: notebook.sortedPages.contains(where: { $0.backgroundImageData != nil }) ? "doc.richtext" : "note.text")
                     Text(notebook.title)
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
@@ -5663,7 +6078,7 @@ private struct NotebookPaneView: View {
     }
 
     private var notebookHasReadablePDFText: Bool {
-        notebook.pages.contains {
+        notebook.sortedPages.contains {
             $0.backgroundImageData != nil
                 && !$0.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
@@ -6289,12 +6704,35 @@ private struct SplitDivider: View {
     enum Axis { case horizontal, vertical }
 
     let axis: Axis
+    let onSwap: () -> Void
+    let onEditingChanged: (Bool) -> Void
     let onChanged: (CGFloat) -> Void
     @State private var previousTranslation: CGFloat = 0
+    @State private var pendingTranslation: CGFloat = 0
 
     var body: some View {
         ZStack {
-            Color(.separator)
+            dragHandle
+            swapButton
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: axis == .horizontal ? .bottom : .center)
+                .padding(.bottom, axis == .horizontal ? 96 : 0)
+                .offset(y: axis == .vertical ? 32 : 0)
+        }
+        .frame(
+            width: axis == .horizontal ? 10 : nil,
+            height: axis == .vertical ? 10 : nil
+        )
+    }
+
+    private var dragHandle: some View {
+        ZStack {
+            Color.clear
+            Rectangle()
+                .fill(Color(uiColor: .separator))
+                .frame(
+                    width: axis == .horizontal ? 1 : nil,
+                    height: axis == .vertical ? 1 : nil
+                )
             Capsule()
                 .fill(Color.secondary)
                 .frame(
@@ -6302,24 +6740,45 @@ private struct SplitDivider: View {
                     height: axis == .horizontal ? 44 : 3
                 )
         }
-        .frame(
-            width: axis == .horizontal ? 10 : nil,
-            height: axis == .vertical ? 10 : nil
-        )
         .contentShape(Rectangle())
         .gesture(
             DragGesture()
                 .onChanged { value in
+                    onEditingChanged(true)
                     let translation = axis == .horizontal ? value.translation.width : value.translation.height
-                    onChanged(translation - previousTranslation)
+                    let delta = translation - previousTranslation
                     previousTranslation = translation
+                    pendingTranslation += delta
+                    guard abs(pendingTranslation) >= 2 else { return }
+                    let stepped = (pendingTranslation / 2).rounded(.towardZero) * 2
+                    pendingTranslation -= stepped
+                    onChanged(stepped)
                 }
                 .onEnded { _ in
                     previousTranslation = 0
+                    if pendingTranslation != 0 {
+                        onChanged(pendingTranslation)
+                        pendingTranslation = 0
+                    }
+                    onEditingChanged(false)
                 }
         )
         .accessibilityLabel("分割位置")
         .accessibilityHint("ドラッグして表示比率を変更します")
+    }
+
+    private var swapButton: some View {
+        Button(action: onSwap) {
+            Image(systemName: axis == .horizontal ? "arrow.left.arrow.right" : "arrow.up.arrow.down")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 40, height: 40)
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().stroke(Color(uiColor: .separator), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.14), radius: 6, y: 2)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("画面を入れ替え")
     }
 }
 
@@ -6706,7 +7165,7 @@ struct PageCanvasContainer: View {
 
     private func convertLegacyShapesIfNeeded() {
         guard hasLoadedDrawing, canvasDisplaySize.width > 0, canvasDisplaySize.height > 0 else { return }
-        let legacyShapes = page.elements.filter { [.rectangle, .ellipse, .line].contains($0.kind) }
+        let legacyShapes = page.allElements.filter { [.rectangle, .ellipse, .line].contains($0.kind) }
         guard !legacyShapes.isEmpty else { return }
 
         var addedStrokes: [InkStroke] = []
@@ -6722,7 +7181,7 @@ struct PageCanvasContainer: View {
             }
         }
 
-        page.elements.removeAll { element in
+        page.elements?.removeAll { element in
             legacyShapes.contains { legacy in legacy === element }
         }
         legacyShapes.forEach(modelContext.delete)
@@ -6822,9 +7281,9 @@ struct PageCanvasContainer: View {
             height: max(pageRect.height / pageHeight, 0.02),
             colorHex: drawingColorHex
         )
-        element.layerIndex = (page.elements.map(\.layerIndex).max() ?? 0) + 1
+        element.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
         element.page = page
-        page.elements.append(element)
+        page.addElement(element)
         modelContext.insert(element)
         recordShapeAddition(element, on: page)
         try? modelContext.save()
@@ -6848,7 +7307,7 @@ struct PageCanvasContainer: View {
     /// if the circle had been drawn with the pen.
     private func eraseShapeElements(along path: [CGPoint], radius: CGFloat, on page: NotePage) {
         guard !path.isEmpty else { return }
-        let doomed = page.elements.filter { element in
+        let doomed = page.allElements.filter { element in
             guard element.kind == .rectangle || element.kind == .ellipse, !element.isLocked else {
                 return false
             }
@@ -6860,7 +7319,7 @@ struct PageCanvasContainer: View {
         guard !doomed.isEmpty else { return }
         for element in doomed {
             recordShapeRemoval(element, on: page)
-            page.elements.removeAll { $0 === element }
+            page.elements?.removeAll { $0 === element }
             modelContext.delete(element)
         }
         try? modelContext.save()
@@ -6876,13 +7335,13 @@ struct PageCanvasContainer: View {
                 guard let page else { return }
                 let restored = snapshot.makeElement()
                 restored.page = page
-                page.elements.append(restored)
+                page.addElement(restored)
                 context.insert(restored)
                 slot.element = restored
             },
             redo: { [weak page] in
                 guard let page, let element = slot.element else { return }
-                page.elements.removeAll { $0 === element }
+                page.elements?.removeAll { $0 === element }
                 context.delete(element)
                 slot.element = nil
             }
@@ -6942,7 +7401,7 @@ struct PageCanvasContainer: View {
         NoteActionHistory.shared.record(
             undo: { [weak page] in
                 guard let page, let element = slot.element else { return }
-                page.elements.removeAll { $0 === element }
+                page.elements?.removeAll { $0 === element }
                 context.delete(element)
                 slot.element = nil
             },
@@ -6950,7 +7409,7 @@ struct PageCanvasContainer: View {
                 guard let page else { return }
                 let restored = snapshot.makeElement()
                 restored.page = page
-                page.elements.append(restored)
+                page.addElement(restored)
                 context.insert(restored)
                 slot.element = restored
             }
@@ -7031,7 +7490,7 @@ private struct PageElementsLayer: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ForEach(page.elements) { element in
+            ForEach(page.allElements) { element in
                 EditablePageElement(
                     element: element,
                     pageSize: geometry.size,
@@ -7047,7 +7506,7 @@ private struct PageElementsLayer: View {
         .coordinateSpace(name: Self.coordinateSpace)
         .onReceive(NotificationCenter.default.publisher(for: .studiquoSelectPageElement)) { note in
             guard let id = note.object as? PersistentIdentifier,
-                  page.elements.contains(where: { $0.persistentModelID == id }) else { return }
+                  page.allElements.contains(where: { $0.persistentModelID == id }) else { return }
             selectedElementID = id
         }
     }
@@ -7483,29 +7942,29 @@ private struct EditablePageElement: View {
             colorHex: element.colorHex
         )
         copy.isLocked = element.isLocked
-        copy.layerIndex = (page.elements.map(\.layerIndex).max() ?? 0) + 1
+        copy.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
         copy.page = page
-        page.elements.append(copy)
+        page.addElement(copy)
         page.notebook?.updatedAt = .now
     }
 
     private func deleteElement() {
         guard let page = element.page else { return }
         if isSelected { selectedElementID = nil }
-        page.elements.removeAll { $0 === element }
+        page.elements?.removeAll { $0 === element }
         modelContext.delete(element)
         page.notebook?.updatedAt = .now
     }
 
     private func bringToFront() {
         guard let page = element.page else { return }
-        element.layerIndex = (page.elements.map(\.layerIndex).max() ?? 0) + 1
+        element.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
         markUpdated()
     }
 
     private func sendToBack() {
         guard let page = element.page else { return }
-        element.layerIndex = (page.elements.map(\.layerIndex).min() ?? 0) - 1
+        element.layerIndex = (page.allElements.map(\.layerIndex).min() ?? 0) - 1
         markUpdated()
     }
 
@@ -7598,7 +8057,7 @@ private struct PageSidebar: View {
                     Button(action: duplicateBookmarkedPages) {
                         Label("ブックマークを一括複製", systemImage: "plus.square.on.square")
                     }
-                    .disabled(!notebook.pages.contains(where: \.isBookmarked))
+                    .disabled(!notebook.sortedPages.contains(where: \.isBookmarked))
                     Button(role: .destructive, action: deleteBookmarkedPages) {
                         Label("ブックマークを一括削除", systemImage: "trash")
                     }
@@ -7689,20 +8148,20 @@ private struct PageSidebar: View {
     }
 
     private var canDeleteBookmarkedPages: Bool {
-        let count = notebook.pages.filter(\.isBookmarked).count
-        return count > 0 && count < notebook.pages.count
+        let count = notebook.sortedPages.filter(\.isBookmarked).count
+        return count > 0 && count < notebook.sortedPages.count
     }
 
     private func duplicateBookmarkedPages() {
         let sources = notebook.sortedPages.filter(\.isBookmarked)
         for source in sources { duplicate(source) }
-        currentPageIndex = max(0, notebook.pages.count - sources.count)
+        currentPageIndex = max(0, notebook.sortedPages.count - sources.count)
     }
 
     private func deleteBookmarkedPages() {
         guard canDeleteBookmarkedPages else { return }
-        let removed = notebook.pages.filter(\.isBookmarked)
-        notebook.pages.removeAll(where: \.isBookmarked)
+        let removed = notebook.sortedPages.filter(\.isBookmarked)
+        notebook.pages?.removeAll(where: \.isBookmarked)
         removed.forEach {
             $0.notebook = nil
             modelContext.delete($0)
@@ -7710,7 +8169,7 @@ private struct PageSidebar: View {
         for (order, page) in notebook.sortedPages.enumerated() { page.order = order }
         notebook.refreshLibraryMetadata()
         notebook.updatedAt = .now
-        currentPageIndex = min(currentPageIndex, notebook.pages.count - 1)
+        currentPageIndex = min(currentPageIndex, notebook.sortedPages.count - 1)
         try? modelContext.save()
     }
 
@@ -7729,7 +8188,7 @@ private struct PageSidebar: View {
     }
 
     private var canDeleteSelectedPages: Bool {
-        !selectedPages.isEmpty && selectedPages.count < notebook.pages.count
+        !selectedPages.isEmpty && selectedPages.count < notebook.sortedPages.count
     }
 
     private func bookmarkSelectedPages() {
@@ -7750,8 +8209,8 @@ private struct PageSidebar: View {
     private func deleteSelectedPages() {
         guard canDeleteSelectedPages else { return }
         let ids = selectedPageIDs
-        let removed = notebook.pages.filter { ids.contains(pageID($0)) }
-        notebook.pages.removeAll { ids.contains(pageID($0)) }
+        let removed = notebook.sortedPages.filter { ids.contains(pageID($0)) }
+        notebook.pages?.removeAll { ids.contains(pageID($0)) }
         removed.forEach {
             $0.notebook = nil
             modelContext.delete($0)
@@ -7759,17 +8218,17 @@ private struct PageSidebar: View {
         for (order, page) in notebook.sortedPages.enumerated() { page.order = order }
         notebook.refreshLibraryMetadata()
         notebook.updatedAt = .now
-        currentPageIndex = min(currentPageIndex, notebook.pages.count - 1)
+        currentPageIndex = min(currentPageIndex, notebook.sortedPages.count - 1)
         selectedPageIDs.removeAll()
         try? modelContext.save()
     }
 
     private func duplicate(_ source: NotePage) {
-        let page = NotePage(order: notebook.pages.count, backgroundImageData: source.backgroundImageData, pageWidth: source.pageWidth, pageHeight: source.pageHeight)
+        let page = NotePage(order: notebook.sortedPages.count, backgroundImageData: source.backgroundImageData, pageWidth: source.pageWidth, pageHeight: source.pageHeight)
         page.drawingData = source.drawingData
         page.templateRawValue = source.templateRawValue
         page.title = source.title
-        for sourceElement in source.elements {
+        for sourceElement in source.allElements {
             let element = PageElement(
                 kind: sourceElement.kind,
                 text: sourceElement.text,
@@ -7784,20 +8243,20 @@ private struct PageSidebar: View {
             element.isLocked = sourceElement.isLocked
             element.layerIndex = sourceElement.layerIndex
             element.page = page
-            page.elements.append(element)
+            page.addElement(element)
         }
         page.notebook = notebook
-        notebook.pages.append(page)
+        notebook.addPage(page)
         notebook.updatedAt = .now
-        currentPageIndex = notebook.pages.count - 1
+        currentPageIndex = notebook.sortedPages.count - 1
     }
 
     private func delete(_ page: NotePage) {
-        guard notebook.pages.count > 1, let index = notebook.pages.firstIndex(where: { $0 === page }) else { return }
-        notebook.pages.remove(at: index)
+        guard notebook.sortedPages.count > 1, let index = notebook.pages?.firstIndex(where: { $0 === page }) else { return }
+        notebook.pages?.remove(at: index)
         for (order, remaining) in notebook.sortedPages.enumerated() { remaining.order = order }
         notebook.updatedAt = .now
-        currentPageIndex = min(currentPageIndex, notebook.pages.count - 1)
+        currentPageIndex = min(currentPageIndex, notebook.sortedPages.count - 1)
     }
 
     private func movePages(from source: IndexSet, to destination: Int) {

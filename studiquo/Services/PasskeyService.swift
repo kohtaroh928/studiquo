@@ -43,7 +43,11 @@ final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAutho
         )
     }
 
-    func login() async throws -> String {
+    /// Returns the account's email and a freshly minted studiquo cloud
+    /// token — a successful passkey assertion is itself proof of identity,
+    /// so the server mints a real session here, same as it does for
+    /// Apple/Google/local-password sign-in.
+    func login() async throws -> (email: String, token: String) {
         let envelope: AuthenticationOptionsEnvelope = try await post(
             path: "api/passkeys/login/options", body: EmptyBody(), bearer: nil
         )
@@ -70,11 +74,11 @@ final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAutho
         )
         let result: AuthenticationResult = try await post(
             path: "api/passkeys/login/verify",
-            body: AuthenticationVerification(transaction: envelope.transaction, credential: response),
+            body: AuthenticationVerification(transaction: envelope.transaction, credential: response, randomValue: MCPCloudCredentials.makeRandomValue()),
             bearer: nil
         )
         guard result.authenticated else { throw PasskeyError.notVerified }
-        return result.email
+        return (result.email, result.token)
     }
 
     private func perform(_ request: ASAuthorizationRequest) async throws -> ASAuthorization {
@@ -139,7 +143,7 @@ private struct AuthenticationPublicKeyOptions: Codable { let challenge: String }
 private struct RegistrationOptionsEnvelope: Codable { let transaction: String; let options: PublicKeyOptions }
 private struct AuthenticationOptionsEnvelope: Codable { let transaction: String; let options: AuthenticationPublicKeyOptions }
 private struct RegistrationResult: Codable { let registered: Bool }
-private struct AuthenticationResult: Codable { let authenticated: Bool; let email: String }
+private struct AuthenticationResult: Codable { let authenticated: Bool; let email: String; let token: String }
 
 private struct RegistrationCredential: Codable {
     struct Response: Codable { let clientDataJSON: String; let attestationObject: String; let transports: [String] }
@@ -154,7 +158,7 @@ private struct AuthenticationCredential: Codable {
     let authenticatorAttachment: String; let clientExtensionResults: [String: String]
 }
 private struct RegistrationVerification: Codable { let transaction: String; let credential: RegistrationCredential }
-private struct AuthenticationVerification: Codable { let transaction: String; let credential: AuthenticationCredential }
+private struct AuthenticationVerification: Codable { let transaction: String; let credential: AuthenticationCredential; let randomValue: String }
 
 private extension Data {
     func base64URLEncodedString() -> String {
