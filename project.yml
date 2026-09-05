@@ -3,6 +3,10 @@ options:
   bundleIdPrefix: com.yabuko
   deploymentTarget:
     iOS: "17.0"
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 7.1.0
 targets:
   studiquo:
     type: application
@@ -12,6 +16,19 @@ targets:
       - path: studiquo
     entitlements:
       path: studiquo/studiquo.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
+    # Sign in with Apple's SystemCapabilities entry can't be expressed here:
+    # xcodegen 2.46.0 mis-serializes a 2-level-nested `attributes` dict into a
+    # single string, corrupting project.pbxproj. It must be re-added by hand
+    # in project.pbxproj (PBXProject.attributes.TargetAttributes.<target>)
+    # after every `xcodegen generate`, alongside studiquo.entitlements.
+    dependencies:
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: GoogleSignIn
+        product: GoogleSignInSwift
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "2"
@@ -36,7 +53,27 @@ targets:
         NSFaceIDUsageDescription: "ロックしたノートを安全に開くためにFace IDを使用します。"
         NSCameraUsageDescription: "授業資料やQRコードを読み取るためにカメラを使用します。"
         NSMicrophoneUsageDescription: "AIトークの通話機能と文字起こし機能で音声を入力するためにマイクを使用します。"
+        GIDClientID: "812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd.apps.googleusercontent.com"
+        GIDServerClientID: "812858933445-q6j9uih0o702884hemnk2okiet26gv1j.apps.googleusercontent.com"
         CFBundleURLTypes:
           - CFBundleURLName: com.yabuko.studiquo.friend
             CFBundleURLSchemes:
               - studiquo
+          - CFBundleURLName: com.yabuko.studiquo.google-signin
+            CFBundleURLSchemes:
+              - com.googleusercontent.apps.812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd
+  studiquoTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: studiquoTests
+    dependencies:
+      - target: studiquo
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquoTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/studiquo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/studiquo"
+        BUNDLE_LOADER: "$(TEST_HOST)"

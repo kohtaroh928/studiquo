@@ -1291,6 +1291,9 @@ private struct StudyTimeBarChart: View {
     }
 
     @State private var span: Span = .week
+    /// Index into `bars` of the bar last tapped, if any — shown in place of
+    /// the average until tapped again or the span changes.
+    @State private var selectedIndex: Int?
 
     private var calendar: Calendar { .current }
 
@@ -1298,6 +1301,9 @@ private struct StudyTimeBarChart: View {
         let id = UUID()
         let label: String
         let seconds: TimeInterval
+        /// The day (week/month) or the month's first day (year) this bar
+        /// represents — used to build the tapped-detail text.
+        let date: Date
         /// The bar for the selected day / current month, drawn in full colour.
         let isHighlighted: Bool
     }
@@ -1329,6 +1335,7 @@ private struct StudyTimeBarChart: View {
                 return Bar(
                     label: symbols[offset],
                     seconds: seconds(on: day),
+                    date: day,
                     isHighlighted: calendar.isDate(day, inSameDayAs: referenceDate)
                 )
             }
@@ -1340,6 +1347,7 @@ private struct StudyTimeBarChart: View {
                 return Bar(
                     label: "\(calendar.component(.day, from: day))",
                     seconds: seconds(on: day),
+                    date: day,
                     isHighlighted: calendar.isDate(day, inSameDayAs: referenceDate)
                 )
             }
@@ -1352,9 +1360,28 @@ private struct StudyTimeBarChart: View {
                 return Bar(
                     label: "\(month)",
                     seconds: stats.total / Double(stats.days), // the month's daily average
+                    date: day,
                     isHighlighted: month == selectedMonth
                 )
             }
+        }
+    }
+
+    private var selectedBar: Bar? {
+        guard let selectedIndex, bars.indices.contains(selectedIndex) else { return nil }
+        return bars[selectedIndex]
+    }
+
+    /// The tapped bar's own value — that day's total for week/month, that
+    /// month's daily average for year. Shown in place of `averageLabel`
+    /// until the bar is tapped again or the span changes.
+    private var selectedDetailText: String? {
+        guard let bar = selectedBar else { return nil }
+        switch span {
+        case .week, .month:
+            return L("\(bar.date.formatted(.dateTime.month().day()))：\(durationText(bar.seconds))")
+        case .year:
+            return L("\(bar.date.formatted(.dateTime.month()))の平均：\(durationText(bar.seconds))")
         }
     }
 
@@ -1401,9 +1428,9 @@ private struct StudyTimeBarChart: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("勉強時間の記録")
                         .font(.headline)
-                    Text(averageLabel)
+                    Text(selectedDetailText ?? averageLabel)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(selectedDetailText != nil ? Color.blue : .secondary)
                 }
                 Spacer()
                 Picker("期間", selection: $span) {
@@ -1411,6 +1438,7 @@ private struct StudyTimeBarChart: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 168)
+                .onChange(of: span) { selectedIndex = nil }
             }
 
             chart
@@ -1422,6 +1450,7 @@ private struct StudyTimeBarChart: View {
     }
 
     private var chart: some View {
+        let bars = bars
         let maxSeconds = max(bars.map(\.seconds).max() ?? 0, 1)
         // Every span fits the width — a month's days are packed in rather than
         // scrolled, so the whole record is visible at a glance. Bars get
@@ -1431,9 +1460,12 @@ private struct StudyTimeBarChart: View {
         return GeometryReader { geo in
             let barWidth = max(6, (geo.size.width - spacing * CGFloat(bars.count + 1)) / CGFloat(max(bars.count, 1)))
             HStack(alignment: .bottom, spacing: spacing) {
-                ForEach(bars) { bar in
+                ForEach(Array(bars.enumerated()), id: \.element.id) { index, bar in
                     barColumn(bar, maxSeconds: maxSeconds, width: barWidth, plotHeight: 132,
-                              dense: bars.count > 12)
+                              dense: bars.count > 12, isSelected: selectedIndex == index)
+                    .onTapGesture {
+                        selectedIndex = selectedIndex == index ? nil : index
+                    }
                 }
             }
             .padding(.horizontal, spacing)
@@ -1441,33 +1473,24 @@ private struct StudyTimeBarChart: View {
         }
     }
 
-    private func barColumn(_ bar: Bar, maxSeconds: TimeInterval, width: CGFloat, plotHeight: CGFloat, dense: Bool) -> some View {
+    private func barColumn(_ bar: Bar, maxSeconds: TimeInterval, width: CGFloat, plotHeight: CGFloat, dense: Bool, isSelected: Bool) -> some View {
         let height = bar.seconds > 0 ? max(3, plotHeight * CGFloat(bar.seconds / maxSeconds)) : 0
         return VStack(spacing: dense ? 3 : 5) {
             Spacer(minLength: 0)
             RoundedRectangle(cornerRadius: dense ? 1.5 : 3)
-                .fill(bar.isHighlighted ? Color.blue : Color.blue.opacity(0.4))
+                .fill(bar.isHighlighted || isSelected ? Color.blue : Color.blue.opacity(0.4))
                 .frame(width: width, height: height)
             Text(bar.label)
-                // In the packed month view, thinning the labels keeps day
-                // numbers from colliding: show every fifth day plus the
-                // highlighted one.
                 .font(.system(size: dense ? 8 : 9))
-                .foregroundStyle(bar.isHighlighted ? Color.blue : .secondary)
+                .foregroundStyle(bar.isHighlighted || isSelected ? Color.blue : .secondary)
                 .lineLimit(1)
                 .fixedSize()
                 .frame(width: max(width, dense ? 6 : 14))
-                .opacity(labelVisible(bar, dense: dense) ? 1 : 0)
         }
-    }
-
-    /// Whether to draw a bar's label. All of them outside the month view; a
-    /// readable subset inside it.
-    private func labelVisible(_ bar: Bar, dense: Bool) -> Bool {
-        guard dense else { return true }
-        if bar.isHighlighted { return true }
-        guard let day = Int(bar.label) else { return true }
-        return day % 5 == 0 || day == 1
+        // The full column (including empty space above a short/zero bar) is
+        // tappable, not just the visible rectangle.
+        .frame(height: plotHeight + 14)
+        .contentShape(Rectangle())
     }
 }
 

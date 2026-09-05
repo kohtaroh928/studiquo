@@ -44,7 +44,7 @@ struct FlashcardDeckView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.indigo)
-                    .disabled(deck.cards.isEmpty)
+                    .disabled(deck.sortedCards.isEmpty)
                 } else {
                     Button {
                         mode = .edit
@@ -125,7 +125,7 @@ struct FlashcardStudyContent: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.indigo)
-                .disabled(deck.cards.isEmpty)
+                .disabled(deck.sortedCards.isEmpty)
 
                 studySetting(
                     title: "出題順",
@@ -154,13 +154,13 @@ struct FlashcardStudyContent: View {
                     .pickerStyle(.segmented)
                 }
 
-                if deck.cards.isEmpty {
+                if deck.sortedCards.isEmpty {
                     Label("先に暗記カードを作成してください", systemImage: "exclamationmark.circle")
                         .foregroundStyle(.orange)
                         .font(.subheadline)
                 } else {
                     HStack(spacing: 10) {
-                        deckStat("カード数", "\(deck.cards.count)", "rectangle.stack", .indigo)
+                        deckStat("カード数", "\(deck.sortedCards.count)", "rectangle.stack", .indigo)
                         deckStat("学習回数", "\(deck.studySessionCount)", "arrow.triangle.2.circlepath", .teal)
                         deckStat("平均正解率", deck.accuracyText, "target", accuracyColor)
                     }
@@ -476,7 +476,7 @@ struct FlashcardEditorContent: View {
 
     private var cardList: some View {
         List {
-            Section("作成済みカード（\(deck.cards.count)枚）") {
+            Section("作成済みカード（\(deck.sortedCards.count)枚）") {
                 ForEach(Array(deck.sortedCards.enumerated()), id: \.element.persistentModelID) { index, card in
                     Button { editingCard = card } label: {
                         VStack(alignment: .leading, spacing: 5) {
@@ -499,10 +499,10 @@ struct FlashcardEditorContent: View {
         let card = Flashcard(
             question: question.trimmingCharacters(in: .whitespacesAndNewlines),
             answer: answer.trimmingCharacters(in: .whitespacesAndNewlines),
-            order: deck.cards.count
+            order: deck.sortedCards.count
         )
         card.deck = deck
-        deck.cards.append(card)
+        deck.addCard(card)
         deck.updatedAt = .now
         modelContext.insert(card)
         question = ""
@@ -519,7 +519,7 @@ struct FlashcardEditorContent: View {
     }
 
     private func delete(_ card: Flashcard) {
-        deck.cards.removeAll { $0 === card }
+        deck.cards?.removeAll { $0 === card }
         modelContext.delete(card)
         reorderCards()
     }

@@ -188,7 +188,7 @@ struct NotePageSnapshot {
         backgroundImageData = page.backgroundImageData
         recognizedText = page.recognizedText
         inkReferenceWidth = page.inkReferenceWidth
-        elements = page.elements.map(PageElementSnapshot.init)
+        elements = page.allElements.map(PageElementSnapshot.init)
     }
 
     @MainActor
@@ -207,7 +207,7 @@ struct NotePageSnapshot {
         for snapshot in elements {
             let element = snapshot.makeElement()
             element.page = page
-            page.elements.append(element)
+            page.addElement(element)
             context.insert(element)
         }
         return page

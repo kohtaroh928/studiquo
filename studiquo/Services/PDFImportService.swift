@@ -14,7 +14,7 @@ enum PDFImportService {
         // Unlock whenever a password is supplied, not only when PDFKit calls
         // the document locked — its `isLocked` is unreliable and leaving a
         // still-encrypted document renders every page blank.
-        if let password, document.isLocked {
+        if let password {
             _ = document.unlock(withPassword: password)
         }
         var results: [(Data, Double, Double, String)] = []

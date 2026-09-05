@@ -3,15 +3,15 @@ import SwiftData
 
 @Model
 final class PageElement {
-    var kindRawValue: String
-    var text: String
+    var kindRawValue: String = PageElementKind.text.rawValue
+    var text: String = ""
     @Attribute(.externalStorage) var imageData: Data?
-    var centerX: Double
-    var centerY: Double
-    var width: Double
-    var height: Double
-    var rotation: Double
-    var colorHex: String
+    var centerX: Double = 0.5
+    var centerY: Double = 0.35
+    var width: Double = 0.35
+    var height: Double = 0.12
+    var rotation: Double = 0
+    var colorHex: String = "#1C1C1E"
     var isLocked: Bool = false
     var layerIndex: Double = 0
     var page: NotePage?

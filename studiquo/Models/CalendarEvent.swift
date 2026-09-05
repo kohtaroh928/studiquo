@@ -7,12 +7,12 @@ final class CalendarEvent {
     /// `persistentModelID` — used to key its scheduled reminder notification
     /// so it can be found again to reschedule or cancel.
     var id: UUID = UUID()
-    var title: String
-    var startDate: Date
-    var endDate: Date
-    var kindRawValue: String
-    var notes: String
-    var createdAt: Date
+    var title: String = ""
+    var startDate: Date = Date.now
+    var endDate: Date = Date.now
+    var kindRawValue: String = CalendarEventKind.other.rawValue
+    var notes: String = ""
+    var createdAt: Date = Date.now
     var externalID: String?
     var externalSource: String?
     /// Display name of the institution an imported entry came from, so the
@@ -70,12 +70,12 @@ final class StudyActivity {
 
 @Model
 final class AIChatThread {
-    var title: String
-    var createdAt: Date
-    var updatedAt: Date
+    var title: String = "新しいトーク"
+    var createdAt: Date = Date.now
+    var updatedAt: Date = Date.now
 
     @Relationship(deleteRule: .cascade, inverse: \AIChatMessage.thread)
-    var messages: [AIChatMessage] = []
+    var messages: [AIChatMessage]?
 
     init(title: String = "新しいトーク") {
         self.title = title
@@ -84,15 +84,22 @@ final class AIChatThread {
     }
 
     var sortedMessages: [AIChatMessage] {
-        messages.sorted { $0.createdAt < $1.createdAt }
+        (messages ?? []).sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// Appends to the CloudKit-required optional relationship, creating the
+    /// backing array on first use.
+    func addMessage(_ message: AIChatMessage) {
+        if messages == nil { messages = [] }
+        messages?.append(message)
     }
 }
 
 @Model
 final class AIChatMessage {
-    var text: String
-    var createdAt: Date
-    var roleRawValue: String
+    var text: String = ""
+    var createdAt: Date = Date.now
+    var roleRawValue: String = AIChatRole.user.rawValue
     var thread: AIChatThread?
 
     init(text: String, role: AIChatRole, createdAt: Date = .now) {

@@ -26,9 +26,21 @@
 				<string>studiquo</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.yabuko.studiquo.google-signin</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>GIDClientID</key>
+	<string>812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>812858933445-q6j9uih0o702884hemnk2okiet26gv1j.apps.googleusercontent.com</string>
 	<key>NSCameraUsageDescription</key>
 	<string>授業資料やQRコードを読み取るためにカメラを使用します。</string>
 	<key>NSFaceIDUsageDescription</key>

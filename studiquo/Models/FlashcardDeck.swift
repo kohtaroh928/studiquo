@@ -3,9 +3,9 @@ import SwiftData
 
 @Model
 final class FlashcardDeck {
-    var title: String
-    var createdAt: Date
-    var updatedAt: Date
+    var title: String = ""
+    var createdAt: Date = Date.now
+    var updatedAt: Date = Date.now
     var isFavorite: Bool = false
     /// Soft-delete flag, matching notes/documents/slides: a swiped deck goes
     /// to the trash and can be restored, rather than vanishing for good.
@@ -24,7 +24,7 @@ final class FlashcardDeck {
     var lastStudiedAt: Date?
 
     @Relationship(deleteRule: .cascade, inverse: \Flashcard.deck)
-    var cards: [Flashcard] = []
+    var cards: [Flashcard]?
 
     init(title: String) {
         self.title = title
@@ -32,8 +32,15 @@ final class FlashcardDeck {
         self.updatedAt = .now
     }
 
+    /// Appends to the CloudKit-required optional relationship, creating the
+    /// backing array on first use.
+    func addCard(_ card: Flashcard) {
+        if cards == nil { cards = [] }
+        cards?.append(card)
+    }
+
     var sortedCards: [Flashcard] {
-        cards.sorted { $0.order < $1.order }
+        (cards ?? []).sorted { $0.order < $1.order }
     }
 
     var orderMode: FlashcardOrderMode {
@@ -55,10 +62,10 @@ final class FlashcardDeck {
 
 @Model
 final class Flashcard {
-    var question: String
-    var answer: String
-    var order: Int
-    var createdAt: Date
+    var question: String = ""
+    var answer: String = ""
+    var order: Int = 0
+    var createdAt: Date = Date.now
     var mastery: Int = 0
     var reviewCount: Int = 0
     var lastReviewedAt: Date?
