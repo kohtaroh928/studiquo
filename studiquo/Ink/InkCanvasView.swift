@@ -13,12 +13,19 @@ private final class InkSelectionTransfer {
     let drawing: InkDrawing
     let screenPoint: CGPoint
     let screenSize: CGSize
+    /// The source canvas's selection outline, in the same page-space as
+    /// `drawing`'s strokes — carried across so the receiving canvas can
+    /// apply the exact same resize/reposition it applies to the strokes and
+    /// rebuild a matching dashed outline, instead of the drop losing its
+    /// selection state entirely.
+    let selectionPolygon: [CGPoint]
     var wasAccepted = false
 
-    init(drawing: InkDrawing, screenPoint: CGPoint, screenSize: CGSize) {
+    init(drawing: InkDrawing, screenPoint: CGPoint, screenSize: CGSize, selectionPolygon: [CGPoint]) {
         self.drawing = drawing
         self.screenPoint = screenPoint
         self.screenSize = screenSize
+        self.selectionPolygon = selectionPolygon
     }
 }
 
@@ -527,7 +534,13 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         ))
 
         let moved = lastMovementLocation.map { hypot(location.x - $0.x, location.y - $0.y) > 6 } ?? true
-        if moved {
+        // The pen's shape/line-correction hold-timer has no business running
+        // while erasing — `touchesBegan` already skips starting it for the
+        // eraser, but this is the actual per-sample driver that restarts it
+        // on every subsequent move (see `startHoldTimer` below), so it needs
+        // the same exclusion or a slow eraser drag ends up holding still
+        // long enough to trigger it anyway.
+        if moved, !isEraser {
             lastMovementLocation = location
             lastMovementAt = Date()
             if isStraightened {
@@ -551,6 +564,36 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     // MARK: Lasso selection
 
+    /// Whether an in-progress drag at `location` should switch into "left
+    /// the canvas" mode (hide the content, show a floating preview that can
+    /// be handed to another pane). Only meaningful when `allowsSelectionTransfer`
+    /// is true — when this canvas has nowhere to hand a selection off to
+    /// (e.g. both panes are showing the same notebook), wandering past this
+    /// canvas's own edge is never treated as "outside": the floating
+    /// preview would only ever end in a drop that has to unwind itself,
+    /// dragged across what looks like open space and then yanked back for
+    /// no visible reason the instant it's released.
+    static func lassoDragShouldLeaveCanvas(location: CGPoint, canvasSize: CGSize, allowsSelectionTransfer: Bool) -> Bool {
+        allowsSelectionTransfer && !CGRect(origin: .zero, size: canvasSize).contains(location)
+    }
+
+    /// Whether a lift at `location` should be treated as a drop outside the
+    /// canvas. `wasAlreadyOutside` (`isSelectionOutsideCanvas`) is only as
+    /// fresh as the last `moveLasso` call — a lift that happens to land
+    /// outside the canvas without an intervening move event (unlikely given
+    /// how often UIKit reports movement, but not impossible) would otherwise
+    /// be treated as a plain in-canvas drop. Checking the lift's own
+    /// location directly removes that dependency on the flag having already
+    /// caught up. Gated on `allowsSelectionTransfer` for the same reason as
+    /// `lassoDragShouldLeaveCanvas` above — with no pane to hand off to, a
+    /// lift past the edge is still just a plain in-canvas drop to commit.
+    static func isLassoLiftOutsideCanvas(
+        location: CGPoint, canvasSize: CGSize, wasAlreadyOutside: Bool, allowsSelectionTransfer: Bool
+    ) -> Bool {
+        guard allowsSelectionTransfer else { return false }
+        return wasAlreadyOutside || !CGRect(origin: .zero, size: canvasSize).contains(location)
+    }
+
     private func beginLasso(at location: CGPoint) {
         if !selectedStrokeIDs.isEmpty, Self.point(location, isInside: selectionPolygon) {
             selectionDragStart = location
@@ -567,13 +610,19 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         if let start = selectionDragStart {
             guard let location = locations.last else { return }
             selectionDragOffset = CGPoint(x: location.x - start.x, y: location.y - start.y)
-            if !CGRect(origin: .zero, size: canvasSize).contains(location) {
+            if Self.lassoDragShouldLeaveCanvas(location: location, canvasSize: canvasSize, allowsSelectionTransfer: allowsSelectionTransfer) {
                 isSelectionOutsideCanvas = true
                 withoutImplicitAnimations {
                     for id in selectedStrokeIDs {
                         strokeLayers[id]?.setAffineTransform(.identity)
                         strokeLayers[id]?.isHidden = true
                     }
+                    // The dashed outline now travels baked into the floating
+                    // preview image itself (see `selectionPreview`) — left
+                    // visible here, it would just sit frozen at the boundary
+                    // while the content it used to encircle moves on without
+                    // it, which is exactly the "outline left behind" bug.
+                    selectionLayer.isHidden = true
                 }
                 let preview = selectionPreview()
                 onSelectionDragMoved?(preview?.image, preview?.screenSize, convert(location, to: nil))
@@ -583,6 +632,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                 isSelectionOutsideCanvas = false
                 withoutImplicitAnimations {
                     for id in selectedStrokeIDs { strokeLayers[id]?.isHidden = false }
+                    selectionLayer.isHidden = false
                 }
                 onSelectionDragMoved?(nil, nil, nil)
             }
@@ -605,14 +655,18 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     private func endLasso(at location: CGPoint) {
         if selectionDragStart != nil {
-            if isSelectionOutsideCanvas {
+            if Self.isLassoLiftOutsideCanvas(
+                location: location, canvasSize: canvasSize,
+                wasAlreadyOutside: isSelectionOutsideCanvas, allowsSelectionTransfer: allowsSelectionTransfer
+            ) {
                 let screenPoint = convert(location, to: nil)
                 let preview = selectionPreview()
-                if allowsSelectionTransfer, let preview {
+                if let preview {
                     let transfer = InkSelectionTransfer(
                         drawing: InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) }),
                         screenPoint: screenPoint,
-                        screenSize: preview.screenSize
+                        screenSize: preview.screenSize,
+                        selectionPolygon: selectionPolygon
                     )
                     NotificationCenter.default.post(name: .studiquoInkSelectionTransfer, object: transfer)
                     if transfer.wasAccepted {
@@ -634,8 +688,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         if let last = lassoPoints.last, hypot(location.x - last.x, location.y - last.y) >= 1 {
             lassoPoints.append(location)
         }
-        guard lassoPoints.count >= 8,
-              let first = lassoPoints.first, let last = lassoPoints.last else {
+        guard lassoPoints.count >= 8, let first = lassoPoints.first else {
             clearLassoSelection()
             return
         }
@@ -643,8 +696,19 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             $0.union(CGRect(origin: $1, size: .zero))
         }
         let closureTolerance = max(18, hypot(bounds.width, bounds.height) * 0.18)
-        guard bounds.width >= 12, bounds.height >= 12,
-              hypot(last.x - first.x, last.y - first.y) <= closureTolerance else {
+        // A self-crossing loop often has the pencil lift somewhere other than
+        // exactly back at the start — the loop closes, then the stroke
+        // continues on through the middle (that's what makes it cross
+        // itself) before finally lifting elsewhere. Requiring only the last
+        // point to land near the start rejected every one of those as
+        // "never closed." Scanning the whole path for any point (past the
+        // first few, which start trivially close to themselves) that comes
+        // back near the start instead recognizes the loop the moment it
+        // actually closes, regardless of where the gesture wanders after.
+        let closesLoop = lassoPoints.dropFirst(4).contains {
+            hypot($0.x - first.x, $0.y - first.y) <= closureTolerance
+        }
+        guard bounds.width >= 12, bounds.height >= 12, closesLoop else {
             clearLassoSelection()
             return
         }
@@ -715,6 +779,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             }
             selectionLayer.setAffineTransform(.identity)
             selectionLayer.path = nil
+            selectionLayer.isHidden = false
         }
         lassoPoints = []
         selectionPolygon = []
@@ -748,6 +813,12 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             $0.union($1.bounds)
         }
         guard sourceBounds.width > 0, sourceBounds.height > 0 else { return }
+        // `transfer.screenSize` was measured against ink bounds unioned with
+        // the outline (see `selectionPreview`) — matching that union here is
+        // what keeps this scale calculation correct instead of over-scaling
+        // by however much outline margin is included in `screenSize` but not
+        // in a plain ink-only bounds.
+        let combinedSourceBounds = Self.unionBounds(sourceBounds, with: transfer.selectionPolygon)
         let screenTopLeft = CGPoint(
             x: transfer.screenPoint.x - transfer.screenSize.width / 2,
             y: transfer.screenPoint.y - transfer.screenSize.height / 2
@@ -758,9 +829,9 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         )
         let localTopLeft = pagePoint(convert(screenTopLeft, from: nil))
         let localBottomRight = pagePoint(convert(screenBottomRight, from: nil))
-        let scaleX = abs(localBottomRight.x - localTopLeft.x) / sourceBounds.width
-        let scaleY = abs(localBottomRight.y - localTopLeft.y) / sourceBounds.height
-        let sourceCenter = CGPoint(x: sourceBounds.midX, y: sourceBounds.midY)
+        let scaleX = abs(localBottomRight.x - localTopLeft.x) / combinedSourceBounds.width
+        let scaleY = abs(localBottomRight.y - localTopLeft.y) / combinedSourceBounds.height
+        let sourceCenter = CGPoint(x: combinedSourceBounds.midX, y: combinedSourceBounds.midY)
         let widthScale = max(0.01, (scaleX + scaleY) / 2)
 
         let transferred = transfer.drawing.strokes.map { stroke -> InkStroke in
@@ -780,6 +851,21 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         drawing.strokes.append(contentsOf: transferred)
         rebuildCommittedLayers()
         transfer.wasAccepted = true
+
+        // Re-establish the selection here too, scaled and repositioned the
+        // same way the strokes themselves just were — a lasso selection
+        // dragged across the pane boundary should still read as "selected"
+        // (dashed outline included) once it lands, not silently become
+        // plain committed ink with no outline at all.
+        selectedStrokeIDs = Set(transferred.map(\.id))
+        selectionPolygon = transfer.selectionPolygon.map {
+            CGPoint(
+                x: localCenter.x + ($0.x - sourceCenter.x) * scaleX,
+                y: localCenter.y + ($0.y - sourceCenter.y) * scaleY
+            )
+        }
+        updateLassoPath(selectionPolygon)
+        onSelectionChanged?(InkDrawing(strokes: transferred))
     }
 
     private func selectionPreview() -> (image: UIImage, screenSize: CGSize)? {
@@ -787,13 +873,54 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         guard let first = selected.strokes.first else { return nil }
         let inkBounds = selected.strokes.dropFirst().reduce(first.bounds) { $0.union($1.bounds) }
         guard inkBounds.width > 0, inkBounds.height > 0 else { return nil }
-        let topLeft = convert(viewPoint(CGPoint(x: inkBounds.minX, y: inkBounds.minY)), to: nil)
-        let bottomRight = convert(viewPoint(CGPoint(x: inkBounds.maxX, y: inkBounds.maxY)), to: nil)
+        // The lasso outline is drawn with a margin outside the ink it
+        // encloses — sizing the traveling image to the ink alone clips that
+        // margin off mid-drag. Unioning the outline's own points in keeps
+        // the whole dashed border inside the image; `receiveInkSelectionTransfer`
+        // unions the same way so the two sides agree on what "the selection's
+        // bounds" means and the landing scale/position stay correct.
+        let previewBounds = Self.unionBounds(inkBounds, with: selectionPolygon)
+        let topLeft = convert(viewPoint(CGPoint(x: previewBounds.minX, y: previewBounds.minY)), to: nil)
+        let bottomRight = convert(viewPoint(CGPoint(x: previewBounds.maxX, y: previewBounds.maxY)), to: nil)
         let screenSize = CGSize(
             width: abs(bottomRight.x - topLeft.x),
             height: abs(bottomRight.y - topLeft.y)
         )
-        return (selected.image(from: inkBounds, scale: 2), screenSize)
+        return (Self.selectionPreviewImage(ink: selected, bounds: previewBounds, outline: selectionPolygon), screenSize)
+    }
+
+    /// `bounds` unioned with every point in `points` treated as a zero-size
+    /// rect — the same "grow a bounding box to cover some points" pattern
+    /// used for the lasso path itself, reused here so the ink's bounds and
+    /// the outline's bounds combine into one region.
+    private static func unionBounds(_ bounds: CGRect, with points: [CGPoint]) -> CGRect {
+        points.reduce(bounds) { $0.union(CGRect(origin: $1, size: .zero)) }
+    }
+
+    /// The dragged content's dashed outline baked into the same floating
+    /// image as the ink, so the marquee travels across the pane boundary
+    /// with the selection instead of being left behind on the source
+    /// canvas (which has no way to keep drawing it once the touch has moved
+    /// off its own bounds).
+    private static func selectionPreviewImage(ink: InkDrawing, bounds: CGRect, outline: [CGPoint]) -> UIImage {
+        let scale: CGFloat = 2
+        let inkImage = ink.image(from: bounds, scale: scale)
+        let pixelSize = CGSize(width: max(1, bounds.width * scale), height: max(1, bounds.height * scale))
+        return UIGraphicsImageRenderer(size: pixelSize).image { _ in
+            inkImage.draw(at: .zero)
+            guard let first = outline.first, outline.count >= 2 else { return }
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: (first.x - bounds.minX) * scale, y: (first.y - bounds.minY) * scale))
+            for point in outline.dropFirst() {
+                path.addLine(to: CGPoint(x: (point.x - bounds.minX) * scale, y: (point.y - bounds.minY) * scale))
+            }
+            path.lineWidth = 1.5 * scale
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            path.setLineDash([6 * scale, 4 * scale], count: 2, phase: 0)
+            UIColor.systemBlue.setStroke()
+            path.stroke()
+        }
     }
 
     // MARK: Cross-pane selection drag
@@ -827,20 +954,35 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         return UITargetedDragPreview(view: imageView, parameters: parameters)
     }
 
-    private static func point(_ point: CGPoint, isInside polygon: [CGPoint]) -> Bool {
+    /// Nonzero winding-number test rather than even-odd parity: a hand-drawn
+    /// lasso that loops back over itself (a wobbly closure, not a clean
+    /// simple polygon) creates a region crossed twice by the boundary.
+    /// Even-odd counts that region as outside (the two crossings cancel to
+    /// even parity), silently dropping strokes the user visibly circled.
+    /// Winding number instead tracks each crossing's direction, so a loop
+    /// drawn consistently — clockwise or counterclockwise, self-crossing or
+    /// not — keeps a nonzero total there and is correctly treated as inside.
+    static func point(_ point: CGPoint, isInside polygon: [CGPoint]) -> Bool {
         guard polygon.count >= 3 else { return false }
-        var inside = false
+        var windingNumber = 0
         var previous = polygon[polygon.count - 1]
         for current in polygon {
-            let crosses = (current.y > point.y) != (previous.y > point.y)
-            if crosses {
-                let intersectionX = (previous.x - current.x) * (point.y - current.y)
-                    / (previous.y - current.y) + current.x
-                if point.x < intersectionX { inside.toggle() }
+            if previous.y <= point.y {
+                if current.y > point.y, signedArea(previous, current, point) > 0 {
+                    windingNumber += 1
+                }
+            } else if current.y <= point.y, signedArea(previous, current, point) < 0 {
+                windingNumber -= 1
             }
             previous = current
         }
-        return inside
+        return windingNumber != 0
+    }
+
+    /// Twice the signed area of triangle (a, b, point): positive when
+    /// `point` is left of the directed edge a→b, negative when right.
+    private static func signedArea(_ a: CGPoint, _ b: CGPoint, _ point: CGPoint) -> CGFloat {
+        (b.x - a.x) * (point.y - a.y) - (point.x - a.x) * (b.y - a.y)
     }
 
     private static func selectionSamples(for points: [InkPoint]) -> [CGPoint] {
@@ -871,7 +1013,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         holdTimer?.invalidate()
         holdTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
-            guard let since = self.lastMovementAt,
+            guard let since = self.lastMovementAt, !self.isEraser,
                   !self.isStraightened, !self.isEllipseLocked, !self.isRectangleLocked,
                   !self.isTriangleLocked, !self.isParabolaLocked else { return }
             guard Date().timeIntervalSince(since) >= self.straightenHoldDuration else { return }
@@ -891,35 +1033,41 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             }
 
             if self.isRectangleCorrectionEnabled,
-               self.rectangleIfClosedLoop(self.previewStroke()) != nil {
+               Self.rectangleIfClosedLoop(self.previewStroke()) != nil {
                 self.isRectangleLocked = true
                 self.prepareLockedShape(at: current, snapToSquare: true)
                 self.emitRectanglePreview()
                 self.triggerCorrectionFeedback(at: current)
             } else if self.isTriangleCorrectionEnabled,
-                      let triangle = self.triangleIfClosedLoop(self.previewStroke()) {
+                      let triangle = Self.triangleIfClosedLoop(self.previewStroke()) {
                 self.isTriangleLocked = true
                 self.prepareLockedNormalizedShape(points: triangle.points, at: current)
                 self.emitNormalizedShapePreview()
                 self.triggerCorrectionFeedback(at: current)
             } else if self.isParabolaCorrectionEnabled,
-                      let parabola = self.parabolaIfRecognized(self.previewStroke()) {
+                      let parabola = Self.parabolaIfRecognized(self.previewStroke()) {
                 self.isParabolaLocked = true
                 self.prepareLockedNormalizedShape(points: parabola.points, at: current)
                 self.emitNormalizedShapePreview()
                 self.triggerCorrectionFeedback(at: current)
             } else if self.isCurveCorrectionEnabled,
-                      let curve = self.curveIfRecognized(self.previewStroke()) {
+                      let curve = Self.curveIfRecognized(self.previewStroke()) {
                 self.isParabolaLocked = true
                 self.prepareLockedNormalizedShape(points: curve.points, at: current)
                 self.emitNormalizedShapePreview()
                 self.triggerCorrectionFeedback(at: current)
             } else if self.isLineCorrectionEnabled,
-                      distanceFromStart > 16, !self.looksLikeClosedLoop() {
+                      distanceFromStart > 16,
+                      !Self.looksLikeClosedLoop(
+                        points: self.rawPoints.map(\.location), width: self.strokeWidth, start: start, current: current
+                      ) {
                 self.isStraightened = true
                 self.emitStraightPreview(to: current)
                 self.triggerCorrectionFeedback(at: current)
-            } else if self.isEllipseCorrectionEnabled, self.looksLikeClosedLoop() {
+            } else if self.isEllipseCorrectionEnabled,
+                      Self.looksLikeClosedLoop(
+                        points: self.rawPoints.map(\.location), width: self.strokeWidth, start: start, current: current
+                      ) {
                 self.isEllipseLocked = true
                 self.prepareLockedShape(at: current, snapToSquare: false)
                 self.emitEllipsePreview()
@@ -942,9 +1090,11 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     /// True once the stroke drawn so far forms a loop that has come back
     /// close to its own start — the "closing the circle" moment.
-    private func looksLikeClosedLoop() -> Bool {
-        guard rawPoints.count >= 12, let start = strokeStartLocation, let current = lastMovementLocation else { return false }
-        let bounds = InkStroke(points: rawPoints, colorHex: strokeColorHex, width: strokeWidth).bounds
+    static func looksLikeClosedLoop(points: [CGPoint], width: CGFloat, start: CGPoint, current: CGPoint) -> Bool {
+        guard points.count >= 12, let first = points.first else { return false }
+        var rect = CGRect(origin: first, size: .zero)
+        for point in points.dropFirst() { rect = rect.union(CGRect(origin: point, size: .zero)) }
+        let bounds = rect.insetBy(dx: -width, dy: -width)
         guard bounds.width >= 24, bounds.height >= 24 else { return false }
         let diagonal = hypot(bounds.width, bounds.height)
         let closureGap = hypot(current.x - start.x, current.y - start.y)
@@ -1070,7 +1220,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         }
     }
 
-    private static func correctedRectangleBounds(_ bounds: CGRect) -> CGRect {
+    static func correctedRectangleBounds(_ bounds: CGRect) -> CGRect {
         guard bounds.width > 0, bounds.height > 0 else { return bounds }
         let ratio = bounds.width / bounds.height
         guard (0.8...1.25).contains(ratio) else { return bounds }
@@ -1418,7 +1568,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         return result
     }
 
-    private func rectangleIfClosedLoop(_ stroke: InkStroke) -> InkStroke? {
+    static func rectangleIfClosedLoop(_ stroke: InkStroke) -> InkStroke? {
         let points = stroke.points.map(\.location)
         guard points.count >= 12, let first = points.first, let last = points.last else { return nil }
         let bounds = stroke.bounds.insetBy(dx: stroke.width, dy: stroke.width)
@@ -1445,7 +1595,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         return result
     }
 
-    private func triangleIfClosedLoop(_ stroke: InkStroke) -> InkStroke? {
+    static func triangleIfClosedLoop(_ stroke: InkStroke) -> InkStroke? {
         let points = stroke.points.map(\.location)
         guard points.count >= 10, let first = points.first, let last = points.last else { return nil }
         let bounds = stroke.bounds.insetBy(dx: stroke.width, dy: stroke.width)
@@ -1496,7 +1646,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// coordinates. Both U and inverted-U strokes are accepted, while near
     /// straight lines and shapes whose vertex lies outside the drawn span are
     /// rejected.
-    private func parabolaIfRecognized(_ stroke: InkStroke) -> InkStroke? {
+    static func parabolaIfRecognized(_ stroke: InkStroke) -> InkStroke? {
         let points = stroke.points.map(\.location)
         guard points.count >= 10 else { return nil }
         let minX = points.map(\.x).min() ?? 0, maxX = points.map(\.x).max() ?? 0
@@ -1566,7 +1716,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// cannot describe a shape that doubles back, and forcing one onto a loop
     /// produces nonsense. Convex arcs never reach here — the parabola check
     /// runs first and claims them.
-    private func curveIfRecognized(_ stroke: InkStroke) -> InkStroke? {
+    static func curveIfRecognized(_ stroke: InkStroke) -> InkStroke? {
         let raw = stroke.points.map(\.location)
         guard raw.count >= 12 else { return nil }
         let minX = raw.map(\.x).min() ?? 0, maxX = raw.map(\.x).max() ?? 0

@@ -1,7 +1,139 @@
 import Foundation
 import UIKit
+import SwiftUI
 
 enum ExportService {
+    /// A flattened, read-only rendering of an in-app note/deck/document/slide,
+    /// suitable for sending to a friend in chat. The recipient's device has no
+    /// access to the sender's local SwiftData store, so a live editable object
+    /// can never be handed over directly — a PDF is the shared, self-contained
+    /// stand-in both sides can open the same way an uploaded photo or file
+    /// already is.
+    static func chatAttachmentPDFData(sourceKind: String, sourceID: String, notebooks: [Notebook], flashcardDecks: [FlashcardDeck], textDocuments: [TextDocument], slideDecks: [SlideDeck]) -> Data? {
+        switch sourceKind {
+        case "notebook":
+            guard let notebook = notebooks.first(where: { String(describing: $0.persistentModelID) == sourceID && !$0.isTrashed }) else { return nil }
+            return pdfData(from: notebook)
+        case "deck", "flashcards":
+            guard let deck = flashcardDecks.first(where: { String(describing: $0.persistentModelID) == sourceID && !$0.isTrashed }) else { return nil }
+            return pdfData(from: deck)
+        case "document":
+            guard let document = textDocuments.first(where: { String(describing: $0.persistentModelID) == sourceID && !$0.isTrashed }) else { return nil }
+            return pdfData(from: document)
+        case "slide":
+            guard let deck = slideDecks.first(where: { String(describing: $0.persistentModelID) == sourceID && !$0.isTrashed }) else { return nil }
+            return pdfData(from: deck)
+        default:
+            return nil
+        }
+    }
+
+    static func pdfData(from notebook: Notebook) -> Data? {
+        pdfData(pages: notebook.sortedPages)
+    }
+
+    static func pdfData(from document: TextDocument) -> Data? {
+        let attributedText = DocumentBody.decode(document.bodyData)
+        let pageSize = document.pageSize.size
+        let margin = document.pageSize.margin
+        let textRect = CGRect(
+            x: margin, y: margin,
+            width: pageSize.width - margin * 2,
+            height: pageSize.height - margin * 2
+        )
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText as CFAttributedString)
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: pageSize))
+        return renderer.pdfData { context in
+            var offset = 0
+            let total = attributedText.length
+            repeat {
+                context.beginPage()
+                guard let cgContext = UIGraphicsGetCurrentContext() else { break }
+                cgContext.translateBy(x: 0, y: pageSize.height)
+                cgContext.scaleBy(x: 1, y: -1)
+
+                let path = CGPath(rect: textRect, transform: nil)
+                let frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(offset, 0), path, nil)
+                CTFrameDraw(frame, cgContext)
+                let visible = CTFrameGetVisibleStringRange(frame)
+                if visible.length <= 0 { break }
+                offset += visible.length
+            } while offset < total
+
+            if total == 0 { context.beginPage() }
+        }
+    }
+
+    static func pdfData(from deck: SlideDeck) -> Data? {
+        let size = deck.aspect.size
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: size))
+        let theme = deck.theme
+        let aspect = deck.aspect
+        let ordered = deck.sortedSlides
+        let family = deck.fontFamily
+        let scale = CGFloat(deck.textScale)
+        let bold = deck.titleIsBold
+        let italic = deck.bodyIsItalic
+        return renderer.pdfData { context in
+            for slide in ordered {
+                context.beginPage()
+                let view = SlideCanvas(
+                    slide: slide, theme: theme, aspect: aspect, isEditable: false,
+                    fontFamily: family, textScale: scale, titleIsBold: bold, bodyIsItalic: italic
+                )
+                    .frame(width: size.width, height: size.height)
+                let imageRenderer = ImageRenderer(content: view)
+                imageRenderer.scale = 2
+                if let image = imageRenderer.uiImage {
+                    image.draw(in: CGRect(origin: .zero, size: size))
+                }
+            }
+            if ordered.isEmpty { context.beginPage() }
+        }
+    }
+
+    /// Flashcards have no existing PDF export to reuse — this renders a
+    /// simple one-card-per-page question/answer layout, enough for a friend
+    /// to read the deck without needing the live study UI.
+    static func pdfData(from deck: FlashcardDeck) -> Data? {
+        let cards = deck.sortedCards
+        guard !cards.isEmpty else { return nil }
+        let pageSize = CGSize(width: 612, height: 792)
+        let margin: CGFloat = 48
+        let contentWidth = pageSize.width - margin * 2
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: pageSize))
+        return renderer.pdfData { context in
+            let labelAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.boldSystemFont(ofSize: 14),
+                .foregroundColor: UIColor.secondaryLabel
+            ]
+            let questionAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 22, weight: .semibold),
+                .foregroundColor: UIColor.label
+            ]
+            let answerAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 18),
+                .foregroundColor: UIColor.label
+            ]
+            for (index, card) in cards.enumerated() {
+                context.beginPage()
+                UIColor.white.setFill()
+                context.fill(CGRect(origin: .zero, size: pageSize))
+                ("\(index + 1) / \(cards.count)" as NSString).draw(at: CGPoint(x: margin, y: margin), withAttributes: labelAttributes)
+                ("Q" as NSString).draw(at: CGPoint(x: margin, y: margin + 32), withAttributes: labelAttributes)
+                (card.question as NSString).draw(
+                    in: CGRect(x: margin, y: margin + 56, width: contentWidth, height: 220),
+                    withAttributes: questionAttributes
+                )
+                ("A" as NSString).draw(at: CGPoint(x: margin, y: margin + 300), withAttributes: labelAttributes)
+                (card.answer as NSString).draw(
+                    in: CGRect(x: margin, y: margin + 324, width: contentWidth, height: 220),
+                    withAttributes: answerAttributes
+                )
+            }
+        }
+    }
+
     static func makePNG(from page: NotePage, notebookTitle: String) -> URL? {
         guard let data = makeImage(from: page).pngData() else { return nil }
         let safeTitle = notebookTitle.replacingOccurrences(of: "/", with: "-")
@@ -42,10 +174,23 @@ enum ExportService {
     }
 
     private static func makePDF(pages: [NotePage], filename: String) -> URL? {
+        guard let data = pdfData(pages: pages) else { return nil }
+
+        let safeFilename = filename.replacingOccurrences(of: "/", with: "-")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeFilename).pdf")
+        do {
+            try data.write(to: url)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    private static func pdfData(pages: [NotePage]) -> Data? {
         guard !pages.isEmpty else { return nil }
 
         let pdfRenderer = UIGraphicsPDFRenderer(bounds: .zero)
-        let data = pdfRenderer.pdfData { context in
+        return pdfRenderer.pdfData { context in
             for page in pages {
                 let size = CGSize(width: page.pageWidth, height: page.pageHeight)
                 context.beginPage(withBounds: CGRect(origin: .zero, size: size), pageInfo: [:])
@@ -67,15 +212,6 @@ enum ExportService {
                     draw(element: element, pageSize: size)
                 }
             }
-        }
-
-        let safeFilename = filename.replacingOccurrences(of: "/", with: "-")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeFilename).pdf")
-        do {
-            try data.write(to: url)
-            return url
-        } catch {
-            return nil
         }
     }
 

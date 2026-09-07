@@ -258,6 +258,7 @@ struct NoteEditorView: View {
     // The browser view observes this model directly. Keeping the reference in
     // State prevents every loading-progress change from rebuilding all pages.
     @State private var webBrowser = WebBrowserModel()
+    @State private var isDownloadingFriendAttachment = false
 
     @State private var primaryPageIndex = 0
     @State private var secondaryPageIndex = 0
@@ -414,6 +415,13 @@ struct NoteEditorView: View {
                         .position(x: point.x - editorFrame.minX, y: point.y - editorFrame.minY)
                         .allowsHitTesting(false)
                         .zIndex(2000)
+                }
+
+                if isDownloadingFriendAttachment {
+                    ProgressView("読み込み中…")
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                        .zIndex(3500)
                 }
 
                 if showsCalculator {
@@ -1221,6 +1229,7 @@ struct NoteEditorView: View {
                     friend: primaryFriend,
                     store: friendStore,
                     appAttachments: friendMessageAttachmentOptions(),
+                    resolveAppAttachment: resolvedAppMessageAttachment,
                     onAttachDroppedTab: friendAttachmentForDroppedTab,
                     onPaneDrop: { handlePaneDrop($0, target: .primary) },
                     onOpenAttachment: { openFriendAttachment($0, target: .primary) }
@@ -1301,6 +1310,7 @@ struct NoteEditorView: View {
                 friend: secondaryFriend,
                 store: friendStore,
                 appAttachments: friendMessageAttachmentOptions(),
+                resolveAppAttachment: resolvedAppMessageAttachment,
                 onAttachDroppedTab: friendAttachmentForDroppedTab,
                 onPaneDrop: { handlePaneDrop($0, target: .secondary) },
                 onOpenAttachment: { openFriendAttachment($0, target: .secondary) }
@@ -2143,6 +2153,52 @@ struct NoteEditorView: View {
         return options
     }
 
+    /// Turns a picked in-app material into something the *other* participant
+    /// can actually open. `friendMessageAttachmentOptions()` builds each
+    /// option's `sourceID` from this device's own SwiftData identifier, which
+    /// only resolves against this device's own store — sent as-is, the
+    /// recipient's device can never look it up and tapping it silently does
+    /// nothing. Rendering it to a PDF and uploading it to the room mirrors
+    /// what already works for photo/file attachments: both sides end up
+    /// downloading the same shared bytes instead of one side reading a
+    /// pointer only the other side's device could ever have followed.
+    private func resolvedAppMessageAttachment(_ attachment: FriendMessageAttachment, friend: FriendRecord) async -> FriendMessageAttachment {
+        guard let sourceKind = attachment.resolvedSourceKind,
+              let sourceID = attachment.resolvedSourceID,
+              let pdfData = ExportService.chatAttachmentPDFData(
+                sourceKind: sourceKind,
+                sourceID: sourceID,
+                notebooks: notebooks,
+                flashcardDecks: flashcardDecks,
+                textDocuments: textDocuments,
+                slideDecks: slideDecks
+              ) else { return attachment }
+
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appending(path: "\(UUID().uuidString)-\(FriendMessageAttachment.boundedFilename(attachment.title)).pdf")
+        guard (try? pdfData.write(to: destination, options: [.atomic])) != nil else { return attachment }
+
+        var remoteID: String?
+        var remoteRoomID: String?
+        if friend.isDemo != true, let roomID = friend.roomID {
+            remoteID = await friendStore.uploadAttachment(data: pdfData, contentType: "application/pdf", roomID: roomID)
+            remoteRoomID = remoteID != nil ? roomID : nil
+        }
+
+        return FriendMessageAttachment(
+            id: attachment.id,
+            title: attachment.title,
+            kind: attachment.kind,
+            icon: attachment.icon,
+            sourceKind: "pdf",
+            sourceID: remoteID ?? destination.path,
+            sourcePath: destination.path,
+            remoteRoomID: remoteRoomID
+        )
+    }
+
     private func friendAttachmentForDroppedTab(_ value: String) -> FriendMessageAttachment? {
         let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return nil }
@@ -2210,10 +2266,54 @@ struct NoteEditorView: View {
             }
         }
 
-        if let sourceKind = attachment.resolvedSourceKind,
-           let sourceID = attachment.resolvedSourceID,
-           let material = temporaryMaterial(kind: sourceKind, rawID: sourceID) {
+        guard let sourceKind = attachment.resolvedSourceKind,
+              let sourceID = attachment.resolvedSourceID else { return }
+
+        if let material = temporaryMaterial(kind: sourceKind, rawID: sourceID) {
             setTemporaryChatMaterial(material, in: target)
+            return
+        }
+
+        // No local copy on this device (e.g. this is the recipient, who
+        // never had the file locally) — fetch it from the room.
+        guard let roomID = attachment.remoteRoomID else { return }
+        downloadAndPreviewFriendAttachment(sourceKind: sourceKind, sourceID: sourceID, roomID: roomID, title: attachment.title, target: target)
+    }
+
+    private func downloadAndPreviewFriendAttachment(sourceKind: String, sourceID: String, roomID: String, title: String, target: ActivePane) {
+        isDownloadingFriendAttachment = true
+        Task {
+            guard let data = await friendStore.downloadAttachment(roomID: roomID, id: sourceID) else {
+                await MainActor.run {
+                    isDownloadingFriendAttachment = false
+                    friendStore.errorMessage = "添付ファイルを読み込めませんでした。"
+                }
+                return
+            }
+            let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let ext: String
+            if sourceKind == "photo" {
+                ext = "jpg"
+            } else {
+                let titleExtension = (title as NSString).pathExtension
+                ext = titleExtension.isEmpty ? (sourceKind == "pdf" ? "pdf" : "dat") : titleExtension
+            }
+            let destination = directory.appending(path: "\(sourceID).\(ext)")
+            if !FileManager.default.fileExists(atPath: destination.path) {
+                guard (try? data.write(to: destination, options: [.atomic])) != nil else {
+                    await MainActor.run {
+                        isDownloadingFriendAttachment = false
+                        friendStore.errorMessage = "添付ファイルを読み込めませんでした。"
+                    }
+                    return
+                }
+            }
+            await MainActor.run {
+                isDownloadingFriendAttachment = false
+                setTemporaryChatMaterial(.file(destination), in: target)
+            }
         }
     }
 
