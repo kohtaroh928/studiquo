@@ -1619,7 +1619,8 @@ struct ContentView: View {
                     myStudySeconds: studyActivities
                         .filter { Calendar.current.isDateInToday($0.startedAt) }
                         .reduce(0) { $0 + $1.duration },
-                    appAttachments: friendMessageAttachmentOptions()
+                    appAttachments: friendMessageAttachmentOptions(),
+                    resolveAppAttachment: resolvedAppMessageAttachment
                 )
             }
             Divider()
@@ -2099,6 +2100,53 @@ struct ContentView: View {
             )
         })
         return options
+    }
+
+    /// Turns a picked in-app material into something the *other* participant
+    /// can actually open. `friendMessageAttachmentOptions()` builds each
+    /// option's `sourceID` from this device's own SwiftData identifier, which
+    /// only resolves against this device's own store — sent as-is, the
+    /// recipient's device can never look it up and tapping it silently does
+    /// nothing. Rendering it to a PDF and uploading it to the room mirrors
+    /// exactly what already works for photo/file attachments (see
+    /// `uploadIfPossible` in ProfileAndFriendsView.swift): both sides end up
+    /// downloading the same shared bytes instead of one side reading a
+    /// pointer only the other side's device could ever have followed.
+    private func resolvedAppMessageAttachment(_ attachment: FriendMessageAttachment, friend: FriendRecord) async -> FriendMessageAttachment {
+        guard let sourceKind = attachment.resolvedSourceKind,
+              let sourceID = attachment.resolvedSourceID,
+              let pdfData = ExportService.chatAttachmentPDFData(
+                sourceKind: sourceKind,
+                sourceID: sourceID,
+                notebooks: allNotebooks,
+                flashcardDecks: flashcardDecks,
+                textDocuments: textDocuments,
+                slideDecks: slideDecks
+              ) else { return attachment }
+
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appending(path: "\(UUID().uuidString)-\(FriendMessageAttachment.boundedFilename(attachment.title)).pdf")
+        guard (try? pdfData.write(to: destination, options: [.atomic])) != nil else { return attachment }
+
+        var remoteID: String?
+        var remoteRoomID: String?
+        if friend.isDemo != true, let roomID = friend.roomID {
+            remoteID = await friendStore.uploadAttachment(data: pdfData, contentType: "application/pdf", roomID: roomID)
+            remoteRoomID = remoteID != nil ? roomID : nil
+        }
+
+        return FriendMessageAttachment(
+            id: attachment.id,
+            title: attachment.title,
+            kind: attachment.kind,
+            icon: attachment.icon,
+            sourceKind: "pdf",
+            sourceID: remoteID ?? destination.path,
+            sourcePath: destination.path,
+            remoteRoomID: remoteRoomID
+        )
     }
 
     private func handleTabDrop(_ value: String) -> Bool {

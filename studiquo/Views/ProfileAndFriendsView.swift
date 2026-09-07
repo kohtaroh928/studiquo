@@ -758,6 +758,7 @@ struct FriendsHomeView: View {
     @ObservedObject var store: FriendStore
     let myStudySeconds: TimeInterval
     var appAttachments: [FriendMessageAttachment] = []
+    var resolveAppAttachment: (FriendMessageAttachment, FriendRecord) async -> FriendMessageAttachment = { attachment, _ in attachment }
     @State private var showsAdd = false
 
     var body: some View {
@@ -790,7 +791,7 @@ struct FriendsHomeView: View {
                 Section("フレンド") {
                     ForEach(store.friends) { friend in
                         NavigationLink {
-                            FriendChatView(friend: friend, store: store, appAttachments: appAttachments)
+                            FriendChatView(friend: friend, store: store, appAttachments: appAttachments, resolveAppAttachment: resolveAppAttachment)
                         } label: {
                             HStack {
                                 Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(.tint)
@@ -953,6 +954,7 @@ struct FriendChatView: View {
     let friend: FriendRecord
     @ObservedObject var store: FriendStore
     var appAttachments: [FriendMessageAttachment] = []
+    var resolveAppAttachment: (FriendMessageAttachment, FriendRecord) async -> FriendMessageAttachment = { attachment, _ in attachment }
     var onAttachDroppedTab: (String) -> FriendMessageAttachment? = { _ in nil }
     var onPaneDrop: (String) -> Bool = { _ in false }
     var onOpenAttachment: ((FriendMessageAttachment) -> Void)?
@@ -964,6 +966,7 @@ struct FriendChatView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showsCameraScanner = false
     @State private var partialCopyText: PartialCopyText?
+    @State private var isAttachingAppMaterial = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -995,6 +998,14 @@ struct FriendChatView: View {
                     .background(Color.accentColor.opacity(0.12), in: Capsule())
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
+                if isAttachingAppMaterial {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("資料を準備しています…").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
                 if !attachments.isEmpty {
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
@@ -1023,7 +1034,12 @@ struct FriendChatView: View {
                         Menu("アプリ内の資料を追加") {
                             ForEach(appAttachments) { item in
                                 Button {
-                                    attachments.append(item)
+                                    isAttachingAppMaterial = true
+                                    Task {
+                                        let resolved = await resolveAppAttachment(item, friend)
+                                        isAttachingAppMaterial = false
+                                        attachments.append(resolved)
+                                    }
                                 } label: {
                                     Label(item.title, systemImage: item.icon)
                                 }
