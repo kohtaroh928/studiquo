@@ -7143,6 +7143,31 @@ struct PageCanvasContainer: View {
                                 shapeSelectionDragOffsets = [:]
                                 page.notebook?.updatedAt = .now
                                 try? modelContext.save()
+                            },
+                            onShapeSelectionReceived: { ids, localCenter, sourceCenter, scaleX, scaleY in
+                                for id in ids {
+                                    guard let pid = id.base as? PersistentIdentifier,
+                                          let element = modelContext.model(for: pid) as? PageElement,
+                                          let sourcePage = element.page
+                                    else { continue }
+                                    let geometry = Self.transferredShapeGeometry(
+                                        sourceCenterX: element.centerX, sourceCenterY: element.centerY,
+                                        sourceWidth: element.width, sourceHeight: element.height,
+                                        sourcePageWidth: sourcePage.pageWidth, sourcePageHeight: sourcePage.pageHeight,
+                                        localCenter: localCenter, sourceCenter: sourceCenter, scaleX: scaleX, scaleY: scaleY,
+                                        destinationPageWidth: page.pageWidth, destinationPageHeight: page.pageHeight
+                                    )
+                                    sourcePage.elements?.removeAll { $0 === element }
+                                    element.page = page
+                                    element.centerX = geometry.centerX
+                                    element.centerY = geometry.centerY
+                                    element.width = geometry.width
+                                    element.height = geometry.height
+                                    element.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
+                                    page.addElement(element)
+                                }
+                                page.notebook?.updatedAt = .now
+                                try? modelContext.save()
                             }
                         )
                             .allowsHitTesting(!isReadOnlyMode)
@@ -7421,6 +7446,34 @@ struct PageCanvasContainer: View {
         return (centerX: centerX + Double(offset.x) / pageWidth, centerY: centerY + Double(offset.y) / pageHeight)
     }
 
+    /// Where a shape lands after a cross-pane transfer: its absolute
+    /// position and size in the SOURCE page's units are re-centered and
+    /// rescaled by exactly the transform the ink went through
+    /// (`InkCanvasView.SelectionTransferGeometry`), then expressed as the
+    /// DESTINATION page's own normalized (0...1) geometry — since the two
+    /// pages can be different sizes (different notebooks, say).
+    static func transferredShapeGeometry(
+        sourceCenterX: Double, sourceCenterY: Double, sourceWidth: Double, sourceHeight: Double,
+        sourcePageWidth: Double, sourcePageHeight: Double,
+        localCenter: CGPoint, sourceCenter: CGPoint, scaleX: CGFloat, scaleY: CGFloat,
+        destinationPageWidth: Double, destinationPageHeight: Double
+    ) -> (centerX: Double, centerY: Double, width: Double, height: Double) {
+        let absoluteX = sourceCenterX * sourcePageWidth
+        let absoluteY = sourceCenterY * sourcePageHeight
+        let newAbsoluteX = Double(localCenter.x) + (absoluteX - Double(sourceCenter.x)) * Double(scaleX)
+        let newAbsoluteY = Double(localCenter.y) + (absoluteY - Double(sourceCenter.y)) * Double(scaleY)
+        let newAbsoluteWidth = sourceWidth * sourcePageWidth * Double(scaleX)
+        let newAbsoluteHeight = sourceHeight * sourcePageHeight * Double(scaleY)
+        let destinationPageWidth = max(destinationPageWidth, 1)
+        let destinationPageHeight = max(destinationPageHeight, 1)
+        return (
+            centerX: newAbsoluteX / destinationPageWidth,
+            centerY: newAbsoluteY / destinationPageHeight,
+            width: max(newAbsoluteWidth / destinationPageWidth, 0.02),
+            height: max(newAbsoluteHeight / destinationPageHeight, 0.02)
+        )
+    }
+
     /// Shapes the lasso selection tool can enclose and move alongside ink —
     /// see `SelectableShapeOutline`. Locked shapes are excluded, matching
     /// the eraser's own outline sweep (`shapeElementsSwept`) and the
@@ -7444,7 +7497,8 @@ struct PageCanvasContainer: View {
             centerY: geometry.centerY,
             width: geometry.width,
             height: geometry.height,
-            colorHex: drawingColorHex
+            colorHex: drawingColorHex,
+            lineWidth: drawingWidth
         )
         element.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
         element.page = page
@@ -7864,9 +7918,9 @@ private struct EditablePageElement: View {
                 Image(systemName: "photo.badge.exclamationmark")
             }
         case .rectangle:
-            RoundedRectangle(cornerRadius: 3).stroke(color, lineWidth: 3)
+            RoundedRectangle(cornerRadius: 3).stroke(color, lineWidth: element.lineWidth)
         case .ellipse:
-            Ellipse().stroke(color, lineWidth: 3)
+            Ellipse().stroke(color, lineWidth: element.lineWidth)
         case .line:
             Rectangle().fill(color).frame(height: 3)
         case .studyTape:
@@ -8125,7 +8179,8 @@ private struct EditablePageElement: View {
             width: element.width,
             height: element.height,
             rotation: element.rotation,
-            colorHex: element.colorHex
+            colorHex: element.colorHex,
+            lineWidth: element.lineWidth
         )
         copy.isLocked = element.isLocked
         copy.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
