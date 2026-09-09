@@ -1153,7 +1153,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                 shapePath.lineWidth = max(1, shape.lineWidth) * scale
                 shapePath.lineCapStyle = .round
                 shapePath.lineJoinStyle = .round
-                UIColor(hex: shape.colorHex).setStroke()
+                UIColor(inkHex: shape.colorHex).setStroke()
                 shapePath.stroke()
             }
             guard let first = outline.first, outline.count >= 2 else { return }
