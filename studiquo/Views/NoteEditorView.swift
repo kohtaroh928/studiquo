@@ -7194,7 +7194,10 @@ struct PageCanvasContainer: View {
                         )
                             .allowsHitTesting(!isReadOnlyMode)
                             .modifier(ConditionalColorInvert(enabled: usesDarkPageDisplay))
-                        PageElementsLayer(page: page, isDark: usesDarkPageDisplay, lassoDragOffsets: shapeSelectionDragOffsets, hiddenElementIDs: hiddenShapeSelectionIDs)
+                        PageElementsLayer(
+                            page: page, isDark: usesDarkPageDisplay, lassoDragOffsets: shapeSelectionDragOffsets,
+                            hiddenElementIDs: hiddenShapeSelectionIDs, isLassoActive: drawingTool.wrappedValue == .lasso
+                        )
                             .allowsHitTesting(!isReadOnlyMode)
                     }
                     .frame(width: displaySize.width, height: displaySize.height)
@@ -7532,7 +7535,14 @@ struct PageCanvasContainer: View {
     private var selectableShapeOutlines: [SelectableShapeOutline] {
         page.allElements
             .filter { ($0.kind == .rectangle || $0.kind == .ellipse) && !$0.isLocked }
-            .map { SelectableShapeOutline(id: AnyHashable($0.persistentModelID), outline: Self.shapeOutline(for: $0, on: page)) }
+            .map {
+                SelectableShapeOutline(
+                    id: AnyHashable($0.persistentModelID),
+                    outline: Self.shapeOutline(for: $0, on: page),
+                    colorHex: $0.colorHex,
+                    lineWidth: CGFloat($0.lineWidth)
+                )
+            }
     }
 
     private func addShapeElement(kind: InkCanvasView.ShapeKind, pageRect: CGRect, on page: NotePage) {
@@ -7766,6 +7776,13 @@ private struct PageElementsLayer: View {
     /// outside this canvas's own edge — see
     /// `PageCanvasContainer.hiddenShapeSelectionIDs`.
     var hiddenElementIDs: Set<PersistentIdentifier> = []
+    /// True while the lasso tool is the active drawing tool. Shape elements
+    /// stop taking touches while this is true (see `EditablePageElement`) so
+    /// a touch that starts inside a shape's bounding box still reaches
+    /// `InkCanvasView` underneath to begin a lasso drag or a selection-box
+    /// drag, instead of being claimed by the shape's own tap/gesture
+    /// recognizers first.
+    var isLassoActive: Bool = false
 
     /// At most one element carries the resize/rotate chrome at a time, so
     /// the state lives here rather than in each element.
@@ -7785,7 +7802,8 @@ private struct PageElementsLayer: View {
                     isDark: isDark,
                     selectedElementID: $selectedElementID,
                     lassoDragOffset: lassoDragOffsets[element.persistentModelID] ?? .zero,
-                    isHiddenForLasso: hiddenElementIDs.contains(element.persistentModelID)
+                    isHiddenForLasso: hiddenElementIDs.contains(element.persistentModelID),
+                    isLassoActive: isLassoActive
                 )
                 // A selected element floats above the rest so its handles
                 // are never buried under a neighbour that happens to sit on
@@ -7852,6 +7870,13 @@ private struct EditablePageElement: View {
     /// drag has carried it outside the canvas's own edge — see
     /// `PageElementsLayer.hiddenElementIDs`.
     var isHiddenForLasso: Bool = false
+    /// True while the lasso tool is active — see `PageElementsLayer.isLassoActive`.
+    /// While true this element takes no touches at all, so a touch that
+    /// starts inside a shape's bounding box (not just outside it) still
+    /// reaches `InkCanvasView` underneath to begin or continue a lasso
+    /// gesture, instead of this view's own `.contentShape`/gestures
+    /// claiming it first.
+    var isLassoActive: Bool = false
 
     @State private var dragOrigin: CGPoint?
     @State private var sizeOrigin: CGSize?
@@ -7888,6 +7913,7 @@ private struct EditablePageElement: View {
             .position(x: pageSize.width * element.centerX, y: pageSize.height * element.centerY)
             .offset(x: lassoDragOffset.x, y: lassoDragOffset.y)
             .opacity(isHiddenForLasso ? 0 : 1)
+            .allowsHitTesting(!isLassoActive)
             .onTapGesture {
                 guard supportsSelection else { return }
                 selectedElementID = isSelected ? nil : element.persistentModelID
