@@ -172,6 +172,15 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// Fires once a same-canvas drag lifts, with the final offset to commit
     /// into each selected shape's stored position.
     var onShapeSelectionMoved: ((Set<AnyHashable>, CGPoint) -> Void)?
+    /// Fires when a lasso drag carrying shapes crosses this canvas's own
+    /// edge (going outside, `true`) or comes back in (`false`), with the ids
+    /// of the shapes currently selected. Ink strokes have their own layers
+    /// this view can hide directly (`strokeLayers[id]?.isHidden`), but a
+    /// shape's visual representation lives entirely in the owner's SwiftUI
+    /// tree (`EditablePageElement`) — this is how the owner is told to hide
+    /// it too, instead of leaving it frozen in place at the boundary while
+    /// the floating preview carries on without it.
+    var onShapeSelectionHidden: ((Set<AnyHashable>, Bool) -> Void)?
     /// Fires once a cross-pane transfer lands here and includes shapes —
     /// this view has no idea what a `PageElement` is, so the owner (which
     /// does) uses these to reparent the actual model objects itself.
@@ -684,6 +693,9 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                     // it, which is exactly the "outline left behind" bug.
                     selectionLayer.isHidden = true
                 }
+                if !selectedShapeIDs.isEmpty {
+                    onShapeSelectionHidden?(selectedShapeIDs, true)
+                }
                 let preview = selectionPreview()
                 onSelectionDragMoved?(preview?.image, preview?.screenSize, convert(location, to: nil))
                 return
@@ -693,6 +705,9 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                 withoutImplicitAnimations {
                     for id in selectedStrokeIDs { strokeLayers[id]?.isHidden = false }
                     selectionLayer.isHidden = false
+                }
+                if !selectedShapeIDs.isEmpty {
+                    onShapeSelectionHidden?(selectedShapeIDs, false)
                 }
                 onSelectionDragMoved?(nil, nil, nil)
             }
@@ -884,6 +899,11 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         // moments before this runs), it's a harmless no-op repeat.
         if let reset = Self.shapeSelectionResetOnClear(selectedShapeIDs: selectedShapeIDs) {
             onShapeSelectionMoved?(reset.ids, reset.offset)
+            // Mirrors the stroke-layer unhide above: if the selection is
+            // being cleared while shapes were hidden for being outside the
+            // canvas (e.g. a rejected cross-pane drop), the owner needs to
+            // be told to show them again — nothing else would.
+            onShapeSelectionHidden?(reset.ids, false)
         }
         lassoPoints = []
         selectionPolygon = []
@@ -987,7 +1007,12 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             width: abs(bottomRight.x - topLeft.x),
             height: abs(bottomRight.y - topLeft.y)
         )
-        return (Self.selectionPreviewImage(ink: selected, bounds: previewBounds, outline: selectionPolygon), screenSize)
+        return (
+            Self.selectionPreviewImage(
+                ink: selected, bounds: previewBounds, outline: selectionPolygon, shapeOutlinePoints: shapeOutlinePoints
+            ),
+            screenSize
+        )
     }
 
     /// The bounds a floating cross-pane preview must cover: the selected
@@ -1026,12 +1051,39 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// with the selection instead of being left behind on the source
     /// canvas (which has no way to keep drawing it once the touch has moved
     /// off its own bounds).
-    private static func selectionPreviewImage(ink: InkDrawing, bounds: CGRect, outline: [CGPoint]) -> UIImage {
+    private static func selectionPreviewImage(
+        ink: InkDrawing, bounds: CGRect, outline: [CGPoint], shapeOutlinePoints: [CGPoint] = []
+    ) -> UIImage {
         let scale: CGFloat = 2
         let inkImage = ink.image(from: bounds, scale: scale)
         let pixelSize = CGSize(width: max(1, bounds.width * scale), height: max(1, bounds.height * scale))
         return UIGraphicsImageRenderer(size: pixelSize).image { _ in
             inkImage.draw(at: .zero)
+            // A shape-only selection has no `InkDrawing` content of its own,
+            // so without drawing something here the floating preview that
+            // follows the finger across the pane boundary would show only
+            // the dashed marquee below with nothing inside it — the shape
+            // itself appears to have vanished until the drop lands. A solid
+            // outline (not the selection's own dashed style, so the two
+            // stay visually distinct) is enough to read as "the shape is
+            // still here"; full fidelity (fill, stroke color/width) isn't
+            // needed for a floating drag preview.
+            if shapeOutlinePoints.count >= 2 {
+                let shapePath = UIBezierPath()
+                shapePath.move(to: CGPoint(
+                    x: (shapeOutlinePoints[0].x - bounds.minX) * scale,
+                    y: (shapeOutlinePoints[0].y - bounds.minY) * scale
+                ))
+                for point in shapeOutlinePoints.dropFirst() {
+                    shapePath.addLine(to: CGPoint(x: (point.x - bounds.minX) * scale, y: (point.y - bounds.minY) * scale))
+                }
+                shapePath.close()
+                shapePath.lineWidth = 2 * scale
+                shapePath.lineCapStyle = .round
+                shapePath.lineJoinStyle = .round
+                UIColor.label.setStroke()
+                shapePath.stroke()
+            }
             guard let first = outline.first, outline.count >= 2 else { return }
             let path = UIBezierPath()
             path.move(to: CGPoint(x: (first.x - bounds.minX) * scale, y: (first.y - bounds.minY) * scale))

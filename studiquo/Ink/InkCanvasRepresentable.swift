@@ -82,6 +82,10 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     var onShapeSelectionDragged: (Set<AnyHashable>, CGPoint) -> Void = { _, _ in }
     var onShapeSelectionMoved: (Set<AnyHashable>, CGPoint) -> Void = { _, _ in }
     var onShapeSelectionReceived: (Set<AnyHashable>, CGPoint, CGPoint, CGFloat, CGFloat) -> Void = { _, _, _, _, _ in }
+    /// Fires when a lasso drag carrying shapes crosses this canvas's own
+    /// edge, so the owner can hide/show the corresponding
+    /// `EditablePageElement` views — see `InkCanvasView.onShapeSelectionHidden`.
+    var onShapeSelectionHidden: (Set<AnyHashable>, Bool) -> Void = { _, _ in }
 
     func makeUIView(context: Context) -> InkCanvasView {
         let view = InkCanvasView()
@@ -127,6 +131,9 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         }
         view.onShapeSelectionReceived = { [coordinator = context.coordinator] ids, localCenter, sourceCenter, scaleX, scaleY in
             coordinator.parent.onShapeSelectionReceived(ids, localCenter, sourceCenter, scaleX, scaleY)
+        }
+        view.onShapeSelectionHidden = { [coordinator = context.coordinator] ids, hidden in
+            coordinator.parent.onShapeSelectionHidden(ids, hidden)
         }
         return view
     }
