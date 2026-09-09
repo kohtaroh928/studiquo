@@ -19,13 +19,28 @@ private final class InkSelectionTransfer {
     /// rebuild a matching dashed outline, instead of the drop losing its
     /// selection state entirely.
     let selectionPolygon: [CGPoint]
+    /// Non-ink shapes riding along in this selection, identified the same
+    /// opaque way `SelectableShapeOutline` is — the receiving canvas has no
+    /// idea what a `PageElement` is, so it only relays these onward via
+    /// `onShapeSelectionReceived` for its owner to actually reparent.
+    let shapeIDs: Set<AnyHashable>
+    /// Those same shapes' outlines, in the source canvas's page-space —
+    /// carried across so the receiver can compute the same combined
+    /// (ink + shapes + outline) bounds the source used to size the floating
+    /// preview, keeping both sides' scale calculations in agreement.
+    let shapeOutlinePoints: [CGPoint]
     var wasAccepted = false
 
-    init(drawing: InkDrawing, screenPoint: CGPoint, screenSize: CGSize, selectionPolygon: [CGPoint]) {
+    init(
+        drawing: InkDrawing, screenPoint: CGPoint, screenSize: CGSize, selectionPolygon: [CGPoint],
+        shapeIDs: Set<AnyHashable> = [], shapeOutlinePoints: [CGPoint] = []
+    ) {
         self.drawing = drawing
         self.screenPoint = screenPoint
         self.screenSize = screenSize
         self.selectionPolygon = selectionPolygon
+        self.shapeIDs = shapeIDs
+        self.shapeOutlinePoints = shapeOutlinePoints
     }
 }
 
@@ -38,6 +53,16 @@ private final class InkSelectionTransfer {
 /// scribble-to-erase hit test) can run live, against the actual stroke, while
 /// the pencil is still down — matching the reference video instead of
 /// approximating it.
+/// A non-ink shape's outline, in page units — enough for the lasso
+/// selection tool to treat it as selectable and movable alongside ink,
+/// without `InkCanvasView` needing to know anything about `PageElement` or
+/// SwiftData. `id` is opaque on purpose (in practice a `PersistentIdentifier`
+/// wrapped by the caller) so this view stays a pure ink canvas.
+struct SelectableShapeOutline {
+    var id: AnyHashable
+    var outline: [CGPoint]
+}
+
 final class InkCanvasView: UIView, UIDragInteractionDelegate {
     enum ShapeKind: String {
         // A straight line is what the line-correction already produces from
@@ -136,6 +161,24 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     var onSelectionChanged: ((InkDrawing?) -> Void)?
     var onSelectionDragMoved: ((UIImage?, CGSize?, CGPoint?) -> Void)?
     var onSelectionDropped: ((String, CGPoint) -> Void)?
+    /// Shape elements the lasso can also enclose, alongside ink — supplied
+    /// by the owner, which is the only side that knows about `PageElement`.
+    var selectableShapes: [SelectableShapeOutline] = []
+    /// Fires on every same-canvas lasso move tick while shapes are part of
+    /// the current selection, with the offset dragged so far (page units) —
+    /// lets the owner move the actual elements in sync with the ink instead
+    /// of only jumping to place once the drag ends.
+    var onShapeSelectionDragged: ((Set<AnyHashable>, CGPoint) -> Void)?
+    /// Fires once a same-canvas drag lifts, with the final offset to commit
+    /// into each selected shape's stored position.
+    var onShapeSelectionMoved: ((Set<AnyHashable>, CGPoint) -> Void)?
+    /// Fires once a cross-pane transfer lands here and includes shapes —
+    /// this view has no idea what a `PageElement` is, so the owner (which
+    /// does) uses these to reparent the actual model objects itself.
+    /// `localCenter`/`sourceCenter`/`scaleX`/`scaleY` are exactly the
+    /// numbers this view just used to place the transferred ink, so a
+    /// shape lands in the same visual spot at the same relative scale.
+    var onShapeSelectionReceived: ((Set<AnyHashable>, _ localCenter: CGPoint, _ sourceCenter: CGPoint, _ scaleX: CGFloat, _ scaleY: CGFloat) -> Void)?
     /// OCR text exported when the retained lasso selection is lifted into an
     /// iPad system drag. Using UIDragInteraction lets the preview leave this
     /// clipped page and cross into the other split pane.
@@ -281,6 +324,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     private var lassoPoints: [CGPoint] = []
     private var selectionPolygon: [CGPoint] = []
     private var selectedStrokeIDs: Set<UUID> = []
+    private var selectedShapeIDs: Set<AnyHashable> = []
     private var selectionDragStart: CGPoint?
     private var selectionDragOffset: CGPoint = .zero
     private var isSelectionOutsideCanvas = false
@@ -500,8 +544,26 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     private var snipRect: CGRect? {
         guard let start = snipStart, let current = snipCurrent else { return nil }
-        return CGRect(x: min(start.x, current.x), y: min(start.y, current.y),
-                      width: abs(current.x - start.x), height: abs(current.y - start.y))
+        return Self.snipDragRect(from: start, to: current)
+    }
+
+    /// The dashed marquee's rectangle for a still-in-progress snip drag,
+    /// normalized regardless of which corner the drag started from. Used
+    /// for the live preview, which — unlike the final capture — is allowed
+    /// to extend past the page's edge so it stays glued to the pencil.
+    static func snipDragRect(from start: CGPoint, to current: CGPoint) -> CGRect {
+        CGRect(x: min(start.x, current.x), y: min(start.y, current.y),
+               width: abs(current.x - start.x), height: abs(current.y - start.y))
+    }
+
+    /// The rectangle actually captured when a snip drag lifts: `nil` for a
+    /// tap or sliver drag (too small to be a deliberate selection — handing
+    /// that to the AI would just be a few blank pixels), otherwise the
+    /// dragged rectangle clipped to the page's own bounds.
+    static func snipCaptureRect(from start: CGPoint, to current: CGPoint, canvasSize: CGSize) -> CGRect? {
+        let rect = snipDragRect(from: start, to: current)
+        guard rect.width >= 16, rect.height >= 16 else { return nil }
+        return rect.intersection(CGRect(origin: .zero, size: canvasSize))
     }
 
     private func updateSnipPreview() {
@@ -511,11 +573,9 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     private func finishSnip() {
         defer { cancelSnip() }
-        guard let rect = snipRect else { return }
-        // A tap, or a sliver, is a miss rather than a selection — reporting
-        // it would hand the AI a few blank pixels.
-        guard rect.width >= 16, rect.height >= 16 else { return }
-        onSnipCaptured?(rect.intersection(CGRect(origin: .zero, size: canvasSize)))
+        guard let start = snipStart, let current = snipCurrent else { return }
+        guard let capturedRect = Self.snipCaptureRect(from: start, to: current, canvasSize: canvasSize) else { return }
+        onSnipCaptured?(capturedRect)
     }
 
     private func cancelSnip() {
@@ -595,7 +655,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     }
 
     private func beginLasso(at location: CGPoint) {
-        if !selectedStrokeIDs.isEmpty, Self.point(location, isInside: selectionPolygon) {
+        if (!selectedStrokeIDs.isEmpty || !selectedShapeIDs.isEmpty), Self.point(location, isInside: selectionPolygon) {
             selectionDragStart = location
             selectionDragOffset = .zero
             return
@@ -644,6 +704,9 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                 CGPoint(x: $0.x + selectionDragOffset.x, y: $0.y + selectionDragOffset.y)
             }
             updateLassoPath(movedOutline)
+            if !selectedShapeIDs.isEmpty {
+                onShapeSelectionDragged?(selectedShapeIDs, selectionDragOffset)
+            }
         } else {
             for location in locations {
                 if let last = lassoPoints.last, hypot(location.x - last.x, location.y - last.y) < 1 { continue }
@@ -666,7 +729,9 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                         drawing: InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) }),
                         screenPoint: screenPoint,
                         screenSize: preview.screenSize,
-                        selectionPolygon: selectionPolygon
+                        selectionPolygon: selectionPolygon,
+                        shapeIDs: selectedShapeIDs,
+                        shapeOutlinePoints: selectableShapes.filter { selectedShapeIDs.contains($0.id) }.flatMap(\.outline)
                     )
                     NotificationCenter.default.post(name: .studiquoInkSelectionTransfer, object: transfer)
                     if transfer.wasAccepted {
@@ -714,21 +779,25 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         }
 
         selectionPolygon = lassoPoints + [first]
-        selectedStrokeIDs = Set(drawing.strokes.compactMap { stroke in
-            // Sample along every segment, not only at the stored touch
-            // points. A corrected straight line may contain just its two end
-            // points; enclosing the middle must still select the whole line.
-            let samples = Self.selectionSamples(for: stroke.points)
-            guard !samples.isEmpty else { return nil }
-            return samples.contains { Self.point($0, isInside: selectionPolygon) } ? stroke.id : nil
-        })
-        guard !selectedStrokeIDs.isEmpty else {
+        selectedStrokeIDs = Self.strokesEnclosed(by: selectionPolygon, in: drawing.strokes)
+        selectedShapeIDs = Self.shapesEnclosed(by: selectionPolygon, in: selectableShapes)
+        guard !selectedStrokeIDs.isEmpty || !selectedShapeIDs.isEmpty else {
             clearLassoSelection()
             return
         }
         lassoPoints = []
         updateLassoPath(selectionPolygon)
         onSelectionChanged?(InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) }))
+    }
+
+    /// Which shapes a lasso loop encloses: a shape counts as selected if any
+    /// point along its outline falls inside the polygon — the same
+    /// dense-resample-then-any-point-inside test `strokesEnclosed` uses for
+    /// ink.
+    static func shapesEnclosed(by polygon: [CGPoint], in shapes: [SelectableShapeOutline]) -> Set<AnyHashable> {
+        Set(shapes.compactMap { shape in
+            shape.outline.contains { point($0, isInside: polygon) } ? shape.id : nil
+        })
     }
 
     private func commitSelectionMove() {
@@ -738,21 +807,33 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             for id in selectedStrokeIDs { strokeLayers[id]?.isHidden = false }
         }
         if abs(offset.x) > 0.01 || abs(offset.y) > 0.01 {
-            var movedDrawing = drawing
-            movedDrawing.strokes = drawing.strokes.map { stroke in
-                guard selectedStrokeIDs.contains(stroke.id) else { return stroke }
-                var moved = stroke
-                moved.points = stroke.points.map { point in
-                    var copy = point
-                    copy.location = CGPoint(x: point.location.x + offset.x, y: point.location.y + offset.y)
-                    return copy
-                }
-                return moved
+            if !selectedStrokeIDs.isEmpty {
+                var movedDrawing = drawing
+                movedDrawing.strokes = Self.movedStrokes(drawing.strokes, selectedIDs: selectedStrokeIDs, offset: offset)
+                drawing = movedDrawing
+                rebuildCommittedLayers()
             }
-            drawing = movedDrawing
-            rebuildCommittedLayers()
+            if !selectedShapeIDs.isEmpty {
+                onShapeSelectionMoved?(selectedShapeIDs, offset)
+            }
         }
         clearLassoSelection()
+    }
+
+    /// Translates every point of the selected strokes by `offset`, leaving
+    /// unselected strokes untouched. The move a same-canvas selection drag
+    /// commits.
+    static func movedStrokes(_ strokes: [InkStroke], selectedIDs: Set<UUID>, offset: CGPoint) -> [InkStroke] {
+        strokes.map { stroke in
+            guard selectedIDs.contains(stroke.id) else { return stroke }
+            var moved = stroke
+            moved.points = stroke.points.map { point in
+                var copy = point
+                copy.location = CGPoint(x: point.location.x + offset.x, y: point.location.y + offset.y)
+                return copy
+            }
+            return moved
+        }
     }
 
     private func updateLassoPath(_ points: [CGPoint]) {
@@ -765,7 +846,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     }
 
     private func clearLassoSelection() {
-        let hadSelection = !selectedStrokeIDs.isEmpty
+        let hadSelection = !selectedStrokeIDs.isEmpty || !selectedShapeIDs.isEmpty
         withoutImplicitAnimations {
             // Dragging outside the canvas hides these layers (see
             // `moveLasso`) so the ghost preview reads as "lifted off the
@@ -784,6 +865,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         lassoPoints = []
         selectionPolygon = []
         selectedStrokeIDs = []
+        selectedShapeIDs = []
         selectionDragStart = nil
         selectionDragOffset = .zero
         isSelectionOutsideCanvas = false
@@ -807,18 +889,15 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
               window != nil else { return }
         let localCenter = pagePoint(convert(transfer.screenPoint, from: nil))
         guard CGRect(origin: .zero, size: canvasSize).contains(localCenter),
-              let first = transfer.drawing.strokes.first else { return }
-
-        let sourceBounds = transfer.drawing.strokes.dropFirst().reduce(first.bounds) {
-            $0.union($1.bounds)
-        }
-        guard sourceBounds.width > 0, sourceBounds.height > 0 else { return }
-        // `transfer.screenSize` was measured against ink bounds unioned with
-        // the outline (see `selectionPreview`) — matching that union here is
-        // what keeps this scale calculation correct instead of over-scaling
-        // by however much outline margin is included in `screenSize` but not
-        // in a plain ink-only bounds.
-        let combinedSourceBounds = Self.unionBounds(sourceBounds, with: transfer.selectionPolygon)
+              !transfer.drawing.strokes.isEmpty || !transfer.shapeIDs.isEmpty else { return }
+        // `transfer.screenSize` was measured against the combined ink +
+        // shape-outline + selection-outline bounds (see `selectionPreview`)
+        // — matching that same combination here is what keeps this scale
+        // calculation correct instead of over- or under-scaling.
+        guard let combinedSourceBounds = Self.selectionPreviewBounds(
+            inkStrokes: transfer.drawing.strokes, shapeOutlinePoints: transfer.shapeOutlinePoints,
+            selectionPolygon: transfer.selectionPolygon
+        ) else { return }
         let screenTopLeft = CGPoint(
             x: transfer.screenPoint.x - transfer.screenSize.width / 2,
             y: transfer.screenPoint.y - transfer.screenSize.height / 2
@@ -829,27 +908,28 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         )
         let localTopLeft = pagePoint(convert(screenTopLeft, from: nil))
         let localBottomRight = pagePoint(convert(screenBottomRight, from: nil))
-        let scaleX = abs(localBottomRight.x - localTopLeft.x) / combinedSourceBounds.width
-        let scaleY = abs(localBottomRight.y - localTopLeft.y) / combinedSourceBounds.height
-        let sourceCenter = CGPoint(x: combinedSourceBounds.midX, y: combinedSourceBounds.midY)
-        let widthScale = max(0.01, (scaleX + scaleY) / 2)
+        let geometry = Self.selectionTransferGeometry(
+            combinedSourceBounds: combinedSourceBounds, localTopLeft: localTopLeft, localBottomRight: localBottomRight
+        )
 
         let transferred = transfer.drawing.strokes.map { stroke -> InkStroke in
             var copy = stroke
             copy.id = UUID()
-            copy.width *= widthScale
+            copy.width *= geometry.widthScale
             copy.points = stroke.points.map { point in
                 var moved = point
                 moved.location = CGPoint(
-                    x: localCenter.x + (point.location.x - sourceCenter.x) * scaleX,
-                    y: localCenter.y + (point.location.y - sourceCenter.y) * scaleY
+                    x: localCenter.x + (point.location.x - geometry.sourceCenter.x) * geometry.scaleX,
+                    y: localCenter.y + (point.location.y - geometry.sourceCenter.y) * geometry.scaleY
                 )
                 return moved
             }
             return copy
         }
-        drawing.strokes.append(contentsOf: transferred)
-        rebuildCommittedLayers()
+        if !transferred.isEmpty {
+            drawing.strokes.append(contentsOf: transferred)
+            rebuildCommittedLayers()
+        }
         transfer.wasAccepted = true
 
         // Re-establish the selection here too, scaled and repositioned the
@@ -858,28 +938,26 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         // (dashed outline included) once it lands, not silently become
         // plain committed ink with no outline at all.
         selectedStrokeIDs = Set(transferred.map(\.id))
+        selectedShapeIDs = transfer.shapeIDs
         selectionPolygon = transfer.selectionPolygon.map {
             CGPoint(
-                x: localCenter.x + ($0.x - sourceCenter.x) * scaleX,
-                y: localCenter.y + ($0.y - sourceCenter.y) * scaleY
+                x: localCenter.x + ($0.x - geometry.sourceCenter.x) * geometry.scaleX,
+                y: localCenter.y + ($0.y - geometry.sourceCenter.y) * geometry.scaleY
             )
         }
         updateLassoPath(selectionPolygon)
         onSelectionChanged?(InkDrawing(strokes: transferred))
+        if !transfer.shapeIDs.isEmpty {
+            onShapeSelectionReceived?(transfer.shapeIDs, localCenter, geometry.sourceCenter, geometry.scaleX, geometry.scaleY)
+        }
     }
 
     private func selectionPreview() -> (image: UIImage, screenSize: CGSize)? {
         let selected = InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) })
-        guard let first = selected.strokes.first else { return nil }
-        let inkBounds = selected.strokes.dropFirst().reduce(first.bounds) { $0.union($1.bounds) }
-        guard inkBounds.width > 0, inkBounds.height > 0 else { return nil }
-        // The lasso outline is drawn with a margin outside the ink it
-        // encloses — sizing the traveling image to the ink alone clips that
-        // margin off mid-drag. Unioning the outline's own points in keeps
-        // the whole dashed border inside the image; `receiveInkSelectionTransfer`
-        // unions the same way so the two sides agree on what "the selection's
-        // bounds" means and the landing scale/position stay correct.
-        let previewBounds = Self.unionBounds(inkBounds, with: selectionPolygon)
+        let shapeOutlinePoints = selectableShapes.filter { selectedShapeIDs.contains($0.id) }.flatMap(\.outline)
+        guard let previewBounds = Self.selectionPreviewBounds(
+            inkStrokes: selected.strokes, shapeOutlinePoints: shapeOutlinePoints, selectionPolygon: selectionPolygon
+        ) else { return nil }
         let topLeft = convert(viewPoint(CGPoint(x: previewBounds.minX, y: previewBounds.minY)), to: nil)
         let bottomRight = convert(viewPoint(CGPoint(x: previewBounds.maxX, y: previewBounds.maxY)), to: nil)
         let screenSize = CGSize(
@@ -889,11 +967,34 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         return (Self.selectionPreviewImage(ink: selected, bounds: previewBounds, outline: selectionPolygon), screenSize)
     }
 
+    /// The bounds a floating cross-pane preview must cover: the selected
+    /// ink's own bounds and any selected shapes' outlines, unioned with the
+    /// dashed selection polygon itself. A shape-only selection (no
+    /// `InkStroke` to measure) falls back to just the shapes' outlines —
+    /// `receiveInkSelectionTransfer` computes this the same way so both
+    /// sides of a transfer agree on what "the selection's bounds" means.
+    static func selectionPreviewBounds(
+        inkStrokes: [InkStroke], shapeOutlinePoints: [CGPoint], selectionPolygon: [CGPoint]
+    ) -> CGRect? {
+        var bounds: CGRect?
+        if let first = inkStrokes.first {
+            bounds = inkStrokes.dropFirst().reduce(first.bounds) { $0.union($1.bounds) }
+        }
+        if let first = shapeOutlinePoints.first {
+            let shapeBounds = shapeOutlinePoints.dropFirst().reduce(CGRect(origin: first, size: .zero)) {
+                $0.union(CGRect(origin: $1, size: .zero))
+            }
+            bounds = bounds.map { $0.union(shapeBounds) } ?? shapeBounds
+        }
+        guard let combined = bounds, combined.width > 0, combined.height > 0 else { return nil }
+        return unionBounds(combined, with: selectionPolygon)
+    }
+
     /// `bounds` unioned with every point in `points` treated as a zero-size
     /// rect — the same "grow a bounding box to cover some points" pattern
     /// used for the lasso path itself, reused here so the ink's bounds and
     /// the outline's bounds combine into one region.
-    private static func unionBounds(_ bounds: CGRect, with points: [CGPoint]) -> CGRect {
+    static func unionBounds(_ bounds: CGRect, with points: [CGPoint]) -> CGRect {
         points.reduce(bounds) { $0.union(CGRect(origin: $1, size: .zero)) }
     }
 
@@ -921,6 +1022,35 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             UIColor.systemBlue.setStroke()
             path.stroke()
         }
+    }
+
+    /// The scale and reference center a cross-pane transfer lands with: how
+    /// much bigger or smaller the destination drew the floating preview
+    /// than the source's own combined selection bounds, and the point in
+    /// source page-space everything is measured relative to. Shared by ink
+    /// strokes, the selection outline, and (via `onShapeSelectionReceived`)
+    /// any shapes — all three get repositioned by exactly the same formula,
+    /// just applied to a stroke's points, the outline's points, or a
+    /// shape's center respectively.
+    struct SelectionTransferGeometry {
+        var scaleX: CGFloat
+        var scaleY: CGFloat
+        var sourceCenter: CGPoint
+        /// `(scaleX + scaleY) / 2`, floored so a degenerate transfer never
+        /// zeroes out a stroke's width entirely.
+        var widthScale: CGFloat
+    }
+
+    static func selectionTransferGeometry(
+        combinedSourceBounds: CGRect, localTopLeft: CGPoint, localBottomRight: CGPoint
+    ) -> SelectionTransferGeometry {
+        let scaleX = abs(localBottomRight.x - localTopLeft.x) / combinedSourceBounds.width
+        let scaleY = abs(localBottomRight.y - localTopLeft.y) / combinedSourceBounds.height
+        return SelectionTransferGeometry(
+            scaleX: scaleX, scaleY: scaleY,
+            sourceCenter: CGPoint(x: combinedSourceBounds.midX, y: combinedSourceBounds.midY),
+            widthScale: max(0.01, (scaleX + scaleY) / 2)
+        )
     }
 
     // MARK: Cross-pane selection drag
@@ -985,6 +1115,18 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         (b.x - a.x) * (point.y - a.y) - (point.x - a.x) * (b.y - a.y)
     }
 
+    /// Which strokes a lasso loop encloses: a stroke counts as selected if
+    /// any point along it (densely resampled, not just its stored touch
+    /// points — a corrected straight line may store just its two end
+    /// points) falls inside the polygon.
+    static func strokesEnclosed(by polygon: [CGPoint], in strokes: [InkStroke]) -> Set<UUID> {
+        Set(strokes.compactMap { stroke in
+            let samples = Self.selectionSamples(for: stroke.points)
+            guard !samples.isEmpty else { return nil }
+            return samples.contains { Self.point($0, isInside: polygon) } ? stroke.id : nil
+        })
+    }
+
     private static func selectionSamples(for points: [InkPoint]) -> [CGPoint] {
         guard let first = points.first?.location else { return [] }
         guard points.count > 1 else { return [first] }
@@ -1005,6 +1147,21 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     // MARK: Straighten / circle (live, both triggered by holding still)
 
+    /// Whether the pen's hold-to-correct machinery (straighten, snap to
+    /// ellipse/rectangle/triangle/parabola/curve) should even be considered
+    /// right now. Erasing and highlighting are both deliberately excluded —
+    /// a highlight is usually a wobbly underline or box drawn by eye, and
+    /// snapping it into a geometric shape would fight that instead of
+    /// helping it — and any lock already in effect means a shape already
+    /// won and there's nothing left to (re-)decide.
+    static func shouldConsiderHoldCorrection(
+        isEraser: Bool, isHighlighter: Bool, isStraightened: Bool, isEllipseLocked: Bool,
+        isRectangleLocked: Bool, isTriangleLocked: Bool, isParabolaLocked: Bool
+    ) -> Bool {
+        !isEraser && !isHighlighter && !isStraightened && !isEllipseLocked
+            && !isRectangleLocked && !isTriangleLocked && !isParabolaLocked
+    }
+
     /// Fires `straightenHoldDuration` after the pencil last moved. Which
     /// shape it locks to depends on where it's holding: near the stroke's
     /// own start (the loop has come back around) means a circle; anywhere
@@ -1013,9 +1170,13 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         holdTimer?.invalidate()
         holdTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
-            guard let since = self.lastMovementAt, !self.isEraser,
-                  !self.isStraightened, !self.isEllipseLocked, !self.isRectangleLocked,
-                  !self.isTriangleLocked, !self.isParabolaLocked else { return }
+            guard let since = self.lastMovementAt,
+                  Self.shouldConsiderHoldCorrection(
+                    isEraser: self.isEraser, isHighlighter: self.isHighlighter,
+                    isStraightened: self.isStraightened, isEllipseLocked: self.isEllipseLocked,
+                    isRectangleLocked: self.isRectangleLocked, isTriangleLocked: self.isTriangleLocked,
+                    isParabolaLocked: self.isParabolaLocked
+                  ) else { return }
             guard Date().timeIntervalSince(since) >= self.straightenHoldDuration else { return }
             guard let start = self.strokeStartLocation, let current = self.lastMovementLocation else { return }
             let distanceFromStart = hypot(current.x - start.x, current.y - start.y)
@@ -1264,7 +1425,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     private func updateShapePreview(kind: ShapeKind) {
         guard let start = shapeDragStart, let current = shapeDragCurrent else { return }
-        let preview = InkStroke(points: shapePoints(kind: kind, from: start, to: current), colorHex: strokeColorHex, width: strokeWidth)
+        let preview = InkStroke(points: Self.shapePoints(kind: kind, from: start, to: current), colorHex: strokeColorHex, width: strokeWidth)
         liveLayer.path = Self.path(for: [preview]).cgPath
         liveLayer.fillColor = UIColor(inkHex: strokeColorHex).cgColor
     }
@@ -1274,17 +1435,24 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// is treated as an accidental tap rather than a degenerate sliver of a
     /// shape.
     private func commitShape(kind: ShapeKind, from start: CGPoint, to end: CGPoint) {
-        guard hypot(end.x - start.x, end.y - start.y) > 8 else { return }
-        let rect = CGRect(
+        guard let rect = Self.committedShapeRect(from: start, to: end) else { return }
+        onShapeCommitted?(kind, rect)
+    }
+
+    /// The rectangle a shape drag commits, normalized regardless of which
+    /// corner the drag started from — `nil` for a drag too short to be a
+    /// deliberate shape (an accidental tap).
+    static func committedShapeRect(from start: CGPoint, to end: CGPoint) -> CGRect? {
+        guard hypot(end.x - start.x, end.y - start.y) > 8 else { return nil }
+        return CGRect(
             x: min(start.x, end.x),
             y: min(start.y, end.y),
             width: abs(end.x - start.x),
             height: abs(end.y - start.y)
         )
-        onShapeCommitted?(kind, rect)
     }
 
-    private func shapePoints(kind: ShapeKind, from start: CGPoint, to end: CGPoint) -> [InkPoint] {
+    static func shapePoints(kind: ShapeKind, from start: CGPoint, to end: CGPoint) -> [InkPoint] {
         switch kind {
         case .rectangle:
             let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
@@ -1418,11 +1586,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     private func showEraserCursor(at location: CGPoint) {
         eraserCursorLocation = location
-        let radius = max(1, eraserWidth / 2)
-        let path = UIBezierPath(ovalIn: CGRect(
-            x: location.x - radius, y: location.y - radius,
-            width: radius * 2, height: radius * 2
-        ))
+        let path = UIBezierPath(ovalIn: Self.eraserCursorRect(at: location, eraserWidth: eraserWidth))
         withoutImplicitAnimations {
             eraserCursorLayer.path = path.cgPath
             eraserCursorLayer.isHidden = false
@@ -1441,29 +1605,60 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// faded preview and no work deferred until lift: the visible drawing is
     /// replaced in the same move event in which the eraser crosses it.
     private func eraseParts(along eraserPath: [CGPoint]) {
-        guard !eraserPath.isEmpty else { return }
-        let radius = max(1, eraserWidth / 2)
+        guard let result = Self.erasedStrokes(drawing.strokes, eraserPath: eraserPath, eraserWidth: eraserWidth) else { return }
+        drawing.strokes = result
+        rebuildCommittedLayers()
+    }
+
+    /// Points-radius the eraser actually affects for a given `eraserWidth`
+    /// — shared by the erase logic and the cursor that previews it, so the
+    /// visible circle can never silently drift out of sync with what it
+    /// actually erases.
+    static func eraserRadius(for eraserWidth: CGFloat) -> CGFloat {
+        max(1, eraserWidth / 2)
+    }
+
+    /// The eraser cursor's circle, centered exactly on `location` with the
+    /// same radius `erasedStrokes` erases with.
+    static func eraserCursorRect(at location: CGPoint, eraserWidth: CGFloat) -> CGRect {
+        let radius = eraserRadius(for: eraserWidth)
+        return CGRect(x: location.x - radius, y: location.y - radius, width: radius * 2, height: radius * 2)
+    }
+
+    /// Erases whatever part of `strokes` the eraser (of `eraserWidth`,
+    /// swept along `eraserPath`) actually touches, splitting a stroke into
+    /// separate fragments where the erased portion falls in the middle
+    /// rather than at an end. Returns `nil` when the pass touched no ink,
+    /// so callers can skip re-rendering.
+    static func erasedStrokes(_ strokes: [InkStroke], eraserPath: [CGPoint], eraserWidth: CGFloat) -> [InkStroke]? {
+        guard !eraserPath.isEmpty else { return nil }
+        let radius = eraserRadius(for: eraserWidth)
         let eraserBounds = eraserPath.dropFirst().reduce(
             CGRect(origin: eraserPath[0], size: .zero)
         ) { $0.union(CGRect(origin: $1, size: .zero)) }
-            .insetBy(dx: -radius - strokeWidth, dy: -radius - strokeWidth)
         var changed = false
         var result: [InkStroke] = []
 
-        for stroke in drawing.strokes {
-            guard stroke.bounds.intersects(eraserBounds) else {
+        for stroke in strokes {
+            // `stroke.bounds` already carries a `stroke.width` margin of its
+            // own (see `InkStroke.bounds`), which alone comfortably covers
+            // the `stroke.width / 2` the precise check below needs — so
+            // padding this pre-filter by `radius` alone, with no extra
+            // stroke-width term, still can't exclude anything the precise
+            // check would have erased.
+            guard stroke.bounds.insetBy(dx: -radius, dy: -radius).intersects(eraserBounds) else {
                 result.append(stroke)
                 continue
             }
-            let source = Self.isGeneratedPolygon(stroke.points) ? stroke.points : Self.smoothed(stroke.points)
+            let source = isGeneratedPolygon(stroke.points) ? stroke.points : smoothed(stroke.points)
             // Corrected lines store only their two endpoints. Linear
             // resampling makes the entire segment hittable, including its
             // middle, instead of testing only those endpoints.
-            let samples = Self.linearlyResampled(source, maxSpacing: max(1, radius * 0.25))
+            let samples = linearlyResampled(source, maxSpacing: max(1, radius * 0.25))
             var runs: [[InkPoint]] = []
             var run: [InkPoint] = []
             for sample in samples {
-                let erased = Self.distance(from: sample.location, to: eraserPath) <= radius + stroke.width / 2
+                let erased = distance(from: sample.location, to: eraserPath) <= radius + stroke.width / 2
                 if erased {
                     changed = true
                     if run.count > 1 { runs.append(run) }
@@ -1475,7 +1670,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             if run.count > 1 { runs.append(run) }
 
             if runs.isEmpty {
-                if !samples.isEmpty && !samples.allSatisfy({ Self.distance(from: $0.location, to: eraserPath) <= radius + stroke.width / 2 }) {
+                if !samples.isEmpty && !samples.allSatisfy({ distance(from: $0.location, to: eraserPath) <= radius + stroke.width / 2 }) {
                     result.append(stroke)
                 }
             } else if runs.count == 1 && runs[0].count == samples.count {
@@ -1490,9 +1685,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             }
         }
 
-        guard changed else { return }
-        drawing.strokes = result
-        rebuildCommittedLayers()
+        return changed ? result : nil
     }
 
     private static func distance(from point: CGPoint, to polyline: [CGPoint]) -> CGFloat {

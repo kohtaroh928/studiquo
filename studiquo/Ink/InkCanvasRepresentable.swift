@@ -25,6 +25,15 @@ enum DrawingToolKind: String, CaseIterable {
         case .none: "hand.point.up.left"
         }
     }
+
+    /// Heading shown above the tool-size slider while this tool is active.
+    var sizeLabel: String {
+        switch self {
+        case .eraser: "消しゴムの大きさ"
+        case .highlighter: "蛍光ペンの太さ"
+        default: "ペンの太さ"
+        }
+    }
 }
 
 /// SwiftUI bridge for `InkCanvasView`. Mirrors the shape of the old
@@ -66,6 +75,13 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     var onSnipCaptured: (CGRect) -> Void = { _ in }
     /// The eraser's path in page units, with its radius.
     var onEraseSwept: ([CGPoint], CGFloat) -> Void = { _, _ in }
+    /// Non-ink shapes (rectangles/ellipses drawn with the shape tool) the
+    /// lasso can also enclose and move alongside ink — see
+    /// `SelectableShapeOutline`.
+    var selectableShapes: [SelectableShapeOutline] = []
+    var onShapeSelectionDragged: (Set<AnyHashable>, CGPoint) -> Void = { _, _ in }
+    var onShapeSelectionMoved: (Set<AnyHashable>, CGPoint) -> Void = { _, _ in }
+    var onShapeSelectionReceived: (Set<AnyHashable>, CGPoint, CGPoint, CGFloat, CGFloat) -> Void = { _, _, _, _, _ in }
 
     func makeUIView(context: Context) -> InkCanvasView {
         let view = InkCanvasView()
@@ -102,6 +118,15 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         }
         view.onEraseSwept = { [coordinator = context.coordinator] path, radius in
             coordinator.parent.onEraseSwept(path, radius)
+        }
+        view.onShapeSelectionDragged = { [coordinator = context.coordinator] ids, offset in
+            coordinator.parent.onShapeSelectionDragged(ids, offset)
+        }
+        view.onShapeSelectionMoved = { [coordinator = context.coordinator] ids, offset in
+            coordinator.parent.onShapeSelectionMoved(ids, offset)
+        }
+        view.onShapeSelectionReceived = { [coordinator = context.coordinator] ids, localCenter, sourceCenter, scaleX, scaleY in
+            coordinator.parent.onShapeSelectionReceived(ids, localCenter, sourceCenter, scaleX, scaleY)
         }
         return view
     }
@@ -157,6 +182,7 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         view.pendingShapeKind = pendingShapeKind
         view.selectionDragText = selectionDragText
         view.allowsSelectionTransfer = allowsSelectionTransfer
+        view.selectableShapes = selectableShapes
         view.isDrawingEnabled = selectedTool == .pen || selectedTool == .highlighter
             || selectedTool == .eraser || selectedTool == .lasso || selectedTool == .snip
             || pendingShapeKind != nil

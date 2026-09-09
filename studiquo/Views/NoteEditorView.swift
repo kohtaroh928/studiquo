@@ -955,9 +955,7 @@ struct NoteEditorView: View {
         DispatchQueue.main.async { isAdjustingToolSize = false }
     }
 
-    private var currentToolSizeLabel: String {
-        drawingTool == .eraser ? "消しゴムの大きさ" : "ペンの太さ"
-    }
+    private var currentToolSizeLabel: String { drawingTool.sizeLabel }
 
     /// The stored value, in points — what the ink is actually drawn with.
     private var currentToolSizeValue: Double {
@@ -6998,6 +6996,10 @@ struct PageCanvasContainer: View {
     @State private var backgroundImage: UIImage?
     @State private var loadedBackgroundImageData: Data?
     @State private var recognizedSelectionText = ""
+    /// Where a shape element visually sits while a lasso drag carrying it is
+    /// still in progress — cleared the moment the drag commits, at which
+    /// point `element.centerX`/`centerY` themselves hold the new position.
+    @State private var shapeSelectionDragOffsets: [PersistentIdentifier: CGPoint] = [:]
     @State private var isRecognizingSelection = false
     @State private var selectionRecognitionID = UUID()
     @AppStorage("drawingTool") private var drawingToolRaw = DrawingToolKind.pen.rawValue
@@ -7116,11 +7118,36 @@ struct PageCanvasContainer: View {
                             },
                             onEraseSwept: { path, radius in
                                 eraseShapeElements(along: path, radius: radius, on: page)
+                            },
+                            selectableShapes: selectableShapeOutlines,
+                            onShapeSelectionDragged: { ids, offset in
+                                var offsets: [PersistentIdentifier: CGPoint] = [:]
+                                for id in ids {
+                                    guard let pid = id.base as? PersistentIdentifier else { continue }
+                                    offsets[pid] = offset
+                                }
+                                shapeSelectionDragOffsets = offsets
+                            },
+                            onShapeSelectionMoved: { ids, offset in
+                                for id in ids {
+                                    guard let pid = id.base as? PersistentIdentifier,
+                                          let element = page.allElements.first(where: { $0.persistentModelID == pid })
+                                    else { continue }
+                                    let moved = Self.movedShapeCenter(
+                                        centerX: element.centerX, centerY: element.centerY, offset: offset,
+                                        pageWidth: page.pageWidth, pageHeight: page.pageHeight
+                                    )
+                                    element.centerX = moved.centerX
+                                    element.centerY = moved.centerY
+                                }
+                                shapeSelectionDragOffsets = [:]
+                                page.notebook?.updatedAt = .now
+                                try? modelContext.save()
                             }
                         )
                             .allowsHitTesting(!isReadOnlyMode)
                             .modifier(ConditionalColorInvert(enabled: usesDarkPageDisplay))
-                        PageElementsLayer(page: page, isDark: usesDarkPageDisplay)
+                        PageElementsLayer(page: page, isDark: usesDarkPageDisplay, lassoDragOffsets: shapeSelectionDragOffsets)
                             .allowsHitTesting(!isReadOnlyMode)
                     }
                     .frame(width: displaySize.width, height: displaySize.height)
@@ -7365,20 +7392,58 @@ struct PageCanvasContainer: View {
     /// only way to change it was to erase it and draw it again. As an element
     /// it gets the same blue frame a photo does, so it can be moved, resized,
     /// rotated and deleted afterwards.
+    /// Maps a shape drag (in page units) to the normalized, resolution-
+    /// independent geometry a `PageElement` stores — the same fractional
+    /// scheme every other element (photos included) uses, floored at 2% of
+    /// the page so a hairline drag doesn't commit an invisible shape.
+    static func shapeElementGeometry(
+        for pageRect: CGRect, pageWidth: Double, pageHeight: Double
+    ) -> (centerX: Double, centerY: Double, width: Double, height: Double) {
+        let pageWidth = max(pageWidth, 1)
+        let pageHeight = max(pageHeight, 1)
+        return (
+            centerX: pageRect.midX / pageWidth,
+            centerY: pageRect.midY / pageHeight,
+            width: max(pageRect.width / pageWidth, 0.02),
+            height: max(pageRect.height / pageHeight, 0.02)
+        )
+    }
+
+    /// The new normalized center a shape element lands at after a lasso
+    /// drag moves it by `offset` page units — the same translation
+    /// `InkCanvasView.movedStrokes` applies to ink, expressed in the
+    /// fractional coordinates `PageElement` stores instead.
+    static func movedShapeCenter(
+        centerX: Double, centerY: Double, offset: CGPoint, pageWidth: Double, pageHeight: Double
+    ) -> (centerX: Double, centerY: Double) {
+        let pageWidth = max(pageWidth, 1)
+        let pageHeight = max(pageHeight, 1)
+        return (centerX: centerX + Double(offset.x) / pageWidth, centerY: centerY + Double(offset.y) / pageHeight)
+    }
+
+    /// Shapes the lasso selection tool can enclose and move alongside ink —
+    /// see `SelectableShapeOutline`. Locked shapes are excluded, matching
+    /// the eraser's own outline sweep (`shapeElementsSwept`) and the
+    /// dedicated move handle's own `!element.isLocked` guard.
+    private var selectableShapeOutlines: [SelectableShapeOutline] {
+        page.allElements
+            .filter { ($0.kind == .rectangle || $0.kind == .ellipse) && !$0.isLocked }
+            .map { SelectableShapeOutline(id: AnyHashable($0.persistentModelID), outline: Self.shapeOutline(for: $0, on: page)) }
+    }
+
     private func addShapeElement(kind: InkCanvasView.ShapeKind, pageRect: CGRect, on page: NotePage) {
         let elementKind: PageElementKind
         switch kind {
         case .rectangle: elementKind = .rectangle
         case .ellipse: elementKind = .ellipse
         }
-        let pageWidth = max(page.pageWidth, 1)
-        let pageHeight = max(page.pageHeight, 1)
+        let geometry = Self.shapeElementGeometry(for: pageRect, pageWidth: page.pageWidth, pageHeight: page.pageHeight)
         let element = PageElement(
             kind: elementKind,
-            centerX: pageRect.midX / pageWidth,
-            centerY: pageRect.midY / pageHeight,
-            width: max(pageRect.width / pageWidth, 0.02),
-            height: max(pageRect.height / pageHeight, 0.02),
+            centerX: geometry.centerX,
+            centerY: geometry.centerY,
+            width: geometry.width,
+            height: geometry.height,
             colorHex: drawingColorHex
         )
         element.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
@@ -7407,15 +7472,7 @@ struct PageCanvasContainer: View {
     /// if the circle had been drawn with the pen.
     private func eraseShapeElements(along path: [CGPoint], radius: CGFloat, on page: NotePage) {
         guard !path.isEmpty else { return }
-        let doomed = page.allElements.filter { element in
-            guard element.kind == .rectangle || element.kind == .ellipse, !element.isLocked else {
-                return false
-            }
-            let outline = shapeOutline(for: element, on: page)
-            return path.contains { point in
-                outline.contains { hypot($0.x - point.x, $0.y - point.y) <= radius + 4 }
-            }
-        }
+        let doomed = Self.shapeElementsSwept(by: path, radius: radius, among: page.allElements, on: page)
         guard !doomed.isEmpty else { return }
         for element in doomed {
             recordShapeRemoval(element, on: page)
@@ -7448,8 +7505,27 @@ struct PageCanvasContainer: View {
         )
     }
 
+    /// Which shape elements an eraser sweep along `path` touches: locked
+    /// elements and anything that isn't a rectangle/ellipse are never
+    /// candidates, and the test is against the shape's outline (not its
+    /// bounding box), so sweeping through the middle of a circle leaves it
+    /// alone — exactly as it would if the circle had been drawn with the pen.
+    static func shapeElementsSwept(
+        by path: [CGPoint], radius: CGFloat, among elements: [PageElement], on page: NotePage
+    ) -> [PageElement] {
+        elements.filter { element in
+            guard element.kind == .rectangle || element.kind == .ellipse, !element.isLocked else {
+                return false
+            }
+            let outline = shapeOutline(for: element, on: page)
+            return path.contains { point in
+                outline.contains { hypot($0.x - point.x, $0.y - point.y) <= radius + 4 }
+            }
+        }
+    }
+
     /// The element's outline as points in page units, rotation included.
-    private func shapeOutline(for element: PageElement, on page: NotePage) -> [CGPoint] {
+    static func shapeOutline(for element: PageElement, on page: NotePage) -> [CGPoint] {
         let center = CGPoint(x: element.centerX * page.pageWidth, y: element.centerY * page.pageHeight)
         let halfWidth = element.width * page.pageWidth / 2
         let halfHeight = element.height * page.pageHeight / 2
@@ -7578,6 +7654,9 @@ struct PageCanvasContainer: View {
 private struct PageElementsLayer: View {
     @Bindable var page: NotePage
     let isDark: Bool
+    /// Where a shape currently sits mid-lasso-drag, in page units, keyed by
+    /// element — see `PageCanvasContainer.shapeSelectionDragOffsets`.
+    var lassoDragOffsets: [PersistentIdentifier: CGPoint] = [:]
 
     /// At most one element carries the resize/rotate chrome at a time, so
     /// the state lives here rather than in each element.
@@ -7595,7 +7674,8 @@ private struct PageElementsLayer: View {
                     element: element,
                     pageSize: geometry.size,
                     isDark: isDark,
-                    selectedElementID: $selectedElementID
+                    selectedElementID: $selectedElementID,
+                    lassoDragOffset: lassoDragOffsets[element.persistentModelID] ?? .zero
                 )
                 // A selected element floats above the rest so its handles
                 // are never buried under a neighbour that happens to sit on
@@ -7653,6 +7733,11 @@ private struct EditablePageElement: View {
     let isDark: Bool
 
     @Binding var selectedElementID: PersistentIdentifier?
+    /// Set while a lasso selection carrying this shape is mid-drag — a
+    /// purely visual offset on top of the element's real, still-unchanged
+    /// position, the same way `strokeLayers` gets a live affine transform
+    /// for ink. Zero the rest of the time.
+    var lassoDragOffset: CGPoint = .zero
 
     @State private var dragOrigin: CGPoint?
     @State private var sizeOrigin: CGSize?
@@ -7687,6 +7772,7 @@ private struct EditablePageElement: View {
             .overlay { if isSelected { selectionChrome } }
             .rotationEffect(.degrees(element.rotation))
             .position(x: pageSize.width * element.centerX, y: pageSize.height * element.centerY)
+            .offset(x: lassoDragOffset.x, y: lassoDragOffset.y)
             .onTapGesture {
                 guard supportsSelection else { return }
                 selectedElementID = isSelected ? nil : element.persistentModelID
