@@ -111,6 +111,7 @@ struct PageElementSnapshot {
     var colorHex: String
     var isLocked: Bool
     var layerIndex: Double
+    var lineWidth: Double
 
     @MainActor
     init(_ element: PageElement) {
@@ -125,6 +126,7 @@ struct PageElementSnapshot {
         colorHex = element.colorHex
         isLocked = element.isLocked
         layerIndex = element.layerIndex
+        lineWidth = element.lineWidth
     }
 
     @MainActor
@@ -138,7 +140,8 @@ struct PageElementSnapshot {
             width: width,
             height: height,
             rotation: rotation,
-            colorHex: colorHex
+            colorHex: colorHex,
+            lineWidth: lineWidth
         )
         element.isLocked = isLocked
         element.layerIndex = layerIndex
@@ -161,6 +164,7 @@ struct PageElementSnapshot {
         element.colorHex = colorHex
         element.isLocked = isLocked
         element.layerIndex = layerIndex
+        element.lineWidth = lineWidth
     }
 }
 

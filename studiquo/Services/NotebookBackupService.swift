@@ -34,6 +34,7 @@ enum NotebookBackupService {
         var colorHex: String
         var isLocked: Bool
         var layerIndex: Double
+        var lineWidth: Double?
     }
 
     struct AutomaticBackup: Identifiable {
@@ -65,7 +66,7 @@ enum NotebookBackupService {
                     flashcardMastery: page.flashcardMastery,
                     flashcardReviewCount: page.flashcardReviewCount,
                     elements: page.allElements.map { element in
-                        ElementArchive(kind: element.kindRawValue, text: element.text, imageData: element.imageData, centerX: element.centerX, centerY: element.centerY, width: element.width, height: element.height, rotation: element.rotation, colorHex: element.colorHex, isLocked: element.isLocked, layerIndex: element.layerIndex)
+                        ElementArchive(kind: element.kindRawValue, text: element.text, imageData: element.imageData, centerX: element.centerX, centerY: element.centerY, width: element.width, height: element.height, rotation: element.rotation, colorHex: element.colorHex, isLocked: element.isLocked, layerIndex: element.layerIndex, lineWidth: element.lineWidth)
                     }
                 )
             }
@@ -137,7 +138,7 @@ enum NotebookBackupService {
             page.flashcardReviewCount = storedPage.flashcardReviewCount ?? 0
             for storedElement in storedPage.elements {
                 guard let kind = PageElementKind(rawValue: storedElement.kind) else { continue }
-                let element = PageElement(kind: kind, text: storedElement.text, imageData: storedElement.imageData, centerX: storedElement.centerX, centerY: storedElement.centerY, width: storedElement.width, height: storedElement.height, rotation: storedElement.rotation, colorHex: storedElement.colorHex)
+                let element = PageElement(kind: kind, text: storedElement.text, imageData: storedElement.imageData, centerX: storedElement.centerX, centerY: storedElement.centerY, width: storedElement.width, height: storedElement.height, rotation: storedElement.rotation, colorHex: storedElement.colorHex, lineWidth: storedElement.lineWidth ?? 3)
                 element.isLocked = storedElement.isLocked
                 element.layerIndex = storedElement.layerIndex
                 element.page = page

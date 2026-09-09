@@ -115,31 +115,52 @@ final class ShapeToolTests: XCTestCase {
         return (buffer[0], buffer[1], buffer[2], buffer[3])
     }
 
-    func testCommittedShapesAlwaysRenderWithASmallFixedBorderThickness() throws {
-        // `PageElement` has no stroke-width field at all for rectangle/
-        // ellipse kinds — whatever pen width was selected while dragging is
-        // not preserved anywhere, and `ExportService.draw` always strokes
-        // at a fixed lineWidth of 3. This measures that border directly by
-        // rendering a rectangle on a plain white page and counting how many
-        // pixels along a line crossing its top edge are actually dark —
-        // pinning down that it stays a thin, constant border rather than
-        // scaling with whatever the current pen width happens to be.
-        let page = NotePage(order: 0, pageWidth: 200, pageHeight: 200)
-        let element = PageElement(kind: .rectangle, centerX: 0.5, centerY: 0.5, width: 0.6, height: 0.6, colorHex: "#000000")
-        element.page = page
-        page.addElement(element)
-
-        let image = ExportService.makeImage(from: page)
+    /// Counts how many pixels along a vertical run straddling a rectangle's
+    /// top edge are actually dark — a stand-in for measuring the rendered
+    /// border's thickness without depending on exact anti-aliasing pixels.
+    private func darkPixelCount(atPageX pageX: Int, fromPageY: Int, toPageY: Int, in image: UIImage) -> Int {
         let scale = Int(image.scale)
-        // The rectangle's top edge sits at page y = 100 - 60 = 40; sample a
-        // vertical run comfortably straddling it.
-        var darkPixelCount = 0
-        for pageY in 34...46 {
-            guard let color = pixel(of: image, atPixelX: 100 * scale, y: pageY * scale) else { continue }
-            if color.r < 128, color.g < 128, color.b < 128 { darkPixelCount += 1 }
+        var count = 0
+        for pageY in fromPageY...toPageY {
+            guard let color = pixel(of: image, atPixelX: pageX * scale, y: pageY * scale) else { continue }
+            if color.r < 128, color.g < 128, color.b < 128 { count += 1 }
         }
-        XCTAssertGreaterThan(darkPixelCount, 0, "図形の輪郭線が実際に描かれている必要があります。")
-        XCTAssertLessThan(darkPixelCount, 10, "図形の枠線は、常に細い固定幅であり、現在のペンの太さ設定に関わらず太くなってはいけません(=現状、ペンの太さは図形に反映されません)。")
+        return count
+    }
+
+    func testCommittedShapesRenderWithTheirOwnStoredLineWidthNotAFixedOne() {
+        // The fix for "太さの設定が図形に反映されない": a wider `lineWidth`
+        // must actually produce a visibly thicker rendered border than a
+        // narrower one, on the same shape.
+        let thin = PageElement(kind: .rectangle, centerX: 0.5, centerY: 0.5, width: 0.6, height: 0.6, colorHex: "#000000", lineWidth: 2)
+        let thinPage = NotePage(order: 0, pageWidth: 200, pageHeight: 200)
+        thinPage.addElement(thin)
+        let thinImage = ExportService.makeImage(from: thinPage)
+        let thinCount = darkPixelCount(atPageX: 100, fromPageY: 20, toPageY: 60, in: thinImage)
+
+        let thick = PageElement(kind: .rectangle, centerX: 0.5, centerY: 0.5, width: 0.6, height: 0.6, colorHex: "#000000", lineWidth: 16)
+        let thickPage = NotePage(order: 0, pageWidth: 200, pageHeight: 200)
+        thickPage.addElement(thick)
+        let thickImage = ExportService.makeImage(from: thickPage)
+        let thickCount = darkPixelCount(atPageX: 100, fromPageY: 20, toPageY: 60, in: thickImage)
+
+        XCTAssertGreaterThan(thickCount, thinCount, "太さの設定を大きくした図形は、細い設定の図形よりも枠線が太く(=濃い部分が多く)描かれる必要があります。")
+    }
+
+    func testShapeElementsDefaultToTheOriginalFixedBorderWidth() {
+        // Shapes drawn before this feature existed carry no `lineWidth` of
+        // their own — the default must match the old hardcoded value (3) so
+        // they keep rendering exactly as before.
+        let element = PageElement(kind: .rectangle)
+        XCTAssertEqual(element.lineWidth, 3, "太さの指定がない(=以前からある)図形は、これまで通りの太さで描かれる必要があります。")
+    }
+
+    func testTheCommittedShapesLineWidthMatchesTheCurrentPenWidth() {
+        // `addShapeElement` passes `lineWidth: drawingWidth` straight
+        // through with no substitution — a single property passthrough,
+        // the same trivial contract as the color test above.
+        let element = PageElement(kind: .rectangle, lineWidth: 11)
+        XCTAssertEqual(element.lineWidth, 11, "図形の太さは、確定時点で選ばれていたペンの太さである必要があります。")
     }
 
     func testTheCommittedShapesColorMatchesTheCurrentDrawingColor() {

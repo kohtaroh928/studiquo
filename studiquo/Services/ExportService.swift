@@ -246,12 +246,12 @@ enum ExportService {
         case .rectangle:
             color.setStroke()
             let path = UIBezierPath(roundedRect: rect, cornerRadius: 3)
-            path.lineWidth = 3
+            path.lineWidth = element.lineWidth
             path.stroke()
         case .ellipse:
             color.setStroke()
             let path = UIBezierPath(ovalIn: rect)
-            path.lineWidth = 3
+            path.lineWidth = element.lineWidth
             path.stroke()
         case .line:
             color.setStroke()

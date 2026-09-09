@@ -845,6 +845,18 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         withoutImplicitAnimations { selectionLayer.path = path.cgPath }
     }
 
+    /// The reset `clearLassoSelection` reports for any still-selected shapes
+    /// whenever it runs — always a zero offset, so a shape whose cross-pane
+    /// drop wasn't accepted snaps its visual position back to where it
+    /// really still is, rather than staying stuck wherever the drag last
+    /// left it (the fix for a shape's `EditablePageElement` overlay having
+    /// no way of its own to hear that the drag ended without landing
+    /// anywhere). `nil` when there's nothing selected to reset.
+    static func shapeSelectionResetOnClear(selectedShapeIDs: Set<AnyHashable>) -> (ids: Set<AnyHashable>, offset: CGPoint)? {
+        guard !selectedShapeIDs.isEmpty else { return nil }
+        return (selectedShapeIDs, .zero)
+    }
+
     private func clearLassoSelection() {
         let hadSelection = !selectedStrokeIDs.isEmpty || !selectedShapeIDs.isEmpty
         withoutImplicitAnimations {
@@ -861,6 +873,17 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             selectionLayer.setAffineTransform(.identity)
             selectionLayer.path = nil
             selectionLayer.isHidden = false
+        }
+        // A shape's visual position during a drag lives entirely in the
+        // owner's SwiftUI state (this view has no layer of its own for it,
+        // unlike ink) — if a cross-pane drop is rejected partway through,
+        // nothing else would ever tell the owner to snap it back to its
+        // real, unchanged position. Firing this with a zero offset resets
+        // that visual state unconditionally; when a move just committed for
+        // real (`commitSelectionMove` already sent the actual offset,
+        // moments before this runs), it's a harmless no-op repeat.
+        if let reset = Self.shapeSelectionResetOnClear(selectedShapeIDs: selectedShapeIDs) {
+            onShapeSelectionMoved?(reset.ids, reset.offset)
         }
         lassoPoints = []
         selectionPolygon = []

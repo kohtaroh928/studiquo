@@ -14,6 +14,12 @@ final class PageElement {
     var colorHex: String = "#1C1C1E"
     var isLocked: Bool = false
     var layerIndex: Double = 0
+    /// Border/stroke thickness for `.rectangle`/`.ellipse`/`.line`, in
+    /// points — independent of `width`/`height` (the box's own size), the
+    /// same way a photo frame's border doesn't get thicker just because the
+    /// photo is bigger. Defaults to the thickness every shape used before
+    /// this existed, so already-drawn shapes render unchanged.
+    var lineWidth: Double = 3
     var page: NotePage?
 
     init(
@@ -25,7 +31,8 @@ final class PageElement {
         width: Double = 0.35,
         height: Double = 0.12,
         rotation: Double = 0,
-        colorHex: String = "#1C1C1E"
+        colorHex: String = "#1C1C1E",
+        lineWidth: Double = 3
     ) {
         self.kindRawValue = kind.rawValue
         self.text = text
@@ -36,6 +43,7 @@ final class PageElement {
         self.height = height
         self.rotation = rotation
         self.colorHex = colorHex
+        self.lineWidth = lineWidth
     }
 
     var kind: PageElementKind {
