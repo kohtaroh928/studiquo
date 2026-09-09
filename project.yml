@@ -19,11 +19,21 @@ targets:
       properties:
         com.apple.developer.applesignin:
           - Default
+        com.apple.developer.icloud-services:
+          - CloudKit
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.yabuko.studiquo
     # Sign in with Apple's SystemCapabilities entry can't be expressed here:
     # xcodegen 2.46.0 mis-serializes a 2-level-nested `attributes` dict into a
     # single string, corrupting project.pbxproj. It must be re-added by hand
     # in project.pbxproj (PBXProject.attributes.TargetAttributes.<target>)
     # after every `xcodegen generate`, alongside studiquo.entitlements.
+    # NOTE: The CloudKit capability (iCloud com.apple.developer.icloud-services /
+    # icloud-container-identifiers above) may hit the same xcodegen nested-dict
+    # serialization bug as Sign in with Apple. After `xcodegen generate`, verify
+    # project.pbxproj actually contains the CloudKit entry under
+    # PBXProject.attributes.TargetAttributes.<target>.SystemCapabilities, and
+    # add it by hand there if it's missing or corrupted.
     dependencies:
       - package: GoogleSignIn
         product: GoogleSignIn
