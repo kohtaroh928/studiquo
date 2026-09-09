@@ -233,7 +233,41 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     }
 
     private(set) var drawing = InkDrawing() {
-        didSet { onDrawingChanged?(drawing) }
+        didSet {
+            // While a single eraser drag is in progress, `eraseParts` keeps
+            // reassigning this on every touch sample so the line visibly
+            // disappears in real time — but reporting each of those tiny
+            // steps out to the owner would let it record one undo entry per
+            // step instead of one for the whole drag (see
+            // `isMidEraserGesture`). Suppressed here; `touchesEnded` reports
+            // the net result exactly once when the gesture actually ends.
+            guard Self.shouldReportDrawingChangeImmediately(isMidEraserGesture: isMidEraserGesture) else { return }
+            onDrawingChanged?(drawing)
+        }
+    }
+    /// True from the moment an eraser touch begins until it lifts (or is
+    /// cancelled) — see the `didSet` above.
+    private var isMidEraserGesture = false
+    /// `drawing` at the moment the current eraser gesture began, so
+    /// `touchesEnded` can tell whether anything actually changed (a
+    /// complete miss must still report nothing, exactly as it does today).
+    private var eraserGestureStartDrawing: InkDrawing?
+
+    /// Whether an assignment to `drawing` should be reported the instant it
+    /// happens. False for every intermediate step of an eraser drag — only
+    /// the drag's net result, reported once it ends, should ever reach the
+    /// owner (and, through it, the undo history).
+    static func shouldReportDrawingChangeImmediately(isMidEraserGesture: Bool) -> Bool {
+        !isMidEraserGesture
+    }
+
+    /// Whether a just-finished eraser gesture actually changed anything —
+    /// `nil` for `start` (no gesture was tracked) or an unchanged `current`
+    /// both mean no undo entry should be created, the same as a drag that
+    /// swept over blank space already reports nothing today.
+    static func eraserGestureShouldReportOnEnd(start: InkDrawing?, current: InkDrawing) -> Bool {
+        guard let start else { return false }
+        return start != current
     }
 
     /// Replaces the drawing without notifying `onDrawingChanged` — for
@@ -458,6 +492,8 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         rawPoints = [InkPoint(location: location, force: normalizedForce(touch), timeOffset: 0)]
 
         if isEraser {
+            isMidEraserGesture = true
+            eraserGestureStartDrawing = drawing
             showEraserCursor(at: location)
             eraseParts(along: [location])
             onEraseSwept?([location], eraserWidth / 2)
@@ -541,6 +577,11 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             let path = [previousEraserLocation, Optional(pagePoint(touch.location(in: self)))].compactMap { $0 }
             eraseParts(along: path)
             hideEraserCursor()
+            isMidEraserGesture = false
+            if Self.eraserGestureShouldReportOnEnd(start: eraserGestureStartDrawing, current: drawing) {
+                onDrawingChanged?(drawing)
+            }
+            eraserGestureStartDrawing = nil
         }
         finishStroke()
     }

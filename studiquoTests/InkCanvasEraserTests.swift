@@ -169,4 +169,59 @@ final class InkCanvasEraserTests: XCTestCase {
 
         XCTAssertNotNil(result, "ページの端(角)にある線でも、なぞれば消える必要があります。")
     }
+
+    // MARK: - Regression: one continuous eraser drag must be exactly one undo step
+    //
+    // Erasing a line used to report every small step of a single drag as
+    // its own change, so "元に戻す" only restored a sliver of the erased
+    // line per press instead of the whole thing at once. The fix batches a
+    // drag's changes and reports them once, when the eraser lifts.
+
+    func testChangesDuringAnEraserDragAreNeverReportedImmediately() {
+        XCTAssertFalse(
+            InkCanvasView.shouldReportDrawingChangeImmediately(isMidEraserGesture: true),
+            "消しゴムでなぞっている最中の細かい変化は、その都度、元に戻す機能へ報告されてはいけません。"
+        )
+    }
+
+    func testChangesOutsideAnEraserDragAreStillReportedImmediately() {
+        // Ordinary drawing, lasso moves, and cross-pane transfers must keep
+        // reporting the instant they happen — only the eraser's own
+        // mid-drag steps are held back.
+        XCTAssertTrue(
+            InkCanvasView.shouldReportDrawingChangeImmediately(isMidEraserGesture: false),
+            "消しゴム操作中でなければ、これまで通り変化はすぐに報告される必要があります。"
+        )
+    }
+
+    func testAnEraserGestureThatActuallyErasedSomethingReportsOnceWhenItEnds() {
+        let untouched = InkDrawing(strokes: [horizontalLineStroke()])
+        var erased = untouched
+        erased.strokes = []
+
+        XCTAssertTrue(
+            InkCanvasView.eraserGestureShouldReportOnEnd(start: untouched, current: erased),
+            "消しゴムのドラッグ全体で何かが実際に消えた場合は、指を離した時点で1回報告される必要があります。"
+        )
+    }
+
+    func testAnEraserGestureThatMissedEverythingReportsNothingWhenItEnds() {
+        let unchanged = InkDrawing(strokes: [horizontalLineStroke()])
+
+        XCTAssertFalse(
+            InkCanvasView.eraserGestureShouldReportOnEnd(start: unchanged, current: unchanged),
+            "何もなぞって消せなかった(空振りだった)場合は、元に戻すべき変化がないので報告されてはいけません。"
+        )
+    }
+
+    func testAnEraserGestureWithNoTrackedStartReportsNothing() {
+        // No gesture was ever begun (start is nil) — nothing to compare
+        // against, so nothing should be reported, regardless of the
+        // current drawing's content.
+        let current = InkDrawing(strokes: [horizontalLineStroke()])
+        XCTAssertFalse(
+            InkCanvasView.eraserGestureShouldReportOnEnd(start: nil, current: current),
+            "追跡していたドラッグ開始時点の状態がない場合は、報告してはいけません。"
+        )
+    }
 }
