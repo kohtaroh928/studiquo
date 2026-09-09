@@ -96,4 +96,38 @@ final class LassoShapeSelectionTests: XCTestCase {
         XCTAssertEqual(movedBack.centerX, 0.4, accuracy: 0.0001, "往復移動させれば、元の位置に戻る必要があります。")
         XCTAssertEqual(movedBack.centerY, 0.6, accuracy: 0.0001, "往復移動させれば、元の位置に戻る必要があります。")
     }
+
+    // MARK: - PageCanvasContainer.scaledShapeSelectionOffset
+    //
+    // Regression coverage for a bug where a shape dragged by the lasso
+    // moved independently of the selection/ink around it whenever the
+    // canvas was displayed at anything other than 1:1 (any split pane or
+    // zoomed view). `onShapeSelectionDragged` reports its offset in page
+    // units, matching what `InkCanvasView` applies directly to its own ink
+    // layers, but `EditablePageElement`'s `.position()` already works in
+    // display-scaled coordinates — so the live drag offset must be scaled
+    // by the same `contentScale` before being used, or the two drift apart.
+
+    func testScaledOffsetIsUnchangedWhenContentScaleIsOne() {
+        let scaled = PageCanvasContainer.scaledShapeSelectionOffset(CGPoint(x: 40, y: -20), contentScale: 1)
+        XCTAssertEqual(scaled, CGPoint(x: 40, y: -20), "表示倍率が1のときは、ページ単位のオフセットがそのまま使われる必要があります。")
+    }
+
+    func testScaledOffsetShrinksWhenTheCanvasIsDisplayedSmallerThanThePage() {
+        // A split-pane canvas typically renders the page at less than its
+        // full page-unit size — e.g. a 600pt-wide page shown at 300 display
+        // points is contentScale 0.5.
+        let scaled = PageCanvasContainer.scaledShapeSelectionOffset(CGPoint(x: 100, y: 50), contentScale: 0.5)
+        XCTAssertEqual(scaled, CGPoint(x: 50, y: 25), "表示倍率が0.5の場合、図形に加えるオフセットも半分にスケールされる必要があります。")
+    }
+
+    func testScaledOffsetGrowsWhenTheCanvasIsZoomedIn() {
+        let scaled = PageCanvasContainer.scaledShapeSelectionOffset(CGPoint(x: 10, y: 10), contentScale: 2)
+        XCTAssertEqual(scaled, CGPoint(x: 20, y: 20), "表示倍率が2の場合、図形に加えるオフセットも2倍にスケールされる必要があります。")
+    }
+
+    func testScaledOffsetOfZeroStaysZeroRegardlessOfScale() {
+        let scaled = PageCanvasContainer.scaledShapeSelectionOffset(.zero, contentScale: 0.37)
+        XCTAssertEqual(scaled, .zero, "ドラッグ量がゼロなら、どんな表示倍率でも結果はゼロのままである必要があります。")
+    }
 }
