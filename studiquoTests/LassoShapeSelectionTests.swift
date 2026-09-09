@@ -65,6 +65,48 @@ final class LassoShapeSelectionTests: XCTestCase {
         XCTAssertEqual(selected, [AnyHashable("straddling")], "図形の輪郭の一部でも輪の中に入っていれば、その図形は選択される必要があります。")
     }
 
+    // MARK: - SelectableShapeOutline color/width (regression for the
+    // "shape looks like it changes color/thickness while crossing a pane
+    // boundary" bug — the floating preview drawn in place of the real,
+    // hidden `PageElement` must carry the shape's own appearance instead of
+    // a fixed placeholder.)
+
+    func testSelectableShapeOutlineDefaultsToTheStandardColorAndLineWidth() {
+        let shape = SelectableShapeOutline(id: AnyHashable("shape-1"), outline: [CGPoint(x: 50, y: 50)])
+
+        XCTAssertEqual(shape.colorHex, "#1C1C1E", "colorHexを指定しない場合は、標準の色がデフォルトになる必要があります。")
+        XCTAssertEqual(shape.lineWidth, 3, "lineWidthを指定しない場合は、標準の太さがデフォルトになる必要があります。")
+    }
+
+    func testSelectableShapeOutlineCarriesItsOwnColorAndLineWidth() {
+        let shape = SelectableShapeOutline(
+            id: AnyHashable("shape-2"), outline: [CGPoint(x: 10, y: 10)], colorHex: "#FF3B30", lineWidth: 8
+        )
+
+        XCTAssertEqual(shape.colorHex, "#FF3B30", "図形自身の色がそのまま保持される必要があります。")
+        XCTAssertEqual(shape.lineWidth, 8, "図形自身の線幅がそのまま保持される必要があります。")
+    }
+
+    func testShapesEnclosedIgnoresColorAndLineWidthWhenMatchingByOutline() {
+        // Adding colorHex/lineWidth to SelectableShapeOutline must not change
+        // which shapes a lasso loop selects — only what the floating
+        // cross-pane preview later draws them with.
+        let square: [CGPoint] = [
+            CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0),
+            CGPoint(x: 100, y: 100), CGPoint(x: 0, y: 100), CGPoint(x: 0, y: 0),
+        ]
+        let redThick = SelectableShapeOutline(
+            id: AnyHashable("red-thick"), outline: [CGPoint(x: 50, y: 50)], colorHex: "#FF0000", lineWidth: 10
+        )
+        let blueThin = SelectableShapeOutline(
+            id: AnyHashable("blue-thin"), outline: [CGPoint(x: 900, y: 900)], colorHex: "#0000FF", lineWidth: 1
+        )
+
+        let selected = InkCanvasView.shapesEnclosed(by: square, in: [redThick, blueThin])
+
+        XCTAssertEqual(selected, [AnyHashable("red-thick")], "色や線幅に関わらず、輪郭が輪の中にある図形だけが選択される必要があります。")
+    }
+
     // MARK: - PageCanvasContainer.movedShapeCenter
 
     func testMovingAShapeTranslatesItsNormalizedCenterByTheOffsetInPageUnits() {

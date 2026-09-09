@@ -61,6 +61,12 @@ private final class InkSelectionTransfer {
 struct SelectableShapeOutline {
     var id: AnyHashable
     var outline: [CGPoint]
+    /// The shape's actual stroke color and width, in hex/page-unit form —
+    /// carried across so a floating selection preview drawn while the real
+    /// `PageElement` view is hidden (see `selectionPreviewImage`) matches
+    /// the shape's real appearance instead of a fixed placeholder color.
+    var colorHex: String = "#1C1C1E"
+    var lineWidth: CGFloat = 3
 }
 
 final class InkCanvasView: UIView, UIDragInteractionDelegate {
@@ -371,6 +377,12 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     private var selectionDragStart: CGPoint?
     private var selectionDragOffset: CGPoint = .zero
     private var isSelectionOutsideCanvas = false
+    /// The floating cross-pane preview rendered once at the moment a lasso
+    /// drag first crosses this canvas's edge — see `moveLasso` — kept until
+    /// the drag returns inside or the selection is cleared, instead of
+    /// re-rendering it (and pushing the shape-hidden state again) on every
+    /// touch update while the drag lingers outside.
+    private var cachedSelectionPreview: (image: UIImage, screenSize: CGSize)?
     private var eraserCursorLocation: CGPoint?
 
     override init(frame: CGRect) {
@@ -721,28 +733,42 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             guard let location = locations.last else { return }
             selectionDragOffset = CGPoint(x: location.x - start.x, y: location.y - start.y)
             if Self.lassoDragShouldLeaveCanvas(location: location, canvasSize: canvasSize, allowsSelectionTransfer: allowsSelectionTransfer) {
+                // The preview image (a synchronous `UIGraphicsImageRenderer`
+                // render) and the `onShapeSelectionHidden` SwiftUI state
+                // update are only worth paying for once, right when the
+                // drag actually crosses the boundary — regenerating them on
+                // every subsequent `moveLasso` call while the drag lingers
+                // outside the canvas is what made that first frame (and
+                // every one after it) stutter. `cachedSelectionPreview`
+                // holds the one render for as long as the drag stays
+                // outside; only the screen point is updated after that.
+                let wasAlreadyOutside = isSelectionOutsideCanvas
                 isSelectionOutsideCanvas = true
-                withoutImplicitAnimations {
-                    for id in selectedStrokeIDs {
-                        strokeLayers[id]?.setAffineTransform(.identity)
-                        strokeLayers[id]?.isHidden = true
+                if !wasAlreadyOutside {
+                    withoutImplicitAnimations {
+                        for id in selectedStrokeIDs {
+                            strokeLayers[id]?.setAffineTransform(.identity)
+                            strokeLayers[id]?.isHidden = true
+                        }
+                        // The dashed outline now travels baked into the floating
+                        // preview image itself (see `selectionPreview`) — left
+                        // visible here, it would just sit frozen at the boundary
+                        // while the content it used to encircle moves on without
+                        // it, which is exactly the "outline left behind" bug.
+                        selectionLayer.isHidden = true
                     }
-                    // The dashed outline now travels baked into the floating
-                    // preview image itself (see `selectionPreview`) — left
-                    // visible here, it would just sit frozen at the boundary
-                    // while the content it used to encircle moves on without
-                    // it, which is exactly the "outline left behind" bug.
-                    selectionLayer.isHidden = true
+                    if !selectedShapeIDs.isEmpty {
+                        onShapeSelectionHidden?(selectedShapeIDs, true)
+                    }
+                    cachedSelectionPreview = selectionPreview()
                 }
-                if !selectedShapeIDs.isEmpty {
-                    onShapeSelectionHidden?(selectedShapeIDs, true)
-                }
-                let preview = selectionPreview()
+                let preview = cachedSelectionPreview
                 onSelectionDragMoved?(preview?.image, preview?.screenSize, convert(location, to: nil))
                 return
             }
             if isSelectionOutsideCanvas {
                 isSelectionOutsideCanvas = false
+                cachedSelectionPreview = nil
                 withoutImplicitAnimations {
                     for id in selectedStrokeIDs { strokeLayers[id]?.isHidden = false }
                     selectionLayer.isHidden = false
@@ -953,6 +979,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         selectionDragStart = nil
         selectionDragOffset = .zero
         isSelectionOutsideCanvas = false
+        cachedSelectionPreview = nil
         if hadSelection { onSelectionChanged?(nil) }
     }
 
@@ -1038,7 +1065,8 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     private func selectionPreview() -> (image: UIImage, screenSize: CGSize)? {
         let selected = InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) })
-        let shapeOutlinePoints = selectableShapes.filter { selectedShapeIDs.contains($0.id) }.flatMap(\.outline)
+        let selectedShapes = selectableShapes.filter { selectedShapeIDs.contains($0.id) }
+        let shapeOutlinePoints = selectedShapes.flatMap(\.outline)
         guard let previewBounds = Self.selectionPreviewBounds(
             inkStrokes: selected.strokes, shapeOutlinePoints: shapeOutlinePoints, selectionPolygon: selectionPolygon
         ) else { return nil }
@@ -1050,7 +1078,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         )
         return (
             Self.selectionPreviewImage(
-                ink: selected, bounds: previewBounds, outline: selectionPolygon, shapeOutlinePoints: shapeOutlinePoints
+                ink: selected, bounds: previewBounds, outline: selectionPolygon, shapes: selectedShapes
             ),
             screenSize
         )
@@ -1093,7 +1121,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// canvas (which has no way to keep drawing it once the touch has moved
     /// off its own bounds).
     private static func selectionPreviewImage(
-        ink: InkDrawing, bounds: CGRect, outline: [CGPoint], shapeOutlinePoints: [CGPoint] = []
+        ink: InkDrawing, bounds: CGRect, outline: [CGPoint], shapes: [SelectableShapeOutline] = []
     ) -> UIImage {
         let scale: CGFloat = 2
         let inkImage = ink.image(from: bounds, scale: scale)
@@ -1104,25 +1132,28 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             // so without drawing something here the floating preview that
             // follows the finger across the pane boundary would show only
             // the dashed marquee below with nothing inside it — the shape
-            // itself appears to have vanished until the drop lands. A solid
-            // outline (not the selection's own dashed style, so the two
-            // stay visually distinct) is enough to read as "the shape is
-            // still here"; full fidelity (fill, stroke color/width) isn't
-            // needed for a floating drag preview.
-            if shapeOutlinePoints.count >= 2 {
+            // itself appears to have vanished until the drop lands. Each
+            // shape is drawn with its own real color and line width (not
+            // the selection's own dashed style, so the two stay visually
+            // distinct) — a fixed placeholder color/width here is exactly
+            // what made a shape appear to change color or thickness while
+            // it crossed the pane boundary, since this image is what shows
+            // in place of the real (opacity-0) `PageElement` during that
+            // stretch.
+            for shape in shapes where shape.outline.count >= 2 {
                 let shapePath = UIBezierPath()
                 shapePath.move(to: CGPoint(
-                    x: (shapeOutlinePoints[0].x - bounds.minX) * scale,
-                    y: (shapeOutlinePoints[0].y - bounds.minY) * scale
+                    x: (shape.outline[0].x - bounds.minX) * scale,
+                    y: (shape.outline[0].y - bounds.minY) * scale
                 ))
-                for point in shapeOutlinePoints.dropFirst() {
+                for point in shape.outline.dropFirst() {
                     shapePath.addLine(to: CGPoint(x: (point.x - bounds.minX) * scale, y: (point.y - bounds.minY) * scale))
                 }
                 shapePath.close()
-                shapePath.lineWidth = 2 * scale
+                shapePath.lineWidth = max(1, shape.lineWidth) * scale
                 shapePath.lineCapStyle = .round
                 shapePath.lineJoinStyle = .round
-                UIColor.label.setStroke()
+                UIColor(hex: shape.colorHex).setStroke()
                 shapePath.stroke()
             }
             guard let first = outline.first, outline.count >= 2 else { return }
