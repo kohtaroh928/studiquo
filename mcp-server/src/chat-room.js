@@ -114,6 +114,50 @@ export class ChatRoom extends DurableObject {
     return { status: "canceled" };
   }
 
+  // Rewrites one of the caller's own messages' text in place — used to
+  // repair a legacy chat attachment (one still carrying only a local,
+  // off-device id, from before attachments could be uploaded at all) once
+  // its material has been re-rendered and re-uploaded under the newer,
+  // shareable scheme. Only the original sender may edit, the same
+  // ownership check `cancelMessage` uses; a canceled message stays
+  // canceled — an edit must never resurrect a retracted message.
+  async editMessage(userKey, messageID, text) {
+    this.requireParticipant(userKey);
+    const row = this.ctx.storage.sql.exec(
+      "SELECT sender_key, is_canceled FROM messages WHERE id = ?", messageID,
+    ).toArray()[0];
+    if (!row) return { status: "not_found" };
+    if (row.sender_key !== userKey) throw new Error("Forbidden");
+    if (row.is_canceled) return { status: "canceled" };
+    this.ctx.storage.sql.exec("UPDATE messages SET text = ? WHERE id = ?", text, messageID);
+    return { status: "edited" };
+  }
+
+  // Looks up the current text for a specific set of message ids, regardless
+  // of how old they are relative to the room's latest message.
+  // `listMessages(after)` only reconciles a rolling window of recent ids
+  // (see its caller in ProfileAndFriendsView.swift), which would never
+  // surface an `editMessage` repair to a message old enough to have
+  // scrolled out of that window — this is the fallback that checks
+  // specific known-stale ids directly instead.
+  async getMessagesByIDs(userKey, ids) {
+    this.requireParticipant(userKey);
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+    const placeholders = ids.map(() => "?").join(",");
+    const rows = this.ctx.storage.sql.exec(
+      `SELECT id, sender_key, text, sent_at, client_message_id, is_canceled FROM messages WHERE id IN (${placeholders})`,
+      ...ids,
+    ).toArray();
+    return rows.map(item => ({
+      id: item.id,
+      text: item.text,
+      sentAt: item.sent_at,
+      isMine: item.sender_key === userKey,
+      clientMessageID: item.client_message_id ?? null,
+      isCanceled: !!item.is_canceled,
+    }));
+  }
+
   // Stores an attachment's actual bytes (base64-encoded) in this room, so
   // the other participant — on a different device, with no access to the
   // uploader's local filesystem or app database — can actually retrieve it.

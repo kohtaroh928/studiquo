@@ -577,6 +577,99 @@ final class FriendStore: ObservableObject {
         }
     }
 
+    /// Attachments this user has sent that still use the pre-PDF-fix scheme
+    /// — candidates `repairLegacyAttachments` can fix, provided the original
+    /// material is still on this device.
+    func legacyAttachmentMessages(for friend: FriendRecord) -> [(message: FriendMessage, attachment: FriendMessageAttachment)] {
+        messages(for: friend).flatMap { message -> [(FriendMessage, FriendMessageAttachment)] in
+            guard message.isMine, message.isCanceled != true else { return [] }
+            return FriendMessageAttachment.legacyAttachments(in: message.text).map { (message, $0) }
+        }
+    }
+
+    /// Repairs this user's own past messages that still reference a material
+    /// only via a local, off-device id — from before attachments could be
+    /// uploaded at all, so the recipient could never open them (see
+    /// `legacyAttachmentMessages`). `resolve` is exactly the closure the
+    /// composer already uses to turn a freshly attached material into an
+    /// uploaded PDF (`resolvedAppMessageAttachment` in ContentView.swift/
+    /// NoteEditorView.swift); reusing it here renders and uploads a legacy
+    /// attachment exactly the same way a brand-new one would be. A material
+    /// no longer on this device (deleted since) can't be repaired — `resolve`
+    /// returns it unchanged in that case, and it's simply skipped.
+    func repairLegacyAttachments(
+        for friend: FriendRecord, resolve: (FriendMessageAttachment, FriendRecord) async -> FriendMessageAttachment
+    ) async {
+        guard friend.isDemo != true, let roomID = friend.roomID else { return }
+        for (message, attachment) in legacyAttachmentMessages(for: friend) {
+            guard let serverID = message.serverID else { continue }
+            // `resolve` only knows how to re-render an in-app material
+            // (notebook/deck/document/slide) — it returns anything else
+            // unchanged. A legacy photo, scanned page, or imported file was
+            // always just flat bytes on disk, never a SwiftData model, so
+            // there's nothing for it to render: re-uploading the bytes
+            // still sitting at its own `sourcePath` is the repair for those.
+            var repaired = await resolve(attachment, friend)
+            if repaired.remoteRoomID == nil {
+                repaired = await repairedFileBackedAttachment(attachment, roomID: roomID) ?? repaired
+            }
+            guard repaired.remoteRoomID != nil else { continue }
+            let newText = FriendMessageAttachment.textReplacingAttachment(in: message.text, id: attachment.id, with: repaired)
+            guard newText != message.text,
+                  (try? await client.editMessage(roomID: roomID, messageID: serverID, text: newText)) != nil
+            else { continue }
+            if let index = messages.firstIndex(where: { $0.id == message.id }) {
+                messages[index].text = newText
+            }
+        }
+    }
+
+    /// Repairs a legacy attachment that was always just a flat file on this
+    /// device — a photo, a scanned page, an imported document — by
+    /// re-uploading the exact bytes still at its own `sourcePath`, with no
+    /// rendering involved. `nil` if that file is gone (deleted since) or
+    /// the upload itself fails, the same "can't repair, leave it" outcome
+    /// `resolve` reports for a deleted in-app material.
+    private func repairedFileBackedAttachment(_ attachment: FriendMessageAttachment, roomID: String) async -> FriendMessageAttachment? {
+        guard let sourcePath = attachment.sourcePath, !sourcePath.isEmpty,
+              FileManager.default.fileExists(atPath: sourcePath),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: sourcePath))
+        else { return nil }
+        let contentType = UTType(filenameExtension: URL(fileURLWithPath: sourcePath).pathExtension)?.preferredMIMEType
+            ?? "application/octet-stream"
+        guard let remoteID = await uploadAttachment(data: data, contentType: contentType, roomID: roomID) else { return nil }
+        return FriendMessageAttachment(
+            id: attachment.id, title: attachment.title, kind: attachment.kind, icon: attachment.icon,
+            sourceKind: attachment.resolvedSourceKind, sourceID: remoteID, sourcePath: sourcePath, remoteRoomID: roomID
+        )
+    }
+
+    /// Catches this device up on repairs made to messages old enough to have
+    /// scrolled out of `refreshMessages`'s normal rolling reconcile window —
+    /// without this, a message repaired by its sender long ago would never
+    /// be re-fetched by a recipient who already has plenty of newer messages
+    /// cached. Safe to call regardless of who sent the message.
+    func reconcileLegacyAttachments(for friend: FriendRecord) async {
+        guard friend.isDemo != true, let roomID = friend.roomID else { return }
+        let candidateIDs = messages(for: friend).compactMap { message -> Int? in
+            guard let serverID = message.serverID, message.isCanceled != true,
+                  !FriendMessageAttachment.legacyAttachments(in: message.text).isEmpty else { return nil }
+            return serverID
+        }
+        guard !candidateIDs.isEmpty, let remote = try? await client.messages(roomID: roomID, ids: candidateIDs) else { return }
+        var working = messages
+        for item in remote {
+            guard let index = working.firstIndex(where: { $0.friendID == friend.id && $0.serverID == item.id }) else { continue }
+            if item.isCanceled == true, working[index].isCanceled != true {
+                working[index].text = ""
+                working[index].isCanceled = true
+            } else if item.text != working[index].text {
+                working[index].text = item.text
+            }
+        }
+        messages = working
+    }
+
     func stopReading(_ friend: FriendRecord) {
         if activeFriendID == friend.id { activeFriendID = nil }
     }
@@ -654,13 +747,16 @@ final class FriendStore: ObservableObject {
             }
             if let index = working.firstIndex(where: { $0.friendID == friend.id && $0.serverID == item.id }) {
                 // Already known — but the server's copy may have been
-                // retracted since the last time this device saw it. Without
-                // this, a cancellation would only ever be visible to a
+                // retracted, or edited (see `FriendStore.repairLegacyAttachments`),
+                // since the last time this device saw it. Without this, a
+                // cancellation or repair would only ever be visible to a
                 // device that hadn't fetched the message yet, defeating the
-                // whole point of retracting it for the recipient.
+                // whole point of either.
                 if item.isCanceled == true, working[index].isCanceled != true {
                     working[index].text = ""
                     working[index].isCanceled = true
+                } else if item.isCanceled != true, item.text != working[index].text {
+                    working[index].text = item.text
                 }
                 continue
             }
@@ -1140,6 +1236,12 @@ struct FriendChatView: View {
         .task {
             store.markRead(friend)
             guard friend.isDemo != true else { return }
+            // Once per chat open, not every 2-second poll: repairing a
+            // legacy attachment re-renders and re-uploads a whole material,
+            // which isn't cheap to retry constantly, and once a message no
+            // longer matches "legacy" there's nothing left to repair anyway.
+            await store.repairLegacyAttachments(for: friend, resolve: resolveAppAttachment)
+            await store.reconcileLegacyAttachments(for: friend)
             while !Task.isCancelled {
                 await store.refreshMessages(for: friend)
                 try? await Task.sleep(for: .seconds(2))
@@ -1639,6 +1741,45 @@ struct FriendMessageAttachment: Identifiable, Hashable, Codable {
         let parts = id.split(separator: "-", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return nil }
         return (parts[0], parts[1])
+    }
+
+    /// Every attachment embedded in `text`, decoded as-is regardless of
+    /// repair status — unlike `legacyAttachments(in:)`, which filters to
+    /// only the still-unrepaired ones.
+    static func attachments(in text: String) -> [FriendMessageAttachment] {
+        FriendMessageParts(text: text).attachments
+    }
+
+    /// Attachments embedded in `text` with no `remoteRoomID` — meaning
+    /// whatever bytes they refer to were never actually uploaded anywhere
+    /// the recipient's device can reach, only ever a path or database id
+    /// local to whichever device sent them. Covers every kind this predates
+    /// (in-app materials, photos, scanned pages, imported files) alike —
+    /// `sourceKind` alone can't tell a not-yet-repaired attachment apart
+    /// from a legitimately-current one, since "pdf" is also the ordinary,
+    /// already-working kind for an imported PDF file. Unless repaired (see
+    /// `FriendStore.repairLegacyAttachments`), these are invisible to the
+    /// recipient's device.
+    static func legacyAttachments(in text: String) -> [FriendMessageAttachment] {
+        FriendMessageParts(text: text).attachments.filter { $0.remoteRoomID == nil }
+    }
+
+    /// Rebuilds `text` with the attachment carrying `id` replaced by
+    /// `repaired` — the message body and any other attachments are left
+    /// untouched.
+    static func textReplacingAttachment(in text: String, id: String, with repaired: FriendMessageAttachment) -> String {
+        text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+            .map { line -> String in
+                guard line.hasPrefix("[studiquo-attachment:"), line.hasSuffix("]") else { return line }
+                let encoded = String(line.dropFirst("[studiquo-attachment:".count).dropLast())
+                guard let decoded = encoded.removingPercentEncoding,
+                      let data = decoded.data(using: .utf8),
+                      let payload = try? JSONDecoder().decode([String: String].self, from: data),
+                      payload["id"] == id else { return line }
+                return repaired.messageLine
+            }
+            .joined(separator: "\n")
     }
 }
 
