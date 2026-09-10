@@ -234,7 +234,20 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// Page point -> this view's own coordinates, for the two places that
     /// have to hand ink positions to UIKit (`convert(_:to:)` for the drag
     /// preview, and the incoming cross-pane transfer).
+    ///
+    /// Regression guard: a page-space point must always go through this
+    /// before being handed to `convert(_:to:)` — `convert` interprets
+    /// whatever it's given as being in this view's own (view-point) space
+    /// already. Skipping this conversion once left the cross-pane drag
+    /// preview's on-screen position off by exactly `contentScale` (never 1
+    /// in practice — a page is essentially never displayed at its own
+    /// native page-unit size), which read as the preview snapping to the
+    /// wrong spot the instant the drag left the canvas.
     private func viewPoint(_ point: CGPoint) -> CGPoint {
+        Self.viewPoint(forPageSpace: point, contentScale: contentScale)
+    }
+
+    static func viewPoint(forPageSpace point: CGPoint, contentScale: CGFloat) -> CGPoint {
         CGPoint(x: point.x * contentScale, y: point.y * contentScale)
     }
 
@@ -695,8 +708,35 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// preview would only ever end in a drop that has to unwind itself,
     /// dragged across what looks like open space and then yanked back for
     /// no visible reason the instant it's released.
-    static func lassoDragShouldLeaveCanvas(location: CGPoint, canvasSize: CGSize, allowsSelectionTransfer: Bool) -> Bool {
-        allowsSelectionTransfer && !CGRect(origin: .zero, size: canvasSize).contains(location)
+    ///
+    /// `movedSelectionBounds` (the dragged selection's own outline, already
+    /// offset by however far it's moved) also triggers this, independent of
+    /// `location`. The page this canvas sits in clips everything to its own
+    /// rectangle (`PageCanvasContainer`'s `.clipShape(Rectangle())`) — a
+    /// selection larger than a finger's width can have its far edge cross
+    /// that boundary well before the touch driving the drag does, and until
+    /// "left the canvas" mode switches over to the unclipped floating
+    /// preview, that overhanging edge is just clipped away: it visibly sinks
+    /// into the seam between the page and the margin around it, rather than
+    /// riding along with the rest of the drag.
+    static func lassoDragShouldLeaveCanvas(
+        location: CGPoint, canvasSize: CGSize, allowsSelectionTransfer: Bool, movedSelectionBounds: CGRect? = nil
+    ) -> Bool {
+        guard allowsSelectionTransfer else { return false }
+        let canvasRect = CGRect(origin: .zero, size: canvasSize)
+        if !canvasRect.contains(location) { return true }
+        if let movedSelectionBounds, !canvasRect.contains(movedSelectionBounds) { return true }
+        return false
+    }
+
+    /// `points` translated by `offset` and reduced to their bounding box —
+    /// used to tell whether a dragged selection's own outline has started
+    /// to reach past the canvas edge, independent of where the touch
+    /// driving the drag currently is.
+    static func movedBounds(of points: [CGPoint], offset: CGPoint) -> CGRect? {
+        guard let first = points.first else { return nil }
+        let bounds = points.dropFirst().reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+        return bounds.offsetBy(dx: offset.x, dy: offset.y)
     }
 
     /// Whether a lift at `location` should be treated as a drop outside the
@@ -732,7 +772,11 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         if let start = selectionDragStart {
             guard let location = locations.last else { return }
             selectionDragOffset = CGPoint(x: location.x - start.x, y: location.y - start.y)
-            if Self.lassoDragShouldLeaveCanvas(location: location, canvasSize: canvasSize, allowsSelectionTransfer: allowsSelectionTransfer) {
+            let movedBounds = Self.movedBounds(of: selectionPolygon, offset: selectionDragOffset)
+            if Self.lassoDragShouldLeaveCanvas(
+                location: location, canvasSize: canvasSize, allowsSelectionTransfer: allowsSelectionTransfer,
+                movedSelectionBounds: movedBounds
+            ) {
                 // The preview image (a synchronous `UIGraphicsImageRenderer`
                 // render) and the `onShapeSelectionHidden` SwiftUI state
                 // update are only worth paying for once, right when the
@@ -763,7 +807,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                     cachedSelectionPreview = selectionPreview()
                 }
                 let preview = cachedSelectionPreview
-                onSelectionDragMoved?(preview?.image, preview?.screenSize, convert(location, to: nil))
+                onSelectionDragMoved?(preview?.image, preview?.screenSize, convert(viewPoint(location), to: nil))
                 return
             }
             if isSelectionOutsideCanvas {
@@ -804,7 +848,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                 location: location, canvasSize: canvasSize,
                 wasAlreadyOutside: isSelectionOutsideCanvas, allowsSelectionTransfer: allowsSelectionTransfer
             ) {
-                let screenPoint = convert(location, to: nil)
+                let screenPoint = convert(viewPoint(location), to: nil)
                 let preview = selectionPreview()
                 if let preview {
                     let transfer = InkSelectionTransfer(
