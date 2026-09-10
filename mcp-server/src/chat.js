@@ -252,6 +252,38 @@ export async function handleChat(url, request, env) {
     }
   }
 
+  // Repairs a legacy attachment reference in place, once the sender's own
+  // device has re-rendered and re-uploaded the material under the newer,
+  // shareable scheme — see `editMessage` in chat-room.js.
+  const editMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/messages\/(\d+)\/edit$/.exec(url.pathname);
+  if (editMatch && request.method === "POST") {
+    const messageID = Number(editMatch[2]);
+    const body = await readBody(request);
+    const text = String(body?.text ?? "").trim().slice(0, 2_000);
+    if (!text) return json({ error: "Message is required." }, 400);
+    try {
+      const result = await env.CHAT_ROOM.getByName(editMatch[1]).editMessage(key, messageID, text);
+      if (result.status === "not_found") return json({ error: "Message not found." }, 404);
+      return json(result);
+    } catch (error) {
+      const forbidden = roomForbiddenResponse(error);
+      if (forbidden) return forbidden;
+      throw error;
+    }
+  }
+
+  // Batch lookup by id, for reconciling messages old enough to have
+  // scrolled out of `listMessages`' rolling reconcile window — see
+  // `getMessagesByIDs` in chat-room.js.
+  const lookupMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/messages\/lookup$/.exec(url.pathname);
+  if (lookupMatch && request.method === "POST") {
+    const body = await readBody(request);
+    const ids = Array.isArray(body?.ids)
+      ? body.ids.map(Number).filter(Number.isSafeInteger).slice(0, 200)
+      : [];
+    return roomResponse(env.CHAT_ROOM.getByName(lookupMatch[1]).getMessagesByIDs(key, ids));
+  }
+
   // Uploads an attachment's actual bytes to the room it'll be shared in, so
   // the other participant — on a different device — can retrieve them too.
   // Previously an attachment only ever carried the sender's local file path

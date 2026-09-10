@@ -56,6 +56,27 @@ function fakeChatRoomBinding() {
           message.isCanceled = true;
           return { status: "canceled" };
         },
+        // Mirrors chat-room.js's real editMessage: only the original sender
+        // may edit, and a canceled message can never be resurrected by one.
+        async editMessage(userKey, messageID, text) {
+          if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          const message = state.messages.find(item => item.id === messageID);
+          if (!message) return { status: "not_found" };
+          if (message.senderKey !== userKey) throw new Error("Forbidden");
+          if (message.isCanceled) return { status: "canceled" };
+          message.text = text;
+          return { status: "edited" };
+        },
+        // Mirrors chat-room.js's real getMessagesByIDs: a direct-by-id
+        // lookup independent of the `after` cursor, for reconciling ids old
+        // enough to have scrolled out of the normal rolling window.
+        async getMessagesByIDs(userKey, ids) {
+          if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          const idSet = new Set(ids);
+          return state.messages
+            .filter(item => idSet.has(item.id))
+            .map(({ senderKey, ...rest }) => ({ ...rest, isMine: senderKey === userKey }));
+        },
         // Mirrors chat-room.js's real storeAttachment/getAttachment: same
         // validation, same Forbidden gate, same in-room storage — so the
         // fake actually exercises the same access-control path.
@@ -340,6 +361,22 @@ async function sendMessage(env, token, roomID, text, clientMessageID) {
 
 async function cancelMessage(env, token, roomID, messageID) {
   return worker.fetch(request(`/api/chat/rooms/${roomID}/messages/${messageID}/cancel`, { method: "POST", token }), env, noopCtx);
+}
+
+async function editMessage(env, token, roomID, messageID, text) {
+  return worker.fetch(
+    request(`/api/chat/rooms/${roomID}/messages/${messageID}/edit`, { method: "POST", token, body: { text } }),
+    env,
+    noopCtx
+  );
+}
+
+async function lookupMessages(env, token, roomID, ids) {
+  return worker.fetch(
+    request(`/api/chat/rooms/${roomID}/messages/lookup`, { method: "POST", token, body: { ids } }),
+    env,
+    noopCtx
+  );
 }
 
 async function readMessages(env, token, roomID) {
@@ -884,6 +921,160 @@ test("canceling a nonexistent message id returns 404", async () => {
 
   const response = await cancelMessage(env, aliceToken, accepted.roomID, 999);
   assert.equal(response.status, 404);
+});
+
+// Regression coverage for "materials sent before attachments could be
+// re-shared are permanently unopenable": editing a message's text in place
+// is how the sender's device repairs a legacy attachment reference once
+// it's re-rendered and re-uploaded the material — this must actually reach
+// every reader of the room, not just the sender's own device.
+
+test("editing a message updates its text for both the sender and the recipient", async () => {
+  const env = environment();
+  const aliceToken = freshToken("ce1");
+  const bobToken = freshToken("ce2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const roomID = accepted.roomID;
+
+  const sent = await (await sendMessage(env, aliceToken, roomID, "legacy attachment reference")).json();
+  const editResponse = await editMessage(env, aliceToken, roomID, sent.id, "repaired attachment reference");
+  assert.equal(editResponse.status, 200);
+  assert.equal((await editResponse.json()).status, "edited");
+
+  const alicesView = await (await readMessages(env, aliceToken, roomID)).json();
+  assert.equal(alicesView[0].text, "repaired attachment reference");
+
+  const bobsView = await (await readMessages(env, bobToken, roomID)).json();
+  assert.equal(bobsView[0].text, "repaired attachment reference", "the recipient must see the repaired text too");
+});
+
+test("only the original sender can edit their own message", async () => {
+  const env = environment();
+  const aliceToken = freshToken("ce3");
+  const bobToken = freshToken("ce4");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const roomID = accepted.roomID;
+
+  const sent = await (await sendMessage(env, aliceToken, roomID, "Alice's message")).json();
+  const bobsAttempt = await editMessage(env, bobToken, roomID, sent.id, "tampered");
+  assert.equal(bobsAttempt.status, 403);
+
+  const alicesView = await (await readMessages(env, aliceToken, roomID)).json();
+  assert.equal(alicesView[0].text, "Alice's message", "an unauthorized edit attempt must not have any effect");
+});
+
+test("someone outside the room cannot edit a message in it", async () => {
+  const env = environment();
+  const aliceToken = freshToken("ce5");
+  const bobToken = freshToken("ce6");
+  const eveToken = freshToken("ce7");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await registerUser(env, eveToken, "Eve");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const roomID = accepted.roomID;
+
+  const sent = await (await sendMessage(env, aliceToken, roomID, "private")).json();
+  const evesAttempt = await editMessage(env, eveToken, roomID, sent.id, "tampered");
+  assert.equal(evesAttempt.status, 403);
+});
+
+test("editing a nonexistent message id returns 404", async () => {
+  const env = environment();
+  const aliceToken = freshToken("ce8");
+  const bobToken = freshToken("ce9");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+
+  const response = await editMessage(env, aliceToken, accepted.roomID, 999, "repaired");
+  assert.equal(response.status, 404);
+});
+
+test("editing a canceled message does not resurrect it", async () => {
+  const env = environment();
+  const aliceToken = freshToken("ce10");
+  const bobToken = freshToken("ce11");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const roomID = accepted.roomID;
+
+  const sent = await (await sendMessage(env, aliceToken, roomID, "oops, wrong chat")).json();
+  await cancelMessage(env, aliceToken, roomID, sent.id);
+
+  const editResponse = await editMessage(env, aliceToken, roomID, sent.id, "repaired attachment reference");
+  assert.equal((await editResponse.json()).status, "canceled");
+
+  const bobsView = await (await readMessages(env, bobToken, roomID)).json();
+  assert.equal(bobsView[0].text, "", "a retracted message must not come back just because an edit was attempted on it");
+  assert.equal(bobsView[0].isCanceled, true);
+});
+
+test("looking up specific message ids returns their current text regardless of how old they are", async () => {
+  const env = environment();
+  const aliceToken = freshToken("cl1");
+  const bobToken = freshToken("cl2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const roomID = accepted.roomID;
+
+  const first = await (await sendMessage(env, aliceToken, roomID, "legacy attachment reference")).json();
+  // Many messages in between — this is exactly the scenario
+  // `listMessages(after)`'s rolling reconcile window would miss.
+  for (let i = 0; i < 25; i += 1) {
+    await sendMessage(env, aliceToken, roomID, `filler ${i}`);
+  }
+  await editMessage(env, aliceToken, roomID, first.id, "repaired attachment reference");
+
+  const lookupResponse = await lookupMessages(env, bobToken, roomID, [first.id]);
+  assert.equal(lookupResponse.status, 200);
+  const looked = await lookupResponse.json();
+  assert.equal(looked.length, 1);
+  assert.equal(looked[0].id, first.id);
+  assert.equal(looked[0].text, "repaired attachment reference");
+});
+
+test("someone outside the room cannot look up messages in it", async () => {
+  const env = environment();
+  const aliceToken = freshToken("cl3");
+  const bobToken = freshToken("cl4");
+  const eveToken = freshToken("cl5");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await registerUser(env, eveToken, "Eve");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const roomID = accepted.roomID;
+
+  const sent = await (await sendMessage(env, aliceToken, roomID, "private")).json();
+  const evesAttempt = await lookupMessages(env, eveToken, roomID, [sent.id]);
+  assert.equal(evesAttempt.status, 403);
+});
+
+test("looking up an empty id list returns an empty result instead of erroring", async () => {
+  const env = environment();
+  const aliceToken = freshToken("cl6");
+  const bobToken = freshToken("cl7");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+
+  const response = await lookupMessages(env, aliceToken, accepted.roomID, []);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), []);
 });
 
 // Regression coverage for "same-text reconciliation could mismatch order":

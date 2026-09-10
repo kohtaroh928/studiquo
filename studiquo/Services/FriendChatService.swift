@@ -38,6 +38,7 @@ enum FriendChatService {
     struct RejectResult: Codable { let status: String }
     struct AttachmentUploadResult: Codable { let id: String }
     struct CancelMessageResult: Codable { let status: String }
+    struct EditMessageResult: Codable { let status: String }
     struct RateLimitedError: Error {}
     /// Carries the server's own `{"error": "..."}` message through to the
     /// caller instead of collapsing every non-2xx response into the same
@@ -106,6 +107,27 @@ enum FriendChatService {
         try await request(path: "api/chat/rooms/\(roomID)/messages/\(messageID)/cancel", method: "POST", body: Optional<String>.none)
     }
 
+    /// Rewrites one of the caller's own already-sent messages in place — used
+    /// to repair a legacy chat attachment reference (one that only ever
+    /// carried a local, off-device id, from before attachments could be
+    /// uploaded) once its material has been re-rendered and re-uploaded
+    /// under the newer, shareable scheme. Reaches every reader of the room,
+    /// not just this device.
+    static func editMessage(roomID: String, messageID: Int, text: String) async throws -> EditMessageResult {
+        try await request(
+            path: "api/chat/rooms/\(roomID)/messages/\(messageID)/edit", method: "POST", body: ["text": text]
+        )
+    }
+
+    /// Looks up the current text for specific message ids, regardless of how
+    /// old they are relative to the room's latest message — `messages(roomID:after:)`
+    /// only reconciles a rolling window of recent ids (see `FriendStore.refreshMessages`),
+    /// which would never surface an `editMessage` repair to a message old
+    /// enough to have scrolled out of that window.
+    static func messages(roomID: String, ids: [Int]) async throws -> [Message] {
+        try await request(path: "api/chat/rooms/\(roomID)/messages/lookup", method: "POST", body: ["ids": ids])
+    }
+
     /// Uploads an attachment's actual bytes to the room, so the other
     /// participant — who has no access to the sender's local filesystem or
     /// app database — can retrieve them too.
@@ -171,6 +193,8 @@ protocol FriendChatClient {
     func messages(roomID: String, after: Int) async throws -> [FriendChatService.Message]
     func send(_ text: String, roomID: String, clientMessageID: String) async throws -> FriendChatService.Message
     func cancelMessage(roomID: String, messageID: Int) async throws -> FriendChatService.CancelMessageResult
+    func editMessage(roomID: String, messageID: Int, text: String) async throws -> FriendChatService.EditMessageResult
+    func messages(roomID: String, ids: [Int]) async throws -> [FriendChatService.Message]
     func uploadAttachment(roomID: String, contentType: String, data: Data) async throws -> FriendChatService.AttachmentUploadResult
     func downloadAttachment(roomID: String, id: String) async throws -> Data
 }
@@ -214,6 +238,14 @@ struct LiveFriendChatClient: FriendChatClient {
 
     func cancelMessage(roomID: String, messageID: Int) async throws -> FriendChatService.CancelMessageResult {
         try await FriendChatService.cancelMessage(roomID: roomID, messageID: messageID)
+    }
+
+    func editMessage(roomID: String, messageID: Int, text: String) async throws -> FriendChatService.EditMessageResult {
+        try await FriendChatService.editMessage(roomID: roomID, messageID: messageID, text: text)
+    }
+
+    func messages(roomID: String, ids: [Int]) async throws -> [FriendChatService.Message] {
+        try await FriendChatService.messages(roomID: roomID, ids: ids)
     }
 
     func uploadAttachment(roomID: String, contentType: String, data: Data) async throws -> FriendChatService.AttachmentUploadResult {

@@ -578,6 +578,280 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(visible.first?.isCanceled, true, "a retraction must reach a device that already had the message, not just devices that hadn't fetched it yet")
     }
 
+    // Regression coverage for "materials sent before attachments could be
+    // re-shared are permanently unopenable": a legacy attachment (no
+    // `remoteRoomID`, not yet `sourceKind == "pdf"`) is repaired by
+    // re-rendering and re-uploading it, then editing the message that
+    // carries it in place — and that repair must actually reach every
+    // reader of the room, including one whose cached copy is old enough to
+    // have scrolled out of the normal rolling reconcile window.
+
+    private func legacyAttachment(id: String = "notebook-ABC123", title: String = "数学ノート") -> FriendMessageAttachment {
+        // Mirrors exactly what a pre-fix message's payload looked like: no
+        // `sourceKind`/`sourceID`/`remoteRoomID` at all, so `resolvedSourceKind`/
+        // `resolvedSourceID` fall back to parsing them out of `id`.
+        FriendMessageAttachment(id: id, title: title, kind: "notebook", icon: "doc.richtext")
+    }
+
+    private func repairedAttachment(from original: FriendMessageAttachment, remoteID: String = "attachment-1", roomID: String = "room-a") -> FriendMessageAttachment {
+        FriendMessageAttachment(
+            id: original.id, title: original.title, kind: original.kind, icon: original.icon,
+            sourceKind: "pdf", sourceID: remoteID, remoteRoomID: roomID
+        )
+    }
+
+    func testLegacyAttachmentsInTextFindsAnAttachmentWithNoRemoteRoomID() {
+        let legacy = legacyAttachment()
+        let found = FriendMessageAttachment.legacyAttachments(in: legacy.messageLine)
+        XCTAssertEqual(found.map(\.id), [legacy.id])
+    }
+
+    func testLegacyAttachmentsInTextExcludesAnAlreadyRepairedPdfAttachment() {
+        let repaired = repairedAttachment(from: legacyAttachment())
+        XCTAssertTrue(FriendMessageAttachment.legacyAttachments(in: repaired.messageLine).isEmpty, "すでにPDF化・アップロード済みの添付は、修復対象に含まれてはいけません。")
+    }
+
+    // Regression coverage for "資料や写真がまだ開けるようになっていない": a
+    // legacy attachment can have `sourceKind == "pdf"` for a completely
+    // ordinary, unrelated reason — an imported PDF *file* (see
+    // `saveFileAttachment`) uses "pdf" as its normal, currently-working
+    // kind, not just as the in-app-material repair's target marker. Judging
+    // "still broken" by `sourceKind` alone wrongly treated a legacy PDF file
+    // (or a legacy photo, whose kind is "photo") as already fine, simply
+    // because it wasn't the exact string "pdf"-after-repair. The only
+    // reliable signal is `remoteRoomID` — nil means the recipient's device
+    // has nowhere to fetch it from, regardless of what kind it is.
+
+    private func legacyFileAttachment(id: String = "file-/tmp/report.pdf-ABC", sourceKind: String = "pdf", sourcePath: String? = "/tmp/report.pdf") -> FriendMessageAttachment {
+        FriendMessageAttachment(id: id, title: "report.pdf", kind: "PDF", icon: "doc.richtext", sourceKind: sourceKind, sourcePath: sourcePath)
+    }
+
+    func testLegacyAttachmentsInTextFindsALegacyPdfFileEvenThoughItsSourceKindIsAlreadyPdf() {
+        let legacyFile = legacyFileAttachment()
+        let found = FriendMessageAttachment.legacyAttachments(in: legacyFile.messageLine)
+        XCTAssertEqual(found.map(\.id), [legacyFile.id], "sourceKindがすでに\"pdf\"であっても、remoteRoomIDがなければ未修復として扱われる必要があります。")
+    }
+
+    func testLegacyAttachmentsInTextFindsALegacyPhoto() {
+        let legacyPhoto = FriendMessageAttachment(id: "photo-/tmp/pic.jpg-XYZ", title: "写真", kind: "写真", icon: "photo", sourceKind: "photo", sourcePath: "/tmp/pic.jpg")
+        let found = FriendMessageAttachment.legacyAttachments(in: legacyPhoto.messageLine)
+        XCTAssertEqual(found.map(\.id), [legacyPhoto.id], "写真も、他の資料と同じく未修復として見つかる必要があります。")
+    }
+
+    func testRepairLegacyAttachmentsReUploadsAPhotoStillSittingAtItsOwnSourcePathWhenTheAppMaterialResolverCannotHandleIt() async throws {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
+        try Data("fake jpeg bytes".utf8).write(to: tempFile)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+
+        let legacyPhoto = FriendMessageAttachment(
+            id: "photo-\(tempFile.path)-XYZ", title: "写真", kind: "写真", icon: "photo",
+            sourceKind: "photo", sourcePath: tempFile.path
+        )
+        await client.setMessages(["room-a": [.init(id: 1, text: legacyPhoto.messageLine, sentAt: 1_000, isMine: true)]])
+        await store.refreshMessages(for: alice)
+
+        // The in-app-material resolver has nothing to do with a photo — it
+        // must return the attachment unchanged, the same as it would for a
+        // deleted notebook, so the fallback below is what actually repairs it.
+        await store.repairLegacyAttachments(for: alice) { attachment, _ in attachment }
+
+        let edits = await client.editedMessagesSnapshot()
+        XCTAssertEqual(edits.count, 1, "アプリ内資料の解決処理では直せない写真も、修復の対象になる必要があります。")
+        let editedAttachment = edits.first.flatMap { FriendMessageAttachment.attachments(in: $0.text).first }
+        XCTAssertEqual(editedAttachment?.remoteRoomID, "room-a", "写真の実体を再アップロードして、遠隔ルームIDを持たせる必要があります。")
+
+        let uploaded = await client.uploadedAttachmentsSnapshot()
+        XCTAssertEqual(uploaded.count, 1)
+        XCTAssertEqual(uploaded.first?.contentType, "image/jpeg", "拡張子から正しいcontent-typeが推測される必要があります。")
+    }
+
+    func testRepairLegacyAttachmentsSkipsAPhotoWhoseFileNoLongerExistsOnDisk() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        let missingPath = "/tmp/studiquo-tests-\(UUID().uuidString)-does-not-exist.jpg"
+        let legacyPhoto = FriendMessageAttachment(id: "photo-\(missingPath)-XYZ", title: "写真", kind: "写真", icon: "photo", sourceKind: "photo", sourcePath: missingPath)
+        await client.setMessages(["room-a": [.init(id: 1, text: legacyPhoto.messageLine, sentAt: 1_000, isMine: true)]])
+        await store.refreshMessages(for: alice)
+
+        await store.repairLegacyAttachments(for: alice) { attachment, _ in attachment }
+
+        let edits = await client.editedMessagesSnapshot()
+        XCTAssertTrue(edits.isEmpty, "写真ファイルがもう端末に残っていない場合は、書き換えようとしてはいけません。")
+    }
+
+    func testLegacyAttachmentsInTextExcludesPlainTextWithNoAttachment() {
+        XCTAssertTrue(FriendMessageAttachment.legacyAttachments(in: "普通のメッセージです").isEmpty)
+    }
+
+    func testTextReplacingAttachmentReplacesOnlyTheMatchingLineAndPreservesEverythingElse() {
+        let legacy = legacyAttachment(id: "notebook-ABC123")
+        let otherAttachment = legacyAttachment(id: "deck-XYZ789", title: "単語帳")
+        let originalText = "見て見て\n\(legacy.messageLine)\n\(otherAttachment.messageLine)"
+        let repaired = repairedAttachment(from: legacy)
+
+        let newText = FriendMessageAttachment.textReplacingAttachment(in: originalText, id: legacy.id, with: repaired)
+        let lines = newText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+        XCTAssertEqual(lines[0], "見て見て", "本文は変わってはいけません。")
+
+        // `messageLine` encodes a plain dictionary, whose JSON key order
+        // isn't guaranteed to be stable between two separate encodings of
+        // the same content — comparing decoded fields, not raw strings, is
+        // what actually pins down "this one changed, that one didn't."
+        let decoded = FriendMessageAttachment.attachments(in: newText)
+        XCTAssertEqual(decoded.count, 2)
+        XCTAssertEqual(decoded.first { $0.id == legacy.id }?.resolvedSourceKind, "pdf", "指定した添付だけが、修復後の内容に置き換わる必要があります。")
+        XCTAssertEqual(decoded.first { $0.id == otherAttachment.id }?.resolvedSourceKind, "deck", "他の添付は変わってはいけません。")
+    }
+
+    func testRefreshMessagesPropagatesAnEditToAMessageThisDeviceAlreadyHas() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        await client.setMessages(["room-a": [.init(id: 1, text: "legacy attachment reference", sentAt: 1_000, isMine: false)]])
+        await store.refreshMessages(for: alice)
+        XCTAssertEqual(store.messages(for: alice).first?.text, "legacy attachment reference")
+
+        // The sender edited it after this device already fetched it —
+        // simulate the server's now-updated state directly.
+        await client.setMessages(["room-a": [.init(id: 1, text: "repaired attachment reference", sentAt: 1_000, isMine: false)]])
+        await store.refreshMessages(for: alice)
+
+        XCTAssertEqual(store.messages(for: alice).first?.text, "repaired attachment reference", "an edit must reach a device that already had the message, not just devices that hadn't fetched it yet")
+    }
+
+    func testLegacyAttachmentMessagesFindsOnlyThisUsersUnrepairedAttachments() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        let legacy = legacyAttachment()
+        let repaired = repairedAttachment(from: legacyAttachment(id: "notebook-DEF456"))
+        await client.setMessages(["room-a": [
+            .init(id: 1, text: legacy.messageLine, sentAt: 1_000, isMine: true),
+            .init(id: 2, text: repaired.messageLine, sentAt: 2_000, isMine: true),
+            .init(id: 3, text: legacy.messageLine, sentAt: 3_000, isMine: false),
+            .init(id: 4, text: legacy.messageLine, sentAt: 4_000, isMine: true, isCanceled: true),
+        ]])
+        await store.refreshMessages(for: alice)
+
+        let candidates = store.legacyAttachmentMessages(for: alice)
+        XCTAssertEqual(candidates.count, 1, "自分が送った・未修復・取消されていないメッセージだけが対象になる必要があります。")
+        XCTAssertEqual(candidates.first?.attachment.id, legacy.id)
+    }
+
+    func testRepairLegacyAttachmentsEditsTheMessageAndUpdatesLocalTextWhenTheMaterialIsStillAvailable() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        let legacy = legacyAttachment()
+        await client.setMessages(["room-a": [.init(id: 1, text: legacy.messageLine, sentAt: 1_000, isMine: true)]])
+        await store.refreshMessages(for: alice)
+
+        let repaired = repairedAttachment(from: legacy)
+        await store.repairLegacyAttachments(for: alice) { attachment, _ in
+            XCTAssertEqual(attachment.id, legacy.id, "解決処理には、修復が必要な添付ファイルがそのまま渡される必要があります。")
+            return repaired
+        }
+
+        let edits = await client.editedMessagesSnapshot()
+        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.first?.roomID, "room-a")
+        XCTAssertEqual(edits.first?.messageID, 1)
+        let editedAttachment = edits.first.flatMap { FriendMessageAttachment.attachments(in: $0.text).first }
+        XCTAssertEqual(editedAttachment?.resolvedSourceKind, "pdf", "修復後のメッセージ本文は、新しい添付情報に置き換わっている必要があります。")
+        XCTAssertEqual(editedAttachment?.remoteRoomID, "room-a")
+
+        let localAttachment = store.messages(for: alice).first.flatMap { FriendMessageAttachment.attachments(in: $0.text).first }
+        XCTAssertEqual(localAttachment?.resolvedSourceKind, "pdf", "この端末が持つメッセージの表示内容も、修復結果に更新される必要があります。")
+    }
+
+    func testRepairLegacyAttachmentsSkipsAMessageWhoseMaterialCanNoLongerBeResolvedLocally() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        let legacy = legacyAttachment()
+        await client.setMessages(["room-a": [.init(id: 1, text: legacy.messageLine, sentAt: 1_000, isMine: true)]])
+        await store.refreshMessages(for: alice)
+
+        // The material was deleted since — `resolvedAppMessageAttachment`
+        // returns the attachment unchanged when it can't find anything to
+        // render, exactly as it does in the app today.
+        await store.repairLegacyAttachments(for: alice) { attachment, _ in attachment }
+
+        let edits = await client.editedMessagesSnapshot()
+        XCTAssertTrue(edits.isEmpty, "元の資料がもう見つからない場合は、メッセージを書き換えようとしてはいけません。")
+        let stillLegacy = store.messages(for: alice).first.map { FriendMessageAttachment.legacyAttachments(in: $0.text) }
+        XCTAssertEqual(stillLegacy?.count, 1, "修復できなかった場合、添付は未修復のまま残る必要があります。")
+    }
+
+    func testReconcileLegacyAttachmentsPicksUpARepairMadeLongAfterThisDeviceLastSawTheMessage() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        let legacy = legacyAttachment()
+        var initial: [FriendChatService.Message] = [.init(id: 1, text: legacy.messageLine, sentAt: 1_000, isMine: false)]
+        // Many messages in between — enough to push id 1 outside
+        // `recentReconcileWindow` (20) once this device has caught up to
+        // the latest one.
+        for index in 2...30 { initial.append(.init(id: index, text: "filler \(index)", sentAt: Double(index) * 1_000, isMine: false)) }
+        await client.setMessages(["room-a": initial])
+        await store.refreshMessages(for: alice)
+        let initialLegacyCount = store.messages(for: alice).first { $0.serverID == 1 }.map { FriendMessageAttachment.legacyAttachments(in: $0.text).count }
+        XCTAssertEqual(initialLegacyCount, 1)
+
+        // The sender (a different device) repairs the attachment — this
+        // simulates the server's now-updated state directly, the same as
+        // `editMessage` would leave behind.
+        let repaired = repairedAttachment(from: legacy)
+        var updated = initial
+        updated[0] = .init(id: 1, text: repaired.messageLine, sentAt: 1_000, isMine: false)
+        await client.setMessages(["room-a": updated])
+
+        // A plain poll must NOT pick this up — message id 1 is now well
+        // outside the rolling reconcile window, which is exactly the gap
+        // `reconcileLegacyAttachments` exists to close.
+        await store.refreshMessages(for: alice)
+        let stillLegacyCount = store.messages(for: alice).first { $0.serverID == 1 }.map { FriendMessageAttachment.legacyAttachments(in: $0.text).count }
+        XCTAssertEqual(stillLegacyCount, 1, "通常のポーリングでは、ウィンドウの外に出た古いメッセージの修復までは拾えないはずです。")
+
+        await store.reconcileLegacyAttachments(for: alice)
+        let repairedCount = store.messages(for: alice).first { $0.serverID == 1 }.map { FriendMessageAttachment.legacyAttachments(in: $0.text).count }
+        XCTAssertEqual(repairedCount, 0, "古いメッセージへの修復も、専用の確認処理で拾える必要があります。")
+    }
+
+    func testReconcileLegacyAttachmentsDoesNothingWhenNoLegacyAttachmentsAreCached() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        await client.setMessages(["room-a": [.init(id: 1, text: "just a normal message", sentAt: 1_000, isMine: false)]])
+        await store.refreshMessages(for: alice)
+
+        // Should be a no-op — no lookup call should even be needed since
+        // nothing cached still looks like an unrepaired legacy attachment.
+        await store.reconcileLegacyAttachments(for: alice)
+        XCTAssertEqual(store.messages(for: alice).first?.text, "just a normal message")
+    }
+
     func testBlankUnknownAndOverlongMessagesAreHandled() async {
         let client = MockFriendChatClient()
         let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
@@ -1231,6 +1505,33 @@ private actor MockFriendChatClient: FriendChatClient {
 
     func canceledMessagesSnapshot() -> [(roomID: String, messageID: Int)] {
         canceledMessages
+    }
+
+    var editedMessages: [(roomID: String, messageID: Int, text: String)] = []
+
+    func editMessage(roomID: String, messageID: Int, text: String) async throws -> FriendChatService.EditMessageResult {
+        if let errorToThrow { throw errorToThrow }
+        guard let index = roomMessages[roomID, default: []].firstIndex(where: { $0.id == messageID }) else {
+            return .init(status: "not_found")
+        }
+        let original = roomMessages[roomID]![index]
+        if original.isCanceled == true { return .init(status: "canceled") }
+        editedMessages.append((roomID: roomID, messageID: messageID, text: text))
+        roomMessages[roomID]![index] = FriendChatService.Message(
+            id: original.id, text: text, sentAt: original.sentAt, isMine: original.isMine,
+            clientMessageID: original.clientMessageID, isCanceled: original.isCanceled
+        )
+        return .init(status: "edited")
+    }
+
+    func editedMessagesSnapshot() -> [(roomID: String, messageID: Int, text: String)] {
+        editedMessages
+    }
+
+    func messages(roomID: String, ids: [Int]) async throws -> [FriendChatService.Message] {
+        if let errorToThrow { throw errorToThrow }
+        let idSet = Set(ids)
+        return roomMessages[roomID, default: []].filter { idSet.contains($0.id) }
     }
 
     func uploadAttachment(roomID: String, contentType: String, data: Data) async throws -> FriendChatService.AttachmentUploadResult {
