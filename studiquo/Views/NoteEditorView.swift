@@ -7000,6 +7000,12 @@ struct PageCanvasContainer: View {
     /// still in progress — cleared the moment the drag commits, at which
     /// point `element.centerX`/`centerY` themselves hold the new position.
     @State private var shapeSelectionDragOffsets: [PersistentIdentifier: CGPoint] = [:]
+    /// Shapes currently hidden because a lasso drag carrying them has
+    /// crossed this canvas's own edge (see
+    /// `InkCanvasView.onShapeSelectionHidden`) — ink strokes hide themselves
+    /// via their own layers, but a shape's visual state lives in
+    /// `EditablePageElement`, which has no way to know this on its own.
+    @State private var hiddenShapeSelectionIDs: Set<PersistentIdentifier> = []
     @State private var isRecognizingSelection = false
     @State private var selectionRecognitionID = UUID()
     @AppStorage("drawingTool") private var drawingToolRaw = DrawingToolKind.pen.rawValue
@@ -7121,10 +7127,20 @@ struct PageCanvasContainer: View {
                             },
                             selectableShapes: selectableShapeOutlines,
                             onShapeSelectionDragged: { ids, offset in
+                                // `offset` is in page coordinates, matching the
+                                // ink layer's own frame. `EditablePageElement`
+                                // is positioned in already-scaled display
+                                // coordinates (see `.position()` below using
+                                // `pageSize.width * element.centerX`), so the
+                                // offset must be scaled by the same
+                                // `contentScale` passed to InkCanvasRepresentable
+                                // before being applied via `.offset()`.
+                                let scale = displaySize.width / max(page.pageWidth, 1)
+                                let scaledOffset = Self.scaledShapeSelectionOffset(offset, contentScale: scale)
                                 var offsets: [PersistentIdentifier: CGPoint] = [:]
                                 for id in ids {
                                     guard let pid = id.base as? PersistentIdentifier else { continue }
-                                    offsets[pid] = offset
+                                    offsets[pid] = scaledOffset
                                 }
                                 shapeSelectionDragOffsets = offsets
                             },
@@ -7168,11 +7184,20 @@ struct PageCanvasContainer: View {
                                 }
                                 page.notebook?.updatedAt = .now
                                 try? modelContext.save()
+                            },
+                            onShapeSelectionHidden: { ids, hidden in
+                                let pids = Set(ids.compactMap { $0.base as? PersistentIdentifier })
+                                hiddenShapeSelectionIDs = Self.updatedHiddenShapeSelectionIDs(
+                                    hiddenShapeSelectionIDs, ids: pids, hidden: hidden
+                                )
                             }
                         )
                             .allowsHitTesting(!isReadOnlyMode)
                             .modifier(ConditionalColorInvert(enabled: usesDarkPageDisplay))
-                        PageElementsLayer(page: page, isDark: usesDarkPageDisplay, lassoDragOffsets: shapeSelectionDragOffsets)
+                        PageElementsLayer(
+                            page: page, isDark: usesDarkPageDisplay, lassoDragOffsets: shapeSelectionDragOffsets,
+                            hiddenElementIDs: hiddenShapeSelectionIDs, isLassoActive: drawingTool.wrappedValue == .lasso
+                        )
                             .allowsHitTesting(!isReadOnlyMode)
                     }
                     .frame(width: displaySize.width, height: displaySize.height)
@@ -7446,6 +7471,35 @@ struct PageCanvasContainer: View {
         return (centerX: centerX + Double(offset.x) / pageWidth, centerY: centerY + Double(offset.y) / pageHeight)
     }
 
+    /// Converts a live lasso-drag offset from page units (what
+    /// `InkCanvasView.onShapeSelectionDragged` reports, matching the ink
+    /// layers it moves in step with) into the already-scaled display units
+    /// `EditablePageElement`'s `.offset()` needs — the same `contentScale`
+    /// (`displaySize.width / pageWidth`) passed to `InkCanvasRepresentable`.
+    /// Left unscaled, a shape drags at a different rate than the ink/marquee
+    /// around it whenever `contentScale` isn't 1 (any split pane or zoomed
+    /// view), visibly detaching from the selection mid-drag — the bug this
+    /// fixes. `onShapeSelectionMoved`'s final commit is unaffected: it
+    /// writes straight into `movedShapeCenter` above, which already works
+    /// in page units end to end.
+    static func scaledShapeSelectionOffset(_ offset: CGPoint, contentScale: CGFloat) -> CGPoint {
+        CGPoint(x: offset.x * contentScale, y: offset.y * contentScale)
+    }
+
+    /// The new `hiddenShapeSelectionIDs` set after
+    /// `InkCanvasView.onShapeSelectionHidden` fires — a shape's
+    /// `EditablePageElement` has no layer of its own to hide the way ink's
+    /// `strokeLayers` do, so this is how the owner tracks which shapes
+    /// should currently render at `opacity(0)` because a lasso drag
+    /// carrying them is past the canvas's own edge. `hidden: true` adds the
+    /// ids in, `hidden: false` (re-entering the canvas, or the selection
+    /// being cleared) removes them again.
+    static func updatedHiddenShapeSelectionIDs(
+        _ current: Set<PersistentIdentifier>, ids: Set<PersistentIdentifier>, hidden: Bool
+    ) -> Set<PersistentIdentifier> {
+        hidden ? current.union(ids) : current.subtracting(ids)
+    }
+
     /// Where a shape lands after a cross-pane transfer: its absolute
     /// position and size in the SOURCE page's units are re-centered and
     /// rescaled by exactly the transform the ink went through
@@ -7481,7 +7535,14 @@ struct PageCanvasContainer: View {
     private var selectableShapeOutlines: [SelectableShapeOutline] {
         page.allElements
             .filter { ($0.kind == .rectangle || $0.kind == .ellipse) && !$0.isLocked }
-            .map { SelectableShapeOutline(id: AnyHashable($0.persistentModelID), outline: Self.shapeOutline(for: $0, on: page)) }
+            .map {
+                SelectableShapeOutline(
+                    id: AnyHashable($0.persistentModelID),
+                    outline: Self.shapeOutline(for: $0, on: page),
+                    colorHex: $0.colorHex,
+                    lineWidth: CGFloat($0.lineWidth)
+                )
+            }
     }
 
     private func addShapeElement(kind: InkCanvasView.ShapeKind, pageRect: CGRect, on page: NotePage) {
@@ -7711,6 +7772,17 @@ private struct PageElementsLayer: View {
     /// Where a shape currently sits mid-lasso-drag, in page units, keyed by
     /// element — see `PageCanvasContainer.shapeSelectionDragOffsets`.
     var lassoDragOffsets: [PersistentIdentifier: CGPoint] = [:]
+    /// Elements hidden mid-lasso-drag because the drag has carried them
+    /// outside this canvas's own edge — see
+    /// `PageCanvasContainer.hiddenShapeSelectionIDs`.
+    var hiddenElementIDs: Set<PersistentIdentifier> = []
+    /// True while the lasso tool is the active drawing tool. Shape elements
+    /// stop taking touches while this is true (see `EditablePageElement`) so
+    /// a touch that starts inside a shape's bounding box still reaches
+    /// `InkCanvasView` underneath to begin a lasso drag or a selection-box
+    /// drag, instead of being claimed by the shape's own tap/gesture
+    /// recognizers first.
+    var isLassoActive: Bool = false
 
     /// At most one element carries the resize/rotate chrome at a time, so
     /// the state lives here rather than in each element.
@@ -7729,7 +7801,9 @@ private struct PageElementsLayer: View {
                     pageSize: geometry.size,
                     isDark: isDark,
                     selectedElementID: $selectedElementID,
-                    lassoDragOffset: lassoDragOffsets[element.persistentModelID] ?? .zero
+                    lassoDragOffset: lassoDragOffsets[element.persistentModelID] ?? .zero,
+                    isHiddenForLasso: hiddenElementIDs.contains(element.persistentModelID),
+                    isLassoActive: isLassoActive
                 )
                 // A selected element floats above the rest so its handles
                 // are never buried under a neighbour that happens to sit on
@@ -7792,6 +7866,17 @@ private struct EditablePageElement: View {
     /// position, the same way `strokeLayers` gets a live affine transform
     /// for ink. Zero the rest of the time.
     var lassoDragOffset: CGPoint = .zero
+    /// Mirrors ink's `strokeLayers[id]?.isHidden` for a shape whose lasso
+    /// drag has carried it outside the canvas's own edge — see
+    /// `PageElementsLayer.hiddenElementIDs`.
+    var isHiddenForLasso: Bool = false
+    /// True while the lasso tool is active — see `PageElementsLayer.isLassoActive`.
+    /// While true this element takes no touches at all, so a touch that
+    /// starts inside a shape's bounding box (not just outside it) still
+    /// reaches `InkCanvasView` underneath to begin or continue a lasso
+    /// gesture, instead of this view's own `.contentShape`/gestures
+    /// claiming it first.
+    var isLassoActive: Bool = false
 
     @State private var dragOrigin: CGPoint?
     @State private var sizeOrigin: CGSize?
@@ -7827,6 +7912,8 @@ private struct EditablePageElement: View {
             .rotationEffect(.degrees(element.rotation))
             .position(x: pageSize.width * element.centerX, y: pageSize.height * element.centerY)
             .offset(x: lassoDragOffset.x, y: lassoDragOffset.y)
+            .opacity(isHiddenForLasso ? 0 : 1)
+            .allowsHitTesting(!isLassoActive)
             .onTapGesture {
                 guard supportsSelection else { return }
                 selectedElementID = isSelected ? nil : element.persistentModelID
