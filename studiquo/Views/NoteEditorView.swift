@@ -37,6 +37,33 @@ extension Notification.Name {
     /// showing the *same* page — the split-screen-onto-one-notebook case —
     /// updates live instead of holding a stale copy until it reloads.
     static let studiquoDrawingSynced = Notification.Name("StudiquoDrawingSynced")
+    /// A directly-selected element (see `EditablePageElement.moveGesture`)
+    /// has been dragged past its own page's edge — carries an
+    /// `ElementDragTransfer`. Every `PageCanvasContainer` on screen checks
+    /// whether the drag's current screen point now falls within its own
+    /// page, so the floating preview (reusing the same overlay the lasso's
+    /// cross-pane transfer already draws — see `StudiquoSelectionDragMoved`)
+    /// lands wherever the finger actually is, split pane or adjacent page
+    /// alike.
+    static let studiquoElementDragDropped = Notification.Name("StudiquoElementDragDropped")
+}
+
+/// Carries one directly-selected element across a page or pane boundary —
+/// the same shape of hand-off `InkSelectionTransfer` does for ink/shapes,
+/// but for a single element dragged by its own move handle rather than
+/// gathered by a lasso loop. Posted once, on lift; every `PageCanvasContainer`
+/// on screen checks `screenPoint` against its own page's current on-screen
+/// frame and the first one to contain it claims the element by setting
+/// `wasAccepted`.
+private final class ElementDragTransfer {
+    let elementID: PersistentIdentifier
+    let screenPoint: CGPoint
+    var wasAccepted = false
+
+    init(elementID: PersistentIdentifier, screenPoint: CGPoint) {
+        self.elementID = elementID
+        self.screenPoint = screenPoint
+    }
 }
 
 /// False while both split panes show the same notebook. Dragging a lasso
@@ -329,6 +356,7 @@ struct NoteEditorView: View {
     @State private var showsTimeTool = false
     @State private var timeToolModel = TimeToolModel()
     @State private var showsCalculator = false
+    @State private var showsPageTemplatePicker = false
     @State private var calculatorExpression = ""
     @State private var calculatorResult = "0"
     @State private var calculatorCenter: CGPoint?
@@ -526,6 +554,22 @@ struct NoteEditorView: View {
                 onCancel: { notebookPendingNewPage = nil },
                 onSelect: { template, colorHex in
                     addPendingPage(template: template, paperColorHex: colorHex)
+                }
+            )
+        }
+        .sheet(isPresented: $showsPageTemplatePicker) {
+            PageTemplatePickerSheet(
+                title: "用紙を変更",
+                selectedTemplate: currentPrimaryPage?.pageTemplate ?? .blank,
+                selectedPaperColorHex: currentPrimaryPage?.paperColorHex ?? PaperColorChoice.white.hex,
+                paperColorOptions: PaperColorOption.existingPagePalette,
+                confirmTitle: "適用",
+                onCancel: { showsPageTemplatePicker = false },
+                onSelect: { template, colorHex in
+                    applyTemplate(template)
+                    currentPrimaryPage?.paperColorHex = colorHex
+                    notebook.updatedAt = .now
+                    showsPageTemplatePicker = false
                 }
             )
         }
@@ -1560,25 +1604,8 @@ struct NoteEditorView: View {
                 Label("ページダーク表示", systemImage: usesDarkPageDisplay ? "sun.max" : "moon")
             }
 
-            Menu {
-                ForEach(PageTemplate.allCases) { template in
-                    Button {
-                        applyTemplate(template)
-                    } label: {
-                        Label(template.name, systemImage: template.icon)
-                    }
-                }
-                Divider()
-                ForEach(PaperColorPreset.allCases) { preset in
-                    Button {
-                        if let page = currentPrimaryPage {
-                            page.paperColorHex = preset.hex
-                            notebook.updatedAt = .now
-                        }
-                    } label: {
-                        Label(preset.title, systemImage: currentPrimaryPage?.paperColorHex == preset.hex ? "checkmark.circle.fill" : "circle.fill")
-                    }
-                }
+            Button {
+                showsPageTemplatePicker = true
             } label: {
                 Label("用紙", systemImage: "doc.text.image")
             }
@@ -1845,24 +1872,11 @@ struct NoteEditorView: View {
 
                 toolStripButton("ページ一覧", icon: "rectangle.split.1x2", isActive: showsPageSidebar) { showsPageSidebar.toggle() }
 
-                Menu {
-                    ForEach(PageTemplate.allCases) { template in
-                        Button { applyTemplate(template) } label: { Label(template.name, systemImage: template.icon) }
-                    }
-                    Divider()
-                    ForEach(PaperColorPreset.allCases) { preset in
-                        Button {
-                            currentPrimaryPage?.paperColorHex = preset.hex
-                            notebook.updatedAt = .now
-                        } label: { Label(preset.title, systemImage: "circle.fill") }
-                    }
-                } label: {
-                    toolStripLabel(
-                        "用紙",
-                        icon: "doc.text.image",
-                        isActive: currentPrimaryPage?.pageTemplate != .blank || currentPrimaryPage?.paperColorHex != "#FFFFFF"
-                    )
-                }
+                toolStripButton(
+                    "用紙",
+                    icon: "doc.text.image",
+                    isActive: currentPrimaryPage?.pageTemplate != .blank || currentPrimaryPage?.paperColorHex != "#FFFFFF"
+                ) { showsPageTemplatePicker = true }
 
                 Menu {
                     Button("1画面", systemImage: "rectangle") { splitMode = .single }
@@ -2511,6 +2525,17 @@ struct NoteEditorView: View {
                 }
                 if reply.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     reply.text = L("返答が空でした。もう一度試してください。")
+                }
+                // Fire-and-forget: researches whether this question is worth
+                // reviewing tomorrow, independently of this task so it never
+                // delays clearing aiChatRespondingThreadIDs above.
+                Task { @MainActor in
+                    await AIReviewService.considerForReview(
+                        questionText: trimmed,
+                        threadTitle: thread.title,
+                        askedAt: userMessage.createdAt,
+                        modelContext: modelContext
+                    )
                 }
             } catch is CancellationError {
                 reply.text += reply.text.isEmpty ? L("（中断しました）") : L("（中断しました）")
@@ -7008,6 +7033,11 @@ struct PageCanvasContainer: View {
     @State private var hiddenShapeSelectionIDs: Set<PersistentIdentifier> = []
     @State private var isRecognizingSelection = false
     @State private var selectionRecognitionID = UUID()
+    /// This page's own rectangle in window (global) coordinates — lets a
+    /// directly-dragged photo (see `EditablePageElement.moveGesture`) tell
+    /// whether it has crossed this page's own edge, and lets every OTHER
+    /// `PageCanvasContainer` on screen tell whether a drop landed on it.
+    @State private var pageGlobalFrame: CGRect = .zero
     @AppStorage("drawingTool") private var drawingToolRaw = DrawingToolKind.pen.rawValue
     @AppStorage("drawingColor") private var drawingColorHex = "#1C1C1E"
     @AppStorage("drawingWidth") private var drawingWidth = 4.0
@@ -7196,7 +7226,9 @@ struct PageCanvasContainer: View {
                             .modifier(ConditionalColorInvert(enabled: usesDarkPageDisplay))
                         PageElementsLayer(
                             page: page, isDark: usesDarkPageDisplay, lassoDragOffsets: shapeSelectionDragOffsets,
-                            hiddenElementIDs: hiddenShapeSelectionIDs, isLassoActive: drawingTool.wrappedValue == .lasso
+                            hiddenElementIDs: hiddenShapeSelectionIDs,
+                            stopsElementTouches: Self.stopsElementTouches(for: drawingTool.wrappedValue),
+                            pageGlobalFrame: pageGlobalFrame
                         )
                             .allowsHitTesting(!isReadOnlyMode)
                     }
@@ -7205,8 +7237,39 @@ struct PageCanvasContainer: View {
                 }
                 .frame(width: displaySize.width, height: displaySize.height)
                 .background(usesDarkPageDisplay ? Color(white: 0.08) : .white)
+                .background(
+                    GeometryReader { pageProxy in
+                        Color.clear
+                            .onAppear { pageGlobalFrame = pageProxy.frame(in: .global) }
+                            .onChange(of: pageProxy.frame(in: .global)) { _, newValue in pageGlobalFrame = newValue }
+                    }
+                )
                 .clipShape(Rectangle())
                 .shadow(color: .black.opacity(0.14), radius: 3, y: 1)
+                .onReceive(NotificationCenter.default.publisher(for: .studiquoElementDragDropped)) { notification in
+                    guard let transfer = notification.object as? ElementDragTransfer, !transfer.wasAccepted,
+                          pageGlobalFrame.contains(transfer.screenPoint),
+                          let element = modelContext.model(for: transfer.elementID) as? PageElement,
+                          let sourcePage = element.page
+                    else { return }
+                    let geometry = Self.droppedElementGeometry(
+                        screenPoint: transfer.screenPoint, destinationPageGlobalFrame: pageGlobalFrame,
+                        sourceWidth: element.width, sourceHeight: element.height,
+                        sourcePageWidth: sourcePage.pageWidth, sourcePageHeight: sourcePage.pageHeight,
+                        destinationPageWidth: page.pageWidth, destinationPageHeight: page.pageHeight
+                    )
+                    transfer.wasAccepted = true
+                    sourcePage.elements?.removeAll { $0 === element }
+                    element.page = page
+                    element.centerX = geometry.centerX
+                    element.centerY = geometry.centerY
+                    element.width = geometry.width
+                    element.height = geometry.height
+                    element.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
+                    page.addElement(element)
+                    page.notebook?.updatedAt = .now
+                    try? modelContext.save()
+                }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .onAppear {
@@ -7528,13 +7591,64 @@ struct PageCanvasContainer: View {
         )
     }
 
+    /// Where a directly-dragged element (a photo, moved by its own
+    /// tap-to-select handle rather than a lasso loop) lands after crossing
+    /// into a different page or pane: `screenPoint` (the drop's window
+    /// coordinates) is re-expressed as a fraction of the destination page's
+    /// own on-screen rectangle for its new center, and clamped the same way
+    /// `EditablePageElement.moveGesture` already clamps an ordinary
+    /// same-page move. The element's own physical (page-unit) size is kept
+    /// as close as possible across two differently-sized pages, the same
+    /// way `transferredShapeGeometry` preserves a shape's physical size.
+    static func droppedElementGeometry(
+        screenPoint: CGPoint, destinationPageGlobalFrame: CGRect,
+        sourceWidth: Double, sourceHeight: Double, sourcePageWidth: Double, sourcePageHeight: Double,
+        destinationPageWidth: Double, destinationPageHeight: Double
+    ) -> (centerX: Double, centerY: Double, width: Double, height: Double) {
+        let frameWidth = max(destinationPageGlobalFrame.width, 1)
+        let frameHeight = max(destinationPageGlobalFrame.height, 1)
+        let centerX = (screenPoint.x - destinationPageGlobalFrame.minX) / frameWidth
+        let centerY = (screenPoint.y - destinationPageGlobalFrame.minY) / frameHeight
+        let absoluteWidth = sourceWidth * sourcePageWidth
+        let absoluteHeight = sourceHeight * sourcePageHeight
+        let destinationPageWidth = max(destinationPageWidth, 1)
+        let destinationPageHeight = max(destinationPageHeight, 1)
+        return (
+            centerX: min(max(centerX, 0.03), 0.97),
+            centerY: min(max(centerY, 0.03), 0.97),
+            width: max(absoluteWidth / destinationPageWidth, 0.02),
+            height: max(absoluteHeight / destinationPageHeight, 0.02)
+        )
+    }
+
+    /// Whether `tool` needs to draw a dashed enclosure directly over the
+    /// page regardless of what elements sit there — the lasso (to enclose
+    /// ink/shapes for the AI, or to move a shape) and the snip tool (to
+    /// crop a region — a photo included — for the AI). While true, page
+    /// elements give up all touches (see `PageElementsLayer.stopsElementTouches`),
+    /// so a loop or crop drawn right over a *selected* element's own blue
+    /// selection box still reaches the tool instead of being claimed by
+    /// that element's move/resize/rotate handles first.
+    static func stopsElementTouches(for tool: DrawingToolKind) -> Bool {
+        tool == .lasso || tool == .snip
+    }
+
+    /// Whether the lasso selection tool can enclose and move `element`
+    /// alongside ink — see `SelectableShapeOutline`. Locked elements are
+    /// excluded, matching the dedicated move handle's own
+    /// `!element.isLocked` guard. Scoped to shapes only — a photo has its
+    /// own dedicated tap-to-select/drag handle instead (see
+    /// `EditablePageElement`'s cross-page/pane drag), so drawing a lasso
+    /// loop around one deliberately leaves it alone.
+    static func isSelectableViaLasso(_ element: PageElement) -> Bool {
+        (element.kind == .rectangle || element.kind == .ellipse) && !element.isLocked
+    }
+
     /// Shapes the lasso selection tool can enclose and move alongside ink —
-    /// see `SelectableShapeOutline`. Locked shapes are excluded, matching
-    /// the eraser's own outline sweep (`shapeElementsSwept`) and the
-    /// dedicated move handle's own `!element.isLocked` guard.
+    /// see `SelectableShapeOutline`.
     private var selectableShapeOutlines: [SelectableShapeOutline] {
         page.allElements
-            .filter { ($0.kind == .rectangle || $0.kind == .ellipse) && !$0.isLocked }
+            .filter(Self.isSelectableViaLasso)
             .map {
                 SelectableShapeOutline(
                     id: AnyHashable($0.persistentModelID),
@@ -7776,13 +7890,22 @@ private struct PageElementsLayer: View {
     /// outside this canvas's own edge — see
     /// `PageCanvasContainer.hiddenShapeSelectionIDs`.
     var hiddenElementIDs: Set<PersistentIdentifier> = []
-    /// True while the lasso tool is the active drawing tool. Shape elements
-    /// stop taking touches while this is true (see `EditablePageElement`) so
-    /// a touch that starts inside a shape's bounding box still reaches
-    /// `InkCanvasView` underneath to begin a lasso drag or a selection-box
-    /// drag, instead of being claimed by the shape's own tap/gesture
+    /// True while the active drawing tool needs to draw directly over the
+    /// page regardless of what elements sit there — the lasso (to enclose
+    /// ink/shapes) and the snip tool (to crop a region, including a photo,
+    /// for the AI). Elements stop taking touches while this is true (see
+    /// `EditablePageElement`) so a touch starting inside an element's
+    /// bounding box — most importantly a *selected* one, whose own blue
+    /// selection box sits right where the lasso or snip most needs to
+    /// reach — still passes through to `InkCanvasView` underneath, instead
+    /// of being claimed by the element's own tap/move/resize/rotate
     /// recognizers first.
-    var isLassoActive: Bool = false
+    var stopsElementTouches: Bool = false
+    /// This page's own rectangle in window coordinates — see
+    /// `PageCanvasContainer.pageGlobalFrame`. Passed through to each element
+    /// so a directly-dragged photo can tell whether it has crossed this
+    /// page's own edge.
+    var pageGlobalFrame: CGRect = .zero
 
     /// At most one element carries the resize/rotate chrome at a time, so
     /// the state lives here rather than in each element.
@@ -7803,7 +7926,8 @@ private struct PageElementsLayer: View {
                     selectedElementID: $selectedElementID,
                     lassoDragOffset: lassoDragOffsets[element.persistentModelID] ?? .zero,
                     isHiddenForLasso: hiddenElementIDs.contains(element.persistentModelID),
-                    isLassoActive: isLassoActive
+                    stopsElementTouches: stopsElementTouches,
+                    pageGlobalFrame: pageGlobalFrame
                 )
                 // A selected element floats above the rest so its handles
                 // are never buried under a neighbour that happens to sit on
@@ -7870,16 +7994,28 @@ private struct EditablePageElement: View {
     /// drag has carried it outside the canvas's own edge — see
     /// `PageElementsLayer.hiddenElementIDs`.
     var isHiddenForLasso: Bool = false
-    /// True while the lasso tool is active — see `PageElementsLayer.isLassoActive`.
-    /// While true this element takes no touches at all, so a touch that
-    /// starts inside a shape's bounding box (not just outside it) still
-    /// reaches `InkCanvasView` underneath to begin or continue a lasso
-    /// gesture, instead of this view's own `.contentShape`/gestures
-    /// claiming it first.
-    var isLassoActive: Bool = false
+    /// True while the active tool (lasso or snip) needs to draw directly
+    /// over the page — see `PageElementsLayer.stopsElementTouches`. While
+    /// true this element takes no touches at all, so a touch starting
+    /// inside its bounding box (including a selected element's own blue
+    /// selection box) still reaches `InkCanvasView` underneath, instead of
+    /// this view's own `.contentShape`/gestures claiming it first.
+    var stopsElementTouches: Bool = false
+    /// This page's own rectangle in window coordinates — see
+    /// `PageCanvasContainer.pageGlobalFrame`. Only consulted for `.image`
+    /// elements, whose own move handle can carry them across a page/pane
+    /// boundary (see `moveGesture`); every other kind keeps its lasso-based
+    /// (shapes) or purely local (text, etc.) behavior unchanged.
+    var pageGlobalFrame: CGRect = .zero
 
     @State private var dragOrigin: CGPoint?
     @State private var sizeOrigin: CGSize?
+    /// True once a photo's own drag has carried it past `pageGlobalFrame` —
+    /// see `moveGesture`.
+    @State private var isDraggingAcrossBoundary = false
+    /// The floating ghost's image, decoded once when a drag first leaves
+    /// this page rather than on every subsequent move tick.
+    @State private var cachedDragPreviewImage: UIImage?
     @State private var isEditingText = false
     @State private var editedText = ""
     @State private var rotationOrigin: Double?
@@ -7912,8 +8048,7 @@ private struct EditablePageElement: View {
             .rotationEffect(.degrees(element.rotation))
             .position(x: pageSize.width * element.centerX, y: pageSize.height * element.centerY)
             .offset(x: lassoDragOffset.x, y: lassoDragOffset.y)
-            .opacity(isHiddenForLasso ? 0 : 1)
-            .allowsHitTesting(!isLassoActive)
+            .opacity(isHiddenForLasso || isDraggingAcrossBoundary ? 0 : 1)
             .onTapGesture {
                 guard supportsSelection else { return }
                 selectedElementID = isSelected ? nil : element.persistentModelID
@@ -7971,6 +8106,17 @@ private struct EditablePageElement: View {
                     Label("削除", systemImage: "trash")
                 }
             }
+            // Placed last on purpose: `allowsHitTesting(false)` only blocks
+            // hit-testing for the content built up to this point in the
+            // chain — a `.gesture`/`.simultaneousGesture`/`.onTapGesture`/
+            // `.contextMenu` attached *after* it (as all of the above are)
+            // stays live regardless. With this any earlier in the chain,
+            // a selected element's own move/resize/rotate handles kept
+            // claiming a touch that started inside its bounding box even
+            // while the lasso or snip tool was active — exactly the box
+            // they most need to reach, since it's drawn right where the
+            // element visibly is.
+            .allowsHitTesting(!stopsElementTouches)
             .alert("テキストを編集", isPresented: $isEditingText) {
                 TextField("文字を入力", text: $editedText, axis: .vertical)
                 Button("キャンセル", role: .cancel) {}
@@ -8214,19 +8360,60 @@ private struct EditablePageElement: View {
             .onEnded { _ in markUpdated() }
     }
 
+    /// A photo's own thumbnail, used as the floating ghost while its drag
+    /// carries it past this page's edge (see `moveGesture`) — it's already
+    /// just flat image bytes, so unlike a lasso selection there's nothing
+    /// to render/rasterize.
+    private var dragPreviewImage: UIImage? {
+        element.imageData.flatMap(UIImage.init(data:))
+    }
+
     private var moveGesture: some Gesture {
-        DragGesture(minimumDistance: 2)
+        DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in
                 guard !element.isLocked else { return }
                 if dragOrigin == nil {
                     dragOrigin = CGPoint(x: element.centerX, y: element.centerY)
                 }
                 guard let origin = dragOrigin else { return }
+                // Only photos hand off to another page/pane — shapes already
+                // have the lasso for that, and every other kind (text, study
+                // tape, ...) keeps its purely local move.
+                if element.kind == .image, !pageGlobalFrame.contains(value.location) {
+                    if !isDraggingAcrossBoundary { cachedDragPreviewImage = dragPreviewImage }
+                    isDraggingAcrossBoundary = true
+                    NotificationCenter.default.post(
+                        name: Notification.Name("StudiquoSelectionDragMoved"),
+                        object: cachedDragPreviewImage,
+                        userInfo: [
+                            "point": NSValue(cgPoint: value.location),
+                            "size": NSValue(cgSize: CGSize(
+                                width: pageSize.width * element.width, height: pageSize.height * element.height
+                            )),
+                        ]
+                    )
+                    return
+                }
+                if isDraggingAcrossBoundary {
+                    isDraggingAcrossBoundary = false
+                    NotificationCenter.default.post(name: Notification.Name("StudiquoSelectionDragMoved"), object: nil)
+                }
                 element.centerX = min(max(origin.x + value.translation.width / max(pageSize.width, 1), 0.03), 0.97)
                 element.centerY = min(max(origin.y + value.translation.height / max(pageSize.height, 1), 0.03), 0.97)
                 element.page?.notebook?.updatedAt = .now
             }
-            .onEnded { _ in dragOrigin = nil }
+            .onEnded { value in
+                defer { dragOrigin = nil }
+                guard !element.isLocked else { return }
+                guard isDraggingAcrossBoundary else { return }
+                isDraggingAcrossBoundary = false
+                NotificationCenter.default.post(name: Notification.Name("StudiquoSelectionDragMoved"), object: nil)
+                // If no page/pane on screen claims it (dropped somewhere
+                // with no page underneath), this element's real position was
+                // never touched while ghosting, so it simply stays put.
+                let transfer = ElementDragTransfer(elementID: element.persistentModelID, screenPoint: value.location)
+                NotificationCenter.default.post(name: .studiquoElementDragDropped, object: transfer)
+            }
     }
 
     private var resizeGesture: some Gesture {
@@ -8808,6 +8995,19 @@ private enum PaperColorPreset: String, CaseIterable, Identifiable {
         case .gray: "#F3F4F6"
         case .green: "#F0FAF2"
         }
+    }
+}
+
+extension PaperColorOption {
+    /// The full colour palette offered by the 用紙 tool when changing an
+    /// *existing* page's paper — a superset of the three quick choices
+    /// `PageTemplatePickerSheet` defaults to for page *creation*
+    /// (`PaperColorChoice`). Defined once here (rather than inlined at the
+    /// `.sheet` call site) so a test can pin down that the two flows keep
+    /// offering different-sized palettes — see
+    /// PageTemplatePickerSheetTests.swift.
+    static let existingPagePalette: [PaperColorOption] = PaperColorPreset.allCases.map {
+        PaperColorOption(title: $0.title, hex: $0.hex)
     }
 }
 

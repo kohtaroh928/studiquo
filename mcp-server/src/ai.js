@@ -36,6 +36,7 @@ const RETRYABLE = new Set([429, 500, 502, 503, 504]);
 /** Soft daily caps per device, so one user cannot drain the shared quota. */
 const DEFAULT_CHAT_LIMIT = 120;
 const DEFAULT_GRADING_LIMIT = 20;
+const DEFAULT_REVIEW_LIMIT = 40;
 
 /**
  * Caps across every device combined.
@@ -48,6 +49,7 @@ const DEFAULT_GRADING_LIMIT = 20;
  */
 const DEFAULT_GLOBAL_CHAT_LIMIT = 1500;
 const DEFAULT_GLOBAL_GRADING_LIMIT = 150;
+const DEFAULT_GLOBAL_REVIEW_LIMIT = 500;
 
 async function readJSONLimited(request, maximumBytes = 20_000_000) {
   return readJSONLimitedShared(request, maximumBytes);
@@ -55,6 +57,7 @@ async function readJSONLimited(request, maximumBytes = 20_000_000) {
 
 function model(env, kind) {
   if (kind === "grading") return env.GEMINI_GRADING_MODEL || DEFAULT_GRADING_MODEL;
+  if (kind === "review") return env.GEMINI_REVIEW_MODEL || DEFAULT_CHAT_MODEL;
   return env.GEMINI_CHAT_MODEL || DEFAULT_CHAT_MODEL;
 }
 
@@ -594,6 +597,69 @@ async function handleGrade(request, env, key, ctx) {
   }, ctx);
 }
 
+// MARK: Day-after review
+
+const REVIEW_SYSTEM = `あなたは学習アプリ「Studiquo」の復習教材を作るアシスタントです。学生がAIトーク機能で送った1つの質問を渡します。
+
+まず、その質問が「復習する価値のある学習・勉強に関する質問」か、「挨拶や雑談、相槌など復習の必要がないもの」かを判定してください。
+
+復習する価値がある場合のみ、次を作成してください:
+- explanationMarkdown: その質問についてよく調べ、翌日読んでも要点がわかるようにまとめた解説文。見出しは「#」「##」、箇条書きは「- 」を使ったMarkdown形式で、300〜800字程度。
+- quiz: 理解を確認するための簡単な一問一答を3〜5問。答えは短く明確にすること。
+
+復習する価値がない場合は isStudyRelevant を false にし、explanationMarkdown は空文字、quiz は空配列にしてください。
+
+日本語で書くこと。`;
+
+const REVIEW_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    isStudyRelevant: { type: "BOOLEAN" },
+    explanationMarkdown: { type: "STRING" },
+    quiz: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          question: { type: "STRING" },
+          answer: { type: "STRING" },
+        },
+        required: ["question", "answer"],
+      },
+    },
+  },
+  required: ["isStudyRelevant", "explanationMarkdown", "quiz"],
+};
+
+async function handleReview(request, env, key, ctx) {
+  if (!(await withinQuota(
+    env, key, "review",
+    Number(env.REVIEW_DAILY_LIMIT) || DEFAULT_REVIEW_LIMIT,
+    Number(env.GLOBAL_REVIEW_DAILY_LIMIT) || DEFAULT_GLOBAL_REVIEW_LIMIT
+  ))) {
+    return json({ error: "今日の復習教材の作成回数の上限に達しました。明日また使えます。" }, 429);
+  }
+  const payload = await readJSONLimited(request);
+  const question = String(payload?.question ?? "").trim().slice(0, 4_000);
+  if (!question) return json({ error: "question is required." }, 400);
+  const context = String(payload?.context ?? "").trim().slice(0, 4_000);
+
+  const parts = [{
+    text: [
+      `<質問>\n${question}\n</質問>`,
+      context ? `<会話の続き>\n${context}\n</会話の続き>` : null,
+    ].filter(Boolean).join("\n\n"),
+  }];
+
+  return streamJSON(env, {
+    kind: "review",
+    systemInstruction: REVIEW_SYSTEM,
+    contents: [{ role: "user", parts }],
+    responseSchema: REVIEW_SCHEMA,
+    failureMessage: "復習教材を作成できませんでした。",
+  }, ctx);
+}
+
 /** Returns a `Response`, or `null` when the path is not an AI route. */
 export async function handleAI(url, request, env, key, ctx) {
   if (request.method !== "POST") return null;
@@ -602,6 +668,7 @@ export async function handleAI(url, request, env, key, ctx) {
     case "/api/ai/chat": handler = handleChat; break;
     case "/api/ai/rubric": handler = handleRubric; break;
     case "/api/ai/grade": handler = handleGrade; break;
+    case "/api/ai/review": handler = handleReview; break;
     default: return null;
   }
   try {
