@@ -255,4 +255,61 @@ final class PDFPasswordServiceTests: XCTestCase {
         XCTAssertNotEqual(first, second, "each call must get its own folder so concurrent imports can't collide")
         XCTAssertTrue(FileManager.default.fileExists(atPath: first.deletingLastPathComponent().path))
     }
+
+    // MARK: - savedCopyDestinationURL
+    //
+    // Regression coverage for "パスワードなしで保存を押すとファイル共有画面が
+    // 飛び出てくる": the flow used to hand the stripped copy to a
+    // `UIActivityViewController` share sheet just so the student had
+    // somewhere to put it. Now it's written straight into the app's own
+    // Documents folder (exposed to the Files app via `UIFileSharingEnabled`),
+    // so no picker ever needs to appear. Unlike `destinationURL(for:)`, this
+    // is a real, persistent location — so it must never silently overwrite a
+    // file already saved there.
+
+    func testSavedCopyDestinationURL_isInsideTheAppsDocumentsDirectory() {
+        let source = workDir.appendingPathComponent("syllabus.pdf")
+        let destination = PDFPasswordService.savedCopyDestinationURL(for: source)
+
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        XCTAssertTrue(destination.path.hasPrefix(documents.path), "保存先はアプリ自身のDocumentsフォルダの中である必要があります。")
+        XCTAssertEqual(destination.lastPathComponent, "syllabus.pdf")
+    }
+
+    func testSavedCopyDestinationURL_keepsTheOriginalFilenameWhenNothingIsThereYet() {
+        let source = workDir.appendingPathComponent("unique-\(UUID().uuidString).pdf")
+        let destination = PDFPasswordService.savedCopyDestinationURL(for: source)
+        XCTAssertEqual(destination.lastPathComponent, source.lastPathComponent)
+    }
+
+    func testSavedCopyDestinationURL_appendsANumberedSuffixInsteadOfOverwritingAnExistingSave() throws {
+        let source = workDir.appendingPathComponent("notes.pdf")
+        let firstDestination = PDFPasswordService.savedCopyDestinationURL(for: source)
+        try Data("already saved once".utf8).write(to: firstDestination)
+        defer { try? FileManager.default.removeItem(at: firstDestination) }
+
+        let secondDestination = PDFPasswordService.savedCopyDestinationURL(for: source)
+
+        XCTAssertNotEqual(secondDestination, firstDestination, "同じ名前のファイルがすでに保存済みなら、上書きせず別名にする必要があります。")
+        XCTAssertEqual(secondDestination.lastPathComponent, "notes 2.pdf")
+        try? FileManager.default.removeItem(at: secondDestination)
+    }
+
+    func testSavedCopyDestinationURL_keepsCountingUpPastMultipleExistingSaves() throws {
+        let source = workDir.appendingPathComponent("handout.pdf")
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("パスワードなしのPDF", isDirectory: true)
+        try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+        let existing = [
+            documents.appendingPathComponent("handout.pdf"),
+            documents.appendingPathComponent("handout 2.pdf"),
+        ]
+        for url in existing { try Data().write(to: url) }
+        defer { for url in existing { try? FileManager.default.removeItem(at: url) } }
+
+        let destination = PDFPasswordService.savedCopyDestinationURL(for: source)
+
+        XCTAssertEqual(destination.lastPathComponent, "handout 3.pdf")
+        try? FileManager.default.removeItem(at: destination)
+    }
 }

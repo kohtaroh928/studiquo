@@ -172,4 +172,34 @@ final class LassoShapeSelectionTests: XCTestCase {
         let scaled = PageCanvasContainer.scaledShapeSelectionOffset(.zero, contentScale: 0.37)
         XCTAssertEqual(scaled, .zero, "ドラッグ量がゼロなら、どんな表示倍率でも結果はゼロのままである必要があります。")
     }
+
+    // MARK: - PageCanvasContainer.isSelectableViaLasso
+    //
+    // Photos are deliberately NOT selectable via the lasso — they keep
+    // their own dedicated tap-to-select/drag handle instead (see
+    // `EditablePageElementDragTests` for that path's cross-page/pane
+    // movement). This is a reversal of an earlier attempt to fold photos
+    // into the lasso's shape-selection support.
+
+    func testPhotosAreNotSelectableViaLasso() {
+        let photo = PageElement(kind: .image)
+        XCTAssertFalse(PageCanvasContainer.isSelectableViaLasso(photo), "写真は、なげなわの選択対象に含めてはいけません(専用の選択・移動の仕組みを使います)。")
+    }
+
+    func testShapesRemainSelectableViaLasso() {
+        XCTAssertTrue(PageCanvasContainer.isSelectableViaLasso(PageElement(kind: .rectangle)))
+        XCTAssertTrue(PageCanvasContainer.isSelectableViaLasso(PageElement(kind: .ellipse)))
+    }
+
+    func testALockedShapeIsNotSelectableViaLasso() {
+        let shape = PageElement(kind: .rectangle)
+        shape.isLocked = true
+        XCTAssertFalse(PageCanvasContainer.isSelectableViaLasso(shape), "位置がロックされた図形は、選択対象から外れる必要があります。")
+    }
+
+    func testTextAndOtherElementKindsAreNotSelectableViaLasso() {
+        XCTAssertFalse(PageCanvasContainer.isSelectableViaLasso(PageElement(kind: .text)))
+        XCTAssertFalse(PageCanvasContainer.isSelectableViaLasso(PageElement(kind: .studyTape)))
+        XCTAssertFalse(PageCanvasContainer.isSelectableViaLasso(PageElement(kind: .pageLink)))
+    }
 }
