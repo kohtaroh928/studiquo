@@ -395,7 +395,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// the drag returns inside or the selection is cleared, instead of
     /// re-rendering it (and pushing the shape-hidden state again) on every
     /// touch update while the drag lingers outside.
-    private var cachedSelectionPreview: (image: UIImage, screenSize: CGSize)?
+    private var cachedSelectionPreview: (image: UIImage, screenSize: CGSize, pageCenter: CGPoint)?
     private var eraserCursorLocation: CGPoint?
 
     override init(frame: CGRect) {
@@ -739,6 +739,20 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         return bounds.offsetBy(dx: offset.x, dy: offset.y)
     }
 
+    /// The selection's current center in page space, given its ORIGINAL
+    /// (still-undragged) center — from `selectionPreview()`, rendered once
+    /// and cached for as long as the drag stays outside the canvas — and
+    /// how far the drag has moved it since. Positioning the floating ghost
+    /// preview at this point (instead of simply centering it on the touch
+    /// itself) is what keeps it exactly where the content would be if the
+    /// drag hadn't left the canvas: the two only agree when the selection
+    /// happens to have been grabbed dead center, and disagree by however far
+    /// off-center the grab was otherwise — which is why the ghost used to
+    /// visibly jump to a new spot the instant a drag crossed the boundary.
+    static func draggedSelectionCenter(originalCenter: CGPoint, offset: CGPoint) -> CGPoint {
+        CGPoint(x: originalCenter.x + offset.x, y: originalCenter.y + offset.y)
+    }
+
     /// Whether a lift at `location` should be treated as a drop outside the
     /// canvas. `wasAlreadyOutside` (`isSelectionOutsideCanvas`) is only as
     /// fresh as the last `moveLasso` call — a lift that happens to land
@@ -789,6 +803,17 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                 let wasAlreadyOutside = isSelectionOutsideCanvas
                 isSelectionOutsideCanvas = true
                 if !wasAlreadyOutside {
+                    // Rendered *before* anything is hidden, while the native
+                    // content is still on screen: this render is a
+                    // synchronous `UIGraphicsImageRenderer` pass, not free,
+                    // and doing it after the hide left a brief gap — long
+                    // enough to read as a flicker — between the native
+                    // content disappearing and the floating replacement
+                    // actually being ready to show. Rendering first means
+                    // the hide and the (now pre-rendered, effectively
+                    // instant) notification post land back-to-back, with
+                    // nothing slow in between them.
+                    cachedSelectionPreview = selectionPreview()
                     withoutImplicitAnimations {
                         for id in selectedStrokeIDs {
                             strokeLayers[id]?.setAffineTransform(.identity)
@@ -804,10 +829,12 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                     if !selectedShapeIDs.isEmpty {
                         onShapeSelectionHidden?(selectedShapeIDs, true)
                     }
-                    cachedSelectionPreview = selectionPreview()
                 }
                 let preview = cachedSelectionPreview
-                onSelectionDragMoved?(preview?.image, preview?.screenSize, convert(viewPoint(location), to: nil))
+                let screenPoint = preview.map {
+                    convert(viewPoint(Self.draggedSelectionCenter(originalCenter: $0.pageCenter, offset: selectionDragOffset)), to: nil)
+                }
+                onSelectionDragMoved?(preview?.image, preview?.screenSize, screenPoint)
                 return
             }
             if isSelectionOutsideCanvas {
@@ -848,8 +875,10 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                 location: location, canvasSize: canvasSize,
                 wasAlreadyOutside: isSelectionOutsideCanvas, allowsSelectionTransfer: allowsSelectionTransfer
             ) {
-                let screenPoint = convert(viewPoint(location), to: nil)
                 let preview = selectionPreview()
+                let screenPoint = preview.map {
+                    convert(viewPoint(Self.draggedSelectionCenter(originalCenter: $0.pageCenter, offset: selectionDragOffset)), to: nil)
+                } ?? convert(viewPoint(location), to: nil)
                 if let preview {
                     let transfer = InkSelectionTransfer(
                         drawing: InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) }),
@@ -1107,7 +1136,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         }
     }
 
-    private func selectionPreview() -> (image: UIImage, screenSize: CGSize)? {
+    private func selectionPreview() -> (image: UIImage, screenSize: CGSize, pageCenter: CGPoint)? {
         let selected = InkDrawing(strokes: drawing.strokes.filter { selectedStrokeIDs.contains($0.id) })
         let selectedShapes = selectableShapes.filter { selectedShapeIDs.contains($0.id) }
         let shapeOutlinePoints = selectedShapes.flatMap(\.outline)
@@ -1124,7 +1153,8 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             Self.selectionPreviewImage(
                 ink: selected, bounds: previewBounds, outline: selectionPolygon, shapes: selectedShapes
             ),
-            screenSize
+            screenSize,
+            CGPoint(x: previewBounds.midX, y: previewBounds.midY)
         )
     }
 

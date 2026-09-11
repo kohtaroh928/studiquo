@@ -166,4 +166,46 @@ final class LassoShapeCrossPaneTransferTests: XCTestCase {
         XCTAssertEqual(geometry.width, 0.02, "極端に縮小されても、届いた図形の大きさは見える最小サイズ未満にはならない必要があります。")
         XCTAssertEqual(geometry.height, 0.02)
     }
+
+    // MARK: - InkCanvasView.draggedSelectionCenter
+    //
+    // Regression coverage for "選択ツールの端がページ間の境界に達したときに
+    // カクっとなって瞬間移動する": the floating ghost preview used to be
+    // positioned centered on the touch itself, which only agrees with where
+    // the selection's own center currently is when the selection happens to
+    // have been grabbed dead center — grabbed anywhere else, the ghost
+    // visibly snapped to a new spot the instant the drag crossed the
+    // boundary and switched from the native (offset-preserving) drag to the
+    // ghost overlay.
+
+    func testDraggedSelectionCenterAddsTheOffsetToTheOriginalCenter() {
+        let center = InkCanvasView.draggedSelectionCenter(
+            originalCenter: CGPoint(x: 100, y: 50), offset: CGPoint(x: 20, y: -10)
+        )
+        XCTAssertEqual(center, CGPoint(x: 120, y: 40))
+    }
+
+    func testDraggedSelectionCenterWithZeroOffsetStaysAtTheOriginalCenter() {
+        let center = InkCanvasView.draggedSelectionCenter(originalCenter: CGPoint(x: 100, y: 50), offset: .zero)
+        XCTAssertEqual(center, CGPoint(x: 100, y: 50))
+    }
+
+    /// The core regression case: a selection grabbed far from its own
+    /// center (e.g. near an edge, exactly the case in the bug report) must
+    /// still track the drag by exactly the offset applied — the same
+    /// translation the native (still-inside-canvas) drag already applies
+    /// to every stroke, regardless of where within the selection it was
+    /// grabbed. Before this fix, the ghost was instead centered on the
+    /// touch point itself, which only coincidentally matches this when the
+    /// grab happens to be dead center.
+    func testDraggedSelectionCenterKeepsTrackingTheOffsetEvenForASelectionGrabbedFarFromItsCenter() {
+        // A selection whose own center is at (50, 50), grabbed near its
+        // right edge at (90, 50) and dragged 40pt further right and 10pt
+        // down — the touch ends at (130, 60), but the selection's center
+        // must move by the same (40, 10) offset, landing at (90, 60), not
+        // snap to sit centered on the touch's own new position.
+        let offset = CGPoint(x: 40, y: 10)
+        let newCenter = InkCanvasView.draggedSelectionCenter(originalCenter: CGPoint(x: 50, y: 50), offset: offset)
+        XCTAssertEqual(newCenter, CGPoint(x: 90, y: 60), "掴んだ場所に関わらず、選択範囲の中心はドラッグした量だけ正確に動く必要があります。")
+    }
 }

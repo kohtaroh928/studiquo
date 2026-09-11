@@ -148,4 +148,25 @@ enum PDFPasswordService {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder.appendingPathComponent(source.lastPathComponent)
     }
+
+    /// Where the password-free copy is actually kept for the student to find
+    /// afterward, inside the app's own Documents folder (visible from the
+    /// Files app under On My iPhone/iPad → studiquo since file sharing is
+    /// enabled). Unlike `destinationURL(for:)`, this is not a throwaway temp
+    /// location, and it never overwrites an existing file of the same name —
+    /// a numbered suffix is appended instead.
+    static func savedCopyDestinationURL(for source: URL) -> URL {
+        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("パスワードなしのPDF", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let base = source.deletingPathExtension().lastPathComponent
+        let ext = source.pathExtension
+        var candidate = folder.appendingPathComponent(source.lastPathComponent)
+        var counter = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = folder.appendingPathComponent(ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)")
+            counter += 1
+        }
+        return candidate
+    }
 }
