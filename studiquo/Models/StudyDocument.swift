@@ -27,6 +27,11 @@ final class TextDocument {
     /// MCP snapshot has something readable without unarchiving.
     var plainText: String = ""
     var pageSizeRawValue: String = DocumentPageSize.a4.rawValue
+    /// Back-reference from `AIReviewItem.explanationDocument`. CloudKit sync
+    /// requires every relationship to have an explicit inverse; without this,
+    /// the whole schema fails CloudKit validation at launch, not just this
+    /// one relationship.
+    var aiReviewItem: AIReviewItem?
 
     init(title: String = "無題の文書") {
         self.title = title

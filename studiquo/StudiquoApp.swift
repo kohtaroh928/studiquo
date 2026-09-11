@@ -65,6 +65,7 @@ struct StudiquoApp: App {
             FlashcardDeck.self, Flashcard.self, CalendarEvent.self, StudyActivity.self,
             AIChatThread.self, AIChatMessage.self,
             TextDocument.self, SlideDeck.self, Slide.self,
+            AIReviewItem.self,
         ])
         do {
             // Creating a CloudKit-backed container does not itself wait on the

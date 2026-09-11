@@ -32,6 +32,18 @@ protocol AIProvider {
     func buildRubric(for submission: ProofSubmission) async throws -> ProofRubric
 
     func grade(_ submission: ProofSubmission, rubric: ProofRubric) async throws -> ProofReviewResult
+
+    /// Judges whether an AIトーク question is worth reviewing tomorrow and,
+    /// if so, researches it into an explanation and a short quiz.
+    func researchReview(question: String, context: String) async throws -> AIReviewResult
+}
+
+/// The Worker's `/api/ai/review` result: whether the question was worth
+/// reviewing, and — only when it was — the material to review it with.
+struct AIReviewResult: Decodable {
+    let isStudyRelevant: Bool
+    let explanationMarkdown: String
+    let quiz: [AIQuizQuestion]
 }
 
 /// One thing to mark.
@@ -222,6 +234,12 @@ final class WorkerAIProvider: AIProvider {
         return try await streamedResult(path: "api/ai/grade", body: body)
     }
 
+    // MARK: Day-after review
+
+    func researchReview(question: String, context: String) async throws -> AIReviewResult {
+        try await streamedResult(path: "api/ai/review", body: ["question": question, "context": context])
+    }
+
     private static func encoded(_ image: UIImage?) -> String? {
         guard let image, let png = downscaled(image).pngData() else { return nil }
         return png.base64EncodedString()
@@ -360,5 +378,12 @@ final class ClaudeDirectProvider: AIProvider {
             question: submission.questionText,
             rubric: rubric
         )
+    }
+
+    /// The legacy direct-Claude path predates the review feature and isn't
+    /// the default provider (`AI.provider` is `WorkerAIProvider`) — kept
+    /// conforming rather than implemented, since nothing calls it today.
+    func researchReview(question: String, context: String) async throws -> AIReviewResult {
+        throw WorkerAIProvider.ProviderError.transport(L("この接続方法では復習教材の作成に対応していません。"))
     }
 }

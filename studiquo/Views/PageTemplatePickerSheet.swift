@@ -5,6 +5,11 @@ struct PageTemplatePickerSheet: View {
     let subtitle: String?
     let selectedTemplate: PageTemplate
     let selectedPaperColorHex: String
+    /// The colours offered in this sheet's 紙の色 section. Defaults to the
+    /// same three quick choices offered at page-creation time; the "変更"
+    /// tool on an already-created page passes the fuller `PaperColorPreset`
+    /// palette instead, since that flow isn't a quick initial pick.
+    let paperColorOptions: [PaperColorOption]
     let confirmTitle: String
     let onCancel: () -> Void
     let onSelect: (PageTemplate, String) -> Void
@@ -17,6 +22,7 @@ struct PageTemplatePickerSheet: View {
         subtitle: String? = nil,
         selectedTemplate: PageTemplate,
         selectedPaperColorHex: String = PaperColorChoice.white.hex,
+        paperColorOptions: [PaperColorOption] = PaperColorChoice.allCases.map(\.option),
         confirmTitle: String,
         onCancel: @escaping () -> Void,
         onSelect: @escaping (PageTemplate, String) -> Void
@@ -25,6 +31,7 @@ struct PageTemplatePickerSheet: View {
         self.subtitle = subtitle
         self.selectedTemplate = selectedTemplate
         self.selectedPaperColorHex = selectedPaperColorHex
+        self.paperColorOptions = paperColorOptions
         self.confirmTitle = confirmTitle
         self.onCancel = onCancel
         self.onSelect = onSelect
@@ -38,6 +45,7 @@ struct PageTemplatePickerSheet: View {
                 TemplatePickerContent(
                     selection: $draftTemplate,
                     paperColorHex: $draftPaperColorHex,
+                    paperColorOptions: paperColorOptions,
                     subtitle: subtitle
                 )
                 .padding(.horizontal, 26)
@@ -94,6 +102,19 @@ enum PaperColorChoice: String, CaseIterable, Identifiable {
         case .sky: "#E8F4FD"
         }
     }
+
+    var option: PaperColorOption { PaperColorOption(title: title, hex: hex) }
+}
+
+/// A paper colour choice offered by `PageTemplatePickerSheet`'s 紙の色
+/// section — a plain (title, hex) pair rather than `PaperColorChoice`
+/// itself, since the "変更" flow on an existing page offers a different,
+/// larger palette (`PaperColorPreset`, private to NoteEditorView.swift) than
+/// the three quick choices offered at page-creation time.
+struct PaperColorOption: Identifiable, Equatable {
+    let title: String
+    let hex: String
+    var id: String { hex }
 }
 
 struct NewNotebookSheet: View {
@@ -142,6 +163,7 @@ private struct TemplatePickerContent: View {
     @Binding var selection: PageTemplate
     /// Optional: the new-notebook sheet reuses this content without one.
     var paperColorHex: Binding<String>?
+    var paperColorOptions: [PaperColorOption] = PaperColorChoice.allCases.map(\.option)
     let subtitle: String?
 
     var body: some View {
@@ -155,12 +177,12 @@ private struct TemplatePickerContent: View {
                     if let paperColorHex {
                         TemplateSection(title: "紙の色", templates: []) { _ in
                             HStack(spacing: 14) {
-                                ForEach(PaperColorChoice.allCases) { choice in
+                                ForEach(paperColorOptions) { option in
                                     PaperColorButton(
-                                        choice: choice,
-                                        isSelected: paperColorHex.wrappedValue == choice.hex
+                                        option: option,
+                                        isSelected: paperColorHex.wrappedValue == option.hex
                                     ) {
-                                        paperColorHex.wrappedValue = choice.hex
+                                        paperColorHex.wrappedValue = option.hex
                                     }
                                 }
                                 Spacer(minLength: 0)
@@ -263,7 +285,7 @@ private struct PageTemplatePreviewButton: View {
 }
 
 private struct PaperColorButton: View {
-    let choice: PaperColorChoice
+    let option: PaperColorOption
     let isSelected: Bool
     let action: () -> Void
 
@@ -271,7 +293,7 @@ private struct PaperColorButton: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Circle()
-                    .fill(Color(uiColor: UIColor(inkHex: choice.hex)))
+                    .fill(Color(uiColor: UIColor(inkHex: option.hex)))
                     .frame(width: 38, height: 38)
                     .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 1))
                     .overlay {
@@ -279,14 +301,14 @@ private struct PaperColorButton: View {
                             Circle().strokeBorder(Color.accentColor, lineWidth: 3)
                         }
                     }
-                Text(choice.title)
+                Text(option.title)
                     .font(.caption.weight(isSelected ? .semibold : .regular))
                     .foregroundStyle(.primary)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(choice.title)
+        .accessibilityLabel(option.title)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }

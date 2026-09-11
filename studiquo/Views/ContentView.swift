@@ -67,8 +67,10 @@ private struct MCPSlide: Codable {
     let notes: String?
 }
 
-private struct StudyNotification: Identifiable {
-    enum Destination { case calendar, none }
+/// Not `private`: `aiReviewStudyNotifications(from:now:)` below builds these
+/// from `AIReviewItem`s and is exercised directly by `AIReviewNotificationFeedTests`.
+struct StudyNotification: Identifiable {
+    enum Destination { case calendar, aiReview, none }
     let id: String
     let title: String
     let message: String
@@ -87,6 +89,37 @@ private struct StudyNotification: Identifiable {
     var relativeDate: String {
         NotificationLocale.relative(date)
     }
+}
+
+/// Prefix shared by an `AIReviewItem`'s bell-feed entry id
+/// (`aiReviewNotificationID(for:)`) and its scheduled local notification's
+/// identifier (`AIReviewNotifications.identifierPrefix`) — two different
+/// systems, kept recognizably named the same way rather than coupled.
+let aiReviewNotificationIDPrefix = "ai-review-"
+
+func aiReviewNotificationID(for item: AIReviewItem) -> String {
+    aiReviewNotificationIDPrefix + item.id.uuidString
+}
+
+/// The bell-feed entries for review items whose `reviewDate` has arrived.
+/// A free function (rather than inline in `ContentView.makeStudyNotifications`)
+/// so it can be unit tested without instantiating the whole view.
+func aiReviewStudyNotifications(from items: [AIReviewItem], now: Date) -> [StudyNotification] {
+    items
+        .filter { $0.reviewDate <= now }
+        .map { item in
+            StudyNotification(
+                id: aiReviewNotificationID(for: item),
+                title: L("復習の時間です"),
+                message: L("昨日の質問「\(item.questionText.prefix(40))」を復習できます"),
+                detail: item.explanationMarkdown,
+                date: item.reviewDate,
+                icon: "brain.head.profile",
+                tint: .purple,
+                destination: .aiReview,
+                university: nil
+            )
+        }
 }
 
 /// The bundle declares no Japanese localization, so `Locale.current` makes
@@ -777,6 +810,24 @@ enum MCPCloudCredentials {
     }
 }
 
+/// Wraps the AI復習 bell-feed wiring (`onChange`/`sheet`) in its own
+/// `ViewModifier` rather than chaining them inline on `ContentView.body` —
+/// added inline, they pushed the already-huge body expression past what the
+/// type checker can solve in reasonable time.
+private struct AIReviewIntegration: ViewModifier {
+    let count: Int
+    @Binding var presentedItem: AIReviewItem?
+    let onCountChange: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: count) { _, _ in onCountChange() }
+            .sheet(item: $presentedItem) { item in
+                AIReviewDetailView(item: item)
+            }
+    }
+}
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var allNotebooks: [Notebook]
@@ -785,6 +836,7 @@ struct ContentView: View {
     @Query(sort: \SlideDeck.updatedAt, order: .reverse) private var slideDecks: [SlideDeck]
     @Query(sort: \CalendarEvent.startDate) private var calendarEvents: [CalendarEvent]
     @Query(sort: \StudyActivity.startedAt, order: .reverse) private var studyActivities: [StudyActivity]
+    @Query(sort: \AIReviewItem.reviewDate, order: .reverse) private var aiReviewItems: [AIReviewItem]
     @AppStorage("libraryFolderNames") private var folderNamesStorage = ""
     @AppStorage("libraryFolderCreatedAt") private var folderCreatedAtStorage = "{}"
     @AppStorage("favoriteFolderPaths") private var favoriteFolderPathsStorage = ""
@@ -863,6 +915,7 @@ struct ContentView: View {
     @State private var isMCPCloudSyncing = false
     @State private var isMCPCloudTokenVisible = false
     @State private var showsNotifications = false
+    @State private var presentedAIReviewItem: AIReviewItem?
     @State private var showsAppSettings = false
     @State private var showsProfile = false
     @AppStorage("profileImage") private var profileImageData = Data()
@@ -1058,6 +1111,12 @@ struct ContentView: View {
                 university: nil
             ))
         }
+
+        // A review only surfaces once its `reviewDate` — the day after the
+        // question was asked — actually arrives, same as the local
+        // notification that fires alongside it.
+        items += aiReviewStudyNotifications(from: aiReviewItems, now: now)
+
         return items.sorted { $0.date < $1.date }
     }
 
@@ -1332,8 +1391,13 @@ struct ContentView: View {
                     }
             }
         }
-        .sheet(item: $pdfUnlockedResult) { wrapped in
-            ShareSheet(items: [wrapped.url])
+        .alert("パスワードなしで保存しました", isPresented: Binding(
+            get: { pdfUnlockedResult != nil },
+            set: { if !$0 { pdfUnlockedResult = nil } }
+        )) {
+            Button("OK", role: .cancel) { pdfUnlockedResult = nil }
+        } message: {
+            Text("「\(pdfUnlockedResult?.url.lastPathComponent ?? "")」をFilesアプリの「ブラウズ」→「studiquo」→「パスワードなしのPDF」に保存しました。")
         }
         .alert("PDFのパスワード", isPresented: pdfPasswordPromptShown) {
             SecureField("パスワード", text: $pdfPasswordEntry)
@@ -1370,7 +1434,7 @@ struct ContentView: View {
                     let output = try PDFPasswordService.removePassword(
                         from: offer.url,
                         password: offer.password,
-                        to: PDFPasswordService.destinationURL(for: offer.url)
+                        to: PDFPasswordService.savedCopyDestinationURL(for: offer.url)
                     )
                     pdfUnlockedResult = IdentifiableURL(url: output)
                 } catch {
@@ -1573,6 +1637,7 @@ struct ContentView: View {
         }
         .onChange(of: calendarEvents.count) { _, _ in refreshStudyNotifications() }
         .onChange(of: studyActivities.count) { _, _ in refreshStudyNotifications() }
+        .modifier(AIReviewIntegration(count: aiReviewItems.count, presentedItem: $presentedAIReviewItem, onCountChange: refreshStudyNotifications))
         .task {
             await rebuildLibraryMetadataIfNeeded()
         }
@@ -2612,6 +2677,11 @@ struct ContentView: View {
         showsNotifications = false
         if notification.destination == .calendar {
             homeSection = .calendar
+        } else if notification.destination == .aiReview {
+            guard notification.id.hasPrefix(aiReviewNotificationIDPrefix),
+                  let uuid = UUID(uuidString: String(notification.id.dropFirst(aiReviewNotificationIDPrefix.count)))
+            else { return }
+            presentedAIReviewItem = aiReviewItems.first { $0.id == uuid }
         }
     }
 
@@ -3101,7 +3171,7 @@ struct ContentView: View {
                 let output = try PDFPasswordService.removePassword(
                     from: url,
                     password: password,
-                    to: PDFPasswordService.destinationURL(for: url)
+                    to: PDFPasswordService.savedCopyDestinationURL(for: url)
                 )
                 pdfPendingUnlock = nil
                 pdfPasswordEntry = ""
@@ -3139,7 +3209,7 @@ struct ContentView: View {
             do {
                 let output = try PDFPasswordService.removePassword(
                     from: source, password: "",
-                    to: PDFPasswordService.destinationURL(for: source)
+                    to: PDFPasswordService.savedCopyDestinationURL(for: source)
                 )
                 pdfUnlockedResult = IdentifiableURL(url: output)
             } catch {
