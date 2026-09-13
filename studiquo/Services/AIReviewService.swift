@@ -66,8 +66,14 @@ enum AIReviewService {
 
     /// The next day, at a fixed mid-morning hour rather than whatever minute
     /// the question happened to be asked — a review at 2:13am is not useful.
-    static func nextReviewDate(after askedAt: Date, hour: Int = 9) -> Date {
-        let calendar = Calendar.current
+    ///
+    /// `calendar` defaults to `.current` in production; tests pass one in a
+    /// specific, DST-observing time zone to pin down that a spring-forward
+    /// or fall-back transition between `askedAt` and the next day doesn't
+    /// shift the result off the intended local hour — `bySettingHour`
+    /// re-derives the wall-clock hour from `calendar`'s own time zone rather
+    /// than from a raw 24-hour offset, which is what makes that safe.
+    static func nextReviewDate(after askedAt: Date, hour: Int = 9, calendar: Calendar = .current) -> Date {
         let nextDay = calendar.date(byAdding: .day, value: 1, to: askedAt) ?? askedAt.addingTimeInterval(86_400)
         return calendar.date(bySettingHour: hour, minute: 0, second: 0, of: nextDay) ?? nextDay
     }

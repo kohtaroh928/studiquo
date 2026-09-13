@@ -61,6 +61,24 @@ final class AIReviewNotificationFeedTests: XCTestCase {
         XCTAssertEqual(Set(notifications.map(\.id)).count, 2)
     }
 
+    /// The same question asked twice in one day produces two independent
+    /// `AIReviewItem`s (see `AIReviewServiceTests`) — this confirms the feed
+    /// doesn't accidentally collapse them into one entry just because their
+    /// visible content (question text, message) happens to be identical.
+    /// Distinctness here comes entirely from each item's own `id`, not its
+    /// content.
+    func testTwoReviewsWithIdenticalQuestionTextStillProduceTwoDistinctFeedEntries() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let first = item(questionText: "微分の連鎖律を教えて", reviewDate: now)
+        let second = item(questionText: "微分の連鎖律を教えて", reviewDate: now)
+
+        let notifications = aiReviewStudyNotifications(from: [first, second], now: now)
+
+        XCTAssertEqual(notifications.count, 2)
+        XCTAssertEqual(Set(notifications.map(\.id)).count, 2)
+        XCTAssertTrue(notifications.allSatisfy { $0.message.contains("微分の連鎖律") })
+    }
+
     func testFeedIDsCarryTheSharedAIReviewPrefixSoOpenNotificationCanParseThemBack() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let due = item(reviewDate: now)

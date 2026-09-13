@@ -138,6 +138,97 @@ final class AIReviewServiceTests: XCTestCase {
         XCTAssertEqual(items.first?.explanationDocument?.persistentModelID, documents.first?.persistentModelID)
     }
 
+    /// The saved document's title is built from the question text — this
+    /// pins down the truncation rule (`reviewDocumentTitle(for:)`,
+    /// `AIReviewService.swift`) via its one observable effect, the saved
+    /// `TextDocument.title`, rather than by exposing the `private` helper
+    /// itself.
+    func testShortQuestionTitleIsNotTruncated() async throws {
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+
+        await AIReviewService.considerForReview(
+            questionText: "積分って何？", threadTitle: "数学", askedAt: .now, modelContext: context
+        )
+
+        let document = try XCTUnwrap(try context.fetch(FetchDescriptor<TextDocument>()).first)
+        XCTAssertEqual(document.title, "復習: 積分って何？")
+        XCTAssertFalse(document.title.contains("…"))
+    }
+
+    /// Exactly 20 characters is the boundary the truncation check uses
+    /// (`question.count > 20`) — at exactly 20 it must NOT truncate, only
+    /// once it exceeds 20.
+    func testQuestionTitleExactlyAtTheTruncationBoundaryIsNotTruncated() async throws {
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+
+        let question = String(repeating: "あ", count: 20)
+        XCTAssertEqual(question.count, 20)
+
+        await AIReviewService.considerForReview(
+            questionText: question, threadTitle: "スレッド", askedAt: .now, modelContext: context
+        )
+
+        let document = try XCTUnwrap(try context.fetch(FetchDescriptor<TextDocument>()).first)
+        XCTAssertEqual(document.title, "復習: " + question)
+        XCTAssertFalse(document.title.contains("…"))
+    }
+
+    func testLongQuestionTitleIsTruncatedToTwentyCharactersWithAnEllipsis() async throws {
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+
+        let question = "三角関数の加法定理の証明について、二通りの方法を詳しく教えてください。単位円を使う方法と回転行列を使う方法の両方を知りたいです。"
+        XCTAssertGreaterThan(question.count, 20)
+
+        await AIReviewService.considerForReview(
+            questionText: question, threadTitle: "スレッド", askedAt: .now, modelContext: context
+        )
+
+        let document = try XCTUnwrap(try context.fetch(FetchDescriptor<TextDocument>()).first)
+        let expectedSnippet = String(question.prefix(20))
+        XCTAssertEqual(document.title, "復習: \(expectedSnippet)…")
+        // The title must actually be shorter than the full question, not
+        // just have an ellipsis tacked onto the whole thing.
+        XCTAssertLessThan(document.title.count, question.count)
+    }
+
+    /// Asking the same question twice in a day (the student re-sends it, or
+    /// asks it in two different threads) must not merge/dedupe into one
+    /// review — each occurrence gets its own document and its own review
+    /// item, independently. Nothing in `considerForReview` looks at
+    /// existing items before saving a new one, so this pins down that this
+    /// is deliberate rather than untested.
+    func testAskingTheSameQuestionTwiceCreatesTwoIndependentReviewsAndDocuments() async throws {
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+
+        await AIReviewService.considerForReview(
+            questionText: "微分の連鎖律を教えて", threadTitle: "数学", askedAt: .now, modelContext: context
+        )
+        await AIReviewService.considerForReview(
+            questionText: "微分の連鎖律を教えて", threadTitle: "数学", askedAt: .now, modelContext: context
+        )
+
+        let items = try context.fetch(FetchDescriptor<AIReviewItem>())
+        let documents = try context.fetch(FetchDescriptor<TextDocument>())
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(documents.count, 2)
+        // Two independent pairs, not one item pointing at both documents or
+        // two items sharing one document.
+        XCTAssertEqual(Set(items.compactMap { $0.explanationDocument?.persistentModelID }).count, 2)
+        XCTAssertNotEqual(items[0].persistentModelID, items[1].persistentModelID)
+    }
+
     func testTheReviewDateIsTheDayAfterTheQuestionWasAsked() async throws {
         let fake = FakeAIProvider()
         fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
@@ -233,6 +324,70 @@ final class AIReviewServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(scheduleCallCount, 0)
+    }
+
+    // MARK: 文書が削除・ゴミ箱に入った場合
+
+    /// If the student later deletes the generated 文書 outright (not just
+    /// trashes it), `AIReviewItem.explanationDocument` has no explicit
+    /// `@Relationship(deleteRule:)`, so SwiftData's default `.nullify`
+    /// should clear the reference rather than leaving a dangling pointer.
+    /// The review screen's fallback (showing `item.explanationMarkdown`
+    /// when `explanationDocument` is nil) depends on this actually becoming
+    /// nil instead of a stale/unfaultable reference.
+    func testDeletingTheLinkedDocumentNullifiesTheReviewItemsReference() async throws {
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+
+        await AIReviewService.considerForReview(
+            questionText: "質問", threadTitle: "スレッド", askedAt: .now, modelContext: context
+        )
+
+        let item = try XCTUnwrap(try context.fetch(FetchDescriptor<AIReviewItem>()).first)
+        let document = try XCTUnwrap(item.explanationDocument)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TextDocument>()), 1)
+
+        context.delete(document)
+        try context.save()
+
+        let reloaded = try XCTUnwrap(try context.fetch(FetchDescriptor<AIReviewItem>()).first)
+        XCTAssertNil(reloaded.explanationDocument)
+        // The review's own copy of the text survives the document's
+        // deletion — this is what the fallback in AIReviewDetailView reads.
+        XCTAssertEqual(reloaded.explanationMarkdown, "解説")
+    }
+
+    /// Trashing (a soft delete via `TextDocument.isTrashed`, recoverable
+    /// from the library's trash) is different from deleting outright: the
+    /// document object and its `bodyData` still exist, so the review
+    /// screen's PDF-export button — enabled whenever `explanationDocument`
+    /// is non-nil — must still produce real PDF bytes rather than silently
+    /// exporting an empty file.
+    func testATrashedButNotDeletedDocumentStillExportsRealPDFData() async throws {
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(
+            isStudyRelevant: true, explanationMarkdown: "# 加法定理\n- sin(a+b) = ...", quiz: []
+        ))
+        AI.provider = fake
+        let context = makeContext()
+
+        await AIReviewService.considerForReview(
+            questionText: "質問", threadTitle: "スレッド", askedAt: .now, modelContext: context
+        )
+
+        let item = try XCTUnwrap(try context.fetch(FetchDescriptor<AIReviewItem>()).first)
+        let document = try XCTUnwrap(item.explanationDocument)
+
+        document.isTrashed = true
+        document.trashedAt = .now
+        try context.save()
+
+        XCTAssertNotNil(item.explanationDocument, "ゴミ箱に入れただけでは参照が失われてはいけません。")
+        let pdfData = ExportService.pdfData(from: document)
+        XCTAssertNotNil(pdfData)
+        XCTAssertGreaterThan(pdfData?.count ?? 0, 0)
     }
 
     // MARK: Category 6 — 障害時の挙動

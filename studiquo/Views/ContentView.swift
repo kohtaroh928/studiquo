@@ -3052,6 +3052,9 @@ struct ContentView: View {
             Button {
                 notebook.isLocked.toggle()
                 notebook.updatedAt = .now
+                if notebook.isLocked {
+                    NotebookBackupService.deleteAutomaticBackups(for: notebook)
+                }
             } label: {
                 Label(notebook.isLocked ? L("保護を解除") : L("ノートを保護"), systemImage: notebook.isLocked ? "lock.open" : "lock")
             }
