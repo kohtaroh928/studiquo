@@ -82,13 +82,22 @@ enum NotebookBackupService {
         return url
     }
 
+    /// Silently skipped for a locked notebook: `makeArchive` has no notion of
+    /// encryption, so writing one here would put the notebook's ink,
+    /// background images and OCR text on disk in plain JSON — exactly what
+    /// 「ロック」is supposed to prevent — every time the app backgrounds or
+    /// the editor closes, with no way for the student to know it happened.
+    /// A locked notebook goes without an automatic backup until it can be
+    /// encrypted before writing; that's a smaller risk than silently
+    /// defeating the lock.
     static func saveAutomaticBackup(for notebook: Notebook) {
+        guard !notebook.isLocked else { return }
         guard let data = try? JSONEncoder().encode(makeArchive(notebook)) else { return }
         let manager = FileManager.default
         guard let root = try? manager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("studiquo/AutoBackups", isDirectory: true) else { return }
         try? manager.createDirectory(at: root, withIntermediateDirectories: true)
-        let identifier = String(describing: notebook.persistentModelID).replacingOccurrences(of: "[^A-Za-z0-9]", with: "-", options: .regularExpression)
+        let identifier = backupIdentifier(for: notebook)
         let stamp = ISO8601DateFormatter().string(from: .now).replacingOccurrences(of: ":", with: "-")
         let url = root.appendingPathComponent("\(identifier)-\(stamp).json")
         guard (try? data.write(to: url, options: .atomic)) != nil else { return }
@@ -97,6 +106,25 @@ enum NotebookBackupService {
             .filter { $0.lastPathComponent.hasPrefix(identifier + "-") }
             .sorted { modificationDate($0) > modificationDate($1) } ?? []
         for url in matching.dropFirst(5) { try? manager.removeItem(at: url) }
+    }
+
+    /// Removes any automatic backups already written for `notebook` before it
+    /// was locked — otherwise locking it stops new plaintext backups
+    /// (`saveAutomaticBackup`'s guard) but leaves earlier ones sitting on
+    /// disk, which would still defeat the lock. Called the moment a notebook
+    /// becomes locked (`ContentView`'s 保護 toggle).
+    static func deleteAutomaticBackups(for notebook: Notebook) {
+        let manager = FileManager.default
+        guard let root = try? manager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("studiquo/AutoBackups", isDirectory: true) else { return }
+        let identifier = backupIdentifier(for: notebook)
+        let matching = (try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil))?
+            .filter { $0.lastPathComponent.hasPrefix(identifier + "-") } ?? []
+        for url in matching { try? manager.removeItem(at: url) }
+    }
+
+    private static func backupIdentifier(for notebook: Notebook) -> String {
+        String(describing: notebook.persistentModelID).replacingOccurrences(of: "[^A-Za-z0-9]", with: "-", options: .regularExpression)
     }
 
     static func automaticBackups() -> [AutomaticBackup] {
