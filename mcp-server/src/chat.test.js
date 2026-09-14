@@ -285,6 +285,7 @@ function environment() {
     RATE_LIMIT_APPLE_AUTH: { async limit() { return { success: true }; } },
     RATE_LIMIT_CHAT_FRIEND_ADD: fakeCloudflareLimiter(),
     RATE_LIMIT_CHAT_MESSAGE: fakeCloudflareLimiter(30),
+    RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD: fakeCloudflareLimiter(10),
     _kv: values,
   };
 }
@@ -1392,6 +1393,46 @@ test("one caller's exhausted message-send limit does not affect a different call
 
   const bobsOwnAttempt = await sendMessage(env, bobToken, aliceAndBob.roomID, "Bob is unaffected");
   assert.equal(bobsOwnAttempt.status, 200);
+});
+
+// Regression coverage for a real gap: unlike message sends, attachment
+// uploads (each up to 6MB) had no rate limit at all — an authenticated
+// caller could spam a room's storage with unlimited uploads.
+test("POST /api/chat/rooms/:id/attachments allows up to 10 per minute, then 429s", async () => {
+  const env = environment();
+  const aliceToken = freshToken("u0");
+  const bobToken = freshToken("u1");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+
+  const tinyPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1ZkAAAAASUVORK5CYII=";
+  for (let i = 0; i < 10; i++) {
+    const response = await uploadAttachment(env, aliceToken, accepted.roomID, "image/png", tinyPNG);
+    assert.equal(response.status, 201);
+  }
+  const overLimit = await uploadAttachment(env, aliceToken, accepted.roomID, "image/png", tinyPNG);
+  assert.equal(overLimit.status, 429);
+});
+
+test("one caller's exhausted attachment-upload limit does not affect a different caller", async () => {
+  const env = environment();
+  const aliceToken = freshToken("u2");
+  const bobToken = freshToken("u3");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+
+  const tinyPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1ZkAAAAASUVORK5CYII=";
+  for (let i = 0; i < 10; i++) {
+    await uploadAttachment(env, aliceToken, accepted.roomID, "image/png", tinyPNG);
+  }
+  assert.equal((await uploadAttachment(env, aliceToken, accepted.roomID, "image/png", tinyPNG)).status, 429);
+
+  const bobsOwnAttempt = await uploadAttachment(env, bobToken, accepted.roomID, "image/png", tinyPNG);
+  assert.equal(bobsOwnAttempt.status, 201);
 });
 
 // Regression coverage for "the code parameter isn't format-checked on the

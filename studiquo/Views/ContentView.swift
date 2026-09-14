@@ -91,6 +91,37 @@ struct StudyNotification: Identifiable {
     }
 }
 
+/// The largest attachment `downloadAndPreviewFriendAttachment` will accept
+/// from a friend's room. The sender already enforces a 3MB cap before
+/// upload (`ProfileAndFriendsView.maximumAttachmentBytes`), but nothing on
+/// the receiving side checked the downloaded bytes before writing them to
+/// disk and handing them to QuickLook — this is that check, generous enough
+/// to never reject a legitimately-sent attachment while still bounding what
+/// a compromised sender or server response could make this device store
+/// and open.
+let maximumFriendAttachmentBytes = 8 * 1024 * 1024
+
+/// Whether a downloaded friend attachment is safe to write to disk and open.
+///
+/// Beyond the size cap, this checks the bytes' own magic number against
+/// what `sourceKind` claims rather than trusting it outright — the
+/// attachment's declared kind and file extension both come from the
+/// sender's own message payload with no server-side enforcement that they
+/// match the actual bytes (see `FriendMessageAttachment`). A generic
+/// `"file"` kind has no single expected signature, so it's only bounded by
+/// size here.
+func isValidFriendAttachment(sourceKind: String, data: Data) -> Bool {
+    guard !data.isEmpty, data.count <= maximumFriendAttachmentBytes else { return false }
+    switch sourceKind {
+    case "photo":
+        return data.starts(with: [0xFF, 0xD8, 0xFF]) // JPEG
+    case "pdf":
+        return data.starts(with: Array("%PDF".utf8))
+    default:
+        return true
+    }
+}
+
 /// Prefix shared by an `AIReviewItem`'s bell-feed entry id
 /// (`aiReviewNotificationID(for:)`) and its scheduled local notification's
 /// identifier (`AIReviewNotifications.identifierPrefix`) — two different
@@ -649,6 +680,8 @@ private struct AppSettingsView: View {
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.system.rawValue
     @AppStorage("studyTimeTrackingEnabled") private var studyTimeTrackingEnabled = true
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
+    @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = true
+    @State private var showsAIDataDisclosure = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -683,9 +716,28 @@ private struct AppSettingsView: View {
                 } footer: {
                     Text("描画バーの並びを左利き向けに反転します。")
                 }
+
+                Section {
+                    Toggle("翌日復習を作成する", isOn: $aiTalkDayAfterReviewEnabled)
+                } header: {
+                    Text("AIトーク")
+                } footer: {
+                    Text("オンにすると、AIトークで質問するたびに復習する価値があるか判定し、翌日に読める解説と確認クイズを自動で作成して通知します。オフにするとこの自動判定・作成は行われません。")
+                }
+
+                Section {
+                    Button("AI機能とデータ送信について") { showsAIDataDisclosure = true }
+                } header: {
+                    Text("プライバシー")
+                } footer: {
+                    Text("AIトーク・添削・翌日復習を使うと、質問文やノートの内容、答案の写真がGoogleのGeminiに送信されます。詳しくはこちらをご確認ください。")
+                }
             }
             .navigationTitle("設定")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showsAIDataDisclosure) {
+                AIDataDisclosureView(buttonTitle: "閉じる") { showsAIDataDisclosure = false }
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完了") { dismiss() }
@@ -825,6 +877,115 @@ private struct AIReviewIntegration: ViewModifier {
             .sheet(item: $presentedItem) { item in
                 AIReviewDetailView(item: item)
             }
+    }
+}
+
+/// Whether the student has acknowledged that AI features send content
+/// off-device. Backs both the first-launch consent screen
+/// (`AIDataDisclosureGate`) and the always-available explanation in
+/// 設定 → プライバシー — there was previously no disclosure anywhere in the
+/// app that note text, answer photos, or chat questions leave the device
+/// for Google's Gemini (and, for the separate opt-in bring-your-own-key
+/// features, Anthropic).
+enum AIDataDisclosure {
+    static let acknowledgedDefaultsKey = "hasAcknowledgedAIDataDisclosure"
+
+    /// Defaults to `false` for every install — including an existing
+    /// install updating to the version that first added this screen, since
+    /// nobody has acknowledged anything yet either way.
+    static var hasBeenAcknowledged: Bool {
+        UserDefaults.standard.bool(forKey: acknowledgedDefaultsKey)
+    }
+
+    static func acknowledge() {
+        UserDefaults.standard.set(true, forKey: acknowledgedDefaultsKey)
+    }
+}
+
+/// Presents `AIDataDisclosureView` full-screen until acknowledged, exactly
+/// once. A dedicated `ViewModifier` (rather than a `.fullScreenCover` inline
+/// on `ContentView.body`) for the same reason `AIReviewIntegration` above
+/// is one: adding modifiers directly to that already-huge body expression
+/// pushes Swift's type checker past what it can solve in reasonable time.
+private struct AIDataDisclosureGate: ViewModifier {
+    @State private var isAcknowledged = AIDataDisclosure.hasBeenAcknowledged
+
+    func body(content: Content) -> some View {
+        content.fullScreenCover(isPresented: Binding(
+            get: { !isAcknowledged },
+            set: { _ in }
+        )) {
+            AIDataDisclosureView {
+                AIDataDisclosure.acknowledge()
+                isAcknowledged = true
+            }
+        }
+    }
+}
+
+/// The first-launch (and update-time, for an existing install that never
+/// saw this) explanation of what AI features send off-device, and to whom.
+private struct AIDataDisclosureView: View {
+    var buttonTitle: String = "理解しました"
+    let onAcknowledge: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("AI機能について", systemImage: "sparkles")
+                            .font(.title2.bold())
+                        Text("studiquoのAIトーク・添削・翌日復習は、Googleの生成AI「Gemini」を使っています。これらの機能を使うと、次の内容がGeminiに送信されます。")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        disclosureRow(icon: "text.bubble", title: "AIトークでのやり取り", detail: "送った質問文と、開いているノートの文字起こし内容")
+                        disclosureRow(icon: "camera.viewfinder", title: "添削(採点)機能", detail: "問題文や答案として切り抜いた画像・写真")
+                        disclosureRow(icon: "calendar.badge.clock", title: "翌日復習機能", detail: "AIトークで送った質問文(内容によっては翌日に復習教材を自動作成します)")
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("任意の連携機能", systemImage: "key")
+                            .font(.headline)
+                        Text("ご自身のAnthropic APIキーを設定した場合のみ、同様の内容がAnthropic(Claude)にも送信されます。キーを設定しない限りこの連携は行われません。")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+
+                    Text("この設定は、いつでも設定 → プライバシーから確認できます。AIトークの翌日復習は設定からオフにできます。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(22)
+            }
+            .navigationTitle("はじめに")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                Button(buttonTitle, action: onAcknowledge)
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(.bar)
+            }
+        }
+        .interactiveDismissDisabled()
+    }
+
+    private func disclosureRow(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
     }
 }
 
@@ -1638,6 +1799,7 @@ struct ContentView: View {
         .onChange(of: calendarEvents.count) { _, _ in refreshStudyNotifications() }
         .onChange(of: studyActivities.count) { _, _ in refreshStudyNotifications() }
         .modifier(AIReviewIntegration(count: aiReviewItems.count, presentedItem: $presentedAIReviewItem, onCountChange: refreshStudyNotifications))
+        .modifier(AIDataDisclosureGate())
         .task {
             await rebuildLibraryMetadataIfNeeded()
         }
@@ -2092,6 +2254,13 @@ struct ContentView: View {
                 await MainActor.run {
                     isDownloadingFriendAttachment = false
                     friendStore.errorMessage = "添付ファイルを読み込めませんでした。"
+                }
+                return
+            }
+            guard isValidFriendAttachment(sourceKind: sourceKind, data: data) else {
+                await MainActor.run {
+                    isDownloadingFriendAttachment = false
+                    friendStore.errorMessage = "添付ファイルの形式が正しくないため開けませんでした。"
                 }
                 return
             }
@@ -3050,11 +3219,7 @@ struct ContentView: View {
             Button { beginRename(notebook) } label: { Label("名前を変更", systemImage: "pencil") }
             Button { beginTagEditing(notebook) } label: { Label("タグを編集", systemImage: "tag") }
             Button {
-                notebook.isLocked.toggle()
-                notebook.updatedAt = .now
-                if notebook.isLocked {
-                    NotebookBackupService.deleteAutomaticBackups(for: notebook)
-                }
+                toggleNotebookProtection(notebook)
             } label: {
                 Label(notebook.isLocked ? L("保護を解除") : L("ノートを保護"), systemImage: notebook.isLocked ? "lock.open" : "lock")
             }
@@ -3728,6 +3893,29 @@ struct ContentView: View {
     private func permanentlyDelete(_ notebook: Notebook) {
         closeNotebookTabs(notebook)
         modelContext.delete(notebook)
+    }
+
+    /// Turning protection ON needs no authentication — locking your own
+    /// notebook isn't a sensitive action. Turning it OFF used to be just as
+    /// unauthenticated, reachable from this same library-list context menu
+    /// with no Face ID/passcode check at all — a real gap, since it let
+    /// anyone with the device unlocked strip protection from a notebook
+    /// without ever proving they were its owner. It now requires the same
+    /// check `ProtectedNotebookView` already asks for to open one.
+    private func toggleNotebookProtection(_ notebook: Notebook) {
+        if notebook.isLocked {
+            Task {
+                guard await DeviceAuthentication.authenticate(reason: "「\(notebook.title)」の保護を解除します") else { return }
+                guard NotebookEncryptionService.unlock(notebook) else { return }
+                notebook.isLocked = false
+                notebook.updatedAt = .now
+            }
+        } else {
+            NotebookEncryptionService.lock(notebook)
+            notebook.isLocked = true
+            notebook.updatedAt = .now
+            NotebookBackupService.deleteAutomaticBackups(for: notebook)
+        }
     }
 
     private func emptyTrash() {

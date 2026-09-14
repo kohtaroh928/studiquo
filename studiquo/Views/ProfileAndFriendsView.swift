@@ -458,12 +458,34 @@ final class FriendStore: ObservableObject {
         friends.append(FriendRecord(id: UUID(), name: "デモフレンド", code: "DEMO123", todayStudySeconds: 3_600, roomID: nil, isDemo: true))
     }
 
+    /// A friend-add code carried in a `studiquo://friend/add?code=…` link,
+    /// waiting on the student's confirmation before an actual request is
+    /// sent — see `add(url:)`. `nil` when there is nothing to confirm.
+    @Published var pendingDeepLinkCode: String?
+
+    /// Opening a `studiquo://friend/add?code=…` link used to send the
+    /// friend request immediately, with no confirmation — a link crafted by
+    /// someone else (a message, a QR code) could make a request go out the
+    /// instant it was tapped, before the student had any chance to see who
+    /// or what it was for. This only stages the code; `FriendsHomeView`
+    /// shows a confirmation alert, and the request is sent only if the
+    /// student accepts it there.
     func add(url: URL) {
         guard url.scheme?.lowercased() == "studiquo",
               url.host?.lowercased() == "friend",
               url.path == "/add",
               let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "code" })?.value else { return }
+        pendingDeepLinkCode = code
+    }
+
+    func confirmPendingDeepLinkRequest() {
+        guard let code = pendingDeepLinkCode else { return }
+        pendingDeepLinkCode = nil
         add(code: code)
+    }
+
+    func cancelPendingDeepLinkRequest() {
+        pendingDeepLinkCode = nil
     }
 
     func send(_ text: String, to friend: FriendRecord) {
@@ -936,6 +958,20 @@ struct FriendsHomeView: View {
                 Button("OK") { store.errorMessage = "" }
             } message: {
                 Text(store.errorMessage)
+            }
+            // A studiquo://friend/add link stages a code here rather than
+            // sending the request immediately — see `FriendStore.add(url:)`.
+            .alert(
+                "フレンド申請を送りますか？",
+                isPresented: Binding(
+                    get: { store.pendingDeepLinkCode != nil },
+                    set: { isPresented in if !isPresented { store.cancelPendingDeepLinkRequest() } }
+                )
+            ) {
+                Button("キャンセル", role: .cancel) { store.cancelPendingDeepLinkRequest() }
+                Button("送信") { store.confirmPendingDeepLinkRequest() }
+            } message: {
+                Text("コード「\(store.pendingDeepLinkCode ?? "")」のユーザーにフレンド申請を送ります。")
             }
         }
     }

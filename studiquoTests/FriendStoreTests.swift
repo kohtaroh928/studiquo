@@ -1101,6 +1101,63 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertNil(downloaded)
     }
 
+    // Regression coverage for a real gap: opening a
+    // studiquo://friend/add?code=... link used to send the friend request
+    // immediately, with no confirmation — a link crafted by someone else
+    // (a message, a QR code) could send a request the instant it was
+    // tapped. add(url:) now only stages the code; the request goes out
+    // only through confirmPendingDeepLinkRequest().
+
+    func testAddURLStagesTheCodeWithoutSendingARequestImmediately() async {
+        let client = MockFriendChatClient(friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        store.add(url: URL(string: "studiquo://friend/add?code=ALICE1")!)
+
+        XCTAssertEqual(store.pendingDeepLinkCode, "ALICE1")
+        // Give any accidental fire-and-forget Task a chance to run before
+        // asserting nothing happened.
+        try? await Task.sleep(for: .milliseconds(50))
+        let addedCodes = await client.addedCodesSnapshot()
+        XCTAssertEqual(addedCodes, [], "opening the link must not send a request by itself")
+    }
+
+    func testConfirmingThePendingDeepLinkRequestActuallySendsIt() async {
+        let client = MockFriendChatClient(friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.add(url: URL(string: "studiquo://friend/add?code=ALICE1")!)
+
+        store.confirmPendingDeepLinkRequest()
+        await waitUntil { await client.addedCodesSnapshot() == ["ALICE1"] }
+
+        XCTAssertNil(store.pendingDeepLinkCode, "the pending code is cleared once the student acts on it")
+    }
+
+    func testCancelingThePendingDeepLinkRequestNeverSendsIt() async {
+        let client = MockFriendChatClient(friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.add(url: URL(string: "studiquo://friend/add?code=ALICE1")!)
+
+        store.cancelPendingDeepLinkRequest()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertNil(store.pendingDeepLinkCode)
+        let addedCodes = await client.addedCodesSnapshot()
+        XCTAssertEqual(addedCodes, [])
+    }
+
+    /// A malformed or unrelated URL (wrong scheme/host/path) must be
+    /// ignored outright — it shouldn't even stage a confirmation for
+    /// something that was never a real friend-add link.
+    func testAddURLIgnoresAnUnrelatedURLEntirely() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        store.add(url: URL(string: "https://example.com/friend/add?code=ALICE1")!)
+
+        XCTAssertNil(store.pendingDeepLinkCode)
+    }
+
     func testAddSurfacesADedicatedMessageWhenRateLimited() async {
         let client = MockFriendChatClient()
         await client.setRateLimited(true)
@@ -1374,6 +1431,7 @@ private actor MockFriendChatClient: FriendChatClient {
     var outgoingPendingRequests: [FriendChatService.OutgoingRequest] = []
     var acceptedCodes: [String] = []
     var rejectedCodes: [String] = []
+    var addedCodes: [String] = []
     var isRateLimited = false
     var errorToThrow: Error?
     var messagesAfterRequests: [Int] = []
@@ -1409,12 +1467,17 @@ private actor MockFriendChatClient: FriendChatClient {
     }
 
     func add(code: String) async throws -> FriendChatService.AddFriendResult {
+        addedCodes.append(code)
         if isRateLimited { throw FriendChatService.RateLimitedError() }
         if let errorToThrow { throw errorToThrow }
         guard remoteFriends.contains(where: { $0.code == code }) else {
             throw URLError(.badServerResponse)
         }
         return .init(status: "pending")
+    }
+
+    func addedCodesSnapshot() -> [String] {
+        addedCodes
     }
 
     func setRateLimited(_ value: Bool) {

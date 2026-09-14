@@ -12,6 +12,7 @@ const MAX_BODY = 16_000;
 const MAX_ATTACHMENT_UPLOAD_BODY = 6_000_000;
 const FRIEND_ADD_LIMIT_PER_MINUTE = 5;
 const CHAT_MESSAGE_LIMIT_PER_MINUTE = 30;
+const ATTACHMENT_UPLOAD_LIMIT_PER_MINUTE = 10;
 const MAX_FRIENDS = 500;
 // Matches the format the client itself generates and validates (see
 // FriendStore.codePattern in ProfileAndFriendsView.swift). Rejecting anything
@@ -290,6 +291,13 @@ export async function handleChat(url, request, env) {
   // or local database id, meaningless off the sender's own device.
   const attachmentUploadMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/attachments$/.exec(url.pathname);
   if (attachmentUploadMatch && request.method === "POST") {
+    // Each upload can be up to MAX_ATTACHMENT_UPLOAD_BODY (6MB) — without
+    // this, a compromised or misbehaving client could spam a room's
+    // storage with unlimited uploads, unlike message sends just above.
+    const allowed = await checkRateLimit(
+      env, env.RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD, "chat-attachment-upload", key, ATTACHMENT_UPLOAD_LIMIT_PER_MINUTE
+    );
+    if (!allowed) return json({ error: "Too many uploads. Please slow down." }, 429);
     const body = await readBody(request, MAX_ATTACHMENT_UPLOAD_BODY);
     try {
       const result = await env.CHAT_ROOM.getByName(attachmentUploadMatch[1]).storeAttachment(key, body?.contentType, body?.data);

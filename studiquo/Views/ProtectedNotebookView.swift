@@ -45,8 +45,18 @@ struct ProtectedNotebookView: View {
         }
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "「\(notebook.title)」を開きます") { success, _ in
             DispatchQueue.main.async {
-                isUnlocked = success
-                if !success { message = "認証できませんでした。もう一度お試しください" }
+                // The content itself is sealed at rest whenever this
+                // notebook isn't actively being viewed (see
+                // NotebookEncryptionService) — Face ID alone only proves who
+                // is asking; it still needs decrypting before there's
+                // anything for NoteEditorView to show.
+                let decrypted = success && NotebookEncryptionService.unlock(notebook)
+                isUnlocked = decrypted
+                if !success {
+                    message = "認証できませんでした。もう一度お試しください"
+                } else if !decrypted {
+                    message = "ノートの内容を復号できませんでした"
+                }
             }
         }
     }
