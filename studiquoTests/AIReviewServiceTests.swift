@@ -23,11 +23,13 @@ final class AIReviewServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         AIReviewService.scheduleNotification = { _ in }
+        UserDefaults.standard.removeObject(forKey: AIReviewService.isEnabledDefaultsKey)
     }
 
     override func tearDown() {
         AI.provider = WorkerAIProvider()
         AIReviewService.scheduleNotification = { await AIReviewNotifications.schedule(for: $0) }
+        UserDefaults.standard.removeObject(forKey: AIReviewService.isEnabledDefaultsKey)
         for url in storeURLs { try? FileManager.default.removeItem(at: url) }
         storeURLs = []
         super.tearDown()
@@ -47,6 +49,53 @@ final class AIReviewServiceTests: XCTestCase {
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         let container = try! ModelContainer(for: schema, configurations: configuration)
         return ModelContext(container)
+    }
+
+    // MARK: 設定でのオン・オフ（回帰テスト）
+
+    /// Regression coverage for a real gap: this feature shipped with no way
+    /// to turn it off — every AIトーク reply silently triggered a second AI
+    /// call and saved a document. `AppSettingsView`'s "翌日復習を作成する"
+    /// toggle writes `AIReviewService.isEnabledDefaultsKey` to UserDefaults;
+    /// this proves `considerForReview` actually honors it, and does so
+    /// before ever touching the network.
+    func testTogglingTheSettingOffSkipsEverythingIncludingTheProviderCall() async throws {
+        UserDefaults.standard.set(false, forKey: AIReviewService.isEnabledDefaultsKey)
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+
+        await AIReviewService.considerForReview(
+            questionText: "加法定理を教えて", threadTitle: "数学", askedAt: .now, modelContext: context
+        )
+
+        XCTAssertEqual(fake.researchCallCount, 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<AIReviewItem>()), 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TextDocument>()), 0)
+    }
+
+    /// The setting has never been touched (fresh install / no UserDefaults
+    /// entry yet) — the feature already shipped enabled, so a missing key
+    /// must default to `true`, not `false`.
+    func testAnUntouchedSettingDefaultsToEnabled() {
+        UserDefaults.standard.removeObject(forKey: AIReviewService.isEnabledDefaultsKey)
+        XCTAssertTrue(AIReviewService.isEnabled)
+    }
+
+    func testExplicitlyEnabledSettingStillRunsNormally() async throws {
+        UserDefaults.standard.set(true, forKey: AIReviewService.isEnabledDefaultsKey)
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+
+        await AIReviewService.considerForReview(
+            questionText: "質問", threadTitle: "スレッド", askedAt: .now, modelContext: context
+        )
+
+        XCTAssertEqual(fake.researchCallCount, 1)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<AIReviewItem>()), 1)
     }
 
     // MARK: Category 1 — AIの判定

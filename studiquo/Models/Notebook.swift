@@ -12,6 +12,13 @@ final class Notebook {
     var folderName: String = ""
     var tagsText: String = ""
     var isLocked: Bool = false
+    /// Every page and element's content, AES-GCM encrypted, whenever this
+    /// notebook is protected and not currently being viewed — see
+    /// `NotebookEncryptionService`. `nil` means the content is presently
+    /// live in the ordinary (plaintext) page/element fields, either because
+    /// the notebook isn't locked at all, or because it's the one currently
+    /// open in the editor.
+    @Attribute(.externalStorage) var encryptedContent: Data?
     var cachedPageCount: Int = 0
     var cachedContainsPDF: Bool = false
     var libraryMetadataVersion: Int = 0

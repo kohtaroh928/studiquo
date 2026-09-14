@@ -15,6 +15,17 @@ enum AIReviewService {
     /// loose at the top level.
     static let reviewFolderName = "AI復習"
 
+    /// Backs the "AIトークの翌日復習を作成する" toggle in `AppSettingsView`.
+    /// Defaults to on (the feature already shipped enabled) — this only
+    /// gives the student a documented way to turn it off, since until now
+    /// every AIトーク reply silently triggered a second AI call and saved a
+    /// document with no way to disable that short of disabling AI entirely.
+    static let isEnabledDefaultsKey = "aiTalkDayAfterReviewEnabled"
+
+    static var isEnabled: Bool {
+        (UserDefaults.standard.object(forKey: isEnabledDefaultsKey) as? Bool) ?? true
+    }
+
     /// Swappable seam, same shape as `AI.provider`: the real notification
     /// call goes through `UNUserNotificationCenter`, which hangs indefinitely
     /// inside an XCTest unit-test host process (there's no interactive UI to
@@ -29,6 +40,7 @@ enum AIReviewService {
         askedAt: Date,
         modelContext: ModelContext
     ) async {
+        guard isEnabled else { return }
         let question = questionText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, AI.provider.isConfigured else { return }
 

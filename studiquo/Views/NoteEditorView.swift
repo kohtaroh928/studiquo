@@ -611,10 +611,12 @@ struct NoteEditorView: View {
         .onChange(of: splitMode) { _, mode in splitState.isSplit = mode != .single }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
+                if notebook.isLocked { NotebookEncryptionService.lock(notebook) }
                 NotebookBackupService.saveAutomaticBackup(for: notebook)
             }
         }
         .onDisappear {
+            if notebook.isLocked { NotebookEncryptionService.lock(notebook) }
             NotebookBackupService.saveAutomaticBackup(for: notebook)
         }
         .overlay(alignment: .top) {
@@ -4545,6 +4547,20 @@ private struct ZoomableWorkspace<Content: View>: View {
     }
 }
 
+/// Whether the in-app browser (`WebBrowserModel`) may navigate to `url`.
+///
+/// The browser used to have no navigation restriction at all: any page's
+/// own link or script could send it to any scheme, including ones that
+/// don't mean "load a web page" — `file://` (local filesystem), `tel:`/
+/// `sms:`/`mailto:` and arbitrary custom schemes (a deep link into another
+/// installed app), or a bare `javascript:` navigation. A free function
+/// (rather than kept inline in the delegate callback) so it's unit tested
+/// directly instead of only through a live WKWebView.
+func webBrowserNavigationPolicy(for url: URL?) -> WKNavigationActionPolicy {
+    guard let scheme = url?.scheme?.lowercased(), ["http", "https"].contains(scheme) else { return .cancel }
+    return .allow
+}
+
 @MainActor
 private final class WebBrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
     lazy var webView: WKWebView = {
@@ -4612,6 +4628,14 @@ private final class WebBrowserModel: NSObject, ObservableObject, WKNavigationDel
 
     func goForward() {
         if webView.canGoForward { webView.goForward() }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        decisionHandler(webBrowserNavigationPolicy(for: navigationAction.request.url))
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {

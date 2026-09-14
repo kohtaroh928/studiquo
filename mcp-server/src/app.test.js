@@ -206,6 +206,31 @@ test("a token older than 90 days is rejected by /api/* endpoints", async () => {
   assert.match((await response.json()).error, /expired/i);
 });
 
+// Regression coverage for a real gap: unlike every other route in this
+// Worker, /mcp handed the raw request straight to the MCP SDK's transport,
+// which reads the body with no size limit of its own. Reachable only with a
+// real, synced session — but there's no reason this route alone should skip
+// the same body-size defense every other one gets.
+test("a POST to /mcp with an oversized body is rejected with 413 instead of being handed unbounded to the MCP SDK", async () => {
+  const env = environment();
+  const token = freshToken("mcp1");
+
+  const upload = await worker.fetch(
+    request("/api/snapshot", { method: "PUT", token, body: { version: 1, notebooks: [], exportedAt: "2026-01-01T00:00:00Z" } }),
+    env,
+    noopCtx
+  );
+  assert.equal(upload.status, 200);
+
+  const oversized = new Request("https://example.test/mcp", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: "x".repeat(9_000_000),
+  });
+  const response = await worker.fetch(oversized, env, noopCtx);
+  assert.equal(response.status, 413);
+});
+
 test("a token older than 90 days is rejected by /mcp, even with a synced snapshot", async () => {
   const env = environment();
   const ninetyOneDaysAgo = Math.floor(Date.now() / 1000) - 91 * 24 * 60 * 60;

@@ -159,6 +159,18 @@ function createServer(env, key) {
   return server;
 }
 
+/**
+ * Every other route in this Worker reads its body through `readJSONLimited`/
+ * `readTextLimited`, capped well below what a legitimate request needs. This
+ * one used to be the exception: the request went straight to the MCP SDK's
+ * `WebStandardStreamableHTTPServerTransport`, which parses the body itself
+ * with no size limit at all. Reachable only with a real, synced session, so
+ * the risk was a rogue device burning Worker memory/CPU rather than an
+ * unauthenticated one — but there's no reason this route alone should skip
+ * the same defense-in-depth every other one gets.
+ */
+const MAX_MCP_BODY = 8_000_000;
+
 async function handleMCP(request, env) {
   const token = bearerToken(request);
   if (!token) return json({ error: "A valid bearer token is required." }, 401);
@@ -168,6 +180,13 @@ async function handleMCP(request, env) {
   if (await isRevoked(env, key)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
   if (!(await env.STUDIQUO_DATA.get(`snapshot:${key}`))) {
     return json({ error: "Run sync in Studiquo before connecting an AI client." }, 401);
+  }
+  if (request.method === "POST") {
+    const text = await readTextLimited(request, MAX_MCP_BODY);
+    if (text === null) return json({ error: "Request body too large." }, 413);
+    const headers = new Headers(request.headers);
+    headers.delete("content-length");
+    request = new Request(request.url, { method: request.method, headers, body: text || undefined });
   }
   const server = createServer(env, key);
   const transport = new WebStandardStreamableHTTPServerTransport({
