@@ -13,7 +13,11 @@ const MAX_ATTACHMENT_UPLOAD_BODY = 6_000_000;
 const FRIEND_ADD_LIMIT_PER_MINUTE = 5;
 const CHAT_MESSAGE_LIMIT_PER_MINUTE = 30;
 const ATTACHMENT_UPLOAD_LIMIT_PER_MINUTE = 10;
+const REPORT_LIMIT_PER_MINUTE = 5;
 const MAX_FRIENDS = 500;
+// A report's free-text reason — generous for context, but bounded so a
+// report can't be used to smuggle an oversized payload into storage.
+const MAX_REPORT_REASON_LENGTH = 1_000;
 // Matches the format the client itself generates and validates (see
 // FriendStore.codePattern in ProfileAndFriendsView.swift). Rejecting anything
 // else here — rather than only trimming/uppercasing — keeps a malformed
@@ -83,9 +87,17 @@ async function roomID(first, second) {
 // ChatRoom.requireParticipant throws a plain Error("Forbidden") for a caller
 // who isn't in the room; without this, that propagates uncaught up to app.js's
 // catch-all and comes back as a generic 500 instead of a proper 403.
+//
+// sendMessage throws a separate Error("Blocked") when the other participant
+// has blocked the caller — translated here to a deliberately vague message
+// rather than "you have been blocked", the same discretion ordinary blocking
+// UX gives every other messaging app: the blocked person isn't told why.
 function roomForbiddenResponse(error) {
   if (error instanceof Error && error.message === "Forbidden") {
     return json({ error: "You are not a participant in this room." }, 403);
+  }
+  if (error instanceof Error && error.message === "Blocked") {
+    return json({ error: "Message could not be sent." }, 403);
   }
   return null;
 }
@@ -327,6 +339,56 @@ export async function handleChat(url, request, env) {
       if (forbidden) return forbidden;
       throw error;
     }
+  }
+
+  // Blocks the other participant in this 1:1 room — from that point on,
+  // sendMessage rejects anything they try to send here (see chat-room.js).
+  // Idempotent, like initialize elsewhere: blocking twice is a no-op, not
+  // an error.
+  const blockMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/block$/.exec(url.pathname);
+  if (blockMatch && request.method === "POST") {
+    return roomResponse(env.CHAT_ROOM.getByName(blockMatch[1]).blockOtherParticipant(key));
+  }
+
+  const unblockMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/unblock$/.exec(url.pathname);
+  if (unblockMatch && request.method === "POST") {
+    return roomResponse(env.CHAT_ROOM.getByName(unblockMatch[1]).unblockOtherParticipant(key));
+  }
+
+  // { blockedByMe, blockedByOther } — lets the client show the right
+  // "ブロックする"/"ブロック解除する" label and decide whether to even
+  // attempt a send, rather than only ever discovering a block from a
+  // failed message.
+  const blockStatusMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/block-status$/.exec(url.pathname);
+  if (blockStatusMatch && request.method === "GET") {
+    return roomResponse(env.CHAT_ROOM.getByName(blockStatusMatch[1]).blockStatus(key));
+  }
+
+  // Records a report for manual review — there's no in-app moderation
+  // queue or admin role yet, so this is written to STUDIQUO_DATA under a
+  // listable prefix (`report:...`) rather than into the room's own
+  // Durable Object storage, which has no external inspection tool at all.
+  // Verifying the reporter is an actual room participant (not just anyone
+  // with a valid token) still goes through the room itself.
+  const reportMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/messages\/(\d+)\/report$/.exec(url.pathname);
+  if (reportMatch && request.method === "POST") {
+    const allowed = await checkRateLimit(env, env.RATE_LIMIT_CHAT_REPORT, "chat-report", key, REPORT_LIMIT_PER_MINUTE);
+    if (!allowed) return json({ error: "Too many reports. Please slow down." }, 429);
+    const messageID = Number(reportMatch[2]);
+    const body = await readBody(request);
+    const reason = String(body?.reason ?? "").trim().slice(0, MAX_REPORT_REASON_LENGTH);
+    try {
+      await env.CHAT_ROOM.getByName(reportMatch[1]).requireParticipant(key);
+    } catch (error) {
+      const forbidden = roomForbiddenResponse(error);
+      if (forbidden) return forbidden;
+      throw error;
+    }
+    const reportKey = `report:chat:${Date.now()}:${crypto.randomUUID()}`;
+    await env.STUDIQUO_DATA.put(reportKey, JSON.stringify({
+      roomID: reportMatch[1], messageID, reporterKey: key, reason, createdAt: Date.now(),
+    }));
+    return json({ status: "reported" });
   }
 
   return json({ error: "Not found" }, 404);

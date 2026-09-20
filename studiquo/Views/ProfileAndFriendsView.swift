@@ -153,6 +153,12 @@ final class FriendStore: ObservableObject {
     @Published var activeFriendID: UUID?
     @Published var myCode: String
     @Published var errorMessage = ""
+    /// Room ids (not persisted — the server is the source of truth, and this
+    /// is only ever populated on demand when a chat screen asks) that *this
+    /// user* has blocked the other participant in. Doesn't track
+    /// `blockedByOther`; nothing in the UI currently needs that beyond what
+    /// a failed send already surfaces.
+    @Published var blockedByMeRoomIDs: Set<String> = []
     private let client: FriendChatClient
     private let defaults: UserDefaults
     private let friendsKey = "studiquoFriends"
@@ -595,6 +601,59 @@ final class FriendStore: ObservableObject {
                     messages[revertIndex].isCanceled = false
                 }
                 errorMessage = "メッセージを取り消せませんでした。もう一度お試しください。"
+            }
+        }
+    }
+
+    /// Refreshes whether this user currently has `friend` blocked, so the
+    /// chat screen can show the right "ブロックする"/"ブロック解除する"
+    /// label without waiting for a block/unblock action to find out.
+    func refreshBlockStatus(for friend: FriendRecord) async {
+        guard let roomID = friends.first(where: { $0.id == friend.id })?.roomID else { return }
+        guard let status = try? await client.blockStatus(roomID: roomID) else { return }
+        if status.blockedByMe {
+            blockedByMeRoomIDs.insert(roomID)
+        } else {
+            blockedByMeRoomIDs.remove(roomID)
+        }
+    }
+
+    func block(_ friend: FriendRecord) {
+        guard let roomID = friends.first(where: { $0.id == friend.id })?.roomID else { return }
+        Task {
+            do {
+                _ = try await client.block(roomID: roomID)
+                blockedByMeRoomIDs.insert(roomID)
+            } catch {
+                errorMessage = "ブロックできませんでした。もう一度お試しください。"
+            }
+        }
+    }
+
+    func unblock(_ friend: FriendRecord) {
+        guard let roomID = friends.first(where: { $0.id == friend.id })?.roomID else { return }
+        Task {
+            do {
+                _ = try await client.unblock(roomID: roomID)
+                blockedByMeRoomIDs.remove(roomID)
+            } catch {
+                errorMessage = "ブロックを解除できませんでした。もう一度お試しください。"
+            }
+        }
+    }
+
+    /// Records a report for manual review — there is no in-app moderation
+    /// queue yet (see `FriendChatService.report`'s own doc comment), so this
+    /// doesn't hide the message or otherwise change what either side sees;
+    /// it only tells the server to persist it somewhere reviewable.
+    func report(_ message: FriendMessage, reason: String) {
+        guard let roomID = friends.first(where: { $0.id == message.friendID })?.roomID,
+              let serverID = message.serverID else { return }
+        Task {
+            do {
+                _ = try await client.report(roomID: roomID, messageID: serverID, reason: reason)
+            } catch {
+                errorMessage = "通報を送信できませんでした。もう一度お試しください。"
             }
         }
     }
@@ -1099,6 +1158,8 @@ struct FriendChatView: View {
     @State private var showsCameraScanner = false
     @State private var partialCopyText: PartialCopyText?
     @State private var isAttachingAppMaterial = false
+    @State private var showsBlockConfirmation = false
+    @State private var reportingMessage: FriendMessage?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1254,6 +1315,35 @@ struct FriendChatView: View {
         }
         .navigationTitle(currentFriend.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    if store.blockedByMeRoomIDs.contains(currentFriend.roomID ?? "") {
+                        Button("ブロックを解除する") { store.unblock(currentFriend) }
+                    } else {
+                        Button("ブロックする", role: .destructive) { showsBlockConfirmation = true }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
+        .confirmationDialog(
+            "\(currentFriend.name)さんをブロックしますか?",
+            isPresented: $showsBlockConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("ブロックする", role: .destructive) { store.block(currentFriend) }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("ブロックすると、相手からのメッセージが届かなくなります。相手には通知されません。")
+        }
+        .sheet(item: $reportingMessage) { message in
+            ReportMessageSheet(onSubmit: { reason in
+                store.report(message, reason: reason)
+                reportingMessage = nil
+            }, onCancel: { reportingMessage = nil })
+        }
         .background(Color(red: 0.84, green: 0.94, blue: 1.0))
         .dropDestination(for: String.self) { items, _ in
             guard let value = items.first, isPaneSwitchDrop(value) else { return false }
@@ -1278,6 +1368,7 @@ struct FriendChatView: View {
             // longer matches "legacy" there's nothing left to repair anyway.
             await store.repairLegacyAttachments(for: friend, resolve: resolveAppAttachment)
             await store.reconcileLegacyAttachments(for: friend)
+            await store.refreshBlockStatus(for: friend)
             while !Task.isCancelled {
                 await store.refreshMessages(for: friend)
                 try? await Task.sleep(for: .seconds(2))
@@ -1564,6 +1655,13 @@ struct FriendChatView: View {
                                 } label: {
                                     cancelActionLabel(for: message)
                                 }
+                            } else {
+                                Divider()
+                                Button(role: .destructive) {
+                                    reportingMessage = message
+                                } label: {
+                                    Label("通報する", systemImage: "flag")
+                                }
                             }
                         }
                 }
@@ -1716,6 +1814,40 @@ private enum FriendChatRow: Identifiable {
 private struct PartialCopyText: Identifiable {
     let id = UUID()
     let text: String
+}
+
+/// A short reason for reporting a message — there is no in-app moderation
+/// queue yet (see `FriendChatService.report`'s doc comment), so this is
+/// purely descriptive text for whoever reviews the report later, not a
+/// category picker tied to any automated handling.
+private struct ReportMessageSheet: View {
+    let onSubmit: (String) -> Void
+    let onCancel: () -> Void
+    @State private var reason = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("理由(任意)", text: $reason, axis: .vertical)
+                        .lineLimit(3...6)
+                } footer: {
+                    Text("通報の内容は運営側の確認用に記録されます。相手には通知されません。")
+                }
+            }
+            .navigationTitle("通報する")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("キャンセル", action: onCancel)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("送信") { onSubmit(reason.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
 }
 
 struct FriendMessageAttachment: Identifiable, Hashable, Codable {

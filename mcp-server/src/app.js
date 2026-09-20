@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import * as z from "zod/v4";
 import { handleAI } from "./ai.js";
+import { handleDocumentCollab } from "./document-collab.js";
+import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys } from "./passkeys.js";
 import { handleChat } from "./chat.js";
 import { isRevoked, revoke } from "./revocation.js";
@@ -204,6 +206,9 @@ export default {
       if (url.pathname === "/health") return json({ ok: true, service: "studiquo-mcp" });
       if (url.pathname === "/.well-known/apple-app-site-association") return associationFile();
 
+      const legal = handleLegal(url);
+      if (legal) return legal;
+
       const passkeys = await handlePasskeys(url, request, env);
       if (passkeys) return passkeys;
       const chat = await handleChat(url, request, env);
@@ -277,6 +282,9 @@ export default {
       // has ever run a sync.
       const ai = await handleAI(url, request, env, key, ctx);
       if (ai) return ai;
+
+      const documentCollab = await handleDocumentCollab(url, request, env, key);
+      if (documentCollab) return documentCollab;
 
       return json({ error: "Not found" }, 404);
     }

@@ -39,6 +39,9 @@ enum FriendChatService {
     struct AttachmentUploadResult: Codable { let id: String }
     struct CancelMessageResult: Codable { let status: String }
     struct EditMessageResult: Codable { let status: String }
+    struct BlockResult: Codable { let status: String }
+    struct BlockStatus: Codable { let blockedByMe: Bool; let blockedByOther: Bool }
+    struct ReportResult: Codable { let status: String }
     struct RateLimitedError: Error {}
     /// Carries the server's own `{"error": "..."}` message through to the
     /// caller instead of collapsing every non-2xx response into the same
@@ -128,6 +131,28 @@ enum FriendChatService {
         try await request(path: "api/chat/rooms/\(roomID)/messages/lookup", method: "POST", body: ["ids": ids])
     }
 
+    /// Blocks the other participant in this room — from then on, the server
+    /// rejects anything they try to send here, without telling them why.
+    static func block(roomID: String) async throws -> BlockResult {
+        try await request(path: "api/chat/rooms/\(roomID)/block", method: "POST", body: Optional<String>.none)
+    }
+
+    static func unblock(roomID: String) async throws -> BlockResult {
+        try await request(path: "api/chat/rooms/\(roomID)/unblock", method: "POST", body: Optional<String>.none)
+    }
+
+    static func blockStatus(roomID: String) async throws -> BlockStatus {
+        try await request(path: "api/chat/rooms/\(roomID)/block-status", method: "GET", body: Optional<String>.none)
+    }
+
+    /// Records a report for manual review — there is no in-app moderation
+    /// queue yet, so this only tells the server to persist the report
+    /// somewhere the developer can look at later; it doesn't hide the
+    /// message or notify anyone automatically.
+    static func report(roomID: String, messageID: Int, reason: String) async throws -> ReportResult {
+        try await request(path: "api/chat/rooms/\(roomID)/messages/\(messageID)/report", method: "POST", body: ["reason": reason])
+    }
+
     /// Uploads an attachment's actual bytes to the room, so the other
     /// participant — who has no access to the sender's local filesystem or
     /// app database — can retrieve them too.
@@ -197,6 +222,10 @@ protocol FriendChatClient {
     func messages(roomID: String, ids: [Int]) async throws -> [FriendChatService.Message]
     func uploadAttachment(roomID: String, contentType: String, data: Data) async throws -> FriendChatService.AttachmentUploadResult
     func downloadAttachment(roomID: String, id: String) async throws -> Data
+    func block(roomID: String) async throws -> FriendChatService.BlockResult
+    func unblock(roomID: String) async throws -> FriendChatService.BlockResult
+    func blockStatus(roomID: String) async throws -> FriendChatService.BlockStatus
+    func report(roomID: String, messageID: Int, reason: String) async throws -> FriendChatService.ReportResult
 }
 
 struct LiveFriendChatClient: FriendChatClient {
@@ -254,5 +283,21 @@ struct LiveFriendChatClient: FriendChatClient {
 
     func downloadAttachment(roomID: String, id: String) async throws -> Data {
         try await FriendChatService.downloadAttachment(roomID: roomID, id: id)
+    }
+
+    func block(roomID: String) async throws -> FriendChatService.BlockResult {
+        try await FriendChatService.block(roomID: roomID)
+    }
+
+    func unblock(roomID: String) async throws -> FriendChatService.BlockResult {
+        try await FriendChatService.unblock(roomID: roomID)
+    }
+
+    func blockStatus(roomID: String) async throws -> FriendChatService.BlockStatus {
+        try await FriendChatService.blockStatus(roomID: roomID)
+    }
+
+    func report(roomID: String, messageID: Int, reason: String) async throws -> FriendChatService.ReportResult {
+        try await FriendChatService.report(roomID: roomID, messageID: messageID, reason: reason)
     }
 }

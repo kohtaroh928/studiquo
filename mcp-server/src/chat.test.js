@@ -19,21 +19,48 @@ function fakeChatRoomBinding() {
   const initializeCalls = { count: 0 };
   let nextAttachmentId = 1;
   function room(name) {
-    if (!rooms.has(name)) rooms.set(name, { participants: new Set(), messages: [], attachments: new Map() });
+    if (!rooms.has(name)) rooms.set(name, { participants: new Set(), messages: [], attachments: new Map(), blocks: new Set() });
     return rooms.get(name);
   }
   return {
     initializeCalls,
     getByName(name) {
       const state = room(name);
+      const other = userKey => [...state.participants].find(candidate => candidate !== userKey) ?? null;
       return {
         async initialize(_roomID, participants) {
           initializeCalls.count += 1;
           if (state.participants.size > 0) return;
           for (const key of participants.slice(0, 2)) state.participants.add(key);
         },
+        // Mirrors chat-room.js's real requireParticipant: throws for a
+        // non-participant, otherwise resolves with nothing meaningful — a
+        // pure access-control check, not a data read.
+        async requireParticipant(userKey) {
+          if (!state.participants.has(userKey)) throw new Error("Forbidden");
+        },
+        async blockOtherParticipant(userKey) {
+          if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          state.blocks.add(userKey);
+          return { status: "blocked" };
+        },
+        async unblockOtherParticipant(userKey) {
+          if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          state.blocks.delete(userKey);
+          return { status: "unblocked" };
+        },
+        async blockStatus(userKey) {
+          if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          const theOther = other(userKey);
+          return {
+            blockedByMe: state.blocks.has(userKey),
+            blockedByOther: theOther ? state.blocks.has(theOther) : false,
+          };
+        },
         async sendMessage(userKey, text, clientMessageID = null) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          const theOther = other(userKey);
+          if (theOther && state.blocks.has(theOther)) throw new Error("Blocked");
           const message = { id: state.messages.length + 1, text, sentAt: Date.now(), isMine: true, clientMessageID, isCanceled: false };
           state.messages.push({ ...message, senderKey: userKey });
           return message;
@@ -286,6 +313,7 @@ function environment() {
     RATE_LIMIT_CHAT_FRIEND_ADD: fakeCloudflareLimiter(),
     RATE_LIMIT_CHAT_MESSAGE: fakeCloudflareLimiter(30),
     RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD: fakeCloudflareLimiter(10),
+    RATE_LIMIT_CHAT_REPORT: fakeCloudflareLimiter(5),
     _kv: values,
   };
 }
@@ -388,6 +416,28 @@ async function readMessages(env, token, roomID) {
 async function readMessagesWithAfter(env, token, roomID, afterRaw) {
   const path = `/api/chat/rooms/${roomID}/messages?after=${encodeURIComponent(afterRaw)}`;
   return worker.fetch(request(path, { token }), env, noopCtx);
+}
+
+async function blockOtherParticipant(env, token, roomID) {
+  return worker.fetch(request(`/api/chat/rooms/${roomID}/block`, { method: "POST", token }), env, noopCtx);
+}
+
+async function unblockOtherParticipant(env, token, roomID) {
+  return worker.fetch(request(`/api/chat/rooms/${roomID}/unblock`, { method: "POST", token }), env, noopCtx);
+}
+
+async function blockStatus(env, token, roomID) {
+  const response = await worker.fetch(request(`/api/chat/rooms/${roomID}/block-status`, { token }), env, noopCtx);
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+async function reportMessage(env, token, roomID, messageID, reason) {
+  return worker.fetch(
+    request(`/api/chat/rooms/${roomID}/messages/${messageID}/report`, { method: "POST", token, body: { reason } }),
+    env,
+    noopCtx
+  );
 }
 
 async function uploadAttachment(env, token, roomID, contentType, data) {
@@ -1487,4 +1537,141 @@ test("a well-formed but unregistered code still reports not-found, unaffected by
 
   const response = await addFriend(env, aliceToken, "NOSUCH9");
   assert.equal(response.status, 404);
+});
+
+// Regression coverage for "no way to stop an unwanted friend from messaging
+// you": blocking must actually be enforced server-side (any client can be
+// modified to ignore a purely client-side block), and it must not tell the
+// blocked person why their message failed.
+
+test("blocking the other participant prevents them from sending, but not the blocker", async () => {
+  const env = environment();
+  const aliceToken = freshToken("b1");
+  const bobToken = freshToken("b2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+
+  const blockResponse = await blockOtherParticipant(env, aliceToken, accepted.roomID);
+  assert.equal(blockResponse.status, 200);
+  assert.deepEqual(await blockResponse.json(), { status: "blocked" });
+
+  const blockedSend = await sendMessage(env, bobToken, accepted.roomID, "let me back in");
+  assert.equal(blockedSend.status, 403);
+  // Deliberately vague — must not reveal "you have been blocked" to the
+  // blocked person.
+  assert.doesNotMatch((await blockedSend.json()).error.toLowerCase(), /block/);
+
+  const stillWorks = await sendMessage(env, aliceToken, accepted.roomID, "I can still talk");
+  assert.equal(stillWorks.status, 200);
+});
+
+test("unblocking restores the other participant's ability to send", async () => {
+  const env = environment();
+  const aliceToken = freshToken("b3");
+  const bobToken = freshToken("b4");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+
+  await blockOtherParticipant(env, aliceToken, accepted.roomID);
+  const unblockResponse = await unblockOtherParticipant(env, aliceToken, accepted.roomID);
+  assert.equal(unblockResponse.status, 200);
+  assert.deepEqual(await unblockResponse.json(), { status: "unblocked" });
+
+  const sendAfterUnblock = await sendMessage(env, bobToken, accepted.roomID, "back!");
+  assert.equal(sendAfterUnblock.status, 200);
+});
+
+test("block-status reports both directions correctly for each side", async () => {
+  const env = environment();
+  const aliceToken = freshToken("b5");
+  const bobToken = freshToken("b6");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+
+  await blockOtherParticipant(env, aliceToken, accepted.roomID);
+
+  assert.deepEqual(await blockStatus(env, aliceToken, accepted.roomID), { blockedByMe: true, blockedByOther: false });
+  assert.deepEqual(await blockStatus(env, bobToken, accepted.roomID), { blockedByMe: false, blockedByOther: true });
+});
+
+test("someone outside the friendship cannot block, unblock, or read block-status in the room", async () => {
+  const env = environment();
+  const aliceToken = freshToken("b7");
+  const bobToken = freshToken("b8");
+  const eveToken = freshToken("b9");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await registerUser(env, eveToken, "Eve");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+
+  assert.equal((await blockOtherParticipant(env, eveToken, accepted.roomID)).status, 403);
+  assert.equal((await unblockOtherParticipant(env, eveToken, accepted.roomID)).status, 403);
+  assert.equal((await worker.fetch(request(`/api/chat/rooms/${accepted.roomID}/block-status`, { token: eveToken }), env, noopCtx)).status, 403);
+});
+
+// Regression coverage for "no way to flag an abusive message": a report
+// must be persisted somewhere reviewable (there's no in-app moderation
+// queue yet), and only an actual room participant can file one.
+
+test("a participant can report a message, and it is recorded in storage for manual review", async () => {
+  const env = environment();
+  const aliceToken = freshToken("r1");
+  const bobToken = freshToken("r2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const sent = await (await sendMessage(env, bobToken, accepted.roomID, "何か不適切な内容")).json();
+
+  const response = await reportMessage(env, aliceToken, accepted.roomID, sent.id, "スパムです");
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { status: "reported" });
+
+  const reportKeys = [...env._kv.keys()].filter(k => k.startsWith("report:chat:"));
+  assert.equal(reportKeys.length, 1);
+  const stored = JSON.parse(env._kv.get(reportKeys[0]));
+  assert.equal(stored.roomID, accepted.roomID);
+  assert.equal(stored.messageID, sent.id);
+  assert.equal(stored.reason, "スパムです");
+});
+
+test("someone outside the friendship cannot file a report in the room", async () => {
+  const env = environment();
+  const aliceToken = freshToken("r3");
+  const bobToken = freshToken("r4");
+  const eveToken = freshToken("r5");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await registerUser(env, eveToken, "Eve");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const sent = await (await sendMessage(env, bobToken, accepted.roomID, "hi")).json();
+
+  const response = await reportMessage(env, eveToken, accepted.roomID, sent.id, "not my business");
+  assert.equal(response.status, 403);
+});
+
+test("POST /api/chat/rooms/:id/messages/:id/report allows up to 5 per minute, then 429s", async () => {
+  const env = environment();
+  const aliceToken = freshToken("r6");
+  const bobToken = freshToken("r7");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const sent = await (await sendMessage(env, bobToken, accepted.roomID, "hi")).json();
+
+  let lastStatus = 200;
+  for (let i = 0; i < 6; i += 1) {
+    const response = await reportMessage(env, aliceToken, accepted.roomID, sent.id, `reason ${i}`);
+    lastStatus = response.status;
+  }
+  assert.equal(lastStatus, 429);
 });
