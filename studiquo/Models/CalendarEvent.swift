@@ -30,6 +30,14 @@ final class CalendarEvent {
     /// `reminderMinutesBefore` is kept alongside it, in step, for anything
     /// still reading the old field. `nil` means no reminder.
     var reminderDate: Date?
+    /// Groups every session an `AIStudyPlanService` run created together, so
+    /// they can be found again to delete or regenerate as one plan — `nil`
+    /// for an event that isn't part of an AI-generated plan.
+    var planID: UUID?
+    /// The `id` of the `CalendarEvent` (kind `.test`) this study session was
+    /// planned for, so sessions for a given test can be found later. `nil`
+    /// outside a plan.
+    var linkedTestEventID: UUID?
 
     init(title: String, startDate: Date, endDate: Date, kind: CalendarEventKind, notes: String = "") {
         self.title = title
@@ -123,6 +131,10 @@ enum CalendarEventKind: String, CaseIterable, Identifiable {
     case test
     case classLesson
     case other
+    /// An AI-generated study-plan session (`AIStudyPlanService`) — kept
+    /// distinct from `.other` so it renders with its own icon/tint instead
+    /// of blending into generic events.
+    case studySession
 
     var id: String { rawValue }
 
@@ -131,6 +143,7 @@ enum CalendarEventKind: String, CaseIterable, Identifiable {
         case .test: L("テスト")
         case .classLesson: L("授業")
         case .other: L("その他")
+        case .studySession: L("学習セッション")
         }
     }
 
@@ -139,6 +152,7 @@ enum CalendarEventKind: String, CaseIterable, Identifiable {
         case .test: "pencil.and.list.clipboard"
         case .classLesson: "graduationcap.fill"
         case .other: "calendar.badge.clock"
+        case .studySession: "brain.head.profile"
         }
     }
 }

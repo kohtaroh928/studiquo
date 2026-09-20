@@ -682,6 +682,7 @@ private struct AppSettingsView: View {
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = true
     @State private var showsAIDataDisclosure = false
+    @State private var showsPrivacyPolicy = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -727,6 +728,7 @@ private struct AppSettingsView: View {
 
                 Section {
                     Button("AI機能とデータ送信について") { showsAIDataDisclosure = true }
+                    Button("プライバシーポリシーを見る") { showsPrivacyPolicy = true }
                 } header: {
                     Text("プライバシー")
                 } footer: {
@@ -737,6 +739,9 @@ private struct AppSettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showsAIDataDisclosure) {
                 AIDataDisclosureView(buttonTitle: "閉じる") { showsAIDataDisclosure = false }
+            }
+            .sheet(isPresented: $showsPrivacyPolicy) {
+                PrivacyPolicyView()
             }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -944,6 +949,7 @@ private struct AIDataDisclosureView: View {
                         disclosureRow(icon: "text.bubble", title: "AIトークでのやり取り", detail: "送った質問文と、開いているノートの文字起こし内容")
                         disclosureRow(icon: "camera.viewfinder", title: "添削(採点)機能", detail: "問題文や答案として切り抜いた画像・写真")
                         disclosureRow(icon: "calendar.badge.clock", title: "翌日復習機能", detail: "AIトークで送った質問文(内容によっては翌日に復習教材を自動作成します)")
+                        disclosureRow(icon: "brain.head.profile", title: "AI学習計画機能", detail: "選んだフォルダ内のノート・暗記デッキの内容や正答率、カレンダーの予定(テスト日を含む)")
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -989,6 +995,99 @@ private struct AIDataDisclosureView: View {
     }
 }
 
+/// The full privacy policy, shown in-app so it's readable without a network
+/// connection. Kept in sync by hand with `legal.js`'s `privacyPolicyHTML()`
+/// on the server — that hosted page is the same policy at a public URL, for
+/// App Store Connect / Sign in with Apple configuration and anyone sharing a
+/// link to it; this sheet is the same wording for someone already inside the
+/// app. Editing one without the other lets them drift out of sync.
+private struct PrivacyPolicyView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Text("studiquoは、利用者の情報をどのように取り扱うかを、このページで説明します。")
+                        .foregroundStyle(.secondary)
+
+                    policySection(title: "収集する情報とその利用目的") {
+                        bullet("アカウント情報", "サインイン方法に応じて、メールアドレス、Apple IDまたはGoogleアカウントの識別子、氏名の一部を取得します。本アプリの利用を可能にするために使用します。")
+                        bullet("プロフィール情報", "設定した表示名。友達機能・共同編集機能で他の利用者に表示するために使用します。")
+                        bullet("学習コンテンツ", "ノート、暗記帳、文書、スライドなど、利用者が作成したコンテンツ。本アプリの基本機能を提供するために保存します。")
+                        bullet("友達・チャット機能に関する情報", "友達コード、友達関係、チャットメッセージ、送信した添付ファイル。友達同士のコミュニケーション機能を提供するために保存します。")
+                        bullet("利用状況", "学習時間の記録、各機能の利用回数。学習記録機能・利用制限の管理のために使用します。")
+                        bullet("AI機能利用時に送信する内容", "AIトーク・添削・翌日復習・AI学習計画などの機能を使うと、質問文、ノートの内容、答案の画像などが外部のAIサービスに送信されます。詳しくは次の項目をご覧ください。")
+                    }
+
+                    policySection(title: "第三者サービスとの連携") {
+                        bullet("Sign in with Apple / Google Sign-In", "アカウント作成・ログインのために使用します。")
+                        bullet("Google Gemini", "AIトーク・添削・翌日復習・AI学習計画機能で、既定の生成AIとして使用します。これらの機能を使うたびに、上記の内容がGoogleに送信されます。")
+                        bullet("Anthropic Claude", "利用者が自分自身のAnthropic APIキーを設定した場合に限り、同様の内容がAnthropicにも送信されます。APIキーを設定しない限り、この連携は行われません。")
+                        bullet("Cloudflare", "本アプリのサーバーインフラとして使用しており、アカウント情報・学習コンテンツ・チャット内容の保管場所です。")
+                        bullet("Apple iCloud", "一部のデータは、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。")
+                    }
+
+                    policySection(title: "広告・トラッキングについて") {
+                        Text("本アプリは広告配信を行っておらず、第三者による行動トラッキングも行っていません。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "お子様のご利用について") {
+                        Text("本アプリは学生の学習を主な想定用途としていますが、現時点で年齢確認の仕組みはありません。保護者の方は、お子様の利用状況をご確認いただくことをお勧めします。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "データの削除について") {
+                        Text("現在、アプリ内からご自身でアカウントやデータを削除する機能は準備中です。削除をご希望の場合は、お問い合わせ先までご連絡ください。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "セキュリティについて") {
+                        Text("通信は暗号化された経路で行われます。一部のノートは、生体認証や暗号化によって保護する機能を利用できます。ただし、いかなる方法も完全な安全性を保証するものではありません。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "本ポリシーの変更について") {
+                        Text("本ポリシーの内容は、必要に応じて変更されることがあります。重要な変更がある場合は、アプリ内でお知らせします。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "お問い合わせ先") {
+                        // TODO before shipping: replace with a real, monitored
+                        // contact address — kept in sync with legal.js's own
+                        // CONTACT_EMAIL placeholder. Must not go live unfilled.
+                        Text("本ポリシーや保有する情報の取り扱いに関するご質問・ご請求は、【お問い合わせ用メールアドレスを記載してください】までご連絡ください。")
+                            .font(.subheadline)
+                    }
+                }
+                .padding(22)
+            }
+            .navigationTitle("プライバシーポリシー")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("閉じる") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func policySection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.headline)
+            content()
+        }
+    }
+
+    private func bullet(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.subheadline.weight(.semibold))
+            Text(detail).font(.subheadline).foregroundStyle(.secondary)
+        }
+    }
+}
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var allNotebooks: [Notebook]
@@ -1010,6 +1109,10 @@ struct ContentView: View {
     @State private var sortOption: NotebookSortOption = .updatedNewest
     @State private var searchText = ""
     @State private var isImportingFiles = false
+    @State private var docxImportFailed = false
+    @State private var docxImportReport: String?
+    @State private var pptxImportFailed = false
+    @State private var pptxImportReport: String?
     @State private var isImportingBackup = false
     /// A locked PDF waiting for its password before it can be imported.
     @State private var pdfPendingImport: URL?
@@ -1239,7 +1342,9 @@ struct ContentView: View {
                         : event.notes,
                     date: event.startDate,
                     icon: event.kind.icon,
-                    tint: event.kind == .test ? .red : (event.kind == .classLesson ? .blue : .orange),
+                    tint: event.kind == .test ? .red
+                        : (event.kind == .classLesson ? .blue
+                        : (event.kind == .studySession ? .purple : .orange)),
                     destination: .calendar,
                     university: nil
                 )
@@ -1404,6 +1509,7 @@ struct ContentView: View {
                     Divider()
                     TextDocumentView(document: selectedTextDocument, onHome: returnToHome)
                         .id(selectedTextDocument.persistentModelID)
+                        .environmentObject(friendStore)
                 }
             } else if let selectedSlideDeck {
                 VStack(spacing: 0) {
@@ -1508,6 +1614,20 @@ struct ContentView: View {
                 isImportingFiles = false
             }
         }
+        .alert("読み込めませんでした", isPresented: $docxImportFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("このファイルは開けませんでした。壊れているか、対応していない形式の可能性があります。")
+        }
+        .alert("一部の要素は変換できませんでした", isPresented: Binding(
+            get: { docxImportReport != nil },
+            set: { if !$0 { docxImportReport = nil } }
+        )) {
+            Button("OK", role: .cancel) { docxImportReport = nil }
+        } message: {
+            Text((docxImportReport ?? "") + "\nこれらは今のところ非対応のため、文書には含まれていません。")
+        }
+        .modifier(PptxImportAlerts(importFailed: $pptxImportFailed, importReport: $pptxImportReport))
         .fileImporter(isPresented: $isPickingPDFToUnlock, allowedContentTypes: [.pdf]) { result in
             guard case .success(let url) = result else { return }
             let didAccess = url.startAccessingSecurityScopedResource()
@@ -1802,6 +1922,9 @@ struct ContentView: View {
         .modifier(AIDataDisclosureGate())
         .task {
             await rebuildLibraryMetadataIfNeeded()
+        }
+        .task {
+            await migrateTextDocumentBlocksIfNeeded()
         }
         .onAppear {
             StudyTimeTracker.shared.configure(context: modelContext)
@@ -3399,6 +3522,14 @@ struct ContentView: View {
             importPDF(from: url)
             return
         }
+        if fileExtension == "docx" {
+            importDocx(from: url)
+            return
+        }
+        if fileExtension == "pptx" {
+            importPptx(from: url)
+            return
+        }
         if ["txt", "tsv", "csv"].contains(fileExtension), importFlashcards(from: url) {
             return
         }
@@ -3421,6 +3552,74 @@ struct ContentView: View {
         openNotebookTab(notebook)
         selectedNotebook = notebook
         libraryMode = .documents
+    }
+
+    /// Imports a `.docx` file as a `TextDocument` — per the design's own
+    /// decision that an imported docx is always a "文書", never a
+    /// handwritten notebook. Parsing happens entirely on-device
+    /// (`DocxReader`), so this works offline the same as the existing PDF
+    /// import above.
+    private func importDocx(from url: URL) {
+        guard let data = try? Data(contentsOf: url),
+              let result = try? DocxReader.read(from: data) else {
+            docxImportFailed = true
+            return
+        }
+        let document = TextDocument(title: url.deletingPathExtension().lastPathComponent)
+        document.folderName = selectedFolder ?? ""
+        for block in result.blocks { block.document = document }
+        document.blocks = result.blocks
+        // Both already reflect exactly what's in `blocks` — no migration
+        // needed, unlike a document that starts from the legacy flat
+        // `bodyData` representation (see `DocumentBlockMigration`).
+        document.isMigratedToBlocks = true
+        let wholeText = DocumentBlockText.joinedText(of: result.blocks.filter { $0.kind == .paragraph })
+        document.bodyData = DocumentBody.encode(wholeText)
+        document.plainText = wholeText.string
+        modelContext.insert(document)
+        try? modelContext.save()
+
+        if !result.droppedElementKinds.isEmpty {
+            // Never let unsupported content vanish without a trace — the
+            // design's own non-supported-element policy — shown as a
+            // grouped count ("画像 2件, 数式 1件") rather than the raw list.
+            let counts = Dictionary(grouping: result.droppedElementKinds, by: { $0 }).mapValues(\.count)
+            docxImportReport = counts.sorted(by: { $0.key < $1.key }).map { "\($0.key) \($0.value)件" }.joined(separator: "、")
+        }
+        openTextDocument(document)
+    }
+
+    /// Imports a `.pptx` file as a `SlideDeck` — the same design decision
+    /// `importDocx` makes for Word files, just for the slide-deck feature.
+    /// `PptxReader` returns slides whose elements already have fully
+    /// resolved absolute geometry (design step 8's own scope: it doesn't
+    /// try to reconstruct the source file's master/layout hierarchy into
+    /// this app's placeholder-inheritance system), so — like `importDocx` —
+    /// this skips `SlideBlockMigration` entirely rather than needing it.
+    private func importPptx(from url: URL) {
+        guard let data = try? Data(contentsOf: url),
+              let result = try? PptxReader.read(from: data) else {
+            pptxImportFailed = true
+            return
+        }
+        let deck = SlideDeck(title: url.deletingPathExtension().lastPathComponent)
+        deck.folderName = selectedFolder ?? ""
+        deck.aspectRawValue = result.aspect.rawValue
+        deck.master = SlideMaster.makeDefault()
+        deck.isMigratedToElements = true
+        for slide in result.slides {
+            slide.deck = deck
+            deck.addSlide(slide)
+        }
+        deck.renumberSlides()
+        modelContext.insert(deck)
+        try? modelContext.save()
+
+        if !result.droppedElementKinds.isEmpty {
+            let counts = Dictionary(grouping: result.droppedElementKinds, by: { $0 }).mapValues(\.count)
+            pptxImportReport = counts.sorted(by: { $0.key < $1.key }).map { "\($0.key) \($0.value)件" }.joined(separator: "、")
+        }
+        openSlideDeck(deck)
     }
 
     private func exportMCPSnapshot() -> URL? {
@@ -3950,6 +4149,24 @@ struct ContentView: View {
         notebookLibraryMetadataVersion = 1
     }
 
+    /// Runs once per launch: converts every `TextDocument` not yet on the
+    /// block-based model (see `DocumentBlockMigration`) in the background, so
+    /// a document a user never happens to open still ends up migrated rather
+    /// than staying on the legacy representation indefinitely. Opening a
+    /// document directly (`TextDocumentView.load()`) already migrates it on
+    /// the spot; this only catches the rest of the library.
+    private func migrateTextDocumentBlocksIfNeeded() async {
+        let pending = textDocuments.filter { !$0.isMigratedToBlocks }
+        guard !pending.isEmpty else { return }
+
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        for document in pending {
+            DocumentBlockMigration.migrateIfNeeded(document)
+            await Task.yield()
+        }
+        try? modelContext.save()
+    }
+
     private func cloneElement(_ source: PageElement) -> PageElement {
         let element = PageElement(
             kind: source.kind,
@@ -3997,6 +4214,34 @@ struct ContentView: View {
             }
             .draggable("notebook:\(notebookID(notebook))")
         }
+    }
+}
+
+/// Bundles both pptx-import alerts into one `.modifier(...)` call rather
+/// than two separate `.alert(...)`s on `ContentView`'s already very long
+/// top-level modifier chain — that chain hit Swift's type-checker
+/// complexity limit ("unable to type-check this expression in reasonable
+/// time") the moment these two were added directly, the same way the
+/// existing docx-import alerts already sit right below the chain's limit.
+private struct PptxImportAlerts: ViewModifier {
+    @Binding var importFailed: Bool
+    @Binding var importReport: String?
+
+    func body(content: Content) -> some View {
+        content
+            .alert("読み込めませんでした", isPresented: $importFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("このファイルは開けませんでした。壊れているか、対応していない形式の可能性があります。")
+            }
+            .alert("一部の要素は変換できませんでした", isPresented: Binding(
+                get: { importReport != nil },
+                set: { if !$0 { importReport = nil } }
+            )) {
+                Button("OK", role: .cancel) { importReport = nil }
+            } message: {
+                Text((importReport ?? "") + "\nこれらは今のところ非対応のため、スライドには含まれていません。")
+            }
     }
 }
 

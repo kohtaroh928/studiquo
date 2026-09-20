@@ -2930,6 +2930,12 @@ struct NoteEditorView: View {
     /// bubble and stays in the thread's history like any other reply.
     private static func markingReport(_ review: ProofReviewResult) -> String {
         var lines = ["【\(review.score) / \(review.maxScore)点】", "", review.verdict, ""]
+        // AI-generated grading can be wrong — a logically valid proof marked
+        // down, or a flawed one marked correct — so every report says so up
+        // front, not just once in a settings screen the student may never
+        // open, before the score itself might be taken at face value.
+        lines.append(L("※ この採点はAIによるものです。誤りを含むことがあるため、参考としてご利用ください。"))
+        lines.append("")
         lines.append(L("■ 採点内訳"))
         for item in review.criteria {
             lines.append("・\(item.name)　\(item.earnedPoints)/\(item.maxPoints)点")

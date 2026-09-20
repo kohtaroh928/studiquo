@@ -21,6 +21,9 @@ final class AppSchemaCloudKitCompatibilityTests: XCTestCase {
         FlashcardDeck.self, Flashcard.self, CalendarEvent.self, StudyActivity.self,
         AIChatThread.self, AIChatMessage.self,
         TextDocument.self, SlideDeck.self, Slide.self,
+        SlideMaster.self, SlideLayoutTemplate.self, SlidePlaceholder.self, SlideElement.self,
+        DocumentBlock.self, DocumentTableRow.self, DocumentTableCell.self,
+        DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
         AIReviewItem.self,
     ])
 
@@ -38,6 +41,34 @@ final class AppSchemaCloudKitCompatibilityTests: XCTestCase {
     /// full-schema one.
     func testAIReviewItemAndTextDocumentHaveAMutualInverseRelationship() throws {
         let schema = Schema([TextDocument.self, AIReviewItem.self])
+        let configuration = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
+        XCTAssertNoThrow(try ModelContainer(for: schema, configurations: configuration))
+    }
+
+    /// Same check for the block-based document structure added alongside
+    /// `TextDocument`: each of these has its own inverse back to
+    /// `TextDocument` (or, for `DocumentTableRow`/`DocumentTableCell`, back
+    /// to their own parent), and `DocumentBlock.tableRows` needs one too.
+    func testDocumentBlockStructureHasMutualInverseRelationships() throws {
+        let schema = Schema([
+            TextDocument.self,
+            DocumentBlock.self, DocumentTableRow.self, DocumentTableCell.self,
+            DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
+        ])
+        let configuration = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
+        XCTAssertNoThrow(try ModelContainer(for: schema, configurations: configuration))
+    }
+
+    /// Same check for the canvas-based slide structure (design steps 2/4):
+    /// `SlideDeck.master`, the master→layout→placeholder cascade, `Slide.elements`,
+    /// `SlidePlaceholder.sourceElements` (deliberately non-cascade — see its
+    /// doc comment), and `SlideElement`'s self-referencing group relationship
+    /// all need their own inverse.
+    func testSlideElementStructureHasMutualInverseRelationships() throws {
+        let schema = Schema([
+            SlideDeck.self, Slide.self,
+            SlideMaster.self, SlideLayoutTemplate.self, SlidePlaceholder.self, SlideElement.self,
+        ])
         let configuration = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
         XCTAssertNoThrow(try ModelContainer(for: schema, configurations: configuration))
     }

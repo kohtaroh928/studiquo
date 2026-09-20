@@ -32,6 +32,10 @@ export class ChatRoom extends DurableObject {
           uploaded_by TEXT NOT NULL,
           created_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS blocks (
+          blocker_key TEXT PRIMARY KEY,
+          blocked_at INTEGER NOT NULL
+        );
       `);
       // `client_message_id` was added after rooms already existed in
       // production — the CREATE TABLE above is a no-op for them, since it
@@ -65,6 +69,48 @@ export class ChatRoom extends DurableObject {
     if (row.length !== 1) throw new Error("Forbidden");
   }
 
+  // The other person in this 1:1 room — a room only ever has two
+  // participants, so "who blocked whom" never needs a target parameter,
+  // just "the other one."
+  otherParticipant(userKey) {
+    const row = this.ctx.storage.sql
+      .exec("SELECT user_key FROM participants WHERE user_key != ?", userKey)
+      .toArray()[0];
+    return row?.user_key ?? null;
+  }
+
+  isBlockedBy(blockerKey) {
+    const row = this.ctx.storage.sql.exec("SELECT 1 FROM blocks WHERE blocker_key = ?", blockerKey).toArray();
+    return row.length > 0;
+  }
+
+  async blockOtherParticipant(userKey) {
+    this.requireParticipant(userKey);
+    this.ctx.storage.sql.exec(
+      "INSERT OR REPLACE INTO blocks (blocker_key, blocked_at) VALUES (?, ?)", userKey, Date.now(),
+    );
+    return { status: "blocked" };
+  }
+
+  async unblockOtherParticipant(userKey) {
+    this.requireParticipant(userKey);
+    this.ctx.storage.sql.exec("DELETE FROM blocks WHERE blocker_key = ?", userKey);
+    return { status: "unblocked" };
+  }
+
+  // Both directions at once, so the client can show "ブロック中" vs
+  // "ブロック解除する" for the caller's own action, and separately decide
+  // whether to even try sending (see sendMessage's own check below) rather
+  // than surfacing that only as a failed send.
+  async blockStatus(userKey) {
+    this.requireParticipant(userKey);
+    const other = this.otherParticipant(userKey);
+    return {
+      blockedByMe: this.isBlockedBy(userKey),
+      blockedByOther: other ? this.isBlockedBy(other) : false,
+    };
+  }
+
   // `clientMessageID` is an opaque, client-generated token (nullable) that
   // round-trips back in this same message's row on every future
   // `listMessages` call — it's what lets the sender's own client reconcile
@@ -73,6 +119,11 @@ export class ChatRoom extends DurableObject {
   // two messages with identical text are in flight at once).
   async sendMessage(userKey, text, clientMessageID = null) {
     this.requireParticipant(userKey);
+    // A block is enforced from the blocker's side only — the sender isn't
+    // told they've been blocked (matches ordinary blocking semantics: no
+    // "you've been blocked" notice), just that sending silently fails.
+    const other = this.otherParticipant(userKey);
+    if (other && this.isBlockedBy(other)) throw new Error("Blocked");
     const sentAt = Date.now();
     const row = this.ctx.storage.sql.exec(
       "INSERT INTO messages (sender_key, text, sent_at, client_message_id) VALUES (?, ?, ?, ?) RETURNING id",

@@ -554,6 +554,94 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(sent.count, 1, "the network send itself can't actually be stopped — it still reaches the server")
     }
 
+    // MARK: Block / unblock / report
+
+    func testBlockCallsTheServerAndMarksTheRoomBlockedLocally() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        store.block(alice)
+        await waitUntil { await client.blockedByMeRoomsSnapshot().contains("room-a") }
+
+        XCTAssertTrue(store.blockedByMeRoomIDs.contains("room-a"))
+    }
+
+    func testUnblockCallsTheServerAndClearsTheLocalBlockedState() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+        store.blockedByMeRoomIDs = ["room-a"]
+        // Seeds the mock's own server-side state as genuinely blocked, so
+        // waiting on it clearing observes a real transition — starting from
+        // an already-empty set would make the wait below pass instantly,
+        // before unblock's async Task has actually run.
+        _ = try? await client.block(roomID: "room-a")
+
+        store.unblock(alice)
+        await waitUntil { await !client.blockedByMeRoomsSnapshot().contains("room-a") }
+
+        XCTAssertFalse(store.blockedByMeRoomIDs.contains("room-a"))
+    }
+
+    func testBlockSurfacesAnErrorWhenTheServerRejectsIt() async {
+        let client = MockFriendChatClient()
+        await client.setErrorToThrow(URLError(.notConnectedToInternet))
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        store.block(alice)
+        await waitUntil { store.errorMessage != "" }
+
+        XCTAssertFalse(store.blockedByMeRoomIDs.contains("room-a"), "a failed block must not be reflected locally")
+    }
+
+    func testRefreshBlockStatusReadsWhetherThisUserHasBlockedTheFriend() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+        _ = try? await client.block(roomID: "room-a") // simulate a block made from another device
+
+        await store.refreshBlockStatus(for: alice)
+
+        XCTAssertTrue(store.blockedByMeRoomIDs.contains("room-a"))
+    }
+
+    func testReportSendsTheMessagesServerIDAndReasonToTheCorrectRoom() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        let theirs = FriendMessage(id: UUID(), friendID: alice.id, text: "何か", sentAt: Date(), isMine: false, isCanceled: false, serverID: 7)
+        store.friends = [alice]
+        store.messages = [theirs]
+
+        store.report(theirs, reason: "スパム")
+        await waitUntil { await client.reportedMessagesSnapshot().count == 1 }
+
+        let reported = await client.reportedMessagesSnapshot()
+        XCTAssertEqual(reported.first?.roomID, "room-a")
+        XCTAssertEqual(reported.first?.messageID, 7)
+        XCTAssertEqual(reported.first?.reason, "スパム")
+    }
+
+    func testReportOfAMessageWithNoServerIDDoesNotCallTheServer() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        let notYetSynced = FriendMessage(id: UUID(), friendID: alice.id, text: "何か", sentAt: Date(), isMine: false, isCanceled: false)
+        store.friends = [alice]
+        store.messages = [notYetSynced]
+
+        store.report(notYetSynced, reason: "スパム")
+
+        let reported = await client.reportedMessagesSnapshot()
+        XCTAssertEqual(reported.count, 0)
+    }
+
     // Regression coverage for the actual point of server-side retraction:
     // the RECIPIENT (or any device that already fetched the message before
     // it was canceled) must see the retraction too, not just the sender.
@@ -1614,6 +1702,40 @@ private actor MockFriendChatClient: FriendChatClient {
             throw URLError(.badServerResponse)
         }
         return match.data
+    }
+
+    var blockedByMeRooms: Set<String> = []
+    var reportedMessages: [(roomID: String, messageID: Int, reason: String)] = []
+
+    func block(roomID: String) async throws -> FriendChatService.BlockResult {
+        if let errorToThrow { throw errorToThrow }
+        blockedByMeRooms.insert(roomID)
+        return .init(status: "blocked")
+    }
+
+    func unblock(roomID: String) async throws -> FriendChatService.BlockResult {
+        if let errorToThrow { throw errorToThrow }
+        blockedByMeRooms.remove(roomID)
+        return .init(status: "unblocked")
+    }
+
+    func blockStatus(roomID: String) async throws -> FriendChatService.BlockStatus {
+        if let errorToThrow { throw errorToThrow }
+        return .init(blockedByMe: blockedByMeRooms.contains(roomID), blockedByOther: false)
+    }
+
+    func report(roomID: String, messageID: Int, reason: String) async throws -> FriendChatService.ReportResult {
+        if let errorToThrow { throw errorToThrow }
+        reportedMessages.append((roomID: roomID, messageID: messageID, reason: reason))
+        return .init(status: "reported")
+    }
+
+    func blockedByMeRoomsSnapshot() -> Set<String> {
+        blockedByMeRooms
+    }
+
+    func reportedMessagesSnapshot() -> [(roomID: String, messageID: Int, reason: String)] {
+        reportedMessages
     }
 
     func setMessages(_ messages: [String: [FriendChatService.Message]]) {

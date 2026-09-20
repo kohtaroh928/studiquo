@@ -2,14 +2,17 @@ import SwiftUI
 import SwiftData
 import UIKit
 import PhotosUI
+import UniformTypeIdentifiers
 
 /// The slide editor: a thumbnail rail, a live slide canvas, an inspector for
 /// layout/theme/notes, a full-screen presentation mode, and PDF export.
 ///
-/// Editing happens through the layout's placeholders rather than on a free
-/// canvas, which is how PowerPoint is built: the layout owns the geometry, the
-/// slide owns the words. Restyling a deck is then a theme change, and changing
-/// a slide's arrangement is one tap instead of dragging boxes around.
+/// Slides are a real canvas (`SlideElementsLayer`) of freely positioned
+/// `SlideElement`s — text boxes, images, shapes — each optionally linked to
+/// a placeholder in the deck's `master` for "fix the layout once, every
+/// slide using it updates" (design steps 2 and 4). Every slide's content
+/// still starts out from `SlideBlockMigration`, which converts the app's
+/// older fixed-placeholder fields the first time a deck is opened.
 struct SlideDeckView: View {
     @Bindable var deck: SlideDeck
     var onHome: () -> Void = {}
@@ -17,6 +20,7 @@ struct SlideDeckView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedSlideID: PersistentIdentifier?
+    @State private var selectedElementIDs: Set<ObjectIdentifier> = []
     @State private var isPresenting = false
     @State private var showsNotes = true
     @State private var isRenaming = false
@@ -24,6 +28,9 @@ struct SlideDeckView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var pdfDocument: PDFExportDocument?
     @State private var showsPDFExporter = false
+    @State private var pptxDocument: PptxExportDocument?
+    @State private var showsPptxExporter = false
+    @State private var showsMasterEditor = false
 
     private var slides: [Slide] { deck.sortedSlides }
 
@@ -45,10 +52,16 @@ struct SlideDeckView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             if deck.sortedSlides.isEmpty { addSlide(layout: .titleSlide) }
+            SlideBlockMigration.migrateIfNeeded(deck)
             if selectedSlideID == nil { selectedSlideID = slides.first?.persistentModelID }
         }
         .fullScreenCover(isPresented: $isPresenting) {
             SlidePresentationView(deck: deck, startAt: selectedSlide?.order ?? 0)
+        }
+        .sheet(isPresented: $showsMasterEditor) {
+            if let master = deck.master {
+                SlideMasterEditorView(master: master)
+            }
         }
         .alert("スライド名を変更", isPresented: $isRenaming) {
             TextField("スライド名", text: $renameDraft)
@@ -62,10 +75,16 @@ struct SlideDeckView: View {
             guard let item else { return }
             Task { await attachImage(from: item) }
         }
+        .onChange(of: selectedSlideID) { _, _ in selectedElementIDs = [] }
         .modifier(PDFSaveModifier(
             isPresented: $showsPDFExporter,
             document: $pdfDocument,
             filename: "\(deck.title).pdf"
+        ))
+        .modifier(PptxSaveModifier(
+            isPresented: $showsPptxExporter,
+            document: $pptxDocument,
+            filename: "\(deck.title).pptx"
         ))
     }
 
@@ -112,6 +131,12 @@ struct SlideDeckView: View {
                 Divider()
                 Toggle("発表者ノートを表示", isOn: $showsNotes)
                 Button("PDFで書き出す", systemImage: "square.and.arrow.down", action: exportPDF)
+                Button("PowerPointで書き出す(.pptx)", systemImage: "square.and.arrow.down", action: exportPptx)
+                Divider()
+                Button("マスタースライドを編集", systemImage: "rectangle.3.group") {
+                    if deck.master == nil { deck.master = SlideMaster.makeDefault() }
+                    showsMasterEditor = true
+                }
             } label: {
                 Image(systemName: "paintbrush")
             }
@@ -142,10 +167,9 @@ struct SlideDeckView: View {
                                     .font(.caption2.monospacedDigit())
                                     .foregroundStyle(.secondary)
                                     .frame(width: 16)
-                                SlideCanvas(
-                                    slide: slide, theme: deck.theme, aspect: deck.aspect, isEditable: false,
-                                    fontFamily: deck.fontFamily, textScale: deck.textScale,
-                                    titleIsBold: deck.titleIsBold, bodyIsItalic: deck.bodyIsItalic
+                                SlideElementsLayer(
+                                    slide: slide, slideSize: CGSize(width: 132, height: 132 / deck.aspect.ratio),
+                                    isEditable: false, onChange: {}
                                 )
                                     .frame(width: 132, height: 132 / deck.aspect.ratio)
                                     .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -199,18 +223,29 @@ struct SlideDeckView: View {
             VStack(spacing: 0) {
                 layoutBar(for: slide)
                 Divider()
+                canvasToolBar(for: slide)
+                Divider()
 
                 GeometryReader { geometry in
                     let width = min(
                         geometry.size.width - 48,
                         (geometry.size.height - 48) * deck.aspect.ratio
                     )
-                    SlideCanvas(
-                        slide: slide, theme: deck.theme, aspect: deck.aspect, isEditable: true,
-                        fontFamily: deck.fontFamily, textScale: deck.textScale,
-                        titleIsBold: deck.titleIsBold, bodyIsItalic: deck.bodyIsItalic
+                    // Rendered directly at its actual on-screen size, not a
+                    // fixed internal resolution scaled down afterward —
+                    // every element's geometry is stored as a 0-1 fraction
+                    // of the canvas already, so this alone keeps everything
+                    // proportionally correct. It also keeps the drag/resize/
+                    // rotate gesture math (which reads real on-screen touch
+                    // points) in the same coordinate space `slideSize` uses;
+                    // a `.scaleEffect` between them would desync the two.
+                    let displaySize = CGSize(width: max(200, width), height: max(200, width) / deck.aspect.ratio)
+                    SlideElementsLayer(
+                        slide: slide, slideSize: displaySize,
+                        selectedElementIDs: $selectedElementIDs,
+                        onChange: { deck.updatedAt = .now }
                     )
-                        .frame(width: max(200, width), height: max(200, width) / deck.aspect.ratio)
+                        .frame(width: displaySize.width, height: displaySize.height)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -249,7 +284,15 @@ struct SlideDeckView: View {
             Menu {
                 ForEach(SlideLayout.allCases) { layout in
                     Button {
-                        slide.layout = layout
+                        // The legacy field is kept in sync purely for this
+                        // button's own display (below) and as a fallback —
+                        // `changeLayout(to:)` is what actually re-links this
+                        // slide's `SlideElement`s (role-matched, so existing
+                        // content survives the switch — design step 5).
+                        slide.legacyLayout = layout
+                        if let newTemplate = deck.master?.sortedLayouts.first(where: { $0.name == layout.title }) {
+                            slide.changeLayout(to: newTemplate)
+                        }
                         deck.updatedAt = .now
                     } label: {
                         Label(layout.title, systemImage: layout.icon)
@@ -257,8 +300,8 @@ struct SlideDeckView: View {
                 }
             } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: slide.layout.icon)
-                    Text(slide.layout.title).font(.subheadline)
+                    Image(systemName: slide.legacyLayout.icon)
+                    Text(slide.legacyLayout.title).font(.subheadline)
                     Image(systemName: "chevron.down").font(.caption2)
                 }
             }
@@ -304,14 +347,33 @@ struct SlideDeckView: View {
 
             Divider().frame(height: 20)
 
-            if slide.layout.hasImage {
+            Menu {
+                ForEach(SlideTransitionKind.allCases) { kind in
+                    Button {
+                        slide.transition = kind
+                        deck.updatedAt = .now
+                    } label: {
+                        Label(kind.title, systemImage: slide.transition == kind ? "checkmark.circle.fill" : "circle")
+                    }
+                }
+            } label: {
+                Label("切り替え: \(slide.transition.title)", systemImage: "rectangle.stack.badge.play")
+                    .font(.subheadline)
+            }
+
+            Divider().frame(height: 20)
+
+            if slide.legacyLayout.hasImage {
                 PhotosPicker(selection: $photoItem, matching: .images) {
-                    Label(slide.imageData == nil ? "画像を選ぶ" : "画像を変更", systemImage: "photo")
+                    Label(slide.element(for: .image) == nil ? "画像を選ぶ" : "画像を変更", systemImage: "photo")
                         .font(.subheadline)
                 }
-                if slide.imageData != nil {
+                if slide.element(for: .image) != nil {
                     Button("画像を削除", role: .destructive) {
                         slide.imageData = nil
+                        if let element = slide.element(for: .image) {
+                            slide.elements?.removeAll { $0 === element }
+                        }
                         deck.updatedAt = .now
                     }
                     .font(.subheadline)
@@ -331,6 +393,181 @@ struct SlideDeckView: View {
         deck.updatedAt = .now
     }
 
+    /// Add-element buttons (always available) plus, once something's
+    /// selected, the multi-selection actions — align/distribute (2+),
+    /// group (2+), ungroup (a sole selected group), delete (1+). Design
+    /// step 4's "remaining piece": a real add-element toolbar and a
+    /// PowerPoint-style selection action bar instead of only the
+    /// per-element context menu.
+    private func canvasToolBar(for slide: Slide) -> some View {
+        HStack(spacing: 10) {
+            Menu {
+                Button("テキストボックス", systemImage: "textformat") { addElement(.text, to: slide) }
+                Button("四角形", systemImage: "rectangle") { addElement(.rectangle, to: slide) }
+                Button("楕円", systemImage: "circle") { addElement(.ellipse, to: slide) }
+                Button("線", systemImage: "line.diagonal") { addElement(.line, to: slide) }
+            } label: {
+                Label("要素を追加", systemImage: "plus.square.on.square").font(.subheadline)
+            }
+
+            if selectedElementIDs.count >= 2 {
+                Divider().frame(height: 20)
+
+                Menu {
+                    Button("左揃え", systemImage: "align.horizontal.left") { align(slide, .left) }
+                    Button("中央揃え(横)", systemImage: "align.horizontal.center") { align(slide, .centerHorizontal) }
+                    Button("右揃え", systemImage: "align.horizontal.right") { align(slide, .right) }
+                    Divider()
+                    Button("上揃え", systemImage: "align.vertical.top") { align(slide, .top) }
+                    Button("中央揃え(縦)", systemImage: "align.vertical.center") { align(slide, .centerVertical) }
+                    Button("下揃え", systemImage: "align.vertical.bottom") { align(slide, .bottom) }
+                    if selectedElementIDs.count >= 3 {
+                        Divider()
+                        Button("左右に整列", systemImage: "square.split.3x1") { distributeHorizontally(slide) }
+                        Button("上下に整列", systemImage: "square.split.1x3") { distributeVertically(slide) }
+                    }
+                } label: {
+                    Label("整列", systemImage: "align.horizontal.left").font(.subheadline)
+                }
+
+                Button { groupSelection(slide) } label: {
+                    Label("グループ化", systemImage: "square.on.square").font(.subheadline)
+                }
+            }
+
+            if selectedElementIDs.count == 1, let sole = selectedElements(slide).first, sole.kind == .group {
+                Button { ungroupSelection(slide, group: sole) } label: {
+                    Label("グループ解除", systemImage: "square.slash").font(.subheadline)
+                }
+            }
+
+            if !selectedElementIDs.isEmpty {
+                Button(role: .destructive) { deleteSelection(slide) } label: {
+                    Label("削除", systemImage: "trash").font(.subheadline)
+                }
+            }
+
+            Spacer()
+
+            if !selectedElementIDs.isEmpty {
+                Text("\(selectedElementIDs.count)個選択中")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .frame(height: 36)
+        .background(Color(.systemBackground))
+    }
+
+    private enum AlignKind { case left, centerHorizontal, right, top, centerVertical, bottom }
+
+    private func selectedElements(_ slide: Slide) -> [SlideElement] {
+        slide.sortedElements.filter { selectedElementIDs.contains($0.stableID) }
+    }
+
+    private func addElement(_ kind: SlideElementKind, to slide: Slide) {
+        let element = SlideElement(kind: kind, layerIndex: Double(slide.sortedElements.count))
+        element.overrideCenterX = 0.5
+        element.overrideCenterY = 0.5
+        switch kind {
+        case .text:
+            element.overrideWidth = 0.5
+            element.overrideHeight = 0.15
+            element.body = NSAttributedString(string: "テキスト", attributes: element.defaultTextAttributes())
+        case .line:
+            element.overrideWidth = 0.4
+            element.overrideHeight = 0.02
+        default:
+            element.overrideWidth = 0.3
+            element.overrideHeight = 0.3
+        }
+        slide.addElement(element)
+        deck.updatedAt = .now
+        selectedElementIDs = [element.stableID]
+        try? modelContext.save()
+    }
+
+    private func align(_ slide: Slide, _ kind: AlignKind) {
+        let elements = selectedElements(slide)
+        guard elements.count >= 2 else { return }
+        for element in elements { element.bakeInGeometryIfNeeded() }
+        let frames = elements.map {
+            CanvasElementGeometry.Frame(centerX: $0.centerX, centerY: $0.centerY, width: $0.width, height: $0.height)
+        }
+        switch kind {
+        case .left, .centerHorizontal, .right:
+            let alignment: CanvasElementGeometry.HorizontalAlignment = switch kind {
+            case .left: .left
+            case .right: .right
+            default: .center
+            }
+            let results = CanvasElementGeometry.aligned(frames, horizontally: alignment)
+            for (element, value) in zip(elements, results) { element.overrideCenterX = value }
+        case .top, .centerVertical, .bottom:
+            let alignment: CanvasElementGeometry.VerticalAlignment = switch kind {
+            case .top: .top
+            case .bottom: .bottom
+            default: .center
+            }
+            let results = CanvasElementGeometry.aligned(frames, vertically: alignment)
+            for (element, value) in zip(elements, results) { element.overrideCenterY = value }
+        }
+        deck.updatedAt = .now
+        try? modelContext.save()
+    }
+
+    private func distributeHorizontally(_ slide: Slide) {
+        let elements = selectedElements(slide)
+        guard elements.count >= 3 else { return }
+        for element in elements { element.bakeInGeometryIfNeeded() }
+        let frames = elements.map {
+            CanvasElementGeometry.Frame(centerX: $0.centerX, centerY: $0.centerY, width: $0.width, height: $0.height)
+        }
+        let results = CanvasElementGeometry.distributedHorizontally(frames)
+        for (element, value) in zip(elements, results) { element.overrideCenterX = value }
+        deck.updatedAt = .now
+        try? modelContext.save()
+    }
+
+    private func distributeVertically(_ slide: Slide) {
+        let elements = selectedElements(slide)
+        guard elements.count >= 3 else { return }
+        for element in elements { element.bakeInGeometryIfNeeded() }
+        let frames = elements.map {
+            CanvasElementGeometry.Frame(centerX: $0.centerX, centerY: $0.centerY, width: $0.width, height: $0.height)
+        }
+        let results = CanvasElementGeometry.distributedVertically(frames)
+        for (element, value) in zip(elements, results) { element.overrideCenterY = value }
+        deck.updatedAt = .now
+        try? modelContext.save()
+    }
+
+    private func groupSelection(_ slide: Slide) {
+        let elements = selectedElements(slide)
+        guard let group = slide.group(elements) else { return }
+        deck.updatedAt = .now
+        selectedElementIDs = [group.stableID]
+        try? modelContext.save()
+    }
+
+    private func ungroupSelection(_ slide: Slide, group: SlideElement) {
+        slide.ungroup(group)
+        deck.updatedAt = .now
+        selectedElementIDs = []
+        try? modelContext.save()
+    }
+
+    private func deleteSelection(_ slide: Slide) {
+        for element in selectedElements(slide) {
+            slide.elements?.removeAll { $0 === element }
+        }
+        deck.updatedAt = .now
+        selectedElementIDs = []
+        try? modelContext.save()
+    }
+
     // MARK: Slide operations
 
     private func addSlide(layout: SlideLayout) {
@@ -340,12 +577,19 @@ struct SlideDeckView: View {
         deck.renumberSlides()
         deck.updatedAt = .now
         modelContext.insert(slide)
+        // `migrateIfNeeded` is safe (and cheap) to call again here — its
+        // per-slide `slide.layout == nil` check means it only ever touches
+        // this brand-new slide, not the rest of the deck. Without this, a
+        // freshly added slide would render as an empty canvas (no `layout`/
+        // `elements` yet) until the view happened to reappear and its
+        // `.onAppear` ran migration again.
+        SlideBlockMigration.migrateIfNeeded(deck)
         try? modelContext.save()
         selectedSlideID = slide.persistentModelID
     }
 
     private func duplicate(_ slide: Slide) {
-        let copy = Slide(order: slide.order + 1, layout: slide.layout)
+        let copy = Slide(order: slide.order + 1, layout: slide.legacyLayout)
         copy.titleText = slide.titleText
         copy.bodyText = slide.bodyText
         copy.secondaryText = slide.secondaryText
@@ -357,6 +601,7 @@ struct SlideDeckView: View {
         deck.renumberSlides()
         deck.updatedAt = .now
         modelContext.insert(copy)
+        SlideBlockMigration.migrateIfNeeded(deck) // see addSlide's comment
         try? modelContext.save()
         selectedSlideID = copy.persistentModelID
     }
@@ -390,7 +635,26 @@ struct SlideDeckView: View {
     private func attachImage(from item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self) else { return }
         await MainActor.run {
-            selectedSlide?.imageData = data
+            guard let slide = selectedSlide else { return }
+            slide.imageData = data // legacy fallback field, kept in sync
+            if let existing = slide.element(for: .image) {
+                existing.imageData = data
+            } else if let placeholder = slide.layout?.placeholder(for: .image) {
+                let element = SlideElement(kind: .image, layerIndex: Double(slide.sortedElements.count))
+                element.sourcePlaceholder = placeholder
+                element.imageData = data
+                slide.addElement(element)
+            } else {
+                // This slide's layout has no image placeholder to link to —
+                // add a free-floating element instead, roughly centered.
+                // There's no add-element toolbar yet (design step 4's
+                // remaining work) to place it more deliberately.
+                let element = SlideElement(kind: .image, layerIndex: Double(slide.sortedElements.count))
+                element.overrideCenterX = 0.5; element.overrideCenterY = 0.6
+                element.overrideWidth = 0.6; element.overrideHeight = 0.5
+                element.imageData = data
+                slide.addElement(element)
+            }
             deck.updatedAt = .now
             photoItem = nil
             try? modelContext.save()
@@ -400,245 +664,100 @@ struct SlideDeckView: View {
     // MARK: Export
 
     private func exportPDF() {
-        let size = deck.aspect.size
-        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: size))
-        let theme = deck.theme
-        let aspect = deck.aspect
-        let ordered = slides
-        let family = deck.fontFamily
-        let scale = CGFloat(deck.textScale)
-        let bold = deck.titleIsBold
-        let italic = deck.bodyIsItalic
-
-        let data = renderer.pdfData { context in
-            for slide in ordered {
-                context.beginPage()
-                // Each slide is rendered from the very same view the editor
-                // shows, so the export cannot drift from what was on screen.
-                let view = SlideCanvas(
-                    slide: slide, theme: theme, aspect: aspect, isEditable: false,
-                    fontFamily: family, textScale: scale, titleIsBold: bold, bodyIsItalic: italic
-                )
-                    .frame(width: size.width, height: size.height)
-                let imageRenderer = ImageRenderer(content: view)
-                imageRenderer.scale = 2
-                if let image = imageRenderer.uiImage {
-                    image.draw(in: CGRect(origin: .zero, size: size))
-                }
-            }
-            if ordered.isEmpty { context.beginPage() }
-        }
+        guard let data = ExportService.pdfData(from: deck) else { return }
         pdfDocument = PDFExportDocument(data: data)
         showsPDFExporter = true
     }
+
+    private func exportPptx() {
+        guard let data = PptxWriter.makeData(from: deck) else { return }
+        pptxDocument = PptxExportDocument(data: data)
+        showsPptxExporter = true
+    }
 }
 
-// MARK: - Slide rendering
+struct PptxExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] {
+        [UTType(filenameExtension: "pptx") ?? .data]
+    }
+    let data: Data
 
-/// One slide, drawn from its layout's placeholders.
-///
-/// The same view backs the thumbnail rail, the editing canvas, the
-/// presentation, and the PDF — `isEditable` only swaps text fields in for
-/// labels, so those four can never disagree about how a slide looks.
-struct SlideCanvas: View {
-    @Bindable var slide: Slide
-    let theme: SlideTheme
-    let aspect: SlideAspect
-    let isEditable: Bool
-    /// Deck-wide typography. Defaulted so the thumbnail, presentation and PDF
-    /// call sites that predate it keep compiling unchanged.
-    var fontFamily: DocumentFontFamily = .system
-    var textScale: CGFloat = 1
-    var titleIsBold: Bool = true
-    var bodyIsItalic: Bool = false
+    init(data: Data) {
+        self.data = data
+    }
 
-    private func titleFont(size: CGFloat) -> Font {
-        guard let descriptor = fontFamily.descriptor(size: size) else {
-            return .system(size: size, weight: titleIsBold ? .bold : .regular)
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
         }
-        return Font(UIFont(descriptor: descriptor, size: size)).weight(titleIsBold ? .bold : .regular)
+        self.data = data
     }
 
-    private func bodyFont(size: CGFloat) -> Font {
-        // Italic is applied through the descriptor rather than SwiftUI's
-        // `Font.italic(_:)`, which needs a newer deployment target than this
-        // app builds against.
-        var descriptor = fontFamily.descriptor(size: size)
-            ?? UIFont.systemFont(ofSize: size).fontDescriptor
-        if bodyIsItalic, let slanted = descriptor.withSymbolicTraits(.traitItalic) {
-            descriptor = slanted
-        }
-        return Font(UIFont(descriptor: descriptor, size: size))
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
     }
+}
 
-    var body: some View {
-        GeometryReader { geometry in
-            // Everything is expressed as a fraction of the slide's height, so
-            // one layout serves a 132pt thumbnail and a full-screen
-            // projection identically.
-            let unit = geometry.size.height / 540
-            let padding = 52 * unit
+struct PptxSaveModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    @Binding var document: PptxExportDocument?
+    let filename: String
 
-            ZStack {
-                theme.background
-
-                switch slide.layout {
-                case .titleSlide, .sectionHeader:
-                    VStack(alignment: .leading, spacing: 16 * unit) {
-                        titleView(unit: unit, size: slide.layout == .titleSlide ? 54 : 42)
-                        if slide.layout == .sectionHeader {
-                            Rectangle()
-                                .fill(theme.accent)
-                                .frame(width: 92 * unit, height: 4 * unit)
-                        }
-                        if slide.layout.hasBody {
-                            bodyView(unit: unit, size: 22, text: $slide.bodyText, placeholder: "サブタイトル")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                    .padding(padding)
-
-                case .titleAndBody:
-                    VStack(alignment: .leading, spacing: 20 * unit) {
-                        titleView(unit: unit, size: 38)
-                        bulletList(unit: unit, size: 22, text: $slide.bodyText, placeholder: "内容を入力")
-                        Spacer(minLength: 0)
-                    }
-                    .padding(padding)
-
-                case .twoContent:
-                    VStack(alignment: .leading, spacing: 18 * unit) {
-                        titleView(unit: unit, size: 36)
-                        HStack(alignment: .top, spacing: 28 * unit) {
-                            bulletList(unit: unit, size: 19, text: $slide.bodyText, placeholder: "左の内容")
-                            bulletList(unit: unit, size: 19, text: $slide.secondaryText, placeholder: "右の内容")
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(padding)
-
-                case .titleAndImage:
-                    VStack(alignment: .leading, spacing: 16 * unit) {
-                        titleView(unit: unit, size: 34)
-                        HStack(alignment: .top, spacing: 24 * unit) {
-                            bulletList(unit: unit, size: 19, text: $slide.bodyText, placeholder: "内容を入力")
-                            imageView(unit: unit)
-                                .frame(maxWidth: geometry.size.width * 0.42)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(padding)
-
-                case .imageOnly:
-                    imageView(unit: unit)
-                        .padding(padding * 0.4)
-
-                case .blank:
-                    Color.clear
-                }
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height)
-        }
-        .aspectRatio(aspect.ratio, contentMode: .fit)
-    }
-
-    @ViewBuilder
-    private func titleView(unit: CGFloat, size: CGFloat) -> some View {
-        if isEditable {
-            TextField("タイトル", text: $slide.titleText, axis: .vertical)
-                .font(titleFont(size: size * unit * textScale))
-                .foregroundStyle(theme.titleColor)
-                .textFieldStyle(.plain)
-                .lineLimit(1...3)
-        } else {
-            Text(slide.titleText.isEmpty ? " " : slide.titleText)
-                .font(titleFont(size: size * unit * textScale))
-                .foregroundStyle(theme.titleColor)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    @ViewBuilder
-    private func bodyView(unit: CGFloat, size: CGFloat, text: Binding<String>, placeholder: String) -> some View {
-        if isEditable {
-            TextField(placeholder, text: text, axis: .vertical)
-                .font(bodyFont(size: size * unit * textScale))
-                .foregroundStyle(theme.bodyColor)
-                .textFieldStyle(.plain)
-                .lineLimit(1...4)
-        } else {
-            Text(text.wrappedValue)
-                .font(bodyFont(size: size * unit * textScale))
-                .foregroundStyle(theme.bodyColor)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    /// A content placeholder: one bullet per line, exactly as PowerPoint's
-    /// body placeholder behaves.
-    @ViewBuilder
-    private func bulletList(unit: CGFloat, size: CGFloat, text: Binding<String>, placeholder: String) -> some View {
-        if isEditable {
-            TextField(placeholder, text: text, axis: .vertical)
-                .font(bodyFont(size: size * unit * textScale))
-                .foregroundStyle(theme.bodyColor)
-                .textFieldStyle(.plain)
-                .lineLimit(2...12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            VStack(alignment: .leading, spacing: 10 * unit) {
-                ForEach(Array(bullets(of: text.wrappedValue).enumerated()), id: \.offset) { _, line in
-                    HStack(alignment: .top, spacing: 10 * unit) {
-                        Circle()
-                            .fill(theme.accent)
-                            .frame(width: 7 * unit, height: 7 * unit)
-                            .padding(.top, size * unit * 0.42)
-                        Text(line)
-                            .font(bodyFont(size: size * unit * textScale))
-                            .foregroundStyle(theme.bodyColor)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func bullets(of text: String) -> [String] {
-        text.components(separatedBy: .newlines)
-            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-    }
-
-    @ViewBuilder
-    private func imageView(unit: CGFloat) -> some View {
-        if let data = slide.imageData, let image = UIImage(data: data) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .clipShape(RoundedRectangle(cornerRadius: 6 * unit))
-        } else {
-            RoundedRectangle(cornerRadius: 6 * unit)
-                .fill(theme.accent.opacity(0.10))
-                .overlay(
-                    VStack(spacing: 6 * unit) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 26 * unit))
-                        Text("画像なし").font(.system(size: 13 * unit))
-                    }
-                    .foregroundStyle(theme.accent.opacity(0.65))
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+    func body(content: Content) -> some View {
+        content.fileExporter(
+            isPresented: $isPresented,
+            document: document,
+            contentType: UTType(filenameExtension: "pptx") ?? .data,
+            defaultFilename: filename
+        ) { _ in
+            document = nil
         }
     }
 }
 
 // MARK: - Presentation
 
+/// Letterboxes a single slide (or nothing, if `slide` is `nil`) into
+/// whatever space it's given, preserving `aspect`'s ratio — the one
+/// GeometryReader+`SlideElementsLayer` pattern shared by the audience
+/// view, the presenter view's two previews, and the external-display
+/// mirror, so there's exactly one place that math lives.
+private struct SlideStage: View {
+    let slide: Slide?
+    let aspect: SlideAspect
+    var revealedElementIDs: Set<ObjectIdentifier>? = nil
+
+    var body: some View {
+        GeometryReader { geometry in
+            if let slide {
+                let width = min(geometry.size.width, geometry.size.height * aspect.ratio)
+                let displaySize = CGSize(width: width, height: width / aspect.ratio)
+                SlideElementsLayer(
+                    slide: slide, slideSize: displaySize, isEditable: false,
+                    revealedElementIDs: revealedElementIDs, onChange: {}
+                )
+                    .frame(width: displaySize.width, height: displaySize.height)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            }
+        }
+    }
+}
+
+/// Pure `mm:ss` formatting for the presenter view's elapsed-time clock,
+/// split out so it's unit-testable without needing a live `Timer`.
+enum PresentationElapsedTime {
+    static func formatted(from start: Date, to now: Date) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(start)))
+        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
 /// Full-screen playback. Tap or swipe (or use the arrow keys on a hardware
 /// keyboard) to advance; the slide number and speaker notes stay available
-/// without being part of the slide itself.
+/// without being part of the slide itself. When a second screen connects
+/// (design step 7), switches to a presenter layout on-device while the
+/// audience-facing slide alone goes to that screen — see
+/// `ExternalDisplayController`.
 private struct SlidePresentationView: View {
     @Bindable var deck: SlideDeck
     let startAt: Int
@@ -646,26 +765,56 @@ private struct SlidePresentationView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var index = 0
     @State private var showsNotes = false
+    /// Which of the current slide's animated elements have been revealed
+    /// so far, and how many click-steps that represents — see
+    /// `Slide.animationSteps`'s doc comment. Reset on every slide change.
+    @State private var revealedElementIDs: Set<ObjectIdentifier> = []
+    @State private var revealStepIndex = 0
+    /// The direction of the last slide-to-slide navigation, so a "push"
+    /// transition slides in from the correct edge in either direction.
+    @State private var lastSlideStep = 1
+    @State private var startedAt = Date.now
+    /// Design step 7's presenter mode: while a second screen is connected
+    /// (cable or AirPlay), the audience-facing slide goes there alone and
+    /// this device switches to `presenterLayout` instead of `audienceLayout`.
+    @StateObject private var externalDisplay = ExternalDisplayController()
 
     private var slides: [Slide] { deck.sortedSlides }
 
     var body: some View {
+        Group {
+            if externalDisplay.isConnected {
+                presenterLayout
+            } else {
+                audienceLayout
+            }
+        }
+        .onAppear {
+            index = min(max(startAt, 0), max(0, slides.count - 1))
+            if slides.indices.contains(index) { resetReveal(for: slides[index]) }
+            startedAt = .now
+            updateExternalDisplay()
+        }
+        .onChange(of: index) { _, _ in updateExternalDisplay() }
+        .onChange(of: revealedElementIDs) { _, _ in updateExternalDisplay() }
+        .onDisappear { externalDisplay.hide() }
+        .statusBarHidden()
+        .persistentSystemOverlays(.hidden)
+    }
+
+    /// The original single-slide, tap-through view — unchanged behavior,
+    /// still what's shown on the device itself whenever no external screen
+    /// is connected (the overwhelmingly common case).
+    private var audienceLayout: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
             if slides.indices.contains(index) {
-                SlideCanvas(
-                    slide: slides[index],
-                    theme: deck.theme,
-                    aspect: deck.aspect,
-                    isEditable: false,
-                    fontFamily: deck.fontFamily,
-                    textScale: CGFloat(deck.textScale),
-                    titleIsBold: deck.titleIsBold,
-                    bodyIsItalic: deck.bodyIsItalic
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea()
+                SlideStage(slide: slides[index], aspect: deck.aspect, revealedElementIDs: revealedElementIDs)
+                    .id(slides[index].persistentModelID)
+                    .transition(transitionStyle(for: slides[index]))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
             }
 
             VStack {
@@ -714,17 +863,138 @@ private struct SlidePresentationView: View {
                     advance(value.translation.width < 0 ? 1 : -1)
                 }
         )
-        .onAppear { index = min(max(startAt, 0), max(0, slides.count - 1)) }
-        .statusBarHidden()
-        .persistentSystemOverlays(.hidden)
     }
 
+    /// Design step 7's presenter view: the current slide, a preview of
+    /// what's coming next, speaker notes, and an elapsed-time clock — none
+    /// of which the audience (on the external screen) ever sees. The next
+    /// slide's preview always shows its final, fully-revealed state
+    /// (`revealedElementIDs: nil`) — a presenter needs to see what's
+    /// coming, not its own build-up animation.
+    private var presenterLayout: some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("現在のスライド").font(.caption).foregroundStyle(.secondary)
+                    SlideStage(
+                        slide: slides.indices.contains(index) ? slides[index] : nil,
+                        aspect: deck.aspect, revealedElementIDs: revealedElementIDs
+                    )
+                        .background(Color.black)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("次のスライド").font(.caption).foregroundStyle(.secondary)
+                    SlideStage(slide: slides.indices.contains(index + 1) ? slides[index + 1] : nil, aspect: deck.aspect)
+                        .background(Color.black.opacity(0.85))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay {
+                            if !slides.indices.contains(index + 1) {
+                                Text("最後のスライドです")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                        }
+                }
+            }
+            .padding(.horizontal)
+            .frame(maxHeight: .infinity)
+
+            if slides.indices.contains(index), !slides[index].notes.isEmpty {
+                ScrollView {
+                    Text(slides[index].notes)
+                        .font(.body)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                }
+                .frame(maxHeight: 160)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal)
+            }
+
+            HStack {
+                Button { dismiss() } label: { Label("終了", systemImage: "xmark") }
+                Spacer()
+                Text("\(index + 1) / \(slides.count)")
+                    .font(.subheadline.monospacedDigit())
+                Spacer()
+                TimelineView(.periodic(from: startedAt, by: 1)) { context in
+                    Label(PresentationElapsedTime.formatted(from: startedAt, to: context.date), systemImage: "clock")
+                        .font(.subheadline.monospacedDigit())
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+        }
+        .padding(.top)
+        .background(Color(.systemBackground))
+        .contentShape(Rectangle())
+        .onTapGesture { advance(1) }
+        .gesture(
+            DragGesture(minimumDistance: 30)
+                .onEnded { value in
+                    advance(value.translation.width < 0 ? 1 : -1)
+                }
+        )
+    }
+
+    /// Mirrors the current slide (respecting reveal progress, same as the
+    /// audience would see it) onto the external screen, if one is
+    /// connected — a no-op otherwise.
+    private func updateExternalDisplay() {
+        guard slides.indices.contains(index) else { return }
+        let slide = slides[index]
+        let revealed = revealedElementIDs
+        let aspect = deck.aspect
+        externalDisplay.show {
+            AnyView(
+                ZStack {
+                    Color.black
+                    SlideStage(slide: slide, aspect: aspect, revealedElementIDs: revealed)
+                }
+                .ignoresSafeArea()
+            )
+        }
+    }
+
+    /// Forward taps reveal this slide's animations one click-step at a
+    /// time before moving on to the next slide; backward swipes always go
+    /// straight to the previous slide, without stepping animations back
+    /// down first — real PowerPoint's own "previous" is more nuanced than
+    /// that, but this covers the common case at far less complexity.
     private func advance(_ step: Int) {
+        if step > 0, slides.indices.contains(index) {
+            let steps = slides[index].animationSteps
+            if revealStepIndex < steps.count - 1 {
+                revealStepIndex += 1
+                revealedElementIDs.formUnion(steps[revealStepIndex].map(\.stableID))
+                return
+            }
+        }
         let next = index + step
         guard slides.indices.contains(next) else {
             if next >= slides.count { dismiss() }
             return
         }
-        withAnimation(.easeInOut(duration: 0.18)) { index = next }
+        lastSlideStep = step
+        withAnimation(.easeInOut(duration: 0.35)) { index = next }
+        resetReveal(for: slides[next])
+    }
+
+    private func resetReveal(for slide: Slide) {
+        let steps = slide.animationSteps
+        revealStepIndex = 0
+        revealedElementIDs = Set(steps.first?.map(\.stableID) ?? [])
+    }
+
+    private func transitionStyle(for slide: Slide) -> AnyTransition {
+        switch slide.transition {
+        case .none: return .identity
+        case .fade: return .opacity
+        case .push:
+            let insertionEdge: Edge = lastSlideStep >= 0 ? .trailing : .leading
+            let removalEdge: Edge = lastSlideStep >= 0 ? .leading : .trailing
+            return .asymmetric(insertion: .move(edge: insertionEdge), removal: .move(edge: removalEdge))
+        }
     }
 }

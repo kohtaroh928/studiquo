@@ -65,6 +65,9 @@ struct StudiquoApp: App {
             FlashcardDeck.self, Flashcard.self, CalendarEvent.self, StudyActivity.self,
             AIChatThread.self, AIChatMessage.self,
             TextDocument.self, SlideDeck.self, Slide.self,
+            SlideMaster.self, SlideLayoutTemplate.self, SlidePlaceholder.self, SlideElement.self,
+            DocumentBlock.self, DocumentTableRow.self, DocumentTableCell.self,
+            DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
             AIReviewItem.self,
         ])
         do {

@@ -770,6 +770,7 @@ struct CalendarHomeView: View {
     @State private var universityStatus = ""
     @State private var isUniversitySyncing = false
     @State private var cachedEventKindsByDay: [Date: Set<CalendarEventKind>] = [:]
+    @State private var showsStudyPlan = false
 
     /// Includes anything running *through* the day, not just starting on it,
     /// so a multi-day entry stays visible for its whole span.
@@ -878,6 +879,10 @@ struct CalendarHomeView: View {
                               ? "link.badge.plus" : "link.circle.fill")
                     }
                     .accessibilityLabel("カレンダー連携")
+                    Button { showsStudyPlan = true } label: {
+                        Image(systemName: "brain.head.profile")
+                    }
+                    .accessibilityLabel("AIに学習計画を作ってもらう")
                     Button {
                         showsNewEvent = true
                     } label: {
@@ -888,6 +893,9 @@ struct CalendarHomeView: View {
         }
         .sheet(isPresented: $showsNewEvent) {
             CalendarEventEditor(event: nil, initialDate: selectedDate)
+        }
+        .sheet(isPresented: $showsStudyPlan) {
+            AIStudyPlanFlowView()
         }
         .sheet(item: $editingEvent) { event in
             CalendarEventEditor(event: event, initialDate: event.startDate)
@@ -1239,6 +1247,7 @@ struct CalendarHomeView: View {
         case .test: .red
         case .classLesson: .blue
         case .other: .orange
+        case .studySession: .purple
         }
     }
 

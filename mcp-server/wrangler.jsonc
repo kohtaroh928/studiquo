@@ -17,12 +17,14 @@
   "durable_objects": {
     "bindings": [
       { "name": "CHAT_ROOM", "class_name": "ChatRoom" },
-      { "name": "USER_REGISTRY", "class_name": "UserRegistry" }
+      { "name": "USER_REGISTRY", "class_name": "UserRegistry" },
+      { "name": "DOCUMENT_ROOM", "class_name": "DocumentRoom" }
     ]
   },
   "migrations": [
     { "tag": "v1-chat", "new_sqlite_classes": ["ChatRoom"] },
-    { "tag": "v2-user-registry", "new_sqlite_classes": ["UserRegistry"] }
+    { "tag": "v2-user-registry", "new_sqlite_classes": ["UserRegistry"] },
+    { "tag": "v3-document-room", "new_sqlite_classes": ["DocumentRoom"] }
   ],
   // One namespace_id per unauthenticated endpoint, so hammering one doesn't
   // burn another's budget. See src/rate-limit.js for why this runs alongside
@@ -50,7 +52,12 @@
     // misbehaving client could otherwise spam a room's Durable Object storage
     // with unlimited uploads. 10/minute is generous for sharing several
     // photos in a row while still bounding sustained abuse.
-    { "name": "RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD", "namespace_id": "1012", "simple": { "limit": 10, "period": 60 } }
+    { "name": "RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD", "namespace_id": "1012", "simple": { "limit": 10, "period": 60 } },
+    // Keyed by userKey. A low, occasional-action budget like
+    // RATE_LIMIT_CHAT_FRIEND_ADD's — reporting is not something a genuine
+    // user does rapidly, so a burst of these is itself a signal worth
+    // capping rather than something normal use would ever hit.
+    { "name": "RATE_LIMIT_CHAT_REPORT", "namespace_id": "1013", "simple": { "limit": 5, "period": 60 } }
   ],
   "vars": {
     // Marking asks for structured output, and Gemini emits that only once the

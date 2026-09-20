@@ -36,51 +36,117 @@ enum ExportService {
         let attributedText = DocumentBody.decode(document.bodyData)
         let pageSize = document.pageSize.size
         let margin = document.pageSize.margin
+
+        // A header/footer reserves its own band inside the margin rather
+        // than shrinking it further, so a document without either keeps
+        // exactly the layout it always had.
+        let bandHeight: CGFloat = 20
+        let header = document.header
+        let footer = document.footer
+        let hasHeader = !(header?.text.isEmpty ?? true) || header?.showsPageNumber == true
+        let hasFooter = !(footer?.text.isEmpty ?? true) || footer?.showsPageNumber == true
+
+        // Coordinates below are in the same bottom-left-origin, y-up space
+        // `cgContext` is flipped into just below (Core Text's convention):
+        // y=0 is the bottom of the page, y=pageSize.height is the top.
+        let bottomY = margin + (hasFooter ? bandHeight : 0)
+        let topY = pageSize.height - margin - (hasHeader ? bandHeight : 0)
         let textRect = CGRect(
-            x: margin, y: margin,
+            x: margin, y: bottomY,
             width: pageSize.width - margin * 2,
-            height: pageSize.height - margin * 2
+            height: topY - bottomY
         )
+        // `document.columnCount` (1-3) splits `textRect` into that many
+        // vertical columns, filled left to right before moving to the next
+        // page — newspaper-style. Only affects this PDF layout; the live
+        // editor (`TextDocumentView`) always shows a single flowing column,
+        // since wiring real multi-column text flow into a `UITextView`
+        // (chained `NSTextContainer`s reacting to live edits) is a much
+        // bigger undertaking than a single-column editor plus a
+        // multi-column *print* layout computed at export time.
+        let columnCount = max(1, min(3, document.columnCount))
+        let columnGap: CGFloat = 20
+        let columnWidth = (textRect.width - CGFloat(columnCount - 1) * columnGap) / CGFloat(columnCount)
+
         let framesetter = CTFramesetterCreateWithAttributedString(attributedText as CFAttributedString)
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: pageSize))
         return renderer.pdfData { context in
             var offset = 0
+            var pageNumber = 0
             let total = attributedText.length
             repeat {
                 context.beginPage()
+                pageNumber += 1
                 guard let cgContext = UIGraphicsGetCurrentContext() else { break }
                 cgContext.translateBy(x: 0, y: pageSize.height)
                 cgContext.scaleBy(x: 1, y: -1)
 
-                let path = CGPath(rect: textRect, transform: nil)
-                let frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(offset, 0), path, nil)
-                CTFrameDraw(frame, cgContext)
-                let visible = CTFrameGetVisibleStringRange(frame)
-                if visible.length <= 0 { break }
-                offset += visible.length
+                var producedTextOnThisPage = false
+                for column in 0..<columnCount {
+                    let columnRect = CGRect(
+                        x: textRect.minX + CGFloat(column) * (columnWidth + columnGap),
+                        y: textRect.minY,
+                        width: columnWidth,
+                        height: textRect.height
+                    )
+                    let path = CGPath(rect: columnRect, transform: nil)
+                    let frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(offset, 0), path, nil)
+                    CTFrameDraw(frame, cgContext)
+                    let visible = CTFrameGetVisibleStringRange(frame)
+                    if visible.length > 0 {
+                        offset += visible.length
+                        producedTextOnThisPage = true
+                    }
+                    if offset >= total { break }
+                }
+
+                // Header band sits just below the page's top margin; footer
+                // band sits just above the bottom margin.
+                drawHeaderFooterBand(header, at: pageSize.height - margin - bandHeight, pageWidth: pageSize.width, margin: margin, bandHeight: bandHeight, pageNumber: pageNumber)
+                drawHeaderFooterBand(footer, at: margin, pageWidth: pageSize.width, margin: margin, bandHeight: bandHeight, pageNumber: pageNumber)
+
+                if !producedTextOnThisPage { break }
             } while offset < total
 
             if total == 0 { context.beginPage() }
         }
     }
 
+    /// Draws one header/footer's text (plus page number, if enabled) inside
+    /// its band. Called with the raw model, not a resolved string, so a page
+    /// with neither text nor a page number is a no-op rather than drawing an
+    /// empty line.
+    private static func drawHeaderFooterBand(_ headerFooter: DocumentHeaderFooter?, at y: CGFloat, pageWidth: CGFloat, margin: CGFloat, bandHeight: CGFloat, pageNumber: Int) {
+        guard let headerFooter else { return }
+        var parts: [String] = []
+        if !headerFooter.text.isEmpty { parts.append(headerFooter.text) }
+        if headerFooter.showsPageNumber { parts.append("\(pageNumber)") }
+        guard !parts.isEmpty else { return }
+
+        let string = parts.joined(separator: " ・ ") as NSString
+        // Still inside the flipped (PDF-style, origin-bottom-left) context
+        // set up by the caller, so this needs its own un-flip — `NSString`
+        // draw calls assume a top-left-origin context, same as the frame
+        // this is called alongside.
+        guard let cgContext = UIGraphicsGetCurrentContext() else { return }
+        cgContext.saveGState()
+        cgContext.translateBy(x: 0, y: y + bandHeight)
+        cgContext.scaleBy(x: 1, y: -1)
+        string.draw(
+            in: CGRect(x: margin, y: 0, width: pageWidth - margin * 2, height: bandHeight),
+            withAttributes: [.font: UIFont.systemFont(ofSize: 9), .foregroundColor: UIColor.secondaryLabel]
+        )
+        cgContext.restoreGState()
+    }
+
     static func pdfData(from deck: SlideDeck) -> Data? {
         let size = deck.aspect.size
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: size))
-        let theme = deck.theme
-        let aspect = deck.aspect
         let ordered = deck.sortedSlides
-        let family = deck.fontFamily
-        let scale = CGFloat(deck.textScale)
-        let bold = deck.titleIsBold
-        let italic = deck.bodyIsItalic
         return renderer.pdfData { context in
             for slide in ordered {
                 context.beginPage()
-                let view = SlideCanvas(
-                    slide: slide, theme: theme, aspect: aspect, isEditable: false,
-                    fontFamily: family, textScale: scale, titleIsBold: bold, bodyIsItalic: italic
-                )
+                let view = SlideElementsLayer(slide: slide, slideSize: size, isEditable: false, onChange: {})
                     .frame(width: size.width, height: size.height)
                 let imageRenderer = ImageRenderer(content: view)
                 imageRenderer.scale = 2
@@ -274,6 +340,23 @@ enum ExportService {
             (("リンク: " + title) as NSString).draw(in: rect.insetBy(dx: 4, dy: 4), withAttributes: attributes)
         }
         context.restoreGState()
+    }
+}
+
+/// iOS's native print sheet, fed the exact same PDF `ExportService.pdfData`
+/// already produces (headers/footers, page numbers, and column layout all
+/// included) — rather than a second rendering path that would need to be
+/// kept in sync with it by hand.
+enum PrintService {
+    static func printDocument(_ document: TextDocument) {
+        guard let data = ExportService.pdfData(from: document) else { return }
+        let printInfo = UIPrintInfo(dictionary: nil)
+        printInfo.jobName = document.title
+        printInfo.outputType = .general
+        let controller = UIPrintInteractionController.shared
+        controller.printInfo = printInfo
+        controller.printingItem = data
+        controller.present(animated: true, completionHandler: nil)
     }
 }
 
