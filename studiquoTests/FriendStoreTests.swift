@@ -1371,6 +1371,69 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(store.incomingRequests.first?.name, "Alice")
     }
 
+    func testRefreshIncomingRequestsCountsAFreshRequestAsUnseen() async {
+        let client = MockFriendChatClient()
+        await client.setPendingRequests([.init(code: "ALICE1", name: "Alice", requestedAt: 1_700_000_000_000)])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        await store.refreshIncomingRequests()
+
+        XCTAssertEqual(store.unseenIncomingRequestCount, 1)
+    }
+
+    func testMarkIncomingRequestsSeenClearsTheUnseenCountWithoutTouchingTheRequestsThemselves() async {
+        let client = MockFriendChatClient()
+        await client.setPendingRequests([.init(code: "ALICE1", name: "Alice", requestedAt: 1_700_000_000_000)])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshIncomingRequests()
+
+        store.markIncomingRequestsSeen()
+
+        XCTAssertEqual(store.unseenIncomingRequestCount, 0)
+        XCTAssertEqual(store.incomingRequests.map(\.code), ["ALICE1"], "seeing a request must not act on it")
+    }
+
+    func testASecondRefreshAfterMarkingSeenDoesNotReCountTheSameRequest() async {
+        let client = MockFriendChatClient()
+        await client.setPendingRequests([.init(code: "ALICE1", name: "Alice", requestedAt: 1_700_000_000_000)])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshIncomingRequests()
+        store.markIncomingRequestsSeen()
+
+        await store.refreshIncomingRequests()
+
+        XCTAssertEqual(store.unseenIncomingRequestCount, 0, "already-seen request shouldn't rearm the badge on a later poll")
+    }
+
+    func testANewRequestArrivingAlongsideAnAlreadySeenOneIsCountedOnItsOwn() async {
+        let client = MockFriendChatClient()
+        await client.setPendingRequests([.init(code: "ALICE1", name: "Alice", requestedAt: 1_700_000_000_000)])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshIncomingRequests()
+        store.markIncomingRequestsSeen()
+        await client.setPendingRequests([
+            .init(code: "ALICE1", name: "Alice", requestedAt: 1_700_000_000_000),
+            .init(code: "BOB222", name: "Bob", requestedAt: 1_700_000_001_000),
+        ])
+
+        await store.refreshIncomingRequests()
+
+        XCTAssertEqual(store.unseenIncomingRequestCount, 1)
+    }
+
+    func testSeenStatusPersistsAcrossARelaunchSoTheBadgeDoesNotReappearForAnAlreadySeenRequest() async {
+        let client = MockFriendChatClient()
+        await client.setPendingRequests([.init(code: "ALICE1", name: "Alice", requestedAt: 1_700_000_000_000)])
+        let firstLaunch = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await firstLaunch.refreshIncomingRequests()
+        firstLaunch.markIncomingRequestsSeen()
+
+        let secondLaunch = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await secondLaunch.refreshIncomingRequests()
+
+        XCTAssertEqual(secondLaunch.unseenIncomingRequestCount, 0)
+    }
+
     func testRefreshOutgoingRequestsPopulatesSentButUnansweredRequestsFromServer() async {
         let client = MockFriendChatClient()
         await client.setOutgoingRequests([

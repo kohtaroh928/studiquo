@@ -1930,9 +1930,11 @@ struct ContentView: View {
             StudyTimeTracker.shared.configure(context: modelContext)
             StudyTimeTracker.shared.handle(scenePhase: scenePhase)
             StudyTimeTracker.shared.setStudying(isStudySurfaceOpen)
+            friendStore.handle(scenePhase: scenePhase)
         }
         .onChange(of: scenePhase) { _, phase in
             StudyTimeTracker.shared.handle(scenePhase: phase)
+            friendStore.handle(scenePhase: phase)
         }
         // Count study time only while an actual study surface is open — not
         // while browsing the library or the calendar.
@@ -1992,6 +1994,23 @@ struct ContentView: View {
                             // an unselected tab's background is clear and would
                             // otherwise ignore taps on its empty area.
                             .contentShape(Rectangle())
+                            // A pending friend request used to be invisible
+                            // unless this tab happened to already be open —
+                            // `friendStore` now polls in the background for
+                            // the whole session (see `FriendStore.handle
+                            // (scenePhase:)`), so this badge is what actually
+                            // surfaces that from anywhere in the app, the
+                            // same visual pattern as `notificationBell`'s.
+                            .overlay(alignment: .topTrailing) {
+                                if section == .friends, friendStore.unseenIncomingRequestCount > 0 {
+                                    Text("\(min(friendStore.unseenIncomingRequestCount, 9))")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .frame(minWidth: 15, minHeight: 15)
+                                        .background(.red, in: Circle())
+                                        .offset(x: -4, y: 2)
+                                }
+                            }
                     }
                     .buttonStyle(.plain)
                 }
