@@ -75,6 +75,27 @@ final class SlideMaster {
         return true
     }
 
+    /// A new layout on this master named `"<original>のコピー"`, with an
+    /// independent copy of every placeholder (position/size/role/kind/
+    /// default text style) — design step 5 master editor's "duplicate"
+    /// action. The copy is fully independent: editing it afterward never
+    /// touches `layout`, and vice versa.
+    @discardableResult
+    func duplicateLayout(_ layout: SlideLayoutTemplate) -> SlideLayoutTemplate {
+        let copy = addLayout(name: layout.name + "のコピー")
+        for placeholder in layout.sortedPlaceholders {
+            let newPlaceholder = copy.addPlaceholder(
+                role: placeholder.role, kind: placeholder.kind,
+                centerX: placeholder.centerX, centerY: placeholder.centerY,
+                width: placeholder.width, height: placeholder.height
+            )
+            newPlaceholder.defaultFontSize = placeholder.defaultFontSize
+            newPlaceholder.defaultIsBold = placeholder.defaultIsBold
+            newPlaceholder.rotation = placeholder.rotation
+        }
+        return copy
+    }
+
     /// The standard starter set every new deck (and every migrated legacy
     /// deck — see `SlideBlockMigration`) gets, matching the seven layouts
     /// the old fixed `SlideLayout` enum offered. Unlike that enum, these are

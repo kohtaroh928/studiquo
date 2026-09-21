@@ -166,6 +166,61 @@ final class SlideChangeLayoutTests: XCTestCase {
 /// Coverage for the master editor's (design step 5) destructive actions —
 /// removing a layout or a single placeholder must never silently discard a
 /// slide's position/size for elements still inheriting from it.
+/// Coverage for the master editor's (design step 5) "duplicate layout"
+/// action — see `SlideMaster.duplicateLayout(_:)`.
+final class SlideMasterDuplicateLayoutTests: XCTestCase {
+    func testDuplicateCreatesAnIndependentLayoutNamedWithACopySuffix() {
+        let master = SlideMaster.makeDefault()
+        let original = master.sortedLayouts.first { $0.name == "タイトルと内容" }!
+
+        let copy = master.duplicateLayout(original)
+
+        XCTAssertEqual(copy.name, "タイトルと内容のコピー")
+        XCTAssertTrue(master.sortedLayouts.contains { $0 === copy })
+        XCTAssertEqual(master.sortedLayouts.count, 8, "the copy is added alongside the 7 defaults, not replacing one")
+    }
+
+    func testDuplicateCopiesEveryPlaceholdersGeometryAndTextStyle() {
+        let master = SlideMaster.makeDefault()
+        let original = master.sortedLayouts.first { $0.name == "タイトルと内容" }!
+        let originalTitle = original.placeholder(for: .title)!
+        originalTitle.defaultFontSize = 44
+        originalTitle.defaultIsBold = true
+        originalTitle.rotation = 5
+
+        let copy = master.duplicateLayout(original)
+        let copiedTitle = copy.placeholder(for: .title)!
+
+        XCTAssertEqual(copiedTitle.centerX, originalTitle.centerX)
+        XCTAssertEqual(copiedTitle.centerY, originalTitle.centerY)
+        XCTAssertEqual(copiedTitle.width, originalTitle.width)
+        XCTAssertEqual(copiedTitle.height, originalTitle.height)
+        XCTAssertEqual(copiedTitle.defaultFontSize, 44)
+        XCTAssertEqual(copiedTitle.defaultIsBold, true)
+        XCTAssertEqual(copiedTitle.rotation, 5)
+    }
+
+    func testEditingTheCopyAfterwardDoesNotAffectTheOriginal() {
+        let master = SlideMaster.makeDefault()
+        let original = master.sortedLayouts.first { $0.name == "タイトルと内容" }!
+        let originalTitleX = original.placeholder(for: .title)!.centerX
+
+        let copy = master.duplicateLayout(original)
+        copy.placeholder(for: .title)!.centerX = 0.1
+
+        XCTAssertEqual(original.placeholder(for: .title)!.centerX, originalTitleX, "the two placeholders must be separate objects, not shared")
+    }
+
+    func testDuplicatingALayoutWithNoPlaceholdersProducesAnEmptyCopy() {
+        let master = SlideMaster.makeDefault()
+        let blank = master.sortedLayouts.first { $0.name == "白紙" }!
+
+        let copy = master.duplicateLayout(blank)
+
+        XCTAssertEqual(copy.sortedPlaceholders.count, 0)
+    }
+}
+
 final class SlideMasterEditorRemovalTests: XCTestCase {
     func testRemovingALayoutDetachesAndBakesInStillInheritingElements() {
         let master = SlideMaster.makeDefault()
@@ -336,6 +391,39 @@ final class SlideAnimationStepsTests: XCTestCase {
 
         let steps = slide.animationSteps
         XCTAssertFalse(steps.contains { $0.contains { $0 === plain } })
+    }
+}
+
+/// Coverage for the "new animation plays last by default" auto-ordering
+/// the element context menu relies on — see `Slide.nextAnimationOrder()`.
+final class SlideNextAnimationOrderTests: XCTestCase {
+    private func animatedElement(order: Int) -> SlideElement {
+        let element = SlideElement(kind: .text)
+        element.animationKind = .fadeIn
+        element.animationOrder = order
+        return element
+    }
+
+    func testASlideWithNoAnimatedElementsStartsAtZero() {
+        let slide = Slide(order: 0)
+        slide.addElement(SlideElement(kind: .text)) // .none, doesn't count
+        XCTAssertEqual(slide.nextAnimationOrder(), 0)
+    }
+
+    func testReturnsOnePastTheCurrentHighestOrder() {
+        let slide = Slide(order: 0)
+        slide.addElement(animatedElement(order: 0))
+        slide.addElement(animatedElement(order: 3))
+        XCTAssertEqual(slide.nextAnimationOrder(), 4, "one past the highest (3), regardless of how many elements share lower orders")
+    }
+
+    func testUnanimatedElementsDoNotAffectTheResult() {
+        let slide = Slide(order: 0)
+        slide.addElement(animatedElement(order: 1))
+        let plain = SlideElement(kind: .text) // .none, animationOrder left at its 0 default
+        plain.animationOrder = 99 // meaningless while animationKind == .none — must be ignored
+        slide.addElement(plain)
+        XCTAssertEqual(slide.nextAnimationOrder(), 2, "the unanimated element's stray animationOrder value must not leak in")
     }
 }
 

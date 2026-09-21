@@ -205,6 +205,41 @@ final class CanvasElementGeometryAlignDistributeTests: XCTestCase {
     }
 }
 
+/// Coverage for the rubber-band multi-select hit test (design step 4's
+/// remaining piece) — `SlideElementsLayer`'s drag-to-select gesture calls
+/// this once per element on the slide to decide what the selection rect
+/// covers.
+final class CanvasElementGeometryFrameIntersectsTests: XCTestCase {
+    private typealias Frame = CanvasElementGeometry.Frame
+    private let canvas = CGSize(width: 1000, height: 1000)
+
+    func testAFrameFullyInsideTheSelectionRectIntersects() {
+        let frame = Frame(centerX: 0.5, centerY: 0.5, width: 0.1, height: 0.1) // screen box 450-550, 450-550
+        let rect = CGRect(x: 200, y: 200, width: 600, height: 600)
+        XCTAssertTrue(CanvasElementGeometry.frameIntersects(frame, rect: rect, canvasSize: canvas))
+    }
+
+    func testAFrameEntirelyOutsideTheSelectionRectDoesNotIntersect() {
+        let frame = Frame(centerX: 0.1, centerY: 0.1, width: 0.05, height: 0.05) // screen box near (75,75)-(125,125)
+        let rect = CGRect(x: 500, y: 500, width: 300, height: 300)
+        XCTAssertFalse(CanvasElementGeometry.frameIntersects(frame, rect: rect, canvasSize: canvas))
+    }
+
+    func testAFrameOnlyPartiallyOverlappingTheSelectionRectStillIntersects() {
+        // Frame spans screen x 400-600, y 400-600; rect only reaches x 500-900 — a partial overlap still counts, matching how a rubber-band selection usually works (touch, not fully enclose).
+        let frame = Frame(centerX: 0.5, centerY: 0.5, width: 0.2, height: 0.2)
+        let rect = CGRect(x: 500, y: 0, width: 400, height: 1000)
+        XCTAssertTrue(CanvasElementGeometry.frameIntersects(frame, rect: rect, canvasSize: canvas))
+    }
+
+    func testFramesThatOnlyTouchAtAnEdgeDoNotCountAsOverlapping() {
+        // Frame's right edge sits exactly at screen x=500; rect starts at x=500 — CGRect.intersects treats an edge-only touch as non-overlapping (zero-area intersection).
+        let frame = Frame(centerX: 0.45, centerY: 0.5, width: 0.1, height: 0.1) // screen box x 400-500
+        let rect = CGRect(x: 500, y: 400, width: 100, height: 100)
+        XCTAssertFalse(CanvasElementGeometry.frameIntersects(frame, rect: rect, canvasSize: canvas))
+    }
+}
+
 /// Coverage for the drag-time snap-to-alignment ("smart guides") used by
 /// design step 4's last piece — a solo element drag only, see
 /// `CanvasElementGeometry.smartGuided`'s doc comment.

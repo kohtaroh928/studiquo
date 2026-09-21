@@ -1350,6 +1350,20 @@ final class Slide {
         return steps
     }
 
+    /// The `animationOrder` a *newly*-animated element on this slide should
+    /// get — one past whatever's currently highest among elements that
+    /// already have an animation, so a fresh animation always plays last by
+    /// default (matching PowerPoint's own "new animations append to the
+    /// end of the sequence" behaviour), without needing a manual reorder
+    /// UI. A slide with no animated elements yet starts at 0.
+    func nextAnimationOrder() -> Int {
+        let currentMax = sortedElements
+            .filter { $0.animationKind != .none }
+            .map(\.animationOrder)
+            .max() ?? -1
+        return currentMax + 1
+    }
+
     @discardableResult
     func addElement(_ element: SlideElement) -> SlideElement {
         element.slide = self
