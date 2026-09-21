@@ -140,6 +140,17 @@ final class FriendStore: ObservableObject {
     @Published var messages: [FriendMessage] = [] { didSet { persist(messages, key: messagesKey) } }
     @Published var incomingRequests: [IncomingFriendRequest] = []
     @Published var outgoingRequests: [OutgoingFriendRequest] = []
+    /// How many of `incomingRequests` haven't been shown to the user yet —
+    /// drives the badge on the home screen's "フレンド" tab (`ContentView`),
+    /// so a pending request is visible from anywhere in the app instead of
+    /// only once this screen happens to already be open. Cleared by
+    /// `markIncomingRequestsSeen()`, not by accept/reject — seeing the
+    /// request and deciding on it are two different things.
+    @Published private(set) var unseenIncomingRequestCount: Int = 0
+    /// Codes already shown to the user at least once, persisted so a
+    /// relaunch doesn't re-surface the badge for a request they've already
+    /// seen (but not yet acted on).
+    private var seenIncomingRequestCodes: Set<String> = [] { didSet { persist(seenIncomingRequestCodes, key: seenIncomingRequestCodesKey) } }
     /// Codes with an accept/reject network call currently in flight, so the
     /// view can disable that request's buttons — without this, a fast
     /// double-tap fires the operation twice before the first response ever
@@ -164,6 +175,11 @@ final class FriendStore: ObservableObject {
     private let friendsKey = "studiquoFriends"
     private let messagesKey = "studiquoFriendMessages"
     private let unreadCountsKey = "studiquoFriendUnreadCounts"
+    private let seenIncomingRequestCodesKey = "studiquoSeenIncomingRequestCodes"
+    /// The app-wide incoming-request poll (see `handle(scenePhase:)`) — owns
+    /// this instead of tying it to whichever screen happens to be open, the
+    /// same reasoning `FriendsHomeView`'s own `.task` used to rely on alone.
+    private var incomingRequestPollTask: Task<Void, Never>?
     private static let codePattern = /^[A-Z0-9]{6,32}$/
     private static let maximumFriends = 500
     /// Enforced per friend, not as a shared total across every
@@ -202,7 +218,61 @@ final class FriendStore: ObservableObject {
         if let data = defaults.data(forKey: unreadCountsKey) {
             unreadCounts = (try? JSONDecoder().decode([UUID: Int].self, from: data)) ?? [:]
         }
-        if autoRefresh { Task { await refresh() } }
+        if let data = defaults.data(forKey: seenIncomingRequestCodesKey) {
+            seenIncomingRequestCodes = (try? JSONDecoder().decode(Set<String>.self, from: data)) ?? []
+        }
+        if autoRefresh {
+            Task { await refresh() }
+            startIncomingRequestPolling()
+        }
+    }
+
+    /// Polls for incoming friend requests for as long as this store exists
+    /// (effectively the whole authenticated session — see `ContentView`),
+    /// independent of whichever screen is currently showing. Without this,
+    /// a request sent while the recipient wasn't already on the Friends
+    /// screen was invisible until they happened to open it: nothing else in
+    /// the app ever fetched this on its own. Safe to call repeatedly —
+    /// a second call while already polling is a no-op.
+    func startIncomingRequestPolling() {
+        guard incomingRequestPollTask == nil else { return }
+        incomingRequestPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshIncomingRequests()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    func stopIncomingRequestPolling() {
+        incomingRequestPollTask?.cancel()
+        incomingRequestPollTask = nil
+    }
+
+    /// Pauses polling while backgrounded and resumes it on return to the
+    /// foreground — there's no server-push delivery for friend requests
+    /// (see `FriendChatService`'s doc comment), so background polling would
+    /// just burn battery for a screen the user can't currently see anyway.
+    /// Driven by `ContentView`'s own `scenePhase`, the app's one existing
+    /// source of truth for this (mirrors `StudyTimeTracker.handle
+    /// (scenePhase:)`).
+    func handle(scenePhase: ScenePhase) {
+        if scenePhase == .active {
+            startIncomingRequestPolling()
+        } else {
+            stopIncomingRequestPolling()
+        }
+    }
+
+    /// Marks every currently-known incoming request as seen, clearing the
+    /// home-screen tab badge — called once the "フレンド申請" list has
+    /// actually been shown to the user (`FriendsHomeView.onAppear`).
+    /// Deliberately separate from accepting/rejecting: seeing a request and
+    /// deciding on it are two different actions.
+    func markIncomingRequestsSeen() {
+        guard unseenIncomingRequestCount > 0 else { return }
+        seenIncomingRequestCodes.formUnion(incomingRequests.map(\.code))
+        unseenIncomingRequestCount = 0
     }
 
     var invitationURL: URL { URL(string: "studiquo://friend/add?code=\(myCode)")! }
@@ -342,6 +412,11 @@ final class FriendStore: ObservableObject {
         incomingRequests = remote.map {
             IncomingFriendRequest(code: $0.code, name: $0.name, requestedAt: Date(timeIntervalSince1970: $0.requestedAt / 1_000))
         }
+        let currentCodes = Set(incomingRequests.map(\.code))
+        unseenIncomingRequestCount = currentCodes.subtracting(seenIncomingRequestCodes).count
+        // Bounded to whatever's actually still pending — otherwise this set
+        // would only ever grow for the lifetime of the install.
+        seenIncomingRequestCodes.formIntersection(currentCodes)
     }
 
     /// The requests this user has sent that are still awaiting the
@@ -987,10 +1062,16 @@ struct FriendsHomeView: View {
             .navigationTitle("フレンド")
             .toolbar { ToolbarItem(placement: .primaryAction) { Button { showsAdd = true } label: { Image(systemName: "person.badge.plus") } } }
             .sheet(isPresented: $showsAdd) { AddFriendView(store: store) }
+            // Clears the home-screen tab badge now that the requests it was
+            // counting are actually visible on screen. Incoming requests
+            // themselves are kept fresh by `store`'s own app-wide poll (see
+            // `FriendStore.startIncomingRequestPolling()`) — no longer this
+            // screen's job alone.
+            .onAppear { store.markIncomingRequestsSeen() }
+            .onChange(of: store.incomingRequests) { _, _ in store.markIncomingRequestsSeen() }
             .task {
                 store.reportMyStudyTime(myStudySeconds)
                 while !Task.isCancelled {
-                    await store.refreshIncomingRequests()
                     // Without this, a friend who just accepted this user's
                     // outgoing request never appears here — nothing else
                     // re-fetches the friends list while this screen is open.
