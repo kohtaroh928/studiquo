@@ -1056,6 +1056,35 @@ extension TextDocument {
         return newRun
     }
 
+    /// A blank paragraph block at the very start or end of the document —
+    /// what pulling past the top/bottom edge of the page inserts (design
+    /// parity with the "pull to add a page" gesture slides/notebooks
+    /// already have; a flowing document has no fixed "pages" to add, so
+    /// this gives the same gesture "more room to write" instead).
+    @discardableResult
+    func insertBlankParagraph(atStart: Bool) -> DocumentBlock {
+        // `sortedBlocks` must be captured *before* `block.document = self`
+        // below — that assignment auto-syncs this relationship's inverse
+        // array (`blocks`), so reading it afterward would already include
+        // `block` once, and the manual insert further down would then add
+        // a second, duplicate reference to the same object. The final
+        // `blocks = all` assignment overwrites the relationship wholesale,
+        // superseding whatever the auto-sync did in between — the same
+        // reason `replaceParagraphRun` above captures its own snapshot
+        // first too.
+        var all = sortedBlocks
+        let block = DocumentBlock(order: 0, kind: .paragraph)
+        block.document = self
+        if atStart {
+            all.insert(block, at: 0)
+        } else {
+            all.append(block)
+        }
+        for (index, b) in all.enumerated() { b.order = index }
+        blocks = all
+        return block
+    }
+
     /// Splits `segment` (a `.text` segment) at `cursorOffset` within
     /// `liveText` — the segment's current, possibly not-yet-saved content —
     /// and inserts a `rows`x`columns` table between the two halves. Returns
@@ -1261,6 +1290,19 @@ final class SlideDeck {
 
     func renumberSlides() {
         for (index, slide) in sortedSlides.enumerated() { slide.order = index }
+    }
+
+    /// Inserts `slide` immediately before/after `reference` (shifting every
+    /// slide at or past that position back by one first) and renumbers —
+    /// the model-side half of "pull past the canvas edge to add a slide."
+    /// The caller still owns telling `modelContext` about the new slide and
+    /// running migration on it, the same as `addSlide` itself.
+    func insertSlide(_ slide: Slide, adjacentTo reference: Slide, before: Bool) {
+        let order = before ? reference.order : reference.order + 1
+        slide.order = order
+        for later in sortedSlides where later.order >= order { later.order += 1 }
+        addSlide(slide)
+        renumberSlides()
     }
 }
 

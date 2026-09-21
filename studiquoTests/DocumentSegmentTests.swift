@@ -513,3 +513,70 @@ final class DocumentSearchTests: XCTestCase {
         XCTAssertEqual(DocumentBody.decode(block.bodyData).string, "子猫ちゃんと犬と子猫ちゃん")
     }
 }
+
+/// Coverage for `TextDocument.insertBlankParagraph(atStart:)` — the
+/// document editor's "pull past the page edge" gesture, giving a flowing
+/// document (which has no fixed pages the way slides/notebooks do) more
+/// room to write instead.
+final class DocumentInsertBlankParagraphTests: XCTestCase {
+    private func paragraph(_ document: TextDocument, order: Int, text: String) -> DocumentBlock {
+        let block = DocumentBlock(order: order, kind: .paragraph)
+        block.bodyData = DocumentBody.encode(NSAttributedString(string: text, attributes: DocumentBody.defaultAttributes()))
+        block.document = document
+        return block
+    }
+
+    func testInsertingAtStartPlacesTheNewBlockBeforeEverythingElse() {
+        let document = TextDocument(title: "テスト")
+        let existing = paragraph(document, order: 0, text: "元からある段落")
+        document.blocks = [existing]
+
+        let inserted = document.insertBlankParagraph(atStart: true)
+
+        XCTAssertTrue(document.sortedBlocks.first === inserted)
+        XCTAssertTrue(document.sortedBlocks.last === existing)
+    }
+
+    func testInsertingAtEndPlacesTheNewBlockAfterEverythingElse() {
+        let document = TextDocument(title: "テスト")
+        let existing = paragraph(document, order: 0, text: "元からある段落")
+        document.blocks = [existing]
+
+        let inserted = document.insertBlankParagraph(atStart: false)
+
+        XCTAssertTrue(document.sortedBlocks.last === inserted)
+        XCTAssertTrue(document.sortedBlocks.first === existing)
+    }
+
+    func testOrderValuesEndUpContiguousStartingAtZero() {
+        let document = TextDocument(title: "テスト")
+        document.blocks = [
+            paragraph(document, order: 0, text: "A"),
+            paragraph(document, order: 1, text: "B"),
+        ]
+
+        document.insertBlankParagraph(atStart: true)
+
+        XCTAssertEqual(document.sortedBlocks.map(\.order), [0, 1, 2])
+    }
+
+    func testInsertingIntoAnEmptyDocumentProducesASingleBlock() {
+        let document = TextDocument(title: "テスト")
+        document.blocks = []
+
+        let inserted = document.insertBlankParagraph(atStart: false)
+
+        XCTAssertEqual(document.sortedBlocks.count, 1)
+        XCTAssertTrue(document.sortedBlocks.first === inserted)
+    }
+
+    func testTheNewBlockIsAnEmptyParagraph() {
+        let document = TextDocument(title: "テスト")
+        document.blocks = []
+
+        let inserted = document.insertBlankParagraph(atStart: true)
+
+        XCTAssertEqual(inserted.kind, .paragraph)
+        XCTAssertEqual(DocumentBody.decode(inserted.bodyData).string, "")
+    }
+}

@@ -36,6 +36,16 @@ struct SlideElementsLayer: View {
     /// `SlidePresentationView` ever passes a real set.
     var revealedElementIDs: Set<ObjectIdentifier>?
     let onChange: () -> Void
+    /// Design fix item 5's live rich-text editing — see
+    /// `EditableSlideElement`'s matching properties for what each one does.
+    /// Owned by the caller (`SlideDeckView`) the same way
+    /// `selectedElementIDs` is, so its own formatting bar can drive them;
+    /// read-only call sites simply don't pass any of this.
+    var editingElementID: ObjectIdentifier?
+    @Binding var editSelectedRange: NSRange
+    var editRevision: Int = 0
+    var onBeginEditingText: (SlideElement) -> Void = { _ in }
+    var onFormattingChange: (SelectionFormatting) -> Void = { _ in }
 
     /// `ObjectIdentifier`, not `PersistentIdentifier` — a `SlideElement`
     /// freshly created in this editing session (e.g. by the add-element
@@ -47,6 +57,11 @@ struct SlideElementsLayer: View {
         isEditable: Bool = true,
         selectedElementIDs: Binding<Set<ObjectIdentifier>> = .constant([]),
         revealedElementIDs: Set<ObjectIdentifier>? = nil,
+        editingElementID: ObjectIdentifier? = nil,
+        editSelectedRange: Binding<NSRange> = .constant(NSRange()),
+        editRevision: Int = 0,
+        onBeginEditingText: @escaping (SlideElement) -> Void = { _ in },
+        onFormattingChange: @escaping (SelectionFormatting) -> Void = { _ in },
         onChange: @escaping () -> Void
     ) {
         self.slide = slide
@@ -54,6 +69,11 @@ struct SlideElementsLayer: View {
         self.isEditable = isEditable
         self._selectedElementIDs = selectedElementIDs
         self.revealedElementIDs = revealedElementIDs
+        self.editingElementID = editingElementID
+        self._editSelectedRange = editSelectedRange
+        self.editRevision = editRevision
+        self.onBeginEditingText = onBeginEditingText
+        self.onFormattingChange = onFormattingChange
         self.onChange = onChange
     }
 
@@ -85,12 +105,17 @@ struct SlideElementsLayer: View {
                     slideSize: slideSize,
                     isEditable: isEditable,
                     selectedElementIDs: $selectedElementIDs,
+                    editingElementID: editingElementID,
+                    editSelectedRange: $editSelectedRange,
+                    editRevision: editRevision,
                     revealedElementIDs: revealedElementIDs,
                     otherElementFrames: otherFrames(excluding: element.stableID),
                     onChange: onChange,
                     onMoveSelection: { moveSelection(by: $0) },
                     onMoveSelectionEnded: { onChange() },
-                    onGuidesChanged: { x, y in guideX = x; guideY = y }
+                    onGuidesChanged: { x, y in guideX = x; guideY = y },
+                    onBeginEditingText: onBeginEditingText,
+                    onFormattingChange: onFormattingChange
                 )
                 .zIndex(selectedElementIDs.contains(element.stableID) ? 1_000_000 : element.layerIndex)
             }
@@ -229,18 +254,35 @@ private struct EditableSlideElement: View {
     let slideSize: CGSize
     var isEditable: Bool = true
     @Binding var selectedElementIDs: Set<ObjectIdentifier>
+    /// Which text element (if any) is live-being-edited right now — design
+    /// fix item 5's real, in-place rich-text editing, replacing the old
+    /// popup that rebuilt the whole box's text from plain `String` on every
+    /// save (destroying any per-character formatting). Owned by
+    /// `SlideDeckView`, alongside `editSelectedRange`/`editRevision`, so its
+    /// own formatting bar can read/drive the same live text.
+    var editingElementID: ObjectIdentifier?
+    @Binding var editSelectedRange: NSRange
+    var editRevision: Int = 0
     var revealedElementIDs: Set<ObjectIdentifier>?
     var otherElementFrames: [CanvasElementGeometry.Frame] = []
     let onChange: () -> Void
     let onMoveSelection: (CGSize) -> Void
     let onMoveSelectionEnded: () -> Void
     var onGuidesChanged: (Double?, Double?) -> Void = { _, _ in }
+    var onBeginEditingText: (SlideElement) -> Void = { _ in }
+    var onFormattingChange: (SelectionFormatting) -> Void = { _ in }
 
     @State private var dragOrigin: CGPoint?
     @State private var lastGroupTranslation: CGSize = .zero
     @State private var handleOrigin: CanvasElementGeometry.Frame?
-    @State private var isEditingText = false
-    @State private var editedText = ""
+    @State private var rotationStart: (touchAngle: Double, elementRotation: Double)?
+
+    /// How much of the raw finger movement actually reaches move/rotate —
+    /// under 1 on purpose, so dragging and turning an element both feel
+    /// calmer than a strict 1:1 follow. Resizing is left at full speed
+    /// (not part of what felt too sensitive).
+    private static let moveDamping: CGFloat = 0.6
+    private static let rotationDamping: Double = 0.6
 
     private var elementSize: CGSize {
         CGSize(
@@ -255,28 +297,48 @@ private struct EditableSlideElement: View {
     /// gets the simplified border-only chrome below plus the shared
     /// align/distribute/group/delete toolbar in `SlideDeckView` instead.
     private var isSoleSelection: Bool { isSelected && selectedElementIDs.count == 1 }
+    private var isEditingThisElement: Bool { isEditable && editingElementID == element.stableID }
 
     var body: some View {
         Group {
             if isEditable {
-                elementContent
-                    .frame(width: elementSize.width, height: elementSize.height)
-                    .contentShape(Rectangle())
-                    .overlay { if isSelected { selectionChrome } }
-                    .rotationEffect(.degrees(element.rotation))
-                    .position(x: slideSize.width * element.centerX, y: slideSize.height * element.centerY)
-                    .onTapGesture { handleTap() }
-                    .gesture(isSelected ? moveGesture : nil)
-                    .simultaneousGesture(isSoleSelection && element.kind != .group ? rotationGesture : nil)
-                    .contextMenu { if selectedElementIDs.count <= 1 { contextMenuContent } }
-                    .alert("テキストを編集", isPresented: $isEditingText) {
-                        TextField("文字を入力", text: $editedText, axis: .vertical)
-                        Button("キャンセル", role: .cancel) {}
-                        Button("保存") {
-                            element.body = NSAttributedString(string: editedText, attributes: element.defaultTextAttributes())
+                if isEditingThisElement {
+                    // A live text-edit session: no move/rotate/resize
+                    // gestures and no selection handles while typing — a
+                    // plain accent-colored outline instead, matching a
+                    // word processor's "click to edit text, click away to
+                    // reposition" split between the two modes. Every other
+                    // element's own gestures are unaffected; only taps
+                    // that land *outside* this box (handled elsewhere,
+                    // changing `selectedElementIDs`) end the session, via
+                    // `SlideDeckView`'s own `onChange(of: selectedElementIDs)`.
+                    RichTextEditor(
+                        attributedText: $element.body,
+                        selectedRange: $editSelectedRange,
+                        externalRevision: editRevision,
+                        shouldFocusOnAppear: true,
+                        defaultTypingAttributes: element.defaultTextAttributes(),
+                        onFormattingChange: { formatting in
+                            onFormattingChange(formatting)
                             onChange()
                         }
-                    }
+                    )
+                    .frame(width: elementSize.width, height: elementSize.height)
+                    .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.accentColor, lineWidth: 1.5))
+                    .rotationEffect(.degrees(element.rotation))
+                    .position(x: slideSize.width * element.centerX, y: slideSize.height * element.centerY)
+                } else {
+                    elementContent
+                        .frame(width: elementSize.width, height: elementSize.height)
+                        .contentShape(Rectangle())
+                        .overlay { if isSelected { selectionChrome } }
+                        .rotationEffect(.degrees(element.rotation))
+                        .position(x: slideSize.width * element.centerX, y: slideSize.height * element.centerY)
+                        .onTapGesture { handleTap() }
+                        .gesture(isSelected ? moveGesture : nil)
+                        .simultaneousGesture(isSoleSelection && element.kind != .group ? rotationGesture : nil)
+                        .contextMenu { if selectedElementIDs.count <= 1 { contextMenuContent } }
+                }
             } else {
                 // Read-only rendering (presentation mode, PDF export): no
                 // hit-testing, no selection chrome, no gestures at all.
@@ -299,13 +361,21 @@ private struct EditableSlideElement: View {
     }
 
     /// Tapping an unselected element selects only it. Tapping the sole
-    /// selected element deselects it. Tapping an element that's already
-    /// part of a multi-selection leaves the whole selection alone, so the
-    /// same tap-and-hold can turn straight into a shared drag without
+    /// selected element a second time either starts editing its text (a
+    /// `.text` element — the same "click to select, click again to edit"
+    /// two-step PowerPoint itself uses) or deselects it (anything else,
+    /// the prior behavior). Tapping an element that's already part of a
+    /// multi-selection leaves the whole selection alone, so the same
+    /// tap-and-hold can turn straight into a shared drag without
     /// collapsing back down to one element first.
     private func handleTap() {
         if isSelected {
-            if selectedElementIDs.count == 1 { selectedElementIDs = [] }
+            guard selectedElementIDs.count == 1 else { return }
+            if element.kind == .text {
+                onBeginEditingText(element)
+            } else {
+                selectedElementIDs = []
+            }
         } else {
             selectedElementIDs = [element.stableID]
         }
@@ -315,8 +385,7 @@ private struct EditableSlideElement: View {
     private var contextMenuContent: some View {
         if element.kind == .text {
             Button {
-                editedText = element.body.string
-                isEditingText = true
+                onBeginEditingText(element)
             } label: {
                 Label("テキストを編集", systemImage: "pencil")
             }
@@ -460,6 +529,28 @@ private struct EditableSlideElement: View {
                     .position(x: elementSize.width / 2, y: -20)
                     .gesture(rotationGesture)
             }
+
+            // Delete, parked just off the top-right corner — the same
+            // position and styling as the notes canvas's own per-element
+            // delete button, so it's not confused with a resize handle.
+            Button(role: .destructive) {
+                delete()
+            } label: {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(Color.red, in: Circle())
+                    .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+            }
+            .buttonStyle(.plain)
+            .contentShape(Circle().inset(by: -6))
+            // Handle positions above are relative to the element's own
+            // (0,0)-top-left-to-(width,height)-bottom-right box — e.g. the
+            // `.topRight` resize handle lands at (width, 0) exactly — so
+            // "just off the top-right corner" is (width + 26, 0 - 20).
+            .position(x: elementSize.width + 26, y: -20)
+            .accessibilityLabel("この要素を削除")
         }
         .frame(width: elementSize.width + margin, height: elementSize.height + margin)
         .allowsHitTesting(!element.isLocked)
@@ -473,16 +564,16 @@ private struct EditableSlideElement: View {
                 guard !element.isLocked else { return }
                 if selectedElementIDs.count > 1 {
                     let delta = CGSize(
-                        width: value.translation.width - lastGroupTranslation.width,
-                        height: value.translation.height - lastGroupTranslation.height
+                        width: (value.translation.width - lastGroupTranslation.width) * Self.moveDamping,
+                        height: (value.translation.height - lastGroupTranslation.height) * Self.moveDamping
                     )
                     onMoveSelection(delta)
                     lastGroupTranslation = value.translation
                     return
                 }
                 if element.kind == .group {
-                    let deltaWidth = value.translation.width - lastGroupTranslation.width
-                    let deltaHeight = value.translation.height - lastGroupTranslation.height
+                    let deltaWidth = (value.translation.width - lastGroupTranslation.width) * Self.moveDamping
+                    let deltaHeight = (value.translation.height - lastGroupTranslation.height) * Self.moveDamping
                     element.moveGroup(
                         dx: deltaWidth / max(slideSize.width, 1),
                         dy: deltaHeight / max(slideSize.height, 1)
@@ -495,7 +586,8 @@ private struct EditableSlideElement: View {
                     dragOrigin = CGPoint(x: element.centerX, y: element.centerY)
                 }
                 guard let origin = dragOrigin else { return }
-                let moved = CanvasElementGeometry.moved(from: origin, translation: value.translation, canvasSize: slideSize)
+                let dampedTranslation = CGSize(width: value.translation.width * Self.moveDamping, height: value.translation.height * Self.moveDamping)
+                let moved = CanvasElementGeometry.moved(from: origin, translation: dampedTranslation, canvasSize: slideSize)
                 // Smart guides (design step 4's last piece): snap toward
                 // alignment with a sibling element or the canvas's own
                 // center whenever already close, and surface the matching
@@ -549,15 +641,37 @@ private struct EditableSlideElement: View {
             }
     }
 
+    /// Delta-based and damped, rather than jumping straight to the raw
+    /// touch-to-center angle every frame: right at the pivot, a tiny
+    /// finger movement used to swing the angle wildly, since that raw
+    /// angle is inherently more sensitive the closer the touch is to the
+    /// center. Tracking how far the angle has moved *since the drag
+    /// started*, then only applying a damped fraction of that change on
+    /// top of the element's rotation at that moment, makes the whole drag
+    /// feel calmer regardless of exactly where on the handle it started.
     private var rotationGesture: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(SlideElementsLayer.coordinateSpace))
             .onChanged { value in
                 guard !element.isLocked else { return }
                 element.bakeInGeometryIfNeeded()
                 let center = CGPoint(x: slideSize.width * element.centerX, y: slideSize.height * element.centerY)
-                element.overrideRotation = CanvasElementGeometry.rotation(center: center, touch: value.location)
+                let touchAngle = CanvasElementGeometry.rotation(center: center, touch: value.location)
+                if rotationStart == nil {
+                    rotationStart = (touchAngle: touchAngle, elementRotation: element.rotation)
+                }
+                guard let start = rotationStart else { return }
+                var angleDelta = touchAngle - start.touchAngle
+                // Keep the shortest way around — otherwise crossing the
+                // 0°/360° seam would register as a near-360° jump instead
+                // of a small step.
+                if angleDelta > 180 { angleDelta -= 360 }
+                if angleDelta < -180 { angleDelta += 360 }
+                element.overrideRotation = start.elementRotation + angleDelta * Self.rotationDamping
             }
-            .onEnded { _ in onChange() }
+            .onEnded { _ in
+                rotationStart = nil
+                onChange()
+            }
     }
 
     // MARK: Actions

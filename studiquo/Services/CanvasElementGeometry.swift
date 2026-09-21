@@ -186,6 +186,43 @@ enum CanvasElementGeometry {
         return result
     }
 
+    /// One of the nine standard slide positions a single element can be
+    /// snapped to with one tap — top/middle/bottom crossed with
+    /// left/center/right, matching PowerPoint's own "Align" quick picks
+    /// applied to the slide itself rather than to other elements (that's
+    /// what `aligned(_:horizontally:)`/`(_:vertically:)` above already
+    /// cover).
+    enum QuickPosition: CaseIterable, Hashable {
+        case topLeft, topCenter, topRight
+        case middleLeft, center, middleRight
+        case bottomLeft, bottomCenter, bottomRight
+    }
+
+    /// The new center for `frame` at `position`, keeping its current
+    /// width/height — `margin` (a fraction of the canvas) is the gap left
+    /// between the element and the slide's own edge for any position that
+    /// isn't dead-center on that axis.
+    static func quickPosition(_ position: QuickPosition, for frame: Frame, margin: Double = 0.04) -> (centerX: Double, centerY: Double) {
+        let left = frame.width / 2 + margin
+        let right = 1 - frame.width / 2 - margin
+        let top = frame.height / 2 + margin
+        let bottom = 1 - frame.height / 2 - margin
+
+        let centerX: Double
+        switch position {
+        case .topLeft, .middleLeft, .bottomLeft: centerX = left
+        case .topCenter, .center, .bottomCenter: centerX = 0.5
+        case .topRight, .middleRight, .bottomRight: centerX = right
+        }
+        let centerY: Double
+        switch position {
+        case .topLeft, .topCenter, .topRight: centerY = top
+        case .middleLeft, .center, .middleRight: centerY = 0.5
+        case .bottomLeft, .bottomCenter, .bottomRight: centerY = bottom
+        }
+        return (centerX, centerY)
+    }
+
     /// Whether `frame`'s unrotated bounding box (converted to screen points
     /// via `canvasSize`) overlaps `rect` — the rubber-band multi-select hit
     /// test (design step 4's remaining piece, `SlideElementsLayer`'s own
