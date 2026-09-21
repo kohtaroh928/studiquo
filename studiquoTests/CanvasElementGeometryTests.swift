@@ -100,6 +100,55 @@ final class CanvasElementGeometryRotationTests: XCTestCase {
     }
 }
 
+/// Coverage for the damped, delta-based rotation update (design fix item
+/// 3) — see `CanvasElementGeometry.dampedRotation`'s doc comment.
+final class CanvasElementGeometryDampedRotationTests: XCTestCase {
+    func testANinetyDegreeTouchSwingOnlyAppliesTheDampedFraction() {
+        let result = CanvasElementGeometry.dampedRotation(
+            startTouchAngle: 0, startElementRotation: 0, currentTouchAngle: 90, damping: 0.6
+        )
+        XCTAssertEqual(result, 54, accuracy: 0.01, "90° of touch movement at 0.6 damping is 54° of actual rotation")
+    }
+
+    func testNoTouchMovementMeansNoRotationChange() {
+        let result = CanvasElementGeometry.dampedRotation(
+            startTouchAngle: 45, startElementRotation: 20, currentTouchAngle: 45, damping: 0.6
+        )
+        XCTAssertEqual(result, 20, accuracy: 0.01)
+    }
+
+    func testDampingOfOneBehavesLikeUndampedDeltaRotation() {
+        let result = CanvasElementGeometry.dampedRotation(
+            startTouchAngle: 10, startElementRotation: 5, currentTouchAngle: 40, damping: 1.0
+        )
+        XCTAssertEqual(result, 35, accuracy: 0.01, "5 (starting rotation) + 30 (undamped touch delta)")
+    }
+
+    func testResultIsAddedOnTopOfWhateverRotationTheElementStartedAt() {
+        let result = CanvasElementGeometry.dampedRotation(
+            startTouchAngle: 0, startElementRotation: 200, currentTouchAngle: 10, damping: 0.5
+        )
+        XCTAssertEqual(result, 205, accuracy: 0.01)
+    }
+
+    /// Crossing the 0°/360° seam (e.g. touch angle going from 350° to 10°,
+    /// a small 20° clockwise step) must not register as a huge -340° jump
+    /// the naive `current - start` subtraction would produce.
+    func testCrossingThe360DegreeSeamTakesTheShortWayAround() {
+        let result = CanvasElementGeometry.dampedRotation(
+            startTouchAngle: 350, startElementRotation: 0, currentTouchAngle: 10, damping: 1.0
+        )
+        XCTAssertEqual(result, 20, accuracy: 0.01, "350° → 10° is a short +20° step across the seam, not -340°")
+    }
+
+    func testCrossingTheSeamTheOtherWayAlsoTakesTheShortPath() {
+        let result = CanvasElementGeometry.dampedRotation(
+            startTouchAngle: 10, startElementRotation: 0, currentTouchAngle: 350, damping: 1.0
+        )
+        XCTAssertEqual(result, -20, accuracy: 0.01, "10° → 350° is a short -20° step across the seam, not +340°")
+    }
+}
+
 final class CanvasElementGeometryMoveTests: XCTestCase {
     func testAnOrdinaryDragOffsetsTheOriginByTheFractionalTranslation() {
         let point = CanvasElementGeometry.moved(
@@ -209,6 +258,45 @@ final class CanvasElementGeometryAlignDistributeTests: XCTestCase {
 /// remaining piece) — `SlideElementsLayer`'s drag-to-select gesture calls
 /// this once per element on the slide to decide what the selection rect
 /// covers.
+/// Coverage for telling a "trying to scroll the continuous slide canvas"
+/// drag apart from a rubber-band multi-select drag, both of which start
+/// the same way (a drag on empty canvas) — see
+/// `CanvasElementGeometry.isMostlyVertical`'s doc comment.
+final class CanvasElementGeometryIsMostlyVerticalTests: XCTestCase {
+    func testAPurelyVerticalDragIsMostlyVertical() {
+        XCTAssertTrue(CanvasElementGeometry.isMostlyVertical(CGSize(width: 0, height: 120)))
+    }
+
+    func testAPurelyHorizontalDragIsNotMostlyVertical() {
+        XCTAssertFalse(CanvasElementGeometry.isMostlyVertical(CGSize(width: 120, height: 0)))
+    }
+
+    func testADiagonalDragUnderTheRatioIsNotMostlyVertical() {
+        // height (110) is not > width (100) * 1.5 (150) — a diagonal drag,
+        // not a scroll attempt.
+        XCTAssertFalse(CanvasElementGeometry.isMostlyVertical(CGSize(width: 100, height: 110)))
+    }
+
+    func testADiagonalDragOverTheRatioIsMostlyVertical() {
+        // height (200) > width (100) * 1.5 (150).
+        XCTAssertTrue(CanvasElementGeometry.isMostlyVertical(CGSize(width: 100, height: 200)))
+    }
+
+    func testDirectionDoesNotMatterOnlyMagnitude() {
+        XCTAssertTrue(CanvasElementGeometry.isMostlyVertical(CGSize(width: 0, height: -120)))
+    }
+
+    func testCustomRatioIsHonored() {
+        let translation = CGSize(width: 100, height: 110)
+        XCTAssertFalse(CanvasElementGeometry.isMostlyVertical(translation, ratio: 1.5))
+        XCTAssertTrue(CanvasElementGeometry.isMostlyVertical(translation, ratio: 1.0))
+    }
+
+    func testAZeroSizedDragIsNotMostlyVertical() {
+        XCTAssertFalse(CanvasElementGeometry.isMostlyVertical(.zero), "0 > 0 is false, not a vacuous true")
+    }
+}
+
 final class CanvasElementGeometryFrameIntersectsTests: XCTestCase {
     private typealias Frame = CanvasElementGeometry.Frame
     private let canvas = CGSize(width: 1000, height: 1000)

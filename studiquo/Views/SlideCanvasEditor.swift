@@ -28,6 +28,11 @@ struct SlideElementsLayer: View {
     @Bindable var slide: Slide
     let slideSize: CGSize
     var isEditable: Bool = true
+    /// Whether "drag on empty canvas to rubber-band-select multiple
+    /// elements" is currently live — off by default. See
+    /// `selectionDragGesture`'s doc comment for why this has to be an
+    /// explicit, caller-controlled mode rather than always-on.
+    var isSelectionModeActive: Bool = false
     @Binding var selectedElementIDs: Set<ObjectIdentifier>
     /// Which animated elements presentation playback (design step 6) has
     /// revealed so far — `nil` (the default) means "show everything,
@@ -55,6 +60,7 @@ struct SlideElementsLayer: View {
         slide: Slide,
         slideSize: CGSize,
         isEditable: Bool = true,
+        isSelectionModeActive: Bool = false,
         selectedElementIDs: Binding<Set<ObjectIdentifier>> = .constant([]),
         revealedElementIDs: Set<ObjectIdentifier>? = nil,
         editingElementID: ObjectIdentifier? = nil,
@@ -67,6 +73,7 @@ struct SlideElementsLayer: View {
         self.slide = slide
         self.slideSize = slideSize
         self.isEditable = isEditable
+        self.isSelectionModeActive = isSelectionModeActive
         self._selectedElementIDs = selectedElementIDs
         self.revealedElementIDs = revealedElementIDs
         self.editingElementID = editingElementID
@@ -96,7 +103,17 @@ struct SlideElementsLayer: View {
                 Color.clear
                     .frame(width: slideSize.width, height: slideSize.height)
                     .contentShape(Rectangle())
-                    .gesture(selectionDragGesture)
+                    // A plain tap deselects — always live, editable or not,
+                    // independent of `isSelectionModeActive`.
+                    .onTapGesture { selectedElementIDs = [] }
+                    // The rubber-band drag itself only exists at all while
+                    // selection mode is on (see its own doc comment for
+                    // why) — `nil` here means no gesture recognizer is
+                    // installed, not merely one that declines to act, so
+                    // there is nothing left to ever contend with the
+                    // continuous-scroll canvas's own `ScrollView` the rest
+                    // of the time.
+                    .simultaneousGesture(isSelectionModeActive ? selectionDragGesture : nil)
             }
 
             ForEach(slide.sortedElements, id: \.stableID) { element in
@@ -147,11 +164,21 @@ struct SlideElementsLayer: View {
         .coordinateSpace(name: Self.coordinateSpace)
     }
 
-    /// A drag on empty canvas: a near-zero-distance drag (a tap) clears the
-    /// selection, anything past that threshold draws a rubber-band rect and
-    /// selects every element whose unrotated bounding box it overlaps.
+    /// A drag on empty canvas draws a rubber-band rect and selects every
+    /// element whose unrotated bounding box it overlaps. Only ever attached
+    /// while `isSelectionModeActive` is on (see the call site above) — two
+    /// earlier attempts tried to let this coexist with the continuous-
+    /// scroll canvas's own `ScrollView` at all times, first by raising
+    /// `minimumDistance`, then by requiring a stationary press first; both
+    /// still left *some* gesture recognizer permanently attached to
+    /// scrollable content, and neither reliably fixed slides failing to
+    /// scroll. Matching how the notebook feature's own equivalent
+    /// (its lasso selection tool) only exists while explicitly switched on
+    /// from the toolbar removes the competition entirely, rather than
+    /// trying to arbitrate it: the rest of the time, literally no gesture
+    /// sits here for the scroll view's own pan recognizer to contend with.
     private var selectionDragGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+        DragGesture(minimumDistance: 2, coordinateSpace: .local)
             .onChanged { value in
                 selectionRect = CGRect(
                     x: min(value.startLocation.x, value.location.x),
@@ -162,11 +189,6 @@ struct SlideElementsLayer: View {
             }
             .onEnded { value in
                 defer { selectionRect = nil }
-                let distance = hypot(value.location.x - value.startLocation.x, value.location.y - value.startLocation.y)
-                guard distance > 4 else {
-                    selectedElementIDs = []
-                    return
-                }
                 let rect = CGRect(
                     x: min(value.startLocation.x, value.location.x),
                     y: min(value.startLocation.y, value.location.y),
@@ -660,13 +682,10 @@ private struct EditableSlideElement: View {
                     rotationStart = (touchAngle: touchAngle, elementRotation: element.rotation)
                 }
                 guard let start = rotationStart else { return }
-                var angleDelta = touchAngle - start.touchAngle
-                // Keep the shortest way around — otherwise crossing the
-                // 0°/360° seam would register as a near-360° jump instead
-                // of a small step.
-                if angleDelta > 180 { angleDelta -= 360 }
-                if angleDelta < -180 { angleDelta += 360 }
-                element.overrideRotation = start.elementRotation + angleDelta * Self.rotationDamping
+                element.overrideRotation = CanvasElementGeometry.dampedRotation(
+                    startTouchAngle: start.touchAngle, startElementRotation: start.elementRotation,
+                    currentTouchAngle: touchAngle, damping: Self.rotationDamping
+                )
             }
             .onEnded { _ in
                 rotationStart = nil
