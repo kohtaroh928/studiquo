@@ -240,6 +240,55 @@ final class CanvasElementGeometryFrameIntersectsTests: XCTestCase {
     }
 }
 
+/// Coverage for the single-element "quick position" presets (design fix
+/// item 7) — see `CanvasElementGeometry.quickPosition(_:for:margin:)`.
+final class CanvasElementGeometryQuickPositionTests: XCTestCase {
+    private typealias Frame = CanvasElementGeometry.Frame
+    private let frame = Frame(centerX: 0.2, centerY: 0.9, width: 0.2, height: 0.1)
+
+    func testCenterIgnoresWidthAndHeightAndLandsExactlyInTheMiddle() {
+        let result = CanvasElementGeometry.quickPosition(.center, for: frame)
+        XCTAssertEqual(result.centerX, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 0.5, accuracy: 0.0001)
+    }
+
+    func testTopLeftKeepsAMarginFromBothEdgesBasedOnTheElementsOwnSize() {
+        let result = CanvasElementGeometry.quickPosition(.topLeft, for: frame, margin: 0.04)
+        // left edge target = width/2 + margin = 0.1 + 0.04 = 0.14
+        XCTAssertEqual(result.centerX, 0.14, accuracy: 0.0001)
+        // top edge target = height/2 + margin = 0.05 + 0.04 = 0.09
+        XCTAssertEqual(result.centerY, 0.09, accuracy: 0.0001)
+    }
+
+    func testBottomRightMirrorsTopLeftOnBothAxes() {
+        let result = CanvasElementGeometry.quickPosition(.bottomRight, for: frame, margin: 0.04)
+        XCTAssertEqual(result.centerX, 1 - 0.14, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 1 - 0.09, accuracy: 0.0001)
+    }
+
+    func testTopCenterUsesDeadCenterHorizontallyButTheMarginVertically() {
+        let result = CanvasElementGeometry.quickPosition(.topCenter, for: frame, margin: 0.04)
+        XCTAssertEqual(result.centerX, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 0.09, accuracy: 0.0001)
+    }
+
+    func testMiddleLeftUsesDeadCenterVerticallyButTheMarginHorizontally() {
+        let result = CanvasElementGeometry.quickPosition(.middleLeft, for: frame, margin: 0.04)
+        XCTAssertEqual(result.centerX, 0.14, accuracy: 0.0001)
+        XCTAssertEqual(result.centerY, 0.5, accuracy: 0.0001)
+    }
+
+    func testEveryPositionKeepsTheElementFullyOnTheCanvasForATypicalSize() {
+        for position in CanvasElementGeometry.QuickPosition.allCases {
+            let result = CanvasElementGeometry.quickPosition(position, for: frame)
+            XCTAssertGreaterThanOrEqual(result.centerX - frame.width / 2, 0, "\(position) pushes the left edge off-canvas")
+            XCTAssertLessThanOrEqual(result.centerX + frame.width / 2, 1, "\(position) pushes the right edge off-canvas")
+            XCTAssertGreaterThanOrEqual(result.centerY - frame.height / 2, 0, "\(position) pushes the top edge off-canvas")
+            XCTAssertLessThanOrEqual(result.centerY + frame.height / 2, 1, "\(position) pushes the bottom edge off-canvas")
+        }
+    }
+}
+
 /// Coverage for the drag-time snap-to-alignment ("smart guides") used by
 /// design step 4's last piece — a solo element drag only, see
 /// `CanvasElementGeometry.smartGuided`'s doc comment.

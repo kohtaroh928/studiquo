@@ -23,6 +23,7 @@ struct SlideDeckView: View {
     @State private var selectedElementIDs: Set<ObjectIdentifier> = []
     @State private var isPresenting = false
     @State private var showsNotes = true
+    @State private var showsThumbnailRail = true
     @State private var isRenaming = false
     @State private var renameDraft = ""
     @State private var photoItem: PhotosPickerItem?
@@ -31,6 +32,17 @@ struct SlideDeckView: View {
     @State private var pptxDocument: PptxExportDocument?
     @State private var showsPptxExporter = false
     @State private var showsMasterEditor = false
+    @State private var showsQuickPositionPicker = false
+    /// Design fix item 5's live rich-text editing state — which text
+    /// element (if any) is currently being edited in place, its live
+    /// cursor/selection, a revision counter bumped whenever the formatting
+    /// bar rewrites the text externally, and the formatting the caret is
+    /// currently sitting in (drives the bar's button states). See
+    /// `SlideElementsLayer`'s matching properties.
+    @State private var editingElementID: ObjectIdentifier?
+    @State private var editSelectedRange = NSRange(location: 0, length: 0)
+    @State private var editRevision = 0
+    @State private var editFormatting = SelectionFormatting()
 
     private var slides: [Slide] { deck.sortedSlides }
 
@@ -43,8 +55,13 @@ struct SlideDeckView: View {
             header
             Divider()
             HStack(spacing: 0) {
-                thumbnailRail
-                Divider()
+                if showsThumbnailRail {
+                    thumbnailRail
+                    Divider()
+                } else {
+                    collapsedRailHandle
+                    Divider()
+                }
                 editorArea
             }
         }
@@ -76,6 +93,16 @@ struct SlideDeckView: View {
             Task { await attachImage(from: item) }
         }
         .onChange(of: selectedSlideID) { _, _ in selectedElementIDs = [] }
+        .onChange(of: selectedElementIDs) { _, newValue in
+            // Ends the live text-edit session the instant selection moves
+            // away from that element — tapping the background, tapping a
+            // different element, deleting the selection, all funnel
+            // through here rather than each needing their own explicit
+            // "stop editing" call.
+            if let editingElementID, !newValue.contains(editingElementID) {
+                self.editingElementID = nil
+            }
+        }
         .modifier(PDFSaveModifier(
             isPresented: $showsPDFExporter,
             document: $pdfDocument,
@@ -156,6 +183,24 @@ struct SlideDeckView: View {
 
     private var thumbnailRail: some View {
         VStack(spacing: 0) {
+            HStack {
+                Text("スライド")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { showsThumbnailRail = false }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("スライド一覧を閉じる")
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
+
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(Array(slides.enumerated()), id: \.element.persistentModelID) { index, slide in
@@ -217,19 +262,41 @@ struct SlideDeckView: View {
         .background(Color(.systemBackground))
     }
 
+    /// Shown instead of `thumbnailRail` while it's collapsed — a thin
+    /// always-visible strip so there's still an obvious way to bring it
+    /// back.
+    private var collapsedRailHandle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { showsThumbnailRail = true }
+        } label: {
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+                .frame(maxHeight: .infinity)
+        }
+        .buttonStyle(.plain)
+        .background(Color(.systemBackground))
+        .accessibilityLabel("スライド一覧を開く")
+    }
+
     @ViewBuilder
     private var editorArea: some View {
         if let slide = selectedSlide {
             VStack(spacing: 0) {
                 layoutBar(for: slide)
                 Divider()
-                canvasToolBar(for: slide)
+                if editingElementID != nil {
+                    textFormattingBar
+                } else {
+                    canvasToolBar(for: slide)
+                }
                 Divider()
 
                 GeometryReader { geometry in
                     let width = min(
                         geometry.size.width - 48,
-                        (geometry.size.height - 48) * deck.aspect.ratio
+                        (geometry.size.height - 48 - 64) * deck.aspect.ratio
                     )
                     // Rendered directly at its actual on-screen size, not a
                     // fixed internal resolution scaled down afterward —
@@ -240,23 +307,49 @@ struct SlideDeckView: View {
                     // points) in the same coordinate space `slideSize` uses;
                     // a `.scaleEffect` between them would desync the two.
                     let displaySize = CGSize(width: max(200, width), height: max(200, width) / deck.aspect.ratio)
-                    SlideElementsLayer(
-                        slide: slide, slideSize: displaySize,
-                        selectedElementIDs: $selectedElementIDs,
-                        onChange: { deck.updatedAt = .now }
-                    )
-                        .frame(width: displaySize.width, height: displaySize.height)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        PullToAddStrip(direction: .top, label: "引っ張ってスライドを追加", armedLabel: "離してスライドを追加") {
+                            insertSlide(adjacentTo: slide, before: true)
+                        }
+                        SlideElementsLayer(
+                            slide: slide, slideSize: displaySize,
+                            selectedElementIDs: $selectedElementIDs,
+                            editingElementID: editingElementID,
+                            editSelectedRange: $editSelectedRange,
+                            editRevision: editRevision,
+                            onBeginEditingText: { beginEditingText($0) },
+                            onFormattingChange: { editFormatting = $0 },
+                            onChange: { deck.updatedAt = .now }
+                        )
+                            .frame(width: displaySize.width, height: displaySize.height)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+                        PullToAddStrip(direction: .bottom, label: "引っ張ってスライドを追加", armedLabel: "離してスライドを追加") {
+                            insertSlide(adjacentTo: slide, before: false)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
 
+                Divider()
                 if showsNotes {
-                    Divider()
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("発表者ノート")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                        HStack {
+                            Text("発表者ノート")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.15)) { showsNotes = false }
+                            } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("発表者ノートを閉じる")
+                        }
                         TextEditor(text: Binding(
                             get: { slide.notes },
                             set: { slide.notes = $0; deck.updatedAt = .now }
@@ -268,6 +361,23 @@ struct SlideDeckView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .background(Color(.systemBackground))
+                } else {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) { showsNotes = true }
+                    } label: {
+                        HStack {
+                            Text("発表者ノート")
+                            Spacer()
+                            Image(systemName: "chevron.up")
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
+                    .background(Color(.systemBackground))
+                    .accessibilityLabel("発表者ノートを開く")
                 }
             }
         } else {
@@ -435,9 +545,23 @@ struct SlideDeckView: View {
                 }
             }
 
-            if selectedElementIDs.count == 1, let sole = selectedElements(slide).first, sole.kind == .group {
-                Button { ungroupSelection(slide, group: sole) } label: {
-                    Label("グループ解除", systemImage: "square.slash").font(.subheadline)
+            if selectedElementIDs.count == 1, let sole = selectedElements(slide).first {
+                Button { showsQuickPositionPicker = true } label: {
+                    Label("位置", systemImage: "square.grid.3x3").font(.subheadline)
+                }
+                .popover(isPresented: $showsQuickPositionPicker) {
+                    QuickPositionPicker { position in
+                        applyQuickPosition(position, to: sole)
+                        showsQuickPositionPicker = false
+                    }
+                    .padding(16)
+                    .presentationCompactAdaptation(.popover)
+                }
+
+                if sole.kind == .group {
+                    Button { ungroupSelection(slide, group: sole) } label: {
+                        Label("グループ解除", systemImage: "square.slash").font(.subheadline)
+                    }
                 }
             }
 
@@ -454,6 +578,62 @@ struct SlideDeckView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .frame(height: 36)
+        .background(Color(.systemBackground))
+    }
+
+    /// Replaces `canvasToolBar` while a text box is being live-edited
+    /// (design fix item 5) — font size, bold/italic/underline, paragraph
+    /// alignment, and font family, all applied to the current selection
+    /// within that one box. A deliberately narrower set than the document
+    /// editor's own bar (no highlight color, line spacing, links, table/
+    /// equation insertion, …) — a slide text box doesn't need those, and
+    /// this bar only ever edits one box at a time, never a whole document.
+    private var textFormattingBar: some View {
+        HStack(spacing: 10) {
+            Button { changeEditingFontSize(by: -1) } label: { Image(systemName: "textformat.size.smaller") }
+            Text("\(Int(editFormatting.fontSize))").font(.caption.monospacedDigit()).frame(width: 28)
+            Button { changeEditingFontSize(by: 1) } label: { Image(systemName: "textformat.size.larger") }
+
+            Divider().frame(height: 20)
+
+            Toggle(isOn: Binding(get: { editFormatting.isBold }, set: { _ in toggleEditingTrait(.traitBold) })) {
+                Image(systemName: "bold")
+            }.toggleStyle(.button)
+            Toggle(isOn: Binding(get: { editFormatting.isItalic }, set: { _ in toggleEditingTrait(.traitItalic) })) {
+                Image(systemName: "italic")
+            }.toggleStyle(.button)
+            Toggle(isOn: Binding(get: { editFormatting.isUnderlined }, set: { _ in toggleEditingUnderline() })) {
+                Image(systemName: "underline")
+            }.toggleStyle(.button)
+
+            Divider().frame(height: 20)
+
+            Button { applyEditingAlignment(.left) } label: { Image(systemName: "text.alignleft") }
+            Button { applyEditingAlignment(.center) } label: { Image(systemName: "text.aligncenter") }
+            Button { applyEditingAlignment(.right) } label: { Image(systemName: "text.alignright") }
+
+            Divider().frame(height: 20)
+
+            Menu {
+                ForEach(DocumentFontFamily.allCases) { family in
+                    Button(family.title) { applyEditingFontFamily(family) }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(editFormatting.familyName).font(.caption).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.caption2)
+                }
+                .frame(maxWidth: 130)
+            }
+
+            Spacer()
+
+            Button("完了") { editingElementID = nil }
+                .font(.subheadline.weight(.semibold))
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
@@ -559,6 +739,110 @@ struct SlideDeckView: View {
         try? modelContext.save()
     }
 
+    private func applyQuickPosition(_ position: CanvasElementGeometry.QuickPosition, to element: SlideElement) {
+        element.bakeInGeometryIfNeeded()
+        let frame = CanvasElementGeometry.Frame(centerX: element.centerX, centerY: element.centerY, width: element.width, height: element.height)
+        let result = CanvasElementGeometry.quickPosition(position, for: frame)
+        element.overrideCenterX = result.centerX
+        element.overrideCenterY = result.centerY
+        deck.updatedAt = .now
+        try? modelContext.save()
+    }
+
+    // MARK: Live rich-text editing (design fix item 5)
+
+    private func beginEditingText(_ element: SlideElement) {
+        editingElementID = element.stableID
+        editSelectedRange = NSRange(location: element.body.length, length: 0)
+        editFormatting = SelectionFormatting(attributes: element.defaultTextAttributes())
+    }
+
+    private var editingElement: SlideElement? {
+        guard let editingElementID, let slide = selectedSlide else { return nil }
+        return slide.sortedElements.first { $0.stableID == editingElementID }
+    }
+
+    /// The same shape as the document editor's own `mutate(_:)`: build a
+    /// mutable copy of the element being edited, hand it (and the current
+    /// selection, clamped to its length) to `body`, then write the result
+    /// back and bump `editRevision` so `RichTextEditor` picks the rewrite
+    /// up. No-ops when nothing is actually selected — unlike the document
+    /// editor, this doesn't also reach for the "composed character
+    /// sequence around the caret" when the selection is empty; a simpler,
+    /// deliberately narrower rule for a text box this small.
+    private func mutateEditingText(_ body: (NSMutableAttributedString, NSRange) -> Void) {
+        guard let element = editingElement else { return }
+        let mutable = NSMutableAttributedString(attributedString: element.body)
+        var range = editSelectedRange
+        range.location = min(range.location, mutable.length)
+        range.length = min(range.length, mutable.length - range.location)
+        guard range.length > 0 else { return }
+        body(mutable, range)
+        element.body = mutable
+        editRevision += 1
+        deck.updatedAt = .now
+        try? modelContext.save()
+    }
+
+    private func toggleEditingTrait(_ trait: UIFontDescriptor.SymbolicTraits) {
+        mutateEditingText { text, range in
+            text.enumerateAttribute(.font, in: range) { value, subrange, _ in
+                let font = (value as? UIFont) ?? UIFont.systemFont(ofSize: 18)
+                var traits = font.fontDescriptor.symbolicTraits
+                if traits.contains(trait) { traits.remove(trait) } else { traits.insert(trait) }
+                guard let descriptor = font.fontDescriptor.withSymbolicTraits(traits) else { return }
+                text.addAttribute(.font, value: UIFont(descriptor: descriptor, size: font.pointSize), range: subrange)
+            }
+        }
+    }
+
+    private func toggleEditingUnderline() {
+        let turnOn = !editFormatting.isUnderlined
+        mutateEditingText { text, range in
+            text.addAttribute(.underlineStyle, value: turnOn ? NSUnderlineStyle.single.rawValue : 0, range: range)
+        }
+    }
+
+    private func changeEditingFontSize(by delta: CGFloat) {
+        mutateEditingText { text, range in
+            text.enumerateAttribute(.font, in: range) { value, subrange, _ in
+                let font = (value as? UIFont) ?? UIFont.systemFont(ofSize: 18)
+                text.addAttribute(.font, value: font.withSize(min(max(font.pointSize + delta, 8), 96)), range: subrange)
+            }
+        }
+    }
+
+    /// Expands to the whole paragraph the selection touches, the way a
+    /// word processor's alignment buttons do — a caret in the middle of a
+    /// line still reformats that entire line, not just the character
+    /// beside it.
+    private func applyEditingAlignment(_ alignment: NSTextAlignment) {
+        mutateEditingText { text, range in
+            let paragraphRange = (text.string as NSString).paragraphRange(for: range)
+            let style = NSMutableParagraphStyle()
+            if let existing = text.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle {
+                style.setParagraphStyle(existing)
+            }
+            style.alignment = alignment
+            text.addAttribute(.paragraphStyle, value: style, range: paragraphRange)
+        }
+    }
+
+    /// Swaps the typeface while keeping each run's own size and bold/
+    /// italic traits — same behavior as the document editor's own font
+    /// menu (`TextDocumentView.apply(family:)`).
+    private func applyEditingFontFamily(_ family: DocumentFontFamily) {
+        mutateEditingText { text, range in
+            text.enumerateAttribute(.font, in: range) { value, subrange, _ in
+                let current = (value as? UIFont) ?? UIFont.systemFont(ofSize: 18)
+                let traits = current.fontDescriptor.symbolicTraits
+                guard let descriptor = family.descriptor(size: current.pointSize)?
+                    .withSymbolicTraits(traits) ?? family.descriptor(size: current.pointSize) else { return }
+                text.addAttribute(.font, value: UIFont(descriptor: descriptor, size: current.pointSize), range: subrange)
+            }
+        }
+    }
+
     private func deleteSelection(_ slide: Slide) {
         for element in selectedElements(slide) {
             slide.elements?.removeAll { $0 === element }
@@ -604,6 +888,21 @@ struct SlideDeckView: View {
         SlideBlockMigration.migrateIfNeeded(deck) // see addSlide's comment
         try? modelContext.save()
         selectedSlideID = copy.persistentModelID
+    }
+
+    /// A blank new slide right before/after `reference`, and switches to
+    /// it — what pulling past the top/bottom edge of the main canvas
+    /// triggers (the "pull to add a page" gesture, matching the one
+    /// notebooks already have).
+    private func insertSlide(adjacentTo reference: Slide, before: Bool) {
+        let slide = Slide(order: 0, layout: .titleAndBody)
+        slide.deck = deck
+        deck.insertSlide(slide, adjacentTo: reference, before: before)
+        deck.updatedAt = .now
+        modelContext.insert(slide)
+        SlideBlockMigration.migrateIfNeeded(deck) // see addSlide's comment
+        try? modelContext.save()
+        selectedSlideID = slide.persistentModelID
     }
 
     private func delete(_ slide: Slide) {
@@ -673,6 +972,92 @@ struct SlideDeckView: View {
         guard let data = PptxWriter.makeData(from: deck) else { return }
         pptxDocument = PptxExportDocument(data: data)
         showsPptxExporter = true
+    }
+}
+
+/// A 3×3 grid of the nine standard slide positions (design fix item 7) —
+/// top/middle/bottom × left/center/right, matching PowerPoint's own quick
+/// "position on slide" picker. Tapping a cell calls `onSelect` with that
+/// `CanvasElementGeometry.QuickPosition`; the caller applies it and closes
+/// the popover.
+private struct QuickPositionPicker: View {
+    let onSelect: (CanvasElementGeometry.QuickPosition) -> Void
+
+    private static let rows: [[CanvasElementGeometry.QuickPosition]] = [
+        [.topLeft, .topCenter, .topRight],
+        [.middleLeft, .center, .middleRight],
+        [.bottomLeft, .bottomCenter, .bottomRight],
+    ]
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("位置を選択").font(.caption).foregroundStyle(.secondary)
+            VStack(spacing: 8) {
+                ForEach(Self.rows, id: \.self) { row in
+                    HStack(spacing: 8) {
+                        ForEach(row, id: \.self) { position in
+                            Button { onSelect(position) } label: {
+                                RoundedRectangle(cornerRadius: 5)
+                                    .fill(Color.accentColor.opacity(0.12))
+                                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.accentColor, lineWidth: 1.5))
+                                    .frame(width: 36, height: 24)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A thin strip right above/below a scrollable editor's content — dragging
+/// it toward the content (down at the top edge, up at the bottom edge)
+/// past a threshold and releasing calls `onTrigger`, mirroring notebooks'
+/// own "pull past the edge to add a page" gesture. Simpler than that one: a
+/// plain drag-then-release rather than a rubber-band-physics hold-to-
+/// confirm gauge — reused by both the slide canvas (adds a slide) and the
+/// document editor (adds a blank paragraph), neither of which has a
+/// continuous-stack scroll view to read overscroll from the way notebooks
+/// do, so this still reads as the same "pull to add" gesture without
+/// needing that.
+struct PullToAddStrip: View {
+    enum Direction { case top, bottom }
+    let direction: Direction
+    let label: String
+    let armedLabel: String
+    let onTrigger: () -> Void
+
+    @State private var pullDistance: CGFloat = 0
+    private static let threshold: CGFloat = 64
+
+    private var progress: CGFloat { min(max(pullDistance, 0) / Self.threshold, 1) }
+    private var isArmed: Bool { progress >= 1 }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "plus.circle.fill")
+                .font(.caption)
+            Text(isArmed ? armedLabel : label)
+                .font(.caption2)
+        }
+        .foregroundStyle(isArmed ? Color.accentColor : .secondary)
+        .opacity(pullDistance > 4 ? min(1, progress + 0.35) : 0)
+        .frame(height: 28)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 4)
+                .onChanged { value in
+                    let raw = direction == .top ? value.translation.height : -value.translation.height
+                    pullDistance = max(0, raw)
+                }
+                .onEnded { _ in
+                    if isArmed { onTrigger() }
+                    withAnimation(.easeOut(duration: 0.2)) { pullDistance = 0 }
+                }
+        )
+        .animation(.easeOut(duration: 0.1), value: pullDistance)
     }
 }
 

@@ -471,6 +471,11 @@ struct TextDocumentView: View {
             ScrollView {
                 let width = min(document.pageSize.size.width, max(280, geometry.size.width - 48))
                 VStack(spacing: 0) {
+                    PullToAddStrip(direction: .top, label: "引っ張って段落を追加", armedLabel: "離して段落を追加") {
+                        addBlankParagraph(atStart: true)
+                    }
+                    .padding(.bottom, 6)
+
                     headerFooterField(kind: .header, placeholder: "ヘッダーを追加")
                         .padding(.bottom, 10)
 
@@ -541,6 +546,11 @@ struct TextDocumentView: View {
 
                     headerFooterField(kind: .footer, placeholder: "フッターを追加")
                         .padding(.top, 10)
+
+                    PullToAddStrip(direction: .bottom, label: "引っ張って段落を追加", armedLabel: "離して段落を追加") {
+                        addBlankParagraph(atStart: false)
+                    }
+                    .padding(.top, 6)
                 }
                 .frame(minHeight: document.pageSize.size.height * 0.6, alignment: .top)
                 .frame(width: width)
@@ -666,6 +676,18 @@ struct TextDocumentView: View {
         guard !searchMatches.isEmpty else { return }
         currentMatchIndex = (currentMatchIndex - 1 + searchMatches.count) % searchMatches.count
         navigateToMatch(searchMatches[currentMatchIndex])
+    }
+
+    /// Inserts a blank paragraph at the very start/end of the document
+    /// (the "pull past the page edge" gesture) and jumps straight to it,
+    /// ready to type — the document equivalent of a notebook's "pull to
+    /// add a page."
+    private func addBlankParagraph(atStart: Bool) {
+        let block = document.insertBlankParagraph(atStart: atStart)
+        scheduleAuxiliarySave()
+        guard let segment = document.segments.first(where: { seg in seg.blocks.contains(where: { $0 === block }) }) else { return }
+        activateSegment(segment)
+        scrollTarget = segment.id
     }
 
     /// Activates `match`'s segment if it isn't already, then selects the
@@ -1481,7 +1503,13 @@ private enum DocumentAlignment: String, CaseIterable, Identifiable {
 /// Wraps `UITextView` so the document gets real TextKit editing — selection,
 /// autocorrect, dictation, hardware-keyboard shortcuts, inline attachments —
 /// rather than a SwiftUI `TextEditor`, which has no attributed-text support.
-private struct RichTextEditor: UIViewRepresentable {
+///
+/// Not document-specific despite living in this file — it only knows about
+/// `NSAttributedString`/`NSRange`/`SelectionFormatting`, so the slide
+/// canvas's own rich-text editing (design fix item 5) reuses this exact
+/// type directly for each text box, rather than a second, independently
+/// written bridge.
+struct RichTextEditor: UIViewRepresentable {
     @Binding var attributedText: NSAttributedString
     @Binding var selectedRange: NSRange
     /// Incremented by the owner when it has rewritten `attributedText` and
@@ -1493,6 +1521,12 @@ private struct RichTextEditor: UIViewRepresentable {
     /// document first opens. `makeUIView` only runs once per mount, so this
     /// is read once and never needs resetting.
     var shouldFocusOnAppear: Bool
+    /// What a caret in genuinely empty text starts typing with — defaults
+    /// to the document editor's own default, but the slide canvas passes
+    /// `SlideElement.defaultTextAttributes()` instead so a brand-new,
+    /// empty text box starts at its placeholder's own size rather than the
+    /// document feature's.
+    var defaultTypingAttributes: [NSAttributedString.Key: Any] = DocumentBody.defaultAttributes()
     var onFormattingChange: (SelectionFormatting) -> Void
 
     func makeUIView(context: Context) -> UITextView {
@@ -1504,7 +1538,7 @@ private struct RichTextEditor: UIViewRepresentable {
         view.textContainer.lineFragmentPadding = 0
         view.alwaysBounceVertical = false
         view.attributedText = attributedText
-        view.typingAttributes = DocumentBody.defaultAttributes()
+        view.typingAttributes = defaultTypingAttributes
         context.coordinator.lastRevision = externalRevision
         if shouldFocusOnAppear {
             // Not yet in the window hierarchy at this point in makeUIView,

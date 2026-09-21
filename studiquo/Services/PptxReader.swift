@@ -203,9 +203,14 @@ enum PptxReader {
             if index < paragraphs.count - 1 {
                 result.append(NSAttributedString(string: "\n", attributes: DocumentBody.defaultAttributes()))
             }
+            let paragraphRange = NSRange(location: start, length: result.length - start)
             if let kind = paragraph.listKind {
-                let paragraphRange = NSRange(location: start, length: result.length - start)
                 SlideListText.setListKind(kind, level: paragraph.level, forRange: paragraphRange, in: result)
+            }
+            if let alignment = paragraph.alignment, paragraphRange.length > 0 {
+                let style = NSMutableParagraphStyle()
+                style.alignment = alignment
+                result.addAttribute(.paragraphStyle, value: style, range: paragraphRange)
             }
         }
         return result
@@ -227,6 +232,7 @@ private struct ParsedParagraph {
     var runs: [ParsedRun] = []
     var listKind: DocumentListKind?
     var level = 0
+    var alignment: NSTextAlignment?
 }
 
 private struct ParsedShape {
@@ -358,6 +364,12 @@ private final class SlideXMLDelegate: NSObject, XMLParserDelegate {
             paragraphInProgress = ParsedParagraph()
         case "a:pPr":
             if let lvl = attributeDict["lvl"].flatMap(Int.init) { paragraphInProgress?.level = lvl }
+            switch attributeDict["algn"] {
+            case "ctr": paragraphInProgress?.alignment = .center
+            case "r": paragraphInProgress?.alignment = .right
+            case "just": paragraphInProgress?.alignment = .justified
+            default: break // absent, or "l" — left is this reader's own default, nothing to set
+            }
         case "a:buChar":
             paragraphInProgress?.listKind = .bulleted
         case "a:buAutoNum":

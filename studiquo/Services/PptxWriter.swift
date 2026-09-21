@@ -188,7 +188,8 @@ enum PptxWriter {
             let (range, _) = entry
             let kind = SlideListText.listKind(at: range.location, in: text)
             let level = SlideListText.listLevel(at: range.location, in: text)
-            let pPr = paragraphPropertiesXML(kind: kind, level: level)
+            let alignment = (text.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle)?.alignment
+            let pPr = paragraphPropertiesXML(kind: kind, level: level, alignment: alignment)
 
             var runRange = range
             let rangeString = (text.string as NSString).substring(with: range)
@@ -201,18 +202,44 @@ enum PptxWriter {
         }.joined(separator: "\n")
     }
 
-    private static func paragraphPropertiesXML(kind: DocumentListKind?, level: Int) -> String {
-        guard let kind else { return "" }
-        let indentEMU = 228600 + level * 228600 // ~0.25in per level
-        let bullet: String
-        switch kind {
-        case .bulleted:
-            let glyphs = ["•", "◦", "▪"]
-            bullet = "<a:buChar char=\"\(glyphs[min(level, glyphs.count - 1)])\"/>"
-        case .numbered:
-            bullet = "<a:buAutoNum type=\"arabicPeriod\"/>"
+    /// design fix item 5 added real paragraph-alignment editing for slide
+    /// text boxes — `algn` is combined into the same `<a:pPr>` a list
+    /// paragraph already needed, since OOXML allows only one per paragraph.
+    private static func paragraphPropertiesXML(kind: DocumentListKind?, level: Int, alignment: NSTextAlignment?) -> String {
+        var attributes = ""
+        if kind != nil {
+            let indentEMU = 228600 + level * 228600 // ~0.25in per level
+            attributes += " marL=\"\(indentEMU)\" indent=\"-228600\" lvl=\"\(min(level, 8))\""
         }
-        return "<a:pPr marL=\"\(indentEMU)\" indent=\"-228600\" lvl=\"\(min(level, 8))\">\(bullet)</a:pPr>"
+        if let algn = pptxAlignmentValue(alignment) {
+            attributes += " algn=\"\(algn)\""
+        }
+
+        var inner = ""
+        if let kind {
+            switch kind {
+            case .bulleted:
+                let glyphs = ["•", "◦", "▪"]
+                inner = "<a:buChar char=\"\(glyphs[min(level, glyphs.count - 1)])\"/>"
+            case .numbered:
+                inner = "<a:buAutoNum type=\"arabicPeriod\"/>"
+            }
+        }
+
+        guard !attributes.isEmpty || !inner.isEmpty else { return "" }
+        return "<a:pPr\(attributes)>\(inner)</a:pPr>"
+    }
+
+    /// `nil` for `.natural`/`.left` — PowerPoint's own paragraph default,
+    /// the same reasoning `DocxWriter.paragraphAlignment(of:)` uses for
+    /// omitting `w:jc` on ordinary left-aligned text.
+    private static func pptxAlignmentValue(_ alignment: NSTextAlignment?) -> String? {
+        switch alignment {
+        case .center: return "ctr"
+        case .right: return "r"
+        case .justified: return "just"
+        default: return nil
+        }
     }
 
     private struct Run {

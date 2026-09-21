@@ -88,6 +88,67 @@ final class PptxReaderTests: XCTestCase {
         XCTAssertEqual(SlideListText.listLevel(at: 0, in: readBody), 1)
     }
 
+    func testRoundTripPreservesCenterParagraphAlignment() throws {
+        let slide = Slide(order: 0)
+        let element = SlideElement(kind: .text)
+        element.overrideCenterX = 0.5; element.overrideCenterY = 0.5
+        element.overrideWidth = 0.6; element.overrideHeight = 0.2
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        let body = NSMutableAttributedString(string: "中央揃え")
+        body.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: body.length))
+        element.body = body
+        slide.addElement(element)
+        let source = deck { _ in [slide] }
+
+        let data = try XCTUnwrap(PptxWriter.makeData(from: source))
+        let result = try PptxReader.read(from: data)
+
+        let readBody = try XCTUnwrap(result.slides.first?.sortedElements.first?.body)
+        let readStyle = readBody.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        XCTAssertEqual(readStyle?.alignment, .center)
+    }
+
+    func testLeftAlignmentIsOmittedFromTheExportedXMLSinceItsTheDefault() throws {
+        let slide = Slide(order: 0)
+        let element = SlideElement(kind: .text)
+        element.overrideCenterX = 0.5; element.overrideCenterY = 0.5
+        element.overrideWidth = 0.6; element.overrideHeight = 0.2
+        let style = NSMutableParagraphStyle()
+        style.alignment = .left
+        let body = NSMutableAttributedString(string: "左揃え")
+        body.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: body.length))
+        element.body = body
+        slide.addElement(element)
+        let source = deck { _ in [slide] }
+
+        let data = try XCTUnwrap(PptxWriter.makeData(from: source))
+        let slideXML = try XCTUnwrap(try DocxZip.read(data).first { $0.path == "ppt/slides/slide1.xml" })
+        let xmlString = try XCTUnwrap(String(data: slideXML.data, encoding: .utf8))
+        XCTAssertFalse(xmlString.contains("algn="))
+    }
+
+    func testRoundTripPreservesRightParagraphAlignment() throws {
+        let slide = Slide(order: 0)
+        let element = SlideElement(kind: .text)
+        element.overrideCenterX = 0.5; element.overrideCenterY = 0.5
+        element.overrideWidth = 0.6; element.overrideHeight = 0.2
+        let style = NSMutableParagraphStyle()
+        style.alignment = .right
+        let body = NSMutableAttributedString(string: "右揃え")
+        body.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: body.length))
+        element.body = body
+        slide.addElement(element)
+        let source = deck { _ in [slide] }
+
+        let data = try XCTUnwrap(PptxWriter.makeData(from: source))
+        let result = try PptxReader.read(from: data)
+
+        let readBody = try XCTUnwrap(result.slides.first?.sortedElements.first?.body)
+        let readStyle = readBody.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        XCTAssertEqual(readStyle?.alignment, .right)
+    }
+
     func testRoundTripPreservesRectangleColorAndGeometry() throws {
         let slide = Slide(order: 0)
         let rect = SlideElement(kind: .rectangle)

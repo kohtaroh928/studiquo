@@ -168,6 +168,69 @@ final class SlideChangeLayoutTests: XCTestCase {
 /// slide's position/size for elements still inheriting from it.
 /// Coverage for the master editor's (design step 5) "duplicate layout"
 /// action — see `SlideMaster.duplicateLayout(_:)`.
+/// Coverage for the "pull past the canvas edge to add a slide" gesture's
+/// model-side ordering — see `SlideDeck.insertSlide(_:adjacentTo:before:)`.
+final class SlideDeckInsertSlideTests: XCTestCase {
+    private func deckWithSlides(_ count: Int) -> (SlideDeck, [Slide]) {
+        let deck = SlideDeck(title: "テスト")
+        var slides: [Slide] = []
+        for i in 0..<count {
+            let slide = Slide(order: i)
+            slide.deck = deck
+            deck.addSlide(slide)
+            slides.append(slide)
+        }
+        return (deck, slides)
+    }
+
+    func testInsertingBeforeThePlacesTheNewSlideImmediatelyAheadOfIt() {
+        let (deck, slides) = deckWithSlides(2) // [A, B]
+        let inserted = Slide(order: 0)
+        deck.insertSlide(inserted, adjacentTo: slides[1], before: true) // insert before B → [A, new, B]
+
+        let ordered = deck.sortedSlides
+        XCTAssertEqual(ordered.count, 3)
+        XCTAssertTrue(ordered[0] === slides[0])
+        XCTAssertTrue(ordered[1] === inserted)
+        XCTAssertTrue(ordered[2] === slides[1])
+    }
+
+    func testInsertingAfterPlacesTheNewSlideImmediatelyBehindIt() {
+        let (deck, slides) = deckWithSlides(2) // [A, B]
+        let inserted = Slide(order: 0)
+        deck.insertSlide(inserted, adjacentTo: slides[0], before: false) // insert after A → [A, new, B]
+
+        let ordered = deck.sortedSlides
+        XCTAssertTrue(ordered[0] === slides[0])
+        XCTAssertTrue(ordered[1] === inserted)
+        XCTAssertTrue(ordered[2] === slides[1])
+    }
+
+    func testOrderValuesEndUpContiguousStartingAtZero() {
+        let (deck, slides) = deckWithSlides(3) // [A, B, C]
+        let inserted = Slide(order: 0)
+        deck.insertSlide(inserted, adjacentTo: slides[1], before: false) // after B → [A, B, new, C]
+
+        XCTAssertEqual(deck.sortedSlides.map(\.order), [0, 1, 2, 3])
+    }
+
+    func testInsertingBeforeTheFirstSlideBecomesTheNewFirstSlide() {
+        let (deck, slides) = deckWithSlides(2)
+        let inserted = Slide(order: 0)
+        deck.insertSlide(inserted, adjacentTo: slides[0], before: true)
+
+        XCTAssertTrue(deck.sortedSlides.first === inserted)
+    }
+
+    func testInsertingAfterTheLastSlideBecomesTheNewLastSlide() {
+        let (deck, slides) = deckWithSlides(2)
+        let inserted = Slide(order: 0)
+        deck.insertSlide(inserted, adjacentTo: slides[1], before: false)
+
+        XCTAssertTrue(deck.sortedSlides.last === inserted)
+    }
+}
+
 final class SlideMasterDuplicateLayoutTests: XCTestCase {
     func testDuplicateCreatesAnIndependentLayoutNamedWithACopySuffix() {
         let master = SlideMaster.makeDefault()
