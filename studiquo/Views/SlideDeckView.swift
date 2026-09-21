@@ -33,6 +33,13 @@ struct SlideDeckView: View {
     @State private var showsPptxExporter = false
     @State private var showsMasterEditor = false
     @State private var showsQuickPositionPicker = false
+    /// Whether "drag on empty canvas to rubber-band-select multiple
+    /// elements" is currently live — off by default, toggled from
+    /// `canvasToolBar`. See `SlideElementsLayer.selectionDragGesture`'s doc
+    /// comment for why this has to be an explicit mode rather than
+    /// always-on: it's what actually lets the slide canvas scroll normally
+    /// the rest of the time.
+    @State private var isSelectingMultiple = false
     /// Design fix item 5's live rich-text editing state — which text
     /// element (if any) is currently being edited in place, its live
     /// cursor/selection, a revision counter bumped whenever the formatting
@@ -293,45 +300,20 @@ struct SlideDeckView: View {
                 }
                 Divider()
 
-                GeometryReader { geometry in
-                    let width = min(
-                        geometry.size.width - 48,
-                        (geometry.size.height - 48 - 64) * deck.aspect.ratio
-                    )
-                    // Rendered directly at its actual on-screen size, not a
-                    // fixed internal resolution scaled down afterward —
-                    // every element's geometry is stored as a 0-1 fraction
-                    // of the canvas already, so this alone keeps everything
-                    // proportionally correct. It also keeps the drag/resize/
-                    // rotate gesture math (which reads real on-screen touch
-                    // points) in the same coordinate space `slideSize` uses;
-                    // a `.scaleEffect` between them would desync the two.
-                    let displaySize = CGSize(width: max(200, width), height: max(200, width) / deck.aspect.ratio)
-                    VStack(spacing: 4) {
-                        Spacer(minLength: 0)
-                        PullToAddStrip(direction: .top, label: "引っ張ってスライドを追加", armedLabel: "離してスライドを追加") {
-                            insertSlide(adjacentTo: slide, before: true)
-                        }
-                        SlideElementsLayer(
-                            slide: slide, slideSize: displaySize,
-                            selectedElementIDs: $selectedElementIDs,
-                            editingElementID: editingElementID,
-                            editSelectedRange: $editSelectedRange,
-                            editRevision: editRevision,
-                            onBeginEditingText: { beginEditingText($0) },
-                            onFormattingChange: { editFormatting = $0 },
-                            onChange: { deck.updatedAt = .now }
-                        )
-                            .frame(width: displaySize.width, height: displaySize.height)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
-                        PullToAddStrip(direction: .bottom, label: "引っ張ってスライドを追加", armedLabel: "離してスライドを追加") {
-                            insertSlide(adjacentTo: slide, before: false)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+                ContinuousSlidesView(
+                    deck: deck,
+                    isSelectionModeActive: isSelectingMultiple,
+                    selectedSlideID: $selectedSlideID,
+                    selectedElementIDs: $selectedElementIDs,
+                    editingElementID: editingElementID,
+                    editSelectedRange: $editSelectedRange,
+                    editRevision: editRevision,
+                    onBeginEditingText: { beginEditingText($0) },
+                    onFormattingChange: { editFormatting = $0 },
+                    onChange: { deck.updatedAt = .now },
+                    onInsertSlideAtTop: insertSlideAtTop,
+                    onInsertSlideAtBottom: insertSlideAtBottom
+                )
 
                 Divider()
                 if showsNotes {
@@ -519,6 +501,20 @@ struct SlideDeckView: View {
             } label: {
                 Label("要素を追加", systemImage: "plus.square.on.square").font(.subheadline)
             }
+
+            Divider().frame(height: 20)
+
+            // Rubber-band multi-select only exists on the canvas while this
+            // is on (see `SlideElementsLayer.selectionDragGesture`'s doc
+            // comment) — the same "explicit tool, not an always-on
+            // gesture" shape the notebook feature's own lasso selection
+            // tool uses, so ordinary scrolling never has anything to
+            // contend with the rest of the time.
+            Toggle(isOn: $isSelectingMultiple) {
+                Label("複数選択", systemImage: "lasso")
+            }
+            .toggleStyle(.button)
+            .tint(isSelectingMultiple ? Color.accentColor : nil)
 
             if selectedElementIDs.count >= 2 {
                 Divider().frame(height: 20)
@@ -785,62 +781,24 @@ struct SlideDeckView: View {
     }
 
     private func toggleEditingTrait(_ trait: UIFontDescriptor.SymbolicTraits) {
-        mutateEditingText { text, range in
-            text.enumerateAttribute(.font, in: range) { value, subrange, _ in
-                let font = (value as? UIFont) ?? UIFont.systemFont(ofSize: 18)
-                var traits = font.fontDescriptor.symbolicTraits
-                if traits.contains(trait) { traits.remove(trait) } else { traits.insert(trait) }
-                guard let descriptor = font.fontDescriptor.withSymbolicTraits(traits) else { return }
-                text.addAttribute(.font, value: UIFont(descriptor: descriptor, size: font.pointSize), range: subrange)
-            }
-        }
+        mutateEditingText { text, range in SlideTextFormatting.toggleTrait(trait, in: text, range: range) }
     }
 
     private func toggleEditingUnderline() {
         let turnOn = !editFormatting.isUnderlined
-        mutateEditingText { text, range in
-            text.addAttribute(.underlineStyle, value: turnOn ? NSUnderlineStyle.single.rawValue : 0, range: range)
-        }
+        mutateEditingText { text, range in SlideTextFormatting.setUnderline(turnOn, in: text, range: range) }
     }
 
     private func changeEditingFontSize(by delta: CGFloat) {
-        mutateEditingText { text, range in
-            text.enumerateAttribute(.font, in: range) { value, subrange, _ in
-                let font = (value as? UIFont) ?? UIFont.systemFont(ofSize: 18)
-                text.addAttribute(.font, value: font.withSize(min(max(font.pointSize + delta, 8), 96)), range: subrange)
-            }
-        }
+        mutateEditingText { text, range in SlideTextFormatting.changeFontSize(by: delta, in: text, range: range) }
     }
 
-    /// Expands to the whole paragraph the selection touches, the way a
-    /// word processor's alignment buttons do — a caret in the middle of a
-    /// line still reformats that entire line, not just the character
-    /// beside it.
     private func applyEditingAlignment(_ alignment: NSTextAlignment) {
-        mutateEditingText { text, range in
-            let paragraphRange = (text.string as NSString).paragraphRange(for: range)
-            let style = NSMutableParagraphStyle()
-            if let existing = text.attribute(.paragraphStyle, at: paragraphRange.location, effectiveRange: nil) as? NSParagraphStyle {
-                style.setParagraphStyle(existing)
-            }
-            style.alignment = alignment
-            text.addAttribute(.paragraphStyle, value: style, range: paragraphRange)
-        }
+        mutateEditingText { text, range in SlideTextFormatting.applyAlignment(alignment, in: text, range: range) }
     }
 
-    /// Swaps the typeface while keeping each run's own size and bold/
-    /// italic traits — same behavior as the document editor's own font
-    /// menu (`TextDocumentView.apply(family:)`).
     private func applyEditingFontFamily(_ family: DocumentFontFamily) {
-        mutateEditingText { text, range in
-            text.enumerateAttribute(.font, in: range) { value, subrange, _ in
-                let current = (value as? UIFont) ?? UIFont.systemFont(ofSize: 18)
-                let traits = current.fontDescriptor.symbolicTraits
-                guard let descriptor = family.descriptor(size: current.pointSize)?
-                    .withSymbolicTraits(traits) ?? family.descriptor(size: current.pointSize) else { return }
-                text.addAttribute(.font, value: UIFont(descriptor: descriptor, size: current.pointSize), range: subrange)
-            }
-        }
+        mutateEditingText { text, range in SlideTextFormatting.applyFontFamily(family, in: text, range: range) }
     }
 
     private func deleteSelection(_ slide: Slide) {
@@ -903,6 +861,31 @@ struct SlideDeckView: View {
         SlideBlockMigration.migrateIfNeeded(deck) // see addSlide's comment
         try? modelContext.save()
         selectedSlideID = slide.persistentModelID
+    }
+
+    /// The vertical-swipe half of "scroll between slides" (matching the
+    /// notebook feature's own gesture): moves to the previous/next slide
+    /// when one exists, or — swiping past the very first/last slide —
+    /// inserts a new blank one there instead, the same as pulling on the
+    /// dedicated strip above/below the canvas does.
+    /// Pulling past the very top/bottom of the continuous slide canvas —
+    /// design fix "make it really scroll like notes": inserts before the
+    /// first slide, or after the last, or (an empty deck) just makes a
+    /// first one.
+    private func insertSlideAtTop() {
+        if let first = slides.first {
+            insertSlide(adjacentTo: first, before: true)
+        } else {
+            addSlide(layout: .titleSlide)
+        }
+    }
+
+    private func insertSlideAtBottom() {
+        if let last = slides.last {
+            insertSlide(adjacentTo: last, before: false)
+        } else {
+            addSlide(layout: .titleSlide)
+        }
     }
 
     private func delete(_ slide: Slide) {
@@ -980,6 +963,151 @@ struct SlideDeckView: View {
 /// "position on slide" picker. Tapping a cell calls `onSelect` with that
 /// `CanvasElementGeometry.QuickPosition`; the caller applies it and closes
 /// the popover.
+/// The slide editor's main canvas — design fix "make it really scroll like
+/// notes": every slide shown as one continuous, fully-interactive vertical
+/// scroll (each one directly draggable/editable, no separate "select this
+/// slide first" step — the same way a notebook page can be drawn on
+/// without tapping to activate it first), with a pull-past-the-edge gauge
+/// at the very top/bottom to insert a new blank slide there. A direct port
+/// of the notebook feature's own `ContinuousPagesView`
+/// (`Views/NoteEditorView.swift`) built on the shared primitives in
+/// `Services/ContinuousScrollPullToAdd.swift` — see that file's doc
+/// comment for what's reused as-is and what's deliberately simplified.
+private struct ContinuousSlidesView: View {
+    @Bindable var deck: SlideDeck
+    var isSelectionModeActive: Bool
+    @Binding var selectedSlideID: PersistentIdentifier?
+    @Binding var selectedElementIDs: Set<ObjectIdentifier>
+    var editingElementID: ObjectIdentifier?
+    @Binding var editSelectedRange: NSRange
+    var editRevision: Int
+    let onBeginEditingText: (SlideElement) -> Void
+    let onFormattingChange: (SelectionFormatting) -> Void
+    let onChange: () -> Void
+    let onInsertSlideAtTop: () -> Void
+    let onInsertSlideAtBottom: () -> Void
+
+    @State private var scrollTarget: PersistentIdentifier?
+    @State private var topPullProgress: CGFloat = 0
+    @State private var bottomPullProgress: CGFloat = 0
+    @State private var topHoldTracker = PullHoldTracker()
+    @State private var bottomHoldTracker = PullHoldTracker()
+
+    // Both numbers deliberately identical to the notebook feature's own
+    // `ContinuousPagesView` — see `PullHoldTracker`'s doc comment.
+    private static let pullThreshold: CGFloat = 150
+    private static let pullHoldDuration: TimeInterval = 0.2
+    private static let contentPadding: CGFloat = 18
+    private static let coordinateSpaceName = "studiquoContinuousSlidesScroll"
+
+    /// Shared by `ScrollOverscrollObserver`'s KVO reading and
+    /// `PullEdgeGeometryReader`'s layout-driven one — see
+    /// `PullEdgeGeometryReader`'s doc comment for why both feed the same
+    /// tracker instead of picking one source.
+    private func updateTopPull(overscroll: CGFloat) {
+        let progress = min(overscroll / Self.pullThreshold, 1)
+        topPullProgress = progress
+        if topHoldTracker.update(progress: progress, holdDuration: Self.pullHoldDuration) {
+            onInsertSlideAtTop()
+        }
+    }
+
+    private func updateBottomPull(overscroll: CGFloat) {
+        let progress = min(overscroll / Self.pullThreshold, 1)
+        bottomPullProgress = progress
+        if bottomHoldTracker.update(progress: progress, holdDuration: Self.pullHoldDuration) {
+            onInsertSlideAtBottom()
+        }
+    }
+
+    var body: some View {
+        let slides = deck.sortedSlides
+        GeometryReader { geometry in
+            let availableWidth = max(240, geometry.size.width - 32)
+            // Every slide fitted to the same size, the smaller of "as wide
+            // as the pane allows" or "as tall as the pane allows, at this
+            // deck's aspect ratio" — mirrors how the notebook feature fits
+            // each of its own (possibly differently-sized) pages.
+            let width = min(availableWidth, max(160, geometry.size.height - 48) * deck.aspect.ratio)
+            let displaySize = CGSize(width: width, height: width / deck.aspect.ratio)
+
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 18) {
+                    PullToAddGauge(
+                        progress: topPullProgress,
+                        label: "さらに引っ張ってスライドを追加", armedLabel: "指を離してスライドを追加"
+                    )
+                    .background(
+                        ZStack {
+                            ScrollOverscrollObserver(edge: .top) { updateTopPull(overscroll: $0) }
+                            PullEdgeGeometryReader(edge: .top, spaceName: Self.coordinateSpaceName)
+                        }
+                    )
+
+                    ForEach(slides, id: \.persistentModelID) { slide in
+                        SlideElementsLayer(
+                            slide: slide, slideSize: displaySize,
+                            isSelectionModeActive: isSelectionModeActive,
+                            selectedElementIDs: $selectedElementIDs,
+                            editingElementID: editingElementID,
+                            editSelectedRange: $editSelectedRange,
+                            editRevision: editRevision,
+                            onBeginEditingText: onBeginEditingText,
+                            onFormattingChange: onFormattingChange,
+                            onChange: onChange
+                        )
+                        .frame(width: displaySize.width, height: displaySize.height)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+                        .id(slide.persistentModelID)
+                    }
+
+                    PullToAddGauge(
+                        progress: bottomPullProgress,
+                        label: "さらに引っ張ってスライドを追加", armedLabel: "指を離してスライドを追加"
+                    )
+                    .background(
+                        ZStack {
+                            ScrollOverscrollObserver(edge: .bottom) { updateBottomPull(overscroll: $0) }
+                            PullEdgeGeometryReader(edge: .bottom, spaceName: Self.coordinateSpaceName)
+                        }
+                    )
+                }
+                .scrollTargetLayout()
+                .padding(.vertical, Self.contentPadding)
+                .frame(maxWidth: .infinity)
+            }
+            .coordinateSpace(name: Self.coordinateSpaceName)
+            .onPreferenceChange(PullTopMinYPreferenceKey.self) { minY in
+                guard minY.isFinite else { return }
+                updateTopPull(overscroll: max(0, minY - Self.contentPadding))
+            }
+            .onPreferenceChange(PullBottomMaxYPreferenceKey.self) { maxY in
+                guard maxY.isFinite else { return }
+                let restingMaxY = geometry.size.height - Self.contentPadding
+                updateBottomPull(overscroll: max(0, restingMaxY - maxY))
+            }
+            .scrollPosition(id: $scrollTarget, anchor: .center)
+            .onAppear {
+                if scrollTarget == nil { scrollTarget = selectedSlideID ?? slides.first?.persistentModelID }
+            }
+            // Scroll → selection: whichever slide ends up nearest the
+            // anchor becomes "current," the same way `currentPageIndex`
+            // tracks scroll position in the notebook feature.
+            .onChange(of: scrollTarget) { _, target in
+                guard let target, target != selectedSlideID else { return }
+                selectedSlideID = target
+            }
+            // Selection → scroll: picking a slide from the thumbnail rail
+            // still scrolls this view to it.
+            .onChange(of: selectedSlideID) { _, target in
+                guard let target, target != scrollTarget else { return }
+                withAnimation(.easeInOut(duration: 0.25)) { scrollTarget = target }
+            }
+        }
+    }
+}
+
 private struct QuickPositionPicker: View {
     let onSelect: (CanvasElementGeometry.QuickPosition) -> Void
 
@@ -1008,56 +1136,6 @@ private struct QuickPositionPicker: View {
                 }
             }
         }
-    }
-}
-
-/// A thin strip right above/below a scrollable editor's content — dragging
-/// it toward the content (down at the top edge, up at the bottom edge)
-/// past a threshold and releasing calls `onTrigger`, mirroring notebooks'
-/// own "pull past the edge to add a page" gesture. Simpler than that one: a
-/// plain drag-then-release rather than a rubber-band-physics hold-to-
-/// confirm gauge — reused by both the slide canvas (adds a slide) and the
-/// document editor (adds a blank paragraph), neither of which has a
-/// continuous-stack scroll view to read overscroll from the way notebooks
-/// do, so this still reads as the same "pull to add" gesture without
-/// needing that.
-struct PullToAddStrip: View {
-    enum Direction { case top, bottom }
-    let direction: Direction
-    let label: String
-    let armedLabel: String
-    let onTrigger: () -> Void
-
-    @State private var pullDistance: CGFloat = 0
-    private static let threshold: CGFloat = 64
-
-    private var progress: CGFloat { min(max(pullDistance, 0) / Self.threshold, 1) }
-    private var isArmed: Bool { progress >= 1 }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "plus.circle.fill")
-                .font(.caption)
-            Text(isArmed ? armedLabel : label)
-                .font(.caption2)
-        }
-        .foregroundStyle(isArmed ? Color.accentColor : .secondary)
-        .opacity(pullDistance > 4 ? min(1, progress + 0.35) : 0)
-        .frame(height: 28)
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 4)
-                .onChanged { value in
-                    let raw = direction == .top ? value.translation.height : -value.translation.height
-                    pullDistance = max(0, raw)
-                }
-                .onEnded { _ in
-                    if isArmed { onTrigger() }
-                    withAnimation(.easeOut(duration: 0.2)) { pullDistance = 0 }
-                }
-        )
-        .animation(.easeOut(duration: 0.1), value: pullDistance)
     }
 }
 

@@ -116,6 +116,22 @@ enum CanvasElementGeometry {
         return angle * 180 / .pi + 90
     }
 
+    /// A damped, delta-based rotation update (design fix item 3): rather
+    /// than jumping straight to `rotation(center:touch:)`'s raw angle every
+    /// frame — which swings wildly the closer the touch sits to the pivot,
+    /// since that raw angle is inherently more sensitive near the center —
+    /// this tracks how far the touch angle has moved *since the drag
+    /// started* and applies only a damped fraction of that change on top
+    /// of whatever the element's rotation was at that moment. Crossing the
+    /// 0°/360° seam is handled by taking the shortest way around, so it
+    /// reads as a small step rather than a near-360° jump.
+    static func dampedRotation(startTouchAngle: Double, startElementRotation: Double, currentTouchAngle: Double, damping: Double) -> Double {
+        var angleDelta = currentTouchAngle - startTouchAngle
+        if angleDelta > 180 { angleDelta -= 360 }
+        if angleDelta < -180 { angleDelta += 360 }
+        return startElementRotation + angleDelta * damping
+    }
+
     /// The new centre (fractional 0-1 canvas coordinates) for a plain move
     /// drag, clamped to keep the element's centre from leaving the canvas
     /// entirely — the same clamp `EditablePageElement.moveGesture` applies.
@@ -221,6 +237,18 @@ enum CanvasElementGeometry {
         case .bottomLeft, .bottomCenter, .bottomRight: centerY = bottom
         }
         return (centerX, centerY)
+    }
+
+    /// Whether a drag on the canvas background is predominantly vertical —
+    /// now that the slide canvas scrolls for real (each slide sits inside
+    /// a native `ScrollView`), a mostly-vertical drag on empty canvas
+    /// almost always means "I'm trying to scroll," not "I'm drawing a
+    /// selection box." `SlideElementsLayer`'s own rubber-band select
+    /// gesture uses this to suppress itself for that case, attached via
+    /// `.simultaneousGesture` (not `.gesture`) so it never claims the
+    /// touch exclusively and blocks the scroll view's own recognizer.
+    static func isMostlyVertical(_ translation: CGSize, ratio: CGFloat = 1.5) -> Bool {
+        abs(translation.height) > abs(translation.width) * ratio
     }
 
     /// Whether `frame`'s unrotated bounding box (converted to screen points

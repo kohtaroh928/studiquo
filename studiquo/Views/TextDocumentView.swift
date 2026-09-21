@@ -127,6 +127,42 @@ struct TextDocumentView: View {
     @State private var searchMatches: [DocumentSearchMatch] = []
     @State private var currentMatchIndex = 0
     @State private var scrollTarget: ObjectIdentifier?
+    /// "Pull past the page's own top/bottom edge to add a paragraph" —
+    /// design fix "make it really scroll like notes": the document is
+    /// already one continuously-scrolling page (there's no separate
+    /// "pages" concept to introduce the way slides had discrete slides to
+    /// scroll between), so this upgrades the gesture's *feel* to match the
+    /// notebook feature's own precise gauge mechanism, built on the shared
+    /// primitives in `Services/ContinuousScrollPullToAdd.swift`.
+    @State private var topPullProgress: CGFloat = 0
+    @State private var bottomPullProgress: CGFloat = 0
+    @State private var topHoldTracker = PullHoldTracker()
+    @State private var bottomHoldTracker = PullHoldTracker()
+    // Both numbers deliberately identical to the notebook feature's own
+    // `ContinuousPagesView` — see `PullHoldTracker`'s doc comment.
+    private static let pullThreshold: CGFloat = 150
+    private static let pullHoldDuration: TimeInterval = 0.2
+    private static let pullCoordinateSpaceName = "studiquoDocumentPageScroll"
+
+    /// Shared by `ScrollOverscrollObserver`'s KVO reading and
+    /// `PullEdgeGeometryReader`'s layout-driven one — see
+    /// `PullEdgeGeometryReader`'s doc comment for why both feed the same
+    /// tracker instead of picking one source.
+    private func updateTopPull(overscroll: CGFloat) {
+        let progress = min(overscroll / Self.pullThreshold, 1)
+        topPullProgress = progress
+        if topHoldTracker.update(progress: progress, holdDuration: Self.pullHoldDuration) {
+            addBlankParagraph(atStart: true)
+        }
+    }
+
+    private func updateBottomPull(overscroll: CGFloat) {
+        let progress = min(overscroll / Self.pullThreshold, 1)
+        bottomPullProgress = progress
+        if bottomHoldTracker.update(progress: progress, holdDuration: Self.pullHoldDuration) {
+            addBlankParagraph(atStart: false)
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -470,12 +506,25 @@ struct TextDocumentView: View {
             ScrollViewReader { scrollProxy in
             ScrollView {
                 let width = min(document.pageSize.size.width, max(280, geometry.size.width - 48))
-                VStack(spacing: 0) {
-                    PullToAddStrip(direction: .top, label: "引っ張って段落を追加", armedLabel: "離して段落を追加") {
-                        addBlankParagraph(atStart: true)
-                    }
-                    .padding(.bottom, 6)
+                // The pull gauges are siblings of the paper-styled page
+                // below, not children inside it — matching the notebook
+                // feature's own layout, where its page adders sit in the
+                // surrounding gray background, never inside a page's own
+                // white canvas. They need to live outside the `.background
+                // (.white)`/`.shadow(...)` group entirely for that.
+                VStack(spacing: 12) {
+                    PullToAddGauge(
+                        progress: topPullProgress,
+                        label: "さらに引っ張って段落を追加", armedLabel: "指を離して段落を追加"
+                    )
+                    .background(
+                        ZStack {
+                            ScrollOverscrollObserver(edge: .top) { updateTopPull(overscroll: $0) }
+                            PullEdgeGeometryReader(edge: .top, spaceName: Self.pullCoordinateSpaceName)
+                        }
+                    )
 
+                    VStack(spacing: 0) {
                     headerFooterField(kind: .header, placeholder: "ヘッダーを追加")
                         .padding(.bottom, 10)
 
@@ -546,19 +595,36 @@ struct TextDocumentView: View {
 
                     headerFooterField(kind: .footer, placeholder: "フッターを追加")
                         .padding(.top, 10)
-
-                    PullToAddStrip(direction: .bottom, label: "引っ張って段落を追加", armedLabel: "離して段落を追加") {
-                        addBlankParagraph(atStart: false)
                     }
-                    .padding(.top, 6)
+                    .frame(minHeight: document.pageSize.size.height * 0.6, alignment: .top)
+                    .frame(width: width)
+                    .padding(document.pageSize.margin * (width / document.pageSize.size.width))
+                    .background(.white)
+                    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+
+                    PullToAddGauge(
+                        progress: bottomPullProgress,
+                        label: "さらに引っ張って段落を追加", armedLabel: "指を離して段落を追加"
+                    )
+                    .background(
+                        ZStack {
+                            ScrollOverscrollObserver(edge: .bottom) { updateBottomPull(overscroll: $0) }
+                            PullEdgeGeometryReader(edge: .bottom, spaceName: Self.pullCoordinateSpaceName)
+                        }
+                    )
                 }
-                .frame(minHeight: document.pageSize.size.height * 0.6, alignment: .top)
-                .frame(width: width)
-                .padding(document.pageSize.margin * (width / document.pageSize.size.width))
-                .background(.white)
-                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
                 .padding(.vertical, 24)
                 .frame(maxWidth: .infinity)
+            }
+            .coordinateSpace(name: Self.pullCoordinateSpaceName)
+            .onPreferenceChange(PullTopMinYPreferenceKey.self) { minY in
+                guard minY.isFinite else { return }
+                updateTopPull(overscroll: max(0, minY - 24))
+            }
+            .onPreferenceChange(PullBottomMaxYPreferenceKey.self) { maxY in
+                guard maxY.isFinite else { return }
+                let restingMaxY = geometry.size.height - 24
+                updateBottomPull(overscroll: max(0, restingMaxY - maxY))
             }
             .onChange(of: scrollTarget) { _, target in
                 guard let target else { return }
