@@ -165,13 +165,10 @@ struct SlideElementsLayer: View {
     }
 
     private func elementIntersects(_ element: SlideElement, rect: CGRect) -> Bool {
-        let frame = CGRect(
-            x: (element.centerX - element.width / 2) * slideSize.width,
-            y: (element.centerY - element.height / 2) * slideSize.height,
-            width: element.width * slideSize.width,
-            height: element.height * slideSize.height
+        CanvasElementGeometry.frameIntersects(
+            CanvasElementGeometry.Frame(centerX: element.centerX, centerY: element.centerY, width: element.width, height: element.height),
+            rect: rect, canvasSize: slideSize
         )
-        return frame.intersects(rect)
     }
 
     /// Moves every currently-selected element by the same incremental
@@ -592,11 +589,7 @@ private struct EditableSlideElement: View {
         let wasNone = element.animationKind == .none
         element.animationKind = kind
         if wasNone, kind != .none {
-            let currentMax = element.slide?.sortedElements
-                .filter { $0.animationKind != .none }
-                .map(\.animationOrder)
-                .max() ?? -1
-            element.animationOrder = currentMax + 1
+            element.animationOrder = element.slide?.nextAnimationOrder() ?? 0
         }
         onChange()
     }

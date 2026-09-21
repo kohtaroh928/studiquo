@@ -186,6 +186,24 @@ enum CanvasElementGeometry {
         return result
     }
 
+    /// Whether `frame`'s unrotated bounding box (converted to screen points
+    /// via `canvasSize`) overlaps `rect` — the rubber-band multi-select hit
+    /// test (design step 4's remaining piece, `SlideElementsLayer`'s own
+    /// drag-to-select gesture). Ignores rotation, the same simplification
+    /// that gesture's own doc comment already discloses — a rotated
+    /// element's true bounds are a tighter shape than this box, so this
+    /// can occasionally select an element whose actual (rotated) silhouette
+    /// the rubber band doesn't quite touch, never the other way around.
+    static func frameIntersects(_ frame: Frame, rect: CGRect, canvasSize: CGSize) -> Bool {
+        let screenFrame = CGRect(
+            x: (frame.centerX - frame.width / 2) * canvasSize.width,
+            y: (frame.centerY - frame.height / 2) * canvasSize.height,
+            width: frame.width * canvasSize.width,
+            height: frame.height * canvasSize.height
+        )
+        return screenFrame.intersects(rect)
+    }
+
     static func distributedVertically(_ frames: [Frame]) -> [Double] {
         guard frames.count >= 3 else { return frames.map(\.centerY) }
         let sortedIndices = frames.indices.sorted { frames[$0].centerY < frames[$1].centerY }

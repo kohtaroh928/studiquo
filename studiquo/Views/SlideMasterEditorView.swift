@@ -273,17 +273,7 @@ struct SlideMasterEditorView: View {
     }
 
     private func duplicate(_ layout: SlideLayoutTemplate) {
-        let copy = master.addLayout(name: layout.name + "のコピー")
-        for placeholder in layout.sortedPlaceholders {
-            let newPlaceholder = copy.addPlaceholder(
-                role: placeholder.role, kind: placeholder.kind,
-                centerX: placeholder.centerX, centerY: placeholder.centerY,
-                width: placeholder.width, height: placeholder.height
-            )
-            newPlaceholder.defaultFontSize = placeholder.defaultFontSize
-            newPlaceholder.defaultIsBold = placeholder.defaultIsBold
-            newPlaceholder.rotation = placeholder.rotation
-        }
+        let copy = master.duplicateLayout(layout)
         try? modelContext.save()
         selectedLayoutID = copy.persistentModelID
     }
