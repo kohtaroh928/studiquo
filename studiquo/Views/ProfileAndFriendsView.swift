@@ -163,6 +163,12 @@ final class FriendStore: ObservableObject {
     @Published var unreadCounts: [UUID: Int] = [:] { didSet { persist(unreadCounts, key: unreadCountsKey) } }
     @Published var activeFriendID: UUID?
     @Published var myCode: String
+    /// A second code, embedded only in `invitationURL`'s link/QR — never
+    /// shown for manual entry. Redeeming it (see `confirmPendingLinkAdd()`)
+    /// creates an immediate, no-approval friendship; deliberately a
+    /// different value from `myCode` so that shortcut can never be reached
+    /// by typing a code by hand instead of actually receiving the link.
+    @Published private(set) var myLinkToken: String
     @Published var errorMessage = ""
     /// Room ids (not persisted — the server is the source of truth, and this
     /// is only ever populated on demand when a chat screen asks) that *this
@@ -197,6 +203,7 @@ final class FriendStore: ObservableObject {
         self.client = client
         self.defaults = defaults
         myCode = defaults.string(forKey: "studiquoFriendCode") ?? Self.placeholderCode
+        myLinkToken = defaults.string(forKey: "studiquoFriendLinkToken") ?? Self.placeholderCode
         if let data = defaults.data(forKey: friendsKey) {
             friends = (try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? []
         }
@@ -275,12 +282,16 @@ final class FriendStore: ObservableObject {
         unseenIncomingRequestCount = 0
     }
 
-    var invitationURL: URL { URL(string: "studiquo://friend/add?code=\(myCode)")! }
+    /// `token`, not `code` — a link/QR tap redeems `myLinkToken` for an
+    /// immediate, no-approval friendship (see `myLinkToken`'s doc comment
+    /// and `add(url:)`), a deliberately different mechanism from typing
+    /// `myCode` by hand.
+    var invitationURL: URL { URL(string: "studiquo://friend/add?token=\(myLinkToken)")! }
 
     /// False only during the narrow window on a brand-new install before the
     /// first registration completes — sharing/scanning a QR code before this
-    /// is true would encode the placeholder text instead of a real code.
-    var isCodeReady: Bool { myCode != Self.placeholderCode }
+    /// is true would encode the placeholder text instead of a real token.
+    var isCodeReady: Bool { myCode != Self.placeholderCode && myLinkToken != Self.placeholderCode }
 
     func refresh() async {
         do {
@@ -288,6 +299,10 @@ final class FriendStore: ObservableObject {
             let identity = try await client.register(name: name, todayStudySeconds: nil, studyDate: nil)
             myCode = identity.code
             defaults.set(myCode, forKey: "studiquoFriendCode")
+            if let linkToken = identity.linkToken {
+                myLinkToken = linkToken
+                defaults.set(myLinkToken, forKey: "studiquoFriendLinkToken")
+            }
             let remote = try await client.friends()
             friends = Self.mergedFriends(existing: friends, remote: remote)
             errorMessage = ""
@@ -529,6 +544,8 @@ final class FriendStore: ObservableObject {
             return "コードの形式が正しくありません。"
         case "Friend not found.", "Request not found.":
             return "フレンドコードが見つかりません。"
+        case "This invite link is no longer valid.":
+            return "この招待リンクは無効です。"
         default:
             return fallback
         }
@@ -539,24 +556,36 @@ final class FriendStore: ObservableObject {
         friends.append(FriendRecord(id: UUID(), name: "デモフレンド", code: "DEMO123", todayStudySeconds: 3_600, roomID: nil, isDemo: true))
     }
 
-    /// A friend-add code carried in a `studiquo://friend/add?code=…` link,
-    /// waiting on the student's confirmation before an actual request is
-    /// sent — see `add(url:)`. `nil` when there is nothing to confirm.
+    /// A friend-add code carried in an *old-format* `studiquo://friend/add?code=…`
+    /// link, waiting on the student's confirmation before an actual request
+    /// is sent — see `add(url:)`. `nil` when there is nothing to confirm.
+    /// Current links use `?token=…` instead (`pendingLinkToken`); this stays
+    /// around only so a link shared before that change still works.
     @Published var pendingDeepLinkCode: String?
 
-    /// Opening a `studiquo://friend/add?code=…` link used to send the
-    /// friend request immediately, with no confirmation — a link crafted by
-    /// someone else (a message, a QR code) could make a request go out the
-    /// instant it was tapped, before the student had any chance to see who
-    /// or what it was for. This only stages the code; `FriendsHomeView`
-    /// shows a confirmation alert, and the request is sent only if the
-    /// student accepts it there.
+    /// A link/QR-only invite token (see `myLinkToken`'s doc comment) waiting
+    /// on the student's confirmation before it's actually redeemed — see
+    /// `add(url:)`/`confirmPendingLinkAdd()`. `nil` when there is nothing to
+    /// confirm.
+    @Published var pendingLinkToken: String?
+
+    /// Opening a `studiquo://friend/add?...` link used to send the friend
+    /// request immediately, with no confirmation — a link crafted by
+    /// someone else (a message, a QR code) could act the instant it was
+    /// tapped, before the student had any chance to see who or what it was
+    /// for. Both formats only ever stage something here; `FriendsHomeView`
+    /// shows a confirmation alert, and nothing happens unless the student
+    /// accepts it there.
     func add(url: URL) {
         guard url.scheme?.lowercased() == "studiquo",
               url.host?.lowercased() == "friend",
               url.path == "/add",
-              let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "code" })?.value else { return }
-        pendingDeepLinkCode = code
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return }
+        if let token = items.first(where: { $0.name == "token" })?.value {
+            pendingLinkToken = token
+        } else if let code = items.first(where: { $0.name == "code" })?.value {
+            pendingDeepLinkCode = code
+        }
     }
 
     func confirmPendingDeepLinkRequest() {
@@ -567,6 +596,39 @@ final class FriendStore: ObservableObject {
 
     func cancelPendingDeepLinkRequest() {
         pendingDeepLinkCode = nil
+    }
+
+    /// Redeems `pendingLinkToken` for an immediate, mutual friendship — no
+    /// pending request, no separate accept step on either side; actually
+    /// having received the link/QR (the only way to ever learn its token)
+    /// is treated as consent enough. See `myLinkToken`'s doc comment for why
+    /// this has to be a different mechanism from `confirmPendingDeepLinkRequest()`.
+    func confirmPendingLinkAdd() {
+        guard let token = pendingLinkToken else { return }
+        pendingLinkToken = nil
+        guard token != myLinkToken else {
+            errorMessage = "自分自身をフレンドに追加することはできません。"
+            return
+        }
+        Task {
+            do {
+                let result = try await client.addViaLink(token: token)
+                if !friends.contains(where: { $0.code == result.code }) {
+                    friends.append(FriendRecord(id: UUID(), name: result.name, code: result.code, todayStudySeconds: 0, roomID: result.roomID, isDemo: false))
+                }
+                errorMessage = ""
+            } catch is FriendChatService.RateLimitedError {
+                errorMessage = "フレンド申請の送信回数が上限に達しました。しばらくしてからもう一度お試しください。"
+            } catch let error as FriendChatService.ServerError {
+                errorMessage = Self.message(for: error, fallback: "この招待リンクは無効です。")
+            } catch {
+                errorMessage = "この招待リンクは無効です。"
+            }
+        }
+    }
+
+    func cancelPendingLinkAdd() {
+        pendingLinkToken = nil
     }
 
     func send(_ text: String, to friend: FriendRecord) {
@@ -1099,8 +1161,11 @@ struct FriendsHomeView: View {
             } message: {
                 Text(store.errorMessage)
             }
-            // A studiquo://friend/add link stages a code here rather than
-            // sending the request immediately — see `FriendStore.add(url:)`.
+            // An old-format studiquo://friend/add?code=… link stages a code
+            // here rather than sending the request immediately — see
+            // `FriendStore.add(url:)`. Current links use ?token=… instead
+            // (the alert just below), which skips the approval step
+            // entirely rather than merely pre-filling it.
             .alert(
                 "フレンド申請を送りますか？",
                 isPresented: Binding(
@@ -1112,6 +1177,23 @@ struct FriendsHomeView: View {
                 Button("送信") { store.confirmPendingDeepLinkRequest() }
             } message: {
                 Text("コード「\(store.pendingDeepLinkCode ?? "")」のユーザーにフレンド申請を送ります。")
+            }
+            // A studiquo://friend/add?token=… link (the current invite-link
+            // format) redeems immediately on confirmation — no separate
+            // approval step on either side, since actually receiving the
+            // link is treated as consent enough. See
+            // `FriendStore.confirmPendingLinkAdd()`.
+            .alert(
+                "フレンドになりますか？",
+                isPresented: Binding(
+                    get: { store.pendingLinkToken != nil },
+                    set: { isPresented in if !isPresented { store.cancelPendingLinkAdd() } }
+                )
+            ) {
+                Button("キャンセル", role: .cancel) { store.cancelPendingLinkAdd() }
+                Button("フレンドになる") { store.confirmPendingLinkAdd() }
+            } message: {
+                Text("この招待リンクを送ってきた相手とフレンドになります。")
             }
         }
     }

@@ -25,7 +25,7 @@ final class FriendStoreTests: XCTestCase {
     // code": the add-friend screen must know not to show it yet.
 
     func testIsCodeReadyIsFalseOnAFreshInstallAndTrueAfterRegistering() async {
-        let client = MockFriendChatClient(identity: .init(code: "ME1234", name: "Me"))
+        let client = MockFriendChatClient(identity: .init(code: "ME1234", name: "Me", linkToken: "LINKME1"))
         let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
 
         XCTAssertFalse(store.isCodeReady, "a brand-new install has no persisted code yet")
@@ -38,6 +38,7 @@ final class FriendStoreTests: XCTestCase {
 
     func testIsCodeReadyIsTrueImmediatelyWhenALastKnownCodeWasAlreadyPersisted() {
         defaults.set("ME1234", forKey: "studiquoFriendCode")
+        defaults.set("LINKME1", forKey: "studiquoFriendLinkToken")
         let store = FriendStore(client: MockFriendChatClient(), defaults: defaults, autoRefresh: false)
 
         XCTAssertTrue(store.isCodeReady, "a later launch already has a persisted code before refresh() ever runs")
@@ -1246,6 +1247,69 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertNil(store.pendingDeepLinkCode)
     }
 
+    func testInvitationURLEncodesTheLinkTokenNotTheFriendCode() async {
+        let client = MockFriendChatClient(identity: .init(code: "ME0000", name: "Me", linkToken: "LINKTOKEN1"))
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refresh()
+
+        XCTAssertEqual(store.invitationURL.absoluteString, "studiquo://friend/add?token=LINKTOKEN1")
+    }
+
+    func testAddURLWithATokenStagesItWithoutRedeemingItImmediately() async {
+        let client = MockFriendChatClient()
+        await client.setLinkTokenOwner(.init(code: "ALICE1", name: "Alice", roomID: "room-a"), token: "LINKTOKEN1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        store.add(url: URL(string: "studiquo://friend/add?token=LINKTOKEN1")!)
+
+        XCTAssertEqual(store.pendingLinkToken, "LINKTOKEN1")
+        try? await Task.sleep(for: .milliseconds(50))
+        let redeemed = await client.linkAddedTokensSnapshot()
+        XCTAssertEqual(redeemed, [], "opening the link must not redeem it by itself")
+    }
+
+    func testConfirmingAPendingLinkAddCreatesAnImmediateFriendshipWithNoApprovalStep() async {
+        let client = MockFriendChatClient()
+        await client.setLinkTokenOwner(.init(code: "ALICE1", name: "Alice", roomID: "room-a"), token: "LINKTOKEN1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.add(url: URL(string: "studiquo://friend/add?token=LINKTOKEN1")!)
+
+        store.confirmPendingLinkAdd()
+        await waitUntil { store.friends.contains { $0.code == "ALICE1" } }
+
+        XCTAssertNil(store.pendingLinkToken)
+        XCTAssertTrue(store.outgoingRequests.isEmpty, "a link add must never go through the pending-request system")
+    }
+
+    func testCancelingAPendingLinkAddNeverRedeemsIt() async {
+        let client = MockFriendChatClient()
+        await client.setLinkTokenOwner(.init(code: "ALICE1", name: "Alice", roomID: "room-a"), token: "LINKTOKEN1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.add(url: URL(string: "studiquo://friend/add?token=LINKTOKEN1")!)
+
+        store.cancelPendingLinkAdd()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertNil(store.pendingLinkToken)
+        let redeemed = await client.linkAddedTokensSnapshot()
+        XCTAssertEqual(redeemed, [])
+        XCTAssertTrue(store.friends.isEmpty)
+    }
+
+    func testConfirmingAPendingLinkAddForOnesOwnTokenIsRejectedLocallyWithoutCallingTheServer() async {
+        let client = MockFriendChatClient(identity: .init(code: "ME0000", name: "Me", linkToken: "MYTOKEN1"))
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refresh()
+        store.add(url: URL(string: "studiquo://friend/add?token=MYTOKEN1")!)
+
+        store.confirmPendingLinkAdd()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(store.errorMessage, "自分自身をフレンドに追加することはできません。")
+        let redeemed = await client.linkAddedTokensSnapshot()
+        XCTAssertEqual(redeemed, [], "a self-add must be caught before ever reaching the server")
+    }
+
     func testAddSurfacesADedicatedMessageWhenRateLimited() async {
         let client = MockFriendChatClient()
         await client.setRateLimited(true)
@@ -1629,6 +1693,32 @@ private actor MockFriendChatClient: FriendChatClient {
 
     func addedCodesSnapshot() -> [String] {
         addedCodes
+    }
+
+    var linkAddedTokens: [String] = []
+    var linkTokenOwner: FriendChatService.Friend?
+    var linkToken = "LINK0000"
+
+    func addViaLink(token: String) async throws -> FriendChatService.LinkAddResult {
+        linkAddedTokens.append(token)
+        if isRateLimited { throw FriendChatService.RateLimitedError() }
+        if let errorToThrow { throw errorToThrow }
+        guard let owner = linkTokenOwner, token == linkToken else {
+            throw FriendChatService.ServerError(status: 404, message: "This invite link is no longer valid.")
+        }
+        return .init(status: "added", code: owner.code, name: owner.name, roomID: owner.roomID)
+    }
+
+    /// Registers the token an `addViaLink(token:)` call must match, and the
+    /// friend it resolves to on success — mirrors how a real invite link's
+    /// token is tied to one specific account server-side.
+    func setLinkTokenOwner(_ friend: FriendChatService.Friend, token: String) {
+        linkTokenOwner = friend
+        linkToken = token
+    }
+
+    func linkAddedTokensSnapshot() -> [String] {
+        linkAddedTokens
     }
 
     func setRateLimited(_ value: Bool) {

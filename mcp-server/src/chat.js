@@ -29,6 +29,27 @@ function parseFriendCode(body) {
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
 
+// Same format as a friend code (see FRIEND_CODE_PATTERN) — the two are
+// generated the same way, just stored under a different KV prefix so a
+// link token can never be confused with, or substituted for, a manually
+// typed friend code.
+function parseLinkToken(body) {
+  const token = String(body?.token ?? "").trim().toUpperCase();
+  return FRIEND_CODE_PATTERN.test(token) ? token : null;
+}
+
+// Same alphabet/shape as UserRegistry's own generateCode (user-registry.js)
+// — kept as a separate copy rather than imported, since user-registry.js
+// pulls in `cloudflare:workers` for its DurableObject base class, which
+// only resolves inside the Workers runtime and would break this file's own
+// plain-Node test suite (chat.test.js) if imported here.
+const LINK_TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function generateLinkToken() {
+  const bytes = new Uint8Array(7);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, value => LINK_TOKEN_ALPHABET[value % 32]).join("");
+}
+
 // `Number("1e400")` and friends parse to Infinity, which SQLite's bind
 // rejects with an exception — this turns that into a clean fallback instead
 // of a 500 from chat-room.js's query.
@@ -67,6 +88,14 @@ async function ensureUser(env, key, name = null, studyStats = null) {
     if (studyStats) {
       user.todayStudySeconds = studyStats.seconds;
       user.studyDate = studyStats.date;
+      changed = true;
+    }
+    // Backfills a link token for a user created before invite links
+    // existed — see UserRegistry.ensureUser's brand-new-user branch for
+    // why this has to be a second, separate value from `code`.
+    if (!user.linkToken) {
+      do { user.linkToken = generateLinkToken(); } while (await env.STUDIQUO_DATA.get(`chat:linktoken:${user.linkToken}`));
+      await env.STUDIQUO_DATA.put(`chat:linktoken:${user.linkToken}`, key);
       changed = true;
     }
     if (changed) {
@@ -124,7 +153,7 @@ export async function handleChat(url, request, env) {
   if (url.pathname === "/api/chat/me" && request.method === "POST") {
     const body = await readBody(request);
     const user = await ensureUser(env, key, body?.name, parseStudyStats(body));
-    return json({ code: user.code, name: user.name });
+    return json({ code: user.code, name: user.name, linkToken: user.linkToken });
   }
 
   if (url.pathname === "/api/chat/friends" && request.method === "GET") {
@@ -181,6 +210,48 @@ export async function handleChat(url, request, env) {
       await env.USER_REGISTRY.getByName(key).addOutgoingRequest(key, result.recipient.code, result.recipient.name);
     }
     return json({ status: result.status });
+  }
+
+  // Redeems the *other* person's invite-link token for an immediate,
+  // mutual friendship — unlike POST /api/chat/friends above, there's no
+  // pending request and no separate accept step: actually having received
+  // the link/QR (which is the only way to ever learn its token) is treated
+  // as consent enough. `linkToken` is deliberately a different value from
+  // `code` (see UserRegistry.ensureUser's doc comment) specifically so
+  // this shortcut can never be reached by just typing a friend code by
+  // hand.
+  if (url.pathname === "/api/chat/friends/link-add" && request.method === "POST") {
+    const allowed = await checkRateLimit(env, env.RATE_LIMIT_CHAT_FRIEND_ADD, "chat-friend-link-add", key, FRIEND_ADD_LIMIT_PER_MINUTE);
+    if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
+    const body = await readBody(request);
+    const linkToken = parseLinkToken(body);
+    if (!linkToken) return json({ error: "Invalid invite link." }, 400);
+    const otherKey = await env.STUDIQUO_DATA.get(`chat:linktoken:${linkToken}`);
+    if (!otherKey) return json({ error: "This invite link is no longer valid." }, 404);
+    if (otherKey === key) return json({ error: "You cannot add yourself as a friend." }, 400);
+    const [user, other] = await Promise.all([ensureUser(env, key), ensureUser(env, otherKey)]);
+    if ((other.friends ?? []).length >= MAX_FRIENDS) {
+      return json({ error: "Friend list is full." }, 400);
+    }
+    const room = await roomID(key, otherKey);
+    // The caller's own side is delegated to their UserRegistry instance for
+    // the same race-safety reason every other friends-list mutation here
+    // is (see addFriendDirectly). The link owner's side is written directly
+    // here, mirroring how the accept handler below updates its own "other"
+    // side.
+    const result = await env.USER_REGISTRY.getByName(key).addFriendDirectly(key, other.code, other.name, room);
+    if (result.status === "not_found") return json({ error: "Friend not found." }, 404);
+    if (result.status === "friends_full") return json({ error: "Friend list is full." }, 400);
+    if (result.status === "already_friends") {
+      const existing = (user.friends ?? []).find(item => item.code === other.code);
+      return json({ status: "already_friends", code: other.code, name: other.name, roomID: existing?.roomID ?? room });
+    }
+    other.friends = [...(other.friends ?? []).filter(item => item.code !== user.code), { code: user.code, name: user.name, roomID: room }];
+    await Promise.all([
+      env.STUDIQUO_DATA.put(`chat:user:${otherKey}`, JSON.stringify(other)),
+      env.CHAT_ROOM.getByName(room).initialize(room, [key, otherKey]),
+    ]);
+    return json({ status: "added", code: other.code, name: other.name, roomID: room });
   }
 
   // Accept: the request's recipient turns it into a mutual friendship and

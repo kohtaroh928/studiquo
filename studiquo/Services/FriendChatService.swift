@@ -14,7 +14,18 @@ enum FriendChatService {
         var todayStudySeconds: Double? = nil
         var studyDate: String? = nil
     }
-    struct Identity: Codable { let code: String; let name: String }
+    struct Identity: Codable {
+        let code: String
+        let name: String
+        /// A second, separate code — only ever embedded in a shareable
+        /// invite link/QR, never typed manually — that redeems for an
+        /// immediate, no-approval friendship. Deliberately not the same
+        /// value as `code`: if it were, anyone could type `code` by hand
+        /// and skip the approval step manual entry is supposed to require.
+        /// Optional purely for decoding safety against an older server
+        /// response; every real response includes it.
+        var linkToken: String? = nil
+    }
     struct Message: Codable {
         let id: Int
         let text: String
@@ -33,6 +44,12 @@ enum FriendChatService {
         var isCanceled: Bool? = nil
     }
     struct AddFriendResult: Codable { let status: String }
+    /// `status` is `"added"` for a brand-new friendship or `"already_friends"`
+    /// if the two were already friends (a harmless no-op, not an error) —
+    /// either way `code`/`name`/`roomID` describe the link owner, the same
+    /// shape `Friend` uses, so the caller can build a `FriendRecord` from it
+    /// exactly like it does for `acceptRequest`'s response.
+    struct LinkAddResult: Codable { let status: String; let code: String; let name: String; let roomID: String }
     struct IncomingRequest: Codable { let code: String; let name: String; let requestedAt: Double }
     struct OutgoingRequest: Codable { let code: String; let name: String; let requestedAt: Double }
     struct RejectResult: Codable { let status: String }
@@ -73,6 +90,17 @@ enum FriendChatService {
     /// (see `acceptRequest`) before a mutual friendship or chat room exists.
     static func add(code: String) async throws -> AddFriendResult {
         try await request(path: "api/chat/friends", method: "POST", body: ["code": code])
+    }
+
+    /// Redeems the *other* person's invite-link token for an immediate,
+    /// mutual friendship — no pending request, no approval step on either
+    /// side. `token` is only ever obtained by actually receiving the
+    /// invite link/QR (see `Identity.linkToken`'s doc comment); receiving
+    /// it at all is treated as consent enough, unlike a manually typed
+    /// friend code, which still always goes through `add(code:)` and a
+    /// real accept/reject step.
+    static func addViaLink(token: String) async throws -> LinkAddResult {
+        try await request(path: "api/chat/friends/link-add", method: "POST", body: ["token": token])
     }
 
     static func incomingRequests() async throws -> [IncomingRequest] {
@@ -211,6 +239,7 @@ protocol FriendChatClient {
     func register(name: String, todayStudySeconds: Int?, studyDate: String?) async throws -> FriendChatService.Identity
     func friends() async throws -> [FriendChatService.Friend]
     func add(code: String) async throws -> FriendChatService.AddFriendResult
+    func addViaLink(token: String) async throws -> FriendChatService.LinkAddResult
     func incomingRequests() async throws -> [FriendChatService.IncomingRequest]
     func outgoingRequests() async throws -> [FriendChatService.OutgoingRequest]
     func accept(code: String) async throws -> FriendChatService.Friend
@@ -239,6 +268,10 @@ struct LiveFriendChatClient: FriendChatClient {
 
     func add(code: String) async throws -> FriendChatService.AddFriendResult {
         try await FriendChatService.add(code: code)
+    }
+
+    func addViaLink(token: String) async throws -> FriendChatService.LinkAddResult {
+        try await FriendChatService.addViaLink(token: token)
     }
 
     func incomingRequests() async throws -> [FriendChatService.IncomingRequest] {
