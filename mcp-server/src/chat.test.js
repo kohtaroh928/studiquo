@@ -172,21 +172,46 @@ function fakeUserRegistryBinding(studiquoData) {
     const storageKey = `chat:user:${key}`;
     let user = await studiquoData.get(storageKey, "json");
     if (user) {
+      let changed = false;
       const cleaned = name == null ? "" : String(name).trim().slice(0, 80);
       if (cleaned && cleaned !== user.name) {
         user.name = cleaned;
-        await studiquoData.put(storageKey, JSON.stringify(user));
+        changed = true;
       }
+      if (!user.linkToken) {
+        do { user.linkToken = generateRegistryTestCode(); } while (await studiquoData.get(`chat:linktoken:${user.linkToken}`));
+        await studiquoData.put(`chat:linktoken:${user.linkToken}`, key);
+        changed = true;
+      }
+      if (changed) await studiquoData.put(storageKey, JSON.stringify(user));
       return user;
     }
     let friendCode;
     do { friendCode = generateRegistryTestCode(); } while (await studiquoData.get(`chat:code:${friendCode}`));
-    user = { key, name: String(name ?? "").trim().slice(0, 80) || "Studiquoユーザー", code: friendCode, friends: [] };
+    let linkToken;
+    do { linkToken = generateRegistryTestCode(); } while (await studiquoData.get(`chat:linktoken:${linkToken}`));
+    user = { key, name: String(name ?? "").trim().slice(0, 80) || "Studiquoユーザー", code: friendCode, linkToken, friends: [] };
     await Promise.all([
       studiquoData.put(storageKey, JSON.stringify(user)),
       studiquoData.put(`chat:code:${friendCode}`, key),
+      studiquoData.put(`chat:linktoken:${linkToken}`, key),
     ]);
     return user;
+  }
+
+  async function addFriendDirectlyAtomic(key, otherCode, otherName, roomID) {
+    const storageKey = `chat:user:${key}`;
+    const user = await studiquoData.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    if ((user.friends ?? []).some(item => item.code === otherCode)) {
+      return { status: "already_friends", friend: { code: user.code, name: user.name } };
+    }
+    if ((user.friends ?? []).length >= 500) {
+      return { status: "friends_full" };
+    }
+    user.friends = [...(user.friends ?? []), { code: otherCode, name: otherName, roomID }];
+    await studiquoData.put(storageKey, JSON.stringify(user));
+    return { status: "added", friend: { code: user.code, name: user.name } };
   }
 
   async function addIncomingRequestAtomic(key, requesterCode, requesterName) {
@@ -276,6 +301,9 @@ function fakeUserRegistryBinding(studiquoData) {
         },
         resolveIncomingRequest(k, action, otherCode, otherName, roomID) {
           return enqueue(key, () => resolveIncomingRequestAtomic(k, action, otherCode, otherName, roomID));
+        },
+        addFriendDirectly(k, otherCode, otherName, roomID) {
+          return enqueue(key, () => addFriendDirectlyAtomic(k, otherCode, otherName, roomID));
         },
       };
     },
@@ -373,6 +401,10 @@ async function outgoingRequests(env, token) {
 
 async function addFriend(env, token, code) {
   return worker.fetch(request("/api/chat/friends", { method: "POST", token, body: { code } }), env, noopCtx);
+}
+
+async function addFriendViaLink(env, token, linkToken) {
+  return worker.fetch(request("/api/chat/friends/link-add", { method: "POST", token, body: { token: linkToken } }), env, noopCtx);
 }
 
 async function acceptRequest(env, token, code) {
@@ -619,6 +651,103 @@ test("requesting an existing mutual friend again reports already_friends and add
   // Re-requesting an existing friend must not touch the chat room at all —
   // there is nothing to (re-)initialize.
   assert.equal(env.CHAT_ROOM.initializeCalls.count, 0);
+});
+
+// Regression coverage for the invite-link add path: unlike POST
+// /api/chat/friends above, redeeming the *other* person's link token must
+// create a mutual friendship immediately — no pending request, no separate
+// accept step on either side.
+test("redeeming an invite-link token creates an immediate mutual friendship with no pending request", async () => {
+  const env = environment();
+  const aliceToken = freshToken("li1");
+  const bobToken = freshToken("li2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  assert.ok(bob.linkToken, "registration must return a link token");
+  assert.notEqual(bob.linkToken, bob.code, "the link token must differ from the manually-typed friend code");
+
+  const response = await addFriendViaLink(env, aliceToken, bob.linkToken);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.status, "added");
+  assert.equal(body.code, bob.code);
+  assert.equal(body.name, "Bob");
+
+  const aliceFriends = await friends(env, aliceToken);
+  assert.equal(aliceFriends.length, 1);
+  assert.equal(aliceFriends[0].code, bob.code);
+  assert.equal(aliceFriends[0].roomID, body.roomID);
+
+  const bobFriends = await friends(env, bobToken);
+  assert.equal(bobFriends.length, 1);
+  assert.equal(bobFriends[0].code, alice.code);
+  assert.equal(bobFriends[0].roomID, body.roomID);
+
+  // No pending-request bookkeeping should exist anywhere for this pair.
+  assert.deepEqual(await incomingRequests(env, aliceToken), []);
+  assert.deepEqual(await incomingRequests(env, bobToken), []);
+  assert.deepEqual(await outgoingRequests(env, aliceToken), []);
+  assert.deepEqual(await outgoingRequests(env, bobToken), []);
+});
+
+test("typing a friend's code by hand cannot be used to reach the link-add shortcut", async () => {
+  const env = environment();
+  const aliceToken = freshToken("li3");
+  const bobToken = freshToken("li4");
+  await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+
+  const response = await addFriendViaLink(env, aliceToken, bob.code);
+  assert.equal(response.status, 404);
+  assert.deepEqual(await friends(env, aliceToken), []);
+  assert.deepEqual(await friends(env, bobToken), []);
+});
+
+test("redeeming an invite-link token twice is a harmless already_friends no-op, not a duplicate friend", async () => {
+  const env = environment();
+  const aliceToken = freshToken("li5");
+  const bobToken = freshToken("li6");
+  await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+
+  const first = await addFriendViaLink(env, aliceToken, bob.linkToken);
+  assert.equal((await first.json()).status, "added");
+  const second = await addFriendViaLink(env, aliceToken, bob.linkToken);
+  assert.equal(second.status, 200);
+  assert.equal((await second.json()).status, "already_friends");
+
+  assert.equal((await friends(env, aliceToken)).length, 1);
+  assert.equal((await friends(env, bobToken)).length, 1);
+  assert.equal(env.CHAT_ROOM.initializeCalls.count, 1);
+});
+
+test("redeeming your own invite-link token is rejected with a specific message", async () => {
+  const env = environment();
+  const aliceToken = freshToken("li7");
+  const alice = await registerUser(env, aliceToken, "Alice");
+
+  const response = await addFriendViaLink(env, aliceToken, alice.linkToken);
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /cannot add yourself/i);
+  assert.deepEqual(await friends(env, aliceToken), []);
+});
+
+test("redeeming an invite-link token that does not exist returns 404", async () => {
+  const env = environment();
+  const aliceToken = freshToken("li8");
+  await registerUser(env, aliceToken, "Alice");
+
+  const response = await addFriendViaLink(env, aliceToken, "NOSUCH1");
+  assert.equal(response.status, 404);
+});
+
+test("a malformed invite-link token is rejected with 400 instead of reaching the KV lookup", async () => {
+  const env = environment();
+  const aliceToken = freshToken("li9");
+  await registerUser(env, aliceToken, "Alice");
+
+  const response = await addFriendViaLink(env, aliceToken, "short");
+  assert.equal(response.status, 400);
 });
 
 // Regression coverage for "the room is (re-)initialized on every add, even

@@ -18,19 +18,41 @@ export class UserRegistry extends DurableObject {
     const storageKey = `chat:user:${key}`;
     let user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
     if (user) {
+      let changed = false;
       const cleaned = name == null ? "" : String(name).trim().slice(0, 80);
       if (cleaned && cleaned !== user.name) {
         user.name = cleaned;
+        changed = true;
+      }
+      // Backfills a link token for a user created before invite links
+      // existed — see the brand-new-user branch below for why this has to
+      // be a second, separate value from `code`.
+      if (!user.linkToken) {
+        do { user.linkToken = generateCode(); } while (await this.env.STUDIQUO_DATA.get(`chat:linktoken:${user.linkToken}`));
+        await this.env.STUDIQUO_DATA.put(`chat:linktoken:${user.linkToken}`, key);
+        changed = true;
+      }
+      if (changed) {
         await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
       }
       return user;
     }
     let friendCode;
     do { friendCode = generateCode(); } while (await this.env.STUDIQUO_DATA.get(`chat:code:${friendCode}`));
-    user = { key, name: String(name ?? "").trim().slice(0, 80) || "Studiquoユーザー", code: friendCode, friends: [] };
+    // A second code, distinct from `friendCode`, embedded only in a
+    // shareable invite link/QR — never typed manually. Keeping it separate
+    // from `friendCode` is what lets `/api/chat/friends/link-add` treat
+    // redeeming it as consent enough for an instant, no-approval
+    // friendship, without also letting anyone bypass manual entry's
+    // approval step by just typing the same value `friendCode` would give
+    // them.
+    let linkToken;
+    do { linkToken = generateCode(); } while (await this.env.STUDIQUO_DATA.get(`chat:linktoken:${linkToken}`));
+    user = { key, name: String(name ?? "").trim().slice(0, 80) || "Studiquoユーザー", code: friendCode, linkToken, friends: [] };
     await Promise.all([
       this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user)),
       this.env.STUDIQUO_DATA.put(`chat:code:${friendCode}`, key),
+      this.env.STUDIQUO_DATA.put(`chat:linktoken:${linkToken}`, key),
     ]);
     return user;
   }
@@ -114,5 +136,28 @@ export class UserRegistry extends DurableObject {
     user.friends = [...(user.friends ?? []).filter(item => item.code !== otherCode), { code: otherCode, name: otherName, roomID }];
     await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
     return { status: "accepted", friend: { code: user.code, name: user.name } };
+  }
+
+  // Instant, no-approval friendship — used only for `/api/chat/friends/link-add`,
+  // when the caller redeemed the *other* person's invite-link token (a
+  // value only someone who actually received the link/QR could have,
+  // never a manually typed friend code). Mirrors resolveIncomingRequest's
+  // "accept" branch, but there's no pending request to remove first since
+  // none was ever created for this path. Routed through this per-key
+  // instance (called via getByName(key), the caller's own key) for the
+  // same race-safety reason every other friends-list mutation here is.
+  async addFriendDirectly(key, otherCode, otherName, roomID) {
+    const storageKey = `chat:user:${key}`;
+    const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    if ((user.friends ?? []).some(item => item.code === otherCode)) {
+      return { status: "already_friends", friend: { code: user.code, name: user.name } };
+    }
+    if ((user.friends ?? []).length >= MAX_FRIENDS) {
+      return { status: "friends_full" };
+    }
+    user.friends = [...(user.friends ?? []), { code: otherCode, name: otherName, roomID }];
+    await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+    return { status: "added", friend: { code: user.code, name: user.name } };
   }
 }
