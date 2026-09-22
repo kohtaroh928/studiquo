@@ -9,7 +9,10 @@ final class Notebook {
     var isFavorite: Bool = false
     var isTrashed: Bool = false
     var trashedAt: Date?
+    /// Legacy "/"-joined folder path, kept as a migration fallback — see
+    /// `FolderMigrationService`. `folder` is the source of truth now.
     var folderName: String = ""
+    var folder: Folder?
     var tagsText: String = ""
     var isLocked: Bool = false
     /// Every page and element's content, AES-GCM encrypted, whenever this

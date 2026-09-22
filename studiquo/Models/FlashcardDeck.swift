@@ -11,7 +11,10 @@ final class FlashcardDeck {
     /// to the trash and can be restored, rather than vanishing for good.
     var isTrashed: Bool = false
     var trashedAt: Date?
+    /// Legacy "/"-joined folder path, kept as a migration fallback — see
+    /// `FolderMigrationService`. `folder` is the source of truth now.
     var folderName: String = ""
+    var folder: Folder?
     var reversesQuestionAndAnswer: Bool = false
     var orderModeRawValue: String = FlashcardOrderMode.creation.rawValue
     /// How many times the deck has been studied end to end.

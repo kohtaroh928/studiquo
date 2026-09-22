@@ -1017,11 +1017,13 @@ private struct PrivacyPolicyView: View {
                         bullet("学習コンテンツ", "ノート、暗記帳、文書、スライドなど、利用者が作成したコンテンツ。本アプリの基本機能を提供するために保存します。")
                         bullet("友達・チャット機能に関する情報", "友達コード、友達関係、チャットメッセージ、送信した添付ファイル。友達同士のコミュニケーション機能を提供するために保存します。")
                         bullet("利用状況", "学習時間の記録、各機能の利用回数。学習記録機能・利用制限の管理のために使用します。")
+                        bullet("Googleカレンダー情報", "Googleカレンダー連携を選択した場合、カレンダー名、予定のタイトル、開始・終了日時、説明を読み取り、学習予定と一緒に表示するために端末内へ保存します。Googleカレンダーへの書き込みは行いません。")
                         bullet("AI機能利用時に送信する内容", "AIトーク・添削・翌日復習・AI学習計画などの機能を使うと、質問文、ノートの内容、答案の画像などが外部のAIサービスに送信されます。詳しくは次の項目をご覧ください。")
                     }
 
                     policySection(title: "第三者サービスとの連携") {
                         bullet("Sign in with Apple / Google Sign-In", "アカウント作成・ログインのために使用します。")
+                        bullet("Google Calendar API", "許可を得たうえで、選択されているカレンダーの予定を読み取り専用で同期します。取得した情報を広告、行動追跡、第三者への販売には使用しません。")
                         bullet("Google Gemini", "AIトーク・添削・翌日復習・AI学習計画機能で、既定の生成AIとして使用します。これらの機能を使うたびに、上記の内容がGoogleに送信されます。")
                         bullet("Anthropic Claude", "利用者が自分自身のAnthropic APIキーを設定した場合に限り、同様の内容がAnthropicにも送信されます。APIキーを設定しない限り、この連携は行われません。")
                         bullet("Cloudflare", "本アプリのサーバーインフラとして使用しており、アカウント情報・学習コンテンツ・チャット内容の保管場所です。")
@@ -1039,7 +1041,7 @@ private struct PrivacyPolicyView: View {
                     }
 
                     policySection(title: "データの削除について") {
-                        Text("現在、アプリ内からご自身でアカウントやデータを削除する機能は準備中です。削除をご希望の場合は、お問い合わせ先までご連絡ください。")
+                        Text("Google連携はアプリ内からいつでも解除できます。同期したGoogleカレンダーの予定およびその他のアカウントデータの削除をご希望の場合は、お問い合わせ先までご連絡ください。")
                             .font(.subheadline)
                     }
 
@@ -1054,10 +1056,7 @@ private struct PrivacyPolicyView: View {
                     }
 
                     policySection(title: "お問い合わせ先") {
-                        // TODO before shipping: replace with a real, monitored
-                        // contact address — kept in sync with legal.js's own
-                        // CONTACT_EMAIL placeholder. Must not go live unfilled.
-                        Text("本ポリシーや保有する情報の取り扱いに関するご質問・ご請求は、【お問い合わせ用メールアドレスを記載してください】までご連絡ください。")
+                        Text("本ポリシーや保有する情報の取り扱いに関するご質問・ご請求は、yabukohtaroh@gmail.comまでご連絡ください。")
                             .font(.subheadline)
                     }
                 }
@@ -1094,6 +1093,7 @@ struct ContentView: View {
     @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
     @Query(sort: \TextDocument.updatedAt, order: .reverse) private var textDocuments: [TextDocument]
     @Query(sort: \SlideDeck.updatedAt, order: .reverse) private var slideDecks: [SlideDeck]
+    @Query private var allFolders: [Folder]
     @Query(sort: \CalendarEvent.startDate) private var calendarEvents: [CalendarEvent]
     @Query(sort: \StudyActivity.startedAt, order: .reverse) private var studyActivities: [StudyActivity]
     @Query(sort: \AIReviewItem.reviewDate, order: .reverse) private var aiReviewItems: [AIReviewItem]
@@ -1107,6 +1107,7 @@ struct ContentView: View {
     @State private var libraryMode: LibraryMode = .documents
     @State private var selectedFolder: String?
     @State private var sortOption: NotebookSortOption = .updatedNewest
+    @AppStorage("homeViewMode") private var viewMode: HomeViewMode = .list
     @State private var searchText = ""
     @State private var isImportingFiles = false
     @State private var docxImportFailed = false
@@ -1159,6 +1160,12 @@ struct ContentView: View {
     @State private var tagsText = ""
     @State private var expandedSidebarFolders: Set<String> = []
     @State private var folderDropTarget: String?
+    /// The `HomeEntry` currently under a drag, across all three view modes —
+    /// drives the "+" badge (`entryDropBadge`) shown while dragging one
+    /// resource over another, mirroring `folderDropTarget`/`folderDropBadge`.
+    @State private var entryDropTarget: PersistentIdentifier?
+    @State private var folderToRename: Folder?
+    @State private var folderRenameText = ""
     @State private var studyNotebook: Notebook?
     @State private var selectedFlashcardDeck: FlashcardDeck?
     @State private var selectedTextDocument: TextDocument?
@@ -1186,6 +1193,7 @@ struct ContentView: View {
     @State private var showsTabPicker = false
     @State private var cachedStudyNotifications: [StudyNotification] = []
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("readStudyNotificationIDs") private var readStudyNotificationIDsStorage = ""
 
     private enum HomeSection: String, CaseIterable, Identifiable {
@@ -1926,6 +1934,9 @@ struct ContentView: View {
         .task {
             await migrateTextDocumentBlocksIfNeeded()
         }
+        .task {
+            await migrateFoldersIfNeeded()
+        }
         .onAppear {
             StudyTimeTracker.shared.configure(context: modelContext)
             StudyTimeTracker.shared.handle(scenePhase: scenePhase)
@@ -2356,6 +2367,60 @@ struct ContentView: View {
         String(describing: deck.persistentModelID)
     }
 
+    /// Opens `entry` the same way its list row / sidebar button already does
+    /// for each concrete type — shared by the icon grid so it doesn't
+    /// reimplement per-type navigation.
+    private func open(_ entry: HomeEntry) {
+        switch entry {
+        case .notebook(let notebook):
+            selectedNotebook = notebook
+            columnVisibility = .detailOnly
+        case .flashcardDeck(let deck):
+            openFlashcardDeck(deck)
+        case .textDocument(let document):
+            openTextDocument(document)
+        case .slideDeck(let deck):
+            openSlideDeck(deck)
+        }
+    }
+
+    /// Same "type:id" drag payload each list row already writes via
+    /// `.draggable(...)`, so `handleFolderDrop` keeps working unchanged for
+    /// drags started from the icon grid.
+    private func dragPayload(for entry: HomeEntry) -> String {
+        switch entry {
+        case .notebook(let notebook): "notebook:\(notebookID(notebook))"
+        case .flashcardDeck(let deck): "deck:\(deckID(deck))"
+        case .textDocument(let document): "document:\(textDocumentID(document))"
+        case .slideDeck(let deck): "slide:\(slideDeckID(deck))"
+        }
+    }
+
+    private func toggleFavorite(_ entry: HomeEntry) {
+        switch entry {
+        case .notebook(let notebook):
+            notebook.isFavorite.toggle()
+        case .flashcardDeck(let deck):
+            deck.isFavorite.toggle()
+            deck.updatedAt = .now
+        case .textDocument(let document):
+            document.isFavorite.toggle()
+            document.updatedAt = .now
+        case .slideDeck(let deck):
+            deck.isFavorite.toggle()
+            deck.updatedAt = .now
+        }
+    }
+
+    private func trash(_ entry: HomeEntry) {
+        switch entry {
+        case .notebook(let notebook): moveToTrash(notebook)
+        case .flashcardDeck(let deck): trashDeck(deck)
+        case .textDocument(let document): trashDocument(document)
+        case .slideDeck(let deck): trashSlideDeck(deck)
+        }
+    }
+
     private func openFriendAttachment(_ attachment: FriendMessageAttachment) {
         if let sourcePath = attachment.sourcePath, !sourcePath.isEmpty {
             let url = URL(filePath: sourcePath)
@@ -2553,22 +2618,22 @@ struct ContentView: View {
             switch parts[0] {
             case "notebook":
                 guard let notebook = allNotebooks.first(where: { notebookID($0) == parts[1] && !$0.isTrashed }) else { continue }
-                notebook.folderName = folder
+                assign(notebook, toLegacyPath: folder)
                 notebook.updatedAt = .now
                 didMove = true
             case "deck":
                 guard let deck = flashcardDecks.first(where: { deckID($0) == parts[1] }) else { continue }
-                deck.folderName = folder
+                assign(deck, toLegacyPath: folder)
                 deck.updatedAt = .now
                 didMove = true
             case "document":
                 guard let document = textDocuments.first(where: { textDocumentID($0) == parts[1] && !$0.isTrashed }) else { continue }
-                document.folderName = folder
+                assign(document, toLegacyPath: folder)
                 document.updatedAt = .now
                 didMove = true
             case "slide":
                 guard let deck = slideDecks.first(where: { slideDeckID($0) == parts[1] && !$0.isTrashed }) else { continue }
-                deck.folderName = folder
+                assign(deck, toLegacyPath: folder)
                 deck.updatedAt = .now
                 didMove = true
             default:
@@ -2699,6 +2764,16 @@ struct ContentView: View {
                 folderDropTarget = isTargeted ? folder : (folderDropTarget == folder ? nil : folderDropTarget)
             }
         )
+        .contextMenu {
+            if let target = folderObject(forLegacyPath: folder) {
+                Button {
+                    folderRenameText = target.name
+                    folderToRename = target
+                } label: {
+                    Label("名前を変更", systemImage: "pencil")
+                }
+            }
+        }
     }
 
     private func folderDropBadge(_ folder: String) -> some View {
@@ -2708,6 +2783,169 @@ struct ContentView: View {
             .opacity(folderDropTarget == folder ? 1 : 0)
             .scaleEffect(folderDropTarget == folder ? 1 : 0.6)
             .animation(.easeOut(duration: 0.12), value: folderDropTarget)
+    }
+
+    /// Same "+" cue as `folderDropBadge`, shown on a resource tile/row while
+    /// another resource is being dragged over it — dropping there runs
+    /// `handleEntryDrop`, which bundles both into a brand-new folder.
+    private func entryDropBadge(_ id: PersistentIdentifier) -> some View {
+        Image(systemName: "plus.circle.fill")
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(.green)
+            .opacity(entryDropTarget == id ? 1 : 0)
+            .scaleEffect(entryDropTarget == id ? 1 : 0.6)
+            .animation(.easeOut(duration: 0.12), value: entryDropTarget)
+    }
+
+    private func setEntryDropTarget(_ isTargeted: Bool, _ id: PersistentIdentifier) {
+        entryDropTarget = isTargeted ? id : (entryDropTarget == id ? nil : entryDropTarget)
+    }
+
+    /// Parses the same "type:id" drag payload `handleFolderDrop` does, but
+    /// resolves it back to a `HomeEntry` instead of writing a folder — used
+    /// by `handleEntryDrop` to find the resource being dragged onto another
+    /// resource.
+    private func resolveEntry(fromDragValue value: String) -> HomeEntry? {
+        let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        switch parts[0] {
+        case "notebook":
+            return allNotebooks.first { notebookID($0) == parts[1] && !$0.isTrashed }.map(HomeEntry.notebook)
+        case "deck":
+            return flashcardDecks.first { deckID($0) == parts[1] }.map(HomeEntry.flashcardDeck)
+        case "document":
+            return textDocuments.first { textDocumentID($0) == parts[1] && !$0.isTrashed }.map(HomeEntry.textDocument)
+        case "slide":
+            return slideDecks.first { slideDeckID($0) == parts[1] && !$0.isTrashed }.map(HomeEntry.slideDeck)
+        default:
+            return nil
+        }
+    }
+
+    /// Dropping one resource onto another (neither is a folder) bundles both
+    /// into a brand-new folder next to wherever the drop target already
+    /// lived — the same "drag an app onto another app" gesture iOS's own
+    /// home screen uses to create a folder. The new folder opens straight
+    /// into the rename alert (`folderToRename`) so it doesn't sit around
+    /// nameless.
+    private func handleEntryDrop(_ values: [String], onto target: HomeEntry) -> Bool {
+        guard let value = values.first, let source = resolveEntry(fromDragValue: value), source.id != target.id,
+              !source.isTrashed, !target.isTrashed else {
+            return false
+        }
+        let parent = target.folder
+        let name = uniqueFolderName(base: "新規フォルダ", parent: parent)
+        let newFolder = Folder(name: name, parent: parent)
+        modelContext.insert(newFolder)
+        registerFolderPathMetadata(newFolder.legacyPath)
+        assign(source.underlying, toLegacyPath: newFolder.legacyPath)
+        assign(target.underlying, toLegacyPath: newFolder.legacyPath)
+        source.underlying.updatedAt = .now
+        target.underlying.updatedAt = .now
+        try? modelContext.save()
+        folderRenameText = newFolder.name
+        folderToRename = newFolder
+        return true
+    }
+
+    /// "新規フォルダ", "新規フォルダ 2", … — keeps `handleEntryDrop` from ever
+    /// creating two same-named siblings, since `folderObject(forLegacyPath:)`
+    /// looks folders up by their name-derived path and two identically named
+    /// siblings would be ambiguous.
+    private func uniqueFolderName(base: String, parent: Folder?) -> String {
+        let siblingNames = Set(subfolders(of: parent).map(\.name))
+        guard siblingNames.contains(base) else { return base }
+        var suffix = 2
+        while siblingNames.contains("\(base) \(suffix)") { suffix += 1 }
+        return "\(base) \(suffix)"
+    }
+
+    /// Registers a freshly-created `Folder`'s path in the same AppStorage
+    /// lists `createFolder()` already maintains, so the list/icon views (and
+    /// the "フォルダへ移動" menu, which reads `sortedFolderNames`) see it
+    /// immediately too.
+    private func registerFolderPathMetadata(_ path: String) {
+        var names = Set(folderNames)
+        names.insert(path)
+        folderNamesStorage = names.sorted().joined(separator: "\n")
+        var dates = folderCreatedAt
+        if dates[path] == nil { dates[path] = Date.now.timeIntervalSince1970 }
+        if let data = try? JSONEncoder().encode(dates), let value = String(data: data, encoding: .utf8) {
+            folderCreatedAtStorage = value
+        }
+    }
+
+    private func commitFolderRename() {
+        guard let folder = folderToRename else { return }
+        let trimmed = folderRenameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            renameFolder(folder, to: trimmed)
+        }
+        folderToRename = nil
+    }
+
+    private func renameFolder(_ folder: Folder, to newName: String) {
+        guard newName != folder.name else { return }
+        let oldPath = folder.legacyPath
+        folder.name = newName
+        folder.updatedAt = .now
+        remapLegacyPaths(from: oldPath, to: folder.legacyPath)
+    }
+
+    /// Rewrites every *stored* string that encodes a folder path — the
+    /// AppStorage-backed folder list/dates/favorites, every item's
+    /// `folderName`, and `selectedFolder` if it's inside the affected
+    /// subtree — after a `Folder`'s `name` changes. `Folder.legacyPath`
+    /// itself needs no such fixup (it's computed live from `parent`/`name`);
+    /// this exists only because the list/icon views still read separate,
+    /// stored string copies of that same path.
+    private func remapLegacyPaths(from oldPath: String, to newPath: String) {
+        func remap(_ path: String) -> String? {
+            if path == oldPath { return newPath }
+            if path.hasPrefix(oldPath + "/") { return newPath + path.dropFirst(oldPath.count) }
+            return nil
+        }
+
+        var names = Set<String>()
+        for path in folderNames { names.insert(remap(path) ?? path) }
+        folderNamesStorage = names.sorted().joined(separator: "\n")
+
+        var dates = folderCreatedAt
+        for (path, value) in folderCreatedAt {
+            if let mapped = remap(path) {
+                dates.removeValue(forKey: path)
+                dates[mapped] = value
+            }
+        }
+        if let data = try? JSONEncoder().encode(dates), let value = String(data: data, encoding: .utf8) {
+            folderCreatedAtStorage = value
+        }
+
+        var favorites = favoriteFolderPaths
+        for path in favoriteFolderPaths {
+            if let mapped = remap(path) {
+                favorites.remove(path)
+                favorites.insert(mapped)
+            }
+        }
+        favoriteFolderPathsStorage = favorites.sorted().joined(separator: "\n")
+
+        for notebook in allNotebooks {
+            if let mapped = remap(notebook.folderName) { notebook.folderName = mapped }
+        }
+        for deck in flashcardDecks {
+            if let mapped = remap(deck.folderName) { deck.folderName = mapped }
+        }
+        for document in textDocuments {
+            if let mapped = remap(document.folderName) { document.folderName = mapped }
+        }
+        for deck in slideDecks {
+            if let mapped = remap(deck.folderName) { deck.folderName = mapped }
+        }
+
+        if let selectedFolder, let mapped = remap(selectedFolder) {
+            self.selectedFolder = mapped
+        }
     }
 
     private func sidebarNotebookButton(_ notebook: Notebook) -> some View {
@@ -2770,45 +3008,13 @@ struct ContentView: View {
     }
 
     private var fullScreenHome: some View {
-        let notebookCounts = Dictionary(
-            grouping: allNotebooks.filter { !$0.isTrashed },
-            by: \.folderName
-        ).mapValues(\.count)
-        let deckCounts = Dictionary(grouping: flashcardDecks, by: \.folderName).mapValues(\.count)
-        let documentCounts = Dictionary(grouping: textDocuments.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
-        let slideCounts = Dictionary(grouping: slideDecks.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
-
-        return List(selection: $selectedNotebook) {
-            if libraryMode == .documents {
-                Section {
-                    ForEach(visibleFolderPaths, id: \.self) { folder in
-                        folderRow(
-                            folder,
-                            notebookCount: notebookCounts[folder, default: 0],
-                            deckCount: deckCounts[folder, default: 0],
-                            documentCount: documentCounts[folder, default: 0],
-                            slideCount: slideCounts[folder, default: 0]
-                        )
-                    }
-                    let displayedNotebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
-                    notebookRows(displayedNotebooks)
-                    studyCardRows
-                    documentRows
-                    slideRows
-                }
-            } else if libraryMode == .studyCards && selectedFolder == nil {
-                studyCardRows
-            } else if libraryMode == .textDocuments && selectedFolder == nil {
-                documentRows
-            } else if libraryMode == .slides && selectedFolder == nil {
-                slideRows
-            } else if libraryMode == .favorites && selectedFolder == nil {
-                favoriteRows
+        Group {
+            if libraryMode == .documents && viewMode == .icon {
+                homeIconGrid
+            } else if libraryMode == .documents && viewMode == .column {
+                columnBrowser
             } else {
-                notebookRows(visibleNotebooks)
-                if libraryMode == .trash && selectedFolder == nil {
-                    trashedItemRows
-                }
+                homeList
             }
         }
         .navigationTitle(selectedFolder.map(folderDisplayName) ?? (isHomeScreen ? L("ホーム") : libraryMode.title))
@@ -2822,30 +3028,38 @@ struct ContentView: View {
             )
         )
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                HStack {
-                    if selectedFolder != nil {
-                        Button {
-                            goBackOneFolder()
-                        } label: {
-                            Label("一つ前のフォルダへ戻る", systemImage: "chevron.left")
-                        }
-                        Button {
-                            selectedFolder = nil
-                            libraryMode = .documents
-                        } label: {
-                            Label("ホームへ戻る", systemImage: "house.fill")
-                        }
-                    }
-                    Menu {
-                        Picker("並べ替え", selection: $sortOption) {
-                            ForEach(NotebookSortOption.allCases) { option in
-                                Text(option.title).tag(option)
-                            }
-                        }
+            ToolbarItemGroup(placement: .navigationBarLeading) {
+                if selectedFolder != nil {
+                    Button {
+                        goBackOneFolder()
                     } label: {
-                        Label("並べ替え", systemImage: "arrow.up.arrow.down")
+                        Label("一つ前のフォルダへ戻る", systemImage: "chevron.left")
                     }
+                    Button {
+                        selectedFolder = nil
+                        libraryMode = .documents
+                    } label: {
+                        Label("ホームへ戻る", systemImage: "house.fill")
+                    }
+                }
+                if libraryMode == .documents {
+                    ForEach(HomeViewMode.allCases) { mode in
+                        Button {
+                            viewMode = mode
+                        } label: {
+                            Image(systemName: mode.systemImage)
+                        }
+                        .tint(viewMode == mode ? Color.accentColor : Color.secondary)
+                    }
+                }
+                Menu {
+                    Picker("並べ替え", selection: $sortOption) {
+                        ForEach(NotebookSortOption.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                } label: {
+                    Label("並べ替え", systemImage: "arrow.up.arrow.down")
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -2895,6 +3109,14 @@ struct ContentView: View {
         } message: {
             Text("この操作は取り消せません。")
         }
+        .alert(
+            "フォルダ名",
+            isPresented: Binding(get: { folderToRename != nil }, set: { if !$0 { folderToRename = nil } })
+        ) {
+            TextField("フォルダ名", text: $folderRenameText)
+            Button("OK") { commitFolderRename() }
+            Button("キャンセル", role: .cancel) { folderToRename = nil }
+        }
         .overlay {
             if libraryMode == .studyCards && selectedFolder == nil && flashcardDecks.isEmpty {
                 ContentUnavailableView(
@@ -2929,6 +3151,260 @@ struct ContentView: View {
                 )
             }
         }
+    }
+
+    private var homeList: some View {
+        let notebookCounts = Dictionary(
+            grouping: allNotebooks.filter { !$0.isTrashed },
+            by: \.folderName
+        ).mapValues(\.count)
+        let deckCounts = Dictionary(grouping: flashcardDecks, by: \.folderName).mapValues(\.count)
+        let documentCounts = Dictionary(grouping: textDocuments.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
+        let slideCounts = Dictionary(grouping: slideDecks.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
+
+        return List(selection: $selectedNotebook) {
+            if libraryMode == .documents {
+                Section {
+                    ForEach(visibleFolderPaths, id: \.self) { folder in
+                        folderRow(
+                            folder,
+                            notebookCount: notebookCounts[folder, default: 0],
+                            deckCount: deckCounts[folder, default: 0],
+                            documentCount: documentCounts[folder, default: 0],
+                            slideCount: slideCounts[folder, default: 0]
+                        )
+                    }
+                    let displayedNotebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
+                    notebookRows(displayedNotebooks)
+                    studyCardRows
+                    documentRows
+                    slideRows
+                }
+            } else if libraryMode == .studyCards && selectedFolder == nil {
+                studyCardRows
+            } else if libraryMode == .textDocuments && selectedFolder == nil {
+                documentRows
+            } else if libraryMode == .slides && selectedFolder == nil {
+                slideRows
+            } else if libraryMode == .favorites && selectedFolder == nil {
+                favoriteRows
+            } else {
+                notebookRows(visibleNotebooks)
+                if libraryMode == .trash && selectedFolder == nil {
+                    trashedItemRows
+                }
+            }
+        }
+    }
+
+    /// The Finder-icon-view equivalent of `homeList`, shown only for
+    /// `libraryMode == .documents` (the folder-organized "all files" browsing
+    /// screen) — the other tabs (favorites, trash, study-cards-only, …) are
+    /// single-type filtered lists where an icon grid wouldn't add anything,
+    /// so they stay list-only regardless of `viewMode`.
+    private var homeIconGrid: some View {
+        let notebookCounts = Dictionary(
+            grouping: allNotebooks.filter { !$0.isTrashed },
+            by: \.folderName
+        ).mapValues(\.count)
+        let deckCounts = Dictionary(grouping: flashcardDecks, by: \.folderName).mapValues(\.count)
+        let documentCounts = Dictionary(grouping: textDocuments.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
+        let slideCounts = Dictionary(grouping: slideDecks.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
+        let displayedNotebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
+        let entries: [HomeEntry] =
+            displayedNotebooks.map(HomeEntry.notebook)
+            + displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
+            + displayedTextDocuments.map(HomeEntry.textDocument)
+            + displayedSlideDecks.map(HomeEntry.slideDeck)
+
+        return ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: 18)], spacing: 24) {
+                ForEach(visibleFolderPaths, id: \.self) { folder in
+                    HomeFolderTile(
+                        name: folderDisplayName(folder),
+                        isFavorite: favoriteFolderPaths.contains(folder),
+                        itemCount: notebookCounts[folder, default: 0]
+                            + deckCounts[folder, default: 0]
+                            + documentCounts[folder, default: 0]
+                            + slideCounts[folder, default: 0]
+                    ) {
+                        selectedFolder = folder
+                    }
+                    .overlay(alignment: .bottomTrailing) { folderDropBadge(folder) }
+                    .dropDestination(
+                        for: String.self,
+                        action: { items, _ in handleFolderDrop(items, into: folder) },
+                        isTargeted: { isTargeted in
+                            folderDropTarget = isTargeted ? folder : (folderDropTarget == folder ? nil : folderDropTarget)
+                        }
+                    )
+                    .contextMenu {
+                        Button {
+                            toggleFolderFavorite(folder)
+                        } label: {
+                            Label(
+                                favoriteFolderPaths.contains(folder) ? "お気に入り解除" : "お気に入り",
+                                systemImage: favoriteFolderPaths.contains(folder) ? "star.slash" : "star"
+                            )
+                        }
+                        if let target = folderObject(forLegacyPath: folder) {
+                            Button {
+                                folderRenameText = target.name
+                                folderToRename = target
+                            } label: {
+                                Label("名前を変更", systemImage: "pencil")
+                            }
+                        }
+                    }
+                }
+                ForEach(entries) { entry in
+                    HomeEntryTile(entry: entry) {
+                        open(entry)
+                    }
+                    .draggable(dragPayload(for: entry))
+                    .overlay(alignment: .topTrailing) { entryDropBadge(entry.id) }
+                    .dropDestination(
+                        for: String.self,
+                        action: { items, _ in handleEntryDrop(items, onto: entry) },
+                        isTargeted: { isTargeted in setEntryDropTarget(isTargeted, entry.id) }
+                    )
+                    .contextMenu {
+                        Button {
+                            toggleFavorite(entry)
+                        } label: {
+                            Label(entry.isFavorite ? "お気に入り解除" : "お気に入り", systemImage: entry.isFavorite ? "star.slash" : "star")
+                        }
+                        Button(role: .destructive) {
+                            trash(entry)
+                        } label: {
+                            Label("ゴミ箱", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+
+    /// Finder-style Miller-column browser for `libraryMode == .documents`.
+    /// One column per folder in `folderChain(endingAt: selectedFolder)`, plus
+    /// one more for the deepest folder's own contents. Tapping a subfolder in
+    /// any column extends the chain by writing to `selectedFolder` — the same
+    /// state the list/icon views already use — so drilling down in one view
+    /// mode is immediately reflected if the user switches to another, and
+    /// `goBackOneFolder()`/the "ホームへ戻る" button already work unchanged.
+    /// Wrapped in `GeometryReader` so the column width can adapt: wide enough
+    /// on iPad to show several columns side by side, narrow enough on iPhone
+    /// that the browser is really "one column plus a sliver of the next,"
+    /// with the rest reached by scrolling horizontally — which is also how
+    /// a chain deeper than the screen is wide gets to stay reachable at all.
+    private var columnBrowser: some View {
+        let chain = folderChain(endingAt: selectedFolder)
+        return GeometryReader { geometry in
+            let columnWidth: CGFloat = horizontalSizeClass == .compact
+                ? max(geometry.size.width - 56, 220)
+                : 280
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        ForEach(0...chain.count, id: \.self) { level in
+                            HStack(spacing: 0) {
+                                columnPane(
+                                    parent: level == 0 ? nil : chain[level - 1],
+                                    highlighted: level < chain.count ? chain[level] : nil
+                                )
+                                .frame(width: columnWidth)
+                                Divider()
+                            }
+                            .id(level)
+                        }
+                    }
+                }
+                .onChange(of: chain.count) { _, newCount in
+                    withAnimation { proxy.scrollTo(newCount, anchor: .trailing) }
+                }
+            }
+        }
+    }
+
+    /// One column of `columnBrowser`: `parent`'s subfolders (as navigation
+    /// rows) above its directly-contained items. `highlighted` is the
+    /// subfolder the chain already drilled into from this column, if any —
+    /// mirroring Finder's "selected row stays tinted in the column it came
+    /// from" cue.
+    private func columnPane(parent: Folder?, highlighted: Folder?) -> some View {
+        List {
+            ForEach(subfolders(of: parent)) { folder in
+                Button {
+                    selectedFolder = folder.legacyPath
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "folder.fill").foregroundStyle(.tint)
+                        Text(folder.name).lineLimit(1)
+                        if folder.isFavorite {
+                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(folder === highlighted ? Color.accentColor.opacity(0.15) : Color.clear)
+                .overlay(alignment: .trailing) { folderDropBadge(folder.legacyPath).padding(.trailing, 28) }
+                .dropDestination(
+                    for: String.self,
+                    action: { items, _ in handleFolderDrop(items, into: folder.legacyPath) },
+                    isTargeted: { isTargeted in
+                        folderDropTarget = isTargeted ? folder.legacyPath : (folderDropTarget == folder.legacyPath ? nil : folderDropTarget)
+                    }
+                )
+                .contextMenu {
+                    Button {
+                        folderRenameText = folder.name
+                        folderToRename = folder
+                    } label: {
+                        Label("名前を変更", systemImage: "pencil")
+                    }
+                }
+            }
+            ForEach(entries(in: parent)) { entry in
+                Button {
+                    open(entry)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: entry.iconName).foregroundStyle(entry.tintColor)
+                        Text(entry.title).lineLimit(1)
+                        if entry.isFavorite {
+                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                        }
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .draggable(dragPayload(for: entry))
+                .overlay(alignment: .trailing) { entryDropBadge(entry.id).padding(.trailing, 12) }
+                .dropDestination(
+                    for: String.self,
+                    action: { items, _ in handleEntryDrop(items, onto: entry) },
+                    isTargeted: { isTargeted in setEntryDropTarget(isTargeted, entry.id) }
+                )
+                .contextMenu {
+                    Button {
+                        toggleFavorite(entry)
+                    } label: {
+                        Label(entry.isFavorite ? "お気に入り解除" : "お気に入り", systemImage: entry.isFavorite ? "star.slash" : "star")
+                    }
+                    Button(role: .destructive) {
+                        trash(entry)
+                    } label: {
+                        Label("ゴミ箱", systemImage: "trash")
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
     }
 
     private var notificationPanel: some View {
@@ -3044,6 +3520,12 @@ struct ContentView: View {
                 Button("ゴミ箱", role: .destructive) { trashDeck(deck) }
             }
             .draggable("deck:\(deckID(deck))")
+            .overlay(alignment: .trailing) { entryDropBadge(HomeEntry.flashcardDeck(deck).id).padding(.trailing, 40) }
+            .dropDestination(
+                for: String.self,
+                action: { items, _ in handleEntryDrop(items, onto: .flashcardDeck(deck)) },
+                isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.flashcardDeck(deck).id) }
+            )
         }
     }
 
@@ -3095,6 +3577,12 @@ struct ContentView: View {
                 Button("ゴミ箱", role: .destructive) { trashDocument(document) }
             }
             .draggable("document:\(textDocumentID(document))")
+            .overlay(alignment: .trailing) { entryDropBadge(HomeEntry.textDocument(document).id).padding(.trailing, 40) }
+            .dropDestination(
+                for: String.self,
+                action: { items, _ in handleEntryDrop(items, onto: .textDocument(document)) },
+                isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.textDocument(document).id) }
+            )
         }
     }
 
@@ -3130,6 +3618,12 @@ struct ContentView: View {
                 Button("ゴミ箱", role: .destructive) { trashSlideDeck(deck) }
             }
             .draggable("slide:\(slideDeckID(deck))")
+            .overlay(alignment: .trailing) { entryDropBadge(HomeEntry.slideDeck(deck).id).padding(.trailing, 40) }
+            .dropDestination(
+                for: String.self,
+                action: { items, _ in handleEntryDrop(items, onto: .slideDeck(deck)) },
+                isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.slideDeck(deck).id) }
+            )
         }
     }
 
@@ -3245,12 +3739,75 @@ struct ContentView: View {
         if favorites.contains(folder) { favorites.remove(folder) }
         else { favorites.insert(folder) }
         favoriteFolderPathsStorage = favorites.sorted().joined(separator: "\n")
+        folderObject(forLegacyPath: folder)?.isFavorite = favorites.contains(folder)
+    }
+
+    /// Looks up the real `Folder` matching a legacy "/"-joined path string,
+    /// such as the one every item's `folderName` and `selectedFolder` still
+    /// use. The column view (`columnBrowser`) is the one place that reads
+    /// `Folder` directly instead of these strings, so every place that used
+    /// to write only `folderName` now goes through `assign(_:toLegacyPath:)`
+    /// below to keep both in sync.
+    private func folderObject(forLegacyPath path: String) -> Folder? {
+        guard !path.isEmpty else { return nil }
+        return allFolders.first { $0.legacyPath == path }
+    }
+
+    /// Sets both `item.folderName` (legacy string, still what the list/icon
+    /// views filter on) and `item.folder` (the real relationship, what the
+    /// column view traverses) to the same destination, so the three view
+    /// modes never disagree about where an item lives.
+    private func assign<T: HomeItem>(_ item: T, toLegacyPath path: String) {
+        item.folderName = path
+        item.folder = folderObject(forLegacyPath: path)
+    }
+
+    private func assignToCurrentFolder<T: HomeItem>(_ item: T) {
+        assign(item, toLegacyPath: selectedFolder ?? "")
+    }
+
+    /// `parent`'s immediate subfolders — used only by `columnBrowser`, which
+    /// (unlike the list/icon views) walks the real `Folder` relationship
+    /// instead of "/"-joined path strings, since a column needs to know
+    /// exactly what sits one level below a given folder.
+    private func subfolders(of parent: Folder?) -> [Folder] {
+        allFolders
+            .filter { $0.parent === parent }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// `parent`'s directly-contained items (not its subfolders' items), as a
+    /// single flat list mixing all four kinds — the column view's equivalent
+    /// of `homeIconGrid`'s `entries`, but keyed by `folder` rather than by
+    /// `selectedFolder`/`folderName`.
+    private func entries(in parent: Folder?) -> [HomeEntry] {
+        allNotebooks.filter { !$0.isTrashed && $0.folder === parent }.map(HomeEntry.notebook)
+            + flashcardDecks.filter { !$0.isTrashed && $0.folder === parent }.map(HomeEntry.flashcardDeck)
+            + textDocuments.filter { !$0.isTrashed && $0.folder === parent }.map(HomeEntry.textDocument)
+            + slideDecks.filter { !$0.isTrashed && $0.folder === parent }.map(HomeEntry.slideDeck)
+    }
+
+    /// The root-to-`path` chain of real `Folder`s backing the legacy path
+    /// string, e.g. `"数学/代数"` → `[数学, 代数]`. `columnBrowser` renders one
+    /// column per entry (plus one more for the deepest folder's own
+    /// contents), so drilling into a folder in any view mode — since they
+    /// all share `selectedFolder` — immediately reflects in the column view
+    /// too, and vice versa.
+    private func folderChain(endingAt path: String?) -> [Folder] {
+        guard let path, let leaf = folderObject(forLegacyPath: path) else { return [] }
+        var chain: [Folder] = []
+        var current: Folder? = leaf
+        while let folder = current {
+            chain.insert(folder, at: 0)
+            current = folder.parent
+        }
+        return chain
     }
 
     private func createTextDocument() {
         let title = newDocumentName.trimmingCharacters(in: .whitespacesAndNewlines)
         let document = TextDocument(title: title.isEmpty ? L("無題の文書") : title)
-        document.folderName = selectedFolder ?? ""
+        assignToCurrentFolder(document)
         modelContext.insert(document)
         try? modelContext.save()
         newDocumentName = ""
@@ -3260,7 +3817,7 @@ struct ContentView: View {
     private func createSlideDeck() {
         let title = newSlideDeckName.trimmingCharacters(in: .whitespacesAndNewlines)
         let deck = SlideDeck(title: title.isEmpty ? L("無題のスライド") : title)
-        deck.folderName = selectedFolder ?? ""
+        assignToCurrentFolder(deck)
         modelContext.insert(deck)
         try? modelContext.save()
         newSlideDeckName = ""
@@ -3270,7 +3827,7 @@ struct ContentView: View {
     private func createFlashcardDeck() {
         let title = newFlashcardDeckName.trimmingCharacters(in: .whitespacesAndNewlines)
         let deck = FlashcardDeck(title: title.isEmpty ? "新しい暗記帳" : title)
-        deck.folderName = selectedFolder ?? ""
+        assignToCurrentFolder(deck)
         modelContext.insert(deck)
         newFlashcardDeckName = ""
         openFlashcardDeck(deck)
@@ -3369,9 +3926,9 @@ struct ContentView: View {
                 backupURL = NotebookBackupService.export(notebook).map(IdentifiableURL.init(url:))
             } label: { Label("バックアップを書き出す", systemImage: "externaldrive") }
             Menu {
-                Button { notebook.folderName = "" } label: { Label("フォルダから外す", systemImage: "tray") }
+                Button { assign(notebook, toLegacyPath: "") } label: { Label("フォルダから外す", systemImage: "tray") }
                 ForEach(sortedFolderNames, id: \.self) { folder in
-                    Button { notebook.folderName = folder } label: {
+                    Button { assign(notebook, toLegacyPath: folder) } label: {
                         if notebook.folderName == folder { Label(folder, systemImage: "checkmark") }
                         else { Text(folder) }
                     }
@@ -3391,7 +3948,7 @@ struct ContentView: View {
         page.notebook = notebook
         notebook.addPage(page)
         notebook.refreshLibraryMetadata()
-        notebook.folderName = selectedFolder ?? ""
+        assignToCurrentFolder(notebook)
         modelContext.insert(notebook)
         newNotebookName = ""
         openNotebookTab(notebook)
@@ -3421,7 +3978,7 @@ struct ContentView: View {
         }
 
         let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
-        notebook.folderName = selectedFolder ?? ""
+        assignToCurrentFolder(notebook)
         for (index, pageData) in PDFImportService.extractPages(from: url, password: password).enumerated() {
             let page = NotePage(order: index, backgroundImageData: pageData.imageData, pageWidth: pageData.width, pageHeight: pageData.height)
             page.recognizedText = pageData.text
@@ -3557,7 +4114,7 @@ struct ContentView: View {
               let data = try? Data(contentsOf: url, options: .mappedIfSafe),
               let image = UIImage(data: data) else { return }
         let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
-        notebook.folderName = selectedFolder ?? ""
+        assignToCurrentFolder(notebook)
         let page = NotePage(
             order: 0,
             backgroundImageData: image.jpegData(compressionQuality: 0.9),
@@ -3585,7 +4142,7 @@ struct ContentView: View {
             return
         }
         let document = TextDocument(title: url.deletingPathExtension().lastPathComponent)
-        document.folderName = selectedFolder ?? ""
+        assignToCurrentFolder(document)
         for block in result.blocks { block.document = document }
         document.blocks = result.blocks
         // Both already reflect exactly what's in `blocks` — no migration
@@ -3622,7 +4179,7 @@ struct ContentView: View {
             return
         }
         let deck = SlideDeck(title: url.deletingPathExtension().lastPathComponent)
-        deck.folderName = selectedFolder ?? ""
+        assignToCurrentFolder(deck)
         deck.aspectRawValue = result.aspect.rawValue
         deck.master = SlideMaster.makeDefault()
         deck.isMigratedToElements = true
@@ -3735,7 +4292,7 @@ struct ContentView: View {
             case "create_flashcards":
                 guard let title = action.deckTitle, let cards = action.cards, !cards.isEmpty else { continue }
                 let deck = FlashcardDeck(title: title)
-                deck.folderName = selectedFolder ?? ""
+                assignToCurrentFolder(deck)
                 for (index, value) in cards.enumerated() {
                     let card = Flashcard(question: value.question, answer: value.answer, order: index)
                     card.deck = deck
@@ -3747,7 +4304,7 @@ struct ContentView: View {
             case "create_document":
                 guard let title = action.title else { continue }
                 let document = TextDocument(title: title)
-                document.folderName = selectedFolder ?? ""
+                assignToCurrentFolder(document)
                 let body = DocumentBody.attributedString(fromMarkup: action.body ?? "")
                 document.bodyData = DocumentBody.encode(body)
                 document.plainText = body.string
@@ -3757,7 +4314,7 @@ struct ContentView: View {
             case "create_slides":
                 guard let title = action.title, let requested = action.slides, !requested.isEmpty else { continue }
                 let deck = SlideDeck(title: title)
-                deck.folderName = selectedFolder ?? ""
+                assignToCurrentFolder(deck)
                 if let theme = action.theme, let parsed = SlideTheme(rawValue: theme) {
                     deck.theme = parsed
                 }
@@ -3894,7 +4451,7 @@ struct ContentView: View {
         }
         guard !rows.isEmpty else { return false }
         let deck = FlashcardDeck(title: url.deletingPathExtension().lastPathComponent)
-        deck.folderName = selectedFolder ?? ""
+        assignToCurrentFolder(deck)
         for (index, row) in rows.enumerated() {
             let card = Flashcard(question: row.0, answer: row.1, order: index)
             card.deck = deck
@@ -3962,13 +4519,10 @@ struct ContentView: View {
         let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         let path = selectedFolder.map { "\($0)/\(name)" } ?? name
-        var names = Set(folderNames)
-        names.insert(path)
-        folderNamesStorage = names.sorted().joined(separator: "\n")
-        var dates = folderCreatedAt
-        if dates[path] == nil { dates[path] = Date.now.timeIntervalSince1970 }
-        if let data = try? JSONEncoder().encode(dates), let value = String(data: data, encoding: .utf8) {
-            folderCreatedAtStorage = value
+        registerFolderPathMetadata(path)
+        if folderObject(forLegacyPath: path) == nil {
+            let parent = selectedFolder.flatMap(folderObject(forLegacyPath:))
+            modelContext.insert(Folder(name: name, parent: parent))
         }
         selectedFolder = path
         libraryMode = .documents
@@ -4186,6 +4740,24 @@ struct ContentView: View {
         try? modelContext.save()
     }
 
+    /// Runs once per install: builds real `Folder` records from the legacy
+    /// "/"-joined `folderName` path strings and the folder list/metadata
+    /// previously kept only in local `UserDefaults`. See
+    /// `FolderMigrationService` for the full migration logic.
+    private func migrateFoldersIfNeeded() async {
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        FolderMigrationService.migrateIfNeeded(
+            context: modelContext,
+            folderNamesStorage: folderNamesStorage,
+            folderCreatedAtStorage: folderCreatedAtStorage,
+            favoriteFolderPathsStorage: favoriteFolderPathsStorage,
+            notebooks: allNotebooks,
+            flashcardDecks: flashcardDecks,
+            textDocuments: textDocuments,
+            slideDecks: slideDecks
+        )
+    }
+
     private func cloneElement(_ source: PageElement) -> PageElement {
         let element = PageElement(
             kind: source.kind,
@@ -4232,6 +4804,12 @@ struct ContentView: View {
                 }
             }
             .draggable("notebook:\(notebookID(notebook))")
+            .overlay(alignment: .trailing) { entryDropBadge(HomeEntry.notebook(notebook).id).padding(.trailing, 12) }
+            .dropDestination(
+                for: String.self,
+                action: { items, _ in handleEntryDrop(items, onto: .notebook(notebook)) },
+                isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.notebook(notebook).id) }
+            )
         }
     }
 }
@@ -4298,6 +4876,75 @@ private struct FileImportPicker: UIViewControllerRepresentable {
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             onCancel()
         }
+    }
+}
+
+/// One folder tile in `ContentView.homeIconGrid`. Visually mirrors
+/// `folderRow`'s list row (same folder glyph, same favorite star, same drop
+/// badge) but laid out as an icon-and-label tile instead of a horizontal row.
+private struct HomeFolderTile: View {
+    let name: String
+    let isFavorite: Bool
+    let itemCount: Int
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 44))
+                        .foregroundStyle(.tint)
+                    if isFavorite {
+                        Image(systemName: "star.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.yellow)
+                    }
+                }
+                Text(name)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+                Text("\(itemCount)項目")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(width: 104)
+    }
+}
+
+/// One notebook/deck/document/slide tile in `ContentView.homeIconGrid`. Takes
+/// a `HomeEntry` rather than one of the four concrete model types so the grid
+/// can render all of them with a single `ForEach`.
+private struct HomeEntryTile: View {
+    let entry: HomeEntry
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: entry.iconName)
+                        .font(.system(size: 40))
+                        .foregroundStyle(entry.tintColor)
+                    if entry.isFavorite {
+                        Image(systemName: "star.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.yellow)
+                    }
+                }
+                Text(entry.title)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(width: 104)
     }
 }
 
@@ -4420,6 +5067,23 @@ private enum LibraryMode: String, CaseIterable, Identifiable {
         case .textDocuments: L("＋から文書を作成してください")
         case .slides: L("＋からスライドを作成してください")
         case .trash: L("削除したノートがここに表示されます")
+        }
+    }
+}
+
+/// How `ContentView.fullScreenHome` lays out the "all files" browsing screen
+/// (`LibraryMode.documents`) — a Finder-style icon/list/column switch.
+/// Persisted app-wide via `@AppStorage`, matching the earlier design decision
+/// to remember one view mode for the whole app rather than per folder.
+private enum HomeViewMode: String, CaseIterable, Identifiable {
+    case list, icon, column
+    var id: String { rawValue }
+
+    var systemImage: String {
+        switch self {
+        case .list: "list.bullet"
+        case .icon: "square.grid.2x2"
+        case .column: "rectangle.split.3x1"
         }
     }
 }
