@@ -25,6 +25,7 @@ final class AppSchemaCloudKitCompatibilityTests: XCTestCase {
         DocumentBlock.self, DocumentTableRow.self, DocumentTableCell.self,
         DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
         AIReviewItem.self,
+        Folder.self,
     ])
 
     /// A schema with a missing inverse fails here, synchronously and without
@@ -68,6 +69,18 @@ final class AppSchemaCloudKitCompatibilityTests: XCTestCase {
         let schema = Schema([
             SlideDeck.self, Slide.self,
             SlideMaster.self, SlideLayoutTemplate.self, SlidePlaceholder.self, SlideElement.self,
+        ])
+        let configuration = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
+        XCTAssertNoThrow(try ModelContainer(for: schema, configurations: configuration))
+    }
+
+    /// `Folder` has a self-referencing `parent`/`children` pair plus one
+    /// inverse back from each of the four item types it can contain — all
+    /// five need to validate on their own, not just as part of the full
+    /// schema above.
+    func testFolderStructureHasMutualInverseRelationships() throws {
+        let schema = Schema([
+            Folder.self, Notebook.self, FlashcardDeck.self, TextDocument.self, SlideDeck.self,
         ])
         let configuration = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
         XCTAssertNoThrow(try ModelContainer(for: schema, configurations: configuration))

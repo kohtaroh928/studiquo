@@ -17,7 +17,10 @@ final class TextDocument {
     var title: String = "無題の文書"
     var createdAt: Date = Date.now
     var updatedAt: Date = Date.now
+    /// Legacy "/"-joined folder path, kept as a migration fallback — see
+    /// `FolderMigrationService`. `folder` is the source of truth now.
     var folderName: String = ""
+    var folder: Folder?
     var isFavorite: Bool = false
     var isTrashed: Bool = false
     var trashedAt: Date?
@@ -1228,7 +1231,10 @@ final class SlideDeck {
     var title: String = "無題のスライド"
     var createdAt: Date = Date.now
     var updatedAt: Date = Date.now
+    /// Legacy "/"-joined folder path, kept as a migration fallback — see
+    /// `FolderMigrationService`. `folder` is the source of truth now.
     var folderName: String = ""
+    var folder: Folder?
     var isFavorite: Bool = false
     var isTrashed: Bool = false
     var trashedAt: Date?

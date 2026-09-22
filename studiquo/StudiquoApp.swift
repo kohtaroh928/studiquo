@@ -69,6 +69,7 @@ struct StudiquoApp: App {
             DocumentBlock.self, DocumentTableRow.self, DocumentTableCell.self,
             DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
             AIReviewItem.self,
+            Folder.self,
         ])
         do {
             // Creating a CloudKit-backed container does not itself wait on the
