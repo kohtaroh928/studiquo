@@ -507,9 +507,4 @@ private final class FakeAIProvider: AIProvider {
         researchCallCount += 1
         return try reviewResult.get()
     }
-
-    func planStudySessions(_ request: AIStudyPlanRequest) async throws -> AIStudyPlanResult {
-        XCTFail("AIReviewService should never call planStudySessions")
-        return AIStudyPlanResult(sessions: [])
-    }
 }

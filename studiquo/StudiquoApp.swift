@@ -1,4 +1,5 @@
 import CoreData
+import OSLog
 import GoogleSignIn
 import SwiftUI
 import SwiftData
@@ -45,9 +46,48 @@ func L(_ value: String.LocalizationValue) -> String {
 
 func L(_ value: String) -> String { value }
 
+let studiquoSchema = Schema([
+    Notebook.self, NotePage.self, PageElement.self,
+    FlashcardDeck.self, Flashcard.self, CalendarEvent.self, StudyActivity.self,
+    AIChatThread.self, AIChatMessage.self,
+    TextDocument.self, SlideDeck.self, Slide.self,
+    SlideMaster.self, SlideLayoutTemplate.self, SlidePlaceholder.self, SlideElement.self,
+    DocumentBlock.self, DocumentTableRow.self, DocumentTableCell.self,
+    DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
+    AIReviewItem.self,
+    Folder.self,
+])
+
+private let startupLogger = Logger(subsystem: "com.yabuko.studiquo", category: "Startup")
+
+/// Only fall back after the cloud attempt has actually returned an error.
+/// A deadline cannot cancel ModelContainer.init; opening another container
+/// on the same store while migration is still running can contend for its lock.
+private func makeStudiquoModelContainer() throws -> ModelContainer {
+    startupLogger.info("Opening persistent store with CloudKit")
+    do {
+        let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .automatic)
+        let container = try ModelContainer(for: studiquoSchema, configurations: configuration)
+        startupLogger.info("Persistent store ready (CloudKit)")
+        return container
+    } catch {
+        startupLogger.error("CloudKit store open failed: \(String(describing: error), privacy: .public)")
+        do {
+            let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .none)
+            let container = try ModelContainer(for: studiquoSchema, configurations: configuration)
+            startupLogger.info("Persistent store ready (local)")
+            return container
+        } catch {
+            startupLogger.error("Local store open failed: \(String(describing: error), privacy: .public)")
+            // Never silently substitute an empty, unsaved in-memory library.
+            throw error
+        }
+    }
+}
+
 @main
 struct StudiquoApp: App {
-    private let sharedModelContainer: ModelContainer
+    @StateObject private var startup = StartupStoreLoader(openStore: makeStudiquoModelContainer)
     @AppStorage("appLanguage") private var appLanguage = "system"
     @StateObject private var cloudSyncStatus = CloudKitSyncStatus()
 
@@ -59,49 +99,39 @@ struct StudiquoApp: App {
         }
     }
 
-    init() {
-        let schema = Schema([
-            Notebook.self, NotePage.self, PageElement.self,
-            FlashcardDeck.self, Flashcard.self, CalendarEvent.self, StudyActivity.self,
-            AIChatThread.self, AIChatMessage.self,
-            TextDocument.self, SlideDeck.self, Slide.self,
-            SlideMaster.self, SlideLayoutTemplate.self, SlidePlaceholder.self, SlideElement.self,
-            DocumentBlock.self, DocumentTableRow.self, DocumentTableCell.self,
-            DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
-            AIReviewItem.self,
-            Folder.self,
-        ])
-        do {
-            // Creating a CloudKit-backed container does not itself wait on the
-            // network: it opens the local store synchronously (fast, as with
-            // the old local-only configuration) and CloudKit's own one-time
-            // schema push and ongoing sync happen in the background afterward,
-            // surfaced to the UI via `CloudKitSyncStatus` rather than by
-            // blocking this call.
-            let cloudConfiguration = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
-            sharedModelContainer = try ModelContainer(for: schema, configurations: cloudConfiguration)
-        } catch {
-            do {
-                // CloudKit unavailable for this launch (offline, no iCloud
-                // account, schema push failed, etc.) — fall back to a
-                // local-only store so the user's data still persists even
-                // though it won't sync across devices until CloudKit is
-                // reachable again on a later launch.
-                let localConfiguration = ModelConfiguration(schema: schema, cloudKitDatabase: .none)
-                sharedModelContainer = try ModelContainer(for: schema, configurations: localConfiguration)
-            } catch {
-                // If even the local persistent store cannot be opened after a
-                // schema change, still show the app instead of leaving the
-                // user on a blank screen.
-                let fallback = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-                sharedModelContainer = try! ModelContainer(for: schema, configurations: fallback)
+    var body: some Scene {
+        WindowGroup {
+            Group {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--startup-ui-test") {
+                    StartupUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test") {
+                    LibraryDropUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test") {
+                    FriendChatUITestRoot()
+                } else {
+                    normalRoot
+                }
+                #else
+                normalRoot
+                #endif
+            }
+            .preferredColorScheme(.light)
+            .task {
+                #if DEBUG
+                guard !ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--startup-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test") else { return }
+                #endif
+                startup.start()
             }
         }
     }
 
-    var body: some Scene {
-        WindowGroup {
+    @ViewBuilder private var normalRoot: some View {
+        if case .ready(let modelContainer) = startup.state {
             AccountGateView()
+                .modelContainer(modelContainer)
                 .tint(Color(red: 0.16, green: 0.33, blue: 0.63))
                 .environment(\.locale, resolvedLocale)
                 .overlay(alignment: .top) {
@@ -112,23 +142,212 @@ struct StudiquoApp: App {
                     }
                 }
                 .animation(.easeInOut, value: cloudSyncStatus.isShowingFirstSyncBanner)
-                // Google's sign-in flow completes in Safari/the system
-                // browser and hands control back to the app via this app's
-                // reversed-client-id URL scheme (Info.plist) — GIDSignIn
-                // needs that redirect to finish the flow it started.
+                // Complete Google sign-in after the system browser redirects here.
                 .onOpenURL { url in
                     _ = GIDSignIn.sharedInstance.handle(url)
                 }
+        } else {
+            LaunchLoadingView(state: startup.state, retry: startup.start)
+                .environment(\.locale, resolvedLocale)
         }
-        .modelContainer(sharedModelContainer)
+    }
+}
+
+#if DEBUG
+/// Opens the real chat composer with a friend whose room is unavailable, so
+/// UI tests can verify a rejected send does not erase what the user typed.
+private struct FriendChatUITestRoot: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var store = FriendStore(
+        defaults: UserDefaults(suiteName: "FriendChatUITest-\(UUID().uuidString)")!,
+        autoRefresh: false
+    )
+    private let friend = FriendRecord(
+        id: UUID(), name: "Test friend", code: "TEST01",
+        todayStudySeconds: 0, roomID: nil, isDemo: false
+    )
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Text(colorScheme == .light ? "light" : "dark")
+                    .accessibilityIdentifier("friend-chat-color-scheme")
+                FriendChatView(friend: friend, store: store)
+            }
+        }
+        .onAppear {
+            store.friends = [friend]
+            store.messages = [FriendMessage(
+                id: UUID(), friendID: friend.id, text: "可読性テスト",
+                sentAt: Date(), isMine: false, isCanceled: false
+            )]
+        }
+    }
+}
+
+/// Exercises the real loading view and ContentView transition with a delayed store.
+private struct StartupUITestRoot: View {
+    @StateObject private var loader = StartupStoreLoader<ModelContainer>(timeout: 0.05) {
+        Thread.sleep(forTimeInterval: 0.15)
+        let configuration = ModelConfiguration(schema: studiquoSchema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        return try ModelContainer(for: studiquoSchema, configurations: configuration)
+    }
+    @StateObject private var authentication = AuthenticationStore(service: "com.yabuko.studiquo.startup-ui-tests")
+
+    init() {
+        AIDataDisclosure.acknowledge()
+        UserDefaults.standard.set("", forKey: "libraryFolderNames")
+        UserDefaults.standard.set(true, forKey: "didMigrateFoldersToHierarchy")
+    }
+
+    var body: some View {
+        Group {
+            if case .ready(let container) = loader.state {
+                ContentView()
+                    .modelContainer(container)
+                    .environmentObject(authentication)
+            } else {
+                LaunchLoadingView(state: loader.state, retry: loader.start)
+            }
+        }
+        .task { loader.start() }
+    }
+}
+
+/// A disposable in-memory library for the drag-and-drop UI regression test.
+/// It is reachable only through the test runner's launch argument.
+private struct LibraryDropUITestRoot: View {
+    init() {
+        AIDataDisclosure.acknowledge()
+        _ = LibraryDropUITestStore.container
+    }
+
+    var body: some View {
+        ContentView()
+            .modelContainer(LibraryDropUITestStore.container)
+            .environmentObject(LibraryDropUITestStore.authentication)
+    }
+}
+
+@MainActor
+private enum LibraryDropUITestStore {
+    static let authentication = AuthenticationStore(service: "com.yabuko.studiquo.library-drop-ui-tests")
+
+    static let container: ModelContainer = {
+        let arguments = ProcessInfo.processInfo.arguments
+        let mode = arguments.contains("--column-mode") ? "column" : "list"
+        let compact = arguments.contains("--resource-types-fixture")
+        UserDefaults.standard.set(mode, forKey: "homeViewMode")
+        let folderPaths = compact ? ["Target"] : ["Parent", "Parent/Source", "Parent/Destination", "Parent/Empty", "Sibling", "Target"]
+        UserDefaults.standard.set(folderPaths.joined(separator: "\n"), forKey: "libraryFolderNames")
+        UserDefaults.standard.set(true, forKey: "didMigrateFoldersToHierarchy")
+        let persistentID = arguments
+            .first(where: { $0.hasPrefix("--persistent-drop-store=") })?
+            .replacingOccurrences(of: "--persistent-drop-store=", with: "")
+        let configuration: ModelConfiguration
+        if let persistentID {
+            let storeURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("LibraryDropUITest-\(persistentID).store")
+            configuration = ModelConfiguration(schema: studiquoSchema, url: storeURL, cloudKitDatabase: .none)
+        } else {
+            configuration = ModelConfiguration(schema: studiquoSchema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        }
+        let container = try! ModelContainer(for: studiquoSchema, configurations: configuration)
+        if ((try? container.mainContext.fetchCount(FetchDescriptor<Notebook>())) ?? 0) > 0 {
+            return container
+        }
+        let target = Folder(name: "Target")
+        container.mainContext.insert(target)
+        if compact {
+            container.mainContext.insert(Notebook(title: "Drag me"))
+            container.mainContext.insert(FlashcardDeck(title: "Cards"))
+            container.mainContext.insert(TextDocument(title: "Document"))
+            container.mainContext.insert(SlideDeck(title: "Y"))
+            try! container.mainContext.save()
+            return container
+        }
+        let parent = Folder(name: "Parent")
+        let sourceFolder = Folder(name: "Source", parent: parent)
+        let destinationFolder = Folder(name: "Destination", parent: parent)
+        let emptyFolder = Folder(name: "Empty", parent: parent)
+        container.mainContext.insert(parent)
+        container.mainContext.insert(sourceFolder)
+        container.mainContext.insert(destinationFolder)
+        container.mainContext.insert(emptyFolder)
+        container.mainContext.insert(Folder(name: "Sibling"))
+        let source = Notebook(title: "Drag me")
+        source.updatedAt = Date(timeIntervalSince1970: 100)
+        container.mainContext.insert(source)
+        container.mainContext.insert(Notebook(title: "Other one"))
+        container.mainContext.insert(Notebook(title: "Other two"))
+        container.mainContext.insert(FlashcardDeck(title: "Cards"))
+        container.mainContext.insert(TextDocument(title: "Document"))
+        container.mainContext.insert(SlideDeck(title: "Y"))
+        let nested = Notebook(title: "Source note")
+        nested.folder = sourceFolder
+        nested.folderName = sourceFolder.legacyPath
+        container.mainContext.insert(nested)
+        let parentItem = Notebook(title: "Parent note")
+        parentItem.folder = parent
+        parentItem.folderName = parent.legacyPath
+        container.mainContext.insert(parentItem)
+        let alreadyThere = Notebook(title: "Already there")
+        alreadyThere.folder = target
+        alreadyThere.folderName = target.legacyPath
+        container.mainContext.insert(alreadyThere)
+        let pathOnly = Notebook(title: "Path only")
+        pathOnly.folderName = "Target"
+        container.mainContext.insert(pathOnly)
+        let staleRelationship = Notebook(title: "Stale relationship")
+        staleRelationship.folder = target
+        container.mainContext.insert(staleRelationship)
+        try! container.mainContext.save()
+        return container
+    }()
+}
+#endif
+
+private struct LaunchLoadingView: View {
+    let state: StartupStoreLoader<ModelContainer>.State
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "book.pages.fill")
+                .font(.system(size: 44))
+                .foregroundStyle(.tint)
+            switch state {
+            case .delayed:
+                Text("データの読み込みに時間がかかっています")
+                    .font(.headline)
+                Text("読み込みが完了すると自動的に画面が切り替わります。改善しない場合は、アプリを終了して開き直してください。保存済みのデータは削除されません。")
+                    .foregroundStyle(.secondary)
+            case .failed(let message):
+                Text("保存データを開けませんでした")
+                    .font(.headline)
+                Text("保存済みのデータは削除されていません。もう一度お試しください。")
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Button("再試行", action: retry)
+                    .buttonStyle(.borderedProminent)
+            default:
+                ProgressView()
+            }
+        }
+        .multilineTextAlignment(.center)
+        .padding(24)
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
     }
 }
 
 /// Tracks whether this device's very first CloudKit hand-off (schema push +
 /// initial import) is still in flight, so the UI can show a brief, dismissible
 /// hint instead of silently waiting for notes to appear from other devices.
-/// Never blocks app launch — `StudiquoApp.init()` already returns before this
-/// finishes, since CloudKit sync runs in the background regardless.
+/// Never blocks app launch; CloudKit sync runs in the background.
 @MainActor
 private final class CloudKitSyncStatus: ObservableObject {
     private static let hasCompletedFirstSyncKey = "hasCompletedFirstCloudKitSync"

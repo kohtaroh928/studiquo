@@ -35,6 +35,11 @@ export async function mintSession(env, identityKey, randomValue) {
  * it.
  */
 export async function hasRealSession(env, token) {
+  return (await realSession(env, token)) !== null;
+}
+
+export async function realSession(env, token) {
   const key = await sha256Hex(token);
-  return (await env.STUDIQUO_DATA.get(`${SESSION_PREFIX}${key}`)) !== null;
+  const session = await env.STUDIQUO_DATA.get(`${SESSION_PREFIX}${key}`, "json");
+  return typeof session?.sub === "string" && session.sub.length > 0 ? session : null;
 }

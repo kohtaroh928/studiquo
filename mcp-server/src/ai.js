@@ -55,7 +55,6 @@ const RETRYABLE = new Set([429, 500, 502, 503, 504]);
 const DEFAULT_CHAT_LIMIT = 120;
 const DEFAULT_GRADING_LIMIT = 20;
 const DEFAULT_REVIEW_LIMIT = 40;
-const DEFAULT_PLAN_LIMIT = 5;
 
 /**
  * Caps across every device combined.
@@ -72,7 +71,6 @@ const DEFAULT_PLAN_LIMIT = 5;
 const DEFAULT_GLOBAL_CHAT_LIMIT = 1500;
 const DEFAULT_GLOBAL_GRADING_LIMIT = 150;
 const DEFAULT_GLOBAL_REVIEW_LIMIT = 500;
-const DEFAULT_GLOBAL_PLAN_LIMIT = 100;
 
 async function readJSONLimited(request, maximumBytes = 20_000_000) {
   return readJSONLimitedShared(request, maximumBytes);
@@ -81,7 +79,6 @@ async function readJSONLimited(request, maximumBytes = 20_000_000) {
 function model(env, kind) {
   if (kind === "grading") return env.GEMINI_GRADING_MODEL || DEFAULT_GRADING_MODEL;
   if (kind === "review") return env.GEMINI_REVIEW_MODEL || DEFAULT_CHAT_MODEL;
-  if (kind === "plan") return env.GEMINI_PLAN_MODEL || DEFAULT_CHAT_MODEL;
   return env.GEMINI_CHAT_MODEL || DEFAULT_CHAT_MODEL;
 }
 
@@ -684,148 +681,6 @@ async function handleReview(request, env, key, ctx) {
   }, ctx);
 }
 
-// MARK: Study plan
-
-const PLAN_SYSTEM = `あなたは学習アプリ「Studiquo」の学習計画を作るアシスタントです。学生から、直近のテストの情報、そのテスト範囲に関連するノート・暗記デッキ・文書の内容、そしてテスト日までの既存の予定を渡します。
-
-やること:
-- 渡された資料の分量と、デッキの正答率から、テスト日までにどれくらいの学習が必要かを判断してください。分量が多い、または正答率が低いほど必要な時間は長くなります。
-- 正答率が高く(目安80%以上)、かつ最近学習済みの範囲は、軽めに扱うか計画から外してよいです。
-- 既存の予定が入っている日は、その日の学習量を減らすか、その日を避けてください。
-- 通常は1日1コマまでにしてください。テスト直前でどうしても必要な場合のみ、1日2コマまで許容します。
-- 提案する日付は、渡された「今日」より後、かつテスト日以前にしてください。
-- 各コマには次を含めてください:
-  - date: 日付(YYYY-MM-DD形式)
-  - startTime: 開始時刻の目安(HH:mm形式)
-  - durationMinutes: 所要時間の目安(分)
-  - focus: 何を勉強するか、具体的に
-  - reason: その内容・時間が必要な理由(正答率や分量に触れること)
-- 渡された資料だけでは計画を立てられない(空、または全く手がかりがない)場合は、sessions を空配列にしてください。
-- 日本語で書くこと。`;
-
-const PLAN_SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    sessions: {
-      type: "ARRAY",
-      items: {
-        type: "OBJECT",
-        properties: {
-          date: { type: "STRING" },
-          startTime: { type: "STRING" },
-          durationMinutes: { type: "INTEGER" },
-          focus: { type: "STRING" },
-          reason: { type: "STRING" },
-        },
-        required: ["date", "startTime", "durationMinutes", "focus", "reason"],
-      },
-    },
-  },
-  required: ["sessions"],
-};
-
-/** Caps how much of each array the prompt actually includes — defense in
- * depth alongside whatever the client already trimmed to, so a client bug
- * (or a modified client) can't blow up the request size or the model's
- * context. */
-const MAX_PLAN_NOTES = 10;
-const MAX_PLAN_DECKS = 5;
-const MAX_PLAN_DOCUMENTS = 5;
-const MAX_PLAN_EVENTS = 30;
-/** Total characters across every note/document text block combined. */
-const MAX_PLAN_MATERIAL_CHARS = 12_000;
-
-function formatPlanNotes(notes) {
-  if (!Array.isArray(notes)) return "";
-  let remaining = MAX_PLAN_MATERIAL_CHARS;
-  const blocks = [];
-  for (const note of notes.slice(0, MAX_PLAN_NOTES)) {
-    if (remaining <= 0) break;
-    const title = escapeForPromptTag(String(note?.title ?? "").slice(0, 200));
-    const text = escapeForPromptTag(String(note?.text ?? "").slice(0, remaining));
-    remaining -= text.length;
-    blocks.push(`【${title}】\n${text}`);
-  }
-  return blocks.join("\n\n");
-}
-
-function formatPlanDocuments(documents) {
-  if (!Array.isArray(documents)) return "";
-  let remaining = MAX_PLAN_MATERIAL_CHARS;
-  const blocks = [];
-  for (const document of documents.slice(0, MAX_PLAN_DOCUMENTS)) {
-    if (remaining <= 0) break;
-    const title = escapeForPromptTag(String(document?.title ?? "").slice(0, 200));
-    const text = escapeForPromptTag(String(document?.text ?? "").slice(0, remaining));
-    remaining -= text.length;
-    blocks.push(`【${title}】\n${text}`);
-  }
-  return blocks.join("\n\n");
-}
-
-function formatPlanDecks(decks) {
-  if (!Array.isArray(decks)) return "";
-  return decks.slice(0, MAX_PLAN_DECKS).map(deck => {
-    const title = escapeForPromptTag(String(deck?.title ?? "").slice(0, 200));
-    const cardCount = Number.isFinite(deck?.cardCount) ? deck.cardCount : 0;
-    const accuracy = Number.isFinite(deck?.averageAccuracyPercent) ? `${deck.averageAccuracyPercent}%` : "未実施";
-    const lastStudiedAt = deck?.lastStudiedAt ? escapeForPromptTag(String(deck.lastStudiedAt).slice(0, 40)) : "未実施";
-    return `・${title}（${cardCount}枚、正答率${accuracy}、最終学習: ${lastStudiedAt}）`;
-  }).join("\n");
-}
-
-function formatPlanEvents(events) {
-  if (!Array.isArray(events)) return "";
-  return events.slice(0, MAX_PLAN_EVENTS).map(event => {
-    const title = escapeForPromptTag(String(event?.title ?? "").slice(0, 200));
-    const kind = escapeForPromptTag(String(event?.kind ?? "").slice(0, 40));
-    const startDate = escapeForPromptTag(String(event?.startDate ?? "").slice(0, 40));
-    const endDate = escapeForPromptTag(String(event?.endDate ?? "").slice(0, 40));
-    return `・${startDate}〜${endDate}（${kind}）: ${title}`;
-  }).join("\n");
-}
-
-async function handlePlan(request, env, key, ctx) {
-  if (!(await withinQuota(
-    env, key, "plan",
-    Number(env.PLAN_DAILY_LIMIT) || DEFAULT_PLAN_LIMIT,
-    Number(env.GLOBAL_PLAN_DAILY_LIMIT) || DEFAULT_GLOBAL_PLAN_LIMIT
-  ))) {
-    return json({ error: "今日の学習計画の作成回数の上限に達しました。明日また使えます。" }, 429);
-  }
-  const payload = await readJSONLimited(request);
-  const testTitle = String(payload?.testTitle ?? "").trim().slice(0, 200);
-  const testDate = String(payload?.testDate ?? "").trim().slice(0, 40);
-  const today = String(payload?.today ?? "").trim().slice(0, 40);
-  if (!testTitle || !testDate || !today) {
-    return json({ error: "testTitle, testDate, and today are required." }, 400);
-  }
-
-  const notesBlock = formatPlanNotes(payload?.notes);
-  const decksBlock = formatPlanDecks(payload?.decks);
-  const documentsBlock = formatPlanDocuments(payload?.documents);
-  const eventsBlock = formatPlanEvents(payload?.existingEvents);
-
-  const parts = [{
-    text: [
-      `<テスト>\n名前: ${escapeForPromptTag(testTitle)}\n日付: ${escapeForPromptTag(testDate)}\n</テスト>`,
-      `<今日>\n${escapeForPromptTag(today)}\n</今日>`,
-      notesBlock ? `<関連ノート>\n${notesBlock}\n</関連ノート>` : null,
-      decksBlock ? `<関連デッキ>\n${decksBlock}\n</関連デッキ>` : null,
-      documentsBlock ? `<関連文書>\n${documentsBlock}\n</関連文書>` : null,
-      eventsBlock ? `<既存の予定>\n${eventsBlock}\n</既存の予定>` : null,
-    ].filter(Boolean).join("\n\n"),
-  }];
-
-  return streamJSON(env, {
-    kind: "plan",
-    systemInstruction: PLAN_SYSTEM,
-    contents: [{ role: "user", parts }],
-    responseSchema: PLAN_SCHEMA,
-    failureMessage: "学習計画を作成できませんでした。",
-  }, ctx);
-}
-
 /** Returns a `Response`, or `null` when the path is not an AI route. */
 export async function handleAI(url, request, env, key, ctx) {
   if (request.method !== "POST") return null;
@@ -835,7 +690,6 @@ export async function handleAI(url, request, env, key, ctx) {
     case "/api/ai/rubric": handler = handleRubric; break;
     case "/api/ai/grade": handler = handleGrade; break;
     case "/api/ai/review": handler = handleReview; break;
-    case "/api/ai/plan": handler = handlePlan; break;
     default: return null;
   }
   try {

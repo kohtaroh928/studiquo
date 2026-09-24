@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import GoogleSignIn
 import Security
 import UIKit
 import UserNotifications
@@ -704,19 +705,52 @@ enum UniversityCalendar {
     }
 }
 
-/// Google Calendar, connected through the private iCal address Google issues
-/// for a calendar (Settings → that calendar → "Integrate calendar" → "Secret
-/// address in iCal format").
-///
-/// Deliberately not OAuth: the secret URL needs no Google Cloud project, no
-/// consent screen, and no token refresh, and it reuses the iCal fetching and
-/// parsing this app already does for university feeds. The trade-off is that
-/// the link is read-only and has to be re-issued if the user resets it.
+/// Google Calendar connection state and API reads. Existing iCal URL support
+/// remains as a fallback, but the primary path is OAuth through the Google
+/// Sign-In SDK so a user can connect from a single button.
 enum GoogleCalendar {
     static let externalSource = "google-calendar"
 
     private static let service = "com.yabuko.studiquo.google-calendar"
     private static let account = "calendar-url"
+    private static let connectedEmailKey = "googleCalendarConnectedEmail"
+    private static let calendarReadOnlyScope = "https://www.googleapis.com/auth/calendar.readonly"
+
+    struct APIEvent {
+        let id: String
+        let title: String
+        let startDate: Date
+        let endDate: Date
+        let notes: String
+        let calendarName: String
+        let isAllDay: Bool
+
+        var importEvent: UniversityCalendar.Event {
+            UniversityCalendar.Event(
+                id: id,
+                title: title,
+                startDate: startDate,
+                endDate: endDate,
+                notes: notes,
+                isAllDay: isAllDay
+            )
+        }
+    }
+
+    static var connectedEmail: String? {
+        get { UserDefaults.standard.string(forKey: connectedEmailKey) }
+        set {
+            if let newValue {
+                UserDefaults.standard.setValue(newValue, forKey: connectedEmailKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: connectedEmailKey)
+            }
+        }
+    }
+
+    static var isOAuthConnected: Bool {
+        connectedEmail != nil || GIDSignIn.sharedInstance.currentUser != nil
+    }
 
     static func loadURL() -> String {
         let query: [String: Any] = [
@@ -747,6 +781,223 @@ enum GoogleCalendar {
     }
 
     static func removeURL() { saveURL("") }
+
+    @MainActor
+    static func disconnect() {
+        connectedEmail = nil
+        GIDSignIn.sharedInstance.disconnect { _ in
+            GIDSignIn.sharedInstance.signOut()
+        }
+    }
+
+    @MainActor
+    static func fetchViaOAuth() async throws -> [APIEvent] {
+        let user = try await authorizedUser()
+        connectedEmail = user.profile?.email
+        let token = user.accessToken.tokenString
+        let calendars = try await fetchCalendarList(accessToken: token)
+
+        let calendar = Calendar.current
+        let now = Date.now
+        let timeMin = calendar.date(byAdding: .month, value: -3, to: now) ?? now
+        let timeMax = calendar.date(byAdding: .year, value: 1, to: now) ?? now
+        var result: [APIEvent] = []
+        for calendarInfo in calendars {
+            let events = try await fetchEvents(
+                calendar: calendarInfo,
+                accessToken: token,
+                timeMin: timeMin,
+                timeMax: timeMax
+            )
+            result.append(contentsOf: events)
+        }
+        return result
+    }
+
+    @MainActor
+    private static func authorizedUser() async throws -> GIDGoogleUser {
+        let scopes = [calendarReadOnlyScope]
+        let user: GIDGoogleUser
+        if let current = GIDSignIn.sharedInstance.currentUser {
+            user = current
+        } else if GIDSignIn.sharedInstance.hasPreviousSignIn() {
+            user = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
+        } else {
+            guard let presenting = presentingViewController() else {
+                throw GoogleCalendarError.noPresentingViewController
+            }
+            user = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenting).user
+        }
+
+        if user.grantedScopes?.contains(calendarReadOnlyScope) != true {
+            guard let presenting = presentingViewController() else {
+                throw GoogleCalendarError.noPresentingViewController
+            }
+            return try await user.addScopes(scopes, presenting: presenting).user
+        }
+        return try await user.refreshTokensIfNeeded()
+    }
+
+    @MainActor
+    private static func presentingViewController() -> UIViewController? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }?
+            .rootViewController
+    }
+
+    private static func fetchCalendarList(accessToken: String) async throws -> [CalendarInfo] {
+        let request = calendarListRequest(accessToken: accessToken)
+        let data = try await googleData(for: request)
+        return try decodeSelectedCalendars(from: data)
+    }
+
+    static func calendarListRequest(accessToken: String) -> URLRequest {
+        var components = URLComponents(string: "https://www.googleapis.com/calendar/v3/users/me/calendarList")!
+        components.queryItems = [
+            URLQueryItem(name: "minAccessRole", value: "reader"),
+            URLQueryItem(name: "showHidden", value: "false"),
+        ]
+        return authorizedRequest(url: components.url!, accessToken: accessToken)
+    }
+
+    static func decodeSelectedCalendars(from data: Data) throws -> [CalendarInfo] {
+        try JSONDecoder().decode(CalendarListResponse.self, from: data).items
+            .filter { $0.selected != false }
+    }
+
+    private static func fetchEvents(
+        calendar: CalendarInfo,
+        accessToken: String,
+        timeMin: Date,
+        timeMax: Date
+    ) async throws -> [APIEvent] {
+        let request = eventsRequest(
+            calendarID: calendar.id,
+            accessToken: accessToken,
+            timeMin: timeMin,
+            timeMax: timeMax
+        )
+        let data = try await googleData(for: request)
+        return try decodeEvents(from: data, calendarID: calendar.id, calendarName: calendar.summary)
+    }
+
+    static func eventsRequest(
+        calendarID: String,
+        accessToken: String,
+        timeMin: Date,
+        timeMax: Date
+    ) -> URLRequest {
+        var pathSegmentAllowed = CharacterSet.urlPathAllowed
+        pathSegmentAllowed.remove(charactersIn: "/")
+        let encodedCalendarID = calendarID.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) ?? calendarID
+        var components = URLComponents(
+            string: "https://www.googleapis.com/calendar/v3/calendars/\(encodedCalendarID)/events"
+        )!
+        components.queryItems = [
+            URLQueryItem(name: "singleEvents", value: "true"),
+            URLQueryItem(name: "orderBy", value: "startTime"),
+            URLQueryItem(name: "timeMin", value: RFC3339Formatter.string(from: timeMin)),
+            URLQueryItem(name: "timeMax", value: RFC3339Formatter.string(from: timeMax)),
+        ]
+        return authorizedRequest(url: components.url!, accessToken: accessToken)
+    }
+
+    static func decodeEvents(from data: Data, calendarID: String, calendarName: String) throws -> [APIEvent] {
+        let response = try JSONDecoder().decode(EventListResponse.self, from: data)
+        return response.items.compactMap { item in
+            guard item.status != "cancelled",
+                  let start = item.start.dateValue else {
+                return nil
+            }
+            let isAllDay = item.start.date != nil
+            let rawEnd = item.end.dateValue ?? Calendar.current.date(byAdding: .hour, value: 1, to: start) ?? start
+            let end = isAllDay ? rawEnd.addingTimeInterval(-1) : rawEnd
+            return APIEvent(
+                id: "\(calendarID):\(item.id)",
+                title: item.summary?.isEmpty == false ? item.summary! : L("無題の予定"),
+                startDate: start,
+                endDate: max(end, start),
+                notes: item.description ?? "",
+                calendarName: calendarName,
+                isAllDay: isAllDay
+            )
+        }
+    }
+
+    private static func authorizedRequest(url: URL, accessToken: String) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    private static func googleData(for request: URLRequest) async throws -> Data {
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+            throw GoogleCalendarError.apiRejected
+        }
+        return data
+    }
+
+    enum GoogleCalendarError: LocalizedError {
+        case noPresentingViewController, apiRejected
+
+        var errorDescription: String? {
+            switch self {
+            case .noPresentingViewController: L("Google連携画面を表示できませんでした。")
+            case .apiRejected: L("Googleカレンダーを取得できませんでした。権限を確認してもう一度お試しください。")
+            }
+        }
+    }
+
+    private struct CalendarListResponse: Decodable { let items: [CalendarInfo] }
+    struct CalendarInfo: Decodable {
+        let id: String
+        let summary: String
+        let selected: Bool?
+    }
+    private struct EventListResponse: Decodable { let items: [GoogleEventItem] }
+    private struct GoogleEventItem: Decodable {
+        let id: String
+        let status: String?
+        let summary: String?
+        let description: String?
+        let start: GoogleEventDate
+        let end: GoogleEventDate
+    }
+    private struct GoogleEventDate: Decodable {
+        let date: String?
+        let dateTime: String?
+
+        var dateValue: Date? {
+            if let dateTime { return RFC3339Formatter.date(from: dateTime) }
+            guard let date else { return nil }
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = .current
+            formatter.dateFormat = "yyyy-MM-dd"
+            return formatter.date(from: date)
+        }
+    }
+
+    private enum RFC3339Formatter {
+        static func string(from date: Date) -> String {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter.string(from: date)
+        }
+
+        static func date(from value: String) -> Date? {
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = fractional.date(from: value) { return date }
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            return plain.date(from: value)
+        }
+    }
 }
 
 struct CalendarHomeView: View {
@@ -770,7 +1021,6 @@ struct CalendarHomeView: View {
     @State private var universityStatus = ""
     @State private var isUniversitySyncing = false
     @State private var cachedEventKindsByDay: [Date: Set<CalendarEventKind>] = [:]
-    @State private var showsStudyPlan = false
 
     /// Includes anything running *through* the day, not just starting on it,
     /// so a multi-day entry stays visible for its whole span.
@@ -879,10 +1129,6 @@ struct CalendarHomeView: View {
                               ? "link.badge.plus" : "link.circle.fill")
                     }
                     .accessibilityLabel("カレンダー連携")
-                    Button { showsStudyPlan = true } label: {
-                        Image(systemName: "brain.head.profile")
-                    }
-                    .accessibilityLabel("AIに学習計画を作ってもらう")
                     Button {
                         showsNewEvent = true
                     } label: {
@@ -893,9 +1139,6 @@ struct CalendarHomeView: View {
         }
         .sheet(isPresented: $showsNewEvent) {
             CalendarEventEditor(event: nil, initialDate: selectedDate)
-        }
-        .sheet(isPresented: $showsStudyPlan) {
-            AIStudyPlanFlowView()
         }
         .sheet(item: $editingEvent) { event in
             CalendarEventEditor(event: event, initialDate: event.startDate)
@@ -928,28 +1171,50 @@ struct CalendarHomeView: View {
                         }
                     }
                     Section {
-                        SecureField("Googleカレンダーの非公開iCal URL", text: $googleCalendarURL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        Button("Googleカレンダーを同期", systemImage: "arrow.triangle.2.circlepath") {
+                        if let email = GoogleCalendar.connectedEmail {
+                            Label(email, systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                        Button(GoogleCalendar.isOAuthConnected ? "Googleカレンダーを同期" : "Googleで連携",
+                               systemImage: GoogleCalendar.isOAuthConnected ? "arrow.triangle.2.circlepath" : "g.circle.fill") {
                             Task { await syncGoogleCalendar() }
                         }
-                        .disabled(isGoogleSyncing || googleCalendarURL.isEmpty)
+                        .disabled(isGoogleSyncing)
                         if isGoogleSyncing { ProgressView() }
                         if !googleStatus.isEmpty {
                             Text(googleStatus).foregroundStyle(.secondary)
                         }
-                        if !GoogleCalendar.loadURL().isEmpty {
-                            Button("Googleカレンダーの連携を解除", role: .destructive) {
-                                GoogleCalendar.removeURL()
-                                googleCalendarURL = ""
+                        if GoogleCalendar.isOAuthConnected {
+                            Button("Google連携を解除", role: .destructive) {
+                                GoogleCalendar.disconnect()
                                 googleStatus = L("連携を解除しました。")
                             }
                         }
                     } header: {
                         Text("Googleカレンダー")
                     } footer: {
-                        Text("Googleカレンダーを開き、左の「マイカレンダー」で対象カレンダーの︙→「設定と共有」→「カレンダーの統合」にある『iCal 形式の非公開 URL』をコピーして貼り付けてください。読み取り専用で取り込みます。URLを知る人は誰でも予定を見られるため、他人に共有しないでください。")
+                        Text("Googleアカウントの許可画面でカレンダーの読み取りを許可すると、URLをコピーせずに予定を取り込めます。")
+                    }
+
+                    Section {
+                        SecureField("Googleカレンダーの非公開iCal URL", text: $googleCalendarURL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button("URLで同期", systemImage: "link") {
+                            Task { await syncGoogleCalendarURLFallback() }
+                        }
+                        .disabled(isGoogleSyncing || googleCalendarURL.isEmpty)
+                        if !GoogleCalendar.loadURL().isEmpty {
+                            Button("URL連携を解除", role: .destructive) {
+                                GoogleCalendar.removeURL()
+                                googleCalendarURL = ""
+                                googleStatus = L("連携を解除しました。")
+                            }
+                        }
+                    } header: {
+                        Text("手動URLで同期")
+                    } footer: {
+                        Text("Google連携が使えない場合だけ、非公開iCal URLを貼り付けて同期できます。")
                     }
 
                     if !UniversityCalendar.loadURL().isEmpty {
@@ -1029,47 +1294,32 @@ struct CalendarHomeView: View {
         }
     }
 
-    /// Same import path as a university feed, tagged with its own source so
-    /// the two never overwrite each other's events.
+    /// Primary Google Calendar path: ask Google for read-only Calendar access,
+    /// then import selected calendars through the Calendar API.
     private func syncGoogleCalendar() async {
         isGoogleSyncing = true
         googleStatus = ""
         defer { isGoogleSyncing = false }
         do {
+            let imported = try await GoogleCalendar.fetchViaOAuth()
+            try importGoogleEvents(imported.map(\.importEvent))
+            await UniversityCalendar.requestNotificationPermission()
+            googleStatus = imported.isEmpty
+                ? L("接続しましたが、取り込める予定がありませんでした。")
+                : L("Googleカレンダーの予定を\(imported.count)件同期しました。")
+        } catch {
+            googleStatus = error.localizedDescription
+        }
+    }
+
+    /// Compatibility path for users who already pasted a private iCal URL.
+    private func syncGoogleCalendarURLFallback() async {
+        isGoogleSyncing = true
+        googleStatus = ""
+        defer { isGoogleSyncing = false }
+        do {
             let imported = try await UniversityCalendar.fetch(from: googleCalendarURL)
-
-            var existing: [String: CalendarEvent] = [:]
-            for event in events {
-                guard event.externalSource == GoogleCalendar.externalSource,
-                      let id = event.externalID else { continue }
-                existing[id] = event
-            }
-
-            let incomingIDs = Set(imported.map(\.id))
-            for item in imported {
-                let event = existing[item.id] ?? {
-                    let created = CalendarEvent(title: item.title, startDate: item.startDate,
-                                                endDate: item.endDate, kind: .other, notes: item.notes)
-                    modelContext.insert(created)
-                    return created
-                }()
-                event.title = item.title
-                event.startDate = item.startDate
-                event.endDate = item.endDate
-                event.notes = item.notes
-                event.externalID = item.id
-                event.externalSource = GoogleCalendar.externalSource
-                event.externalSourceName = L("Googleカレンダー")
-            }
-            // Anything that vanished upstream goes here too, so a deleted
-            // Google event does not linger in the app forever.
-            for event in existing.values where !incomingIDs.contains(event.externalID ?? "") {
-                EventReminderNotifications.cancel(for: event)
-                modelContext.delete(event)
-            }
-            try modelContext.save()
-            refreshEventKindsByDay()
-
+            try importGoogleEvents(imported)
             GoogleCalendar.saveURL(googleCalendarURL)
             await UniversityCalendar.requestNotificationPermission()
             googleStatus = imported.isEmpty
@@ -1078,6 +1328,40 @@ struct CalendarHomeView: View {
         } catch {
             googleStatus = error.localizedDescription
         }
+    }
+
+    private func importGoogleEvents(_ imported: [UniversityCalendar.Event]) throws {
+        var existing: [String: CalendarEvent] = [:]
+        for event in events {
+            guard event.externalSource == GoogleCalendar.externalSource,
+                  let id = event.externalID else { continue }
+            existing[id] = event
+        }
+
+        let incomingIDs = Set(imported.map(\.id))
+        for item in imported {
+            let event = existing[item.id] ?? {
+                let created = CalendarEvent(title: item.title, startDate: item.startDate,
+                                            endDate: item.endDate, kind: .other, notes: item.notes)
+                modelContext.insert(created)
+                return created
+            }()
+            event.title = item.title
+            event.startDate = item.startDate
+            event.endDate = item.endDate
+            event.notes = item.notes
+            event.externalID = item.id
+            event.externalSource = GoogleCalendar.externalSource
+            event.externalSourceName = L("Googleカレンダー")
+        }
+        // Anything that vanished upstream goes here too, so a deleted Google
+        // event does not linger in the app forever.
+        for event in existing.values where !incomingIDs.contains(event.externalID ?? "") {
+            EventReminderNotifications.cancel(for: event)
+            modelContext.delete(event)
+        }
+        try modelContext.save()
+        refreshEventKindsByDay()
     }
 
     private func refreshEventKindsByDay() {
@@ -1247,7 +1531,6 @@ struct CalendarHomeView: View {
         case .test: .red
         case .classLesson: .blue
         case .other: .orange
-        case .studySession: .purple
         }
     }
 
@@ -1648,8 +1931,8 @@ enum EventReminderNotifications {
         guard fireDate > .now else { return }
 
         let content = UNMutableNotificationContent()
-        content.title = L("もうすぐ予定です")
-        content.body = L("\(event.title)・\(event.startDate.formatted(date: .omitted, time: .shortened))")
+        content.title = event.title
+        content.body = calendarEventReminderBody(for: event)
         content.sound = .default
 
         let trigger = UNCalendarNotificationTrigger(
@@ -1723,6 +2006,7 @@ private struct CalendarEventEditor: View {
             Form {
                 Section("予定") {
                     TextField("タイトル", text: $title)
+                        .accessibilityIdentifier("calendar-event-title")
                     Picker("種類", selection: $kind) {
                         ForEach(CalendarEventKind.allCases) { kind in
                             Label(kind.title, systemImage: kind.icon).tag(kind)
@@ -1756,8 +2040,19 @@ private struct CalendarEventEditor: View {
                     Text("通知は予定の開始時刻より前にしか設定できません。開始時刻を早めると、通知日時も自動でその前に繰り上がります。")
                 }
                 Section("メモ") {
-                    TextField("教室、範囲、持ち物など", text: $notes, axis: .vertical)
-                        .lineLimit(3...8)
+                    ZStack(alignment: .topLeading) {
+                        if notes.isEmpty {
+                            Text("教室、範囲、持ち物など")
+                                .foregroundStyle(.tertiary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 8)
+                                .allowsHitTesting(false)
+                        }
+                        TextEditor(text: $notes)
+                            .frame(minHeight: 92, maxHeight: 160)
+                            .scrollContentBackground(.hidden)
+                            .accessibilityIdentifier("calendar-event-notes")
+                    }
                 }
             }
             .navigationTitle(event == nil ? L("予定を追加") : L("予定を編集"))

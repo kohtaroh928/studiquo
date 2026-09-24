@@ -36,44 +36,6 @@ protocol AIProvider {
     /// Judges whether an AIトーク question is worth reviewing tomorrow and,
     /// if so, researches it into an explanation and a short quiz.
     func researchReview(question: String, context: String) async throws -> AIReviewResult
-
-    /// Turns a test plus the student's own material for it into a list of
-    /// proposed study sessions between now and the test date.
-    func planStudySessions(_ request: AIStudyPlanRequest) async throws -> AIStudyPlanResult
-}
-
-/// Everything `/api/ai/plan` needs to judge how much studying is left and
-/// when it should happen — assembled by `AIStudyPlanService` from whatever
-/// folder(s) the student pointed at the test.
-struct AIStudyPlanRequest {
-    struct Note { var title: String; var text: String }
-    struct Deck { var title: String; var cardCount: Int; var averageAccuracyPercent: Int?; var lastStudiedAt: Date? }
-    struct Document { var title: String; var text: String }
-    struct ExistingEvent { var title: String; var kind: String; var startDate: Date; var endDate: Date }
-
-    var testTitle: String
-    var testDate: Date
-    var today: Date = .now
-    var notes: [Note] = []
-    var decks: [Deck] = []
-    var documents: [Document] = []
-    var existingEvents: [ExistingEvent] = []
-}
-
-/// The Worker's `/api/ai/plan` result.
-struct AIStudyPlanResult: Decodable {
-    struct Session: Decodable {
-        /// `YYYY-MM-DD` — parsed by the caller against the student's
-        /// calendar, not decoded as a `Date` here, since the model is only
-        /// ever asked for a plain date/time pair, not a full ISO instant.
-        let date: String
-        /// `HH:mm`.
-        let startTime: String
-        let durationMinutes: Int
-        let focus: String
-        let reason: String
-    }
-    let sessions: [Session]
 }
 
 /// The Worker's `/api/ai/review` result: whether the question was worth
@@ -278,33 +240,6 @@ final class WorkerAIProvider: AIProvider {
         try await streamedResult(path: "api/ai/review", body: ["question": question, "context": context])
     }
 
-    // MARK: Study plan
-
-    func planStudySessions(_ request: AIStudyPlanRequest) async throws -> AIStudyPlanResult {
-        let formatter = ISO8601DateFormatter()
-        let body: [String: Any] = [
-            "testTitle": request.testTitle,
-            "testDate": formatter.string(from: request.testDate),
-            "today": formatter.string(from: request.today),
-            "notes": request.notes.map { ["title": $0.title, "text": $0.text] },
-            "decks": request.decks.map { deck -> [String: Any] in
-                var entry: [String: Any] = ["title": deck.title, "cardCount": deck.cardCount]
-                if let accuracy = deck.averageAccuracyPercent { entry["averageAccuracyPercent"] = accuracy }
-                if let lastStudiedAt = deck.lastStudiedAt { entry["lastStudiedAt"] = formatter.string(from: lastStudiedAt) }
-                return entry
-            },
-            "documents": request.documents.map { ["title": $0.title, "text": $0.text] },
-            "existingEvents": request.existingEvents.map {
-                [
-                    "title": $0.title, "kind": $0.kind,
-                    "startDate": formatter.string(from: $0.startDate),
-                    "endDate": formatter.string(from: $0.endDate),
-                ]
-            },
-        ]
-        return try await streamedResult(path: "api/ai/plan", body: body)
-    }
-
     private static func encoded(_ image: UIImage?) -> String? {
         guard let image, let png = downscaled(image).pngData() else { return nil }
         return png.base64EncodedString()
@@ -450,9 +385,5 @@ final class ClaudeDirectProvider: AIProvider {
     /// conforming rather than implemented, since nothing calls it today.
     func researchReview(question: String, context: String) async throws -> AIReviewResult {
         throw WorkerAIProvider.ProviderError.transport(L("この接続方法では復習教材の作成に対応していません。"))
-    }
-
-    func planStudySessions(_ request: AIStudyPlanRequest) async throws -> AIStudyPlanResult {
-        throw WorkerAIProvider.ProviderError.transport(L("この接続方法では学習計画の作成に対応していません。"))
     }
 }

@@ -14,6 +14,20 @@ function generateCode() {
 // concurrent "this user doesn't exist yet" registrations for the same key
 // can no longer each mint and persist a different friend code for it.
 export class UserRegistry extends DurableObject {
+  async resolveChatKey(identityHash, legacyTokenHash) {
+    const existing = await this.ctx.storage.get("chatIdentityKey");
+    if (existing) return existing;
+    // Only initialization needs to hold the gate across the legacy KV read.
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const saved = await this.ctx.storage.get("chatIdentityKey");
+      if (saved) return saved;
+      const key = await this.env.STUDIQUO_DATA.get(`chat:user:${legacyTokenHash}`)
+        ? legacyTokenHash : identityHash;
+      await this.ctx.storage.put("chatIdentityKey", key);
+      return key;
+    });
+  }
+
   async ensureUser(key, name) {
     const storageKey = `chat:user:${key}`;
     let user = await this.env.STUDIQUO_DATA.get(storageKey, "json");

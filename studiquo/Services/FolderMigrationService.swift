@@ -11,6 +11,17 @@ import SwiftData
 /// as a fallback in case this ever needs to run again.
 enum FolderMigrationService {
     private static let didMigrateKey = "didMigrateFoldersToHierarchy"
+    /// How many folders/items to process between yielding to the run loop
+    /// and flushing a save. Without this, a library built up over a long
+    /// time ran this whole migration as one uninterrupted synchronous chunk
+    /// on the main actor — long enough on a large library to freeze the app
+    /// (no redraws, no touch handling) until it finished. The other
+    /// one-time migrations in `ContentView`
+    /// (`rebuildLibraryMetadataIfNeeded`, `migrateTextDocumentBlocksIfNeeded`)
+    /// already yield per item for the same reason; this does the same, just
+    /// every `batchSize` items instead of every single one, since this
+    /// migration's per-item work is cheaper.
+    private static let batchSize = 200
 
     static func migrateIfNeeded(
         context: ModelContext,
@@ -21,7 +32,7 @@ enum FolderMigrationService {
         flashcardDecks: [FlashcardDeck],
         textDocuments: [TextDocument],
         slideDecks: [SlideDeck]
-    ) {
+    ) async {
         guard !UserDefaults.standard.bool(forKey: didMigrateKey) else { return }
 
         let knownPaths = Set(folderNamesStorage.split(separator: "\n").map(String.init))
@@ -61,6 +72,18 @@ enum FolderMigrationService {
             $0.split(separator: "/").count < $1.split(separator: "/").count
         }
 
+        var processedSinceCheckpoint = 0
+        // Saves and yields every `batchSize` items, so no single
+        // uninterrupted stretch of work — and no single `save()` — is big
+        // enough to freeze the app, however large the library.
+        func checkpoint() async {
+            processedSinceCheckpoint += 1
+            guard processedSinceCheckpoint >= batchSize else { return }
+            try? context.save()
+            await Task.yield()
+            processedSinceCheckpoint = 0
+        }
+
         var foldersByPath: [String: Folder] = [:]
         for path in orderedPaths {
             let components = path.split(separator: "/").map(String.init)
@@ -73,19 +96,24 @@ enum FolderMigrationService {
             }
             context.insert(folder)
             foldersByPath[path] = folder
+            await checkpoint()
         }
 
         for notebook in notebooks where !notebook.folderName.isEmpty {
             notebook.folder = foldersByPath[notebook.folderName]
+            await checkpoint()
         }
         for deck in flashcardDecks where !deck.folderName.isEmpty {
             deck.folder = foldersByPath[deck.folderName]
+            await checkpoint()
         }
         for document in textDocuments where !document.folderName.isEmpty {
             document.folder = foldersByPath[document.folderName]
+            await checkpoint()
         }
         for deck in slideDecks where !deck.folderName.isEmpty {
             deck.folder = foldersByPath[deck.folderName]
+            await checkpoint()
         }
 
         try? context.save()

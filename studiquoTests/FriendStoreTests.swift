@@ -20,6 +20,17 @@ final class FriendStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    func testMessageListURLUsesAQueryItemForTheCursor() throws {
+        let roomID = String(repeating: "a", count: 64)
+        let baseURL = try XCTUnwrap(URL(string: "https://example.com"))
+        let url = FriendChatService.messageListURL(roomID: roomID, after: 42, baseURL: baseURL)
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+
+        XCTAssertEqual(components.path, "/api/chat/rooms/\(roomID)/messages")
+        XCTAssertEqual(components.queryItems, [URLQueryItem(name: "after", value: "42")])
+        XCTAssertFalse(url.absoluteString.contains("%3F"))
+    }
+
     // Regression coverage for "sharing the QR/invitation link before
     // registration finishes shares the placeholder text instead of a real
     // code": the add-friend screen must know not to show it yet.
@@ -86,6 +97,109 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(store.myCode, "ME1234")
         XCTAssertEqual(store.friends.map(\.name), ["デモフレンド", "Alice", "Bob"])
         XCTAssertEqual(Set(store.friends.compactMap(\.roomID)), ["room-a", "room-b"])
+    }
+
+    // Regression coverage for "a friend's profile photo never shows up
+    // anywhere but a generic placeholder icon, no matter what's set in the
+    // profile screen": nothing about it ever reached the server before this.
+    func testRefreshUploadsTheLocalProfilePhotoTheFirstTime() async {
+        defaults.set(Data("fake jpeg bytes".utf8), forKey: "profileImage")
+        let client = MockFriendChatClient(identity: .init(code: "ME1234", name: "Me"))
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        await store.refresh()
+
+        let uploaded = await client.uploadedAvatarsSnapshot()
+        XCTAssertEqual(uploaded.count, 1)
+        XCTAssertEqual(uploaded.first?.contentType, "image/jpeg")
+        XCTAssertEqual(uploaded.first?.data, Data("fake jpeg bytes".utf8))
+    }
+
+    func testRefreshDoesNotReuploadAnUnchangedProfilePhoto() async {
+        defaults.set(Data("fake jpeg bytes".utf8), forKey: "profileImage")
+        let client = MockFriendChatClient(identity: .init(code: "ME1234", name: "Me"))
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        await store.refresh()
+        await store.refresh()
+
+        let uploaded = await client.uploadedAvatarsSnapshot()
+        XCTAssertEqual(uploaded.count, 1, "an unchanged photo must not be re-uploaded on every poll")
+    }
+
+    func testRefreshUploadsAgainOnlyAfterThePhotoActuallyChanges() async {
+        defaults.set(Data("first photo".utf8), forKey: "profileImage")
+        let client = MockFriendChatClient(identity: .init(code: "ME1234", name: "Me"))
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refresh()
+
+        defaults.set(Data("second photo".utf8), forKey: "profileImage")
+        await store.refresh()
+
+        let uploaded = await client.uploadedAvatarsSnapshot()
+        XCTAssertEqual(uploaded.map(\.data), [Data("first photo".utf8), Data("second photo".utf8)])
+    }
+
+    func testRefreshDownloadsANewFriendsAvatarAndSurfacesItOnTheFriendRecord() async {
+        let client = MockFriendChatClient(
+            identity: .init(code: "ME1234", name: "Me"),
+            friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a", avatarUpdatedAt: 1_000)]
+        )
+        await client.setAvatar(Data("alice's photo".utf8), forCode: "ALICE1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        await store.refresh()
+
+        XCTAssertEqual(store.friends.first(where: { $0.code == "ALICE1" })?.avatarData, Data("alice's photo".utf8))
+    }
+
+    func testRefreshDoesNotRedownloadAFriendsAvatarWhenItHasNotChanged() async {
+        let client = MockFriendChatClient(
+            identity: .init(code: "ME1234", name: "Me"),
+            friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a", avatarUpdatedAt: 1_000)]
+        )
+        await client.setAvatar(Data("alice's photo".utf8), forCode: "ALICE1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refresh()
+
+        // A second poll reports the exact same avatarUpdatedAt — the cached
+        // copy must be trusted, not re-fetched on every single poll.
+        await client.setAvatar(Data("a different payload, should never be read".utf8), forCode: "ALICE1")
+        await store.refreshFriends()
+
+        XCTAssertEqual(store.friends.first(where: { $0.code == "ALICE1" })?.avatarData, Data("alice's photo".utf8))
+    }
+
+    func testRefreshRedownloadsAFriendsAvatarOnceItsTimestampChanges() async {
+        let client = MockFriendChatClient(
+            identity: .init(code: "ME1234", name: "Me"),
+            friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a", avatarUpdatedAt: 1_000)]
+        )
+        await client.setAvatar(Data("old photo".utf8), forCode: "ALICE1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refresh()
+
+        await client.setFriends([.init(code: "ALICE1", name: "Alice", roomID: "room-a", avatarUpdatedAt: 2_000)])
+        await client.setAvatar(Data("new photo".utf8), forCode: "ALICE1")
+        await store.refreshFriends()
+
+        XCTAssertEqual(store.friends.first(where: { $0.code == "ALICE1" })?.avatarData, Data("new photo".utf8))
+    }
+
+    func testRefreshClearsACachedAvatarOnceAFriendNoLongerHasOne() async {
+        let client = MockFriendChatClient(
+            identity: .init(code: "ME1234", name: "Me"),
+            friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a", avatarUpdatedAt: 1_000)]
+        )
+        await client.setAvatar(Data("old photo".utf8), forCode: "ALICE1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refresh()
+        XCTAssertNotNil(store.friends.first(where: { $0.code == "ALICE1" })?.avatarData)
+
+        await client.setFriends([.init(code: "ALICE1", name: "Alice", roomID: "room-a", avatarUpdatedAt: nil)])
+        await store.refreshFriends()
+
+        XCTAssertNil(store.friends.first(where: { $0.code == "ALICE1" })?.avatarData)
     }
 
     // Regression coverage for "a demo friend's scripted reply never counts
@@ -193,6 +307,72 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(bob?.todayStudySeconds, 0, "a stale (not-today) study date must not be trusted")
     }
 
+    func testReportMyStudyTimeCanHideTheValueFromFriends() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        store.reportMyStudyTime(1_500, sharesStudyTime: false)
+        await waitUntil { await client.reportedStudyStatsSnapshot().count == 1 }
+
+        let reported = await client.reportedStudyStatsSnapshot()
+        XCTAssertNil(reported.first?.seconds)
+        XCTAssertNil(reported.first?.date)
+    }
+
+    func testFriendProfileLeavesStudyTimeEmptyWhenFriendDoesNotShareIt() {
+        let friend = FriendRecord(
+            id: UUID(), name: "Alice", code: "ALICE1",
+            todayStudySeconds: 1_200, roomID: "room-a",
+            isDemo: false, sharesStudyTime: false
+        )
+
+        let profile = FriendProfile(friend: friend, blockedByMeRoomIDs: [])
+
+        XCTAssertNil(profile.todayStudySeconds, "共有していないフレンドの勉強時間は、未共有などの文言を出さず空欄にするためnilにします。")
+    }
+
+    func testRefreshFriendsMarksMissingStudyTimeAsUnshared() async {
+        let todayFormatter = DateFormatter()
+        todayFormatter.calendar = Calendar(identifier: .gregorian)
+        todayFormatter.dateFormat = "yyyy-MM-dd"
+        let today = todayFormatter.string(from: Date())
+        let client = MockFriendChatClient(friends: [
+            .init(code: "ALICE1", name: "Alice", roomID: "room-a", todayStudySeconds: nil, studyDate: today),
+        ])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        await store.refreshFriends()
+
+        let alice = store.friends.first(where: { $0.code == "ALICE1" })
+        XCTAssertEqual(alice?.sharesStudyTime, false)
+        if let alice {
+            XCTAssertNil(FriendProfile(friend: alice, blockedByMeRoomIDs: []).todayStudySeconds)
+        }
+    }
+
+    func testFriendChatSummariesSortNewestMessagesFirstAndKeepEmptyChatsLast() {
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let bob = FriendRecord(id: UUID(), name: "Bob", code: "BOB222", todayStudySeconds: 0, roomID: "room-b", isDemo: false)
+        let carol = FriendRecord(id: UUID(), name: "Carol", code: "CAROL3", todayStudySeconds: 0, roomID: "room-c", isDemo: false)
+        let oldDate = Date(timeIntervalSince1970: 1_000)
+        let newDate = Date(timeIntervalSince1970: 2_000)
+        let messages = [
+            FriendMessage(id: UUID(), friendID: alice.id, text: "old", sentAt: oldDate, isMine: false),
+            FriendMessage(id: UUID(), friendID: bob.id, text: "new", sentAt: newDate, isMine: false),
+        ]
+
+        let summaries = FriendChatSummary.summaries(
+            friends: [alice, bob, carol],
+            messages: messages,
+            unreadCounts: [bob.id: 2]
+        )
+
+        XCTAssertEqual(summaries.map { $0.friend.id }, [bob.id, alice.id, carol.id])
+        XCTAssertEqual(summaries.first?.previewText, "new")
+        XCTAssertEqual(summaries.first?.unreadCount, 2)
+        XCTAssertNil(summaries.last?.latestDate)
+    }
+
     func testSendRoutesMessagesToTheCorrectFriendAndRoom() async {
         let client = MockFriendChatClient()
         let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
@@ -232,6 +412,53 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertNotEqual(store.errorMessage, "")
     }
 
+    func testSendReturnsFalseAndKeepsAFailedBubbleWhenTheFriendHasNoRoomYet() {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: nil, isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        let queued = store.send("hello", to: alice)
+
+        XCTAssertFalse(queued)
+        XCTAssertEqual(store.messages(for: alice).first?.text, "hello")
+        XCTAssertEqual(store.messages(for: alice).first?.sendFailed, true)
+        XCTAssertNotEqual(store.errorMessage, "")
+    }
+
+    func testSendCanonicalizesAStaleFriendRecordByCodeBeforeSavingTheMessage() async {
+        let client = MockFriendChatClient()
+        let current = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let stale = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: nil, isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [current]
+
+        let queued = store.send("hello", to: stale)
+        await waitUntil { store.messages(for: current).first?.serverID != nil }
+
+        XCTAssertTrue(queued)
+        XCTAssertEqual(store.messages(for: stale).count, 0)
+        XCTAssertEqual(store.messages(for: current).first?.text, "hello")
+        XCTAssertEqual(store.messages(for: current).first?.sendFailed, nil)
+        let sent = await client.sentMessages()
+        XCTAssertEqual(sent.first?.roomID, "room-a")
+    }
+
+    func testIncomingMessageUsesCurrentFriendWhenTheOpenChatHasAnOldFriendID() async {
+        let client = MockFriendChatClient(roomMessages: ["room-a": [
+            .init(id: 1, text: "届いた", sentAt: 1_000, isMine: false),
+        ]])
+        let current = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let stale = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: nil, isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [current]
+
+        await store.refreshMessages(for: stale)
+
+        XCTAssertEqual(store.messages(for: current).map(\.text), ["届いた"])
+        XCTAssertTrue(store.messages(for: stale).isEmpty)
+    }
+
     func testSendDoesNotMarkTheMessageAsFailedWhenTheServerAccepts() async {
         let client = MockFriendChatClient()
         let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
@@ -242,6 +469,37 @@ final class FriendStoreTests: XCTestCase {
         await waitUntil { await client.sentMessages().count == 1 }
 
         XCTAssertEqual(store.messages(for: alice).first?.sendFailed, nil)
+    }
+
+    func testSuccessfulSendImmediatelyStoresTheServerConfirmation() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        store.send("hello", to: alice)
+        await waitUntil { store.messages(for: alice).first?.serverID != nil }
+
+        let message = store.messages(for: alice).first
+        XCTAssertEqual(message?.text, "hello")
+        XCTAssertEqual(message?.serverID, 1)
+        XCTAssertEqual(message?.isCanceled, false)
+        XCTAssertEqual(message?.sendFailed, nil)
+    }
+
+    func testSuccessfulSendImmediatelyRefreshesTheConversation() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+
+        store.send("hello", to: alice)
+        await waitUntil { await !client.messagesAfterRequestsSnapshot().isEmpty }
+
+        let afterRequests = await client.messagesAfterRequestsSnapshot()
+        XCTAssertEqual(afterRequests, [0])
+        XCTAssertEqual(store.messages(for: alice).first?.serverID, 1)
+        XCTAssertEqual(store.messages(for: alice).first?.isCanceled, false)
     }
 
     func testRefreshMessagesKeepsFriendRoomsSeparateAndCountsUnread() async {
@@ -283,6 +541,27 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(store.unreadCounts[alice.id, default: 0], 0)
     }
 
+    func testChatKeepsPollingWhileAttachmentMaintenanceIsSuspended() async {
+        let gate = FriendChatMaintenanceGate()
+        var refreshCount = 0
+        let activity = Task {
+            await FriendChatActivity.run(
+                pollInterval: .milliseconds(10),
+                refresh: { refreshCount += 1 },
+                maintenance: { await gate.wait() }
+            )
+        }
+
+        await waitUntil { gate.isWaiting && refreshCount > 0 }
+        let countBefore = refreshCount
+        await waitUntil { refreshCount > countBefore }
+        XCTAssertTrue(gate.isWaiting, "receiving must continue before attachment repair finishes")
+
+        activity.cancel()
+        gate.open()
+        await activity.value
+    }
+
     func testRefreshMessagesFetchesOnlyWhatsNewAndKeepsOlderLocalHistory() async {
         let client = MockFriendChatClient()
         let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
@@ -312,6 +591,48 @@ final class FriendStoreTests: XCTestCase {
             requestedAfterValues, [0, 5],
             "the second fetch must ask for messages well past the start (efficient), but not strictly past the last known id either (the trailing window)"
         )
+    }
+
+    func testRoomChangeResetsMessageCursorAndDoesNotMixRoomHistories() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-old", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+        await client.setMessages(["room-old": [.init(id: 100, text: "Old room", sentAt: 1_000, isMine: false)]])
+        await store.refreshMessages(for: alice)
+
+        await client.setFriends([.init(code: "ALICE1", name: "Alice", roomID: "room-new")])
+        await store.refreshFriends()
+        await client.setMessages(["room-new": [
+            .init(id: 1, text: "New room", sentAt: 2_000, isMine: false),
+            .init(id: 100, text: "Same numeric ID in new room", sentAt: 3_000, isMine: false),
+        ]])
+        await store.refreshMessages(for: alice)
+
+        let requestedAfterValues = await client.messagesAfterRequestsSnapshot()
+        XCTAssertEqual(requestedAfterValues, [0, 0])
+        XCTAssertEqual(store.messages(for: alice).map(\.text), ["New room", "Same numeric ID in new room"])
+        XCTAssertEqual(store.messages.filter { $0.roomID == "room-old" }.map(\.text), ["Old room"])
+        XCTAssertEqual(FriendChatSummary.summaries(friends: store.friends, messages: store.messages, unreadCounts: [:]).first?.previewText, "Same numeric ID in new room")
+    }
+
+    func testLegacyCachedMessagesAdoptPersistedRoomBeforeFriendshipChanges() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-old", isDemo: false)
+        let oldMessage = FriendMessage(id: UUID(), friendID: alice.id, text: "Old room", sentAt: Date(timeIntervalSince1970: 1), isMine: false, isCanceled: false, serverID: 100)
+        defaults.set(try! JSONEncoder().encode([alice]), forKey: "studiquoFriends")
+        defaults.set(try! JSONEncoder().encode([oldMessage]), forKey: "studiquoFriendMessages")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        XCTAssertEqual(store.messages.first?.roomID, "room-old")
+
+        await client.setFriends([.init(code: "ALICE1", name: "Alice", roomID: "room-new")])
+        await store.refreshFriends()
+        await client.setMessages(["room-new": [.init(id: 1, text: "New room", sentAt: 2_000, isMine: false)]])
+        await store.refreshMessages(for: alice)
+
+        let requestedAfterValues = await client.messagesAfterRequestsSnapshot()
+        XCTAssertEqual(requestedAfterValues, [0])
+        XCTAssertEqual(store.messages(for: alice).map(\.text), ["New room"])
     }
 
     func testRefreshMessagesReconcilesAnOptimisticallySentMessageInsteadOfDuplicatingIt() async {
@@ -397,6 +718,124 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(store.errorMessage, "", "a success in between must reset the streak, not just accumulate failures across it")
     }
 
+    func testConnectivityErrorClearsOnceThePollActuallyRecovers() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(URLError(.notConnectedToInternet))
+        await store.refreshFriends()
+        await store.refreshFriends()
+        await store.refreshFriends()
+        XCTAssertNotEqual(store.errorMessage, "", "sanity check: the sustained-failure alert fired")
+
+        await client.setErrorToThrow(nil)
+        await store.refreshFriends()
+
+        XCTAssertEqual(store.errorMessage, "", "a stale connectivity error must not sit on screen forever once polling actually recovers")
+    }
+
+    func testAnExpiredTokenSurfacesASignInAgainMessageImmediatelyInsteadOfWaitingForConsecutiveFailures() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 401, message: "This token has expired. Reconnect from Studiquo to get a new one."))
+
+        await store.refreshFriends()
+
+        XCTAssertEqual(
+            store.errorMessage, "ログインの有効期限が切れています。一度サインアウトし、もう一度サインインしてください。",
+            "an expired token fails identically on every retry, so there's nothing to gain by waiting for the usual consecutive-failure threshold"
+        )
+    }
+
+    // Regression coverage for a real report: with an actually-expired token,
+    // dismissing the alert (which just clears errorMessage — see
+    // FriendsHomeView's own .alert) only ever bought a fraction of a
+    // second before it reappeared, because several independent 2-second
+    // polling loops (friends, incoming requests, and — while a chat is
+    // open — messages, all funneling into this same notePollResult) keep
+    // rediscovering the same still-401 token, and used to unconditionally
+    // reassign errorMessage every single time one of them did. The user
+    // could not actually read or act on it before it was replaced by an
+    // identical copy of itself.
+    func testAnExpiredTokenAlertIsNotReshownOnEveryPollWhileItIsStillUnresolved() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 401, message: "This token has expired. Reconnect from Studiquo to get a new one."))
+        await store.refreshFriends()
+        XCTAssertNotEqual(store.errorMessage, "", "sanity check: the first failure did surface the message")
+
+        // The user dismisses it, exactly like tapping "OK" on the alert.
+        store.errorMessage = ""
+
+        // More poll ticks — standing in for this same loop's next tick, or
+        // one of the other independent polling loops discovering the same
+        // still-expired token moments later — keep failing identically.
+        await store.refreshFriends()
+        await store.refreshFriends()
+        await store.refreshFriends()
+
+        XCTAssertEqual(store.errorMessage, "", "a still-expired token must not re-show the alert on every subsequent poll once the user has already been told and dismissed it")
+    }
+
+    func testAnExpiredTokenAlertCanBeShownAgainAfterActuallySigningInAgainAndFailingOnceMore() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 401, message: "This token has expired. Reconnect from Studiquo to get a new one."))
+        await store.refreshFriends()
+        store.errorMessage = ""
+        await store.refreshFriends()
+        XCTAssertEqual(store.errorMessage, "", "sanity check: the repeat-suppression from the test above is in effect")
+
+        // A real sign-in-again success resets the "already notified" state...
+        await client.setErrorToThrow(nil)
+        await store.refreshFriends()
+        // ...so a genuinely new expiry later is still reported, not
+        // silently suppressed forever by the very first one this store
+        // instance ever saw.
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 401, message: "This token has expired. Reconnect from Studiquo to get a new one."))
+        await store.refreshFriends()
+
+        XCTAssertNotEqual(store.errorMessage, "", "a fresh expiry after a real recovery must still be reported")
+    }
+
+    func testAPlainServerErrorStillUsesTheGenericConnectivityMessageWithTheUsualThreshold() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 500, message: "Internal error."))
+
+        await store.refreshFriends()
+        XCTAssertEqual(store.errorMessage, "", "a single blip — even a server error, not just a network one — shouldn't alert immediately unless it's specifically an expired token")
+
+        await store.refreshFriends()
+        await store.refreshFriends()
+        XCTAssertEqual(store.errorMessage, "フレンドサーバーに接続できません。", "a sustained non-auth failure still gets the generic connectivity message")
+    }
+
+    func testAuthExpiredErrorClearsOnceSigningInAgainActuallyRecovers() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 401, message: "This token has expired. Reconnect from Studiquo to get a new one."))
+        await store.refreshFriends()
+        XCTAssertNotEqual(store.errorMessage, "", "sanity check: the auth-expired message fired")
+
+        await client.setErrorToThrow(nil)
+        await store.refreshFriends()
+
+        XCTAssertEqual(store.errorMessage, "", "a stale sign-in-again message must not sit on screen forever once a fresh token actually starts working")
+    }
+
+    func testASuccessfulPollDoesNotClearAnUnrelatedErrorMessage() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.errorMessage = "フレンド申請を承認できませんでした。"
+
+        await store.refreshFriends()
+
+        XCTAssertEqual(
+            store.errorMessage, "フレンド申請を承認できませんでした。",
+            "a background poll succeeding a moment later must not silently wipe out a different, not-yet-seen error"
+        )
+    }
+
     func testRefreshMessagesTreatsAnEmptySuccessfulResponseAsSuccessNotFailure() async {
         let client = MockFriendChatClient()
         let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
@@ -408,6 +847,18 @@ final class FriendStoreTests: XCTestCase {
         }
 
         XCTAssertEqual(store.errorMessage, "", "an empty but successful response (no new messages yet) must never be mistaken for a failure")
+    }
+
+    func testRoomAccessFailureIsNotMisreportedAsServerConnectivityFailure() async {
+        let client = MockFriendChatClient()
+        let alice = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [alice]
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 403, message: "You are not a participant in this room."))
+
+        await store.refreshMessages(for: alice)
+
+        XCTAssertEqual(store.errorMessage, "チャットルームにアクセスできません。フレンド情報を更新してください。")
     }
 
     // Regression coverage for "same-text reconciliation could mismatch
@@ -1398,9 +1849,9 @@ final class FriendStoreTests: XCTestCase {
     func testAcceptSurfacesTheServersSpecificReasonWhenTheFriendListIsFull() async {
         let client = MockFriendChatClient(friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a")])
         await client.setPendingRequests([.init(code: "ALICE1", name: "Alice", requestedAt: 1_700_000_000_000)])
-        await client.setErrorToThrow(FriendChatService.ServerError(status: 400, message: "Friend list is full."))
         let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
         await store.refreshIncomingRequests()
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 400, message: "Friend list is full."))
 
         store.accept(store.incomingRequests[0])
         await waitUntil { !store.errorMessage.isEmpty }
@@ -1412,9 +1863,9 @@ final class FriendStoreTests: XCTestCase {
     func testRejectSurfacesTheServersSpecificReason() async {
         let client = MockFriendChatClient()
         await client.setPendingRequests([.init(code: "MALLRY", name: "Mallory", requestedAt: 1_700_000_000_000)])
-        await client.setErrorToThrow(FriendChatService.ServerError(status: 404, message: "Request not found."))
         let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
         await store.refreshIncomingRequests()
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 404, message: "Request not found."))
 
         store.reject(store.incomingRequests[0])
         await waitUntil { !store.errorMessage.isEmpty }
@@ -1632,6 +2083,25 @@ final class FriendStoreTests: XCTestCase {
     }
 }
 
+@MainActor
+private final class FriendChatMaintenanceGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var isWaiting = false
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            isWaiting = true
+            self.continuation = continuation
+        }
+    }
+
+    func open() {
+        continuation?.resume()
+        continuation = nil
+        isWaiting = false
+    }
+}
+
 private actor MockFriendChatClient: FriendChatClient {
     struct SentMessage: Equatable {
         let text: String
@@ -1679,6 +2149,29 @@ private actor MockFriendChatClient: FriendChatClient {
 
     func setFriends(_ value: [FriendChatService.Friend]) {
         remoteFriends = value
+    }
+
+    var uploadedAvatars: [(contentType: String, data: Data)] = []
+    var avatarsByCode: [String: Data] = [:]
+
+    func uploadAvatar(contentType: String, data: Data) async throws -> FriendChatService.AvatarUploadResult {
+        if let errorToThrow { throw errorToThrow }
+        uploadedAvatars.append((contentType, data))
+        return .init(avatarUpdatedAt: Date().timeIntervalSince1970 * 1_000)
+    }
+
+    func uploadedAvatarsSnapshot() -> [(contentType: String, data: Data)] {
+        uploadedAvatars
+    }
+
+    func setAvatar(_ data: Data, forCode code: String) {
+        avatarsByCode[code] = data
+    }
+
+    func downloadAvatar(code: String) async throws -> Data {
+        if let errorToThrow { throw errorToThrow }
+        guard let data = avatarsByCode[code] else { throw URLError(.fileDoesNotExist) }
+        return data
     }
 
     func add(code: String) async throws -> FriendChatService.AddFriendResult {

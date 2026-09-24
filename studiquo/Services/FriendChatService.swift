@@ -1,7 +1,9 @@
 import Foundation
 
 enum FriendChatService {
-    private static let endpoint = URL(string: "https://studiquo-mcp.studiquo-mcp-server.workers.dev")!
+    private static var endpoint: URL {
+        MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)!
+    }
 
     struct Friend: Codable {
         let code: String
@@ -13,6 +15,13 @@ enum FriendChatService {
         /// property is Optional.
         var todayStudySeconds: Double? = nil
         var studyDate: String? = nil
+        /// When this friend's server-side avatar was last replaced (ms since
+        /// epoch), or nil if they've never uploaded one. Rides along
+        /// `friends()`'s existing "live" per-friend lookup so the client can
+        /// tell, without downloading every friend's photo on every poll,
+        /// whether the one it already has cached is still current — see
+        /// `FriendStore.syncFriendAvatarsIfNeeded`.
+        var avatarUpdatedAt: Double? = nil
     }
     struct Identity: Codable {
         let code: String
@@ -25,7 +34,9 @@ enum FriendChatService {
         /// Optional purely for decoding safety against an older server
         /// response; every real response includes it.
         var linkToken: String? = nil
+        var avatarUpdatedAt: Double? = nil
     }
+    struct AvatarUploadResult: Codable { let avatarUpdatedAt: Double }
     struct Message: Codable {
         let id: Int
         let text: String
@@ -86,6 +97,37 @@ enum FriendChatService {
         try await request(path: "api/chat/friends", method: "GET", body: Optional<String>.none)
     }
 
+    /// Uploads the caller's own profile photo so it can be shown to their
+    /// friends, mirroring `uploadAttachment` below. `contentType` must be
+    /// `image/jpeg` or `image/png` — anything else is rejected server-side.
+    static func uploadAvatar(contentType: String, data: Data) async throws -> AvatarUploadResult {
+        try await request(
+            path: "api/chat/me/avatar", method: "POST",
+            body: ["contentType": contentType, "data": data.base64EncodedString()]
+        )
+    }
+
+    /// Downloads a friend's (or the caller's own) uploaded profile photo by
+    /// their friend code. Mirrors `downloadAttachment` below, except this
+    /// isn't scoped to a room — the server instead checks that the caller is
+    /// either `code` themselves or an established friend of theirs.
+    static func downloadAvatar(code: String) async throws -> Data {
+        var request = URLRequest(url: endpoint.appending(path: "api/chat/avatar/\(code)"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard 200..<300 ~= http.statusCode else {
+            if http.statusCode == 429 { throw RateLimitedError() }
+            guard let payload = try? JSONDecoder().decode(ErrorPayload.self, from: data) else {
+                throw URLError(.badServerResponse)
+            }
+            throw ServerError(status: http.statusCode, message: payload.error)
+        }
+        return data
+    }
+
     /// Sends a one-directional friend request; the recipient must accept it
     /// (see `acceptRequest`) before a mutual friendship or chat room exists.
     static func add(code: String) async throws -> AddFriendResult {
@@ -121,7 +163,16 @@ enum FriendChatService {
     }
 
     static func messages(roomID: String, after: Int = 0) async throws -> [Message] {
-        try await request(path: "api/chat/rooms/\(roomID)/messages?after=\(after)", method: "GET", body: Optional<String>.none)
+        try await request(url: messageListURL(roomID: roomID, after: after, baseURL: endpoint), method: "GET", body: Optional<String>.none)
+    }
+
+    /// URL.appending(path:) escapes `?` as part of the path. Build the cursor
+    /// as a real query item so the Worker matches its messages route.
+    static func messageListURL(roomID: String, after: Int, baseURL: URL) -> URL {
+        let pathURL = baseURL.appending(path: "api/chat/rooms/\(roomID)/messages")
+        var components = URLComponents(url: pathURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "after", value: String(after))]
+        return components.url!
     }
 
     static func send(_ text: String, roomID: String, clientMessageID: String) async throws -> Message {
@@ -214,7 +265,13 @@ enum FriendChatService {
     private static func request<Response: Decodable, Body: Encodable>(
         path: String, method: String, body: Body?
     ) async throws -> Response {
-        var request = URLRequest(url: endpoint.appending(path: path))
+        try await request(url: endpoint.appending(path: path), method: method, body: body)
+    }
+
+    private static func request<Response: Decodable, Body: Encodable>(
+        url: URL, method: String, body: Body?
+    ) async throws -> Response {
+        var request = URLRequest(url: url)
         request.httpMethod = method
         request.timeoutInterval = 20
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
@@ -238,6 +295,8 @@ enum FriendChatService {
 protocol FriendChatClient {
     func register(name: String, todayStudySeconds: Int?, studyDate: String?) async throws -> FriendChatService.Identity
     func friends() async throws -> [FriendChatService.Friend]
+    func uploadAvatar(contentType: String, data: Data) async throws -> FriendChatService.AvatarUploadResult
+    func downloadAvatar(code: String) async throws -> Data
     func add(code: String) async throws -> FriendChatService.AddFriendResult
     func addViaLink(token: String) async throws -> FriendChatService.LinkAddResult
     func incomingRequests() async throws -> [FriendChatService.IncomingRequest]
@@ -264,6 +323,14 @@ struct LiveFriendChatClient: FriendChatClient {
 
     func friends() async throws -> [FriendChatService.Friend] {
         try await FriendChatService.friends()
+    }
+
+    func uploadAvatar(contentType: String, data: Data) async throws -> FriendChatService.AvatarUploadResult {
+        try await FriendChatService.uploadAvatar(contentType: contentType, data: data)
+    }
+
+    func downloadAvatar(code: String) async throws -> Data {
+        try await FriendChatService.downloadAvatar(code: code)
     }
 
     func add(code: String) async throws -> FriendChatService.AddFriendResult {

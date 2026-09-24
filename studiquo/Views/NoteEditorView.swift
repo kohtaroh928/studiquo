@@ -196,6 +196,8 @@ private enum PaneDropTarget: Equatable { case primary, secondary }
 enum PaneSwitchTarget {
     case notebook(Notebook)
     case flashcardDeck(FlashcardDeck)
+    case document(TextDocument)
+    case slideDeck(SlideDeck)
     case web(title: String, homeURL: String)
     case ai(PersistentIdentifier)
     case friend(UUID)
@@ -228,6 +230,17 @@ private enum TemporaryChatMaterial: Identifiable {
         case .flashcardDeck(let deck): return deck.title
         case .document(let document): return document.title
         case .slideDeck(let deck): return deck.title
+        }
+    }
+
+    var accessibilityKind: String {
+        switch self {
+        case .file: return "file"
+        case .image: return "image"
+        case .notebook: return "notebook"
+        case .flashcardDeck: return "deck"
+        case .document: return "document"
+        case .slideDeck: return "slide"
         }
     }
 }
@@ -694,10 +707,10 @@ struct NoteEditorView: View {
                             .foregroundStyle(.secondary)
                         Label("AIトーク", systemImage: "sparkles")
                             .font(.subheadline.weight(.semibold))
+                        Spacer(minLength: 0)
                     }
                     .contentShape(Rectangle())
-                    .highPriorityGesture(temporaryAIChatDragGesture(in: size, panelSize: panelSize))
-                    Spacer()
+                    .gesture(temporaryAIChatDragGesture(in: size, panelSize: panelSize))
                     Button {
                         withAnimation(.easeOut(duration: 0.18)) {
                             showsTemporaryAIChat = false
@@ -1309,6 +1322,7 @@ struct NoteEditorView: View {
             }
         }
         .contentShape(Rectangle())
+        .accessibilityIdentifier("split-pane-primary")
         .simultaneousGesture(TapGesture().onEnded { activePane = .primary })
         .dropDestination(for: String.self) { items, _ in
             guard let value = items.first else { return false }
@@ -1321,6 +1335,11 @@ struct NoteEditorView: View {
     private var secondaryPane: some View {
         if let material = secondaryTemporaryChatMaterial {
             temporaryChatMaterialView(material, pane: .secondary)
+                .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
+                .dropDestination(for: String.self) { items, _ in
+                    guard let value = items.first else { return false }
+                    return handlePaneDrop(value, target: .secondary)
+                }
         } else if secondaryShowsWeb {
             WebSearchPane(browser: webBrowser)
         } else if secondaryShowsAIChat {
@@ -1362,10 +1381,11 @@ struct NoteEditorView: View {
         } else if let secondaryFlashcardDeck {
             FlashcardPaneView(deck: secondaryFlashcardDeck, onHome: onHome)
                 .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
-                .dropDestination(for: String.self) { items, _ in
-                    guard let value = items.first else { return false }
-                    return handlePaneDrop(value, target: .secondary)
-                }
+            .dropDestination(for: String.self) { items, _ in
+                guard let value = items.first else { return false }
+                return handlePaneDrop(value, target: .secondary)
+            }
+            .accessibilityIdentifier("split-pane-secondary")
         } else if let secondaryNotebook {
             GeometryReader { geometry in
                 ZStack {
@@ -1392,6 +1412,7 @@ struct NoteEditorView: View {
                 }
             }
             .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
+            .accessibilityIdentifier("split-pane-secondary")
             .dropDestination(for: String.self) { items, _ in
                 guard let value = items.first else { return false }
                 return handlePaneDrop(value, target: .secondary)
@@ -1410,6 +1431,7 @@ struct NoteEditorView: View {
                 guard let value = items.first else { return false }
                 return handlePaneDrop(value, target: .secondary)
             }
+            .accessibilityIdentifier("split-pane-secondary")
         }
     }
 
@@ -1478,6 +1500,7 @@ struct NoteEditorView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemBackground))
+        .accessibilityIdentifier("split-pane-\(pane == .primary ? "primary" : "secondary")-\(material.accessibilityKind)-\(material.title)")
     }
 
     @ToolbarContentBuilder
@@ -1569,30 +1592,6 @@ struct NoteEditorView: View {
             } label: {
                 Label("学習モード", systemImage: "graduationcap")
             }
-
-            Menu {
-                Button {
-                    recognizeCurrentPage()
-                } label: {
-                    Label("現在のページを認識", systemImage: "text.viewfinder")
-                }
-                Button {
-                    recognizeAllPages()
-                } label: {
-                    Label("全ページを認識", systemImage: "doc.text.magnifyingglass")
-                }
-                if let page = currentPrimaryPage {
-                    Button {
-                        addRecognizedTextElement(from: page)
-                    } label: {
-                        Label("認識文字をテキストに変換", systemImage: "text.badge.checkmark")
-                    }
-                    .disabled(page.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            } label: {
-                Label("手書き文字認識", systemImage: "character.cursor.ibeam")
-            }
-            .disabled(isRecognizingHandwriting)
 
             Button {
                 showsPageSidebar.toggle()
@@ -1861,17 +1860,6 @@ struct NoteEditorView: View {
                             || isParabolaCorrectionEnabled || isCurveCorrectionEnabled
                     )
                 }
-                Menu {
-                    Button("現在のページを認識", systemImage: "text.viewfinder", action: recognizeCurrentPage)
-                    Button("全ページを認識", systemImage: "doc.text.magnifyingglass", action: recognizeAllPages)
-                    if let page = currentPrimaryPage {
-                        Button("認識文字をテキストに変換", systemImage: "text.badge.checkmark") {
-                            addRecognizedTextElement(from: page)
-                        }
-                        .disabled(page.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                } label: { toolStripLabel("文字認識", icon: "character.cursor.ibeam", isActive: isRecognizingHandwriting) }
-
                 toolStripButton("ページ一覧", icon: "rectangle.split.1x2", isActive: showsPageSidebar) { showsPageSidebar.toggle() }
 
                 toolStripButton(
@@ -1965,7 +1953,9 @@ struct NoteEditorView: View {
             .frame(height: 52)
         }
         .scrollIndicators(.hidden)
+        .background(ToolbarScrollTouchPolicy())
         .background(.regularMaterial)
+        .buttonStyle(.plain)
         .overlay(alignment: .bottom) { Divider() }
     }
 
@@ -3062,6 +3052,12 @@ struct NoteEditorView: View {
                 secondaryShowsAIChat = false
                 secondaryFriendChatID = nil
             }
+        case .document(let document):
+            setTemporaryChatMaterial(.document(document), in: pane)
+            return
+        case .slideDeck(let deck):
+            setTemporaryChatMaterial(.slideDeck(deck), in: pane)
+            return
         case .web(_, let homeURL):
             webBrowser.openHomeIfNeeded(homeURL)
             if pane == .primary {
@@ -3267,21 +3263,12 @@ struct NoteEditorView: View {
     private func handlePaneDrop(_ value: String, target: PaneDropTarget) -> Bool {
         let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return false }
+        let pane: ActivePane = target == .primary ? .primary : .secondary
 
         if parts[0] == "deck",
            let deck = flashcardDecks.first(where: { String(describing: $0.persistentModelID) == parts[1] }) {
-            if target == .primary {
-                primaryFlashcardDeck = deck
-                primaryOverrideNotebook = nil
-                primaryShowsWeb = false
-                primaryShowsAIChat = false
-            } else {
-                secondaryFlashcardDeck = deck
-                secondaryNotebook = nil
-                secondaryShowsWeb = false
-                secondaryShowsAIChat = false
-            }
-            activePane = target == .primary ? .primary : .secondary
+            applyPaneTarget(.flashcardDeck(deck), to: pane)
+            activePane = pane
             return true
         }
 
@@ -3289,7 +3276,7 @@ struct NoteEditorView: View {
             let webParts = parts[1].split(separator: "|", maxSplits: 1).map(String.init)
             let title = webParts.first ?? "Web"
             let homeURL = webParts.count > 1 ? webParts[1] : parts[1]
-            applyPaneTarget(.web(title: title, homeURL: homeURL), to: target == .primary ? .primary : .secondary)
+            applyPaneTarget(.web(title: title, homeURL: homeURL), to: pane)
             return true
         }
 
@@ -3298,46 +3285,30 @@ struct NoteEditorView: View {
             guard let thread = aiChatThreads.first(where: {
                 String(describing: $0.persistentModelID) == parts[1]
             }) else { return false }
-            selectedAIChatThread = thread
-            announceAIChatTab(thread)
-            showsTemporaryAIChat = false
-            if isAIChatVisibleInSplit {
-                activePane = primaryShowsAIChat ? .primary : .secondary
-                return true
-            }
-            if target == .primary {
-                primaryOverrideNotebook = nil
-                primaryFlashcardDeck = nil
-                primaryShowsWeb = false
-                primaryShowsAIChat = true
-                activePane = .primary
-            } else {
-                secondaryNotebook = nil
-                secondaryFlashcardDeck = nil
-                secondaryShowsWeb = false
-                secondaryShowsAIChat = true
-                activePane = .secondary
-            }
+            applyPaneTarget(.ai(thread.persistentModelID), to: pane)
             return true
         }
 
         if parts[0] == "friend", let friendID = UUID(uuidString: parts[1]) {
             guard friendStore.friends.contains(where: { $0.id == friendID }) else { return false }
-            if target == .primary {
-                primaryOverrideNotebook = nil
-                primaryFlashcardDeck = nil
-                primaryShowsWeb = false
-                primaryShowsAIChat = false
-                primaryFriendChatID = friendID
-                activePane = .primary
-            } else {
-                secondaryNotebook = nil
-                secondaryFlashcardDeck = nil
-                secondaryShowsWeb = false
-                secondaryShowsAIChat = false
-                secondaryFriendChatID = friendID
-                activePane = .secondary
-            }
+            applyPaneTarget(.friend(friendID), to: pane)
+            activePane = pane
+            return true
+        }
+
+        if parts[0] == "document",
+           let document = textDocuments.first(where: {
+               String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
+           }) {
+            applyPaneTarget(.document(document), to: pane)
+            return true
+        }
+
+        if parts[0] == "slide",
+           let deck = slideDecks.first(where: {
+               String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
+           }) {
+            applyPaneTarget(.slideDeck(deck), to: pane)
             return true
         }
 
@@ -3345,22 +3316,8 @@ struct NoteEditorView: View {
               let targetNotebook = notebooks.first(where: {
                   String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
               }) else { return false }
-        if target == .primary {
-            primaryOverrideNotebook = targetNotebook
-            primaryFlashcardDeck = nil
-            primaryShowsWeb = false
-            primaryShowsAIChat = false
-            primaryFriendChatID = nil
-            primaryPageIndex = 0
-        } else {
-            secondaryNotebook = targetNotebook
-            secondaryFlashcardDeck = nil
-            secondaryShowsWeb = false
-            secondaryShowsAIChat = false
-            secondaryFriendChatID = nil
-            secondaryPageIndex = 0
-        }
-        activePane = target == .primary ? .primary : .secondary
+        applyPaneTarget(.notebook(targetNotebook), to: pane)
+        activePane = pane
         return true
     }
 
@@ -3717,6 +3674,7 @@ struct NoteEditorView: View {
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.addElement(element)
+        recordElementAddition(element, on: page)
         notebook.updatedAt = .now
     }
 
@@ -3755,6 +3713,7 @@ struct NoteEditorView: View {
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.addElement(element)
+        recordElementAddition(element, on: page)
         notebook.updatedAt = .now
     }
 
@@ -3765,6 +3724,7 @@ struct NoteEditorView: View {
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.addElement(element)
+        recordElementAddition(element, on: page)
         notebook.updatedAt = .now
     }
 
@@ -4347,6 +4307,37 @@ private struct TimeToolView: View {
 /// Deliberately a separate view: its position is `@State` here rather than on
 /// `NoteEditorView`, so a drag invalidates only this small subtree instead of
 /// the entire editor. The bar tracks the finger exactly as a result.
+/// The editor tool strip is a horizontal SwiftUI `ScrollView` containing
+/// `Button`, `Menu`, and `PhotosPicker` controls. UIKit's default scroll-view
+/// behavior delays touches before deciding whether a gesture is a tap or a pan,
+/// which makes the picker/menu controls feel like they ignored a tap. Keep the
+/// strip scrollable, but deliver touches to its controls immediately.
+struct ToolbarScrollTouchPolicy: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        DispatchQueue.main.async { Self.apply(from: view) }
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        DispatchQueue.main.async { Self.apply(from: view) }
+    }
+
+    static func apply(from view: UIView) {
+        var candidate = view.superview
+        while let current = candidate, !(current is UIScrollView) {
+            candidate = current.superview
+        }
+        guard let scrollView = candidate as? UIScrollView else { return }
+        configureEditorToolbarScrollView(scrollView)
+    }
+}
+
+func configureEditorToolbarScrollView(_ scrollView: UIScrollView) {
+    scrollView.delaysContentTouches = false
+}
+
 private struct FloatingDrawingToolbar: View {
     let identity: String
     let paneSize: CGSize
@@ -8277,12 +8268,14 @@ private struct EditablePageElement: View {
             }
             .offset(y: -elementSize.height / 2 - 27)
 
-            // Delete, parked just off the top-right corner where it cannot be
-            // confused with a resize handle.
+            // Keep delete inside the element's own hit-test bounds. SwiftUI
+            // may draw overlay content outside the source view, but taps there
+            // are still clipped to the source view's hit area; placing the
+            // button inside the top-right corner keeps it reliably tappable.
             Button(role: .destructive) {
                 deleteElement()
             } label: {
-                Image(systemName: "trash.fill")
+                Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 34, height: 34)
@@ -8292,8 +8285,8 @@ private struct EditablePageElement: View {
             .buttonStyle(.plain)
             .contentShape(Circle().inset(by: -6))
             .offset(
-                x: elementSize.width / 2 + 26,
-                y: -elementSize.height / 2 - 20
+                x: elementSize.width / 2 - 17,
+                y: -elementSize.height / 2 + 17
             )
             .accessibilityLabel("この要素を削除")
         }
@@ -8490,15 +8483,66 @@ private struct EditablePageElement: View {
         copy.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
         copy.page = page
         page.addElement(copy)
+        recordElementAddition(copy, on: page)
         page.notebook?.updatedAt = .now
     }
 
     private func deleteElement() {
         guard let page = element.page else { return }
         if isSelected { selectedElementID = nil }
+        recordElementRemoval(element, on: page)
         page.elements?.removeAll { $0 === element }
         modelContext.delete(element)
         page.notebook?.updatedAt = .now
+    }
+
+    /// Mirrors `NoteEditorView.recordElementAddition`/`recordElementRemoval`
+    /// — this view can't call those private methods since it's a separate
+    /// `View` type in the same file, so it builds the same undo/redo pair
+    /// itself with the same `ElementSlot`/`PageElementSnapshot` helpers from
+    /// NoteActionHistory.swift.
+    private func recordElementAddition(_ newElement: PageElement, on page: NotePage) {
+        let slot = ElementSlot(newElement)
+        let snapshot = PageElementSnapshot(newElement)
+        let context = modelContext
+        NoteActionHistory.shared.record(
+            undo: { [weak page] in
+                guard let page, let element = slot.element else { return }
+                page.elements?.removeAll { $0 === element }
+                context.delete(element)
+                slot.element = nil
+            },
+            redo: { [weak page] in
+                guard let page else { return }
+                let restored = snapshot.makeElement()
+                restored.page = page
+                page.addElement(restored)
+                context.insert(restored)
+                slot.element = restored
+            }
+        )
+    }
+
+    private func recordElementRemoval(_ removedElement: PageElement, on page: NotePage) {
+        let slot = ElementSlot(removedElement)
+        let snapshot = PageElementSnapshot(removedElement)
+        let context = modelContext
+        NoteActionHistory.shared.record(
+            undo: { [weak page] in
+                guard let page else { return }
+                let restored = snapshot.makeElement()
+                restored.page = page
+                page.addElement(restored)
+                context.insert(restored)
+                slot.element = restored
+            },
+            redo: { [weak page] in
+                guard let page, let element = slot.element else { return }
+                page.elements?.removeAll { $0 === element }
+                context.delete(element)
+                slot.element = nil
+            }
+        )
     }
 
     private func bringToFront() {

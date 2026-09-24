@@ -1,4 +1,5 @@
 import CoreImage.CIFilterBuiltins
+import CryptoKit
 import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -12,6 +13,14 @@ struct UserProfileView: View {
     @AppStorage("profileImage") private var imageData = Data()
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var passkeyAdded = false
+    /// A multiline `TextField(_:text:axis:.vertical)` bound straight to an
+    /// `@AppStorage` value re-triggers this `Form`'s layout (the field's own
+    /// height depends on its text) on every keystroke as the write-through to
+    /// UserDefaults publishes a change synchronously — which raced the
+    /// field's own edit and dropped whatever had just been typed. Typing
+    /// into a plain `@State` draft here, and only writing it through to
+    /// `bio` on change, keeps every keystroke local to this view instead.
+    @State private var bioDraft = ""
 
     var body: some View {
         NavigationStack {
@@ -25,7 +34,7 @@ struct UserProfileView: View {
                     }
                     TextField("名前", text: $name)
                     TextField("職業・身分", text: $occupation)
-                    TextField("自己紹介", text: $bio, axis: .vertical).lineLimit(3...6)
+                    TextField("自己紹介", text: $bioDraft, axis: .vertical).lineLimit(3...6)
                     LabeledContent("メールアドレス", value: authentication.email)
                 }
                 Section {
@@ -54,6 +63,8 @@ struct UserProfileView: View {
             }
             .navigationTitle("プロフィール")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { dismiss() } } }
+            .onAppear { bioDraft = bio }
+            .onChange(of: bioDraft) { _, newValue in bio = newValue }
             .onChange(of: selectedPhoto) { _, item in
                 Task {
                     guard let data = try? await item?.loadTransferable(type: Data.self),
@@ -96,6 +107,115 @@ struct FriendRecord: Identifiable, Codable, Hashable {
     var todayStudySeconds: TimeInterval
     var roomID: String?
     var isDemo: Bool?
+    /// nil means an older persisted record that predates this flag. Treat it
+    /// as shared for existing local demo/real friends so their current UI does
+    /// not suddenly hide already-known study time after an update.
+    var sharesStudyTime: Bool? = true
+    /// This friend's profile photo, cached locally once fetched — see
+    /// `FriendStore.syncFriendAvatarsIfNeeded`. Falls back to a generic icon
+    /// (`FriendProfile.iconSystemName`) until/unless this is ever set.
+    var avatarData: Data? = nil
+    /// The `avatarUpdatedAt` last reported by the server for this friend
+    /// (ms since epoch) as of when `avatarData` was cached — compared
+    /// against `friends()`'s response on each poll so a friend changing
+    /// their photo is picked up without re-downloading it on every poll.
+    var avatarUpdatedAt: Double? = nil
+}
+
+struct FriendProfile: Identifiable, Hashable {
+    var id: UUID
+    var name: String
+    var code: String
+    var iconSystemName: String
+    var avatarData: Data?
+    var todayStudySeconds: TimeInterval?
+    var roomID: String?
+    var isDemo: Bool
+    var isBlockedByMe: Bool
+
+    init(friend: FriendRecord, blockedByMeRoomIDs: Set<String>) {
+        id = friend.id
+        name = friend.name
+        code = friend.code
+        iconSystemName = friend.isDemo == true ? "sparkles" : "person.crop.circle.fill"
+        avatarData = friend.avatarData
+        todayStudySeconds = friend.sharesStudyTime == false ? nil : friend.todayStudySeconds
+        roomID = friend.roomID
+        isDemo = friend.isDemo == true
+        isBlockedByMe = friend.roomID.map { blockedByMeRoomIDs.contains($0) } ?? false
+    }
+}
+
+/// A friend's photo if it's been cached locally, else a generic placeholder
+/// icon — the single rendering used everywhere a friend's avatar appears
+/// (sidebar row, chat list, profile popover, message bubbles), so all of
+/// them pick up a newly-synced photo identically.
+private struct FriendAvatarView: View {
+    let avatarData: Data?
+    let iconSystemName: String
+    var size: CGFloat = 34
+
+    var body: some View {
+        if let avatarData, let image = UIImage(data: avatarData) {
+            Image(uiImage: image)
+                .resizable().scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+        } else {
+            Image(systemName: iconSystemName)
+                .font(.system(size: size * 0.72))
+                .foregroundStyle(.tint)
+                .frame(width: size, height: size)
+        }
+    }
+}
+
+struct FriendChatSummary: Identifiable, Hashable {
+    var id: UUID { friend.id }
+    var friend: FriendRecord
+    var latestMessage: FriendMessage?
+    var latestDate: Date?
+    var previewText: String
+    var unreadCount: Int
+
+    static func summaries(
+        friends: [FriendRecord],
+        messages: [FriendMessage],
+        unreadCounts: [UUID: Int]
+    ) -> [FriendChatSummary] {
+        friends.map { friend in
+            let latest = messages
+                .filter { $0.friendID == friend.id && ($0.roomID == nil || $0.roomID == friend.roomID) }
+                .max { $0.sentAt < $1.sentAt }
+            return FriendChatSummary(
+                friend: friend,
+                latestMessage: latest,
+                latestDate: latest?.sentAt,
+                previewText: latest.map(previewText(for:)) ?? "",
+                unreadCount: unreadCounts[friend.id, default: 0]
+            )
+        }
+        .sorted { lhs, rhs in
+            switch (lhs.latestDate, rhs.latestDate) {
+            case let (left?, right?):
+                if left != right { return left > right }
+                return lhs.friend.name.localizedStandardCompare(rhs.friend.name) == .orderedAscending
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            case (nil, nil):
+                return lhs.friend.name.localizedStandardCompare(rhs.friend.name) == .orderedAscending
+            }
+        }
+    }
+
+    private static func previewText(for message: FriendMessage) -> String {
+        if message.isCanceled == true { return "メッセージを取り消しました" }
+        let parts = FriendMessageParts(text: message.text)
+        if let attachment = parts.attachments.first { return attachment.title }
+        return parts.body.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }
 
 struct IncomingFriendRequest: Identifiable, Codable, Hashable {
@@ -128,6 +248,9 @@ struct FriendMessage: Identifiable, Codable, Hashable {
     /// failure indicator instead of looking identical to a delivered
     /// message. The user can still dismiss it via the existing "送信取消".
     var sendFailed: Bool? = nil
+    /// Message ids are only unique within a room. Keep the room alongside
+    /// each cached message so a changed friendship cannot reuse its cursor.
+    var roomID: String? = nil
 }
 
 struct FriendAttachmentOpenRequest {
@@ -182,6 +305,12 @@ final class FriendStore: ObservableObject {
     private let messagesKey = "studiquoFriendMessages"
     private let unreadCountsKey = "studiquoFriendUnreadCounts"
     private let seenIncomingRequestCodesKey = "studiquoSeenIncomingRequestCodes"
+    /// A digest of whichever `profileImage` bytes were last successfully
+    /// uploaded via `syncMyAvatarIfNeeded` — compared against the profile
+    /// screen's current photo on every `refresh()` so a changed (or
+    /// first-ever) photo is pushed to the server without re-uploading an
+    /// unchanged one on every single poll.
+    private let uploadedAvatarDigestKey = "studiquoUploadedAvatarDigest"
     /// The app-wide incoming-request poll (see `handle(scenePhase:)`) — owns
     /// this instead of tying it to whichever screen happens to be open, the
     /// same reasoning `FriendsHomeView`'s own `.task` used to rely on alone.
@@ -209,7 +338,12 @@ final class FriendStore: ObservableObject {
         }
         if let data = defaults.data(forKey: messagesKey) {
             if let decoded = try? JSONDecoder().decode([FriendMessage].self, from: data) {
-                messages = decoded
+                let roomsByFriend = Dictionary(uniqueKeysWithValues: friends.map { ($0.id, $0.roomID) })
+                messages = decoded.map { message in
+                    var migrated = message
+                    if migrated.roomID == nil { migrated.roomID = roomsByFriend[message.friendID] ?? nil }
+                    return migrated
+                }
             } else {
                 // Unlike `friends` (fully recoverable from the next
                 // refresh()) or `unreadCounts` (self-corrects as new
@@ -305,10 +439,12 @@ final class FriendStore: ObservableObject {
             }
             let remote = try await client.friends()
             friends = Self.mergedFriends(existing: friends, remote: remote)
+            await syncFriendAvatarsIfNeeded(remote: remote)
             errorMessage = ""
         } catch {
-            errorMessage = "フレンドサーバーに接続できません。"
+            errorMessage = Self.isAuthFailure(error) ? Self.authExpiredErrorMessage : Self.connectivityErrorMessage
         }
+        await syncMyAvatarIfNeeded()
         await refreshIncomingRequests()
         await refreshOutgoingRequests()
     }
@@ -318,36 +454,140 @@ final class FriendStore: ObservableObject {
     /// friend who just accepted this user's request shows up without
     /// waiting for a full refresh() (app relaunch, or another add()).
     func refreshFriends() async {
-        guard let remote = try? await client.friends() else {
-            notePollResult("friends", succeeded: false)
-            return
+        do {
+            let remote = try await client.friends()
+            notePollResult("friends", succeeded: true)
+            friends = Self.mergedFriends(existing: friends, remote: remote)
+            await syncFriendAvatarsIfNeeded(remote: remote)
+        } catch {
+            notePollResult("friends", succeeded: false, error: error)
         }
-        notePollResult("friends", succeeded: true)
-        friends = Self.mergedFriends(existing: friends, remote: remote)
+    }
+
+    /// Downloads a friend's photo whenever the server's `avatarUpdatedAt`
+    /// for them (this poll's fresh value, not yet written onto the merged
+    /// `FriendRecord`) differs from whatever timestamp the locally cached
+    /// `avatarData` was fetched for — including the very first time either
+    /// side ever sees a photo at all (cached is nil, server has a value), and
+    /// a friend removing their photo (server is nil, cached is not).
+    private func syncFriendAvatarsIfNeeded(remote: [FriendChatService.Friend]) async {
+        let needsFetch = remote.filter { item in
+            guard let cached = friends.first(where: { $0.isDemo != true && $0.code == item.code }) else { return false }
+            return cached.avatarUpdatedAt != item.avatarUpdatedAt
+        }
+        guard !needsFetch.isEmpty else { return }
+        var working = friends
+        for item in needsFetch {
+            guard let index = working.firstIndex(where: { $0.isDemo != true && $0.code == item.code }) else { continue }
+            guard item.avatarUpdatedAt != nil else {
+                working[index].avatarData = nil
+                working[index].avatarUpdatedAt = nil
+                continue
+            }
+            guard let data = try? await client.downloadAvatar(code: item.code) else { continue }
+            working[index].avatarData = data
+            working[index].avatarUpdatedAt = item.avatarUpdatedAt
+        }
+        friends = working
+    }
+
+    /// Pushes the profile screen's current photo to the server whenever it's
+    /// changed since the last successful upload — see
+    /// `uploadedAvatarDigestKey`. Without this, a friend never learns about a
+    /// new (or first-ever) profile photo no matter how many times this
+    /// device polls, because nothing about it was ever sent.
+    private func syncMyAvatarIfNeeded() async {
+        let imageData = defaults.data(forKey: "profileImage") ?? Data()
+        guard !imageData.isEmpty else { return }
+        let digest = SHA256.hash(data: imageData).map { String(format: "%02x", $0) }.joined()
+        guard digest != defaults.string(forKey: uploadedAvatarDigestKey) else { return }
+        guard (try? await client.uploadAvatar(contentType: "image/jpeg", data: imageData)) != nil else { return }
+        defaults.set(digest, forKey: uploadedAvatarDigestKey)
     }
 
     /// Consecutive-failure counts for each background polling loop, keyed by
     /// a name unique to that loop. A single transient blip shouldn't nag the
     /// user, but a sustained failure (e.g. no connectivity at all) used to
     /// go on forever with nothing ever telling them why the screen had gone
-    /// stale — this surfaces `errorMessage` once failures persist. It
-    /// doesn't auto-clear on recovery, since `errorMessage` is shared with
-    /// other flows (add/accept/reject) and blowing away whatever's there
-    /// the moment polling happens to succeed again could dismiss an
-    /// unrelated alert the user hasn't even seen yet; dismissal stays the
-    /// user tapping OK, same as every other use of this field.
+    /// stale — this surfaces `errorMessage` once failures persist.
     private var consecutivePollFailures: [String: Int] = [:]
     private static let pollFailureAlertThreshold = 3
+    /// Set once an expired-token alert has actually been shown, and only
+    /// cleared on the next successful poll (see the `succeeded` branch
+    /// below) — not on every dismissal. Without this, three separate
+    /// polling loops (friends, incoming requests, and — while a chat is
+    /// open — messages) each independently rediscover the same still-401
+    /// token roughly every 2 seconds, and `notePollResult`'s auth branch
+    /// used to unconditionally reassign `errorMessage` every single time,
+    /// so the alert reappeared within a second of being dismissed no matter
+    /// how many times the user tapped OK. An expired token doesn't recover
+    /// on its own, so there is nothing more to learn from telling the user
+    /// about it twice before they've had a chance to act on the first one.
+    private var hasNotifiedAuthExpired = false
+    /// Also used as a marker: `notePollResult` only ever clears `errorMessage`
+    /// on recovery when it currently holds exactly one of these two strings —
+    /// see its own doc comment for why a blanket clear-on-any-success isn't
+    /// safe.
+    private static let connectivityErrorMessage = "フレンドサーバーに接続できません。"
+    private static let roomAccessErrorMessage = "チャットルームにアクセスできません。フレンド情報を更新してください。"
+    /// The server rejects every request with 401 once a token is expired or
+    /// revoked. This used to be reported to the user as the exact same
+    /// generic "can't connect" message as a real network failure — actively
+    /// misleading, since retrying, rebuilding, or waiting does nothing for
+    /// an expired token; only signing out and back in (which issues a fresh
+    /// one) fixes it. A real report matched this exactly: the same error
+    /// kept appearing no matter how many times the app was rebuilt.
+    private static let authExpiredErrorMessage = "ログインの有効期限が切れています。一度サインアウトし、もう一度サインインしてください。"
 
-    private func notePollResult(_ key: String, succeeded: Bool) {
+    /// A 401 specifically — the one status the server only ever returns for
+    /// an expired, invalid, or revoked token (see chat.js's auth gate),
+    /// never for an ordinary network failure or a busy server.
+    private static func isAuthFailure(_ error: Error) -> Bool {
+        (error as? FriendChatService.ServerError)?.status == 401
+    }
+
+    /// On recovery, clears `errorMessage` *only* when it's still showing one
+    /// of these two known messages — a stale "can't connect"/"login
+    /// expired" that would otherwise sit on screen forever once the
+    /// underlying problem actually resolves (a real report: the background
+    /// poll every 2 seconds was succeeding the whole time, but nothing ever
+    /// told the alert that). Deliberately narrower than "clear on any
+    /// success": `errorMessage` is shared with other flows (add/accept/
+    /// reject), and a background poll succeeding a moment later must never
+    /// silently wipe out a *different*, not-yet-seen error from one of
+    /// those — only these two specific messages are something a later poll
+    /// success is actually evidence against.
+    ///
+    /// An auth failure also skips the usual "wait for `pollFailureAlertThreshold`
+    /// consecutive failures before saying anything" damping that a plain
+    /// connectivity blip gets: once a token is invalid, every retry fails
+    /// identically, so there's nothing to be gained by waiting, and every
+    /// extra attempt just delays the one thing that actually helps — the
+    /// user finding out they need to re-sign in.
+    private func notePollResult(_ key: String, succeeded: Bool, error: Error? = nil) {
         if succeeded {
             consecutivePollFailures[key] = 0
+            hasNotifiedAuthExpired = false
+            if errorMessage == Self.connectivityErrorMessage || errorMessage == Self.authExpiredErrorMessage
+                || (key == "messages" && errorMessage == Self.roomAccessErrorMessage) {
+                errorMessage = ""
+            }
+            return
+        }
+        if let error, Self.isAuthFailure(error) {
+            guard !hasNotifiedAuthExpired else { return }
+            hasNotifiedAuthExpired = true
+            errorMessage = Self.authExpiredErrorMessage
+            return
+        }
+        if let serverError = error as? FriendChatService.ServerError, serverError.status == 403 {
+            errorMessage = Self.roomAccessErrorMessage
             return
         }
         let count = (consecutivePollFailures[key] ?? 0) + 1
         consecutivePollFailures[key] = count
         if count == Self.pollFailureAlertThreshold {
-            errorMessage = "フレンドサーバーに接続できません。"
+            errorMessage = Self.connectivityErrorMessage
         }
     }
 
@@ -377,10 +617,14 @@ final class FriendStore: ObservableObject {
     /// Reports this device's own study time for today, so friends can see it
     /// in their own friends list. Fire-and-forget: a missed report just
     /// means friends see a stale value until the next successful one.
-    func reportMyStudyTime(_ seconds: TimeInterval) {
+    func reportMyStudyTime(_ seconds: TimeInterval, sharesStudyTime: Bool = true) {
         Task {
             let name = defaults.string(forKey: "profileName") ?? "Studiquoユーザー"
-            _ = try? await client.register(name: name, todayStudySeconds: Int(seconds), studyDate: Self.todayDateKey())
+            _ = try? await client.register(
+                name: name,
+                todayStudySeconds: sharesStudyTime ? Int(seconds) : nil,
+                studyDate: sharesStudyTime ? Self.todayDateKey() : nil
+            )
         }
     }
 
@@ -405,46 +649,61 @@ final class FriendStore: ObservableObject {
         let today = todayDateKey()
         let demos = existing.filter { $0.isDemo == true }
         let mapped = remote.map { item -> FriendRecord in
-            let freshSeconds = item.studyDate == today ? (item.todayStudySeconds ?? 0) : 0
+            let hasFreshSharedStudyTime = item.studyDate == today && item.todayStudySeconds != nil
+            let freshSeconds = hasFreshSharedStudyTime ? (item.todayStudySeconds ?? 0) : 0
             if let match = existing.first(where: { $0.isDemo != true && $0.code == item.code }) {
                 var updated = match
                 updated.name = item.name
                 updated.roomID = item.roomID
                 updated.todayStudySeconds = freshSeconds
+                updated.sharesStudyTime = hasFreshSharedStudyTime
+                // `avatarData`/`avatarUpdatedAt` deliberately untouched here:
+                // they track what's actually cached, and this is a pure,
+                // synchronous merge that can't make the network call a
+                // changed photo would need. `syncFriendAvatarsIfNeeded`
+                // compares `item.avatarUpdatedAt` (the server's current
+                // value, not persisted on the record until then) against
+                // what's cached and downloads the difference.
                 return updated
             }
-            return FriendRecord(id: UUID(), name: item.name, code: item.code, todayStudySeconds: freshSeconds, roomID: item.roomID, isDemo: false)
+            return FriendRecord(
+                id: UUID(), name: item.name, code: item.code,
+                todayStudySeconds: freshSeconds, roomID: item.roomID,
+                isDemo: false, sharesStudyTime: hasFreshSharedStudyTime
+            )
         }
         return demos + mapped
     }
 
     func refreshIncomingRequests() async {
-        guard let remote = try? await client.incomingRequests() else {
-            notePollResult("incomingRequests", succeeded: false)
-            return
+        do {
+            let remote = try await client.incomingRequests()
+            notePollResult("incomingRequests", succeeded: true)
+            incomingRequests = remote.map {
+                IncomingFriendRequest(code: $0.code, name: $0.name, requestedAt: Date(timeIntervalSince1970: $0.requestedAt / 1_000))
+            }
+            let currentCodes = Set(incomingRequests.map(\.code))
+            unseenIncomingRequestCount = currentCodes.subtracting(seenIncomingRequestCodes).count
+            // Bounded to whatever's actually still pending — otherwise this set
+            // would only ever grow for the lifetime of the install.
+            seenIncomingRequestCodes.formIntersection(currentCodes)
+        } catch {
+            notePollResult("incomingRequests", succeeded: false, error: error)
         }
-        notePollResult("incomingRequests", succeeded: true)
-        incomingRequests = remote.map {
-            IncomingFriendRequest(code: $0.code, name: $0.name, requestedAt: Date(timeIntervalSince1970: $0.requestedAt / 1_000))
-        }
-        let currentCodes = Set(incomingRequests.map(\.code))
-        unseenIncomingRequestCount = currentCodes.subtracting(seenIncomingRequestCodes).count
-        // Bounded to whatever's actually still pending — otherwise this set
-        // would only ever grow for the lifetime of the install.
-        seenIncomingRequestCodes.formIntersection(currentCodes)
     }
 
     /// The requests this user has sent that are still awaiting the
     /// recipient's approval — shown in the add-friend screen so sending a
     /// request doesn't feel like it vanished into nothing.
     func refreshOutgoingRequests() async {
-        guard let remote = try? await client.outgoingRequests() else {
-            notePollResult("outgoingRequests", succeeded: false)
-            return
-        }
-        notePollResult("outgoingRequests", succeeded: true)
-        outgoingRequests = remote.map {
-            OutgoingFriendRequest(code: $0.code, name: $0.name, requestedAt: Date(timeIntervalSince1970: $0.requestedAt / 1_000))
+        do {
+            let remote = try await client.outgoingRequests()
+            notePollResult("outgoingRequests", succeeded: true)
+            outgoingRequests = remote.map {
+                OutgoingFriendRequest(code: $0.code, name: $0.name, requestedAt: Date(timeIntervalSince1970: $0.requestedAt / 1_000))
+            }
+        } catch {
+            notePollResult("outgoingRequests", succeeded: false, error: error)
         }
     }
 
@@ -499,7 +758,7 @@ final class FriendStore: ObservableObject {
                 // response can result in this friend already being present
                 // — don't add a second, duplicate entry.
                 if !friends.contains(where: { $0.code == friend.code }) {
-                    friends.append(FriendRecord(id: UUID(), name: friend.name, code: friend.code, todayStudySeconds: 0, roomID: friend.roomID, isDemo: false))
+                    friends.append(FriendRecord(id: UUID(), name: friend.name, code: friend.code, todayStudySeconds: 0, roomID: friend.roomID, isDemo: false, sharesStudyTime: false))
                 }
                 incomingRequests.removeAll { $0.code == request.code }
                 errorMessage = ""
@@ -553,7 +812,7 @@ final class FriendStore: ObservableObject {
 
     func addDemoFriend() {
         guard !friends.contains(where: { $0.isDemo == true }) else { return }
-        friends.append(FriendRecord(id: UUID(), name: "デモフレンド", code: "DEMO123", todayStudySeconds: 3_600, roomID: nil, isDemo: true))
+        friends.append(FriendRecord(id: UUID(), name: "デモフレンド", code: "DEMO123", todayStudySeconds: 3_600, roomID: nil, isDemo: true, sharesStudyTime: true))
     }
 
     /// A friend-add code carried in an *old-format* `studiquo://friend/add?code=…`
@@ -614,7 +873,7 @@ final class FriendStore: ObservableObject {
             do {
                 let result = try await client.addViaLink(token: token)
                 if !friends.contains(where: { $0.code == result.code }) {
-                    friends.append(FriendRecord(id: UUID(), name: result.name, code: result.code, todayStudySeconds: 0, roomID: result.roomID, isDemo: false))
+                    friends.append(FriendRecord(id: UUID(), name: result.name, code: result.code, todayStudySeconds: 0, roomID: result.roomID, isDemo: false, sharesStudyTime: false))
                 }
                 errorMessage = ""
             } catch is FriendChatService.RateLimitedError {
@@ -631,36 +890,53 @@ final class FriendStore: ObservableObject {
         pendingLinkToken = nil
     }
 
-    func send(_ text: String, to friend: FriendRecord) {
+    @discardableResult
+    func send(_ text: String, to friend: FriendRecord) -> Bool {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard friends.contains(where: { $0.id == friend.id }), Self.hasVisibleContent(cleaned) else { return }
+        guard let recipient = canonicalFriend(matching: friend), Self.hasVisibleContent(cleaned) else { return false }
         let messageText = String(cleaned.prefix(Self.maximumMessageLength))
         let messageID = UUID()
         var working = messages
         working.append(FriendMessage(
-            id: messageID, friendID: friend.id,
-            text: messageText, sentAt: Date(), isMine: true, isCanceled: false
+            id: messageID, friendID: recipient.id,
+            text: messageText, sentAt: Date(), isMine: true, isCanceled: false,
+            roomID: recipient.roomID
         ))
-        let (trimmedMessages, evicted) = Self.trimmed(working, for: friend.id)
+        let (trimmedMessages, evicted) = Self.trimmed(working, for: recipient.id)
         messages = trimmedMessages
         Self.deleteLocalAttachmentFiles(for: evicted)
-        if friend.isDemo == true {
+        if recipient.isDemo == true {
             Task {
                 try? await Task.sleep(for: .seconds(1))
-                messages.append(FriendMessage(id: UUID(), friendID: friend.id, text: "メッセージを受け取りました！これはデモ返信です。", sentAt: Date(), isMine: false, isCanceled: false))
+                messages.append(FriendMessage(id: UUID(), friendID: recipient.id, text: "メッセージを受け取りました！これはデモ返信です。", sentAt: Date(), isMine: false, isCanceled: false))
                 // Mirrors how a real incoming message affects unreadCounts
                 // in refreshMessages — without this, the demo reply never
                 // showed up as unread even while its chat wasn't open.
-                if activeFriendID == friend.id {
-                    unreadCounts[friend.id] = 0
+                if activeFriendID == recipient.id {
+                    unreadCounts[recipient.id] = 0
                 } else {
-                    unreadCounts[friend.id, default: 0] += 1
+                    unreadCounts[recipient.id, default: 0] += 1
                 }
             }
-        } else if let roomID = friend.roomID {
+        } else {
+            guard let roomID = recipient.roomID else {
+                if let index = messages.firstIndex(where: { $0.id == messageID }) {
+                    messages[index].sendFailed = true
+                }
+                errorMessage = "メッセージを送信できませんでした。フレンド情報を更新してからもう一度お試しください。"
+                return false
+            }
             Task {
                 do {
                     let sent = try await client.send(messageText, roomID: roomID, clientMessageID: messageID.uuidString)
+                    if let index = messages.firstIndex(where: { $0.id == messageID }) {
+                        messages[index].serverID = sent.id
+                        messages[index].roomID = roomID
+                        messages[index].sentAt = Date(timeIntervalSince1970: sent.sentAt / 1_000)
+                        messages[index].text = sent.text
+                        messages[index].isCanceled = sent.isCanceled == true
+                        messages[index].sendFailed = nil
+                    }
                     // There's no way to actually stop an HTTP request that's
                     // already been issued — but if the user canceled this
                     // message while it was still in flight (see `cancel`),
@@ -670,12 +946,20 @@ final class FriendStore: ObservableObject {
                     if pendingCancellations.remove(messageID) != nil {
                         _ = try? await client.cancelMessage(roomID: roomID, messageID: sent.id)
                     }
+                    await refreshMessages(for: recipient)
                 } catch is FriendChatService.RateLimitedError {
                     pendingCancellations.remove(messageID)
                     errorMessage = "メッセージの送信回数が上限に達しました。しばらくしてからもう一度お試しください。"
                     if let index = messages.firstIndex(where: { $0.id == messageID }) {
                         messages[index].sendFailed = true
                     }
+                } catch let error as FriendChatService.ServerError where error.status == 403 {
+                    pendingCancellations.remove(messageID)
+                    errorMessage = Self.roomAccessErrorMessage
+                    if let index = messages.firstIndex(where: { $0.id == messageID }) {
+                        messages[index].sendFailed = true
+                    }
+                    await refreshFriends()
                 } catch {
                     pendingCancellations.remove(messageID)
                     errorMessage = "メッセージを送信できませんでした。"
@@ -685,6 +969,7 @@ final class FriendStore: ObservableObject {
                 }
             }
         }
+        return true
     }
 
     /// Message ids canceled while still in flight (no `serverID` yet) — see
@@ -897,7 +1182,16 @@ final class FriendStore: ObservableObject {
     }
 
     func messages(for friend: FriendRecord) -> [FriendMessage] {
-        messages.filter { $0.friendID == friend.id }.sorted { $0.sentAt < $1.sentAt }
+        let roomID = canonicalFriend(matching: friend)?.roomID ?? friend.roomID
+        return messages.filter { $0.friendID == friend.id && ($0.roomID == nil || $0.roomID == roomID) }
+            .sorted { $0.sentAt < $1.sentAt }
+    }
+
+    private func canonicalFriend(matching friend: FriendRecord) -> FriendRecord? {
+        friends.first(where: { $0.id == friend.id })
+            ?? friends.first(where: { $0.roomID != nil && $0.roomID == friend.roomID })
+            ?? friends.first(where: { $0.code == friend.code && $0.roomID != nil })
+            ?? friends.first(where: { $0.code == friend.code })
     }
 
     /// Fetches only what's new since the last-seen server message id and
@@ -913,11 +1207,17 @@ final class FriendStore: ObservableObject {
     private static let recentReconcileWindow = 20
 
     func refreshMessages(for friend: FriendRecord) async {
-        guard friend.isDemo != true, let roomID = friend.roomID else { return }
-        let latestKnownServerID = messages(for: friend).compactMap(\.serverID).max() ?? 0
+        guard let recipient = canonicalFriend(matching: friend), recipient.isDemo != true,
+              let roomID = recipient.roomID else { return }
+        let latestKnownServerID = messages
+            .filter { $0.friendID == recipient.id && $0.roomID == roomID }
+            .compactMap(\.serverID).max() ?? 0
         let after = max(0, latestKnownServerID - Self.recentReconcileWindow)
-        guard let remote = try? await client.messages(roomID: roomID, after: after) else {
-            notePollResult("messages", succeeded: false)
+        let remote: [FriendChatService.Message]
+        do {
+            remote = try await client.messages(roomID: roomID, after: after)
+        } catch {
+            notePollResult("messages", succeeded: false, error: error)
             return
         }
         notePollResult("messages", succeeded: true)
@@ -934,22 +1234,39 @@ final class FriendStore: ObservableObject {
         var working = messages
         var newIncomingCount = 0
         for item in remote {
-            if item.isMine, let index = working.firstIndex(where: {
-                guard $0.friendID == friend.id, $0.isMine, $0.serverID == nil else { return false }
-                // Matching by the client-generated id the message was sent
-                // with is exact and order-independent; falling back to text
-                // equality only covers a message sent before this existed
-                // (or a request whose response never made it back with the
-                // id echoed) — and even then is no worse than the old
-                // behavior, which always matched by text alone. Matching by
-                // text alone is what let two in-flight messages with
-                // identical content get reconciled in the wrong order (the
-                // network doesn't guarantee two concurrent sends arrive at
-                // the server in the same order they were issued locally).
-                if let clientMessageID = item.clientMessageID {
-                    return $0.id.uuidString == clientMessageID
+            // Matching by the client-generated id the message was sent with
+            // is exact and order-independent, and stays authoritative even
+            // for a message this device already reconciled on an earlier
+            // poll — unlike the `serverID`-keyed match below, it isn't
+            // gated on `serverID == nil`. `send`'s own completion handler
+            // (see `send(_:to:)`) reconciles a message's `serverID` as soon
+            // as its own request returns, almost always before the next
+            // poll — so gating this match on `serverID == nil` meant a
+            // later poll's resync of `sentAt` (below) was effectively dead
+            // code, along with the reassignment this specifically covers:
+            // the server settling two in-flight, identical-text messages in
+            // the opposite order from how this device happened to send
+            // them.
+            if item.isMine, let clientMessageID = item.clientMessageID,
+               let index = working.firstIndex(where: { $0.friendID == recipient.id && $0.roomID == roomID && $0.id.uuidString == clientMessageID }) {
+                working[index].serverID = item.id
+                working[index].roomID = roomID
+                working[index].sentAt = Date(timeIntervalSince1970: item.sentAt / 1_000)
+                if item.isCanceled == true, working[index].isCanceled != true {
+                    working[index].text = ""
+                    working[index].isCanceled = true
+                } else if item.isCanceled != true, item.text != working[index].text {
+                    working[index].text = item.text
                 }
-                return $0.text == item.text
+                continue
+            }
+            if item.isMine, let index = working.firstIndex(where: {
+                // Falls back to text equality only for a message sent
+                // before `clientMessageID` existed, or whose send request's
+                // response never echoed one back — no worse than the old
+                // behavior, which always matched by text alone, and still
+                // limited to a message not yet reconciled by anything else.
+                $0.friendID == recipient.id && $0.roomID == roomID && $0.isMine && $0.serverID == nil && $0.text == item.text
             }) {
                 // Reconcile the optimistic copy created by `send` with its
                 // now-confirmed server id and authoritative timestamp,
@@ -960,16 +1277,22 @@ final class FriendStore: ObservableObject {
                 // the optimistic append and the server ack) can then flip
                 // its order relative to messages that arrived in between.
                 working[index].serverID = item.id
+                working[index].roomID = roomID
                 working[index].sentAt = Date(timeIntervalSince1970: item.sentAt / 1_000)
                 continue
             }
-            if let index = working.firstIndex(where: { $0.friendID == friend.id && $0.serverID == item.id }) {
-                // Already known — but the server's copy may have been
+            if let index = working.firstIndex(where: { $0.friendID == recipient.id && $0.roomID == roomID && $0.serverID == item.id }) {
+                // Already known — but the server's authoritative sentAt may
+                // have shifted since this device last saw it (e.g. this is
+                // itself the first poll to observe it, having missed the
+                // clientMessageID-keyed match above because this message
+                // predates clientMessageID), and its copy may have been
                 // retracted, or edited (see `FriendStore.repairLegacyAttachments`),
-                // since the last time this device saw it. Without this, a
-                // cancellation or repair would only ever be visible to a
-                // device that hadn't fetched the message yet, defeating the
-                // whole point of either.
+                // since then too. Without this, a cancellation or repair
+                // would only ever be visible to a device that hadn't
+                // fetched the message yet, defeating the whole point of
+                // either.
+                working[index].sentAt = Date(timeIntervalSince1970: item.sentAt / 1_000)
                 if item.isCanceled == true, working[index].isCanceled != true {
                     working[index].text = ""
                     working[index].isCanceled = true
@@ -979,20 +1302,21 @@ final class FriendStore: ObservableObject {
                 continue
             }
             working.append(FriendMessage(
-                id: UUID(), friendID: friend.id, text: item.text,
+                id: UUID(), friendID: recipient.id, text: item.text,
                 sentAt: Date(timeIntervalSince1970: item.sentAt / 1_000),
-                isMine: item.isMine, isCanceled: item.isCanceled == true, serverID: item.id
+                isMine: item.isMine, isCanceled: item.isCanceled == true, serverID: item.id,
+                roomID: roomID
             ))
             if !item.isMine { newIncomingCount += 1 }
         }
-        let (trimmedMessages, evicted) = Self.trimmed(working, for: friend.id)
+        let (trimmedMessages, evicted) = Self.trimmed(working, for: recipient.id)
         messages = trimmedMessages
         Self.deleteLocalAttachmentFiles(for: evicted)
 
-        if activeFriendID == friend.id {
-            unreadCounts[friend.id] = 0
+        if activeFriendID == recipient.id {
+            unreadCounts[recipient.id] = 0
         } else if newIncomingCount > 0 {
-            unreadCounts[friend.id, default: 0] += newIncomingCount
+            unreadCounts[recipient.id, default: 0] += newIncomingCount
         }
     }
 
@@ -1073,26 +1397,330 @@ struct FriendsHomeView: View {
     let myStudySeconds: TimeInterval
     var appAttachments: [FriendMessageAttachment] = []
     var resolveAppAttachment: (FriendMessageAttachment, FriendRecord) async -> FriendMessageAttachment = { attachment, _ in attachment }
+    @AppStorage("friendShareStudyTime") private var shareStudyTime = true
+    // Same keys `UserProfileView` writes — see `MyFriendCardPopover`'s doc
+    // comment for why this sidebar row needs its own copy rather than
+    // reading them only there.
+    @AppStorage("profileName") private var profileName = ""
+    @AppStorage("profileImage") private var profileImageData = Data()
     @State private var showsAdd = false
+    @State private var selection: FriendsDetailSelection = .chats
+    @State private var popover: FriendsPopover?
+
+    private enum FriendsDetailSelection: Hashable {
+        case chats
+        case chat(UUID)
+    }
+
+    private enum FriendsPopover: Identifiable {
+        case me
+        case requests
+        case profile(UUID)
+        case settings
+
+        var id: String {
+            switch self {
+            case .me: return "me"
+            case .requests: return "requests"
+            case .profile(let id): return "profile-\(id.uuidString)"
+            case .settings: return "settings"
+            }
+        }
+    }
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("今日の勉強時間") {
-                    LabeledContent("あなた", value: duration(myStudySeconds))
+        NavigationSplitView {
+            friendSidebar
+                .navigationTitle("フレンド")
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { showsAdd = true } label: { Image(systemName: "person.badge.plus") }
+                    }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { popover = .settings } label: { Image(systemName: "gearshape") }
+                            .accessibilityLabel("フレンド設定")
+                    }
                 }
-                if !store.incomingRequests.isEmpty {
-                    Section("フレンド申請") {
-                        ForEach(store.incomingRequests) { request in
+        } detail: {
+            friendDetail
+        }
+        .sheet(isPresented: $showsAdd) { AddFriendView(store: store) }
+        .sheet(item: $popover) { item in
+            NavigationStack {
+                popoverContent(for: item)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("閉じる") { popover = nil }
+                        }
+                    }
+            }
+        }
+        // Clears the home-screen tab badge now that the requests it was
+        // counting are actually visible on screen. Incoming requests
+        // themselves are kept fresh by `store`'s own app-wide poll (see
+        // `FriendStore.startIncomingRequestPolling()`) — no longer this
+        // screen's job alone.
+        .onAppear {
+            store.markIncomingRequestsSeen()
+            store.reportMyStudyTime(myStudySeconds, sharesStudyTime: shareStudyTime)
+        }
+        .onChange(of: store.incomingRequests) { _, _ in store.markIncomingRequestsSeen() }
+        .task {
+            while !Task.isCancelled {
+                // Without this, a friend who just accepted this user's
+                // outgoing request never appears here — nothing else
+                // re-fetches the friends list while this screen is open.
+                await store.refreshFriends()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+        // `myStudySeconds` is a plain `let` recomputed by the parent on
+        // every render, not something the long-running .task above would
+        // ever see update on its own — onChange is what actually reports
+        // a newly-finished study session instead of a stale snapshot.
+        .onChange(of: myStudySeconds) { _, newValue in
+            store.reportMyStudyTime(newValue, sharesStudyTime: shareStudyTime)
+        }
+        .onChange(of: shareStudyTime) { _, newValue in
+            store.reportMyStudyTime(myStudySeconds, sharesStudyTime: newValue)
+        }
+        // store.errorMessage was previously set by add/accept/reject but
+        // never shown anywhere — this is the first surface that renders
+        // it. FriendsHomeView stays visible underneath the add-friend
+        // sheet (which dismisses immediately on tapping send), so an
+        // error from add() still reaches the user here.
+        .alert("エラー", isPresented: Binding(
+            get: { !store.errorMessage.isEmpty },
+            set: { isPresented in if !isPresented { store.errorMessage = "" } }
+        )) {
+            Button("OK") { store.errorMessage = "" }
+        } message: {
+            Text(store.errorMessage)
+        }
+        // An old-format studiquo://friend/add?code=… link stages a code
+        // here rather than sending the request immediately — see
+        // `FriendStore.add(url:)`. Current links use ?token=… instead
+        // (the alert just below), which skips the approval step
+        // entirely rather than merely pre-filling it.
+        .alert(
+            "フレンド申請を送りますか？",
+            isPresented: Binding(
+                get: { store.pendingDeepLinkCode != nil },
+                set: { isPresented in if !isPresented { store.cancelPendingDeepLinkRequest() } }
+            )
+        ) {
+            Button("キャンセル", role: .cancel) { store.cancelPendingDeepLinkRequest() }
+            Button("送信") { store.confirmPendingDeepLinkRequest() }
+        } message: {
+            Text("コード「\(store.pendingDeepLinkCode ?? "")」のユーザーにフレンド申請を送ります。")
+        }
+        // A studiquo://friend/add?token=… link (the current invite-link
+        // format) redeems immediately on confirmation — no separate
+        // approval step on either side, since actually receiving the
+        // link is treated as consent enough. See
+        // `FriendStore.confirmPendingLinkAdd()`.
+        .alert(
+            "フレンドになりますか？",
+            isPresented: Binding(
+                get: { store.pendingLinkToken != nil },
+                set: { isPresented in if !isPresented { store.cancelPendingLinkAdd() } }
+            )
+        ) {
+            Button("キャンセル", role: .cancel) { store.cancelPendingLinkAdd() }
+            Button("フレンドになる") { store.confirmPendingLinkAdd() }
+        } message: {
+            Text("この招待リンクを送ってきた相手とフレンドになります。")
+        }
+    }
+
+    private var friendSidebar: some View {
+        List {
+            Section {
+                Button { popover = .me } label: {
+                    HStack(spacing: 12) {
+                        if let image = UIImage(data: profileImageData) {
+                            Image(uiImage: image)
+                                .resizable().scaledToFill()
+                                .frame(width: 34, height: 34)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(.tint)
+                                .frame(width: 34)
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(profileName.isEmpty ? "あなた" : profileName)
+                            if shareStudyTime {
+                                Text(Self.duration(myStudySeconds))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section {
+                Button { popover = .requests } label: {
+                    HStack {
+                        Label("フレンド申請", systemImage: "person.badge.clock")
+                        Spacer()
+                        if !store.incomingRequests.isEmpty {
+                            Text("\(store.incomingRequests.count)")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Color.red, in: Capsule())
+                        }
+                    }
+                }
+            }
+
+            Section("フレンド") {
+                ForEach(store.friends) { friend in
+                    Button { popover = .profile(friend.id) } label: {
+                        FriendSidebarRow(profile: FriendProfile(friend: friend, blockedByMeRoomIDs: store.blockedByMeRoomIDs))
+                    }
+                }
+                if store.friends.isEmpty {
+                    ContentUnavailableView("フレンドがいません", systemImage: "person.2", description: Text("右上の追加ボタンから招待できます。"))
+                }
+            }
+
+        }
+    }
+
+    @ViewBuilder private var friendDetail: some View {
+        switch selection {
+        case .chats:
+            FriendChatListView(
+                summaries: FriendChatSummary.summaries(
+                    friends: store.friends,
+                    messages: store.messages,
+                    unreadCounts: store.unreadCounts
+                ),
+                openChat: { selection = .chat($0.id) }
+            )
+        case .chat(let id):
+            if let friend = store.friends.first(where: { $0.id == id }) {
+                FriendChatView(
+                    friend: friend,
+                    store: store,
+                    appAttachments: appAttachments,
+                    resolveAppAttachment: resolveAppAttachment,
+                    onBack: { selection = .chats }
+                )
+            } else {
+                ContentUnavailableView("フレンドを選択してください", systemImage: "person.crop.circle")
+            }
+        }
+    }
+
+    @ViewBuilder private func popoverContent(for item: FriendsPopover) -> some View {
+        switch item {
+        case .me:
+            MyFriendCardPopover(myCode: store.myCode, myStudySeconds: myStudySeconds, sharesStudyTime: shareStudyTime)
+        case .requests:
+            FriendRequestsPopover(store: store)
+        case .profile(let id):
+            if let friend = store.friends.first(where: { $0.id == id }) {
+                FriendProfileView(
+                    profile: FriendProfile(friend: friend, blockedByMeRoomIDs: store.blockedByMeRoomIDs),
+                    friend: friend,
+                    store: store,
+                    openChat: {
+                        popover = nil
+                        selection = .chat(id)
+                    }
+                )
+            } else {
+                ContentUnavailableView("フレンドを選択してください", systemImage: "person.crop.circle")
+            }
+        case .settings:
+            FriendPrivacySettingsView(shareStudyTime: $shareStudyTime)
+        }
+    }
+
+    static func duration(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        return minutes >= 60 ? "\(minutes / 60)時間\(minutes % 60)分" : "\(minutes)分"
+    }
+}
+
+private struct MyFriendCardPopover: View {
+    let myCode: String
+    let myStudySeconds: TimeInterval
+    let sharesStudyTime: Bool
+
+    // Reads the same `@AppStorage` keys `UserProfileView` writes, so a
+    // photo or name set there shows up here immediately — this card used to
+    // always render a generic person icon and the literal text "あなた"
+    // regardless of what was set in the profile screen.
+    @AppStorage("profileName") private var profileName = ""
+    @AppStorage("profileImage") private var imageData = Data()
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(spacing: 14) {
+                    if let image = UIImage(data: imageData) {
+                        Image(uiImage: image)
+                            .resizable().scaledToFill()
+                            .frame(width: 70, height: 70)
+                            .clipShape(Circle())
+                    } else {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 70))
+                            .foregroundStyle(.tint)
+                    }
+                    Text(profileName.isEmpty ? "あなた" : profileName)
+                        .font(.title.bold())
+                    if sharesStudyTime {
+                        Text("今日の勉強時間  \(FriendsHomeView.duration(myStudySeconds))")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            }
+            Section("フレンドコード") {
+                Text(myCode)
+                    .font(.body.monospaced())
+                    .textSelection(.enabled)
+            }
+        }
+        .navigationTitle("自分のカード")
+    }
+}
+
+private struct FriendRequestsPopover: View {
+    @ObservedObject var store: FriendStore
+
+    var body: some View {
+        List {
+            if store.incomingRequests.isEmpty {
+                ContentUnavailableView("フレンド申請はありません", systemImage: "person.badge.clock")
+            } else {
+                Section("フレンド申請") {
+                    ForEach(store.incomingRequests) { request in
+                        VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(request.name)
-                                    Text(request.code).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                    Text(request.code)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 if store.pendingRequestActions.contains(request.code) {
                                     ProgressView()
-                                } else {
+                                }
+                            }
+                            if !store.pendingRequestActions.contains(request.code) {
+                                HStack {
                                     Button("承認") { store.accept(request) }
                                         .buttonStyle(.borderedProminent)
                                     Button("拒否", role: .destructive) { store.reject(request) }
@@ -1100,107 +1728,209 @@ struct FriendsHomeView: View {
                                 }
                             }
                         }
-                    }
-                }
-                Section("フレンド") {
-                    ForEach(store.friends) { friend in
-                        NavigationLink {
-                            FriendChatView(friend: friend, store: store, appAttachments: appAttachments, resolveAppAttachment: resolveAppAttachment)
-                        } label: {
-                            HStack {
-                                Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(.tint)
-                                VStack(alignment: .leading) {
-                                    Text(friend.name)
-                                    Text("今日 \(duration(friend.todayStudySeconds))").font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                    if store.friends.isEmpty {
-                        ContentUnavailableView("フレンドがいません", systemImage: "person.2", description: Text("右上の追加ボタンから招待できます。"))
+                        .padding(.vertical, 4)
                     }
                 }
             }
-            .navigationTitle("フレンド")
-            .toolbar { ToolbarItem(placement: .primaryAction) { Button { showsAdd = true } label: { Image(systemName: "person.badge.plus") } } }
-            .sheet(isPresented: $showsAdd) { AddFriendView(store: store) }
-            // Clears the home-screen tab badge now that the requests it was
-            // counting are actually visible on screen. Incoming requests
-            // themselves are kept fresh by `store`'s own app-wide poll (see
-            // `FriendStore.startIncomingRequestPolling()`) — no longer this
-            // screen's job alone.
-            .onAppear { store.markIncomingRequestsSeen() }
-            .onChange(of: store.incomingRequests) { _, _ in store.markIncomingRequestsSeen() }
-            .task {
-                store.reportMyStudyTime(myStudySeconds)
-                while !Task.isCancelled {
-                    // Without this, a friend who just accepted this user's
-                    // outgoing request never appears here — nothing else
-                    // re-fetches the friends list while this screen is open.
-                    await store.refreshFriends()
-                    try? await Task.sleep(for: .seconds(2))
+        }
+        .navigationTitle("フレンド申請")
+    }
+}
+
+private struct FriendSidebarRow: View {
+    let profile: FriendProfile
+
+    var body: some View {
+        HStack(spacing: 12) {
+            FriendAvatarView(avatarData: profile.avatarData, iconSystemName: profile.iconSystemName, size: 34)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(profile.name)
+                    if profile.isBlockedByMe {
+                        Image(systemName: "nosign")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if let seconds = profile.todayStudySeconds {
+                    Text(FriendsHomeView.duration(seconds))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-            // `myStudySeconds` is a plain `let` recomputed by the parent on
-            // every render, not something the long-running .task above would
-            // ever see update on its own — onChange is what actually reports
-            // a newly-finished study session instead of a stale snapshot.
-            .onChange(of: myStudySeconds) { _, newValue in
-                store.reportMyStudyTime(newValue)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+private struct FriendChatListView: View {
+    let summaries: [FriendChatSummary]
+    let openChat: (FriendRecord) -> Void
+
+    var body: some View {
+        List {
+            Section("メッセージ") {
+                ForEach(summaries) { summary in
+                    Button { openChat(summary.friend) } label: {
+                        FriendChatSummaryRow(summary: summary)
+                    }
+                }
             }
-            // store.errorMessage was previously set by add/accept/reject but
-            // never shown anywhere — this is the first surface that renders
-            // it. FriendsHomeView stays visible underneath the add-friend
-            // sheet (which dismisses immediately on tapping send), so an
-            // error from add() still reaches the user here.
-            .alert("エラー", isPresented: Binding(
-                get: { !store.errorMessage.isEmpty },
-                set: { isPresented in if !isPresented { store.errorMessage = "" } }
-            )) {
-                Button("OK") { store.errorMessage = "" }
-            } message: {
-                Text(store.errorMessage)
-            }
-            // An old-format studiquo://friend/add?code=… link stages a code
-            // here rather than sending the request immediately — see
-            // `FriendStore.add(url:)`. Current links use ?token=… instead
-            // (the alert just below), which skips the approval step
-            // entirely rather than merely pre-filling it.
-            .alert(
-                "フレンド申請を送りますか？",
-                isPresented: Binding(
-                    get: { store.pendingDeepLinkCode != nil },
-                    set: { isPresented in if !isPresented { store.cancelPendingDeepLinkRequest() } }
-                )
-            ) {
-                Button("キャンセル", role: .cancel) { store.cancelPendingDeepLinkRequest() }
-                Button("送信") { store.confirmPendingDeepLinkRequest() }
-            } message: {
-                Text("コード「\(store.pendingDeepLinkCode ?? "")」のユーザーにフレンド申請を送ります。")
-            }
-            // A studiquo://friend/add?token=… link (the current invite-link
-            // format) redeems immediately on confirmation — no separate
-            // approval step on either side, since actually receiving the
-            // link is treated as consent enough. See
-            // `FriendStore.confirmPendingLinkAdd()`.
-            .alert(
-                "フレンドになりますか？",
-                isPresented: Binding(
-                    get: { store.pendingLinkToken != nil },
-                    set: { isPresented in if !isPresented { store.cancelPendingLinkAdd() } }
-                )
-            ) {
-                Button("キャンセル", role: .cancel) { store.cancelPendingLinkAdd() }
-                Button("フレンドになる") { store.confirmPendingLinkAdd() }
-            } message: {
-                Text("この招待リンクを送ってきた相手とフレンドになります。")
+        }
+        .navigationTitle("メッセージ")
+        .overlay {
+            if summaries.isEmpty {
+                ContentUnavailableView("メッセージがありません", systemImage: "message", description: Text("フレンドを追加すると、ここにチャットが表示されます。"))
             }
         }
     }
+}
 
-    private func duration(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds) / 60
-        return minutes >= 60 ? "\(minutes / 60)時間\(minutes % 60)分" : "\(minutes)分"
+private struct FriendChatSummaryRow: View {
+    let summary: FriendChatSummary
+
+    var body: some View {
+        HStack(spacing: 12) {
+            FriendAvatarView(
+                avatarData: summary.friend.avatarData,
+                iconSystemName: summary.friend.isDemo == true ? "sparkles" : "person.crop.circle.fill",
+                size: 38
+            )
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(summary.friend.name)
+                        .font(.body.weight(.semibold))
+                    Spacer()
+                    if let latestDate = summary.latestDate {
+                        Text(Self.timeText(for: latestDate))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                HStack(spacing: 8) {
+                    Text(summary.previewText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    if summary.unreadCount > 0 {
+                        Text("\(summary.unreadCount)")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.red, in: Capsule())
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private static func timeText(for date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return date.formatted(.dateTime.hour().minute())
+        }
+        return date.formatted(.dateTime.month().day())
+    }
+}
+
+private struct FriendOverviewView: View {
+    let myStudySeconds: TimeInterval
+    let sharesStudyTime: Bool
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "person.2.fill")
+                .font(.system(size: 54))
+                .foregroundStyle(.tint)
+            Text("フレンド")
+                .font(.largeTitle.bold())
+            if sharesStudyTime {
+                Text("今日の勉強時間  \(FriendsHomeView.duration(myStudySeconds))")
+                    .foregroundStyle(.secondary)
+            }
+            Text("左のサイドバーからフレンドを選ぶと、プロフィールとチャットを開けます。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(32)
+    }
+}
+
+private struct FriendProfileView: View {
+    let profile: FriendProfile
+    let friend: FriendRecord
+    @ObservedObject var store: FriendStore
+    let openChat: () -> Void
+    @State private var showsBlockConfirmation = false
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(spacing: 14) {
+                    FriendAvatarView(avatarData: profile.avatarData, iconSystemName: profile.iconSystemName, size: 70)
+                    Text(profile.name)
+                        .font(.title.bold())
+                    if let seconds = profile.todayStudySeconds {
+                        Text("今日の勉強時間  \(FriendsHomeView.duration(seconds))")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            }
+            Section("プロフィール") {
+                LabeledContent("フレンドコード", value: profile.code)
+                if profile.isDemo {
+                    LabeledContent("種類", value: "デモフレンド")
+                }
+            }
+            Section {
+                Button { openChat() } label: {
+                    Label("メッセージ", systemImage: "message.fill")
+                }
+                if profile.isBlockedByMe {
+                    Button { store.unblock(friend) } label: {
+                        Label("ブロックを解除する", systemImage: "checkmark.circle")
+                    }
+                } else {
+                    Button(role: .destructive) { showsBlockConfirmation = true } label: {
+                        Label("ブロックする", systemImage: "nosign")
+                    }
+                }
+            }
+        }
+        .navigationTitle(profile.name)
+        .confirmationDialog(
+            "\(profile.name)さんをブロックしますか?",
+            isPresented: $showsBlockConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("ブロックする", role: .destructive) { store.block(friend) }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("ブロックすると、相手からのメッセージが届かなくなります。相手には通知されません。")
+        }
+        .task { await store.refreshBlockStatus(for: friend) }
+    }
+}
+
+private struct FriendPrivacySettingsView: View {
+    @Binding var shareStudyTime: Bool
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("勉強時間をフレンドに公開", isOn: $shareStudyTime)
+            } footer: {
+                Text("オフにすると、あなたの今日の勉強時間はフレンドに送信されません。フレンド側では勉強時間の行は空欄になります。")
+            }
+        }
+        .navigationTitle("フレンド設定")
     }
 }
 
@@ -1304,6 +2034,24 @@ private struct AddFriendView: View {
     }
 }
 
+@MainActor
+enum FriendChatActivity {
+    static func run(
+        pollInterval: Duration = .seconds(2),
+        refresh: @escaping @MainActor () async -> Void,
+        maintenance: @escaping @MainActor () async -> Void
+    ) async {
+        // Attachment repair may await a slow upload. Keep it off the receive
+        // loop so a newly sent message can still be fetched immediately.
+        let maintenanceTask = Task { await maintenance() }
+        defer { maintenanceTask.cancel() }
+        while !Task.isCancelled {
+            await refresh()
+            do { try await Task.sleep(for: pollInterval) } catch { break }
+        }
+    }
+}
+
 struct FriendChatView: View {
     let friend: FriendRecord
     @ObservedObject var store: FriendStore
@@ -1312,6 +2060,7 @@ struct FriendChatView: View {
     var onAttachDroppedTab: (String) -> FriendMessageAttachment? = { _ in nil }
     var onPaneDrop: (String) -> Bool = { _ in false }
     var onOpenAttachment: ((FriendMessageAttachment) -> Void)?
+    var onBack: (() -> Void)?
     @State private var draft = ""
     @State private var attachments: [FriendMessageAttachment] = []
     @State private var isDropTargeted = false
@@ -1439,6 +2188,7 @@ struct FriendChatView: View {
                     .accessibilityLabel("写真から追加")
 
                     TextField("メッセージ", text: $draft, axis: .vertical)
+                        .accessibilityIdentifier("friend-chat-draft")
                         .lineLimit(1...5)
                         .textFieldStyle(.plain)
                         .padding(.horizontal, 14)
@@ -1455,6 +2205,7 @@ struct FriendChatView: View {
                             .foregroundStyle(canSend ? Color.accentColor : .primary)
                             .frame(width: 34, height: 34)
                     }
+                    .accessibilityIdentifier("friend-chat-send")
                     .disabled(!canSend)
                     .buttonStyle(.plain)
                     .fixedSize()
@@ -1479,6 +2230,13 @@ struct FriendChatView: View {
         .navigationTitle(currentFriend.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if let onBack {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: onBack) {
+                        Label("戻る", systemImage: "chevron.left")
+                    }
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     if store.blockedByMeRoomIDs.contains(currentFriend.roomID ?? "") {
@@ -1523,21 +2281,19 @@ struct FriendChatView: View {
             }
         }
         .task {
-            store.markRead(friend)
-            guard friend.isDemo != true else { return }
-            // Once per chat open, not every 2-second poll: repairing a
-            // legacy attachment re-renders and re-uploads a whole material,
-            // which isn't cheap to retry constantly, and once a message no
-            // longer matches "legacy" there's nothing left to repair anyway.
-            await store.repairLegacyAttachments(for: friend, resolve: resolveAppAttachment)
-            await store.reconcileLegacyAttachments(for: friend)
-            await store.refreshBlockStatus(for: friend)
-            while !Task.isCancelled {
-                await store.refreshMessages(for: friend)
-                try? await Task.sleep(for: .seconds(2))
-            }
+            store.markRead(currentFriend)
+            guard currentFriend.isDemo != true else { return }
+            await FriendChatActivity.run(
+                refresh: { await store.refreshMessages(for: currentFriend) },
+                maintenance: {
+                    // Repair once per chat open, independently of polling.
+                    await store.repairLegacyAttachments(for: currentFriend, resolve: resolveAppAttachment)
+                    await store.reconcileLegacyAttachments(for: currentFriend)
+                    await store.refreshBlockStatus(for: currentFriend)
+                }
+            )
         }
-        .onDisappear { store.stopReading(friend) }
+        .onDisappear { store.stopReading(currentFriend) }
         .fileImporter(isPresented: $isImportingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
                 Task {
@@ -1662,14 +2418,18 @@ struct FriendChatView: View {
     /// snapshot if it's ever no longer in the list (shouldn't normally
     /// happen, since friends are never removed).
     private var currentFriend: FriendRecord {
-        store.friends.first(where: { $0.id == friend.id }) ?? friend
+        store.friends.first(where: { $0.id == friend.id })
+            ?? store.friends.first(where: { $0.roomID != nil && $0.roomID == friend.roomID })
+            ?? store.friends.first(where: { $0.code == friend.code && $0.roomID != nil })
+            ?? store.friends.first(where: { $0.code == friend.code })
+            ?? friend
     }
 
     private var chatRows: [FriendChatRow] {
         var rows: [FriendChatRow] = []
         var previousDay: Date?
         let calendar = Calendar.current
-        for message in store.messages(for: friend) {
+        for message in store.messages(for: currentFriend) {
             let day = calendar.startOfDay(for: message.sentAt)
             if previousDay.map({ !calendar.isDate($0, inSameDayAs: day) }) ?? true {
                 rows.append(.date(id: "date-\(day.timeIntervalSince1970)", date: day))
@@ -1682,8 +2442,9 @@ struct FriendChatView: View {
 
     private func send() {
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        var bodyWasQueued = body.isEmpty
         if !body.isEmpty {
-            store.send(body, to: friend)
+            bodyWasQueued = store.send(body, to: currentFriend)
         }
         // Sent as one message per attachment, not combined into a single
         // message with the body — combining multiple attachments (or even
@@ -1693,11 +2454,14 @@ struct FriendChatView: View {
         // reference mid-string and corrupted it into garbled visible text.
         // A single attachment's own line stays comfortably under the limit
         // on its own, so sending each separately can't hit this at all.
+        var unsentAttachments: [FriendMessageAttachment] = []
         for attachment in attachments {
-            store.send(attachment.messageLine, to: friend)
+            if !store.send(attachment.messageLine, to: currentFriend) {
+                unsentAttachments.append(attachment)
+            }
         }
-        draft = ""
-        attachments = []
+        if bodyWasQueued { draft = "" }
+        attachments = unsentAttachments
     }
 
     private func savePhotoAttachment(data: Data, title: String, icon: String) async -> FriendMessageAttachment? {
@@ -1791,10 +2555,7 @@ struct FriendChatView: View {
             HStack(alignment: .top, spacing: 8) {
             if message.isMine { Spacer(minLength: 54) }
             if !message.isMine {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 30)
+                FriendAvatarView(avatarData: friend.avatarData, iconSystemName: "person.crop.circle.fill", size: 30)
                     .padding(.top, 4)
             }
             VStack(alignment: message.isMine ? .trailing : .leading, spacing: 4) {
@@ -1877,6 +2638,12 @@ struct FriendChatView: View {
                         .font(.caption2)
                         .foregroundStyle(.red)
                         .frame(maxWidth: 280, alignment: .trailing)
+                } else if message.isMine, message.serverID == nil, message.isCanceled != true,
+                          message.sendFailed != true, message.roomID != nil {
+                    Text("送信中…")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: 280, alignment: .trailing)
                 }
                 messageTime(message.sentAt, isMine: message.isMine)
             }
@@ -1892,7 +2659,7 @@ struct FriendChatView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 14)
             .padding(.vertical, 5)
-            .background(Color.black.opacity(0.16), in: Capsule())
+            .background(Color.black.opacity(0.55), in: Capsule())
             .frame(maxWidth: .infinity)
             .accessibilityIdentifier(id)
     }
@@ -1905,7 +2672,7 @@ struct FriendChatView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
             .background(isMine ? Color(red: 0.37, green: 0.92, blue: 0.40) : .white, in: RoundedRectangle(cornerRadius: 20))
-            .foregroundStyle(.primary)
+            .foregroundStyle(Color.black)
             .frame(maxWidth: 280, alignment: isMine ? .trailing : .leading)
     }
 
@@ -1937,7 +2704,7 @@ struct FriendChatView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
-            .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 18))
+            .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 18))
     }
 
     private func messageTime(_ sentAt: Date, isMine: Bool) -> some View {

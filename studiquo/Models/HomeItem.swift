@@ -37,6 +37,24 @@ extension SlideDeck: HomeItem {
     var itemKind: HomeItemKind { .slideDeck }
 }
 
+/// The same move is used by list, column, icon and sidebar drop targets.
+/// Keep the relationship and the legacy path together: columns read the
+/// relationship, while the other library views still filter by folderName.
+enum LibraryFolderMove {
+    static func canMove(_ item: any HomeItem, into folder: Folder?) -> Bool {
+        !item.isTrashed && (item.folder !== folder || item.folderName != (folder?.legacyPath ?? ""))
+    }
+
+    @discardableResult
+    static func move(_ item: any HomeItem, into folder: Folder?) -> Bool {
+        guard canMove(item, into: folder) else { return false }
+        item.folder = folder
+        item.folderName = folder?.legacyPath ?? ""
+        item.updatedAt = .now
+        return true
+    }
+}
+
 /// A single home-screen entry, wrapping whichever of the four concrete
 /// SwiftData model types it holds. Exists because SwiftData's `@Query`
 /// fetches each model type separately — this is what lets the icon/list/

@@ -224,3 +224,245 @@ struct MathExpressionView: View {
         }
     }
 }
+
+// MARK: - Editable equation tree (fill-in-the-blank editor)
+
+/// The mutable tree behind the equation editor: a Word-style "insert a
+/// structure, then tap each blank to fill it" editor rather than a raw
+/// LaTeX text field. A reference type (unlike `MathExpression`) so each
+/// blank/run has a stable identity a tap can target and a mutation can
+/// update in place, and so the same numerator box that was blank a moment
+/// ago is still the thing the user is typing into after it becomes `.text`.
+final class MathNode: ObservableObject, Identifiable {
+    let id = UUID()
+    @Published var kind: Kind
+    /// Unowned-ish back-pointer used only to know how to delete/collapse
+    /// this node on backspace — never used to traverse downward, so a
+    /// retain cycle isn't a concern, but `weak` avoids one anyway.
+    weak var parent: MathNode?
+
+    enum Kind {
+        /// An empty slot the user hasn't filled in yet — rendered as a
+        /// dashed box, the way Word's equation placeholders look.
+        case blank
+        /// A run of typed characters (digits, letters, operators, or a
+        /// pasted-in Greek glyph) — grows by appending to the same node
+        /// while it stays selected.
+        case text(String)
+        case sequence([MathNode])
+        case fraction(MathNode, MathNode)
+        case power(MathNode, MathNode)
+        case sub(MathNode, MathNode)
+        case sqrt(MathNode)
+    }
+
+    init(_ kind: Kind, parent: MathNode? = nil) {
+        self.kind = kind
+        self.parent = parent
+    }
+
+    /// Depth-first search for the node with `id`, starting at `self`.
+    func find(_ id: UUID) -> MathNode? {
+        if self.id == id { return self }
+        switch kind {
+        case .blank, .text:
+            return nil
+        case .sequence(let children):
+            for child in children {
+                if let found = child.find(id) { return found }
+            }
+            return nil
+        case .fraction(let a, let b), .power(let a, let b), .sub(let a, let b):
+            return a.find(id) ?? b.find(id)
+        case .sqrt(let inner):
+            return inner.find(id)
+        }
+    }
+
+    /// The first unfilled blank in this subtree, in reading order — what a
+    /// freshly-inserted template (e.g. a fraction) selects automatically so
+    /// the user can start typing the numerator right away.
+    func firstBlank() -> MathNode? {
+        switch kind {
+        case .blank:
+            return self
+        case .text:
+            return nil
+        case .sequence(let children):
+            for child in children {
+                if let found = child.firstBlank() { return found }
+            }
+            return nil
+        case .fraction(let a, let b), .power(let a, let b), .sub(let a, let b):
+            return a.firstBlank() ?? b.firstBlank()
+        case .sqrt(let inner):
+            return inner.firstBlank()
+        }
+    }
+
+    /// Serializes this subtree back into the small LaTeX-like syntax
+    /// `MathExpressionParser` reads, so the result stays compatible with
+    /// the read-only renderer used everywhere an equation block is
+    /// displayed (see `MathExpressionView`/`DocumentEquationBlockView`). A
+    /// numerator/denominator/base/exponent/radicand is always wrapped in
+    /// `{}` even when it's a single character — required so a multi-token
+    /// run (e.g. "2x") groups as one unit instead of only the token right
+    /// before `^`/`_` binding to it.
+    func toSource() -> String {
+        switch kind {
+        case .blank:
+            return "□"
+        case .text(let s):
+            return s.isEmpty ? "□" : s
+        case .sequence(let children):
+            return children.map { $0.toSource() }.joined()
+        case .fraction(let numerator, let denominator):
+            return "\\frac{\(numerator.toSource())}{\(denominator.toSource())}"
+        case .power(let base, let exponent):
+            return "{\(base.toSource())}^{\(exponent.toSource())}"
+        case .sub(let base, let subscriptNode):
+            return "{\(base.toSource())}_{\(subscriptNode.toSource())}"
+        case .sqrt(let inner):
+            return "\\sqrt{\(inner.toSource())}"
+        }
+    }
+
+    /// Rebuilds an editable tree from a `MathExpression` (what
+    /// `MathExpressionParser.parse` produces from a stored `equationSource`
+    /// string) — how an equation written before this editor existed, or
+    /// saved by it, opens for further editing. A lone "□" text token
+    /// (`toSource()`'s own blank marker) round-trips back into `.blank`.
+    static func from(_ expression: MathExpression, parent: MathNode? = nil) -> MathNode {
+        switch expression {
+        case .sequence(let items):
+            let node = MathNode(.blank, parent: parent)
+            let children = items.map { from($0, parent: node) }
+            node.kind = .sequence(children)
+            return node
+        case .text(let s):
+            return MathNode(s == "□" ? .blank : .text(s), parent: parent)
+        case .symbol(let glyph):
+            // The editor has no separate "upright symbol" concept — a
+            // Greek letter typed from the keypad is just another character
+            // in a text run. Re-opening an equation that used `\pi` etc.
+            // folds it back into plain text the same way.
+            return MathNode(.text(glyph), parent: parent)
+        case .fraction(let numerator, let denominator):
+            let node = MathNode(.blank, parent: parent)
+            let n = from(numerator, parent: node)
+            let d = from(denominator, parent: node)
+            node.kind = .fraction(n, d)
+            return node
+        case .superscript(let base, let exponent):
+            let node = MathNode(.blank, parent: parent)
+            let b = from(base, parent: node)
+            let e = from(exponent, parent: node)
+            node.kind = .power(b, e)
+            return node
+        case .subscriptExpression(let base, let subscriptExpr):
+            let node = MathNode(.blank, parent: parent)
+            let b = from(base, parent: node)
+            let s = from(subscriptExpr, parent: node)
+            node.kind = .sub(b, s)
+            return node
+        case .sqrt(let inner):
+            let node = MathNode(.blank, parent: parent)
+            let i = from(inner, parent: node)
+            node.kind = .sqrt(i)
+            return node
+        }
+    }
+
+    /// A brand-new, empty equation: one blank waiting to be tapped.
+    static func empty() -> MathNode {
+        let root = MathNode(.blank)
+        let blank = MathNode(.blank, parent: root)
+        root.kind = .sequence([blank])
+        return root
+    }
+
+    /// Parses `source` (empty means a brand-new equation) into an editable
+    /// tree, guaranteeing the root is a non-empty `.sequence` so there's
+    /// always at least one blank to tap.
+    static func editableTree(from source: String) -> MathNode {
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .empty() }
+        let root = from(MathExpressionParser.parse(source))
+        if case .sequence(let children) = root.kind, children.isEmpty {
+            let blank = MathNode(.blank, parent: root)
+            root.kind = .sequence([blank])
+        }
+        return root
+    }
+}
+
+/// Renders a `MathNode` tree with tappable blanks/runs — the editable
+/// counterpart to `MathExpressionView`. Selecting a node (tapping it)
+/// highlights it and routes the keypad's next character/backspace to it.
+struct MathNodeView: View {
+    @ObservedObject var node: MathNode
+    @Binding var selectedID: UUID?
+    var fontSize: CGFloat = 22
+
+    private var isSelected: Bool { selectedID == node.id }
+
+    var body: some View {
+        switch node.kind {
+        case .blank:
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(
+                    isSelected ? Color.accentColor : Color.secondary.opacity(0.6),
+                    style: StrokeStyle(lineWidth: isSelected ? 2 : 1, dash: [3, 2])
+                )
+                .background(
+                    (isSelected ? Color.accentColor.opacity(0.14) : Color.clear),
+                    in: RoundedRectangle(cornerRadius: 4)
+                )
+                .frame(minWidth: fontSize * 1.1, minHeight: fontSize * 1.3)
+                .contentShape(Rectangle())
+                .onTapGesture { selectedID = node.id }
+        case .text(let s):
+            Text(s)
+                .font(.system(size: fontSize, design: .serif))
+                .padding(.horizontal, 1)
+                .background(
+                    (isSelected ? Color.accentColor.opacity(0.18) : Color.clear),
+                    in: RoundedRectangle(cornerRadius: 3)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { selectedID = node.id }
+        case .sequence(let children):
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+                ForEach(children) { child in
+                    MathNodeView(node: child, selectedID: $selectedID, fontSize: fontSize)
+                }
+            }
+        case .fraction(let numerator, let denominator):
+            VStack(spacing: 2) {
+                MathNodeView(node: numerator, selectedID: $selectedID, fontSize: fontSize * 0.85)
+                Rectangle().frame(height: 1)
+                MathNodeView(node: denominator, selectedID: $selectedID, fontSize: fontSize * 0.85)
+            }
+            .fixedSize()
+        case .power(let base, let exponent):
+            HStack(alignment: .top, spacing: 0) {
+                MathNodeView(node: base, selectedID: $selectedID, fontSize: fontSize)
+                MathNodeView(node: exponent, selectedID: $selectedID, fontSize: fontSize * 0.65)
+                    .offset(y: -fontSize * 0.3)
+            }
+        case .sub(let base, let subscriptNode):
+            HStack(alignment: .bottom, spacing: 0) {
+                MathNodeView(node: base, selectedID: $selectedID, fontSize: fontSize)
+                MathNodeView(node: subscriptNode, selectedID: $selectedID, fontSize: fontSize * 0.65)
+                    .offset(y: fontSize * 0.25)
+            }
+        case .sqrt(let inner):
+            HStack(alignment: .top, spacing: 2) {
+                Text("√").font(.system(size: fontSize, design: .serif))
+                MathNodeView(node: inner, selectedID: $selectedID, fontSize: fontSize)
+                    .padding(.top, 2)
+                    .overlay(alignment: .top) { Rectangle().frame(height: 1) }
+            }
+        }
+    }
+}

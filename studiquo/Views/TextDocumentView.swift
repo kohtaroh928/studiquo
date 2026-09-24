@@ -55,7 +55,11 @@ enum DocumentBody {
                 string: line + "\n",
                 attributes: [
                     .font: UIFont(descriptor: descriptor, size: style.fontSize),
-                    .foregroundColor: UIColor.label,
+                    // The page is a fixed white sheet regardless of light/dark
+                    // mode (see the `.background(.white)` on the page in
+                    // `TextDocumentView`), so text needs a fixed dark color
+                    // too — `.label` turns white in dark mode and disappears.
+                    .foregroundColor: UIColor.black,
                     .paragraphStyle: paragraph,
                 ]
             ))
@@ -63,14 +67,19 @@ enum DocumentBody {
         return result
     }
 
-    /// The typography a brand-new document starts in.
+    /// The typography a brand-new document starts in: 游明朝 (Yu Mincho) at
+    /// the body size, black text — matching the page, which is always a
+    /// white sheet (see the comment above).
     static func defaultAttributes() -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
         paragraph.paragraphSpacing = DocumentParagraphStyle.body.spacingAfter
+        let size = DocumentParagraphStyle.body.fontSize
+        let font = DocumentFontFamily.yuMincho.descriptor(size: size)
+            .map { UIFont(descriptor: $0, size: size) } ?? UIFont.systemFont(ofSize: size)
         return [
-            .font: UIFont.systemFont(ofSize: DocumentParagraphStyle.body.fontSize),
-            .foregroundColor: UIColor.label,
+            .font: font,
+            .foregroundColor: UIColor.black,
             .paragraphStyle: paragraph,
         ]
     }
@@ -138,6 +147,10 @@ struct TextDocumentView: View {
     @State private var bottomPullProgress: CGFloat = 0
     @State private var topHoldTracker = PullHoldTracker()
     @State private var bottomHoldTracker = PullHoldTracker()
+    /// The scrollable content's actual height, measured via
+    /// `ScrollContentHeightPreferenceKey` — see `updateBottomPull`'s doc
+    /// comment for why the bottom gauge needs this and the top one doesn't.
+    @State private var pageContentHeight: CGFloat = 0
     // Both numbers deliberately identical to the notebook feature's own
     // `ContinuousPagesView` — see `PullHoldTracker`'s doc comment.
     private static let pullThreshold: CGFloat = 150
@@ -156,7 +169,25 @@ struct TextDocumentView: View {
         }
     }
 
-    private func updateBottomPull(overscroll: CGFloat) {
+    /// A short document's content is routinely shorter than the viewport —
+    /// far more often than a notebook's page list or a slide deck, since a
+    /// single-page memo can be a few lines. When that happens the bottom
+    /// gauge's resting position sits *above* where a full viewport's worth
+    /// of content would put it, so `restingMaxY - maxY` reads as a positive
+    /// overscroll — the gauge showing "pull to add" and eventually firing —
+    /// even with zero finger movement. `viewportHeight` guards against
+    /// exactly that, matching the notebook feature's own
+    /// `ContinuousPagesView`, whose bottom-edge handler bails out unless
+    /// `contentHeight > geometry.size.height` (see
+    /// `ScrollContentHeightPreferenceKey`'s doc comment for the same
+    /// reasoning). The top edge doesn't need this: short content still
+    /// rests pinned to the top of the scroll view, so its resting `minY`
+    /// never drifts the way the bottom's `maxY` does.
+    private func updateBottomPull(overscroll: CGFloat, viewportHeight: CGFloat) {
+        guard pageContentHeight > viewportHeight else {
+            if bottomPullProgress != 0 { bottomPullProgress = 0 }
+            return
+        }
         let progress = min(overscroll / Self.pullThreshold, 1)
         bottomPullProgress = progress
         if bottomHoldTracker.update(progress: progress, holdDuration: Self.pullHoldDuration) {
@@ -392,6 +423,7 @@ struct TextDocumentView: View {
                     }
                 } label: {
                     HStack(spacing: 4) {
+                        Image(systemName: "textformat")
                         Text(formatting.familyName)
                             .font(.subheadline)
                             .lineLimit(1)
@@ -608,15 +640,23 @@ struct TextDocumentView: View {
                     )
                     .background(
                         ZStack {
-                            ScrollOverscrollObserver(edge: .bottom) { updateBottomPull(overscroll: $0) }
+                            ScrollOverscrollObserver(edge: .bottom) {
+                                updateBottomPull(overscroll: $0, viewportHeight: geometry.size.height)
+                            }
                             PullEdgeGeometryReader(edge: .bottom, spaceName: Self.pullCoordinateSpaceName)
                         }
                     )
                 }
                 .padding(.vertical, 24)
                 .frame(maxWidth: .infinity)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: ScrollContentHeightPreferenceKey.self, value: proxy.size.height)
+                    }
+                )
             }
             .coordinateSpace(name: Self.pullCoordinateSpaceName)
+            .onPreferenceChange(ScrollContentHeightPreferenceKey.self) { pageContentHeight = $0 }
             .onPreferenceChange(PullTopMinYPreferenceKey.self) { minY in
                 guard minY.isFinite else { return }
                 updateTopPull(overscroll: max(0, minY - 24))
@@ -624,7 +664,7 @@ struct TextDocumentView: View {
             .onPreferenceChange(PullBottomMaxYPreferenceKey.self) { maxY in
                 guard maxY.isFinite else { return }
                 let restingMaxY = geometry.size.height - 24
-                updateBottomPull(overscroll: max(0, restingMaxY - maxY))
+                updateBottomPull(overscroll: max(0, restingMaxY - maxY), viewportHeight: geometry.size.height)
             }
             .onChange(of: scrollTarget) { _, target in
                 guard let target else { return }
@@ -1048,7 +1088,7 @@ struct TextDocumentView: View {
     private func removeLink() {
         mutateRange(linkTargetRange) { text, range in
             text.removeAttribute(.link, range: range)
-            text.addAttribute(.foregroundColor, value: UIColor.label, range: range)
+            text.addAttribute(.foregroundColor, value: UIColor.black, range: range)
             text.removeAttribute(.underlineStyle, range: range)
         }
     }
@@ -1368,7 +1408,7 @@ struct SelectionFormatting: Equatable {
     var fontSize: CGFloat = DocumentParagraphStyle.body.fontSize
     var alignment: NSTextAlignment = .natural
     var paragraphStyle: DocumentParagraphStyle = .body
-    var familyName: String = DocumentFontFamily.system.title
+    var familyName: String = DocumentFontFamily.yuMincho.title
 
     init() {}
 
@@ -1506,7 +1546,10 @@ private enum DocumentTextColor: String, CaseIterable, Identifiable {
 
     var uiColor: UIColor {
         switch self {
-        case .primary: .label
+        // The page is always a fixed white sheet (see `TextDocumentView`'s
+        // `.background(.white)`), so "standard" text needs a fixed dark
+        // color too — `.label` turns white in dark mode and disappears.
+        case .primary: .black
         case .red: UIColor(red: 0.84, green: 0.18, blue: 0.16, alpha: 1)
         case .blue: UIColor(red: 0.09, green: 0.35, blue: 0.72, alpha: 1)
         case .green: UIColor(red: 0.13, green: 0.47, blue: 0.22, alpha: 1)
@@ -1706,30 +1749,97 @@ private struct TextSegmentPreview: View {
 
 // MARK: - Table insertion sheet
 
+/// A Word-style table picker: drag a finger across the grid to choose how
+/// many rows/columns, lift to insert. `Stepper`s below cover sizes past the
+/// grid's cap without giving up the visual picker as the primary way in.
 private struct InsertTableSheet: View {
     @Binding var rows: Int
     @Binding var columns: Int
     let onInsert: () -> Void
     @Environment(\.dismiss) private var dismiss
 
+    private let maxRows = 8
+    private let maxColumns = 10
+    private let cellSize: CGFloat = 26
+    private let cellSpacing: CGFloat = 4
+
+    @State private var hoveredRow = 0
+    @State private var hoveredColumn = 0
+
     var body: some View {
         NavigationStack {
-            Form {
-                Stepper("行: \(rows)", value: $rows, in: 1...20)
-                Stepper("列: \(columns)", value: $columns, in: 1...10)
+            VStack(spacing: 18) {
+                Text(hoveredRow > 0 ? "\(hoveredRow) × \(hoveredColumn) の表" : "マス目を指でなぞって大きさを選び、離すと挿入されます")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(height: 20)
+
+                grid
+
+                Divider()
+
+                DisclosureGroup("行・列数を指定して挿入") {
+                    VStack(spacing: 12) {
+                        Stepper("行: \(rows)", value: $rows, in: 1...30)
+                        Stepper("列: \(columns)", value: $columns, in: 1...20)
+                        Button("挿入", action: onInsert)
+                            .buttonStyle(.borderedProminent)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .padding(.top, 8)
+                }
+                .padding(.horizontal)
+
+                Spacer(minLength: 0)
             }
+            .padding(.top, 20)
             .navigationTitle("表を挿入")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("キャンセル") { dismiss() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("挿入", action: onInsert)
+            }
+        }
+        .presentationDetents([.height(440)])
+    }
+
+    private var grid: some View {
+        VStack(spacing: cellSpacing) {
+            ForEach(1...maxRows, id: \.self) { row in
+                HStack(spacing: cellSpacing) {
+                    ForEach(1...maxColumns, id: \.self) { column in
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(isHighlighted(row: row, column: column)
+                                  ? Color.accentColor
+                                  : Color(.tertiarySystemFill))
+                            .frame(width: cellSize, height: cellSize)
+                    }
                 }
             }
         }
-        .presentationDetents([.height(220)])
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { updateHover(at: $0.location) }
+                .onEnded { value in
+                    updateHover(at: value.location)
+                    guard hoveredRow > 0, hoveredColumn > 0 else { return }
+                    rows = hoveredRow
+                    columns = hoveredColumn
+                    onInsert()
+                }
+        )
+    }
+
+    private func isHighlighted(row: Int, column: Int) -> Bool {
+        row <= hoveredRow && column <= hoveredColumn
+    }
+
+    private func updateHover(at location: CGPoint) {
+        let step = cellSize + cellSpacing
+        hoveredColumn = min(maxColumns, max(1, Int(location.x / step) + 1))
+        hoveredRow = min(maxRows, max(1, Int(location.y / step) + 1))
     }
 }
 
@@ -1815,30 +1925,41 @@ private struct DocumentTableOfContentsBlockView: View {
 
 // MARK: - Equation editing sheet
 
-/// A source text field (the small LaTeX-like syntax `MathExpressionParser`
-/// reads) with a live-rendered preview below it — used both for inserting a
-/// new equation and, via `DocumentEquationBlockView`'s tap gesture, for
-/// editing an existing one in place.
+/// A Word-style equation editor: tap a template (fraction, power, subscript,
+/// root) from the gallery to drop it in with dashed blanks, tap any blank to
+/// select it, then fill it in from the keypad — no LaTeX typing. Used both
+/// for inserting a new equation and, via `DocumentEquationBlockView`'s tap
+/// gesture, for editing an existing one in place; `source` round-trips
+/// through `MathNode.toSource()`/`editableTree(from:)` either way.
 private struct EquationEditSheet: View {
     @Binding var source: String
     let onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
 
+    @StateObject private var root: MathNode
+    @State private var selectedID: UUID?
+
+    init(source: Binding<String>, onSave: @escaping () -> Void) {
+        self._source = source
+        self.onSave = onSave
+        _root = StateObject(wrappedValue: MathNode.editableTree(from: source.wrappedValue))
+    }
+
     var body: some View {
         NavigationStack {
-            Form {
-                Section("入力(LaTeX風の記法)") {
-                    TextField("例: x^2 + \\frac{1}{2}", text: $source, axis: .vertical)
-                        .font(.system(.body, design: .monospaced))
-                        .autocorrectionDisabled()
+            VStack(spacing: 18) {
+                templateGallery
+                ScrollView(.horizontal, showsIndicators: false) {
+                    MathNodeView(node: root, selectedID: $selectedID, fontSize: 26)
+                        .padding(18)
                 }
-                Section("プレビュー") {
-                    ScrollView(.horizontal) {
-                        MathExpressionView(expression: MathExpressionParser.parse(source), fontSize: 22)
-                            .padding(.vertical, 8)
-                    }
-                }
+                .frame(maxWidth: .infinity, minHeight: 100)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal)
+                keypad
+                Spacer(minLength: 0)
             }
+            .padding(.top, 12)
             .navigationTitle("数式")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1846,11 +1967,202 @@ private struct EquationEditSheet: View {
                     Button("キャンセル") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存", action: onSave)
+                    Button("保存") {
+                        source = root.toSource()
+                        onSave()
+                    }
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
+    }
+
+    // MARK: Template gallery
+
+    private var templateGallery: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                templateButton(title: "分数") {
+                    MathExpressionView(expression: .fraction(.text("a"), .text("b")), fontSize: 16)
+                } insert: {
+                    .fraction(MathNode(.blank, parent: $0), MathNode(.blank, parent: $0))
+                }
+                templateButton(title: "べき乗") {
+                    MathExpressionView(expression: .superscript(.text("a"), .text("b")), fontSize: 16)
+                } insert: {
+                    .power(MathNode(.blank, parent: $0), MathNode(.blank, parent: $0))
+                }
+                templateButton(title: "添字") {
+                    MathExpressionView(expression: .subscriptExpression(.text("a"), .text("b")), fontSize: 16)
+                } insert: {
+                    .sub(MathNode(.blank, parent: $0), MathNode(.blank, parent: $0))
+                }
+                templateButton(title: "根号") {
+                    MathExpressionView(expression: .sqrt(.text("a")), fontSize: 16)
+                } insert: {
+                    .sqrt(MathNode(.blank, parent: $0))
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    /// One gallery entry: a small static preview of the shape (built with
+    /// the read-only `MathExpressionView`, purely for the icon) over its
+    /// Japanese name, matching a word processor's equation gallery.
+    private func templateButton<Preview: View>(
+        title: String,
+        @ViewBuilder preview: () -> Preview,
+        insert: @escaping (MathNode) -> MathNode.Kind
+    ) -> some View {
+        Button {
+            insertTemplate(insert)
+        } label: {
+            VStack(spacing: 4) {
+                preview()
+                    .frame(height: 22)
+                Text(title).font(.caption2)
+            }
+            .frame(width: 60, height: 52)
+            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Keypad
+
+    private static let keypadRows: [[String]] = [
+        ["7", "8", "9", "÷", "("],
+        ["4", "5", "6", "×", ")"],
+        ["1", "2", "3", "−", "="],
+        ["0", ".", "x", "y", "+"],
+        ["π", "θ", "α", "β", "√"],
+    ]
+
+    private var keypad: some View {
+        VStack(spacing: 6) {
+            ForEach(Array(Self.keypadRows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 6) {
+                    ForEach(row, id: \.self) { key in
+                        Button {
+                            insertCharacter(key)
+                        } label: {
+                            Text(key)
+                                .font(.system(.body, design: .rounded))
+                                .frame(maxWidth: .infinity, minHeight: 34)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+            HStack(spacing: 6) {
+                Button {
+                    clearSelection()
+                } label: {
+                    Label("選択解除", systemImage: "xmark.circle")
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                }
+                .buttonStyle(.bordered)
+                Button(role: .destructive) {
+                    backspace()
+                } label: {
+                    Image(systemName: "delete.left")
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    // MARK: Editing actions
+
+    private var selectedNode: MathNode? {
+        guard let selectedID else { return nil }
+        return root.find(selectedID)
+    }
+
+    private func clearSelection() {
+        selectedID = nil
+    }
+
+    private func appendToRoot(_ node: MathNode) {
+        guard case .sequence(let children) = root.kind else { return }
+        node.parent = root
+        root.kind = .sequence(children + [node])
+    }
+
+    /// Drops a template in: nested inside the selected blank if one is
+    /// selected (so tapping "分数" while the exponent box is selected
+    /// builds a fraction *in* that exponent), otherwise appended to the end
+    /// — either way, the template's first blank is selected next so the
+    /// user can start typing immediately.
+    private func insertTemplate(_ makeKind: (MathNode) -> MathNode.Kind) {
+        if let node = selectedNode, case .blank = node.kind {
+            node.kind = makeKind(node)
+            selectedID = node.firstBlank()?.id
+        } else {
+            let node = MathNode(.blank)
+            node.kind = makeKind(node)
+            appendToRoot(node)
+            selectedID = node.firstBlank()?.id
+        }
+    }
+
+    /// Routes a keypad character to the selected blank/run, or starts a new
+    /// run at the end of the equation if nothing is selected.
+    private func insertCharacter(_ character: String) {
+        guard let node = selectedNode else {
+            let new = MathNode(.text(character))
+            appendToRoot(new)
+            selectedID = new.id
+            return
+        }
+        switch node.kind {
+        case .blank:
+            node.kind = .text(character)
+            selectedID = node.id
+        case .text(let s):
+            node.kind = .text(s + character)
+            selectedID = node.id
+        default:
+            let new = MathNode(.text(character))
+            appendToRoot(new)
+            selectedID = new.id
+        }
+    }
+
+    /// Deletes the last character of the selected run, or — for a selected
+    /// blank — removes it (from a plain sequence) or collapses its parent
+    /// structure back down to a single blank (a fraction/root/etc. isn't
+    /// useful with no way to remove just one of its required slots).
+    private func backspace() {
+        guard let node = selectedNode else { return }
+        switch node.kind {
+        case .text(let s):
+            if s.count > 1 {
+                node.kind = .text(String(s.dropLast()))
+            } else {
+                node.kind = .blank
+            }
+            selectedID = node.id
+        case .blank:
+            guard let parent = node.parent else { return }
+            if case .sequence(let siblings) = parent.kind {
+                var remaining = siblings.filter { $0 !== node }
+                if remaining.isEmpty {
+                    let fresh = MathNode(.blank, parent: parent)
+                    remaining = [fresh]
+                }
+                parent.kind = .sequence(remaining)
+                selectedID = nil
+            } else {
+                parent.kind = .blank
+                selectedID = parent.id
+            }
+        default:
+            break
+        }
     }
 }
 
@@ -1895,6 +2207,12 @@ private struct DocumentTableBlockView: View {
     let onChange: () -> Void
 
     private let cellWidth: CGFloat = 120
+    /// Whether any cell in *this* table currently has the keyboard focus —
+    /// the row/column controls below only make sense while the table is
+    /// the thing being worked on, the way Word only shows its table tools
+    /// while the selection is inside a table.
+    @FocusState private var focusedCellID: PersistentIdentifier?
+    private var isSelected: Bool { focusedCellID != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1913,6 +2231,7 @@ private struct DocumentTableBlockView: View {
                                     get: { cell.text },
                                     set: { cell.text = $0; onChange() }
                                 ), axis: .vertical)
+                                .focused($focusedCellID, equals: cell.persistentModelID)
                                 .font(.system(size: 14))
                                 .padding(8)
                                 // A merged cell's size scales with its
@@ -1957,19 +2276,22 @@ private struct DocumentTableBlockView: View {
             .background(Color(.separator))
             .border(Color(.separator))
 
-            HStack(spacing: 16) {
-                Button("行を追加") { block.addTableRow(); onChange() }
-                Button("列を追加") { block.addTableColumn(); onChange() }
-                Button("最後の行を削除") { block.removeLastTableRow(); onChange() }
-                Button("最後の列を削除") { block.removeLastTableColumn(); onChange() }
-                Spacer()
-                Button("表を削除", role: .destructive) {
-                    block.document?.blocks?.removeAll { $0 === block }
-                    onChange()
+            if isSelected {
+                HStack(spacing: 16) {
+                    Button("行を追加") { block.addTableRow(); onChange() }
+                    Button("列を追加") { block.addTableColumn(); onChange() }
+                    Button("最後の行を削除") { block.removeLastTableRow(); onChange() }
+                    Button("最後の列を削除") { block.removeLastTableColumn(); onChange() }
+                    Spacer()
+                    Button("表を削除", role: .destructive) {
+                        block.document?.blocks?.removeAll { $0 === block }
+                        onChange()
+                    }
                 }
+                .font(.caption)
+                .buttonStyle(.bordered)
+                .transition(.opacity)
             }
-            .font(.caption)
-            .buttonStyle(.bordered)
         }
     }
 }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createHash } from "node:crypto";
 import worker from "./app.js";
 
 // Regression coverage for "friend requests are approved, not instant": adding
@@ -167,6 +168,7 @@ function generateRegistryTestCode() {
 // registered waits for the first to finish, instead of racing it.
 function fakeUserRegistryBinding(studiquoData) {
   const queues = new Map();
+  const chatIdentityKeys = new Map();
 
   async function ensureUserAtomic(key, name) {
     const storageKey = `chat:user:${key}`;
@@ -287,6 +289,15 @@ function fakeUserRegistryBinding(studiquoData) {
   return {
     getByName(key) {
       return {
+        resolveChatKey(identityHash, legacyTokenHash) {
+          return enqueue(key, async () => {
+            if (chatIdentityKeys.has(identityHash)) return chatIdentityKeys.get(identityHash);
+            const chatKey = await studiquoData.get(`chat:user:${legacyTokenHash}`)
+              ? legacyTokenHash : identityHash;
+            chatIdentityKeys.set(identityHash, chatKey);
+            return chatKey;
+          });
+        },
         ensureUser(k, name) {
           return enqueue(key, () => ensureUserAtomic(k, name));
         },
@@ -326,7 +337,7 @@ function environment() {
       // well-formed bearer token as if it came from a real sign-in, so
       // freshToken()'s many call sites don't each need to seed one by hand.
       if (value === null && key.startsWith("session:")) {
-        value = JSON.stringify({ sub: "test", issuedAt: Math.floor(Date.now() / 1000) });
+        value = JSON.stringify({ sub: `test:${key.slice(8)}`, issuedAt: Math.floor(Date.now() / 1000) });
       }
       return type === "json" && value ? JSON.parse(value) : value;
     },
@@ -482,6 +493,14 @@ async function uploadAttachment(env, token, roomID, contentType, data) {
 
 async function downloadAttachment(env, token, roomID, id) {
   return worker.fetch(request(`/api/chat/rooms/${roomID}/attachments/${id}`, { token }), env, noopCtx);
+}
+
+async function uploadAvatar(env, token, contentType, data) {
+  return worker.fetch(request("/api/chat/me/avatar", { method: "POST", token, body: { contentType, data } }), env, noopCtx);
+}
+
+async function downloadAvatar(env, token, code) {
+  return worker.fetch(request(`/api/chat/avatar/${code}`, { token }), env, noopCtx);
 }
 
 // Regression coverage for "registering a brand-new user is a race condition":
@@ -849,6 +868,86 @@ test("friends() reports a friend's current name, not the one snapshotted when th
   assert.equal((await friends(env, bobToken))[0].name, "Alice (renamed)");
 });
 
+// Regression coverage for "a friend's profile photo never showed up
+// anywhere but a generic placeholder icon, no matter what was set in the
+// profile screen": nothing about it ever reached the server before this.
+test("a friend can download an uploaded avatar, and sees it reflected in friends()", async () => {
+  const env = environment();
+  const aliceToken = freshToken("z0");
+  const bobToken = freshToken("z1");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  await acceptRequest(env, bobToken, alice.code);
+
+  const uploadResponse = await uploadAvatar(env, aliceToken, "image/jpeg", Buffer.from("fake jpeg bytes").toString("base64"));
+  assert.equal(uploadResponse.status, 200);
+  const { avatarUpdatedAt } = await uploadResponse.json();
+  assert.ok(avatarUpdatedAt);
+
+  assert.equal((await friends(env, bobToken))[0].avatarUpdatedAt, avatarUpdatedAt);
+
+  const downloadResponse = await downloadAvatar(env, bobToken, alice.code);
+  assert.equal(downloadResponse.status, 200);
+  assert.equal(downloadResponse.headers.get("content-type"), "image/jpeg");
+  assert.equal(Buffer.from(await downloadResponse.arrayBuffer()).toString(), "fake jpeg bytes");
+});
+
+test("you can always download your own avatar", async () => {
+  const env = environment();
+  const aliceToken = freshToken("z2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  await uploadAvatar(env, aliceToken, "image/png", Buffer.from("fake png bytes").toString("base64"));
+
+  const response = await downloadAvatar(env, aliceToken, alice.code);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "image/png");
+});
+
+test("a stranger cannot download someone else's avatar", async () => {
+  const env = environment();
+  const aliceToken = freshToken("z3");
+  const strangerToken = freshToken("z4");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  await registerUser(env, strangerToken, "Stranger");
+  await uploadAvatar(env, aliceToken, "image/jpeg", Buffer.from("fake jpeg bytes").toString("base64"));
+
+  const response = await downloadAvatar(env, strangerToken, alice.code);
+  assert.equal(response.status, 404);
+});
+
+test("downloading an avatar that was never uploaded returns 404", async () => {
+  const env = environment();
+  const aliceToken = freshToken("z5");
+  const alice = await registerUser(env, aliceToken, "Alice");
+
+  const response = await downloadAvatar(env, aliceToken, alice.code);
+  assert.equal(response.status, 404);
+});
+
+test("an avatar upload with a disallowed content type is rejected", async () => {
+  const env = environment();
+  const aliceToken = freshToken("z6");
+  await registerUser(env, aliceToken, "Alice");
+
+  const response = await uploadAvatar(env, aliceToken, "image/gif", Buffer.from("fake gif bytes").toString("base64"));
+  assert.equal(response.status, 400);
+});
+
+test("an oversized avatar upload is rejected", async () => {
+  const env = environment();
+  const aliceToken = freshToken("z7");
+  await registerUser(env, aliceToken, "Alice");
+
+  // Decodes to 320,000 bytes — over MAX_AVATAR_BYTES (300,000) — while its
+  // base64 encoding (~427,000 chars) still fits under MAX_AVATAR_UPLOAD_BODY
+  // (450,000), so this actually exercises the decoded-size check itself
+  // rather than being rejected earlier for a merely-oversized request body.
+  const oversized = Buffer.alloc(320_000, 1).toString("base64");
+  const response = await uploadAvatar(env, aliceToken, "image/jpeg", oversized);
+  assert.equal(response.status, 400);
+});
+
 test("study stats reported after becoming friends are still picked up live", async () => {
   const env = environment();
   const aliceToken = freshToken("y2");
@@ -1024,6 +1123,61 @@ test("after acceptance, both friends can actually send and read messages in thei
 
   const alicesView = await (await readMessages(env, aliceToken, roomID)).json();
   assert.equal(alicesView[0].isMine, true);
+});
+
+test("a new session for the same account keeps its friend code and access to both sides of a chat", async () => {
+  const env = environment();
+  const aliceToken = freshToken("ra");
+  const bobToken = freshToken("rb");
+  const aliceNewToken = freshToken("rn");
+  const account = "email:alice@example.test";
+  const tokenHash = token => createHash("sha256").update(token).digest("hex");
+  await env.STUDIQUO_DATA.put(`session:${tokenHash(aliceToken)}`, JSON.stringify({ sub: account }));
+  await env.STUDIQUO_DATA.put(`session:${tokenHash(aliceNewToken)}`, JSON.stringify({ sub: account }));
+
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const roomID = (await (await acceptRequest(env, bobToken, alice.code)).json()).roomID;
+  assert.equal((await sendMessage(env, aliceToken, roomID, "before sign-in")).status, 200);
+
+  assert.equal((await registerUser(env, aliceNewToken, "Alice")).code, alice.code);
+  assert.equal((await friends(env, aliceNewToken))[0].roomID, roomID);
+  assert.equal((await readMessages(env, aliceNewToken, roomID)).status, 200);
+  assert.equal((await sendMessage(env, aliceNewToken, roomID, "after sign-in")).status, 200);
+  const received = await (await readMessages(env, bobToken, roomID)).json();
+  assert.deepEqual(received.map(message => message.text), ["before sign-in", "after sign-in"]);
+});
+
+test("an existing token-derived friendship and room survive a later sign-in", async () => {
+  const env = environment();
+  const oldToken = freshToken("lu");
+  const newToken = freshToken("ln");
+  const bobToken = freshToken("lb");
+  const oldKey = createHash("sha256").update(oldToken).digest("hex");
+  const oldCode = "LEGACY1";
+  await env.STUDIQUO_DATA.put(`chat:user:${oldKey}`, JSON.stringify({
+    key: oldKey, name: "Alice", code: oldCode, friends: [],
+  }));
+  await env.STUDIQUO_DATA.put(`chat:code:${oldCode}`, oldKey);
+  const account = "email:legacy@example.test";
+  for (const token of [oldToken, newToken]) {
+    const hash = createHash("sha256").update(token).digest("hex");
+    await env.STUDIQUO_DATA.put(`session:${hash}`, JSON.stringify({ sub: account }));
+  }
+
+  assert.equal((await registerUser(env, oldToken, "Alice")).code, oldCode);
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, oldToken, bob.code);
+  const roomID = (await (await acceptRequest(env, bobToken, oldCode)).json()).roomID;
+  assert.equal((await sendMessage(env, oldToken, roomID, "before sign-in")).status, 200);
+
+  assert.equal((await registerUser(env, newToken, "Alice")).code, oldCode);
+  assert.equal((await friends(env, newToken))[0].roomID, roomID);
+  assert.equal((await readMessages(env, newToken, roomID)).status, 200);
+  assert.equal((await sendMessage(env, newToken, roomID, "after sign-in")).status, 200);
+  const received = await (await readMessages(env, bobToken, roomID)).json();
+  assert.deepEqual(received.map(message => message.text), ["before sign-in", "after sign-in"]);
 });
 
 // Regression coverage for "canceling a message only hides it on the

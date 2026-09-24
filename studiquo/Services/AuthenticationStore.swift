@@ -25,6 +25,7 @@ final class AuthenticationStore: ObservableObject {
     private let passkeyIdentityAccount = "passkey-identity"
     private let oauthIdentityAccount = "oauth-identity"
     private let now: () -> Date
+    private let defaults: UserDefaults
     /// Email + new password held only in memory between `beginAccountCreation`
     /// and a successful `confirmEmailVerification` — nothing is written to
     /// Keychain until the code is confirmed, so an abandoned sign-up (or
@@ -34,11 +35,21 @@ final class AuthenticationStore: ObservableObject {
     /// password" identically (see EmailVerificationService.confirmCode).
     private var pendingSignUp: (email: String, password: String)?
 
-    /// `service`/`now` are overridable so tests can use an isolated Keychain
-    /// service and a fake clock.
-    init(service: String = "com.yabuko.studiquo.authentication", now: @escaping () -> Date = Date.init) {
+    /// `service`/`now`/`defaults` are overridable so tests can use an
+    /// isolated Keychain service, a fake clock, and an isolated UserDefaults
+    /// suite — without this, the `onboardingKey` flag below reads/writes the
+    /// real, shared `UserDefaults.standard`, which a manually-run copy of
+    /// the app on the same simulator (or another test) can leave set to
+    /// `true`, making a freshly-constructed store in a test jump straight
+    /// to `.authenticated` when it expects `.onboarding`.
+    init(
+        service: String = "com.yabuko.studiquo.authentication",
+        now: @escaping () -> Date = Date.init,
+        defaults: UserDefaults = .standard
+    ) {
         self.service = service
         self.now = now
+        self.defaults = defaults
         restore()
     }
 
@@ -101,7 +112,7 @@ final class AuthenticationStore: ObservableObject {
             persistOAuthIdentity(provider: "email", subject: normalized, email: normalized)
             createSession()
             errorMessage = ""
-            state = UserDefaults.standard.bool(forKey: onboardingKey) ? .authenticated : .onboarding
+            state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
         } catch {
             errorMessage = "メールアドレスまたはパスワードが違います。"
@@ -110,7 +121,7 @@ final class AuthenticationStore: ObservableObject {
     }
 
     func finishOnboarding() {
-        UserDefaults.standard.set(true, forKey: onboardingKey)
+        defaults.set(true, forKey: onboardingKey)
         state = .authenticated
     }
 
@@ -158,7 +169,7 @@ final class AuthenticationStore: ObservableObject {
             pendingSignUp = nil
             createSession()
             errorMessage = ""
-            state = UserDefaults.standard.bool(forKey: onboardingKey) ? .authenticated : .onboarding
+            state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -206,7 +217,7 @@ final class AuthenticationStore: ObservableObject {
             }
             createSession()
             errorMessage = ""
-            state = UserDefaults.standard.bool(forKey: onboardingKey) ? .authenticated : .onboarding
+            state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
         } catch let error as ASAuthorizationError where error.code == .canceled {
             return false
@@ -240,7 +251,7 @@ final class AuthenticationStore: ObservableObject {
                 persistOAuthIdentity(provider: "apple", subject: identity.subject, email: identity.email)
                 createSession()
                 errorMessage = ""
-                state = UserDefaults.standard.bool(forKey: onboardingKey) ? .authenticated : .onboarding
+                state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
                 return true
             } catch {
                 errorMessage = error.localizedDescription
@@ -264,7 +275,7 @@ final class AuthenticationStore: ObservableObject {
             persistOAuthIdentity(provider: "google", subject: identity.subject, email: identity.email)
             createSession()
             errorMessage = ""
-            state = UserDefaults.standard.bool(forKey: onboardingKey) ? .authenticated : .onboarding
+            state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
         } catch let error as NSError where error.domain == "com.google.GIDSignIn" && error.code == -5 {
             // GIDSignInError.canceled: the user dismissed the sign-in sheet.
@@ -283,7 +294,7 @@ final class AuthenticationStore: ObservableObject {
         }
         // Active use renews the six-month session.
         createSession()
-        state = UserDefaults.standard.bool(forKey: onboardingKey) ? .authenticated : .onboarding
+        state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
     }
 
     private func createSession() {
