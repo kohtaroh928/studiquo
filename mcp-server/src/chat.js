@@ -19,11 +19,6 @@ const MAX_ATTACHMENT_UPLOAD_BODY = 6_000_000;
 const MAX_AVATAR_BYTES = 300_000;
 const MAX_AVATAR_UPLOAD_BODY = 450_000;
 const ALLOWED_AVATAR_CONTENT_TYPES = new Set(["image/jpeg", "image/png"]);
-const FRIEND_ADD_LIMIT_PER_MINUTE = 5;
-const CHAT_MESSAGE_LIMIT_PER_MINUTE = 30;
-const ATTACHMENT_UPLOAD_LIMIT_PER_MINUTE = 10;
-const AVATAR_UPLOAD_LIMIT_PER_MINUTE = 5;
-const REPORT_LIMIT_PER_MINUTE = 5;
 const MAX_FRIENDS = 500;
 // A report's free-text reason — generous for context, but bounded so a
 // report can't be used to smuggle an oversized payload into storage.
@@ -180,12 +175,12 @@ export async function handleChat(url, request, env) {
   // /api/chat/avatar/:code below can be reached with the same identifier
   // friends already know a person by.
   if (url.pathname === "/api/chat/me/avatar" && request.method === "POST") {
-    // Reuses the attachment-upload rate limit binding under its own KV
-    // prefix (see checkRateLimit's kvPrefix param) rather than needing a new
-    // Cloudflare Rate Limiting binding provisioned just for this.
-    const allowed = await checkRateLimit(
-      env, env.RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD, "avatar-upload", key, AVATAR_UPLOAD_LIMIT_PER_MINUTE
-    );
+    // Shares the attachment-upload rate limit binding (and its budget)
+    // rather than needing a new Cloudflare Rate Limiting binding
+    // provisioned just for this — an avatar change is rare enough that a
+    // combined 10/minute budget with attachment uploads is no real
+    // constraint on either.
+    const allowed = await checkRateLimit(env.RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD, key);
     if (!allowed) return json({ error: "Too many uploads. Please slow down." }, 429);
     const body = await readBody(request, MAX_AVATAR_UPLOAD_BODY);
     const contentType = String(body?.contentType ?? "");
@@ -264,7 +259,7 @@ export async function handleChat(url, request, env) {
   if (url.pathname === "/api/chat/friends" && request.method === "POST") {
     // Without this, the 200/404 split on a guessed code is a free oracle for
     // brute-forcing other users' friend codes — cap attempts per caller.
-    const allowed = await checkRateLimit(env, env.RATE_LIMIT_CHAT_FRIEND_ADD, "chat-friend-add", key, FRIEND_ADD_LIMIT_PER_MINUTE);
+    const allowed = await checkRateLimit(env.RATE_LIMIT_CHAT_FRIEND_ADD, key);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
     const body = await readBody(request);
     const friendCode = parseFriendCode(body);
@@ -293,7 +288,7 @@ export async function handleChat(url, request, env) {
   // this shortcut can never be reached by just typing a friend code by
   // hand.
   if (url.pathname === "/api/chat/friends/link-add" && request.method === "POST") {
-    const allowed = await checkRateLimit(env, env.RATE_LIMIT_CHAT_FRIEND_ADD, "chat-friend-link-add", key, FRIEND_ADD_LIMIT_PER_MINUTE);
+    const allowed = await checkRateLimit(env.RATE_LIMIT_CHAT_FRIEND_ADD, key);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
     const body = await readBody(request);
     const linkToken = parseLinkToken(body);
@@ -379,7 +374,7 @@ export async function handleChat(url, request, env) {
   if (match && request.method === "POST") {
     // Without this, a single compromised or misbehaving client could flood a
     // room (and this Durable Object's storage) with unlimited messages.
-    const allowed = await checkRateLimit(env, env.RATE_LIMIT_CHAT_MESSAGE, "chat-message", key, CHAT_MESSAGE_LIMIT_PER_MINUTE);
+    const allowed = await checkRateLimit(env.RATE_LIMIT_CHAT_MESSAGE, key);
     if (!allowed) return json({ error: "Too many messages. Please slow down." }, 429);
     const body = await readBody(request);
     const text = String(body?.text ?? "").trim().slice(0, 2_000);
@@ -449,9 +444,7 @@ export async function handleChat(url, request, env) {
     // Each upload can be up to MAX_ATTACHMENT_UPLOAD_BODY (6MB) — without
     // this, a compromised or misbehaving client could spam a room's
     // storage with unlimited uploads, unlike message sends just above.
-    const allowed = await checkRateLimit(
-      env, env.RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD, "chat-attachment-upload", key, ATTACHMENT_UPLOAD_LIMIT_PER_MINUTE
-    );
+    const allowed = await checkRateLimit(env.RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD, key);
     if (!allowed) return json({ error: "Too many uploads. Please slow down." }, 429);
     const body = await readBody(request, MAX_ATTACHMENT_UPLOAD_BODY);
     try {
@@ -515,7 +508,7 @@ export async function handleChat(url, request, env) {
   // with a valid token) still goes through the room itself.
   const reportMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/messages\/(\d+)\/report$/.exec(url.pathname);
   if (reportMatch && request.method === "POST") {
-    const allowed = await checkRateLimit(env, env.RATE_LIMIT_CHAT_REPORT, "chat-report", key, REPORT_LIMIT_PER_MINUTE);
+    const allowed = await checkRateLimit(env.RATE_LIMIT_CHAT_REPORT, key);
     if (!allowed) return json({ error: "Too many reports. Please slow down." }, 429);
     const messageID = Number(reportMatch[2]);
     const body = await readBody(request);

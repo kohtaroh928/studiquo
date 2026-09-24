@@ -301,7 +301,7 @@ export default {
 // studiquo bearer token, in the same "<issued-at epoch>.<random>" format
 // token.js already expects everywhere else.
 async function handleAppleSignIn(request, env) {
-  const allowed = await checkRateLimit(env, env.RATE_LIMIT_APPLE_AUTH, "apple-auth", clientKey(request), 5);
+  const allowed = await checkRateLimit(env.RATE_LIMIT_APPLE_AUTH, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
   const declaredSize = Number(request.headers.get("content-length") ?? 0);
@@ -373,7 +373,7 @@ async function handleAppleSignIn(request, env) {
 // `email`/`email_verified` on every sign-in (not just the first), so those
 // are refreshed each time rather than written once.
 async function handleGoogleSignIn(request, env) {
-  const allowed = await checkRateLimit(env, env.RATE_LIMIT_GOOGLE_AUTH, "google-auth", clientKey(request), 5);
+  const allowed = await checkRateLimit(env.RATE_LIMIT_GOOGLE_AUTH, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
   const declaredSize = Number(request.headers.get("content-length") ?? 0);
@@ -433,7 +433,7 @@ async function handleGoogleSignIn(request, env) {
 // the caller can read mail at that address, which is what lets
 // confirm-code below link it alongside any Apple/Google account sharing it.
 async function handleSendEmailVerification(request, env) {
-  const allowed = await checkRateLimit(env, env.RATE_LIMIT_EMAIL_VERIFY_SEND, "email-verify-send", clientKey(request), 5);
+  const allowed = await checkRateLimit(env.RATE_LIMIT_EMAIL_VERIFY_SEND, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
   const body = await readTextLimited(request, 2_000);
@@ -470,7 +470,7 @@ async function handleSendEmailVerification(request, env) {
 // own exchange. `password` and `randomValue` are required for this reason:
 // this is the only place a local account's password is ever set.
 async function handleConfirmEmailVerification(request, env) {
-  const allowed = await checkRateLimit(env, env.RATE_LIMIT_EMAIL_VERIFY_CONFIRM, "email-verify-confirm", clientKey(request), 10);
+  const allowed = await checkRateLimit(env.RATE_LIMIT_EMAIL_VERIFY_CONFIRM, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
   const body = await readTextLimited(request, 2_000);
@@ -516,7 +516,7 @@ async function handleConfirmEmailVerification(request, env) {
 // old on-device check had one, since a flat per-IP limit is what every
 // other sign-in path here already relies on.
 async function handleLocalLogin(request, env) {
-  const allowed = await checkRateLimit(env, env.RATE_LIMIT_LOCAL_LOGIN, "local-login", clientKey(request), 10);
+  const allowed = await checkRateLimit(env.RATE_LIMIT_LOCAL_LOGIN, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
   const body = await readTextLimited(request, 2_000);

@@ -18,17 +18,18 @@
     "bindings": [
       { "name": "CHAT_ROOM", "class_name": "ChatRoom" },
       { "name": "USER_REGISTRY", "class_name": "UserRegistry" },
-      { "name": "DOCUMENT_ROOM", "class_name": "DocumentRoom" }
+      { "name": "DOCUMENT_ROOM", "class_name": "DocumentRoom" },
+      { "name": "RATE_COUNTER", "class_name": "RateCounter" }
     ]
   },
   "migrations": [
     { "tag": "v1-chat", "new_sqlite_classes": ["ChatRoom"] },
     { "tag": "v2-user-registry", "new_sqlite_classes": ["UserRegistry"] },
-    { "tag": "v3-document-room", "new_sqlite_classes": ["DocumentRoom"] }
+    { "tag": "v3-document-room", "new_sqlite_classes": ["DocumentRoom"] },
+    { "tag": "v4-rate-counter", "new_sqlite_classes": ["RateCounter"] }
   ],
   // One namespace_id per unauthenticated endpoint, so hammering one doesn't
-  // burn another's budget. See src/rate-limit.js for why this runs alongside
-  // a KV+TTL counter rather than being trusted on its own.
+  // burn another's budget.
   "ratelimits": [
     { "name": "RATE_LIMIT_APPLE_AUTH", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
     { "name": "RATE_LIMIT_GOOGLE_AUTH", "namespace_id": "1007", "simple": { "limit": 5, "period": 60 } },
