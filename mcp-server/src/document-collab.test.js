@@ -92,6 +92,25 @@ function fakeDocumentRoomBinding() {
   };
 }
 
+// Stands in for the real RateCounter Durable Object (rate-counter.js): a
+// plain in-memory count per name, ignoring windowSeconds entirely since no
+// test here spans a real window boundary.
+function fakeRateCounterBinding() {
+  const counts = new Map();
+  return {
+    getByName(name) {
+      return {
+        async bump(limit) {
+          const used = (counts.get(name) ?? 0) + 1;
+          if (used > limit) return false;
+          counts.set(name, used);
+          return true;
+        },
+      };
+    },
+  };
+}
+
 function environment() {
   const values = new Map();
   const studiquoData = {
@@ -112,6 +131,7 @@ function environment() {
   return {
     STUDIQUO_DATA: studiquoData,
     DOCUMENT_ROOM: fakeDocumentRoomBinding(),
+    RATE_COUNTER: fakeRateCounterBinding(),
   };
 }
 

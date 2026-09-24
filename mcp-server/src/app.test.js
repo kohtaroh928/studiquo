@@ -759,9 +759,9 @@ test("POST /api/auth/local/login: allows up to the limit, then 429s", async () =
 
   // The fake Cloudflare rate-limit binding below defaults to a cap of 5
   // (see fakeCloudflareLimiter's default), same as every other endpoint's
-  // rate-limit test in this file — checkRateLimit() only allows a request
-  // both layers agree on, so that default caps the effective limit here
-  // even though RATE_LIMIT_LOCAL_LOGIN's own KV-counter limit is 10.
+  // rate-limit test in this file, even though RATE_LIMIT_LOCAL_LOGIN's own
+  // configured limit in wrangler.jsonc is 10 — this test only exercises the
+  // fake, not the real config.
   for (let i = 0; i < 5; i++) {
     assert.equal((await attempt()).status, 401);
   }

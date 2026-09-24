@@ -6,3 +6,4 @@ export { default } from "./app.js";
 export { ChatRoom } from "./chat-room.js";
 export { UserRegistry } from "./user-registry.js";
 export { DocumentRoom } from "./document-room.js";
+export { RateCounter } from "./rate-counter.js";

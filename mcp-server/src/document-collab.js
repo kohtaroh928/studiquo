@@ -32,21 +32,13 @@ async function readBody(request, maxBytes = MAX_BODY) {
   return readJSONLimitedShared(request, maxBytes);
 }
 
-// A KV+TTL soft cap, the same bump() shape ai.js's usage quotas and
-// rate-limit.js's fallback counter both already use — deliberately not
-// routed through checkRateLimit()/the Cloudflare Rate Limiting binding
-// those use, since that binding is provisioned per endpoint in the
-// Cloudflare dashboard and this endpoint doesn't have one of its own yet.
-function currentWindowBucket() {
-  return Math.floor(Date.now() / 1000 / WINDOW_SECONDS);
-}
-
-async function withinLimit(env, kvPrefix, key, limit) {
-  const kvKey = `ratelimit:${kvPrefix}:${key}:${currentWindowBucket()}`;
-  const used = Number(await env.STUDIQUO_DATA.get(kvKey)) || 0;
-  if (used >= limit) return false;
-  await env.STUDIQUO_DATA.put(kvKey, String(used + 1), { expirationTtl: WINDOW_SECONDS * 2 });
-  return true;
+// A RateCounter Durable Object soft cap (see rate-counter.js), the same one
+// ai.js's usage quotas use — deliberately not routed through
+// checkRateLimit()/the Cloudflare Rate Limiting binding those use, since
+// that binding is provisioned per endpoint in the Cloudflare dashboard and
+// this endpoint doesn't have one of its own yet.
+async function withinLimit(env, keyPrefix, key, limit) {
+  return env.RATE_COUNTER.getByName(`${keyPrefix}:${key}`).bump(limit, WINDOW_SECONDS);
 }
 
 // DocumentRoom.requireParticipant/requireReviewer throw a plain

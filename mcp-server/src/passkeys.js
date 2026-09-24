@@ -15,11 +15,6 @@ const RP_ID = "studiquo-mcp.studiquo-mcp-server.workers.dev";
 const ORIGIN = `https://${RP_ID}`;
 const APP_ID = "972G4VGUA6.com.yabuko.studiquo";
 
-// Shared budget for every rate-limited endpoint below. Change this one value
-// (and the matching `simple.limit` entries in wrangler.jsonc) to retune all
-// four at once.
-const RATE_LIMIT_PER_MINUTE = 5;
-
 async function body(request) {
   return readJSONLimited(request, 100_000);
 }
@@ -43,7 +38,7 @@ export async function handlePasskeys(url, request, env) {
     if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
     if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
     const userKey = await sha256Hex(token);
-    const allowed = await checkRateLimit(env, env.RATE_LIMIT_PASSKEY_REGISTER_OPTIONS, "passkey-register-options", userKey, RATE_LIMIT_PER_MINUTE);
+    const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_REGISTER_OPTIONS, userKey);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
     if (await isRevoked(env, userKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
     const existing = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
@@ -72,7 +67,7 @@ export async function handlePasskeys(url, request, env) {
   if (url.pathname === "/api/passkeys/register/verify" && request.method === "POST") {
     const token = bearerToken(request);
     if (token) {
-      const allowed = await checkRateLimit(env, env.RATE_LIMIT_PASSKEY_REGISTER_VERIFY, "passkey-register-verify", await sha256Hex(token), RATE_LIMIT_PER_MINUTE);
+      const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_REGISTER_VERIFY, await sha256Hex(token));
       if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
     }
     const payload = await body(request);
@@ -116,7 +111,7 @@ export async function handlePasskeys(url, request, env) {
   }
 
   if (url.pathname === "/api/passkeys/login/options" && request.method === "POST") {
-    const allowed = await checkRateLimit(env, env.RATE_LIMIT_PASSKEY_LOGIN_OPTIONS, "passkey-login-options", clientKey(request), RATE_LIMIT_PER_MINUTE);
+    const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_LOGIN_OPTIONS, clientKey(request));
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
     const options = await generateAuthenticationOptions({
@@ -132,7 +127,7 @@ export async function handlePasskeys(url, request, env) {
   }
 
   if (url.pathname === "/api/passkeys/login/verify" && request.method === "POST") {
-    const allowed = await checkRateLimit(env, env.RATE_LIMIT_PASSKEY_LOGIN_VERIFY, "passkey-login-verify", clientKey(request), RATE_LIMIT_PER_MINUTE);
+    const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_LOGIN_VERIFY, clientKey(request));
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
     const payload = await body(request);

@@ -82,26 +82,16 @@ function model(env, kind) {
   return env.GEMINI_CHAT_MODEL || DEFAULT_CHAT_MODEL;
 }
 
-/**
- * A per-device, per-day counter.
- *
- * KV is eventually consistent, so this is a soft cap rather than an exact
- * one — a burst of simultaneous requests can slip a few over. That is fine
- * for its purpose, which is stopping sustained abuse rather than metering.
- */
-async function bump(env, counterKey, limit) {
-  const used = Number(await env.STUDIQUO_DATA.get(counterKey)) || 0;
-  if (used >= limit) return false;
-  // Expires on its own, so old counters never accumulate.
-  await env.STUDIQUO_DATA.put(counterKey, String(used + 1), { expirationTtl: 172_800 });
-  return true;
-}
+const DAY_SECONDS = 86_400;
 
-/** Per-device and whole-service caps. Both must pass. */
+/** Per-device and whole-service caps, each a RateCounter Durable Object
+ * (see rate-counter.js) keyed by bucket/device so it resets on its own once
+ * a day passes — a soft cap rather than an exact one, same as before: a
+ * burst of simultaneous requests can still slip a few over. Both must pass. */
 async function withinQuota(env, key, bucket, limit, globalLimit) {
-  const day = new Date().toISOString().slice(0, 10);
-  if (!(await bump(env, `ai:global:${bucket}:${day}`, globalLimit))) return false;
-  return bump(env, `ai:${bucket}:${key}:${day}`, limit);
+  const global = await env.RATE_COUNTER.getByName(`ai:global:${bucket}`).bump(globalLimit, DAY_SECONDS);
+  if (!global) return false;
+  return env.RATE_COUNTER.getByName(`ai:${bucket}:${key}`).bump(limit, DAY_SECONDS);
 }
 
 async function callGemini(env, { kind, systemInstruction, contents, responseSchema, stream }) {

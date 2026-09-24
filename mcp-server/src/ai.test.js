@@ -4,6 +4,25 @@ import { handleAI } from "./ai.js";
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1ZkAAAAASUVORK5CYII=";
 
+// Stands in for the real RateCounter Durable Object (rate-counter.js): a
+// plain in-memory count per name, ignoring windowSeconds entirely since no
+// test here spans a real window boundary.
+function fakeRateCounterBinding() {
+  const counts = new Map();
+  return {
+    getByName(name) {
+      return {
+        async bump(limit) {
+          const used = (counts.get(name) ?? 0) + 1;
+          if (used > limit) return false;
+          counts.set(name, used);
+          return true;
+        },
+      };
+    },
+  };
+}
+
 function environment() {
   const values = new Map();
   return {
@@ -12,6 +31,7 @@ function environment() {
       async get(key) { return values.get(key) ?? null; },
       async put(key, value) { values.set(key, value); },
     },
+    RATE_COUNTER: fakeRateCounterBinding(),
   };
 }
 
