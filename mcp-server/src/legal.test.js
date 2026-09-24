@@ -4,6 +4,26 @@ import worker from "./app.js";
 
 const noopCtx = { waitUntil() {} };
 
+test("GET / serves the public Studiquo home page", async () => {
+  const response = await worker.fetch(new Request("https://example.test/"), {}, noopCtx);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /text\/html/);
+  const body = await response.text();
+  assert.match(body, /studiquo/);
+  assert.match(body, /Googleカレンダー連携/);
+  assert.match(body, /href="\/privacy"/);
+});
+
+test("GET Search Console verification file proves site ownership", async () => {
+  const response = await worker.fetch(
+    new Request("https://example.test/googlea95d7e8605a2e940.html"),
+    {},
+    noopCtx,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "google-site-verification: googlea95d7e8605a2e940.html");
+});
+
 test("GET /privacy serves the privacy policy without a bearer token", async () => {
   const response = await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx);
   assert.equal(response.status, 200);
@@ -11,6 +31,9 @@ test("GET /privacy serves the privacy policy without a bearer token", async () =
   const body = await response.text();
   assert.match(body, /プライバシーポリシー/);
   assert.match(body, /Google Gemini/);
+  assert.match(body, /Google Calendar API/);
+  assert.match(body, /yabukohtaroh@gmail\.com/);
+  assert.doesNotMatch(body, /【/);
 });
 
 test("a request to an unrelated path is not intercepted by the legal router", async () => {

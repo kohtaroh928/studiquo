@@ -3,16 +3,26 @@ import { isExpired } from "./token.js";
 import { checkRateLimit } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
-import { hasRealSession } from "./session.js";
+import { realSession } from "./session.js";
 
 const MAX_BODY = 16_000;
 // Attachment uploads carry base64-encoded image/file bytes (up to
 // MAX_ATTACHMENT_BYTES in chat-room.js, ~33% larger once base64-encoded,
 // plus a little JSON overhead) — far past the small-JSON-payload MAX_BODY.
 const MAX_ATTACHMENT_UPLOAD_BODY = 6_000_000;
+// The client resizes a profile photo to 512x512 before ever sending it
+// (UserProfileView.profileImageData in ProfileAndFriendsView.swift), which
+// lands well under 300KB raw as a JPEG — this caps the decoded size, with
+// MAX_AVATAR_UPLOAD_BODY as the matching cap on the base64-encoded JSON body
+// (~33% larger, plus a little overhead), the same relationship
+// MAX_ATTACHMENT_UPLOAD_BODY has to MAX_ATTACHMENT_BYTES.
+const MAX_AVATAR_BYTES = 300_000;
+const MAX_AVATAR_UPLOAD_BODY = 450_000;
+const ALLOWED_AVATAR_CONTENT_TYPES = new Set(["image/jpeg", "image/png"]);
 const FRIEND_ADD_LIMIT_PER_MINUTE = 5;
 const CHAT_MESSAGE_LIMIT_PER_MINUTE = 30;
 const ATTACHMENT_UPLOAD_LIMIT_PER_MINUTE = 10;
+const AVATAR_UPLOAD_LIMIT_PER_MINUTE = 5;
 const REPORT_LIMIT_PER_MINUTE = 5;
 const MAX_FRIENDS = 500;
 // A report's free-text reason — generous for context, but bounded so a
@@ -146,14 +156,52 @@ export async function handleChat(url, request, env) {
   const token = bearerToken(request);
   if (!token) return json({ error: "Authentication required." }, 401);
   if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
-  if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
-  const key = await sha256Hex(token);
-  if (await isRevoked(env, key)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
+  const session = await realSession(env, token);
+  if (!session) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
+  const tokenKey = await sha256Hex(token);
+  if (await isRevoked(env, tokenKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
+  // A session changes on each sign-in, but a person's chat identity must not.
+  // Preserve the old token-derived key when upgrading an existing account so
+  // its friend codes and room participants remain usable after token rotation.
+  const identityHash = await sha256Hex(`chat-account:${session.sub}`);
+  const key = await env.USER_REGISTRY.getByName(identityHash).resolveChatKey(identityHash, tokenKey);
 
   if (url.pathname === "/api/chat/me" && request.method === "POST") {
     const body = await readBody(request);
     const user = await ensureUser(env, key, body?.name, parseStudyStats(body));
-    return json({ code: user.code, name: user.name, linkToken: user.linkToken });
+    return json({ code: user.code, name: user.name, linkToken: user.linkToken, avatarUpdatedAt: user.avatarUpdatedAt ?? null });
+  }
+
+  // Uploads the caller's own profile photo so it can be shown to their
+  // friends — previously there was no way for a friend to ever see anything
+  // but a generic placeholder icon, no matter what photo was set in the
+  // profile screen, because nothing about it was ever sent to the server.
+  // Stored under the stable `code` (not the internal `key`) so GET
+  // /api/chat/avatar/:code below can be reached with the same identifier
+  // friends already know a person by.
+  if (url.pathname === "/api/chat/me/avatar" && request.method === "POST") {
+    // Reuses the attachment-upload rate limit binding under its own KV
+    // prefix (see checkRateLimit's kvPrefix param) rather than needing a new
+    // Cloudflare Rate Limiting binding provisioned just for this.
+    const allowed = await checkRateLimit(
+      env, env.RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD, "avatar-upload", key, AVATAR_UPLOAD_LIMIT_PER_MINUTE
+    );
+    if (!allowed) return json({ error: "Too many uploads. Please slow down." }, 429);
+    const body = await readBody(request, MAX_AVATAR_UPLOAD_BODY);
+    const contentType = String(body?.contentType ?? "");
+    const data = String(body?.data ?? "");
+    if (!ALLOWED_AVATAR_CONTENT_TYPES.has(contentType) || !data) {
+      return json({ error: "Invalid avatar." }, 400);
+    }
+    if (Math.floor(data.length * 3 / 4) > MAX_AVATAR_BYTES) {
+      return json({ error: "Invalid avatar." }, 400);
+    }
+    const user = await ensureUser(env, key);
+    const updatedAt = Date.now();
+    await env.STUDIQUO_DATA.put(`chat:avatar:${user.code}`, JSON.stringify({ contentType, data, updatedAt }));
+    user.avatarUpdatedAt = updatedAt;
+    await env.STUDIQUO_DATA.put(`chat:user:${key}`, JSON.stringify(user));
+    return json({ avatarUpdatedAt: updatedAt });
   }
 
   if (url.pathname === "/api/chat/friends" && request.method === "GET") {
@@ -161,7 +209,10 @@ export async function handleChat(url, request, env) {
     // Each friend's own current name and study stats are looked up live
     // (rather than trusting this user's stored friends entry, a snapshot
     // frozen at accept time) so a friend renaming themselves later doesn't
-    // leave everyone else seeing their old name forever.
+    // leave everyone else seeing their old name forever. avatarUpdatedAt
+    // rides along the same live lookup so the client knows, without
+    // fetching every friend's photo on every poll, whether the one it has
+    // cached is still current.
     const withLiveDetails = await Promise.all((user.friends ?? []).map(async friend => {
       const friendKey = await env.STUDIQUO_DATA.get(`chat:code:${friend.code}`);
       const friendRecord = friendKey ? await env.STUDIQUO_DATA.get(`chat:user:${friendKey}`, "json") : null;
@@ -170,9 +221,30 @@ export async function handleChat(url, request, env) {
         name: friendRecord?.name ?? friend.name,
         todayStudySeconds: friendRecord?.todayStudySeconds ?? 0,
         studyDate: friendRecord?.studyDate ?? null,
+        avatarUpdatedAt: friendRecord?.avatarUpdatedAt ?? null,
       };
     }));
     return json(withLiveDetails);
+  }
+
+  // Serves a friend's (or the caller's own) uploaded profile photo. Gated to
+  // the caller themselves or an established friend, the same trust boundary
+  // the rest of this file draws around a person's name and study stats —
+  // not a public-by-code lookup.
+  const avatarMatch = /^\/api\/chat\/avatar\/([A-Z0-9]{6,32})$/.exec(url.pathname);
+  if (avatarMatch && request.method === "GET") {
+    const targetCode = avatarMatch[1];
+    const user = await ensureUser(env, key);
+    const isSelf = user.code === targetCode;
+    const isFriend = (user.friends ?? []).some(friend => friend.code === targetCode);
+    if (!isSelf && !isFriend) return json({ error: "Not found" }, 404);
+    const avatar = await env.STUDIQUO_DATA.get(`chat:avatar:${targetCode}`, "json");
+    if (!avatar) return json({ error: "Not found" }, 404);
+    const bytes = Uint8Array.from(atob(avatar.data), c => c.charCodeAt(0));
+    return new Response(bytes, {
+      status: 200,
+      headers: { "content-type": avatar.contentType, "cache-control": "private, max-age=60" },
+    });
   }
 
   if (url.pathname === "/api/chat/friends/requests" && request.method === "GET") {

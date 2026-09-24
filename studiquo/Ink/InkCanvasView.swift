@@ -1755,13 +1755,14 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         // the rule is simply: not a correction, overlaps ink, and turns back
         // on itself.
         if !isHighlighter {
-            let hit = drawing.strokes.filter { strokeIsCoveredBy($0, scribble: rawStroke) }
-            let looksLikeScratchOut = !hit.isEmpty && Self.hasScratchMotion(rawStroke.points.map(\.location))
-            GestureDiagnostics.scratchOutRemoval(candidates: drawing.strokes.count, removed: looksLikeScratchOut ? hit.count : 0)
-            if looksLikeScratchOut {
-                let hitIDs = Set(hit.map(\.id))
-                drawing.strokes.removeAll { hitIDs.contains($0.id) }
-                withoutImplicitAnimations { removeCommittedLayers(ids: hitIDs) }
+            let looksLikeScratchOut = Self.hasScratchMotion(rawStroke.points.map(\.location))
+            let erased = looksLikeScratchOut
+                ? Self.scratchOutErasedStrokes(drawing.strokes, scribble: rawStroke, contentScale: contentScale)
+                : nil
+            GestureDiagnostics.scratchOutRemoval(candidates: drawing.strokes.count, removed: erased == nil ? 0 : max(1, drawing.strokes.count - erased!.count))
+            if let erased {
+                drawing.strokes = erased
+                rebuildCommittedLayers()
                 return
             }
         }
@@ -1892,6 +1893,60 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
             if runs.isEmpty {
                 if !samples.isEmpty && !samples.allSatisfy({ distance(from: $0.location, to: eraserPath) <= radius + stroke.width / 2 }) {
+                    result.append(stroke)
+                }
+            } else if runs.count == 1 && runs[0].count == samples.count {
+                result.append(stroke)
+            } else {
+                for points in runs {
+                    var fragment = stroke
+                    fragment.id = UUID()
+                    fragment.points = points
+                    result.append(fragment)
+                }
+            }
+        }
+
+        return changed ? result : nil
+    }
+
+    /// Applies the scratch-out gesture as a precise partial eraser. A scribble
+    /// should remove only the ink it actually overlaps, so a target stroke is
+    /// split into the untouched fragments left on either side of the scribble
+    /// instead of being deleted wholesale.
+    static func scratchOutErasedStrokes(_ strokes: [InkStroke], scribble: InkStroke, contentScale: CGFloat) -> [InkStroke]? {
+        let scribblePath = scribble.points.map(\.location)
+        guard scribblePath.count > 1 else { return nil }
+        let scale = max(contentScale, 0.0001)
+        var changed = false
+        var result: [InkStroke] = []
+
+        for stroke in strokes {
+            let radius = scratchOutHitRadius(strokeWidth: stroke.width, scribbleWidth: scribble.width, contentScale: scale)
+            guard stroke.bounds.insetBy(dx: -radius, dy: -radius).intersects(scribble.bounds) else {
+                result.append(stroke)
+                continue
+            }
+
+            let source = isGeneratedPolygon(stroke.points) ? stroke.points : smoothed(stroke.points)
+            let samples = linearlyResampled(source, maxSpacing: max(1, radius * 0.25))
+            var runs: [[InkPoint]] = []
+            var run: [InkPoint] = []
+
+            for sample in samples {
+                let erased = distance(from: sample.location, to: scribblePath) <= radius
+                if erased {
+                    changed = true
+                    if run.count > 1 { runs.append(run) }
+                    run = []
+                } else {
+                    run.append(sample)
+                }
+            }
+            if run.count > 1 { runs.append(run) }
+
+            if runs.isEmpty {
+                if !samples.isEmpty && !samples.allSatisfy({ distance(from: $0.location, to: scribblePath) <= radius }) {
                     result.append(stroke)
                 }
             } else if runs.count == 1 && runs[0].count == samples.count {
@@ -2380,25 +2435,30 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     }
 
     private func strokeIsCoveredBy(_ stroke: InkStroke, scribble: InkStroke) -> Bool {
-        guard stroke.bounds.insetBy(dx: -18, dy: -18).intersects(scribble.bounds) else { return false }
+        Self.scratchOutCoversStroke(stroke, scribble: scribble, contentScale: contentScale)
+    }
+
+    static func scratchOutCoversStroke(_ stroke: InkStroke, scribble: InkStroke, contentScale: CGFloat) -> Bool {
+        let scale = max(contentScale, 0.0001)
+        let radius = scratchOutHitRadius(strokeWidth: stroke.width, scribbleWidth: scribble.width, contentScale: scale)
+        guard stroke.bounds.insetBy(dx: -radius, dy: -radius).intersects(scribble.bounds) else { return false }
         let scribblePoints = scribble.points.map(\.location)
         guard scribblePoints.count > 1 else { return false }
         // Resample the whole target path, including the middle of corrected
         // lines that are stored with only two endpoints.
         let samples = Self.linearlyResampled(stroke.points, maxSpacing: 6).map(\.location)
         guard !samples.isEmpty else { return false }
-        // Kept constant in *screen* points by dividing out the page/display
-        // scale, so a scratch-out is no harder to land in a split pane (where
-        // page units are larger than screen points) than full screen.
-        let scale = max(contentScale, 0.0001)
-        let radius = max(14, stroke.width + scribble.width + 8) / scale
-        // A scribble over any part of a stroke removes that stroke. Requiring
-        // a percentage of the *whole* stroke made long corrected lines nearly
-        // impossible to erase because a local scribble covered too little of
-        // their total length.
+        // A scratch-out should erase ink the scribble actually touches, not
+        // nearby notes. The old fixed 14pt minimum made a normal 4pt pen
+        // erase lines more than a fingertip-width away from the scribble.
         return samples.contains { sample in
             Self.distance(from: sample, to: scribblePoints) <= radius
         }
+    }
+
+    static func scratchOutHitRadius(strokeWidth: CGFloat, scribbleWidth: CGFloat, contentScale: CGFloat) -> CGFloat {
+        let screenRadius = max(5, strokeWidth / 2 + scribbleWidth / 2 + 2)
+        return screenRadius / max(contentScale, 0.0001)
     }
 
     // MARK: Force

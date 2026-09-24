@@ -153,6 +153,38 @@ func aiReviewStudyNotifications(from items: [AIReviewItem], now: Date) -> [Study
         }
 }
 
+func calendarEventTimeRangeText(for event: CalendarEvent, calendar: Calendar = .current) -> String {
+    if calendar.isDate(event.startDate, inSameDayAs: event.endDate) {
+        return "\(event.startDate.formatted(date: .omitted, time: .shortened))〜\(event.endDate.formatted(date: .omitted, time: .shortened))"
+    }
+    return "\(event.startDate.formatted(.dateTime.month().day().hour().minute()))〜\(event.endDate.formatted(.dateTime.month().day().hour().minute()))"
+}
+
+func calendarEventReminderBody(for event: CalendarEvent, calendar: Calendar = .current) -> String {
+    calendarEventTimeRangeText(for: event, calendar: calendar)
+}
+
+func studyNotification(forCalendarEvent event: CalendarEvent, now: Date, calendar: Calendar = .current) -> StudyNotification {
+    let timing = calendar.isDateInToday(event.startDate)
+        ? L("今日")
+        : (calendar.isDateInTomorrow(event.startDate)
+           ? L("明日")
+           : event.startDate.formatted(.dateTime.month().day().weekday(.abbreviated)))
+    let eventSummary = L("\(timing)・\(calendarEventTimeRangeText(for: event, calendar: calendar))")
+    return StudyNotification(
+        id: "event-\(event.createdAt.timeIntervalSince1970)-\(event.title)",
+        title: event.title,
+        message: eventSummary,
+        detail: event.notes.isEmpty ? eventSummary : L("\(eventSummary)\n\(event.notes)"),
+        date: event.startDate,
+        icon: event.kind.icon,
+        tint: event.kind == .test ? .red
+            : (event.kind == .classLesson ? .blue : .orange),
+        destination: .calendar,
+        university: nil
+    )
+}
+
 /// The bundle declares no Japanese localization, so `Locale.current` makes
 /// `Foundation`'s date formatting fall back to English — "in 0 seconds" under
 /// an otherwise Japanese interface. Dates are therefore formatted against the
@@ -895,15 +927,21 @@ private struct AIReviewIntegration: ViewModifier {
 enum AIDataDisclosure {
     static let acknowledgedDefaultsKey = "hasAcknowledgedAIDataDisclosure"
 
+    /// Swappable so tests can point this at an isolated suite instead of
+    /// the real, shared `UserDefaults.standard` — otherwise a manual run of
+    /// the app on the same simulator (which really does acknowledge the
+    /// disclosure) leaves this `true` for any test that runs afterward.
+    static var defaults: UserDefaults = .standard
+
     /// Defaults to `false` for every install — including an existing
     /// install updating to the version that first added this screen, since
     /// nobody has acknowledged anything yet either way.
     static var hasBeenAcknowledged: Bool {
-        UserDefaults.standard.bool(forKey: acknowledgedDefaultsKey)
+        defaults.bool(forKey: acknowledgedDefaultsKey)
     }
 
     static func acknowledge() {
-        UserDefaults.standard.set(true, forKey: acknowledgedDefaultsKey)
+        defaults.set(true, forKey: acknowledgedDefaultsKey)
     }
 }
 
@@ -949,7 +987,6 @@ private struct AIDataDisclosureView: View {
                         disclosureRow(icon: "text.bubble", title: "AIトークでのやり取り", detail: "送った質問文と、開いているノートの文字起こし内容")
                         disclosureRow(icon: "camera.viewfinder", title: "添削(採点)機能", detail: "問題文や答案として切り抜いた画像・写真")
                         disclosureRow(icon: "calendar.badge.clock", title: "翌日復習機能", detail: "AIトークで送った質問文(内容によっては翌日に復習教材を自動作成します)")
-                        disclosureRow(icon: "brain.head.profile", title: "AI学習計画機能", detail: "選んだフォルダ内のノート・暗記デッキの内容や正答率、カレンダーの予定(テスト日を含む)")
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -1018,13 +1055,13 @@ private struct PrivacyPolicyView: View {
                         bullet("友達・チャット機能に関する情報", "友達コード、友達関係、チャットメッセージ、送信した添付ファイル。友達同士のコミュニケーション機能を提供するために保存します。")
                         bullet("利用状況", "学習時間の記録、各機能の利用回数。学習記録機能・利用制限の管理のために使用します。")
                         bullet("Googleカレンダー情報", "Googleカレンダー連携を選択した場合、カレンダー名、予定のタイトル、開始・終了日時、説明を読み取り、学習予定と一緒に表示するために端末内へ保存します。Googleカレンダーへの書き込みは行いません。")
-                        bullet("AI機能利用時に送信する内容", "AIトーク・添削・翌日復習・AI学習計画などの機能を使うと、質問文、ノートの内容、答案の画像などが外部のAIサービスに送信されます。詳しくは次の項目をご覧ください。")
+                        bullet("AI機能利用時に送信する内容", "AIトーク・添削・翌日復習などの機能を使うと、質問文、ノートの内容、答案の画像などが外部のAIサービスに送信されます。詳しくは次の項目をご覧ください。")
                     }
 
                     policySection(title: "第三者サービスとの連携") {
                         bullet("Sign in with Apple / Google Sign-In", "アカウント作成・ログインのために使用します。")
                         bullet("Google Calendar API", "許可を得たうえで、選択されているカレンダーの予定を読み取り専用で同期します。取得した情報を広告、行動追跡、第三者への販売には使用しません。")
-                        bullet("Google Gemini", "AIトーク・添削・翌日復習・AI学習計画機能で、既定の生成AIとして使用します。これらの機能を使うたびに、上記の内容がGoogleに送信されます。")
+                        bullet("Google Gemini", "AIトーク・添削・翌日復習機能で、既定の生成AIとして使用します。これらの機能を使うたびに、上記の内容がGoogleに送信されます。")
                         bullet("Anthropic Claude", "利用者が自分自身のAnthropic APIキーを設定した場合に限り、同様の内容がAnthropicにも送信されます。APIキーを設定しない限り、この連携は行われません。")
                         bullet("Cloudflare", "本アプリのサーバーインフラとして使用しており、アカウント情報・学習コンテンツ・チャット内容の保管場所です。")
                         bullet("Apple iCloud", "一部のデータは、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。")
@@ -1160,6 +1197,9 @@ struct ContentView: View {
     @State private var tagsText = ""
     @State private var expandedSidebarFolders: Set<String> = []
     @State private var folderDropTarget: String?
+    @State private var emptyPaneDropTarget: String?
+    @State private var activeFolderDragPath: String?
+    @State private var observedFolderDropHover = false
     /// The `HomeEntry` currently under a drag, across all three view modes —
     /// drives the "+" badge (`entryDropBadge`) shown while dragging one
     /// resource over another, mirroring `folderDropTarget`/`folderDropBadge`.
@@ -1315,12 +1355,6 @@ struct ContentView: View {
                     : event.startDate <= weekFromNow
             }
             .map { event -> StudyNotification in
-                let isToday = calendar.isDateInToday(event.startDate)
-                let isTomorrow = calendar.isDateInTomorrow(event.startDate)
-                let timing = isToday
-                    ? L("今日")
-                    : (isTomorrow ? L("明日") : event.startDate.formatted(.dateTime.month().day().weekday(.abbreviated)))
-
                 if isUniversityEvent(event) {
                     // The subject alone goes in the feed; `detail` carries the
                     // announcement body for the detail screen.
@@ -1339,23 +1373,7 @@ struct ContentView: View {
                     )
                 }
 
-                return StudyNotification(
-                    id: "event-\(event.createdAt.timeIntervalSince1970)-\(event.title)",
-                    title: event.kind == .test
-                        ? L("テストが近づいています")
-                        : L("予定を確認しましょう"),
-                    message: L("\(timing)・\(event.startDate.formatted(date: .omitted, time: .shortened))  \(event.title)"),
-                    detail: event.notes.isEmpty
-                        ? L("\(timing) \(event.startDate.formatted(date: .omitted, time: .shortened))  \(event.title)")
-                        : event.notes,
-                    date: event.startDate,
-                    icon: event.kind.icon,
-                    tint: event.kind == .test ? .red
-                        : (event.kind == .classLesson ? .blue
-                        : (event.kind == .studySession ? .purple : .orange)),
-                    destination: .calendar,
-                    university: nil
-                )
+                return studyNotification(forCalendarEvent: event, now: now, calendar: calendar)
             }
 
         let todayActivities = studyActivities.filter { calendar.isDateInToday($0.startedAt) }
@@ -1504,6 +1522,7 @@ struct ContentView: View {
                         .environmentObject(editorSplitState)
                         .environmentObject(friendStore)
                 }
+                .accessibilityIdentifier("library-open-notebook-\(selectedNotebook.title)")
             } else if let selectedFlashcardDeck {
                 VStack(spacing: 0) {
                     notebookTabBar
@@ -1543,9 +1562,11 @@ struct ContentView: View {
             if isAuxiliaryHomeFullScreen {
                 // A plain navigation stack keeps auxiliary home screens out
                 // of the notebook split view while still providing a toolbar.
-                NavigationStack { homeDashboard }
+                NavigationStack {
+                    LibraryViewSection { AnyView(homeDashboard) }
+                }
             } else {
-                librarySplitView
+                LibraryViewSection { AnyView(librarySplitView) }
             }
         }
         .sheet(isPresented: $isShowingNewNotebookAlert) {
@@ -1970,7 +1991,7 @@ struct ContentView: View {
     private var homeDashboard: some View {
         VStack(spacing: 0) {
             if homeSection == .notes {
-                fullScreenHome
+                LibraryViewSection { AnyView(fullScreenHome) }
             } else if homeSection == .calendar {
                 CalendarHomeView(
                     showsNotifications: $showsNotifications,
@@ -2115,7 +2136,7 @@ struct ContentView: View {
 
                 ForEach(openTextDocuments.filter { !$0.isTrashed }) { document in
                     HStack(spacing: 5) {
-                        Button { openTextDocument(document) } label: {
+                        Button { selectTextDocumentTab(document) } label: {
                             Label(document.title, systemImage: "doc.text").lineLimit(1)
                         }
                         .buttonStyle(.plain)
@@ -2135,11 +2156,12 @@ struct ContentView: View {
                         selectedTextDocument === document ? Color.teal.opacity(0.22) : Color.teal.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 8)
                     )
+                    .accessibilityIdentifier("tab-document-\(document.title)")
                     .draggable("document:\(textDocumentID(document))")
                 }
                 ForEach(openSlideDecks.filter { !$0.isTrashed }) { deck in
                     HStack(spacing: 5) {
-                        Button { openSlideDeck(deck) } label: {
+                        Button { selectSlideDeckTab(deck) } label: {
                             Label(deck.title, systemImage: "rectangle.on.rectangle").lineLimit(1)
                         }
                         .buttonStyle(.plain)
@@ -2159,6 +2181,7 @@ struct ContentView: View {
                         selectedSlideDeck === deck ? Color.orange.opacity(0.24) : Color.orange.opacity(0.12),
                         in: RoundedRectangle(cornerRadius: 8)
                     )
+                    .accessibilityIdentifier("tab-slide-\(deck.title)")
                     .draggable("slide:\(slideDeckID(deck))")
                 }
 
@@ -2266,6 +2289,34 @@ struct ContentView: View {
         }
     }
 
+    private func selectTextDocumentTab(_ document: TextDocument) {
+        if !openTextDocuments.contains(where: { $0.persistentModelID == document.persistentModelID }) {
+            openTextDocuments.append(document)
+        }
+        guard editorSplitState.isSplit, selectedNotebook != nil else {
+            openTextDocument(document)
+            return
+        }
+        NotificationCenter.default.post(
+            name: Notification.Name("StudiquoSwitchPaneTarget"),
+            object: PaneSwitchTarget.document(document)
+        )
+    }
+
+    private func selectSlideDeckTab(_ deck: SlideDeck) {
+        if !openSlideDecks.contains(where: { $0.persistentModelID == deck.persistentModelID }) {
+            openSlideDecks.append(deck)
+        }
+        guard editorSplitState.isSplit, selectedNotebook != nil else {
+            openSlideDeck(deck)
+            return
+        }
+        NotificationCenter.default.post(
+            name: Notification.Name("StudiquoSwitchPaneTarget"),
+            object: PaneSwitchTarget.slideDeck(deck)
+        )
+    }
+
     private func selectWebTab(_ tab: WebTabInfo) {
         guard selectedNotebook != nil else { return }
         NotificationCenter.default.post(
@@ -2365,6 +2416,25 @@ struct ContentView: View {
 
     private func slideDeckID(_ deck: SlideDeck) -> String {
         String(describing: deck.persistentModelID)
+    }
+
+    private func folderID(_ folder: Folder) -> String {
+        String(describing: folder.persistentModelID)
+    }
+
+    private func folderDragPayload(for path: String) -> String? {
+        folderObject(forLegacyPath: path).map { "folder:\(folderID($0))" }
+    }
+
+    private func folderDragProvider(for path: String) -> NSItemProvider {
+        activeFolderDragPath = path
+        // SwiftUI does not report drag cancellation for String payloads, so
+        // expire the hint shortly after the drag starts. Successful drops clear
+        // it immediately in `handleFolderDrop`.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+            if activeFolderDragPath == path { activeFolderDragPath = nil }
+        }
+        return NSItemProvider(object: (folderDragPayload(for: path) ?? "") as NSString)
     }
 
     /// Opens `entry` the same way its list row / sidebar button already does
@@ -2610,41 +2680,181 @@ struct ContentView: View {
         return true
     }
 
-    private func handleFolderDrop(_ values: [String], into folder: String) -> Bool {
-        var didMove = false
+    private func resolveFolder(fromDragValue value: String) -> Folder? {
+        let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2, parts[0] == "folder" else { return nil }
+        return allFolders.first { folderID($0) == parts[1] }
+    }
+
+    private func isFolderDragValue(_ value: String) -> Bool {
+        value.split(separator: ":", maxSplits: 1).first.map(String.init) == "folder"
+    }
+
+    private func handleFolderDrop(_ values: [String], into folder: String?) -> Bool {
+        activeFolderDragPath = nil
+        let destination: Folder?
+        if let folder {
+            guard let found = folderObject(forLegacyPath: folder) else { return false }
+            destination = found
+        } else {
+            destination = nil
+        }
+        var movedItems: [(item: any HomeItem, folder: Folder?, path: String, updatedAt: Date)] = []
+        var movedFolders: [FolderMoveSnapshot] = []
         for value in values {
-            let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
-            guard parts.count == 2 else { continue }
-            switch parts[0] {
-            case "notebook":
-                guard let notebook = allNotebooks.first(where: { notebookID($0) == parts[1] && !$0.isTrashed }) else { continue }
-                assign(notebook, toLegacyPath: folder)
-                notebook.updatedAt = .now
-                didMove = true
-            case "deck":
-                guard let deck = flashcardDecks.first(where: { deckID($0) == parts[1] }) else { continue }
-                assign(deck, toLegacyPath: folder)
-                deck.updatedAt = .now
-                didMove = true
-            case "document":
-                guard let document = textDocuments.first(where: { textDocumentID($0) == parts[1] && !$0.isTrashed }) else { continue }
-                assign(document, toLegacyPath: folder)
-                document.updatedAt = .now
-                didMove = true
-            case "slide":
-                guard let deck = slideDecks.first(where: { slideDeckID($0) == parts[1] && !$0.isTrashed }) else { continue }
-                assign(deck, toLegacyPath: folder)
-                deck.updatedAt = .now
-                didMove = true
-            default:
+            if let sourceFolder = resolveFolder(fromDragValue: value) {
+                if let snapshot = moveFolder(sourceFolder, into: destination) {
+                    movedFolders.append(snapshot)
+                }
                 continue
             }
+            guard let entry = resolveEntry(fromDragValue: value) else { continue }
+            let item = entry.underlying
+            let previous = (item: item, folder: item.folder, path: item.folderName, updatedAt: item.updatedAt)
+            if LibraryFolderMove.move(item, into: destination) {
+                movedItems.append(previous)
+            }
         }
-        if didMove {
-            expandedSidebarFolders.insert(folder)
-            try? modelContext.save()
+        guard !movedItems.isEmpty || !movedFolders.isEmpty else { return false }
+        do {
+            try modelContext.save()
+        } catch {
+            for previous in movedItems {
+                previous.item.folder = previous.folder
+                previous.item.folderName = previous.path
+                previous.item.updatedAt = previous.updatedAt
+            }
+            for snapshot in movedFolders.reversed() {
+                restoreFolderMove(snapshot)
+            }
+            return false
         }
-        return didMove
+        if let folder { expandedSidebarFolders.insert(folder) }
+        return true
+    }
+
+    private struct FolderMoveSnapshot {
+        let folder: Folder
+        let parent: Folder?
+        let updatedAt: Date
+        let folderNamesStorage: String
+        let folderCreatedAtStorage: String
+        let favoriteFolderPathsStorage: String
+        let selectedFolder: String?
+        let itemStates: [(item: any HomeItem, folder: Folder?, path: String, updatedAt: Date)]
+    }
+
+    private func moveFolder(_ source: Folder, into destination: Folder?) -> FolderMoveSnapshot? {
+        guard canMoveFolder(source, into: destination) else { return nil }
+
+        let oldRootPath = source.legacyPath
+        let affectedItems = allHomeItems.filter { item in
+            item.folderName == oldRootPath || item.folderName.hasPrefix(oldRootPath + "/")
+        }
+        let snapshot = FolderMoveSnapshot(
+            folder: source,
+            parent: source.parent,
+            updatedAt: source.updatedAt,
+            folderNamesStorage: folderNamesStorage,
+            folderCreatedAtStorage: folderCreatedAtStorage,
+            favoriteFolderPathsStorage: favoriteFolderPathsStorage,
+            selectedFolder: selectedFolder,
+            itemStates: affectedItems.map { ($0, $0.folder, $0.folderName, $0.updatedAt) }
+        )
+
+        source.parent = destination
+        source.updatedAt = .now
+        let newRootPath = source.legacyPath
+        rewriteFolderPathMetadata(from: oldRootPath, to: newRootPath)
+        rewriteItemLegacyPaths(from: oldRootPath, to: newRootPath)
+        if let selectedFolder, selectedFolder == oldRootPath || selectedFolder.hasPrefix(oldRootPath + "/") {
+            self.selectedFolder = replacingFolderPrefix(in: selectedFolder, oldRoot: oldRootPath, newRoot: newRootPath)
+        }
+        return snapshot
+    }
+
+    private var allHomeItems: [any HomeItem] {
+        allNotebooks.map { $0 as any HomeItem }
+            + flashcardDecks.map { $0 as any HomeItem }
+            + textDocuments.map { $0 as any HomeItem }
+            + slideDecks.map { $0 as any HomeItem }
+    }
+
+    private func canMoveFolder(_ source: Folder, into destination: Folder?) -> Bool {
+        guard source.parent !== destination else { return false }
+        if let destination {
+            guard !source.wouldCreateCycle(ifMovedInto: destination) else { return false }
+        }
+        guard !folderSiblingNameExists(source.name, under: destination, excluding: source) else { return false }
+        return true
+    }
+
+    private func canShowDropCue(into destinationPath: String?) -> Bool {
+        guard let activeFolderDragPath else { return true }
+        guard let source = folderObject(forLegacyPath: activeFolderDragPath) else { return false }
+        let destination = destinationPath.flatMap(folderObject(forLegacyPath:))
+        if destinationPath != nil && destination == nil { return false }
+        return canMoveFolder(source, into: destination)
+    }
+
+    private func folderSiblingNameExists(_ name: String, under parent: Folder?, excluding source: Folder) -> Bool {
+        allFolders.contains { folder in
+            folder !== source && folder.parent === parent && folder.name == name
+        }
+    }
+
+    private func replacingFolderPrefix(in path: String, oldRoot: String, newRoot: String) -> String {
+        guard path != oldRoot else { return newRoot }
+        return newRoot + String(path.dropFirst(oldRoot.count))
+    }
+
+    private func rewriteFolderPathMetadata(from oldRoot: String, to newRoot: String) {
+        let renamedPaths = folderNames.map { path in
+            (path == oldRoot || path.hasPrefix(oldRoot + "/"))
+                ? replacingFolderPrefix(in: path, oldRoot: oldRoot, newRoot: newRoot)
+                : path
+        }
+        folderNamesStorage = Array(Set(renamedPaths)).sorted().joined(separator: "\n")
+
+        let created = folderCreatedAt
+        let renamedCreated = Dictionary(uniqueKeysWithValues: created.map { path, value in
+            let newPath = (path == oldRoot || path.hasPrefix(oldRoot + "/"))
+                ? replacingFolderPrefix(in: path, oldRoot: oldRoot, newRoot: newRoot)
+                : path
+            return (newPath, value)
+        })
+        if let data = try? JSONEncoder().encode(renamedCreated),
+           let text = String(data: data, encoding: .utf8) {
+            folderCreatedAtStorage = text
+        }
+
+        let favorites = favoriteFolderPaths.map { path in
+            (path == oldRoot || path.hasPrefix(oldRoot + "/"))
+                ? replacingFolderPrefix(in: path, oldRoot: oldRoot, newRoot: newRoot)
+                : path
+        }
+        favoriteFolderPathsStorage = Array(Set(favorites)).sorted().joined(separator: "\n")
+    }
+
+    private func rewriteItemLegacyPaths(from oldRoot: String, to newRoot: String) {
+        for item in allHomeItems where item.folderName == oldRoot || item.folderName.hasPrefix(oldRoot + "/") {
+            item.folderName = replacingFolderPrefix(in: item.folderName, oldRoot: oldRoot, newRoot: newRoot)
+            item.updatedAt = .now
+        }
+    }
+
+    private func restoreFolderMove(_ snapshot: FolderMoveSnapshot) {
+        snapshot.folder.parent = snapshot.parent
+        snapshot.folder.updatedAt = snapshot.updatedAt
+        folderNamesStorage = snapshot.folderNamesStorage
+        folderCreatedAtStorage = snapshot.folderCreatedAtStorage
+        favoriteFolderPathsStorage = snapshot.favoriteFolderPathsStorage
+        selectedFolder = snapshot.selectedFolder
+        for state in snapshot.itemStates {
+            state.item.folder = state.folder
+            state.item.folderName = state.path
+            state.item.updatedAt = state.updatedAt
+        }
     }
 
     private func notebooksInFolder(_ folder: String) -> [Notebook] {
@@ -2712,7 +2922,7 @@ struct ContentView: View {
                 handleFolderDrop(items, into: folder)
             },
             isTargeted: { isTargeted in
-                folderDropTarget = isTargeted ? folder : (folderDropTarget == folder ? nil : folderDropTarget)
+                setFolderDropTarget(folder, isTargeted: isTargeted)
             }
         )
     }
@@ -2725,9 +2935,15 @@ struct ContentView: View {
         slideCount: Int
     ) -> some View {
         HStack(spacing: 10) {
-            Button {
-                selectedFolder = folder
-            } label: {
+            LibraryFolderDropSurface(
+                identifier: "library-folder-\(folder)",
+                onTap: { selectedFolder = folder },
+                onDrop: { values in handleFolderDrop(values, into: folder) },
+                onTargeted: { isTargeted in
+                    setFolderDropTarget(folder, isTargeted: isTargeted)
+                }
+            )
+            .overlay {
                 HStack(spacing: 12) {
                     Image(systemName: "folder.fill")
                         .font(.title2)
@@ -2745,9 +2961,9 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
-                .contentShape(Rectangle())
+                .allowsHitTesting(false)
             }
-            .buttonStyle(.plain)
+            .frame(height: 54)
             Button { toggleFolderFavorite(folder) } label: {
                 Image(systemName: favoriteFolderPaths.contains(folder) ? "star.fill" : "star")
                     .foregroundStyle(favoriteFolderPaths.contains(folder) ? .yellow : .secondary)
@@ -2755,15 +2971,8 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
         }
-        .dropDestination(
-            for: String.self,
-            action: { items, _ in
-                handleFolderDrop(items, into: folder)
-            },
-            isTargeted: { isTargeted in
-                folderDropTarget = isTargeted ? folder : (folderDropTarget == folder ? nil : folderDropTarget)
-            }
-        )
+        .contentShape(Rectangle())
+        .onDrag { folderDragProvider(for: folder) }
         .contextMenu {
             if let target = folderObject(forLegacyPath: folder) {
                 Button {
@@ -2783,6 +2992,20 @@ struct ContentView: View {
             .opacity(folderDropTarget == folder ? 1 : 0)
             .scaleEffect(folderDropTarget == folder ? 1 : 0.6)
             .animation(.easeOut(duration: 0.12), value: folderDropTarget)
+    }
+
+    private func setFolderDropTarget(_ folder: String, isTargeted: Bool) {
+        let canShow = isTargeted && canShowDropCue(into: folder)
+        folderDropTarget = canShow ? folder : (folderDropTarget == folder ? nil : folderDropTarget)
+        if canShow && ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test") {
+            observedFolderDropHover = true
+        }
+    }
+
+    private func setEmptyPaneDropTarget(_ parentPath: String?, isTargeted: Bool) {
+        let key = parentPath ?? ""
+        let canShow = isTargeted && canShowDropCue(into: parentPath)
+        emptyPaneDropTarget = canShow ? key : (emptyPaneDropTarget == key ? nil : emptyPaneDropTarget)
     }
 
     /// Same "+" cue as `folderDropBadge`, shown on a resource tile/row while
@@ -2833,8 +3056,10 @@ struct ContentView: View {
               !source.isTrashed, !target.isTrashed else {
             return false
         }
-        let parent = target.folder
-        let name = uniqueFolderName(base: "新規フォルダ", parent: parent)
+        let parentPath = target.underlying.folderName
+        let parent = folderObject(forLegacyPath: parentPath)
+        guard parentPath.isEmpty || parent != nil else { return false }
+        let name = uniqueFolderName(base: "新規フォルダ", parentPath: parentPath)
         let newFolder = Folder(name: name, parent: parent)
         modelContext.insert(newFolder)
         registerFolderPathMetadata(newFolder.legacyPath)
@@ -2852,8 +3077,8 @@ struct ContentView: View {
     /// creating two same-named siblings, since `folderObject(forLegacyPath:)`
     /// looks folders up by their name-derived path and two identically named
     /// siblings would be ambiguous.
-    private func uniqueFolderName(base: String, parent: Folder?) -> String {
-        let siblingNames = Set(subfolders(of: parent).map(\.name))
+    private func uniqueFolderName(base: String, parentPath: String) -> String {
+        let siblingNames = Set(subfolderPaths(of: parentPath.isEmpty ? nil : parentPath).map(folderDisplayName))
         guard siblingNames.contains(base) else { return base }
         var suffix = 2
         while siblingNames.contains("\(base) \(suffix)") { suffix += 1 }
@@ -2861,9 +3086,8 @@ struct ContentView: View {
     }
 
     /// Registers a freshly-created `Folder`'s path in the same AppStorage
-    /// lists `createFolder()` already maintains, so the list/icon views (and
-    /// the "フォルダへ移動" menu, which reads `sortedFolderNames`) see it
-    /// immediately too.
+    /// lists `createFolder()` already maintains, so every library view and
+    /// the "フォルダへ移動" menu see it immediately.
     private func registerFolderPathMetadata(_ path: String) {
         var names = Set(folderNames)
         names.insert(path)
@@ -2897,8 +3121,7 @@ struct ContentView: View {
     /// `folderName`, and `selectedFolder` if it's inside the affected
     /// subtree — after a `Folder`'s `name` changes. `Folder.legacyPath`
     /// itself needs no such fixup (it's computed live from `parent`/`name`);
-    /// this exists only because the list/icon views still read separate,
-    /// stored string copies of that same path.
+    /// all three library views read the stored copies of that path.
     private func remapLegacyPaths(from oldPath: String, to newPath: String) {
         func remap(_ path: String) -> String? {
             if path == oldPath { return newPath }
@@ -3050,6 +3273,7 @@ struct ContentView: View {
                             Image(systemName: mode.systemImage)
                         }
                         .tint(viewMode == mode ? Color.accentColor : Color.secondary)
+                        .accessibilityIdentifier("library-view-\(mode.rawValue)")
                     }
                 }
                 Menu {
@@ -3062,46 +3286,7 @@ struct ContentView: View {
                     Label("並べ替え", systemImage: "arrow.up.arrow.down")
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                HStack(spacing: 14) {
-                    if isHomeScreen {
-                        notificationBell
-                    }
-                    if libraryMode == .studyCards && selectedFolder == nil {
-                        Button {
-                            isShowingNewFlashcardDeckAlert = true
-                        } label: {
-                            Label("新規暗記カードを作成", systemImage: "plus")
-                        }
-                    } else if libraryMode == .trash && selectedFolder == nil {
-                        Button("空にする", role: .destructive) {
-                            showsEmptyTrashConfirmation = true
-                        }
-                        .disabled(isTrashEmpty)
-                    } else {
-                        createMenu
-                    }
-                    Button { showsAppSettings = true } label: {
-                        Label("設定", systemImage: "gearshape")
-                    }
-                    .accessibilityLabel("設定")
-                    Button { showsProfile = true } label: {
-                        if let image = UIImage(data: profileImageData) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 28, height: 28)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(.secondary.opacity(0.35), lineWidth: 0.5))
-                        } else {
-                            Image(systemName: "person.crop.circle")
-                                .font(.title3)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("プロフィール")
-                }
-            }
+            homeToolbarActions
         }
         .confirmationDialog("ゴミ箱を空にしますか？", isPresented: $showsEmptyTrashConfirmation, titleVisibility: .visible) {
             Button("完全に削除", role: .destructive) { emptyTrash() }
@@ -3151,6 +3336,100 @@ struct ContentView: View {
                 )
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test") {
+                Text(observedFolderDropHover ? "shown" : "hidden")
+                    .accessibilityIdentifier("library-folder-drop-hover")
+                    .font(.system(size: 1))
+                    .opacity(0.01)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// Each button is its own `ToolbarItem` — not one `HStack` erased into a
+    /// single opaque view — so the system toolbar can lay them out and, when
+    /// the bar is too narrow, fold the ones that don't fit into its own
+    /// "…" overflow menu individually. A single merged view can't be split
+    /// that way: iOS treats it as one all-or-nothing element, and when it
+    /// doesn't fit, the *whole* HStack silently disappears behind an
+    /// unrelated-looking "…" glyph — the buttons look unresponsive because
+    /// they aren't where the last-known layout put them, not because a tap
+    /// on the visible control failed. Each button stays wrapped in its own
+    /// `LibraryViewSection`/`AnyView` boundary (seem `LibraryViewSection`'s
+    /// doc comment) so this still avoids building one giant view-expression
+    /// tree in one go, the way the single-HStack version did — that part of
+    /// the original fix wasn't the problem.
+    @ToolbarContentBuilder
+    private var homeToolbarActions: some ToolbarContent {
+        if isHomeScreen {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                LibraryViewSection { AnyView(notificationBell) }
+            }
+        }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            LibraryViewSection { AnyView(primaryLibraryToolbarAction) }
+        }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            LibraryViewSection { AnyView(settingsToolbarButton) }
+        }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            LibraryViewSection { AnyView(profileToolbarButton) }
+        }
+    }
+
+    @ViewBuilder
+    private var primaryLibraryToolbarAction: some View {
+        if libraryMode == .studyCards && selectedFolder == nil {
+            Button {
+                isShowingNewFlashcardDeckAlert = true
+            } label: {
+                Label("新規暗記カードを作成", systemImage: "plus")
+            }
+        } else if libraryMode == .trash && selectedFolder == nil {
+            Button("空にする", role: .destructive) {
+                showsEmptyTrashConfirmation = true
+            }
+            .disabled(isTrashEmpty)
+        } else {
+            createMenu
+        }
+    }
+
+    private var settingsToolbarButton: some View {
+        Button { showsAppSettings = true } label: {
+            Label("設定", systemImage: "gearshape")
+        }
+        .accessibilityLabel("設定")
+    }
+
+    private var profileToolbarButton: some View {
+        // `Label { } icon: { }` (icon + title), not a bare `Image`, so that
+        // when this button overflows into the toolbar's native "…" menu, the
+        // system can lay it out as a normal icon+text row — same as
+        // `settingsToolbarButton`'s `Label(_:systemImage:)`. A bare `Image`
+        // label has no title for that row template, so it fell back to
+        // rendering the icon on its own, clipped and overlapping the
+        // neighboring menu item.
+        Button { showsProfile = true } label: {
+            Label {
+                Text("プロフィール")
+            } icon: {
+                if let image = UIImage(data: profileImageData) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 28, height: 28)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(.secondary.opacity(0.35), lineWidth: 0.5))
+                } else {
+                    Image(systemName: "person.crop.circle")
+                        .font(.title3)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("プロフィール")
     }
 
     private var homeList: some View {
@@ -3162,36 +3441,51 @@ struct ContentView: View {
         let documentCounts = Dictionary(grouping: textDocuments.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
         let slideCounts = Dictionary(grouping: slideDecks.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
 
-        return List(selection: $selectedNotebook) {
+        return Group {
             if libraryMode == .documents {
-                Section {
-                    ForEach(visibleFolderPaths, id: \.self) { folder in
-                        folderRow(
-                            folder,
-                            notebookCount: notebookCounts[folder, default: 0],
-                            deckCount: deckCounts[folder, default: 0],
-                            documentCount: documentCounts[folder, default: 0],
-                            slideCount: slideCounts[folder, default: 0]
-                        )
+                // List installs its own row drag/drop interaction. On iPad it
+                // consumes drops before a folder row's dropDestination runs.
+                // Keep the same rows, but place them in a scroll container so
+                // each folder owns its actual drop area.
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(visibleFolderPaths, id: \.self) { folder in
+                            folderRow(
+                                folder,
+                                notebookCount: notebookCounts[folder, default: 0],
+                                deckCount: deckCounts[folder, default: 0],
+                                documentCount: documentCounts[folder, default: 0],
+                                slideCount: slideCounts[folder, default: 0]
+                            )
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            Divider()
+                        }
+                        let displayedNotebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
+                        notebookRows(displayedNotebooks)
+                        studyCardRows
+                        documentRows
+                        slideRows
                     }
-                    let displayedNotebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
-                    notebookRows(displayedNotebooks)
-                    studyCardRows
-                    documentRows
-                    slideRows
+                    .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 24))
+                    .padding()
                 }
-            } else if libraryMode == .studyCards && selectedFolder == nil {
-                studyCardRows
-            } else if libraryMode == .textDocuments && selectedFolder == nil {
-                documentRows
-            } else if libraryMode == .slides && selectedFolder == nil {
-                slideRows
-            } else if libraryMode == .favorites && selectedFolder == nil {
-                favoriteRows
             } else {
-                notebookRows(visibleNotebooks)
-                if libraryMode == .trash && selectedFolder == nil {
-                    trashedItemRows
+                List(selection: $selectedNotebook) {
+                    if libraryMode == .studyCards && selectedFolder == nil {
+                        studyCardRows
+                    } else if libraryMode == .textDocuments && selectedFolder == nil {
+                        documentRows
+                    } else if libraryMode == .slides && selectedFolder == nil {
+                        slideRows
+                    } else if libraryMode == .favorites && selectedFolder == nil {
+                        favoriteRows
+                    } else {
+                        notebookRows(visibleNotebooks)
+                        if libraryMode == .trash && selectedFolder == nil {
+                            trashedItemRows
+                        }
+                    }
                 }
             }
         }
@@ -3230,12 +3524,14 @@ struct ContentView: View {
                     ) {
                         selectedFolder = folder
                     }
+                    .accessibilityIdentifier("library-folder-\(folder)")
+                    .onDrag { folderDragProvider(for: folder) }
                     .overlay(alignment: .bottomTrailing) { folderDropBadge(folder) }
                     .dropDestination(
                         for: String.self,
                         action: { items, _ in handleFolderDrop(items, into: folder) },
                         isTargeted: { isTargeted in
-                            folderDropTarget = isTargeted ? folder : (folderDropTarget == folder ? nil : folderDropTarget)
+                            setFolderDropTarget(folder, isTargeted: isTargeted)
                         }
                     )
                     .contextMenu {
@@ -3261,6 +3557,7 @@ struct ContentView: View {
                     HomeEntryTile(entry: entry) {
                         open(entry)
                     }
+                    .accessibilityIdentifier("library-entry-\(entry.title)")
                     .draggable(dragPayload(for: entry))
                     .overlay(alignment: .topTrailing) { entryDropBadge(entry.id) }
                     .dropDestination(
@@ -3310,8 +3607,8 @@ struct ContentView: View {
                         ForEach(0...chain.count, id: \.self) { level in
                             HStack(spacing: 0) {
                                 columnPane(
-                                    parent: level == 0 ? nil : chain[level - 1],
-                                    highlighted: level < chain.count ? chain[level] : nil
+                                    parentPath: level == 0 ? nil : chain[level - 1],
+                                    highlightedPath: level < chain.count ? chain[level] : nil
                                 )
                                 .frame(width: columnWidth)
                                 Divider()
@@ -3327,51 +3624,52 @@ struct ContentView: View {
         }
     }
 
-    /// One column of `columnBrowser`: `parent`'s subfolders (as navigation
-    /// rows) above its directly-contained items. `highlighted` is the
-    /// subfolder the chain already drilled into from this column, if any —
+    /// One column of `columnBrowser`: the folder path's subfolders above its
+    /// directly-contained items. `highlightedPath` is the subfolder already
+    /// drilled into from this column, if any —
     /// mirroring Finder's "selected row stays tinted in the column it came
     /// from" cue.
-    private func columnPane(parent: Folder?, highlighted: Folder?) -> some View {
-        List {
-            ForEach(subfolders(of: parent)) { folder in
-                Button {
-                    selectedFolder = folder.legacyPath
-                } label: {
+    private func columnPane(parentPath: String?, highlightedPath: String?) -> some View {
+        ScrollView(.vertical) {
+            LazyVStack(spacing: 0) {
+            ForEach(subfolderPaths(of: parentPath), id: \.self) { path in
+                Button { selectedFolder = path } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "folder.fill").foregroundStyle(.tint)
-                        Text(folder.name).lineLimit(1)
-                        if folder.isFavorite {
+                        Text(folderDisplayName(path)).lineLimit(1)
+                        if favoriteFolderPaths.contains(path) {
                             Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
                         }
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
                     }
+                    .frame(maxWidth: .infinity, minHeight: 45)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(folder === highlighted ? Color.accentColor.opacity(0.15) : Color.clear)
-                .overlay(alignment: .trailing) { folderDropBadge(folder.legacyPath).padding(.trailing, 28) }
-                .dropDestination(
-                    for: String.self,
-                    action: { items, _ in handleFolderDrop(items, into: folder.legacyPath) },
-                    isTargeted: { isTargeted in
-                        folderDropTarget = isTargeted ? folder.legacyPath : (folderDropTarget == folder.legacyPath ? nil : folderDropTarget)
-                    }
-                )
+                .padding(.horizontal, 16)
+                .background(path == highlightedPath ? Color.accentColor.opacity(0.15) : Color.clear)
+                .accessibilityIdentifier("library-folder-\(path)")
+                .onDrag { folderDragProvider(for: path) }
+                .overlay(alignment: .trailing) { folderDropBadge(path).padding(.trailing, 28) }
+                .dropDestination(for: String.self) { items, _ in
+                    handleFolderDrop(items, into: path)
+                } isTargeted: { isTargeted in
+                    setFolderDropTarget(path, isTargeted: isTargeted)
+                }
                 .contextMenu {
-                    Button {
-                        folderRenameText = folder.name
-                        folderToRename = folder
-                    } label: {
-                        Label("名前を変更", systemImage: "pencil")
+                    if let folder = folderObject(forLegacyPath: path) {
+                        Button {
+                            folderRenameText = folder.name
+                            folderToRename = folder
+                        } label: {
+                            Label("名前を変更", systemImage: "pencil")
+                        }
                     }
                 }
             }
-            ForEach(entries(in: parent)) { entry in
-                Button {
-                    open(entry)
-                } label: {
+            ForEach(entries(inLegacyPath: parentPath)) { entry in
+                Button { open(entry) } label: {
                     HStack(spacing: 10) {
                         Image(systemName: entry.iconName).foregroundStyle(entry.tintColor)
                         Text(entry.title).lineLimit(1)
@@ -3380,31 +3678,34 @@ struct ContentView: View {
                         }
                         Spacer()
                     }
+                    .frame(maxWidth: .infinity, minHeight: 45)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .accessibilityIdentifier("library-entry-\(entry.title)")
                 .draggable(dragPayload(for: entry))
-                .overlay(alignment: .trailing) { entryDropBadge(entry.id).padding(.trailing, 12) }
-                .dropDestination(
-                    for: String.self,
-                    action: { items, _ in handleEntryDrop(items, onto: entry) },
-                    isTargeted: { isTargeted in setEntryDropTarget(isTargeted, entry.id) }
-                )
-                .contextMenu {
-                    Button {
-                        toggleFavorite(entry)
-                    } label: {
-                        Label(entry.isFavorite ? "お気に入り解除" : "お気に入り", systemImage: entry.isFavorite ? "star.slash" : "star")
+            }
+            Rectangle()
+                .fill(Color.clear)
+                .frame(height: 240)
+                .contentShape(Rectangle())
+                .accessibilityIdentifier("library-empty-\(parentPath ?? "root")")
+                .overlay(alignment: .top) {
+                    if emptyPaneDropTarget == (parentPath ?? "") {
+                        Label("ここに移動", systemImage: "plus.circle.fill")
+                            .foregroundStyle(.green)
+                            .padding(.top, 24)
+                            .allowsHitTesting(false)
                     }
-                    Button(role: .destructive) {
-                        trash(entry)
-                    } label: {
-                        Label("ゴミ箱", systemImage: "trash")
-                    }
+                }
+                .dropDestination(for: String.self) { items, _ in
+                    handleFolderDrop(items, into: parentPath)
+                } isTargeted: { isTargeted in
+                    setEmptyPaneDropTarget(parentPath, isTargeted: isTargeted)
                 }
             }
         }
-        .listStyle(.plain)
     }
 
     private var notificationPanel: some View {
@@ -3509,16 +3810,20 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("library-entry-\(deck.title)")
                 Button { deck.isFavorite.toggle(); deck.updatedAt = .now } label: {
                     Image(systemName: deck.isFavorite ? "star.fill" : "star")
                         .foregroundStyle(deck.isFavorite ? .yellow : .secondary)
                         .frame(width: 34, height: 34)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("library-favorite-\(deck.title)")
+                .accessibilityValue(deck.isFavorite ? "on" : "off")
             }
             .swipeActions {
                 Button("ゴミ箱", role: .destructive) { trashDeck(deck) }
             }
+            .modifier(DocumentLibraryRowStyle(enabled: libraryMode == .documents))
             .draggable("deck:\(deckID(deck))")
             .overlay(alignment: .trailing) { entryDropBadge(HomeEntry.flashcardDeck(deck).id).padding(.trailing, 40) }
             .dropDestination(
@@ -3566,16 +3871,20 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("library-entry-\(document.title)")
                 Button { document.isFavorite.toggle(); document.updatedAt = .now } label: {
                     Image(systemName: document.isFavorite ? "star.fill" : "star")
                         .foregroundStyle(document.isFavorite ? .yellow : .secondary)
                         .frame(width: 34, height: 34)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("library-favorite-\(document.title)")
+                .accessibilityValue(document.isFavorite ? "on" : "off")
             }
             .swipeActions {
                 Button("ゴミ箱", role: .destructive) { trashDocument(document) }
             }
+            .modifier(DocumentLibraryRowStyle(enabled: libraryMode == .documents))
             .draggable("document:\(textDocumentID(document))")
             .overlay(alignment: .trailing) { entryDropBadge(HomeEntry.textDocument(document).id).padding(.trailing, 40) }
             .dropDestination(
@@ -3607,16 +3916,20 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("library-entry-\(deck.title)")
                 Button { deck.isFavorite.toggle(); deck.updatedAt = .now } label: {
                     Image(systemName: deck.isFavorite ? "star.fill" : "star")
                         .foregroundStyle(deck.isFavorite ? .yellow : .secondary)
                         .frame(width: 34, height: 34)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("library-favorite-\(deck.title)")
+                .accessibilityValue(deck.isFavorite ? "on" : "off")
             }
             .swipeActions {
                 Button("ゴミ箱", role: .destructive) { trashSlideDeck(deck) }
             }
+            .modifier(DocumentLibraryRowStyle(enabled: libraryMode == .documents))
             .draggable("slide:\(slideDeckID(deck))")
             .overlay(alignment: .trailing) { entryDropBadge(HomeEntry.slideDeck(deck).id).padding(.trailing, 40) }
             .dropDestination(
@@ -3742,21 +4055,13 @@ struct ContentView: View {
         folderObject(forLegacyPath: folder)?.isFavorite = favorites.contains(folder)
     }
 
-    /// Looks up the real `Folder` matching a legacy "/"-joined path string,
-    /// such as the one every item's `folderName` and `selectedFolder` still
-    /// use. The column view (`columnBrowser`) is the one place that reads
-    /// `Folder` directly instead of these strings, so every place that used
-    /// to write only `folderName` now goes through `assign(_:toLegacyPath:)`
-    /// below to keep both in sync.
+    /// Looks up the relationship object for a path shared by all library views.
     private func folderObject(forLegacyPath path: String) -> Folder? {
         guard !path.isEmpty else { return nil }
         return allFolders.first { $0.legacyPath == path }
     }
 
-    /// Sets both `item.folderName` (legacy string, still what the list/icon
-    /// views filter on) and `item.folder` (the real relationship, what the
-    /// column view traverses) to the same destination, so the three view
-    /// modes never disagree about where an item lives.
+    /// Keep the relationship and the path in sync when an item is moved.
     private func assign<T: HomeItem>(_ item: T, toLegacyPath path: String) {
         item.folderName = path
         item.folder = folderObject(forLegacyPath: path)
@@ -3766,42 +4071,25 @@ struct ContentView: View {
         assign(item, toLegacyPath: selectedFolder ?? "")
     }
 
-    /// `parent`'s immediate subfolders — used only by `columnBrowser`, which
-    /// (unlike the list/icon views) walks the real `Folder` relationship
-    /// instead of "/"-joined path strings, since a column needs to know
-    /// exactly what sits one level below a given folder.
-    private func subfolders(of parent: Folder?) -> [Folder] {
-        allFolders
-            .filter { $0.parent === parent }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    /// Use the same path as list and icon mode. A stale or missing SwiftData
+    /// relationship must not make an item appear in a different column.
+    private func entries(inLegacyPath path: String?) -> [HomeEntry] {
+        let path = path ?? ""
+        return allNotebooks.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.notebook)
+            + flashcardDecks.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.flashcardDeck)
+            + textDocuments.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.textDocument)
+            + slideDecks.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.slideDeck)
     }
 
-    /// `parent`'s directly-contained items (not its subfolders' items), as a
-    /// single flat list mixing all four kinds — the column view's equivalent
-    /// of `homeIconGrid`'s `entries`, but keyed by `folder` rather than by
-    /// `selectedFolder`/`folderName`.
-    private func entries(in parent: Folder?) -> [HomeEntry] {
-        allNotebooks.filter { !$0.isTrashed && $0.folder === parent }.map(HomeEntry.notebook)
-            + flashcardDecks.filter { !$0.isTrashed && $0.folder === parent }.map(HomeEntry.flashcardDeck)
-            + textDocuments.filter { !$0.isTrashed && $0.folder === parent }.map(HomeEntry.textDocument)
-            + slideDecks.filter { !$0.isTrashed && $0.folder === parent }.map(HomeEntry.slideDeck)
+    private func subfolderPaths(of parentPath: String?) -> [String] {
+        sortedFolderNames.filter { parentFolder(of: $0) == parentPath }
     }
 
-    /// The root-to-`path` chain of real `Folder`s backing the legacy path
-    /// string, e.g. `"数学/代数"` → `[数学, 代数]`. `columnBrowser` renders one
-    /// column per entry (plus one more for the deepest folder's own
-    /// contents), so drilling into a folder in any view mode — since they
-    /// all share `selectedFolder` — immediately reflects in the column view
-    /// too, and vice versa.
-    private func folderChain(endingAt path: String?) -> [Folder] {
-        guard let path, let leaf = folderObject(forLegacyPath: path) else { return [] }
-        var chain: [Folder] = []
-        var current: Folder? = leaf
-        while let folder = current {
-            chain.insert(folder, at: 0)
-            current = folder.parent
-        }
-        return chain
+    /// One column for each component of the selected path, plus its contents.
+    private func folderChain(endingAt path: String?) -> [String] {
+        guard let path else { return [] }
+        let components = path.split(separator: "/").map(String.init)
+        return components.indices.map { components[0...$0].joined(separator: "/") }
     }
 
     private func createTextDocument() {
@@ -4516,8 +4804,9 @@ struct ContentView: View {
     }
 
     private func createFolder() {
-        let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
+        let typedName = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parentPath = selectedFolder ?? ""
+        let name = typedName.isEmpty ? uniqueNumberedFolderName(parentPath: parentPath) : typedName
         let path = selectedFolder.map { "\($0)/\(name)" } ?? name
         registerFolderPathMetadata(path)
         if folderObject(forLegacyPath: path) == nil {
@@ -4527,6 +4816,17 @@ struct ContentView: View {
         selectedFolder = path
         libraryMode = .documents
         newFolderName = ""
+    }
+
+    private func uniqueNumberedFolderName(parentPath: String) -> String {
+        let siblingNames = Set(subfolderPaths(of: parentPath.isEmpty ? nil : parentPath).map(folderDisplayName))
+        var suffix = 1
+        var candidate = "新規フォルダ（\(suffix)）"
+        while siblingNames.contains(candidate) {
+            suffix += 1
+            candidate = "新規フォルダ（\(suffix)）"
+        }
+        return candidate
     }
 
     private func goBackOneFolder() {
@@ -4746,7 +5046,7 @@ struct ContentView: View {
     /// `FolderMigrationService` for the full migration logic.
     private func migrateFoldersIfNeeded() async {
         try? await Task.sleep(nanoseconds: 350_000_000)
-        FolderMigrationService.migrateIfNeeded(
+        await FolderMigrationService.migrateIfNeeded(
             context: modelContext,
             folderNamesStorage: folderNamesStorage,
             folderCreatedAtStorage: folderCreatedAtStorage,
@@ -4778,9 +5078,26 @@ struct ContentView: View {
     @ViewBuilder
     private func notebookRows(_ notebooks: [Notebook]) -> some View {
         ForEach(notebooks) { notebook in
-            NavigationLink(value: notebook) {
-                NotebookRow(notebook: notebook)
+            Group {
+                // The all-files screen uses ScrollView, not List(selection:), so a
+                // NavigationLink(value:) row has no selection binding or
+                // navigationDestination to push to and never opens. Open directly
+                // there, the same way the icon grid and column browser already do.
+                if libraryMode == .documents {
+                    Button {
+                        open(.notebook(notebook))
+                    } label: {
+                        NotebookRow(notebook: notebook)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    NavigationLink(value: notebook) {
+                        NotebookRow(notebook: notebook)
+                    }
+                }
             }
+            .accessibilityIdentifier("library-entry-\(notebook.title)")
             .contextMenu {
                 notebookActions(notebook)
             }
@@ -4803,13 +5120,105 @@ struct ContentView: View {
                     Button("ゴミ箱", role: .destructive) { moveToTrash(notebook) }
                 }
             }
-            .draggable("notebook:\(notebookID(notebook))")
+            .modifier(DocumentLibraryRowStyle(enabled: libraryMode == .documents))
+            .onDrag {
+                return NSItemProvider(object: "notebook:\(notebookID(notebook))" as NSString)
+            }
             .overlay(alignment: .trailing) { entryDropBadge(HomeEntry.notebook(notebook).id).padding(.trailing, 12) }
             .dropDestination(
                 for: String.self,
                 action: { items, _ in handleEntryDrop(items, onto: .notebook(notebook)) },
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.notebook(notebook).id) }
             )
+        }
+    }
+}
+
+/// The all-files screen uses ScrollView so folder rows can receive drops.
+/// List used to supply these insets and separators automatically.
+private struct DocumentLibraryRowStyle: ViewModifier {
+    let enabled: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled {
+            content
+                .buttonStyle(.plain)
+                .frame(minHeight: 54)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .overlay(alignment: .bottom) {
+                    Divider().allowsHitTesting(false)
+                }
+        } else {
+            content
+        }
+    }
+}
+
+/// SwiftUI's folder row sits inside nested navigation and scroll containers.
+/// A UIKit drop interaction owns the complete visible row, so its hover and
+/// drop callbacks are delivered even when SwiftUI's row modifiers are not.
+private struct LibraryFolderDropSurface: UIViewRepresentable {
+    let identifier: String
+    let onTap: () -> Void
+    let onDrop: ([String]) -> Bool
+    let onTargeted: (Bool) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isAccessibilityElement = true
+        view.accessibilityTraits = .button
+        view.accessibilityIdentifier = identifier
+        view.accessibilityLabel = String(identifier.dropFirst("library-folder-".count))
+        view.addInteraction(UIDropInteraction(delegate: context.coordinator))
+        view.addGestureRecognizer(UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped)))
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.parent = self
+        view.accessibilityIdentifier = identifier
+        view.accessibilityLabel = String(identifier.dropFirst("library-folder-".count))
+    }
+
+    final class Coordinator: NSObject, UIDropInteractionDelegate {
+        var parent: LibraryFolderDropSurface
+
+        init(_ parent: LibraryFolderDropSurface) { self.parent = parent }
+
+        @objc func tapped() { parent.onTap() }
+
+        func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+            session.canLoadObjects(ofClass: NSString.self)
+        }
+
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnter session: UIDropSession) {
+            parent.onTargeted(true)
+        }
+
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidExit session: UIDropSession) {
+            parent.onTargeted(false)
+        }
+
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidEnd session: UIDropSession) {
+            parent.onTargeted(false)
+        }
+
+        func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+            return UIDropProposal(operation: .move)
+        }
+
+        func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+            parent.onTargeted(false)
+            for item in session.items {
+                _ = item.itemProvider.loadObject(ofClass: NSString.self) { [weak self] object, _ in
+                    guard let value = object as? String else { return }
+                    DispatchQueue.main.async { _ = self?.parent.onDrop([value]) }
+                }
+            }
         }
     }
 }
@@ -4984,6 +5393,8 @@ private struct NotebookRow: View {
                     .frame(width: 34, height: 34)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("library-favorite-\(notebook.title)")
+            .accessibilityValue(notebook.isFavorite ? "on" : "off")
         }
         .padding(.vertical, 4)
     }
@@ -5086,4 +5497,15 @@ private enum HomeViewMode: String, CaseIterable, Identifiable {
         case .column: "rectangle.split.3x1"
         }
     }
+}
+
+/// Keep construction of each large library section in a separate SwiftUI
+/// body evaluation. Eagerly composing all sections and toolbar menus inside
+/// ContentView exhausted the main-thread stack on iPad (EXC_BAD_ACCESS in
+/// fullScreenHome's toolbar type metadata). The closure keeps the parent
+/// view small, and AnyView bounds the type at this coarse section boundary.
+private struct LibraryViewSection: View {
+    let content: () -> AnyView
+
+    var body: some View { content() }
 }

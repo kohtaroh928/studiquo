@@ -9,10 +9,20 @@ import XCTest
 @MainActor
 final class AuthenticationStoreTests: XCTestCase {
     private var storeService = ""
+    private var defaultsSuiteName = ""
+    private var testDefaults: UserDefaults!
 
     override func setUp() {
         super.setUp()
         storeService = "com.yabuko.studiquo.tests.\(UUID().uuidString)"
+        // A private suite, not `.standard` — the onboarding flag `login()`
+        // etc. read/write is real, persistent app state, and `.standard` is
+        // shared with any other copy of the app (or test) running on the
+        // same simulator. Sharing it made these tests depend on nothing
+        // else having touched that flag, which a manual run of the app
+        // alongside the test suite silently violates.
+        defaultsSuiteName = "com.yabuko.studiquo.tests.\(UUID().uuidString)"
+        testDefaults = UserDefaults(suiteName: defaultsSuiteName)
         UserDefaults.standard.removeObject(forKey: "mcpCloudEndpoint")
         URLProtocol.registerClass(StubAuthNetworkProtocol.self)
         StubAuthNetworkProtocol.reset()
@@ -21,14 +31,19 @@ final class AuthenticationStoreTests: XCTestCase {
     override func tearDown() {
         URLProtocol.unregisterClass(StubAuthNetworkProtocol.self)
         MCPCloudCredentials.clear()
+        testDefaults.removePersistentDomain(forName: defaultsSuiteName)
         super.tearDown()
+    }
+
+    private func makeStore() -> AuthenticationStore {
+        AuthenticationStore(service: storeService, defaults: testDefaults)
     }
 
     // MARK: - login()
 
     func testLoginWithCorrectPasswordSucceedsAndSavesACloudToken() async {
         StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 200, body: ["token": "1234567890.\(String(repeating: "a", count: 40))"])
-        let store = AuthenticationStore(service: storeService)
+        let store = makeStore()
 
         let result = await store.login(email: "student@example.com", password: "correct-horse-battery")
 
@@ -40,7 +55,7 @@ final class AuthenticationStoreTests: XCTestCase {
 
     func testLoginWithWrongPasswordFailsWithoutSavingAnyToken() async {
         StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 401, body: ["error": "メールアドレスまたはパスワードが違います。"])
-        let store = AuthenticationStore(service: storeService)
+        let store = makeStore()
 
         let result = await store.login(email: "student@example.com", password: "wrong-password")
 
@@ -52,7 +67,7 @@ final class AuthenticationStoreTests: XCTestCase {
 
     func testLoginWithEmptyFieldsFailsWithoutMakingANetworkCall() async {
         StubAuthNetworkProtocol.failIfCalled(forPathSuffix: "api/auth/local/login")
-        let store = AuthenticationStore(service: storeService)
+        let store = makeStore()
 
         let result = await store.login(email: "", password: "")
 
@@ -60,15 +75,38 @@ final class AuthenticationStoreTests: XCTestCase {
     }
 
     func testAnAlreadyAuthenticatedDeviceLoggingInAgainGoesStraightToAuthenticated() async {
-        UserDefaults.standard.set(true, forKey: "authenticationOnboardingComplete")
-        defer { UserDefaults.standard.removeObject(forKey: "authenticationOnboardingComplete") }
+        testDefaults.set(true, forKey: "authenticationOnboardingComplete")
         StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 200, body: ["token": "1234567890.\(String(repeating: "b", count: 40))"])
-        let store = AuthenticationStore(service: storeService)
+        let store = makeStore()
 
         let result = await store.login(email: "student@example.com", password: "correct-horse-battery")
 
         XCTAssertTrue(result)
         XCTAssertEqual(store.state, .authenticated)
+    }
+
+    /// Regression coverage for a real failure this session: these tests used
+    /// to read/write the onboarding flag straight through
+    /// `UserDefaults.standard`, which every login-state assertion above
+    /// depends on being unset. That is real, persistent, shared app state —
+    /// a manually-run copy of the app on the same simulator (or simply
+    /// having completed onboarding for real once) sets it permanently, and
+    /// every one of the tests above then started reporting `.authenticated`
+    /// where they expected `.onboarding`, with nothing wrong in the app
+    /// itself. `AuthenticationStore` now takes an injected `defaults`, and
+    /// this proves a poisoned `.standard` — exactly what a manual app run
+    /// leaves behind — can no longer reach a store built with its own
+    /// isolated suite.
+    func testLoginIgnoresAStaleOnboardingFlagLeftInSharedUserDefaultsByAnotherAppInstance() async {
+        UserDefaults.standard.set(true, forKey: "authenticationOnboardingComplete")
+        defer { UserDefaults.standard.removeObject(forKey: "authenticationOnboardingComplete") }
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 200, body: ["token": "1234567890.\(String(repeating: "f", count: 40))"])
+        let store = makeStore()
+
+        let result = await store.login(email: "student@example.com", password: "correct-horse-battery")
+
+        XCTAssertTrue(result)
+        XCTAssertEqual(store.state, .onboarding)
     }
 
     // MARK: - restore(): the device must recognize a real sign-in after a cold launch
@@ -82,20 +120,20 @@ final class AuthenticationStoreTests: XCTestCase {
     /// honors it on a *freshly constructed* store, simulating relaunch.
     func testRestoreRecognizesALocalEmailIdentityAfterRelaunch() async {
         StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 200, body: ["token": "1234567890.\(String(repeating: "c", count: 40))"])
-        let firstLaunch = AuthenticationStore(service: storeService)
+        let firstLaunch = makeStore()
         let signedIn = await firstLaunch.login(email: "student@example.com", password: "correct-horse-battery")
         XCTAssertTrue(signedIn)
 
         // A brand-new AuthenticationStore instance against the same Keychain
         // service simulates the app being force-quit and relaunched.
-        let secondLaunch = AuthenticationStore(service: storeService)
+        let secondLaunch = makeStore()
 
         XCTAssertNotEqual(secondLaunch.state, .needsLogin)
         XCTAssertEqual(secondLaunch.email, "student@example.com")
     }
 
     func testRestoreWithNoPriorSignInStaysAtNeedsLogin() {
-        let store = AuthenticationStore(service: storeService)
+        let store = makeStore()
 
         XCTAssertEqual(store.state, .needsLogin)
     }
@@ -105,7 +143,7 @@ final class AuthenticationStoreTests: XCTestCase {
     func testBeginAccountCreationThenConfirmWithTheRightCodeSignsIn() async {
         StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/email/send-code", status: 200, body: ["sent": true])
         StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/email/confirm-code", status: 200, body: ["verified": true, "token": "1234567890.\(String(repeating: "d", count: 40))"])
-        let store = AuthenticationStore(service: storeService)
+        let store = makeStore()
 
         let began = await store.beginAccountCreation(email: "student@example.com", password: "correct-horse-battery")
         XCTAssertTrue(began)
@@ -130,7 +168,7 @@ final class AuthenticationStoreTests: XCTestCase {
             holdUntilSignaled: true
         )
         StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/email/send-code", status: 200, body: ["sent": true])
-        let store = AuthenticationStore(service: storeService)
+        let store = makeStore()
         _ = await store.beginAccountCreation(email: "student@example.com", password: "correct-horse-battery")
 
         async let confirmTask = store.confirmEmailVerification(code: "123456")

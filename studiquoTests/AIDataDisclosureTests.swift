@@ -8,13 +8,21 @@ import XCTest
 /// (`AIDataDisclosureGate`) and the always-available explanation in
 /// 設定 → プライバシー.
 final class AIDataDisclosureTests: XCTestCase {
+    private var suiteName = ""
+
     override func setUp() {
         super.setUp()
-        UserDefaults.standard.removeObject(forKey: AIDataDisclosure.acknowledgedDefaultsKey)
+        // An isolated suite, not `.standard` — `.standard` is shared with
+        // any other copy of the app running on the same simulator, and a
+        // manual run that really acknowledges the disclosure would leave
+        // this `true` for whichever test happens to run next.
+        suiteName = "com.yabuko.studiquo.tests.\(UUID().uuidString)"
+        AIDataDisclosure.defaults = UserDefaults(suiteName: suiteName)!
     }
 
     override func tearDown() {
-        UserDefaults.standard.removeObject(forKey: AIDataDisclosure.acknowledgedDefaultsKey)
+        AIDataDisclosure.defaults.removePersistentDomain(forName: suiteName)
+        AIDataDisclosure.defaults = .standard
         super.tearDown()
     }
 
@@ -28,5 +36,22 @@ final class AIDataDisclosureTests: XCTestCase {
     func testAcknowledgingPersistsSoItIsNotShownAgain() {
         AIDataDisclosure.acknowledge()
         XCTAssertTrue(AIDataDisclosure.hasBeenAcknowledged)
+    }
+
+    /// Regression coverage for a real failure this session: this test used
+    /// to read/write `hasBeenAcknowledged` straight through
+    /// `UserDefaults.standard`, real shared app state. A manually-run copy
+    /// of the app on the same simulator that actually acknowledges the
+    /// disclosure — as happened this session — permanently sets that flag,
+    /// and `testAnUntouchedInstallHasNotAcknowledgedTheDisclosure` above
+    /// then fails with nothing wrong in the app itself. `AIDataDisclosure`
+    /// now reads/writes a swappable `defaults`, and this proves a poisoned
+    /// `.standard` — exactly what a manual app run leaves behind — can no
+    /// longer reach a test pointed at its own isolated suite.
+    func testHasBeenAcknowledgedIgnoresAStaleFlagLeftInSharedUserDefaultsByAnotherAppInstance() {
+        UserDefaults.standard.set(true, forKey: AIDataDisclosure.acknowledgedDefaultsKey)
+        defer { UserDefaults.standard.removeObject(forKey: AIDataDisclosure.acknowledgedDefaultsKey) }
+
+        XCTAssertFalse(AIDataDisclosure.hasBeenAcknowledged)
     }
 }
