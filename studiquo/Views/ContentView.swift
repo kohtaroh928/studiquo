@@ -13,7 +13,9 @@ private struct MCPSnapshot: Codable {
     let calendarEvents: [MCPCalendarEvent]
     let textDocuments: [MCPTextDocument]
     let slideDecks: [MCPSlideDeck]
+    let folders: [MCPFolder]
 }
+private struct MCPFolder: Codable { let path: String }
 
 private struct MCPTextDocument: Codable { let id: String; let title: String; let text: String }
 private struct MCPSlideDeck: Codable { let id: String; let title: String; let slides: [MCPSlideSummary] }
@@ -58,7 +60,22 @@ private struct MCPPendingAction: Codable {
     /// `create_slides`
     let slides: [MCPSlide]?
     let theme: String?
+    let folderPath: String?
+    let pages: [MCPIncomingPage]?
 }
+private struct MCPIncomingPage: Codable { let title: String; let text: String }
+private struct MCPInboxItem: Decodable, Identifiable {
+    let id: String
+    let kind: String
+    let payload: MCPPendingAction
+    let source: String
+}
+private struct MCPConnection: Decodable, Identifiable {
+    let id: String
+    let clientName: String
+}
+private struct MCPPairingInfo: Decodable { let clientName: String?; let scope: String?; let error: String? }
+private struct MCPApprovalResult: Decodable { let approved: Bool }
 
 private struct MCPSlide: Codable {
     let layout: String?
@@ -791,8 +808,22 @@ enum MCPCloudCredentials {
     /// Keep in sync with `VALIDITY_SECONDS` in mcp-server/src/token.js.
     static let validityPeriod: TimeInterval = 90 * 24 * 60 * 60
 
+    /// Returns the stored token as-is, even one `isExpired(_:)` would call
+    /// past its 90 days — only mints a fresh one when none is stored at all.
+    ///
+    /// This used to swap in a freshly-minted token here whenever the stored
+    /// one looked locally expired, with no server round trip. That token had
+    /// never been through `mintSession` server-side, so the server had no
+    /// session record for it — `isExpired` on the *new* token said "not
+    /// expired" (it was just minted), but every request still came back 401
+    /// "no session", which every caller of this token folds into a generic
+    /// "please sign in again" message. The result was indistinguishable from
+    /// a real expiry to the user, except it happened silently, with no
+    /// actual sign-in prompt, and the server's own `isExpired` check never
+    /// even got a chance to fire (see .studiquoAuthFailed in
+    /// AuthenticationStore.swift for what now happens on that real 401).
     static func loadOrCreateToken() -> String {
-        if let value = currentToken(), value.count >= 32, !isExpired(value) { return value }
+        if let value = currentToken(), value.count >= 32 { return value }
         return generateAndSaveNewToken()
     }
 
@@ -1056,6 +1087,7 @@ private struct PrivacyPolicyView: View {
                         bullet("利用状況", "学習時間の記録、各機能の利用回数。学習記録機能・利用制限の管理のために使用します。")
                         bullet("Googleカレンダー情報", "Googleカレンダー連携を選択した場合、カレンダー名、予定のタイトル、開始・終了日時、説明を読み取り、学習予定と一緒に表示するために端末内へ保存します。Googleカレンダーへの書き込みは行いません。")
                         bullet("AI機能利用時に送信する内容", "AIトーク・添削・翌日復習などの機能を使うと、質問文、ノートの内容、答案の画像などが外部のAIサービスに送信されます。詳しくは次の項目をご覧ください。")
+                        bullet("問題報告の内容", "ホーム画面の「問題を報告」機能を使うと、送信した説明文、任意で添付したスクリーンショット、端末モデル・OS・アプリのバージョンなどの情報が送信されます。不具合の調査のために使用します。")
                     }
 
                     policySection(title: "第三者サービスとの連携") {
@@ -1065,6 +1097,7 @@ private struct PrivacyPolicyView: View {
                         bullet("Anthropic Claude", "利用者が自分自身のAnthropic APIキーを設定した場合に限り、同様の内容がAnthropicにも送信されます。APIキーを設定しない限り、この連携は行われません。")
                         bullet("Cloudflare", "本アプリのサーバーインフラとして使用しており、アカウント情報・学習コンテンツ・チャット内容の保管場所です。")
                         bullet("Apple iCloud", "一部のデータは、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。")
+                        bullet("Slack", "「問題を報告」で送信された内容を運営が確認するために使用します。")
                     }
 
                     policySection(title: "広告・トラッキングについて") {
@@ -1131,6 +1164,7 @@ struct ContentView: View {
     @Query(sort: \TextDocument.updatedAt, order: .reverse) private var textDocuments: [TextDocument]
     @Query(sort: \SlideDeck.updatedAt, order: .reverse) private var slideDecks: [SlideDeck]
     @Query private var allFolders: [Folder]
+    @Query(sort: \MCPImportReceipt.importedAt, order: .reverse) private var mcpImportReceipts: [MCPImportReceipt]
     @Query(sort: \CalendarEvent.startDate) private var calendarEvents: [CalendarEvent]
     @Query(sort: \StudyActivity.startedAt, order: .reverse) private var studyActivities: [StudyActivity]
     @Query(sort: \AIReviewItem.reviewDate, order: .reverse) private var aiReviewItems: [AIReviewItem]
@@ -1225,10 +1259,18 @@ struct ContentView: View {
     @State private var mcpCloudStatus = ""
     @State private var isMCPCloudSyncing = false
     @State private var isMCPCloudTokenVisible = false
+    @State private var mcpPairCode = ""
+    @State private var mcpPairClientName = ""
+    @State private var mcpPairScope = ""
+    @State private var mcpConnections: [MCPConnection] = []
+    @State private var mcpInboxCount = 0
+    @State private var mcpInboxError = ""
+    @State private var isPullingMCPInbox = false
     @State private var showsNotifications = false
     @State private var presentedAIReviewItem: AIReviewItem?
     @State private var showsAppSettings = false
     @State private var showsProfile = false
+    @State private var pendingReportIssue: PendingIssueReport?
     @AppStorage("profileImage") private var profileImageData = Data()
     @State private var showsTabPicker = false
     @State private var cachedStudyNotifications: [StudyNotification] = []
@@ -1831,14 +1873,58 @@ struct ContentView: View {
                         Button("今すぐ同期", systemImage: "icloud.and.arrow.up") {
                             Task { await syncMCPCloud() }
                         }
+                        Button("受信した資料を確認", systemImage: "tray.and.arrow.down") {
+                            Task { await pullMCPInbox() }
+                        }
                         .disabled(isMCPCloudSyncing || mcpCloudEndpoint.isEmpty || mcpCloudToken.count < 32)
                         if isMCPCloudSyncing { ProgressView() }
                         if !mcpCloudStatus.isEmpty { Text(mcpCloudStatus).foregroundStyle(.secondary) }
                     } footer: {
-                        Text("先に「今すぐ同期」を実行してください。GeminiにはURLとトークンを設定します。Claude・ChatGPTではURLを登録するとStudiquoの認証画面が開きます。トークンは他人へ共有しないでください。")
+                        Text("資料の参照には先に同期が必要です。Claude・ChatGPTにはMCP URLを登録し、表示された接続コードを下で承認してください。接続トークンは他人へ共有しないでください。")
+                    }
+                    Section("Claude・ChatGPTから接続") {
+                        TextField("接続コード", text: $mcpPairCode)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                        Button("接続先を確認") { Task { await inspectMCPPairing() } }
+                            .disabled(mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if !mcpPairClientName.isEmpty {
+                            Text("接続先：\(mcpPairClientName)")
+                            Text(mcpPairScope.contains("studiquo.write")
+                                 ? "このアプリに資料の参照と作成を許可します。"
+                                 : "このアプリに資料の参照を許可します。")
+                                .font(.footnote).foregroundStyle(.secondary)
+                            Button("この接続を許可") { Task { await approveMCPPairing() } }
+                        }
+                    }
+                    Section("接続済みのアプリ") {
+                        if mcpConnections.isEmpty { Text("接続はありません").foregroundStyle(.secondary) }
+                        ForEach(mcpConnections) { connection in
+                            HStack {
+                                Text(connection.clientName)
+                                Spacer()
+                                Button("解除", role: .destructive) {
+                                    Task { await disconnectMCP(connection) }
+                                }
+                            }
+                        }
+                    }
+                    Section("受信した資料") {
+                        if mcpInboxCount > 0 { Text("受信待ち：\(mcpInboxCount)件") }
+                        if !mcpInboxError.isEmpty { Text(mcpInboxError).foregroundStyle(.red) }
+                        if mcpImportReceipts.isEmpty { Text("まだありません").foregroundStyle(.secondary) }
+                        ForEach(mcpImportReceipts.prefix(30)) { item in
+                            Button { openMCPImport(item) } label: {
+                                VStack(alignment: .leading) {
+                                    Text(item.title)
+                                    Text(item.source).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
                     }
                 }
                 .navigationTitle("MCPクラウド連携")
+                .task { await loadMCPConnections() }
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("完了") {
@@ -1857,6 +1943,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showsProfile) {
             UserProfileView()
+        }
+        .sheet(item: $pendingReportIssue) { pending in
+            ReportIssueSheet(capturedScreenshot: pending.screenshot)
         }
         .sheet(isPresented: $showsTabPicker) {
             TabPickerView(
@@ -1958,6 +2047,12 @@ struct ContentView: View {
         .task {
             await migrateFoldersIfNeeded()
         }
+        .task {
+            while !Task.isCancelled {
+                if scenePhase == .active { await pullMCPInbox() }
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
         .onAppear {
             StudyTimeTracker.shared.configure(context: modelContext)
             StudyTimeTracker.shared.handle(scenePhase: scenePhase)
@@ -1967,6 +2062,7 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             StudyTimeTracker.shared.handle(scenePhase: phase)
             friendStore.handle(scenePhase: phase)
+            if phase == .active { Task { await pullMCPInbox() } }
         }
         // Count study time only while an actual study surface is open — not
         // while browsing the library or the calendar.
@@ -2034,8 +2130,10 @@ struct ContentView: View {
                             // surfaces that from anywhere in the app, the
                             // same visual pattern as `notificationBell`'s.
                             .overlay(alignment: .topTrailing) {
-                                if section == .friends, friendStore.unseenIncomingRequestCount > 0 {
-                                    Text("\(min(friendStore.unseenIncomingRequestCount, 9))")
+                                if section == .friends,
+                                   friendStore.unseenIncomingRequestCount + friendStore.totalUnreadCount > 0 {
+                                    let count = friendStore.unseenIncomingRequestCount + friendStore.totalUnreadCount
+                                    Text(count > 99 ? "99+" : "\(count)")
                                         .font(.system(size: 9, weight: .bold))
                                         .foregroundStyle(.white)
                                         .frame(minWidth: 15, minHeight: 15)
@@ -3366,6 +3464,9 @@ struct ContentView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 LibraryViewSection { AnyView(notificationBell) }
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                LibraryViewSection { AnyView(reportIssueToolbarButton) }
+            }
         }
         ToolbarItem(placement: .navigationBarTrailing) {
             LibraryViewSection { AnyView(primaryLibraryToolbarAction) }
@@ -3401,6 +3502,12 @@ struct ContentView: View {
             Label("設定", systemImage: "gearshape")
         }
         .accessibilityLabel("設定")
+    }
+
+    private var reportIssueToolbarButton: some View {
+        ReportIssueButton {
+            pendingReportIssue = PendingIssueReport(screenshot: ScreenshotCapture.captureFrontWindow())
+        }
     }
 
     private var profileToolbarButton: some View {
@@ -4554,7 +4661,8 @@ struct ContentView: View {
                         MCPSlideSummary(title: $0.titleText, bullets: $0.bullets, notes: $0.notes)
                     }
                 )
-            }
+            },
+            folders: allFolders.map { MCPFolder(path: $0.legacyPath) }
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -4570,39 +4678,41 @@ struct ContentView: View {
         guard let actions = try? decoder.decode([MCPPendingAction].self, from: data), !actions.isEmpty else {
             return false
         }
-        applyMCPActions(actions)
-        return true
+        return applyMCPActions(actions)
     }
 
-    private func applyMCPActions(_ actions: [MCPPendingAction]) {
+    @discardableResult
+    private func applyMCPActions(_ actions: [MCPPendingAction], openAfterImport: Bool = true) -> Bool {
         for action in actions {
             switch action.type {
             case "create_flashcards":
                 guard let title = action.deckTitle, let cards = action.cards, !cards.isEmpty else { continue }
                 let deck = FlashcardDeck(title: title)
-                assignToCurrentFolder(deck)
+                assignMCPDestination(deck, path: action.folderPath)
                 for (index, value) in cards.enumerated() {
                     let card = Flashcard(question: value.question, answer: value.answer, order: index)
                     card.deck = deck
                     deck.addCard(card)
                 }
                 modelContext.insert(deck)
-                openFlashcardDeck(deck)
-                libraryMode = .studyCards
+                if openAfterImport {
+                    openFlashcardDeck(deck)
+                    libraryMode = .studyCards
+                }
             case "create_document":
                 guard let title = action.title else { continue }
                 let document = TextDocument(title: title)
-                assignToCurrentFolder(document)
+                assignMCPDestination(document, path: action.folderPath)
                 let body = DocumentBody.attributedString(fromMarkup: action.body ?? "")
                 document.bodyData = DocumentBody.encode(body)
                 document.plainText = body.string
                 modelContext.insert(document)
-                openTextDocument(document)
+                if openAfterImport { openTextDocument(document) }
 
             case "create_slides":
                 guard let title = action.title, let requested = action.slides, !requested.isEmpty else { continue }
                 let deck = SlideDeck(title: title)
-                assignToCurrentFolder(deck)
+                assignMCPDestination(deck, path: action.folderPath)
                 if let theme = action.theme, let parsed = SlideTheme(rawValue: theme) {
                     deck.theme = parsed
                 }
@@ -4620,7 +4730,26 @@ struct ContentView: View {
                     modelContext.insert(slide)
                 }
                 modelContext.insert(deck)
-                openSlideDeck(deck)
+                if openAfterImport { openSlideDeck(deck) }
+
+            case "create_notebook":
+                guard let title = action.title, let pages = action.pages, !pages.isEmpty else { continue }
+                let notebook = Notebook(title: title)
+                assignMCPDestination(notebook, path: action.folderPath)
+                for (index, source) in pages.enumerated() {
+                    let page = NotePage(order: index)
+                    page.title = source.title
+                    page.recognizedText = source.text
+                    let text = PageElement(kind: .text, text: source.text, centerX: 0.5,
+                                           centerY: 0.5, width: 0.88, height: 0.8)
+                    text.page = page
+                    page.addElement(text)
+                    page.notebook = notebook
+                    notebook.addPage(page)
+                }
+                notebook.refreshLibraryMetadata()
+                modelContext.insert(notebook)
+                if openAfterImport { openNotebookTab(notebook) }
 
             case "add_calendar_event":
                 guard let title = action.title,
@@ -4641,12 +4770,23 @@ struct ContentView: View {
                     await UniversityCalendar.requestNotificationPermission()
                     await EventReminderNotifications.schedule(for: event)
                 }
-                homeSection = .calendar
+                if openAfterImport { homeSection = .calendar }
             default:
                 continue
             }
         }
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+            return true
+        } catch {
+            modelContext.rollback()
+            return false
+        }
+    }
+
+    private func assignMCPDestination<T: HomeItem>(_ item: T, path: String?) {
+        guard let path else { assignToCurrentFolder(item); return }
+        assign(item, toLegacyPath: path.isEmpty || folderObject(forLegacyPath: path) != nil ? path : "")
     }
 
     /// Surfaces the server's own error text (e.g. "token has expired") instead
@@ -4660,6 +4800,126 @@ struct ContentView: View {
             code: status,
             userInfo: [NSLocalizedDescriptionKey: reason ?? "サーバーエラー（HTTP \(status)）"]
         )
+    }
+
+    @MainActor
+    private func mcpRequest(path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
+        guard let endpoint = MCPCloudCredentials.configuredEndpoint() else { throw URLError(.badURL) }
+        let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        var components = URLComponents(url: endpoint.appending(path: String(parts[0])), resolvingAgainstBaseURL: false)
+        if parts.count == 2 { components?.percentEncodedQuery = String(parts[1]) }
+        guard let url = components?.url else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard 200..<300 ~= http.statusCode else {
+            throw Self.mcpCloudServerError(status: http.statusCode, body: data)
+        }
+        return data
+    }
+
+    @MainActor
+    private func inspectMCPPairing() async {
+        let code = mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !code.isEmpty else { return }
+        do {
+            let data = try await mcpRequest(path: "api/mcp/pair?code=\(code)")
+            let info = try JSONDecoder().decode(MCPPairingInfo.self, from: data)
+            mcpPairClientName = info.clientName ?? ""
+            mcpPairScope = info.scope ?? ""
+            mcpCloudStatus = info.clientName == nil ? L("接続コードを確認してください。") : ""
+        } catch {
+            mcpPairClientName = ""
+            mcpPairScope = ""
+            mcpCloudStatus = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func approveMCPPairing() async {
+        guard !mcpPairClientName.isEmpty else { return }
+        let code = mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        do {
+            let data = try await mcpRequest(path: "api/mcp/pair", method: "POST",
+                                            body: try JSONEncoder().encode(["code": code]))
+            let result = try JSONDecoder().decode(MCPApprovalResult.self, from: data)
+            guard result.approved else { mcpCloudStatus = L("接続コードの期限が切れました。"); return }
+            mcpCloudStatus = L("接続を許可しました。")
+            mcpPairCode = ""
+            mcpPairClientName = ""
+            mcpPairScope = ""
+            await loadMCPConnections()
+        } catch { mcpCloudStatus = error.localizedDescription }
+    }
+
+    @MainActor
+    private func loadMCPConnections() async {
+        guard let data = try? await mcpRequest(path: "api/mcp/connections"),
+              let connections = try? JSONDecoder().decode([MCPConnection].self, from: data) else { return }
+        mcpConnections = connections
+    }
+
+    @MainActor
+    private func disconnectMCP(_ connection: MCPConnection) async {
+        do {
+            _ = try await mcpRequest(path: "api/mcp/connections/\(connection.id)", method: "DELETE")
+            mcpConnections.removeAll { $0.id == connection.id }
+            mcpCloudStatus = L("接続を解除しました。")
+        } catch { mcpCloudStatus = error.localizedDescription }
+    }
+
+    @MainActor
+    private func pullMCPInbox() async {
+        guard !isPullingMCPInbox else { return }
+        isPullingMCPInbox = true
+        defer { isPullingMCPInbox = false }
+        do {
+            let data = try await mcpRequest(path: "api/mcp/inbox")
+            let items = try JSONDecoder().decode([MCPInboxItem].self, from: data)
+            mcpInboxCount = items.count
+            mcpInboxError = ""
+            var imported = Set(mcpImportReceipts.map(\.id))
+            for item in items {
+                if !imported.contains(item.id) {
+                    let title = item.payload.deckTitle ?? item.payload.title ?? L("新しい資料")
+                    modelContext.insert(MCPImportReceipt(id: item.id, title: title,
+                                                         kind: item.kind, source: item.source))
+                    guard applyMCPActions([item.payload], openAfterImport: false) else {
+                        mcpInboxError = L("受信した資料を保存できませんでした。再試行してください。")
+                        continue
+                    }
+                    imported.insert(item.id)
+                }
+                _ = try await mcpRequest(path: "api/mcp/inbox/\(item.id)", method: "POST")
+                mcpInboxCount -= 1
+            }
+        } catch {
+            mcpInboxError = error.localizedDescription
+        }
+    }
+
+    private func openMCPImport(_ item: MCPImportReceipt) {
+        switch item.kind {
+        case "create_document":
+            if let document = textDocuments.first(where: { $0.title == item.title && !$0.isTrashed }) { openTextDocument(document) }
+        case "create_slides":
+            if let deck = slideDecks.first(where: { $0.title == item.title && !$0.isTrashed }) { openSlideDeck(deck) }
+        case "create_notebook":
+            if let notebook = allNotebooks.first(where: { $0.title == item.title && !$0.isTrashed }) { openNotebookTab(notebook) }
+        case "create_flashcards":
+            if let deck = flashcardDecks.first(where: { $0.title == item.title && !$0.isTrashed }) { openFlashcardDeck(deck) }
+        case "add_calendar_event":
+            homeSection = .calendar
+        default: break
+        }
+        showsMCPCloudSettings = false
     }
 
     @MainActor
@@ -4705,7 +4965,10 @@ struct ContentView: View {
             decoder.dateDecodingStrategy = .iso8601
             let actions = (try? decoder.decode([MCPPendingAction].self, from: actionData)) ?? []
             if !actions.isEmpty {
-                applyMCPActions(actions)
+                guard applyMCPActions(actions) else {
+                    throw NSError(domain: "MCPCloudSync", code: 0,
+                                  userInfo: [NSLocalizedDescriptionKey: L("資料を保存できませんでした。")])
+                }
                 var clear = URLRequest(url: baseURL.appending(path: "api/actions"))
                 clear.httpMethod = "DELETE"
                 clear.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")

@@ -135,6 +135,13 @@ final class WorkerAIProvider: AIProvider {
         }
     }
 
+    /// A definitive rejection of this device's own token, not something a
+    /// retry could fix — see .studiquoAuthFailed in AuthenticationStore.swift.
+    private func httpError(status: Int, message: String) -> ProviderError {
+        if status == 401 { NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil) }
+        return .http(status: status, message: message)
+    }
+
     private func request(path: String, body: [String: Any]) throws -> URLRequest {
         guard let baseURL else { throw ProviderError.notConfigured }
         var request = URLRequest(url: baseURL.appending(path: path))
@@ -183,7 +190,7 @@ final class WorkerAIProvider: AIProvider {
             guard 200..<300 ~= http.statusCode else {
                 var raw = Data()
                 for try await byte in stream { raw.append(byte) }
-                throw ProviderError.http(status: http.statusCode, message: message(from: raw))
+                throw httpError(status: http.statusCode, message: message(from: raw))
             }
             if expectsImages,
                let received = http.value(forHTTPHeaderField: "X-Studiquo-Images-Received"),
@@ -263,7 +270,7 @@ final class WorkerAIProvider: AIProvider {
             guard 200..<300 ~= http.statusCode else {
                 var raw = Data()
                 for try await byte in stream { raw.append(byte) }
-                throw ProviderError.http(status: http.statusCode, message: message(from: raw))
+                throw httpError(status: http.statusCode, message: message(from: raw))
             }
 
             for try await line in stream.lines {
@@ -274,7 +281,7 @@ final class WorkerAIProvider: AIProvider {
                     continue
                 }
                 if let failure = event["error"] as? String {
-                    throw ProviderError.http(status: 502, message: failure)
+                    throw httpError(status: 502, message: failure)
                 }
                 guard let result = event["result"] else { continue } // A heartbeat.
                 let encoded = try JSONSerialization.data(withJSONObject: result)
@@ -321,7 +328,7 @@ final class WorkerAIProvider: AIProvider {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
             }
             guard 200..<300 ~= http.statusCode else {
-                throw ProviderError.http(status: http.statusCode, message: message(from: data))
+                throw httpError(status: http.statusCode, message: message(from: data))
             }
             return data
         } catch let error as ProviderError {

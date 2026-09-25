@@ -53,6 +53,11 @@ enum FriendChatService {
         /// server in that case, for every reader of the room, not just the
         /// sender's own device.
         var isCanceled: Bool? = nil
+        /// Who sent this — always present, but only worth displaying in a
+        /// group (a 1:1 room's own two participants are already fully
+        /// described by `isMine`). Optional purely for decoding safety.
+        var senderCode: String? = nil
+        var senderName: String? = nil
     }
     struct AddFriendResult: Codable { let status: String }
     /// `status` is `"added"` for a brand-new friendship or `"already_friends"`
@@ -69,7 +74,40 @@ enum FriendChatService {
     struct EditMessageResult: Codable { let status: String }
     struct BlockResult: Codable { let status: String }
     struct BlockStatus: Codable { let blockedByMe: Bool; let blockedByOther: Bool }
+    struct BlockedContact: Codable, Identifiable {
+        var id: String { code }
+        let code: String
+        let name: String
+        let roomID: String
+    }
+    struct InboxState: Codable {
+        let roomID: String
+        let latestID: Int
+        let unreadCount: Int
+        var closed: Bool? = nil
+    }
+    struct RemoveFriendResult: Codable { let status: String }
+    struct ReadResult: Codable { let status: String; let throughID: Int }
     struct ReportResult: Codable { let status: String }
+    struct GroupMember: Codable, Hashable { let code: String; let name: String }
+    /// The same shape whether just created, freshly joined, or listed —
+    /// `members` always reflects who has actually accepted, never who's
+    /// still only pending an invite (see `GroupInvite`).
+    struct Group: Codable { let roomID: String; let name: String; let members: [GroupMember] }
+    /// A still-unanswered invitation sitting in the current user's own
+    /// list — `name`/`inviterName` are a snapshot from invite time (the
+    /// server denormalizes them the same way it already does for a 1:1
+    /// friend request), not a live lookup.
+    struct GroupInvite: Codable {
+        let roomID: String
+        let name: String
+        let inviterCode: String
+        let inviterName: String
+        let invitedAt: Double
+    }
+    struct GroupActionResult: Codable { let status: String }
+    struct RenameGroupResult: Codable { let status: String; let name: String }
+    struct GroupAvatarUploadResult: Codable { let avatarUpdatedAt: Double }
     struct RateLimitedError: Error {}
     /// Carries the server's own `{"error": "..."}` message through to the
     /// caller instead of collapsing every non-2xx response into the same
@@ -85,6 +123,7 @@ enum FriendChatService {
         var todayStudySeconds: Int? = nil
         var studyDate: String? = nil
     }
+    private struct CreateGroupBody: Encodable { let name: String; let memberCodes: [String] }
 
     static func register(name: String, todayStudySeconds: Int? = nil, studyDate: String? = nil) async throws -> Identity {
         try await request(
@@ -95,6 +134,22 @@ enum FriendChatService {
 
     static func friends() async throws -> [Friend] {
         try await request(path: "api/chat/friends", method: "GET", body: Optional<String>.none)
+    }
+
+    static func blockedContacts() async throws -> [BlockedContact] {
+        try await request(path: "api/chat/friends/blocked", method: "GET", body: Optional<String>.none)
+    }
+
+    static func inbox() async throws -> [InboxState] {
+        try await request(path: "api/chat/inbox", method: "GET", body: Optional<String>.none)
+    }
+
+    static func removeFriend(code: String) async throws -> RemoveFriendResult {
+        try await request(path: "api/chat/friends/\(code)", method: "DELETE", body: Optional<String>.none)
+    }
+
+    static func markRead(roomID: String, throughID: Int) async throws -> ReadResult {
+        try await request(path: "api/chat/rooms/\(roomID)/read", method: "POST", body: ["throughID": throughID])
     }
 
     /// Uploads the caller's own profile photo so it can be shown to their
@@ -123,6 +178,9 @@ enum FriendChatService {
             guard let payload = try? JSONDecoder().decode(ErrorPayload.self, from: data) else {
                 throw URLError(.badServerResponse)
             }
+            // A definitive rejection of this device's own token, not
+            // something a retry could fix — see .studiquoAuthFailed.
+            if http.statusCode == 401 { NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil) }
             throw ServerError(status: http.statusCode, message: payload.error)
         }
         return data
@@ -232,6 +290,77 @@ enum FriendChatService {
         try await request(path: "api/chat/rooms/\(roomID)/messages/\(messageID)/report", method: "POST", body: ["reason": reason])
     }
 
+    /// Creates a group with the caller as its only actual member — everyone
+    /// in `memberCodes` (which must all already be the caller's own
+    /// friends) gets a pending invite instead of being added outright; see
+    /// `acceptGroupInvite`/`rejectGroupInvite`.
+    static func createGroup(name: String, memberCodes: [String]) async throws -> Group {
+        try await request(path: "api/chat/groups", method: "POST", body: CreateGroupBody(name: name, memberCodes: memberCodes))
+    }
+
+    /// Groups the caller has actually joined — never one they've only been
+    /// invited to (see `groupInvites`).
+    static func groups() async throws -> [Group] {
+        try await request(path: "api/chat/groups", method: "GET", body: Optional<String>.none)
+    }
+
+    /// The caller's own still-unanswered group invitations.
+    static func groupInvites() async throws -> [GroupInvite] {
+        try await request(path: "api/chat/group-invites", method: "GET", body: Optional<String>.none)
+    }
+
+    /// Invites one of the caller's own friends into a group the caller is
+    /// already a member of — like group creation, this only ever creates a
+    /// pending invite; the invitee still has to accept it.
+    static func inviteToGroup(roomID: String, code: String) async throws -> GroupActionResult {
+        try await request(path: "api/chat/groups/\(roomID)/invites", method: "POST", body: ["code": code])
+    }
+
+    static func acceptGroupInvite(roomID: String) async throws -> Group {
+        try await request(path: "api/chat/groups/\(roomID)/invites/accept", method: "POST", body: Optional<String>.none)
+    }
+
+    static func rejectGroupInvite(roomID: String) async throws -> GroupActionResult {
+        try await request(path: "api/chat/groups/\(roomID)/invites/reject", method: "POST", body: Optional<String>.none)
+    }
+
+    static func renameGroup(roomID: String, name: String) async throws -> RenameGroupResult {
+        try await request(path: "api/chat/groups/\(roomID)", method: "PATCH", body: ["name": name])
+    }
+
+    /// Leaving (code == the caller's own) and removing another member are
+    /// the same call — any current member may do either.
+    static func removeGroupMember(roomID: String, code: String) async throws -> GroupActionResult {
+        try await request(path: "api/chat/groups/\(roomID)/members/\(code)", method: "DELETE", body: Optional<String>.none)
+    }
+
+    /// Uploads a group's photo, mirroring `uploadAvatar`'s own shape.
+    static func uploadGroupAvatar(roomID: String, contentType: String, data: Data) async throws -> GroupAvatarUploadResult {
+        try await request(
+            path: "api/chat/groups/\(roomID)/avatar", method: "POST",
+            body: ["contentType": contentType, "data": data.base64EncodedString()]
+        )
+    }
+
+    /// Downloads a group's photo, mirroring `downloadAvatar`'s own raw-bytes shape.
+    static func downloadGroupAvatar(roomID: String) async throws -> Data {
+        var request = URLRequest(url: endpoint.appending(path: "api/chat/groups/\(roomID)/avatar"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard 200..<300 ~= http.statusCode else {
+            if http.statusCode == 429 { throw RateLimitedError() }
+            guard let payload = try? JSONDecoder().decode(ErrorPayload.self, from: data) else {
+                throw URLError(.badServerResponse)
+            }
+            if http.statusCode == 401 { NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil) }
+            throw ServerError(status: http.statusCode, message: payload.error)
+        }
+        return data
+    }
+
     /// Uploads an attachment's actual bytes to the room, so the other
     /// participant — who has no access to the sender's local filesystem or
     /// app database — can retrieve them too.
@@ -257,6 +386,9 @@ enum FriendChatService {
             guard let payload = try? JSONDecoder().decode(ErrorPayload.self, from: data) else {
                 throw URLError(.badServerResponse)
             }
+            // A definitive rejection of this device's own token, not
+            // something a retry could fix — see .studiquoAuthFailed.
+            if http.statusCode == 401 { NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil) }
             throw ServerError(status: http.statusCode, message: payload.error)
         }
         return data
@@ -286,6 +418,9 @@ enum FriendChatService {
             guard let payload = try? JSONDecoder().decode(ErrorPayload.self, from: data) else {
                 throw URLError(.badServerResponse)
             }
+            // A definitive rejection of this device's own token, not
+            // something a retry could fix — see .studiquoAuthFailed.
+            if http.statusCode == 401 { NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil) }
             throw ServerError(status: http.statusCode, message: payload.error)
         }
         return try JSONDecoder().decode(Response.self, from: data)
@@ -295,6 +430,10 @@ enum FriendChatService {
 protocol FriendChatClient {
     func register(name: String, todayStudySeconds: Int?, studyDate: String?) async throws -> FriendChatService.Identity
     func friends() async throws -> [FriendChatService.Friend]
+    func blockedContacts() async throws -> [FriendChatService.BlockedContact]
+    func inbox() async throws -> [FriendChatService.InboxState]
+    func removeFriend(code: String) async throws -> FriendChatService.RemoveFriendResult
+    func markRead(roomID: String, throughID: Int) async throws -> FriendChatService.ReadResult
     func uploadAvatar(contentType: String, data: Data) async throws -> FriendChatService.AvatarUploadResult
     func downloadAvatar(code: String) async throws -> Data
     func add(code: String) async throws -> FriendChatService.AddFriendResult
@@ -314,6 +453,55 @@ protocol FriendChatClient {
     func unblock(roomID: String) async throws -> FriendChatService.BlockResult
     func blockStatus(roomID: String) async throws -> FriendChatService.BlockStatus
     func report(roomID: String, messageID: Int, reason: String) async throws -> FriendChatService.ReportResult
+    func createGroup(name: String, memberCodes: [String]) async throws -> FriendChatService.Group
+    func groups() async throws -> [FriendChatService.Group]
+    func groupInvites() async throws -> [FriendChatService.GroupInvite]
+    func inviteToGroup(roomID: String, code: String) async throws -> FriendChatService.GroupActionResult
+    func acceptGroupInvite(roomID: String) async throws -> FriendChatService.Group
+    func rejectGroupInvite(roomID: String) async throws -> FriendChatService.GroupActionResult
+    func renameGroup(roomID: String, name: String) async throws -> FriendChatService.RenameGroupResult
+    func removeGroupMember(roomID: String, code: String) async throws -> FriendChatService.GroupActionResult
+    func uploadGroupAvatar(roomID: String, contentType: String, data: Data) async throws -> FriendChatService.GroupAvatarUploadResult
+    func downloadGroupAvatar(roomID: String) async throws -> Data
+}
+
+// Existing isolated test clients only implement the operations their test
+// exercises. Production uses LiveFriendChatClient's concrete implementations.
+extension FriendChatClient {
+    func blockedContacts() async throws -> [FriendChatService.BlockedContact] { [] }
+    func inbox() async throws -> [FriendChatService.InboxState] { [] }
+    func removeFriend(code: String) async throws -> FriendChatService.RemoveFriendResult {
+        throw URLError(.unsupportedURL)
+    }
+    func markRead(roomID: String, throughID: Int) async throws -> FriendChatService.ReadResult {
+        .init(status: "read", throughID: throughID)
+    }
+    func groups() async throws -> [FriendChatService.Group] { [] }
+    func groupInvites() async throws -> [FriendChatService.GroupInvite] { [] }
+    func createGroup(name: String, memberCodes: [String]) async throws -> FriendChatService.Group {
+        throw URLError(.unsupportedURL)
+    }
+    func inviteToGroup(roomID: String, code: String) async throws -> FriendChatService.GroupActionResult {
+        throw URLError(.unsupportedURL)
+    }
+    func acceptGroupInvite(roomID: String) async throws -> FriendChatService.Group {
+        throw URLError(.unsupportedURL)
+    }
+    func rejectGroupInvite(roomID: String) async throws -> FriendChatService.GroupActionResult {
+        throw URLError(.unsupportedURL)
+    }
+    func renameGroup(roomID: String, name: String) async throws -> FriendChatService.RenameGroupResult {
+        throw URLError(.unsupportedURL)
+    }
+    func removeGroupMember(roomID: String, code: String) async throws -> FriendChatService.GroupActionResult {
+        throw URLError(.unsupportedURL)
+    }
+    func uploadGroupAvatar(roomID: String, contentType: String, data: Data) async throws -> FriendChatService.GroupAvatarUploadResult {
+        throw URLError(.unsupportedURL)
+    }
+    func downloadGroupAvatar(roomID: String) async throws -> Data {
+        throw URLError(.unsupportedURL)
+    }
 }
 
 struct LiveFriendChatClient: FriendChatClient {
@@ -323,6 +511,22 @@ struct LiveFriendChatClient: FriendChatClient {
 
     func friends() async throws -> [FriendChatService.Friend] {
         try await FriendChatService.friends()
+    }
+
+    func blockedContacts() async throws -> [FriendChatService.BlockedContact] {
+        try await FriendChatService.blockedContacts()
+    }
+
+    func inbox() async throws -> [FriendChatService.InboxState] {
+        try await FriendChatService.inbox()
+    }
+
+    func removeFriend(code: String) async throws -> FriendChatService.RemoveFriendResult {
+        try await FriendChatService.removeFriend(code: code)
+    }
+
+    func markRead(roomID: String, throughID: Int) async throws -> FriendChatService.ReadResult {
+        try await FriendChatService.markRead(roomID: roomID, throughID: throughID)
     }
 
     func uploadAvatar(contentType: String, data: Data) async throws -> FriendChatService.AvatarUploadResult {
@@ -399,5 +603,45 @@ struct LiveFriendChatClient: FriendChatClient {
 
     func report(roomID: String, messageID: Int, reason: String) async throws -> FriendChatService.ReportResult {
         try await FriendChatService.report(roomID: roomID, messageID: messageID, reason: reason)
+    }
+
+    func createGroup(name: String, memberCodes: [String]) async throws -> FriendChatService.Group {
+        try await FriendChatService.createGroup(name: name, memberCodes: memberCodes)
+    }
+
+    func groups() async throws -> [FriendChatService.Group] {
+        try await FriendChatService.groups()
+    }
+
+    func groupInvites() async throws -> [FriendChatService.GroupInvite] {
+        try await FriendChatService.groupInvites()
+    }
+
+    func inviteToGroup(roomID: String, code: String) async throws -> FriendChatService.GroupActionResult {
+        try await FriendChatService.inviteToGroup(roomID: roomID, code: code)
+    }
+
+    func acceptGroupInvite(roomID: String) async throws -> FriendChatService.Group {
+        try await FriendChatService.acceptGroupInvite(roomID: roomID)
+    }
+
+    func rejectGroupInvite(roomID: String) async throws -> FriendChatService.GroupActionResult {
+        try await FriendChatService.rejectGroupInvite(roomID: roomID)
+    }
+
+    func renameGroup(roomID: String, name: String) async throws -> FriendChatService.RenameGroupResult {
+        try await FriendChatService.renameGroup(roomID: roomID, name: name)
+    }
+
+    func removeGroupMember(roomID: String, code: String) async throws -> FriendChatService.GroupActionResult {
+        try await FriendChatService.removeGroupMember(roomID: roomID, code: code)
+    }
+
+    func uploadGroupAvatar(roomID: String, contentType: String, data: Data) async throws -> FriendChatService.GroupAvatarUploadResult {
+        try await FriendChatService.uploadGroupAvatar(roomID: roomID, contentType: contentType, data: data)
+    }
+
+    func downloadGroupAvatar(roomID: String) async throws -> Data {
+        try await FriendChatService.downloadGroupAvatar(roomID: roomID)
     }
 }

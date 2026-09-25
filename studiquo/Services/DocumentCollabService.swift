@@ -116,6 +116,9 @@ enum DocumentCollabService {
             guard let payload = try? JSONDecoder().decode(ErrorPayload.self, from: data) else {
                 throw URLError(.badServerResponse)
             }
+            // A definitive rejection of this device's own token, not
+            // something a retry could fix — see .studiquoAuthFailed.
+            if http.statusCode == 401 { NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil) }
             throw ServerError(status: http.statusCode, message: payload.error)
         }
         return try JSONDecoder().decode(Response.self, from: data)

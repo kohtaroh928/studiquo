@@ -6,8 +6,11 @@ import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys } from "./passkeys.js";
 import { handleChat } from "./chat.js";
+import { handleIssueReports } from "./issue-reports.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired } from "./token.js";
+import { realSession } from "./session.js";
+import { handleMCPOAuth, externalSession, pairingInfo, approvePairing, listConnections, revokeConnection } from "./mcp-oauth.js";
 import { verifyAppleIdentityToken } from "./apple-auth.js";
 import { verifyGoogleIdentityToken } from "./google-auth.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
@@ -16,7 +19,7 @@ import { upsertLocalAccount, verifyLocalAccount } from "./local-auth.js";
 import { mintSession, hasRealSession } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
-import { json, readTextLimited } from "./http.js";
+import { json, readTextLimited, readJSONLimited, securityHeaders } from "./http.js";
 
 function toolResult(value) {
   return {
@@ -40,10 +43,10 @@ async function queueAction(env, key, action) {
   await env.STUDIQUO_DATA.put(storageKey, JSON.stringify(actions));
 }
 
-function createServer(env, key) {
+function createServer(env, key, accountHash = null, source = "MCP", canWrite = true, canRead = true) {
   const server = new McpServer(
     { name: "studiquo", version: "0.2.0" },
-    { instructions: "Access only the authenticated user's Studiquo data. Write tools queue changes for approval/import in the iPad app." }
+    { instructions: "Access only the authenticated user's Studiquo data. Write tools queue materials for import when the iPad app next connects; pending does not mean imported." }
   );
 
   server.registerTool(
@@ -53,6 +56,7 @@ function createServer(env, key) {
       inputSchema: z.object({})
     },
     async () => {
+      if (!canRead) return { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] };
       const data = await loadSnapshot(env, key);
       return toolResult(data.notebooks.map(notebook => ({
         id: notebook.id,
@@ -74,6 +78,7 @@ function createServer(env, key) {
       })
     },
     async ({ query, limit }) => {
+      if (!canRead) return { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] };
       const data = await loadSnapshot(env, key);
       const needle = query.toLocaleLowerCase("ja");
       const matches = data.notebooks
@@ -101,6 +106,7 @@ function createServer(env, key) {
       inputSchema: z.object({ includeCards: z.boolean().default(false) })
     },
     async ({ includeCards }) => {
+      if (!canRead) return { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] };
       const data = await loadSnapshot(env, key);
       return toolResult(data.flashcardDecks.map(deck => includeCards ? deck : ({
         id: deck.id,
@@ -117,6 +123,7 @@ function createServer(env, key) {
       inputSchema: z.object({ limit: z.number().int().min(1).max(200).default(80) })
     },
     async ({ limit }) => {
+      if (!canRead) return { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] };
       const data = await loadSnapshot(env, key);
       return toolResult((data.calendarEvents ?? []).slice(0, limit));
     }
@@ -128,13 +135,26 @@ function createServer(env, key) {
       description: "Queue a flashcard deck for import into Studiquo.",
       inputSchema: z.object({
         deckTitle: z.string().min(1).max(100),
+        folderPath: z.string().max(500).default(""),
         cards: z.array(z.object({
           question: z.string().min(1).max(4_000),
           answer: z.string().min(1).max(8_000)
         })).min(1).max(200)
       })
     },
-    async ({ deckTitle, cards }) => {
+    async ({ deckTitle, cards, folderPath }) => {
+      if (!canWrite) return { isError: true, content: [{ type: "text", text: "This Studiquo connection is read-only." }] };
+      if (accountHash) {
+        if (folderPath) {
+          const data = await loadSnapshot(env, key);
+          if (!(data.folders ?? []).some(folder => folder.path === folderPath)) {
+            return { isError: true, content: [{ type: "text", text: "That Studiquo folder does not exist. Run sync in the iPad app and choose a path from list_folders." }] };
+          }
+        }
+        return toolResult(await env.MCP_INBOX.getByName(accountHash).enqueue(
+          crypto.randomUUID(), "create_flashcards", { deckTitle, cards, folderPath }, source
+        ));
+      }
       await queueAction(env, key, { type: "create_flashcards", deckTitle, cards });
       return toolResult({ queued: true, deckTitle, cardCount: cards.length });
     }
@@ -153,10 +173,64 @@ function createServer(env, key) {
       })
     },
     async input => {
+      if (!canWrite) return { isError: true, content: [{ type: "text", text: "This Studiquo connection is read-only." }] };
+      if (accountHash) {
+        const result = await env.MCP_INBOX.getByName(accountHash).enqueue(crypto.randomUUID(), "add_calendar_event", input, source);
+        return toolResult(result);
+      }
       await queueAction(env, key, { type: "add_calendar_event", ...input });
       return toolResult({ queued: true, title: input.title });
     }
   );
+
+  const submit = async (kind, payload) => {
+    if (!canWrite) return { isError: true, content: [{ type: "text", text: "This Studiquo connection is read-only." }] };
+    if (!accountHash) throw new Error("Reconnect your Studiquo account before creating materials.");
+    if (payload.folderPath) {
+      const data = await loadSnapshot(env, key);
+      if (!(data.folders ?? []).some(folder => folder.path === payload.folderPath)) {
+        return { isError: true, content: [{ type: "text", text: "That Studiquo folder does not exist. Run sync in the iPad app and choose a path from list_folders." }] };
+      }
+    }
+    return toolResult(await env.MCP_INBOX.getByName(accountHash).enqueue(crypto.randomUUID(), kind, payload, source));
+  };
+
+  server.registerTool("list_folders", {
+    description: "List the user's Studiquo folders for choosing where a new item should be saved. An empty folderPath means Home.",
+    inputSchema: z.object({}),
+  }, async () => {
+    if (!canRead) return { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] };
+    const data = await loadSnapshot(env, key);
+    return toolResult(data.folders ?? []);
+  });
+
+  server.registerTool("create_document", {
+    description: "Send a text document to Studiquo. It is imported when the user's iPad syncs; the returned pending ID is not proof of import.",
+    inputSchema: z.object({ title: z.string().min(1).max(150), body: z.string().min(1).max(100_000), folderPath: z.string().max(500).default("") }),
+  }, input => submit("create_document", input));
+
+  server.registerTool("create_slides", {
+    description: "Send a slide deck to Studiquo for import. Each slide has a title, bullets and optional speaker notes.",
+    inputSchema: z.object({
+      title: z.string().min(1).max(150), folderPath: z.string().max(500).default(""),
+      slides: z.array(z.object({ title: z.string().max(200), bullets: z.array(z.string().max(1000)).max(30), notes: z.string().max(4000).default("") })).min(1).max(100),
+    }),
+  }, input => submit("create_slides", input));
+
+  server.registerTool("create_notebook", {
+    description: "Send a text-based notebook to Studiquo for import. This creates editable pages, not handwriting strokes.",
+    inputSchema: z.object({
+      title: z.string().min(1).max(150), folderPath: z.string().max(500).default(""),
+      pages: z.array(z.object({ title: z.string().max(200), text: z.string().max(2_000) })).min(1).max(100),
+    }),
+  }, input => submit("create_notebook", input));
+
+  server.registerTool("get_import_status", {
+    description: "Check whether a submitted Studiquo item is still pending or has been imported on the iPad.",
+    inputSchema: z.object({ id: z.uuid() }),
+  }, async ({ id }) => canRead
+    ? toolResult(accountHash ? await env.MCP_INBOX.getByName(accountHash).status(id) : null)
+    : { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] });
 
   return server;
 }
@@ -175,12 +249,15 @@ const MAX_MCP_BODY = 8_000_000;
 
 async function handleMCP(request, env) {
   const token = bearerToken(request);
-  if (!token) return json({ error: "A valid bearer token is required." }, 401);
-  if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
-  if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
-  const key = await sha256Hex(token);
-  if (await isRevoked(env, key)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
-  if (!(await env.STUDIQUO_DATA.get(`snapshot:${key}`))) {
+  const external = token ? await externalSession(env, request) : null;
+  if (!external && (!token || token.startsWith("mcp_"))) return Response.json({ error: "Connect your Studiquo account." }, { status: 401, headers: securityHeaders({ "WWW-Authenticate": `Bearer resource_metadata="${new URL(request.url).origin}/.well-known/oauth-protected-resource"` }) });
+  if (!external && isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
+  if (!external && !(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
+  const deviceKey = external ? null : await sha256Hex(token);
+  if (!external && await isRevoked(env, deviceKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
+  const accountHash = external ? await sha256Hex(`mcp-account:${external.sub}`) : null;
+  const key = accountHash ?? deviceKey;
+  if (!external && !(await env.STUDIQUO_DATA.get(`snapshot:${key}`))) {
     return json({ error: "Run sync in Studiquo before connecting an AI client." }, 401);
   }
   if (request.method === "POST") {
@@ -190,7 +267,10 @@ async function handleMCP(request, env) {
     headers.delete("content-length");
     request = new Request(request.url, { method: request.method, headers, body: text || undefined });
   }
-  const server = createServer(env, key);
+  const client = external ? await env.STUDIQUO_DATA.get(`mcp:client:${external.clientId}`, "json") : null;
+  const server = createServer(env, key, accountHash, client?.clientName ?? "MCP",
+    !external || external.scope?.split(" ").includes("studiquo.write"),
+    !external || external.scope?.split(" ").includes("studiquo.read"));
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -204,6 +284,8 @@ export default {
     try {
       const url = new URL(request.url);
       if (url.pathname === "/health") return json({ ok: true, service: "studiquo-mcp" });
+      const oauth = await handleMCPOAuth(url, request, env);
+      if (oauth) return oauth;
       if (url.pathname === "/.well-known/apple-app-site-association") return associationFile();
 
       const legal = handleLegal(url);
@@ -213,6 +295,8 @@ export default {
       if (passkeys) return passkeys;
       const chat = await handleChat(url, request, env);
       if (chat) return chat;
+      const issueReports = await handleIssueReports(url, request, env);
+      if (issueReports) return issueReports;
 
     if (url.pathname === "/mcp") {
       return handleMCP(request, env);
@@ -250,6 +334,32 @@ export default {
         return json({ revoked: true });
       }
 
+      const session = await realSession(env, token);
+      const accountHash = session ? await sha256Hex(`mcp-account:${session.sub}`) : null;
+      if (url.pathname === "/api/mcp/pair" && request.method === "GET") {
+        return json(await pairingInfo(env, url.searchParams.get("code") ?? "") ?? { error: "Code expired or invalid." });
+      }
+      if (url.pathname === "/api/mcp/pair" && request.method === "POST") {
+        if (!session) return json({ error: "Sign in again." }, 401);
+        if (!(await checkRateLimit(env.RATE_LIMIT_MCP_PAIR, accountHash))) return json({ error: "Too many attempts." }, 429);
+        const body = await readJSONLimited(request, 1000);
+        return json({ approved: await approvePairing(env, String(body?.code ?? "").trim().toUpperCase(), session.sub) });
+      }
+      if (url.pathname === "/api/mcp/connections" && request.method === "GET") {
+        return session ? json(await listConnections(env, session.sub)) : json({ error: "Sign in again." }, 401);
+      }
+      if (url.pathname.startsWith("/api/mcp/connections/") && request.method === "DELETE") {
+        return session ? json({ revoked: await revokeConnection(env, session.sub, url.pathname.split("/").pop()) }) : json({ error: "Sign in again." }, 401);
+      }
+      if (url.pathname === "/api/mcp/inbox" && request.method === "GET") {
+        return accountHash ? json(await env.MCP_INBOX.getByName(accountHash).list()) : json({ error: "Sign in again." }, 401);
+      }
+      if (url.pathname.startsWith("/api/mcp/inbox/") && request.method === "POST") {
+        const id = url.pathname.split("/").pop();
+        if (!accountHash || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: "Invalid request." }, 400);
+        return json(await env.MCP_INBOX.getByName(accountHash).acknowledge(id));
+      }
+
       if (url.pathname === "/api/snapshot" && request.method === "PUT") {
         const declaredSize = Number(request.headers.get("content-length") ?? 0);
         if (declaredSize > 8_000_000) return json({ error: "Snapshot is too large." }, 413);
@@ -265,6 +375,7 @@ export default {
           return json({ error: "Invalid Studiquo snapshot." }, 400);
         }
         await env.STUDIQUO_DATA.put(`snapshot:${key}`, body);
+        if (accountHash) await env.STUDIQUO_DATA.put(`snapshot:${accountHash}`, body);
         return json({ synced: true, exportedAt: parsed.exportedAt });
       }
 

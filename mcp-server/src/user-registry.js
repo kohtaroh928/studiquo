@@ -174,4 +174,97 @@ export class UserRegistry extends DurableObject {
     await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
     return { status: "added", friend: { code: user.code, name: user.name } };
   }
+
+  // Called for both participants after their room has been closed. Keeping
+  // the blocked-contact archive independent of `friends` makes an existing
+  // block removable even after the friendship disappears from both lists.
+  async removeFriend(key, otherCode, blockedContact = null) {
+    const storageKey = `chat:user:${key}`;
+    const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    const before = user.friends ?? [];
+    user.friends = before.filter(item => item.code !== otherCode);
+    if (blockedContact && !(user.blockedContacts ?? []).some(item => item.code === otherCode)) {
+      user.blockedContacts = [...(user.blockedContacts ?? []), blockedContact];
+    }
+    if (user.friends.length !== before.length || blockedContact) {
+      await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+    }
+    return { status: "removed" };
+  }
+
+  // Records a pending group invitation on the invitee's own record — routed
+  // through this per-key instance (getByName(key), the invitee's own key)
+  // for the same race-safety reason addIncomingRequest is: two different
+  // inviters (or the same group inviting the same person twice in quick
+  // succession) can't race and drop one another's addition. `name` is the
+  // group's name at invite time, denormalized here the same way
+  // addIncomingRequest denormalizes the requester's name — a listed,
+  // not-yet-accepted invite has no room membership yet to look it up live
+  // through.
+  async addIncomingGroupInvite(key, roomID, name, inviterCode, inviterName) {
+    const storageKey = `chat:user:${key}`;
+    const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    if ((user.groups ?? []).some(item => item.roomID === roomID)) {
+      return { status: "already_member" };
+    }
+    if (!(user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
+      user.incomingGroupInvites = [
+        ...(user.incomingGroupInvites ?? []),
+        { roomID, name, inviterCode, inviterName, invitedAt: Date.now() },
+      ].slice(-500);
+      await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+    }
+    return { status: "pending" };
+  }
+
+  // Accept and reject are both initiated by the invitee (called via
+  // getByName(key), the invitee's own key) against their own
+  // incomingGroupInvites/groups — mirrors resolveIncomingRequest's own
+  // race-safety reasoning for the same "both fire at nearly the same
+  // moment" scenario.
+  async resolveIncomingGroupInvite(key, action, roomID) {
+    const storageKey = `chat:user:${key}`;
+    const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
+    if (!user || !(user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
+      return { status: "not_found" };
+    }
+    user.incomingGroupInvites = (user.incomingGroupInvites ?? []).filter(item => item.roomID !== roomID);
+    if (action === "accept") {
+      user.groups = [...(user.groups ?? []).filter(item => item.roomID !== roomID), { roomID }];
+    }
+    await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+    return { status: action === "accept" ? "accepted" : "rejected" };
+  }
+
+  // Adds this key's own groups-list entry directly — used only for the
+  // creator of a brand-new group, who doesn't go through an invite/accept
+  // step for their own membership. Routed through this per-key instance for
+  // the same race-safety reason every other groups-list mutation here is.
+  async addGroupForCreator(key, roomID) {
+    const storageKey = `chat:user:${key}`;
+    const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    user.groups = [...(user.groups ?? []).filter(item => item.roomID !== roomID), { roomID }];
+    await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+    return { status: "added" };
+  }
+
+  // Removes this key's own groups-list entry — called against whichever
+  // member's own record needs updating (getByName(targetKey)), whether they
+  // left on their own or were removed by someone else; the room-side
+  // removal (ChatRoom.removeParticipant) is a separate call groups.js makes
+  // alongside this one.
+  async removeGroup(key, roomID) {
+    const storageKey = `chat:user:${key}`;
+    const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    const before = user.groups ?? [];
+    user.groups = before.filter(item => item.roomID !== roomID);
+    if (user.groups.length !== before.length) {
+      await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+    }
+    return { status: "removed" };
+  }
 }

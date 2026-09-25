@@ -284,6 +284,22 @@ final class FriendStore: ObservableObject {
     /// underlying messages (which genuinely hadn't been read yet) were
     /// still there.
     @Published var unreadCounts: [UUID: Int] = [:] { didSet { persist(unreadCounts, key: unreadCountsKey) } }
+    @Published private(set) var blockedContacts: [FriendChatService.BlockedContact] = []
+    @Published private(set) var pendingRemovalCodes: Set<String> = []
+    /// Groups the user has actually joined — never one they've only been
+    /// invited to (see `incomingGroupInvites`).
+    @Published var groups: [FriendChatService.Group] = [] { didSet { persist(groups, key: groupsKey) } }
+    @Published var incomingGroupInvites: [FriendChatService.GroupInvite] = []
+    /// Keyed by roomID — unlike `messages` (friend-keyed, persisted across
+    /// launches, with a whole local optimistic-echo/attachment apparatus
+    /// built up for 1:1 chat), a group's messages are kept only in memory
+    /// for now and simply re-fetched from the server each time its chat
+    /// screen is opened.
+    @Published var groupMessages: [String: [FriendChatService.Message]] = [:]
+    /// Room ids with a group-invite accept/reject/create/leave/remove
+    /// network call currently in flight — mirrors `pendingRequestActions`'
+    /// own reasoning for friend requests.
+    @Published var pendingGroupActions: Set<String> = []
     @Published var activeFriendID: UUID?
     @Published var myCode: String
     /// A second code, embedded only in `invitationURL`'s link/QR — never
@@ -304,6 +320,9 @@ final class FriendStore: ObservableObject {
     private let friendsKey = "studiquoFriends"
     private let messagesKey = "studiquoFriendMessages"
     private let unreadCountsKey = "studiquoFriendUnreadCounts"
+    private let archivedFriendsKey = "studiquoArchivedFriends"
+    private var archivedFriends: [FriendRecord] = [] { didSet { persist(archivedFriends, key: archivedFriendsKey) } }
+    private let groupsKey = "studiquoGroups"
     private let seenIncomingRequestCodesKey = "studiquoSeenIncomingRequestCodes"
     /// A digest of whichever `profileImage` bytes were last successfully
     /// uploaded via `syncMyAvatarIfNeeded` — compared against the profile
@@ -315,7 +334,20 @@ final class FriendStore: ObservableObject {
     /// this instead of tying it to whichever screen happens to be open, the
     /// same reasoning `FriendsHomeView`'s own `.task` used to rely on alone.
     private var incomingRequestPollTask: Task<Void, Never>?
+    private var inboxPollTask: Task<Void, Never>?
+    private var groupPollTask: Task<Void, Never>?
+    private var locallyRemovedCodes: Set<String> = []
     private static let codePattern = /^[A-Z0-9]{6,32}$/
+    /// Shared cadence for every "list" poll below (incoming requests,
+    /// groups, group invites, the friends list itself) — these used to run
+    /// every 2 seconds, which (multiplied across friends()'s and groups()'s
+    /// own per-item lookups, and every simultaneously active device) was
+    /// enough to exhaust the account's entire daily KV operation quota in
+    /// production, breaking these same features for everyone. None of these
+    /// lists need to feel instant the way an open chat's own message poll
+    /// does — a several-second delay noticing a new request or group is
+    /// imperceptible in practice.
+    private static let listPollInterval: Duration = .seconds(8)
     private static let maximumFriends = 500
     /// Enforced per friend, not as a shared total across every
     /// conversation — a bound shared across all friends meant one very
@@ -335,6 +367,12 @@ final class FriendStore: ObservableObject {
         myLinkToken = defaults.string(forKey: "studiquoFriendLinkToken") ?? Self.placeholderCode
         if let data = defaults.data(forKey: friendsKey) {
             friends = (try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? []
+        }
+        if let data = defaults.data(forKey: archivedFriendsKey) {
+            archivedFriends = (try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? []
+        }
+        if let data = defaults.data(forKey: groupsKey) {
+            groups = (try? JSONDecoder().decode([FriendChatService.Group].self, from: data)) ?? []
         }
         if let data = defaults.data(forKey: messagesKey) {
             if let decoded = try? JSONDecoder().decode([FriendMessage].self, from: data) {
@@ -365,6 +403,8 @@ final class FriendStore: ObservableObject {
         if autoRefresh {
             Task { await refresh() }
             startIncomingRequestPolling()
+            startInboxPolling()
+            startGroupPolling()
         }
     }
 
@@ -380,7 +420,7 @@ final class FriendStore: ObservableObject {
         incomingRequestPollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshIncomingRequests()
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: Self.listPollInterval)
             }
         }
     }
@@ -388,6 +428,41 @@ final class FriendStore: ObservableObject {
     func stopIncomingRequestPolling() {
         incomingRequestPollTask?.cancel()
         incomingRequestPollTask = nil
+    }
+
+    func startInboxPolling() {
+        guard inboxPollTask == nil else { return }
+        inboxPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshInbox()
+                do { try await Task.sleep(for: .seconds(10)) } catch { break }
+            }
+        }
+    }
+
+    func stopInboxPolling() {
+        inboxPollTask?.cancel()
+        inboxPollTask = nil
+    }
+
+    /// Polls for both joined groups and pending group invitations — a
+    /// group's own membership can change from elsewhere (invited, added,
+    /// removed) the same way a friend request can, so this follows
+    /// `startIncomingRequestPolling`'s exact reasoning.
+    func startGroupPolling() {
+        guard groupPollTask == nil else { return }
+        groupPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshGroups()
+                await self?.refreshGroupInvites()
+                try? await Task.sleep(for: Self.listPollInterval)
+            }
+        }
+    }
+
+    func stopGroupPolling() {
+        groupPollTask?.cancel()
+        groupPollTask = nil
     }
 
     /// Pauses polling while backgrounded and resumes it on return to the
@@ -400,8 +475,12 @@ final class FriendStore: ObservableObject {
     func handle(scenePhase: ScenePhase) {
         if scenePhase == .active {
             startIncomingRequestPolling()
+            startInboxPolling()
+            startGroupPolling()
         } else {
             stopIncomingRequestPolling()
+            stopInboxPolling()
+            stopGroupPolling()
         }
     }
 
@@ -438,7 +517,7 @@ final class FriendStore: ObservableObject {
                 defaults.set(myLinkToken, forKey: "studiquoFriendLinkToken")
             }
             let remote = try await client.friends()
-            friends = Self.mergedFriends(existing: friends, remote: remote)
+            applyRemoteFriends(remote)
             await syncFriendAvatarsIfNeeded(remote: remote)
             errorMessage = ""
         } catch {
@@ -457,7 +536,7 @@ final class FriendStore: ObservableObject {
         do {
             let remote = try await client.friends()
             notePollResult("friends", succeeded: true)
-            friends = Self.mergedFriends(existing: friends, remote: remote)
+            applyRemoteFriends(remote)
             await syncFriendAvatarsIfNeeded(remote: remote)
         } catch {
             notePollResult("friends", succeeded: false, error: error)
@@ -675,6 +754,88 @@ final class FriendStore: ObservableObject {
         return demos + mapped
     }
 
+    private func applyRemoteFriends(_ remote: [FriendChatService.Friend]) {
+        let serverCodes = Set(remote.map(\.code))
+        locallyRemovedCodes.formIntersection(serverCodes)
+        let visibleRemote = remote.filter { !locallyRemovedCodes.contains($0.code) }
+        let visibleCodes = Set(visibleRemote.map(\.code))
+        let removed = friends.filter { $0.isDemo != true && !visibleCodes.contains($0.code) }
+        for friend in removed { archiveFriend(friend) }
+        friends = Self.mergedFriends(existing: friends + archivedFriends, remote: visibleRemote)
+        archivedFriends.removeAll { visibleCodes.contains($0.code) }
+    }
+
+    private func archiveFriend(_ friend: FriendRecord) {
+        archivedFriends.removeAll { $0.code == friend.code }
+        archivedFriends.append(friend)
+        unreadCounts.removeValue(forKey: friend.id)
+        if activeFriendID == friend.id { activeFriendID = nil }
+        friends.removeAll { $0.id == friend.id }
+    }
+
+    func refreshBlockedContacts() async {
+        do {
+            let remote = try await client.blockedContacts()
+            blockedContacts = remote
+            blockedByMeRoomIDs = Set(remote.map(\.roomID))
+        } catch {
+            errorMessage = "ブロック一覧を読み込めませんでした。もう一度お試しください。"
+        }
+    }
+
+    @discardableResult
+    func removeFriend(_ contact: FriendChatService.BlockedContact) async -> Bool {
+        guard friends.contains(where: { $0.code == contact.code }),
+              !pendingRemovalCodes.contains(contact.code) else { return false }
+        pendingRemovalCodes.insert(contact.code)
+        defer { pendingRemovalCodes.remove(contact.code) }
+        do {
+            _ = try await client.removeFriend(code: contact.code)
+            locallyRemovedCodes.insert(contact.code)
+            if let friend = friends.first(where: { $0.code == contact.code }) {
+                archiveFriend(friend)
+            }
+            await refreshBlockedContacts()
+            return true
+        } catch {
+            errorMessage = "フレンドを削除できませんでした。もう一度お試しください。"
+            return false
+        }
+    }
+
+    func refreshInbox() async {
+        guard !friends.isEmpty || !archivedFriends.isEmpty else { return }
+        let states: [FriendChatService.InboxState]
+        do {
+            states = try await client.inbox()
+        } catch {
+            notePollResult("inbox", succeeded: false, error: error)
+            return
+        }
+        notePollResult("inbox", succeeded: true)
+        for state in states {
+            if state.closed != true,
+               let archived = archivedFriends.first(where: { $0.roomID == state.roomID }),
+               locallyRemovedCodes.contains(archived.code) {
+                // A new friendship reopened this retained room. Allow the
+                // archived contact back even if an earlier friends-list
+                // response was still showing the just-deleted relationship.
+                locallyRemovedCodes.remove(archived.code)
+                await refreshFriends()
+            }
+            guard let friend = friends.first(where: { $0.roomID == state.roomID }) else { continue }
+            if state.closed == true {
+                locallyRemovedCodes.insert(friend.code)
+                archiveFriend(friend)
+                continue
+            }
+            let newestLocalID = messages.filter { $0.friendID == friend.id && $0.roomID == state.roomID }
+                .compactMap(\.serverID).max() ?? 0
+            if state.latestID > newestLocalID { await refreshMessages(for: friend) }
+            unreadCounts[friend.id] = activeFriendID == friend.id ? 0 : state.unreadCount
+        }
+    }
+
     func refreshIncomingRequests() async {
         do {
             let remote = try await client.incomingRequests()
@@ -713,6 +874,190 @@ final class FriendStore: ObservableObject {
     /// add-friend sheet, so it can wait before dismissing), use `addAndWait`.
     func add(code raw: String) {
         Task { _ = await addAndWait(code: raw) }
+    }
+
+    /// Groups this user has actually joined — never one they've only been
+    /// invited to (see `refreshGroupInvites`).
+    func refreshGroups() async {
+        do {
+            groups = try await client.groups()
+            notePollResult("groups", succeeded: true)
+        } catch {
+            notePollResult("groups", succeeded: false, error: error)
+        }
+    }
+
+    /// This user's own still-unanswered group invitations.
+    func refreshGroupInvites() async {
+        do {
+            incomingGroupInvites = try await client.groupInvites()
+            notePollResult("groupInvites", succeeded: true)
+        } catch {
+            notePollResult("groupInvites", succeeded: false, error: error)
+        }
+    }
+
+    /// Creates a group with `memberCodes` (all of which must already be this
+    /// user's own friends) — the caller joins immediately, everyone else
+    /// gets a pending invite (see `acceptGroupInvite`/`rejectGroupInvite`).
+    @discardableResult
+    func createGroup(name: String, memberCodes: [String]) async -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        do {
+            let created = try await client.createGroup(name: trimmed, memberCodes: memberCodes)
+            if !groups.contains(where: { $0.roomID == created.roomID }) { groups.append(created) }
+            errorMessage = ""
+            return true
+        } catch let error as FriendChatService.ServerError {
+            errorMessage = Self.message(for: error, fallback: "グループを作成できませんでした。")
+            return false
+        } catch {
+            errorMessage = "グループを作成できませんでした。"
+            return false
+        }
+    }
+
+    /// Invites one of this user's own friends into a group they're already
+    /// in — like creation, this only ever creates a pending invite.
+    @discardableResult
+    func inviteToGroup(roomID: String, code: String) async -> Bool {
+        do {
+            _ = try await client.inviteToGroup(roomID: roomID, code: code)
+            errorMessage = ""
+            return true
+        } catch let error as FriendChatService.ServerError {
+            errorMessage = Self.message(for: error, fallback: "招待できませんでした。")
+            return false
+        } catch {
+            errorMessage = "招待できませんでした。"
+            return false
+        }
+    }
+
+    func acceptGroupInvite(_ invite: FriendChatService.GroupInvite) {
+        guard !pendingGroupActions.contains(invite.roomID) else { return }
+        pendingGroupActions.insert(invite.roomID)
+        Task {
+            defer { pendingGroupActions.remove(invite.roomID) }
+            do {
+                let joined = try await client.acceptGroupInvite(roomID: invite.roomID)
+                if !groups.contains(where: { $0.roomID == joined.roomID }) { groups.append(joined) }
+                incomingGroupInvites.removeAll { $0.roomID == invite.roomID }
+                errorMessage = ""
+            } catch let error as FriendChatService.ServerError {
+                errorMessage = Self.message(for: error, fallback: "招待を承認できませんでした。")
+            } catch {
+                errorMessage = "招待を承認できませんでした。"
+            }
+        }
+    }
+
+    func rejectGroupInvite(_ invite: FriendChatService.GroupInvite) {
+        guard !pendingGroupActions.contains(invite.roomID) else { return }
+        pendingGroupActions.insert(invite.roomID)
+        Task {
+            defer { pendingGroupActions.remove(invite.roomID) }
+            do {
+                _ = try await client.rejectGroupInvite(roomID: invite.roomID)
+                incomingGroupInvites.removeAll { $0.roomID == invite.roomID }
+                errorMessage = ""
+            } catch let error as FriendChatService.ServerError {
+                errorMessage = Self.message(for: error, fallback: "招待を拒否できませんでした。")
+            } catch {
+                errorMessage = "招待を拒否できませんでした。"
+            }
+        }
+    }
+
+    @discardableResult
+    func renameGroup(roomID: String, name: String) async -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        do {
+            _ = try await client.renameGroup(roomID: roomID, name: trimmed)
+            if let index = groups.firstIndex(where: { $0.roomID == roomID }) {
+                groups[index] = FriendChatService.Group(roomID: roomID, name: trimmed, members: groups[index].members)
+            }
+            errorMessage = ""
+            return true
+        } catch let error as FriendChatService.ServerError {
+            errorMessage = Self.message(for: error, fallback: "グループ名を変更できませんでした。")
+            return false
+        } catch {
+            errorMessage = "グループ名を変更できませんでした。"
+            return false
+        }
+    }
+
+    /// Leaving (code == this user's own) and removing another member are the
+    /// same call — any current member may do either.
+    @discardableResult
+    func removeGroupMember(roomID: String, code: String) async -> Bool {
+        guard !pendingGroupActions.contains(roomID) else { return false }
+        pendingGroupActions.insert(roomID)
+        defer { pendingGroupActions.remove(roomID) }
+        do {
+            _ = try await client.removeGroupMember(roomID: roomID, code: code)
+            if code == myCode {
+                groups.removeAll { $0.roomID == roomID }
+            } else if let index = groups.firstIndex(where: { $0.roomID == roomID }) {
+                groups[index] = FriendChatService.Group(
+                    roomID: roomID, name: groups[index].name,
+                    members: groups[index].members.filter { $0.code != code }
+                )
+            }
+            errorMessage = ""
+            return true
+        } catch let error as FriendChatService.ServerError {
+            errorMessage = Self.message(for: error, fallback: "メンバーを削除できませんでした。")
+            return false
+        } catch {
+            errorMessage = "メンバーを削除できませんでした。"
+            return false
+        }
+    }
+
+    /// Fetches whatever's new in a group's conversation since the last
+    /// fetch — called on-demand from the group chat screen (see
+    /// `GroupChatView`'s own polling `.task`), not from the app-wide poll,
+    /// since re-fetching every joined group's full history in the
+    /// background would be wasted work for groups nobody's currently
+    /// looking at.
+    func refreshGroupMessages(roomID: String) async {
+        do {
+            let after = groupMessages[roomID]?.last?.id ?? 0
+            let newOnes = try await client.messages(roomID: roomID, after: after)
+            guard !newOnes.isEmpty else { return }
+            var current = groupMessages[roomID] ?? []
+            let existingIDs = Set(current.map(\.id))
+            current.append(contentsOf: newOnes.filter { !existingIDs.contains($0.id) })
+            groupMessages[roomID] = current
+        } catch {
+            // Deliberately silent: this polls every couple of seconds while
+            // the screen is open, and a transient blip shouldn't flash an
+            // alert — the next poll a moment later almost always recovers.
+        }
+    }
+
+    @discardableResult
+    func sendGroupMessage(_ text: String, roomID: String) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= Self.maximumMessageLength else { return false }
+        do {
+            let sent = try await client.send(trimmed, roomID: roomID, clientMessageID: UUID().uuidString)
+            var current = groupMessages[roomID] ?? []
+            if !current.contains(where: { $0.id == sent.id }) { current.append(sent) }
+            groupMessages[roomID] = current
+            errorMessage = ""
+            return true
+        } catch let error as FriendChatService.ServerError {
+            errorMessage = Self.message(for: error, fallback: "送信できませんでした。")
+            return false
+        } catch {
+            errorMessage = "送信できませんでした。"
+            return false
+        }
     }
 
     /// Same as `add`, but awaits the result and reports whether it
@@ -805,6 +1150,20 @@ final class FriendStore: ObservableObject {
             return "フレンドコードが見つかりません。"
         case "This invite link is no longer valid.":
             return "この招待リンクは無効です。"
+        case "Group name is required.":
+            return "グループ名を入力してください。"
+        case "You can only invite your own friends.":
+            return "自分の友達だけを招待できます。"
+        case "This group is full.":
+            return "このグループは満員です。"
+        case "Already a member of this group.":
+            return "すでにこのグループのメンバーです。"
+        case "Invitation not found.":
+            return "招待が見つかりません。"
+        case "Member not found.":
+            return "メンバーが見つかりません。"
+        case "You are not a member of this group.":
+            return "このグループのメンバーではありません。"
         default:
             return fallback
         }
@@ -924,7 +1283,7 @@ final class FriendStore: ObservableObject {
                     messages[index].sendFailed = true
                 }
                 errorMessage = "メッセージを送信できませんでした。フレンド情報を更新してからもう一度お試しください。"
-                return false
+                return true
             }
             Task {
                 do {
@@ -981,6 +1340,14 @@ final class FriendStore: ObservableObject {
     func markRead(_ friend: FriendRecord) {
         unreadCounts[friend.id] = 0
         activeFriendID = friend.id
+        Task { await markDisplayedMessagesRead(for: friend) }
+    }
+
+    private func markDisplayedMessagesRead(for friend: FriendRecord) async {
+        guard let roomID = canonicalFriend(matching: friend)?.roomID else { return }
+        let latestDisplayedID = messages(for: friend).compactMap(\.serverID).max() ?? 0
+        guard latestDisplayedID > 0 else { return }
+        _ = try? await client.markRead(roomID: roomID, throughID: latestDisplayedID)
     }
 
     /// Retracts one of this user's own messages for real: once the server
@@ -1046,6 +1413,7 @@ final class FriendStore: ObservableObject {
             do {
                 _ = try await client.block(roomID: roomID)
                 blockedByMeRoomIDs.insert(roomID)
+                await refreshBlockedContacts()
             } catch {
                 errorMessage = "ブロックできませんでした。もう一度お試しください。"
             }
@@ -1058,6 +1426,19 @@ final class FriendStore: ObservableObject {
             do {
                 _ = try await client.unblock(roomID: roomID)
                 blockedByMeRoomIDs.remove(roomID)
+                await refreshBlockedContacts()
+            } catch {
+                errorMessage = "ブロックを解除できませんでした。もう一度お試しください。"
+            }
+        }
+    }
+
+    func unblock(_ contact: FriendChatService.BlockedContact) {
+        Task {
+            do {
+                _ = try await client.unblock(roomID: contact.roomID)
+                blockedByMeRoomIDs.remove(contact.roomID)
+                blockedContacts.removeAll { $0.code == contact.code }
             } catch {
                 errorMessage = "ブロックを解除できませんでした。もう一度お試しください。"
             }
@@ -1315,6 +1696,7 @@ final class FriendStore: ObservableObject {
 
         if activeFriendID == recipient.id {
             unreadCounts[recipient.id] = 0
+            await markDisplayedMessagesRead(for: recipient)
         } else if newIncomingCount > 0 {
             unreadCounts[recipient.id, default: 0] += newIncomingCount
         }
@@ -1404,12 +1786,15 @@ struct FriendsHomeView: View {
     @AppStorage("profileName") private var profileName = ""
     @AppStorage("profileImage") private var profileImageData = Data()
     @State private var showsAdd = false
+    @State private var showsCreateGroup = false
     @State private var selection: FriendsDetailSelection = .chats
     @State private var popover: FriendsPopover?
+    @State private var pendingReportIssue: PendingIssueReport?
 
     private enum FriendsDetailSelection: Hashable {
         case chats
         case chat(UUID)
+        case group(String)
     }
 
     private enum FriendsPopover: Identifiable {
@@ -1417,6 +1802,7 @@ struct FriendsHomeView: View {
         case requests
         case profile(UUID)
         case settings
+        case groupInvites
 
         var id: String {
             switch self {
@@ -1424,6 +1810,7 @@ struct FriendsHomeView: View {
             case .requests: return "requests"
             case .profile(let id): return "profile-\(id.uuidString)"
             case .settings: return "settings"
+            case .groupInvites: return "groupInvites"
             }
         }
     }
@@ -1434,17 +1821,29 @@ struct FriendsHomeView: View {
                 .navigationTitle("フレンド")
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
-                        Button { showsAdd = true } label: { Image(systemName: "person.badge.plus") }
+                        Menu {
+                            Button { showsAdd = true } label: { Label("フレンドを追加", systemImage: "person.badge.plus") }
+                            Button { showsCreateGroup = true } label: { Label("グループを作成", systemImage: "person.3") }
+                        } label: {
+                            Image(systemName: "plus")
+                        }
                     }
                     ToolbarItem(placement: .topBarLeading) {
                         Button { popover = .settings } label: { Image(systemName: "gearshape") }
                             .accessibilityLabel("フレンド設定")
+                    }
+                    ToolbarItem(placement: .topBarLeading) {
+                        ReportIssueButton {
+                            pendingReportIssue = PendingIssueReport(screenshot: ScreenshotCapture.captureFrontWindow())
+                        }
                     }
                 }
         } detail: {
             friendDetail
         }
         .sheet(isPresented: $showsAdd) { AddFriendView(store: store) }
+        .sheet(isPresented: $showsCreateGroup) { CreateGroupView(store: store) }
+        .sheet(item: $pendingReportIssue) { pending in ReportIssueSheet(capturedScreenshot: pending.screenshot) }
         .sheet(item: $popover) { item in
             NavigationStack {
                 popoverContent(for: item)
@@ -1470,8 +1869,13 @@ struct FriendsHomeView: View {
                 // Without this, a friend who just accepted this user's
                 // outgoing request never appears here — nothing else
                 // re-fetches the friends list while this screen is open.
+                // 8 seconds, not 2 — friends() looks up each friend's live
+                // details by a separate KV read per friend, and this ran
+                // continuously while this screen was open; see
+                // FriendStore.listPollInterval's own doc comment for why
+                // that was enough to exhaust the account's daily KV quota.
                 await store.refreshFriends()
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: .seconds(8))
             }
         }
         // `myStudySeconds` is a plain `let` recomputed by the parent on
@@ -1576,16 +1980,55 @@ struct FriendsHomeView: View {
                         }
                     }
                 }
+                Button { popover = .groupInvites } label: {
+                    HStack {
+                        Label("グループ招待", systemImage: "person.3.sequence")
+                        Spacer()
+                        if !store.incomingGroupInvites.isEmpty {
+                            Text("\(store.incomingGroupInvites.count)")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Color.red, in: Capsule())
+                        }
+                    }
+                }
             }
 
             Section("フレンド") {
                 ForEach(store.friends) { friend in
                     Button { popover = .profile(friend.id) } label: {
-                        FriendSidebarRow(profile: FriendProfile(friend: friend, blockedByMeRoomIDs: store.blockedByMeRoomIDs))
+                        FriendSidebarRow(
+                            profile: FriendProfile(friend: friend, blockedByMeRoomIDs: store.blockedByMeRoomIDs),
+                            unreadCount: store.unreadCounts[friend.id, default: 0]
+                        )
                     }
                 }
                 if store.friends.isEmpty {
                     ContentUnavailableView("フレンドがいません", systemImage: "person.2", description: Text("右上の追加ボタンから招待できます。"))
+                }
+            }
+
+            Section("グループ") {
+                ForEach(store.groups, id: \.roomID) { group in
+                    Button { selection = .group(group.roomID) } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "person.3.fill")
+                                .font(.title3)
+                                .foregroundStyle(.tint)
+                                .frame(width: 34)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(group.name)
+                                Text("\(group.members.count)人のメンバー")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                if store.groups.isEmpty {
+                    ContentUnavailableView("グループがありません", systemImage: "person.3", description: Text("右上の追加ボタンから作成できます。"))
                 }
             }
 
@@ -1615,6 +2058,12 @@ struct FriendsHomeView: View {
             } else {
                 ContentUnavailableView("フレンドを選択してください", systemImage: "person.crop.circle")
             }
+        case .group(let roomID):
+            if store.groups.contains(where: { $0.roomID == roomID }) {
+                GroupChatView(roomID: roomID, store: store, onBack: { selection = .chats })
+            } else {
+                ContentUnavailableView("グループを選択してください", systemImage: "person.3")
+            }
         }
     }
 
@@ -1624,6 +2073,8 @@ struct FriendsHomeView: View {
             MyFriendCardPopover(myCode: store.myCode, myStudySeconds: myStudySeconds, sharesStudyTime: shareStudyTime)
         case .requests:
             FriendRequestsPopover(store: store)
+        case .groupInvites:
+            GroupInvitesPopover(store: store)
         case .profile(let id):
             if let friend = store.friends.first(where: { $0.id == id }) {
                 FriendProfileView(
@@ -1639,7 +2090,7 @@ struct FriendsHomeView: View {
                 ContentUnavailableView("フレンドを選択してください", systemImage: "person.crop.circle")
             }
         case .settings:
-            FriendPrivacySettingsView(shareStudyTime: $shareStudyTime)
+            FriendPrivacySettingsView(shareStudyTime: $shareStudyTime, store: store)
         }
     }
 
@@ -1737,8 +2188,50 @@ private struct FriendRequestsPopover: View {
     }
 }
 
+private struct GroupInvitesPopover: View {
+    @ObservedObject var store: FriendStore
+
+    var body: some View {
+        List {
+            if store.incomingGroupInvites.isEmpty {
+                ContentUnavailableView("グループ招待はありません", systemImage: "person.3.sequence")
+            } else {
+                Section("グループ招待") {
+                    ForEach(store.incomingGroupInvites, id: \.roomID) { invite in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(invite.name)
+                                    Text("\(invite.inviterName)さんから")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if store.pendingGroupActions.contains(invite.roomID) {
+                                    ProgressView()
+                                }
+                            }
+                            if !store.pendingGroupActions.contains(invite.roomID) {
+                                HStack {
+                                    Button("承認") { store.acceptGroupInvite(invite) }
+                                        .buttonStyle(.borderedProminent)
+                                    Button("拒否", role: .destructive) { store.rejectGroupInvite(invite) }
+                                        .buttonStyle(.bordered)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+        .navigationTitle("グループ招待")
+    }
+}
+
 private struct FriendSidebarRow: View {
     let profile: FriendProfile
+    let unreadCount: Int
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1757,6 +2250,15 @@ private struct FriendSidebarRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+            Spacer()
+            if unreadCount > 0 {
+                Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color.red, in: Capsule())
             }
         }
         .padding(.vertical, 2)
@@ -1814,7 +2316,7 @@ private struct FriendChatSummaryRow: View {
                         .lineLimit(1)
                     Spacer(minLength: 8)
                     if summary.unreadCount > 0 {
-                        Text("\(summary.unreadCount)")
+                        Text(summary.unreadCount > 99 ? "99+" : "\(summary.unreadCount)")
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 7)
@@ -1921,6 +2423,7 @@ private struct FriendProfileView: View {
 
 private struct FriendPrivacySettingsView: View {
     @Binding var shareStudyTime: Bool
+    @ObservedObject var store: FriendStore
 
     var body: some View {
         Form {
@@ -1929,8 +2432,69 @@ private struct FriendPrivacySettingsView: View {
             } footer: {
                 Text("オフにすると、あなたの今日の勉強時間はフレンドに送信されません。フレンド側では勉強時間の行は空欄になります。")
             }
+            Section {
+                NavigationLink {
+                    BlockedContactsView(store: store)
+                } label: {
+                    Label("ブロック一覧", systemImage: "hand.raised")
+                }
+            }
         }
         .navigationTitle("フレンド設定")
+    }
+}
+
+private struct BlockedContactsView: View {
+    @ObservedObject var store: FriendStore
+    @State private var contactToRemove: FriendChatService.BlockedContact?
+
+    var body: some View {
+        List {
+            ForEach(store.blockedContacts) { contact in
+                HStack(spacing: 12) {
+                    FriendAvatarView(
+                        avatarData: store.friends.first(where: { $0.code == contact.code })?.avatarData,
+                        iconSystemName: "person.crop.circle.fill"
+                    )
+                    Text(contact.name)
+                    Spacer()
+                    Menu {
+                        Button("ブロックを解除") { store.unblock(contact) }
+                        if store.friends.contains(where: { $0.code == contact.code }) {
+                            Button("フレンドから削除", role: .destructive) { contactToRemove = contact }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .disabled(store.pendingRemovalCodes.contains(contact.code))
+                    .accessibilityLabel("\(contact.name)の操作")
+                }
+            }
+        }
+        .navigationTitle("ブロック一覧")
+        .overlay {
+            if store.blockedContacts.isEmpty {
+                ContentUnavailableView("ブロック中のユーザーはいません", systemImage: "hand.raised")
+            }
+        }
+        .task { await store.refreshBlockedContacts() }
+        .confirmationDialog(
+            "フレンド関係を双方で解除しますか？",
+            isPresented: Binding(
+                get: { contactToRemove != nil },
+                set: { if !$0 { contactToRemove = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("フレンドから削除", role: .destructive) {
+                guard let contact = contactToRemove else { return }
+                Task { _ = await store.removeFriend(contact) }
+                contactToRemove = nil
+            }
+            Button("キャンセル", role: .cancel) { contactToRemove = nil }
+        } message: {
+            Text("双方のフレンド一覧から消えます。過去の会話とブロックは保持されます。")
+        }
     }
 }
 
@@ -2004,7 +2568,7 @@ private struct AddFriendView: View {
                 // answered it, for as long as this sheet stayed open.
                 while !Task.isCancelled {
                     await store.refreshOutgoingRequests()
-                    try? await Task.sleep(for: .seconds(2))
+                    try? await Task.sleep(for: .seconds(5))
                 }
             }
             // Submitting used to dismiss immediately, before the network call
@@ -2030,6 +2594,282 @@ private struct AddFriendView: View {
             let succeeded = await store.addAndWait(code: code)
             isSending = false
             if succeeded { dismiss() }
+        }
+    }
+}
+
+private struct CreateGroupView: View {
+    @ObservedObject var store: FriendStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var selectedCodes: Set<String> = []
+    @State private var isCreating = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("グループ名") {
+                    TextField("グループ名", text: $name)
+                }
+                Section {
+                    ForEach(store.friends.filter { $0.isDemo != true }) { friend in
+                        Button {
+                            if selectedCodes.contains(friend.code) {
+                                selectedCodes.remove(friend.code)
+                            } else {
+                                selectedCodes.insert(friend.code)
+                            }
+                        } label: {
+                            HStack {
+                                Text(friend.name)
+                                Spacer()
+                                if selectedCodes.contains(friend.code) {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.tint)
+                                } else {
+                                    Image(systemName: "circle").foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                } header: {
+                    Text("招待する友達")
+                } footer: {
+                    Text("選んだ友達には招待が届き、承認すると参加します。誰も選ばずに、自分だけでグループを作成することもできます。")
+                }
+                Section {
+                    if isCreating {
+                        HStack { Spacer(); ProgressView(); Spacer() }
+                    } else {
+                        Button("グループを作成") { submit() }
+                            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+            .navigationTitle("グループを作成")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
+            .alert("エラー", isPresented: Binding(
+                get: { !store.errorMessage.isEmpty },
+                set: { isPresented in if !isPresented { store.errorMessage = "" } }
+            )) {
+                Button("OK") { store.errorMessage = "" }
+            } message: {
+                Text(store.errorMessage)
+            }
+        }
+    }
+
+    private func submit() {
+        isCreating = true
+        Task {
+            let succeeded = await store.createGroup(name: name, memberCodes: Array(selectedCodes))
+            isCreating = false
+            if succeeded { dismiss() }
+        }
+    }
+}
+
+/// A group's own chat screen. Deliberately simpler than `FriendChatView`
+/// (no attachments, no edit/cancel, no per-message read state) — those all
+/// still work server-side for a group's room (see groups.js's own doc
+/// comment on why message routes are reused unchanged), so this can grow
+/// to match `FriendChatView` later without any server-side work; keeping
+/// v1 to plain text keeps this new surface reviewable on its own.
+struct GroupChatView: View {
+    let roomID: String
+    @ObservedObject var store: FriendStore
+    var onBack: () -> Void
+
+    @State private var draft = ""
+    @State private var showsMembers = false
+    @State private var showsRename = false
+    @State private var renameDraft = ""
+
+    private var group: FriendChatService.Group? {
+        store.groups.first(where: { $0.roomID == roomID })
+    }
+    private var messages: [FriendChatService.Message] {
+        store.groupMessages[roomID] ?? []
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(messages, id: \.id) { message in
+                            GroupMessageBubble(message: message)
+                                .id(message.id)
+                        }
+                    }
+                    .padding()
+                }
+                .onChange(of: messages.count) { _, _ in
+                    if let lastID = messages.last?.id {
+                        withAnimation { proxy.scrollTo(lastID, anchor: .bottom) }
+                    }
+                }
+            }
+            Divider()
+            HStack(spacing: 8) {
+                TextField("メッセージを入力", text: $draft, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                Button {
+                    let text = draft
+                    draft = ""
+                    Task { await store.sendGroupMessage(text, roomID: roomID) }
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill").font(.title2)
+                }
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding()
+        }
+        .navigationTitle(group?.name ?? "グループ")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { onBack() } label: { Image(systemName: "chevron.left") }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button { renameDraft = group?.name ?? ""; showsRename = true } label: {
+                        Label("グループ名を変更", systemImage: "pencil")
+                    }
+                    Button { showsMembers = true } label: {
+                        Label("メンバーを管理", systemImage: "person.3")
+                    }
+                    Button(role: .destructive) {
+                        Task {
+                            if await store.removeGroupMember(roomID: roomID, code: store.myCode) { onBack() }
+                        }
+                    } label: {
+                        Label("グループを退出", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showsMembers) {
+            if let group { GroupMembersView(roomID: roomID, group: group, store: store) }
+        }
+        .alert("グループ名を変更", isPresented: $showsRename) {
+            TextField("グループ名", text: $renameDraft)
+            Button("キャンセル", role: .cancel) {}
+            Button("変更") { Task { await store.renameGroup(roomID: roomID, name: renameDraft) } }
+        }
+        .alert("エラー", isPresented: Binding(
+            get: { !store.errorMessage.isEmpty },
+            set: { isPresented in if !isPresented { store.errorMessage = "" } }
+        )) {
+            Button("OK") { store.errorMessage = "" }
+        } message: {
+            Text(store.errorMessage)
+        }
+        .task {
+            while !Task.isCancelled {
+                await store.refreshGroupMessages(roomID: roomID)
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+}
+
+private struct GroupMessageBubble: View {
+    let message: FriendChatService.Message
+
+    var body: some View {
+        VStack(alignment: message.isMine ? .trailing : .leading, spacing: 2) {
+            if !message.isMine, let senderName = message.senderName {
+                Text(senderName)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Text(message.isCanceled == true ? "メッセージが取り消されました" : message.text)
+                .italic(message.isCanceled == true)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(message.isMine ? Color.accentColor : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+                .foregroundStyle(message.isMine ? .white : .primary)
+        }
+        .frame(maxWidth: .infinity, alignment: message.isMine ? .trailing : .leading)
+    }
+}
+
+private struct GroupMembersView: View {
+    let roomID: String
+    let group: FriendChatService.Group
+    @ObservedObject var store: FriendStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var showsInvite = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("メンバー") {
+                    ForEach(group.members, id: \.code) { member in
+                        HStack {
+                            Text(member.name)
+                            Spacer()
+                            if member.code != store.myCode {
+                                Button("削除", role: .destructive) {
+                                    Task { await store.removeGroupMember(roomID: roomID, code: member.code) }
+                                }
+                                .font(.caption)
+                            }
+                        }
+                    }
+                }
+                Section {
+                    Button { showsInvite = true } label: {
+                        Label("友達を招待", systemImage: "person.badge.plus")
+                    }
+                }
+            }
+            .navigationTitle("メンバー")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
+            .sheet(isPresented: $showsInvite) {
+                InviteToGroupView(roomID: roomID, existingCodes: Set(group.members.map(\.code)), store: store)
+            }
+        }
+    }
+}
+
+private struct InviteToGroupView: View {
+    let roomID: String
+    let existingCodes: Set<String>
+    @ObservedObject var store: FriendStore
+    @Environment(\.dismiss) private var dismiss
+
+    private var candidates: [FriendRecord] {
+        store.friends.filter { $0.isDemo != true && !existingCodes.contains($0.code) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if candidates.isEmpty {
+                    ContentUnavailableView("招待できる友達がいません", systemImage: "person.badge.plus")
+                } else {
+                    ForEach(candidates) { friend in
+                        Button(friend.name) {
+                            Task {
+                                if await store.inviteToGroup(roomID: roomID, code: friend.code) { dismiss() }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("友達を招待")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
+            .alert("エラー", isPresented: Binding(
+                get: { !store.errorMessage.isEmpty },
+                set: { isPresented in if !isPresented { store.errorMessage = "" } }
+            )) {
+                Button("OK") { store.errorMessage = "" }
+            } message: {
+                Text(store.errorMessage)
+            }
         }
     }
 }
@@ -2072,20 +2912,35 @@ struct FriendChatView: View {
     @State private var isAttachingAppMaterial = false
     @State private var showsBlockConfirmation = false
     @State private var reportingMessage: FriendMessage?
+    @State private var scrollRequest = 0
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    ForEach(chatRows) { row in
-                        switch row {
-                        case .date(let id, let date):
-                            dateSeparator(date, id: id)
-                        case .message(let message):
-                            messageRow(message)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(chatRows) { row in
+                            switch row {
+                            case .date(let id, let date):
+                                dateSeparator(date, id: id)
+                            case .message(let message):
+                                messageRow(message)
+                            }
+                        }
+                        Color.clear.frame(height: 1).id("chat-bottom")
+                    }
+                    .padding()
+                }
+                .onAppear {
+                    DispatchQueue.main.async { proxy.scrollTo("chat-bottom", anchor: .bottom) }
+                }
+                .onChange(of: scrollRequest) { _, _ in
+                    DispatchQueue.main.async {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo("chat-bottom", anchor: .bottom)
                         }
                     }
-                }.padding()
+                }
             }
             Divider()
             VStack(alignment: .leading, spacing: 8) {
@@ -2442,7 +3297,7 @@ struct FriendChatView: View {
 
     private func send() {
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        var bodyWasQueued = body.isEmpty
+        var bodyWasQueued = false
         if !body.isEmpty {
             bodyWasQueued = store.send(body, to: currentFriend)
         }
@@ -2460,8 +3315,12 @@ struct FriendChatView: View {
                 unsentAttachments.append(attachment)
             }
         }
+        let sentAttachmentCount = attachments.count - unsentAttachments.count
         if bodyWasQueued { draft = "" }
         attachments = unsentAttachments
+        if bodyWasQueued || sentAttachmentCount > 0 {
+            scrollRequest += 1
+        }
     }
 
     private func savePhotoAttachment(data: Data, title: String, icon: String) async -> FriendMessageAttachment? {
