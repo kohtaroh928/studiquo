@@ -19,14 +19,16 @@
       { "name": "CHAT_ROOM", "class_name": "ChatRoom" },
       { "name": "USER_REGISTRY", "class_name": "UserRegistry" },
       { "name": "DOCUMENT_ROOM", "class_name": "DocumentRoom" },
-      { "name": "RATE_COUNTER", "class_name": "RateCounter" }
+      { "name": "RATE_COUNTER", "class_name": "RateCounter" },
+      { "name": "MCP_INBOX", "class_name": "MCPInbox" }
     ]
   },
   "migrations": [
     { "tag": "v1-chat", "new_sqlite_classes": ["ChatRoom"] },
     { "tag": "v2-user-registry", "new_sqlite_classes": ["UserRegistry"] },
     { "tag": "v3-document-room", "new_sqlite_classes": ["DocumentRoom"] },
-    { "tag": "v4-rate-counter", "new_sqlite_classes": ["RateCounter"] }
+    { "tag": "v4-rate-counter", "new_sqlite_classes": ["RateCounter"] },
+    { "tag": "v5-mcp-inbox", "new_sqlite_classes": ["MCPInbox"] }
   ],
   // One namespace_id per unauthenticated endpoint, so hammering one doesn't
   // burn another's budget.
@@ -58,7 +60,20 @@
     // RATE_LIMIT_CHAT_FRIEND_ADD's — reporting is not something a genuine
     // user does rapidly, so a burst of these is itself a signal worth
     // capping rather than something normal use would ever hit.
-    { "name": "RATE_LIMIT_CHAT_REPORT", "namespace_id": "1013", "simple": { "limit": 5, "period": 60 } }
+    { "name": "RATE_LIMIT_CHAT_REPORT", "namespace_id": "1013", "simple": { "limit": 5, "period": 60 } },
+    // Keyed by userKey. The home screen's "問題を報告" button — a low,
+    // occasional-action budget like RATE_LIMIT_CHAT_REPORT's above.
+    { "name": "RATE_LIMIT_ISSUE_REPORT", "namespace_id": "1014", "simple": { "limit": 5, "period": 60 } },
+    // Keyed by userKey. Shared by every group-membership action (create,
+    // invite, accept, reject, remove, rename) — see src/groups.js. A bit
+    // more generous than RATE_LIMIT_CHAT_FRIEND_ADD's 5/minute since one of
+    // these, inviting several friends to a new group one at a time, is a
+    // normal burst rather than abuse.
+    { "name": "RATE_LIMIT_CHAT_GROUP_ACTION", "namespace_id": "1015", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RATE_LIMIT_MCP_REGISTER", "namespace_id": "1016", "simple": { "limit": 5, "period": 60 } },
+    { "name": "RATE_LIMIT_MCP_AUTHORIZE", "namespace_id": "1017", "simple": { "limit": 5, "period": 60 } },
+    { "name": "RATE_LIMIT_MCP_TOKEN", "namespace_id": "1018", "simple": { "limit": 20, "period": 60 } },
+    { "name": "RATE_LIMIT_MCP_PAIR", "namespace_id": "1019", "simple": { "limit": 5, "period": 60 } }
   ],
   "vars": {
     // Marking asks for structured output, and Gemini emits that only once the

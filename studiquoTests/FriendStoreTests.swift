@@ -68,6 +68,70 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(secondLaunch.unreadCounts[friendID], 3, "an unread count must survive a relaunch, the same way messages and friends already do")
     }
 
+    func testInboxRefreshFetchesClosedChatAndUpdatesItsUnreadBadge() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let client = MockFriendChatClient(roomMessages: ["room-a": [
+            .init(id: 1, text: "新着", sentAt: Date().timeIntervalSince1970 * 1_000, isMine: false)
+        ]])
+        await client.setInbox([.init(roomID: "room-a", latestID: 1, unreadCount: 1)])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+
+        await store.refreshInbox()
+
+        XCTAssertEqual(store.unreadCounts[friend.id], 1)
+        XCTAssertEqual(store.messages(for: friend).map(\.text), ["新着"])
+        store.markRead(friend)
+        await waitUntil { await client.readCallsSnapshot().contains(where: { $0.roomID == "room-a" && $0.throughID == 1 }) }
+        await client.setInbox([.init(roomID: "room-a", latestID: 1, unreadCount: 0)])
+        await store.refreshInbox()
+        XCTAssertEqual(store.unreadCounts[friend.id], 0)
+    }
+
+    func testRemovingFriendHidesConversationButRestoresHistoryWhenRefriended() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let contact = FriendChatService.BlockedContact(code: friend.code, name: friend.name, roomID: "room-a")
+        let client = MockFriendChatClient()
+        await client.setBlockedContacts([contact])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        store.messages = [.init(id: UUID(), friendID: friend.id, text: "残す会話", sentAt: Date(), isMine: false, isCanceled: false, roomID: "room-a")]
+        store.unreadCounts[friend.id] = 2
+
+        let removed = await store.removeFriend(contact)
+        XCTAssertTrue(removed)
+        XCTAssertTrue(store.friends.isEmpty)
+        XCTAssertEqual(store.messages.map(\.text), ["残す会話"])
+        XCTAssertNil(store.unreadCounts[friend.id])
+
+        let relaunched = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        XCTAssertTrue(relaunched.friends.isEmpty)
+        XCTAssertEqual(relaunched.messages.map(\.text), ["残す会話"])
+        await client.setFriends([.init(code: friend.code, name: friend.name, roomID: "room-a")])
+        await client.setInbox([.init(roomID: "room-a", latestID: 0, unreadCount: 0, closed: false)])
+        await store.refreshInbox()
+        XCTAssertEqual(store.friends.first?.id, friend.id)
+        XCTAssertEqual(store.messages(for: friend).map(\.text), ["残す会話"])
+        await relaunched.refreshFriends()
+        XCTAssertEqual(relaunched.friends.first?.id, friend.id)
+    }
+
+    func testInboxClosesRemovedFriendEvenIfFriendsListIsTemporarilyStale() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let client = MockFriendChatClient()
+        await client.setInbox([.init(roomID: "room-a", latestID: 3, unreadCount: 0, closed: true)])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        store.messages = [.init(id: UUID(), friendID: friend.id, text: "保存する", sentAt: Date(), isMine: false, isCanceled: false, roomID: "room-a")]
+        store.unreadCounts[friend.id] = 2
+
+        await store.refreshInbox()
+
+        XCTAssertTrue(store.friends.isEmpty)
+        XCTAssertNil(store.unreadCounts[friend.id])
+        XCTAssertEqual(store.messages.map(\.text), ["保存する"])
+    }
+
     // Regression coverage for "a corrupted message history silently
     // resets to empty with no warning": unlike friends (re-fetched from
     // the server on the next refresh) or unread counts (self-correcting),
@@ -2111,6 +2175,9 @@ private actor MockFriendChatClient: FriendChatClient {
     var identity: FriendChatService.Identity
     var remoteFriends: [FriendChatService.Friend]
     var roomMessages: [String: [FriendChatService.Message]]
+    var inboxStates: [FriendChatService.InboxState] = []
+    var blocked: [FriendChatService.BlockedContact] = []
+    var readCalls: [(roomID: String, throughID: Int)] = []
     var sent: [SentMessage] = []
     var pendingRequests: [FriendChatService.IncomingRequest] = []
     var outgoingPendingRequests: [FriendChatService.OutgoingRequest] = []
@@ -2146,6 +2213,26 @@ private actor MockFriendChatClient: FriendChatClient {
         if let errorToThrow { throw errorToThrow }
         return remoteFriends
     }
+
+    func inbox() async throws -> [FriendChatService.InboxState] { inboxStates }
+
+    func setInbox(_ value: [FriendChatService.InboxState]) { inboxStates = value }
+
+    func blockedContacts() async throws -> [FriendChatService.BlockedContact] { blocked }
+
+    func setBlockedContacts(_ value: [FriendChatService.BlockedContact]) { blocked = value }
+
+    func removeFriend(code: String) async throws -> FriendChatService.RemoveFriendResult {
+        remoteFriends.removeAll { $0.code == code }
+        return .init(status: "removed")
+    }
+
+    func markRead(roomID: String, throughID: Int) async throws -> FriendChatService.ReadResult {
+        readCalls.append((roomID, throughID))
+        return .init(status: "read", throughID: throughID)
+    }
+
+    func readCallsSnapshot() -> [(roomID: String, throughID: Int)] { readCalls }
 
     func setFriends(_ value: [FriendChatService.Friend]) {
         remoteFriends = value

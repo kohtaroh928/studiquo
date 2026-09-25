@@ -74,6 +74,43 @@ final class AuthenticationLogoutRevocationTests: XCTestCase {
         await fulfillment(of: [expectation], timeout: 2)
         XCTAssertNil(MCPCloudCredentials.currentToken())
     }
+
+    // MARK: - .studiquoAuthFailed
+
+    /// Regression coverage for "the login expired message shows up even
+    /// though the login hadn't really expired": a definitive 401 from any
+    /// authenticated server call now posts .studiquoAuthFailed, which this
+    /// store observes and reacts to by signing out — so the user lands back
+    /// on the login screen (state .needsLogin) instead of being stuck on a
+    /// screen that will keep failing with the same rejected token.
+    func testAuthFailedNotificationSignsOutAndReachesTheLoginScreen() async throws {
+        let expectation = expectation(description: "revoke request sent")
+        RevokeRequestRecordingProtocol.expectation = expectation
+        let store = makeLoggedInStore()
+
+        NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil)
+
+        await fulfillment(of: [expectation], timeout: 2)
+        XCTAssertEqual(store.state, .needsLogin)
+        XCTAssertFalse(store.errorMessage.isEmpty)
+        XCTAssertNil(MCPCloudCredentials.currentToken())
+    }
+
+    /// A device that isn't signed in has nothing to sign out of — several
+    /// independent polling loops could plausibly fire this around the same
+    /// moment, and none of them should trigger a spurious revoke call.
+    func testAuthFailedNotificationIsANoOpWhenAlreadySignedOut() async throws {
+        let expectation = expectation(description: "revoke request must not be sent")
+        expectation.isInverted = true
+        RevokeRequestRecordingProtocol.expectation = expectation
+        let store = AuthenticationStore(service: "com.yabuko.studiquo.tests.\(UUID().uuidString)")
+        XCTAssertEqual(store.state, .needsLogin)
+
+        NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil)
+
+        await fulfillment(of: [expectation], timeout: 0.5)
+        XCTAssertEqual(store.state, .needsLogin)
+    }
 }
 
 /// Records the request made to `/api/session/revoke` and answers it without

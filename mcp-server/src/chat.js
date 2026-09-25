@@ -4,6 +4,7 @@ import { checkRateLimit } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { realSession } from "./session.js";
+import { handleGroupRoutes } from "./groups.js";
 
 const MAX_BODY = 16_000;
 // Attachment uploads carry base64-encoded image/file bytes (up to
@@ -118,6 +119,18 @@ async function roomID(first, second) {
   return sha256Hex([first, second].sort().join(":"));
 }
 
+async function existingRoomIsBlocked(env, roomIDValue, userKey) {
+  try {
+    const state = await env.CHAT_ROOM.getByName(roomIDValue).blockStatus(userKey);
+    return state.blockedByMe || state.blockedByOther;
+  } catch (error) {
+    // A brand-new pair has no initialized room yet. Other failures must not
+    // silently bypass a block check.
+    if (error instanceof Error && error.message === "Forbidden") return false;
+    throw error;
+  }
+}
+
 // ChatRoom.requireParticipant throws a plain Error("Forbidden") for a caller
 // who isn't in the room; without this, that propagates uncaught up to app.js's
 // catch-all and comes back as a generic 500 instead of a proper 403.
@@ -133,7 +146,49 @@ function roomForbiddenResponse(error) {
   if (error instanceof Error && error.message === "Blocked") {
     return json({ error: "Message could not be sent." }, 403);
   }
+  if (error instanceof Error && error.message === "Closed") {
+    return json({ error: "This friendship has ended." }, 403);
+  }
+  // Thrown by ChatRoom's blocking methods for a group room (see
+  // chat-room.js's own isGroupRoom guards) — reachable here because groups
+  // reuse these same /api/chat/rooms/:id/block* routes, not just from
+  // groups.js's own routes.
+  if (error instanceof Error && error.message === "NotSupported") {
+    return json({ error: "Not supported for a group." }, 400);
+  }
   return null;
+}
+
+// Strips the internal `senderKey` chat-room.js's message-returning methods
+// attach (see their own doc comments) and substitutes the sender's own
+// code/name, resolved once per distinct sender in the batch rather than
+// once per message — a group's recent history often shares just a handful
+// of senders. A direct room's client never actually reads senderCode/Name
+// (isMine already tells it everything it needs for exactly two people),
+// but resolving it there too costs one lookup at most and keeps this one
+// code path uniform instead of branching on room kind.
+async function withSenderNames(env, result) {
+  const messages = Array.isArray(result) ? result : [result];
+  const senderKeys = [...new Set(messages.map(item => item.senderKey).filter(Boolean))];
+  const senders = new Map(await Promise.all(senderKeys.map(async senderKey => {
+    const user = await env.STUDIQUO_DATA.get(`chat:user:${senderKey}`, "json");
+    return [senderKey, user ? { code: user.code, name: user.name } : null];
+  })));
+  const resolved = messages.map(({ senderKey, ...rest }) => {
+    const sender = senderKey ? senders.get(senderKey) : null;
+    return sender ? { ...rest, senderCode: sender.code, senderName: sender.name } : rest;
+  });
+  return Array.isArray(result) ? resolved : resolved[0];
+}
+
+async function messageRoomResponse(env, promise) {
+  try {
+    return json(await withSenderNames(env, await promise));
+  } catch (error) {
+    const forbidden = roomForbiddenResponse(error);
+    if (forbidden) return forbidden;
+    throw error;
+  }
 }
 
 async function roomResponse(promise) {
@@ -222,6 +277,70 @@ export async function handleChat(url, request, env) {
     return json(withLiveDetails);
   }
 
+  if (url.pathname === "/api/chat/friends/blocked" && request.method === "GET") {
+    const user = await ensureUser(env, key);
+    const candidates = new Map();
+    for (const contact of [...(user.blockedContacts ?? []), ...(user.friends ?? [])]) {
+      if (contact.roomID) candidates.set(contact.code, contact);
+    }
+    const blocked = (await Promise.all([...candidates.values()].map(async contact => {
+      try {
+        const status = await env.CHAT_ROOM.getByName(contact.roomID).blockStatus(key);
+        return status.blockedByMe ? contact : null;
+      } catch (error) {
+        if (error instanceof Error && error.message === "Forbidden") return null;
+        throw error;
+      }
+    }))).filter(Boolean);
+    return json(blocked);
+  }
+
+  if (url.pathname === "/api/chat/inbox" && request.method === "GET") {
+    const user = await ensureUser(env, key);
+    const friends = user.friends ?? [];
+    const result = [];
+    // Bound concurrent room calls even for a user at the friend limit.
+    for (let start = 0; start < friends.length; start += 20) {
+      const batch = await Promise.all(friends.slice(start, start + 20).map(async friend => {
+        try {
+          const state = await env.CHAT_ROOM.getByName(friend.roomID).inboxState(key);
+          return { roomID: friend.roomID, ...state };
+        } catch (error) {
+          if (error instanceof Error && error.message === "Forbidden") return null;
+          throw error;
+        }
+      }));
+      result.push(...batch.filter(Boolean));
+    }
+    return json(result);
+  }
+
+  const removeFriendMatch = /^\/api\/chat\/friends\/([A-Z0-9]{6,32})$/.exec(url.pathname);
+  if (removeFriendMatch && request.method === "DELETE") {
+    const user = await ensureUser(env, key);
+    const otherCode = removeFriendMatch[1];
+    const otherKey = await env.STUDIQUO_DATA.get(`chat:code:${otherCode}`);
+    if (!otherKey) return json({ error: "Friend not found." }, 404);
+    if (otherKey === key) return json({ error: "Friend not found." }, 404);
+    const other = await ensureUser(env, otherKey);
+    const friend = (user.friends ?? []).find(item => item.code === otherCode);
+    const reciprocal = (other.friends ?? []).find(item => item.code === user.code);
+    // Allow an interrupted two-sided deletion to be retried even if the
+    // caller's own friend record was already removed by the first attempt.
+    if (!friend && !reciprocal) return json({ status: "removed" });
+    const roomIDValue = friend?.roomID ?? reciprocal?.roomID ?? await roomID(key, otherKey);
+    const room = env.CHAT_ROOM.getByName(roomIDValue);
+    const status = await room.blockStatus(key);
+    await room.close(key);
+    await Promise.all([
+      env.USER_REGISTRY.getByName(key).removeFriend(key, otherCode,
+        status.blockedByMe ? { code: otherCode, name: friend?.name ?? other.name, roomID: roomIDValue } : null),
+      env.USER_REGISTRY.getByName(otherKey).removeFriend(otherKey, user.code,
+        status.blockedByOther ? { code: user.code, name: user.name, roomID: roomIDValue } : null),
+    ]);
+    return json({ status: "removed" });
+  }
+
   // Serves a friend's (or the caller's own) uploaded profile photo. Gated to
   // the caller themselves or an established friend, the same trust boundary
   // the rest of this file draws around a person's name and study stats —
@@ -267,6 +386,9 @@ export async function handleChat(url, request, env) {
     const otherKey = await env.STUDIQUO_DATA.get(`chat:code:${friendCode}`);
     if (!otherKey) return json({ error: "Friend not found." }, 404);
     if (otherKey === key) return json({ error: "You cannot add yourself as a friend." }, 400);
+    if (await existingRoomIsBlocked(env, await roomID(key, otherKey), key)) {
+      return json({ error: "This friend cannot be added right now." }, 403);
+    }
     const user = await ensureUser(env, key);
     // Recording the request against the recipient's own record is delegated
     // to their UserRegistry instance so it's serialized against any other
@@ -296,6 +418,9 @@ export async function handleChat(url, request, env) {
     const otherKey = await env.STUDIQUO_DATA.get(`chat:linktoken:${linkToken}`);
     if (!otherKey) return json({ error: "This invite link is no longer valid." }, 404);
     if (otherKey === key) return json({ error: "You cannot add yourself as a friend." }, 400);
+    if (await existingRoomIsBlocked(env, await roomID(key, otherKey), key)) {
+      return json({ error: "This friend cannot be added right now." }, 403);
+    }
     const [user, other] = await Promise.all([ensureUser(env, key), ensureUser(env, otherKey)]);
     if ((other.friends ?? []).length >= MAX_FRIENDS) {
       return json({ error: "Friend list is full." }, 400);
@@ -330,6 +455,9 @@ export async function handleChat(url, request, env) {
     const otherKey = await env.STUDIQUO_DATA.get(`chat:code:${friendCode}`);
     if (!otherKey) return json({ error: "Request not found." }, 404);
     if (otherKey === key) return json({ error: "You cannot accept a request from yourself." }, 400);
+    if (await existingRoomIsBlocked(env, await roomID(key, otherKey), key)) {
+      return json({ error: "This friend cannot be added right now." }, 403);
+    }
     const other = await ensureUser(env, otherKey);
     if ((other.friends ?? []).length >= MAX_FRIENDS) {
       return json({ error: "Friend list is full." }, 400);
@@ -367,9 +495,16 @@ export async function handleChat(url, request, env) {
   }
 
   const match = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/messages$/.exec(url.pathname);
+  const readMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/read$/.exec(url.pathname);
+  if (readMatch && request.method === "POST") {
+    const body = await readBody(request);
+    const throughID = Number(body?.throughID);
+    if (!Number.isSafeInteger(throughID) || throughID < 0) return json({ error: "Invalid read position." }, 400);
+    return roomResponse(env.CHAT_ROOM.getByName(readMatch[1]).markRead(key, throughID));
+  }
   if (match && request.method === "GET") {
     const after = parseAfter(url.searchParams.get("after"));
-    return roomResponse(env.CHAT_ROOM.getByName(match[1]).listMessages(key, after));
+    return messageRoomResponse(env, env.CHAT_ROOM.getByName(match[1]).listMessages(key, after));
   }
   if (match && request.method === "POST") {
     // Without this, a single compromised or misbehaving client could flood a
@@ -380,7 +515,7 @@ export async function handleChat(url, request, env) {
     const text = String(body?.text ?? "").trim().slice(0, 2_000);
     if (!text) return json({ error: "Message is required." }, 400);
     const clientMessageID = typeof body?.clientMessageID === "string" ? body.clientMessageID.slice(0, 100) : null;
-    return roomResponse(env.CHAT_ROOM.getByName(match[1]).sendMessage(key, text, clientMessageID));
+    return messageRoomResponse(env, env.CHAT_ROOM.getByName(match[1]).sendMessage(key, text, clientMessageID));
   }
 
   // Retracts one of the caller's own messages for real: the stored text is
@@ -432,7 +567,7 @@ export async function handleChat(url, request, env) {
     const ids = Array.isArray(body?.ids)
       ? body.ids.map(Number).filter(Number.isSafeInteger).slice(0, 200)
       : [];
-    return roomResponse(env.CHAT_ROOM.getByName(lookupMatch[1]).getMessagesByIDs(key, ids));
+    return messageRoomResponse(env, env.CHAT_ROOM.getByName(lookupMatch[1]).getMessagesByIDs(key, ids));
   }
 
   // Uploads an attachment's actual bytes to the room it'll be shared in, so
@@ -526,6 +661,14 @@ export async function handleChat(url, request, env) {
     }));
     return json({ status: "reported" });
   }
+
+  // Group chat routes share this file's /api/chat/ prefix and auth gate
+  // (see groups.js's own doc comment for why it isn't a fully independent
+  // handler the way ai.js/document-collab.js are) — tried last, after every
+  // route above, so an unmatched group path still falls through to this
+  // function's own 404 below.
+  const groups = await handleGroupRoutes(url, request, env, key);
+  if (groups) return groups;
 
   return json({ error: "Not found" }, 404);
 }

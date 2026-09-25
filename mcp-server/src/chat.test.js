@@ -19,8 +19,9 @@ function fakeChatRoomBinding() {
   const rooms = new Map();
   const initializeCalls = { count: 0 };
   let nextAttachmentId = 1;
+  const FAKE_MAX_GROUP_MEMBERS = 50;
   function room(name) {
-    if (!rooms.has(name)) rooms.set(name, { participants: new Set(), messages: [], attachments: new Map(), blocks: new Set() });
+    if (!rooms.has(name)) rooms.set(name, { participants: new Set(), memberInfo: new Map(), messages: [], attachments: new Map(), blocks: new Set(), readPositions: new Map(), closed: false, kind: "direct", name: null });
     return rooms.get(name);
   }
   return {
@@ -28,11 +29,86 @@ function fakeChatRoomBinding() {
     getByName(name) {
       const state = room(name);
       const other = userKey => [...state.participants].find(candidate => candidate !== userKey) ?? null;
+      const requireGroup = userKey => {
+        if (!state.participants.has(userKey)) throw new Error("Forbidden");
+        if (state.kind !== "group") throw new Error("NotAGroup");
+      };
       return {
-        async initialize(_roomID, participants) {
+        async initialize(_roomID, participants, options = {}) {
           initializeCalls.count += 1;
-          if (state.participants.size > 0) return;
-          for (const key of participants.slice(0, 2)) state.participants.add(key);
+          const kind = options.kind ?? "direct";
+          if (state.participants.size > 0) { state.closed = false; return; }
+          const capped = kind === "group" ? participants : participants.slice(0, 2);
+          for (const key of capped) {
+            state.participants.add(key);
+            if (kind === "group") state.memberInfo.set(key, { code: options.creatorCode ?? null, name: options.creatorName ?? null });
+          }
+          if (kind === "group") {
+            state.kind = "group";
+            state.name = String(options.name ?? "").trim().slice(0, 80) || null;
+          }
+        },
+        // Mirrors chat-room.js's real addParticipant: always self-initiated
+        // by whoever just had their group invite accepted (see groups.js) —
+        // the real authorization already happened one level up, so this
+        // doesn't require the new member to already be a participant.
+        async addParticipant(newKey, code, name) {
+          if (state.kind !== "group") throw new Error("NotAGroup");
+          if (state.participants.size >= FAKE_MAX_GROUP_MEMBERS) throw new Error("GroupFull");
+          state.participants.add(newKey);
+          state.memberInfo.set(newKey, { code: code ?? null, name: name ?? null });
+          state.readPositions.set(newKey, state.messages.at(-1)?.id ?? 0);
+          return { status: "added" };
+        },
+        // Mirrors chat-room.js's real removeParticipant: any current member
+        // may remove any other (or themselves) — no admin/owner concept.
+        async removeParticipant(callerKey, targetKey) {
+          requireGroup(callerKey);
+          if (!state.participants.has(targetKey)) throw new Error("Forbidden");
+          state.participants.delete(targetKey);
+          state.memberInfo.delete(targetKey);
+          state.readPositions.delete(targetKey);
+          return { status: "removed" };
+        },
+        async renameRoom(callerKey, name) {
+          requireGroup(callerKey);
+          const trimmed = String(name ?? "").trim().slice(0, 80);
+          if (!trimmed) throw new Error("InvalidName");
+          state.name = trimmed;
+          return { status: "renamed", name: trimmed };
+        },
+        async groupInfo(callerKey) {
+          requireGroup(callerKey);
+          const members = [...state.participants].map(participantKey => ({
+            key: participantKey,
+            code: state.memberInfo.get(participantKey)?.code ?? null,
+            name: state.memberInfo.get(participantKey)?.name ?? null,
+          }));
+          return { name: state.name, members };
+        },
+        async close(userKey) {
+          if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          const latestID = state.messages.at(-1)?.id ?? 0;
+          for (const participant of state.participants) state.readPositions.set(participant, latestID);
+          state.closed = true;
+          return { status: "closed" };
+        },
+        async inboxState(userKey) {
+          if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          const latestID = state.messages.at(-1)?.id ?? 0;
+          if (state.closed) return { latestID, unreadCount: 0, closed: true };
+          if (!state.readPositions.has(userKey)) state.readPositions.set(userKey, latestID);
+          return {
+            latestID,
+            unreadCount: state.messages.filter(item => item.id > state.readPositions.get(userKey) && item.senderKey !== userKey && !item.isCanceled).length,
+            closed: false,
+          };
+        },
+        async markRead(userKey, throughID) {
+          if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          const safeID = Math.min(state.messages.at(-1)?.id ?? 0, throughID);
+          state.readPositions.set(userKey, Math.max(state.readPositions.get(userKey) ?? 0, safeID));
+          return { status: "read", throughID: safeID };
         },
         // Mirrors chat-room.js's real requireParticipant: throws for a
         // non-participant, otherwise resolves with nothing meaningful — a
@@ -42,16 +118,19 @@ function fakeChatRoomBinding() {
         },
         async blockOtherParticipant(userKey) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          if (state.kind === "group") throw new Error("NotSupported");
           state.blocks.add(userKey);
           return { status: "blocked" };
         },
         async unblockOtherParticipant(userKey) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          if (state.kind === "group") throw new Error("NotSupported");
           state.blocks.delete(userKey);
           return { status: "unblocked" };
         },
         async blockStatus(userKey) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          if (state.kind === "group") throw new Error("NotSupported");
           const theOther = other(userKey);
           return {
             blockedByMe: state.blocks.has(userKey),
@@ -60,17 +139,23 @@ function fakeChatRoomBinding() {
         },
         async sendMessage(userKey, text, clientMessageID = null) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
-          const theOther = other(userKey);
-          if (theOther && state.blocks.has(theOther)) throw new Error("Blocked");
-          const message = { id: state.messages.length + 1, text, sentAt: Date.now(), isMine: true, clientMessageID, isCanceled: false };
-          state.messages.push({ ...message, senderKey: userKey });
+          if (state.closed) throw new Error("Closed");
+          if (state.kind !== "group") {
+            const theOther = other(userKey);
+            if (theOther && state.blocks.has(theOther)) throw new Error("Blocked");
+            if (theOther && !state.readPositions.has(theOther)) {
+              state.readPositions.set(theOther, state.messages.at(-1)?.id ?? 0);
+            }
+          }
+          const message = { id: state.messages.length + 1, text, sentAt: Date.now(), isMine: true, clientMessageID, isCanceled: false, senderKey: userKey };
+          state.messages.push(message);
           return message;
         },
         async listMessages(userKey, after = 0) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           return state.messages
             .filter(item => item.id > after)
-            .map(({ senderKey, ...rest }) => ({ ...rest, isMine: senderKey === userKey }));
+            .map(item => ({ ...item, isMine: item.senderKey === userKey }));
         },
         // Mirrors chat-room.js's real cancelMessage: only the original
         // sender may retract it, and the stored text is actually cleared
@@ -103,7 +188,7 @@ function fakeChatRoomBinding() {
           const idSet = new Set(ids);
           return state.messages
             .filter(item => idSet.has(item.id))
-            .map(({ senderKey, ...rest }) => ({ ...rest, isMine: senderKey === userKey }));
+            .map(item => ({ ...item, isMine: item.senderKey === userKey }));
         },
         // Mirrors chat-room.js's real storeAttachment/getAttachment: same
         // validation, same Forbidden gate, same in-room storage — so the
@@ -113,6 +198,7 @@ function fakeChatRoomBinding() {
         // there's no cron/alarm to do it on a schedule.
         async storeAttachment(userKey, contentType, base64Data) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          if (state.closed) throw new Error("Closed");
           const type = String(contentType ?? "").slice(0, 100);
           if (!ATTACHMENT_CONTENT_TYPE_PATTERN.test(type)) throw new Error("InvalidContentType");
           const data = String(base64Data ?? "");
@@ -216,6 +302,18 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "added", friend: { code: user.code, name: user.name } };
   }
 
+  async function removeFriendAtomic(key, otherCode, blockedContact = null) {
+    const storageKey = `chat:user:${key}`;
+    const user = await studiquoData.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    user.friends = (user.friends ?? []).filter(item => item.code !== otherCode);
+    if (blockedContact && !(user.blockedContacts ?? []).some(item => item.code === otherCode)) {
+      user.blockedContacts = [...(user.blockedContacts ?? []), blockedContact];
+    }
+    await studiquoData.put(storageKey, JSON.stringify(user));
+    return { status: "removed" };
+  }
+
   async function addIncomingRequestAtomic(key, requesterCode, requesterName) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
@@ -276,6 +374,54 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "accepted", friend: { code: user.code, name: user.name } };
   }
 
+  async function addGroupForCreatorAtomic(key, roomID) {
+    const storageKey = `chat:user:${key}`;
+    const user = await studiquoData.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    user.groups = [...(user.groups ?? []).filter(item => item.roomID !== roomID), { roomID }];
+    await studiquoData.put(storageKey, JSON.stringify(user));
+    return { status: "added" };
+  }
+
+  async function addIncomingGroupInviteAtomic(key, roomID, name, inviterCode, inviterName) {
+    const storageKey = `chat:user:${key}`;
+    const user = await studiquoData.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    if ((user.groups ?? []).some(item => item.roomID === roomID)) return { status: "already_member" };
+    if (!(user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
+      user.incomingGroupInvites = [
+        ...(user.incomingGroupInvites ?? []),
+        { roomID, name, inviterCode, inviterName, invitedAt: Date.now() },
+      ].slice(-500);
+      await studiquoData.put(storageKey, JSON.stringify(user));
+    }
+    return { status: "pending" };
+  }
+
+  async function resolveIncomingGroupInviteAtomic(key, action, roomID) {
+    const storageKey = `chat:user:${key}`;
+    const user = await studiquoData.get(storageKey, "json");
+    if (!user || !(user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
+      return { status: "not_found" };
+    }
+    user.incomingGroupInvites = (user.incomingGroupInvites ?? []).filter(item => item.roomID !== roomID);
+    if (action === "accept") {
+      user.groups = [...(user.groups ?? []).filter(item => item.roomID !== roomID), { roomID }];
+    }
+    await studiquoData.put(storageKey, JSON.stringify(user));
+    return { status: action === "accept" ? "accepted" : "rejected" };
+  }
+
+  async function removeGroupAtomic(key, roomID) {
+    const storageKey = `chat:user:${key}`;
+    const user = await studiquoData.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    const before = user.groups ?? [];
+    user.groups = before.filter(item => item.roomID !== roomID);
+    if (user.groups.length !== before.length) await studiquoData.put(storageKey, JSON.stringify(user));
+    return { status: "removed" };
+  }
+
   // All methods share the same per-key queue, mirroring how a single real
   // Durable Object instance serializes every call it receives — regardless
   // of which method is called — one at a time.
@@ -316,6 +462,21 @@ function fakeUserRegistryBinding(studiquoData) {
         addFriendDirectly(k, otherCode, otherName, roomID) {
           return enqueue(key, () => addFriendDirectlyAtomic(k, otherCode, otherName, roomID));
         },
+        removeFriend(k, otherCode, blockedContact) {
+          return enqueue(key, () => removeFriendAtomic(k, otherCode, blockedContact));
+        },
+        addGroupForCreator(k, roomID) {
+          return enqueue(key, () => addGroupForCreatorAtomic(k, roomID));
+        },
+        addIncomingGroupInvite(k, roomID, name, inviterCode, inviterName) {
+          return enqueue(key, () => addIncomingGroupInviteAtomic(k, roomID, name, inviterCode, inviterName));
+        },
+        resolveIncomingGroupInvite(k, action, roomID) {
+          return enqueue(key, () => resolveIncomingGroupInviteAtomic(k, action, roomID));
+        },
+        removeGroup(k, roomID) {
+          return enqueue(key, () => removeGroupAtomic(k, roomID));
+        },
       };
     },
   };
@@ -353,6 +514,7 @@ function environment() {
     RATE_LIMIT_CHAT_MESSAGE: fakeCloudflareLimiter(30),
     RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD: fakeCloudflareLimiter(10),
     RATE_LIMIT_CHAT_REPORT: fakeCloudflareLimiter(5),
+    RATE_LIMIT_CHAT_GROUP_ACTION: fakeCloudflareLimiter(10),
     _kv: values,
   };
 }
@@ -502,6 +664,242 @@ async function uploadAvatar(env, token, contentType, data) {
 async function downloadAvatar(env, token, code) {
   return worker.fetch(request(`/api/chat/avatar/${code}`, { token }), env, noopCtx);
 }
+
+async function createGroup(env, token, name, memberCodes) {
+  return worker.fetch(request("/api/chat/groups", { method: "POST", token, body: { name, memberCodes } }), env, noopCtx);
+}
+
+async function groups(env, token) {
+  const response = await worker.fetch(request("/api/chat/groups", { token }), env, noopCtx);
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+async function groupInvites(env, token) {
+  const response = await worker.fetch(request("/api/chat/group-invites", { token }), env, noopCtx);
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+async function inviteToGroup(env, token, roomID, code) {
+  return worker.fetch(request(`/api/chat/groups/${roomID}/invites`, { method: "POST", token, body: { code } }), env, noopCtx);
+}
+
+async function acceptGroupInvite(env, token, roomID) {
+  return worker.fetch(request(`/api/chat/groups/${roomID}/invites/accept`, { method: "POST", token }), env, noopCtx);
+}
+
+async function rejectGroupInvite(env, token, roomID) {
+  return worker.fetch(request(`/api/chat/groups/${roomID}/invites/reject`, { method: "POST", token }), env, noopCtx);
+}
+
+async function renameGroup(env, token, roomID, name) {
+  return worker.fetch(request(`/api/chat/groups/${roomID}`, { method: "PATCH", token, body: { name } }), env, noopCtx);
+}
+
+async function removeGroupMember(env, token, roomID, code) {
+  return worker.fetch(request(`/api/chat/groups/${roomID}/members/${code}`, { method: "DELETE", token }), env, noopCtx);
+}
+
+// Registers three friends of each other (Alice, Bob, Carol — all mutual
+// friends) and returns their tokens/codes, so group tests can start from
+// "three people who could plausibly form a group" without repeating the
+// same three-way friend setup in every test.
+async function threeMutualFriends(env, suffix) {
+  const aliceToken = freshToken(`${suffix}a`);
+  const bobToken = freshToken(`${suffix}b`);
+  const carolToken = freshToken(`${suffix}c`);
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  const carol = await registerUser(env, carolToken, "Carol");
+  await addFriend(env, aliceToken, bob.code);
+  await acceptRequest(env, bobToken, alice.code);
+  await addFriend(env, aliceToken, carol.code);
+  await acceptRequest(env, carolToken, alice.code);
+  await addFriend(env, bobToken, carol.code);
+  await acceptRequest(env, carolToken, bob.code);
+  return { alice: { token: aliceToken, ...alice }, bob: { token: bobToken, ...bob }, carol: { token: carolToken, ...carol } };
+}
+
+test("a group can be created with no invited friends at all — just its creator", async () => {
+  const env = environment();
+  const { alice } = await threeMutualFriends(env, "g1");
+  const response = await createGroup(env, alice.token, "Study Group", []);
+  assert.equal(response.status, 201);
+  const created = await response.json();
+  assert.deepEqual(created.members, [{ code: alice.code, name: "Alice" }]);
+  assert.deepEqual((await groups(env, alice.token)).map(g => g.roomID), [created.roomID]);
+});
+
+test("creating a group with someone who isn't the caller's own friend is rejected", async () => {
+  const env = environment();
+  const { alice, bob } = await threeMutualFriends(env, "g2");
+  const strangerToken = freshToken("g2d");
+  const stranger = await registerUser(env, strangerToken, "Dave");
+  const response = await createGroup(env, alice.token, "Study Group", [bob.code, stranger.code]);
+  assert.equal(response.status, 400);
+});
+
+test("creating a group adds only the creator immediately, and sends a pending invite to everyone else", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g3");
+
+  const response = await createGroup(env, alice.token, "Study Group", [bob.code, carol.code]);
+  assert.equal(response.status, 201);
+  const created = await response.json();
+  assert.equal(created.name, "Study Group");
+  assert.deepEqual(created.members, [{ code: alice.code, name: "Alice" }]);
+
+  assert.deepEqual((await groups(env, alice.token)).map(g => g.roomID), [created.roomID]);
+  assert.deepEqual(await groups(env, bob.token), []);
+
+  const bobInvites = await groupInvites(env, bob.token);
+  assert.equal(bobInvites.length, 1);
+  assert.equal(bobInvites[0].roomID, created.roomID);
+  assert.equal(bobInvites[0].name, "Study Group");
+  assert.equal(bobInvites[0].inviterCode, alice.code);
+});
+
+test("accepting a group invite adds the room to the invitee's own group list and lets them send messages", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g4");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+
+  const accepted = await (await acceptGroupInvite(env, bob.token, created.roomID)).json();
+  assert.equal(accepted.members.length, 2);
+
+  assert.deepEqual((await groupInvites(env, bob.token)), []);
+  assert.deepEqual((await groups(env, bob.token)).map(g => g.roomID), [created.roomID]);
+
+  const sent = await sendMessage(env, bob.token, created.roomID, "よろしく");
+  assert.equal(sent.status, 200);
+});
+
+test("rejecting a group invite never adds the room to the invitee's group list", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g5");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+
+  const response = await rejectGroupInvite(env, bob.token, created.roomID);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await groupInvites(env, bob.token), []);
+  assert.deepEqual(await groups(env, bob.token), []);
+
+  const sent = await sendMessage(env, bob.token, created.roomID, "内緒で送ってみる");
+  assert.equal(sent.status, 403);
+});
+
+test("an existing member can invite one of their own friends into the group", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g6");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+
+  // Bob invites Dave — Dave is a friend of Bob's, not of Alice's or Carol's.
+  const daveToken = freshToken("g6d");
+  const dave = await registerUser(env, daveToken, "Dave");
+  await addFriend(env, bob.token, dave.code);
+  await acceptRequest(env, daveToken, bob.code);
+
+  const response = await inviteToGroup(env, bob.token, created.roomID, dave.code);
+  assert.equal(response.status, 200);
+  const daveInvites = await groupInvites(env, daveToken);
+  assert.equal(daveInvites.length, 1);
+  assert.equal(daveInvites[0].inviterCode, bob.code);
+});
+
+test("inviting someone who is not the caller's own friend is rejected even by an existing group member", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g7");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+
+  const strangerToken = freshToken("g7d");
+  const stranger = await registerUser(env, strangerToken, "Dave");
+  const response = await inviteToGroup(env, bob.token, created.roomID, stranger.code);
+  assert.equal(response.status, 400);
+});
+
+test("a member who leaves no longer sees the group, but the group survives for the rest", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g8");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+  await acceptGroupInvite(env, carol.token, created.roomID);
+
+  const response = await removeGroupMember(env, bob.token, created.roomID, bob.code);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await groups(env, bob.token), []);
+  const remaining = await groups(env, alice.token);
+  assert.equal(remaining.length, 1);
+  assert.equal(remaining[0].members.length, 2);
+});
+
+test("any current member can remove a different member, with no admin/owner distinction", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g9");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+  await acceptGroupInvite(env, carol.token, created.roomID);
+
+  // Bob (not the creator) removes Carol.
+  const response = await removeGroupMember(env, bob.token, created.roomID, carol.code);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await groups(env, carol.token), []);
+});
+
+test("renaming a group is reflected for every remaining member's own group list", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g10");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+
+  const response = await renameGroup(env, alice.token, created.roomID, "受験対策グループ");
+  assert.equal(response.status, 200);
+  const aliceGroups = await groups(env, alice.token);
+  const bobGroups = await groups(env, bob.token);
+  assert.equal(aliceGroups[0].name, "受験対策グループ");
+  assert.equal(bobGroups[0].name, "受験対策グループ");
+});
+
+test("a group can never be blocked — every blocking endpoint rejects it", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g11");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+
+  const response = await blockOtherParticipant(env, alice.token, created.roomID);
+  assert.equal(response.status, 400);
+});
+
+test("group messages carry the sender's code and name, resolved once per distinct sender", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g13");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+
+  await sendMessage(env, alice.token, created.roomID, "こんにちは");
+  const sentByBob = await (await sendMessage(env, bob.token, created.roomID, "よろしく")).json();
+  assert.equal(sentByBob.senderCode, bob.code);
+  assert.equal(sentByBob.senderName, "Bob");
+  assert.equal(sentByBob.senderKey, undefined);
+
+  const list = await (await readMessages(env, alice.token, created.roomID)).json();
+  assert.deepEqual(list.map(m => m.senderCode), [alice.code, bob.code]);
+  assert.deepEqual(list.map(m => m.senderName), ["Alice", "Bob"]);
+  assert.ok(list.every(m => m.senderKey === undefined));
+});
+
+test("POST /api/chat/groups allows up to 10 group actions per minute, then 429s", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g12");
+
+  let lastStatus = 200;
+  for (let i = 0; i < 11; i += 1) {
+    const response = await createGroup(env, alice.token, `Group ${i}`, [bob.code, carol.code]);
+    lastStatus = response.status;
+  }
+  assert.equal(lastStatus, 429);
+});
 
 // Regression coverage for "registering a brand-new user is a race condition":
 // two concurrent first-time registrations for the same caller must not each
@@ -1848,6 +2246,80 @@ test("blocking the other participant prevents them from sending, but not the blo
 
   const stillWorks = await sendMessage(env, aliceToken, accepted.roomID, "I can still talk");
   assert.equal(stillWorks.status, 200);
+});
+
+test("inbox counts only new incoming messages and shares read progress across devices", async () => {
+  const env = environment();
+  const aliceToken = freshToken("in1");
+  const bobToken = freshToken("in2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const { roomID } = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const inbox = async token => (await (await worker.fetch(request("/api/chat/inbox", { token }), env, noopCtx)).json())[0];
+
+  const first = await (await sendMessage(env, aliceToken, roomID, "one")).json();
+  const second = await (await sendMessage(env, aliceToken, roomID, "two")).json();
+  assert.equal((await inbox(bobToken)).unreadCount, 2);
+  assert.equal((await inbox(aliceToken)).unreadCount, 0);
+
+  const read = await worker.fetch(request(`/api/chat/rooms/${roomID}/read`, {
+    method: "POST", token: bobToken, body: { throughID: first.id },
+  }), env, noopCtx);
+  assert.equal(read.status, 200);
+  assert.equal((await inbox(bobToken)).unreadCount, 1);
+  await worker.fetch(request(`/api/chat/rooms/${roomID}/read`, {
+    method: "POST", token: bobToken, body: { throughID: second.id },
+  }), env, noopCtx);
+  assert.equal((await inbox(bobToken)).unreadCount, 0);
+  const canceled = await (await sendMessage(env, aliceToken, roomID, "withdrawn")).json();
+  await worker.fetch(request(`/api/chat/rooms/${roomID}/messages/${canceled.id}/cancel`, {
+    method: "POST", token: aliceToken,
+  }), env, noopCtx);
+  assert.equal((await inbox(bobToken)).unreadCount, 0);
+});
+
+test("deleting a blocked friend removes both friendships but retains history and the block", async () => {
+  const env = environment();
+  const aliceToken = freshToken("rm1");
+  const bobToken = freshToken("rm2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const { roomID } = await (await acceptRequest(env, bobToken, alice.code)).json();
+  await sendMessage(env, aliceToken, roomID, "retained history");
+  await blockOtherParticipant(env, aliceToken, roomID);
+  const blockedBeforeRemoval = await worker.fetch(request("/api/chat/friends/blocked", { token: aliceToken }), env, noopCtx);
+  assert.deepEqual((await blockedBeforeRemoval.json()).map(item => item.code), [bob.code]);
+
+  const removed = await worker.fetch(request(`/api/chat/friends/${bob.code}`, {
+    method: "DELETE", token: aliceToken,
+  }), env, noopCtx);
+  assert.equal(removed.status, 200);
+  assert.equal((await friends(env, aliceToken)).length, 0);
+  assert.equal((await friends(env, bobToken)).length, 0);
+  assert.equal((await worker.fetch(request(`/api/chat/friends/${bob.code}`, {
+    method: "DELETE", token: aliceToken,
+  }), env, noopCtx)).status, 200);
+  assert.equal((await sendMessage(env, aliceToken, roomID, "after removal")).status, 403);
+  assert.equal((await uploadAttachment(env, aliceToken, roomID, "image/jpeg", "aGVsbG8=")).status, 403);
+  const history = await worker.fetch(request(`/api/chat/rooms/${roomID}/messages`, { token: aliceToken }), env, noopCtx);
+  assert.equal((await history.json())[0].text, "retained history");
+
+  const blocked = await worker.fetch(request("/api/chat/friends/blocked", { token: aliceToken }), env, noopCtx);
+  assert.deepEqual((await blocked.json()).map(item => item.code), [bob.code]);
+  assert.equal((await addFriend(env, bobToken, alice.code)).status, 403);
+  const unblocked = await worker.fetch(request(`/api/chat/rooms/${roomID}/unblock`, {
+    method: "POST", token: aliceToken,
+  }), env, noopCtx);
+  assert.equal(unblocked.status, 200);
+  const empty = await worker.fetch(request("/api/chat/friends/blocked", { token: aliceToken }), env, noopCtx);
+  assert.deepEqual(await empty.json(), []);
+  assert.equal((await addFriend(env, bobToken, alice.code)).status, 200);
+  assert.equal((await acceptRequest(env, aliceToken, bob.code)).status, 200);
+  assert.equal((await friends(env, aliceToken)).length, 1);
+  assert.equal((await friends(env, bobToken)).length, 1);
+  assert.equal((await sendMessage(env, bobToken, roomID, "after re-friending")).status, 200);
 });
 
 test("unblocking restores the other participant's ability to send", async () => {

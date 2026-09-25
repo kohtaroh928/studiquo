@@ -7,7 +7,7 @@ import { securityHeaders } from "./http.js";
 // reachable with no auth.
 //
 const CONTACT_EMAIL = "yabukohtaroh@gmail.com";
-const PUBLISHED_DATE = "2026年9月21日";
+const PUBLISHED_DATE = "2026年9月25日";
 
 function homePageHTML() {
   return `<!DOCTYPE html>
@@ -73,6 +73,7 @@ function privacyPolicyHTML() {
   <li><strong>利用状況</strong>:学習時間の記録、各機能の利用回数。学習記録機能・利用制限の管理のために使用します。</li>
   <li><strong>Googleカレンダー情報</strong>:利用者がGoogleカレンダー連携を選択した場合、カレンダー名、予定のタイトル、開始・終了日時、説明を読み取り、学習予定と一緒に表示するために端末内へ保存します。Googleカレンダーへの書き込みは行いません。</li>
   <li><strong>AI機能利用時に送信する内容</strong>:AIトーク・添削・翌日復習などの機能を使うと、質問文、ノートの内容、答案の画像などが外部のAIサービスに送信されます。詳しくは次の項目をご覧ください。</li>
+  <li><strong>問題報告の内容</strong>:ホーム画面の「問題を報告」機能を使うと、送信した説明文、任意で添付したスクリーンショット、端末モデル・OS・アプリのバージョンなどの情報が送信されます。不具合の調査のために使用します。</li>
 </ul>
 
 <h2>第三者サービスとの連携</h2>
@@ -83,6 +84,7 @@ function privacyPolicyHTML() {
   <li><strong>Anthropic Claude</strong>:利用者が自分自身のAnthropic APIキーを設定した場合に限り、同様の内容がAnthropicにも送信されます。APIキーを設定しない限り、この連携は行われません。</li>
   <li><strong>Cloudflare</strong>:本アプリのサーバーインフラとして使用しており、上記のアカウント情報・学習コンテンツ・チャット内容の保管場所です。</li>
   <li><strong>Apple iCloud</strong>:一部のデータは、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。</li>
+  <li><strong>Slack</strong>:「問題を報告」で送信された内容を運営が確認するために使用します。</li>
 </ul>
 
 <h2>広告・トラッキングについて</h2>

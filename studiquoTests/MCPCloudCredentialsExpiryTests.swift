@@ -1,7 +1,14 @@
 import XCTest
+import SwiftData
 @testable import studiquo
 
-/// Regression coverage for "the cloud sync Bearer token never expires".
+/// Regression coverage for two, opposite bugs this token's lifecycle has
+/// had: originally it never rotated at all even once the server started
+/// rejecting it as expired, and a later fix for that over-corrected by
+/// silently minting a replacement the server had never seen (see
+/// loadOrCreateToken's own doc comment in ContentView.swift for the full
+/// story, and .studiquoAuthFailed in AuthenticationStore.swift for how a
+/// real 401 is handled instead now).
 final class MCPCloudCredentialsExpiryTests: XCTestCase {
     override func tearDown() {
         MCPCloudCredentials.clear()
@@ -33,15 +40,23 @@ final class MCPCloudCredentialsExpiryTests: XCTestCase {
         XCTAssertTrue(MCPCloudCredentials.isExpired("plain-legacy-token-with-no-dot"))
     }
 
-    func testLoadOrCreateTokenRotatesAnExpiredStoredToken() {
+    /// Regression test for a real report: a device would go on to silently
+    /// mint its own replacement token here once the stored one looked
+    /// locally expired — a token the server's mintSession had never
+    /// recorded a session for, so `isExpired` on the *new* token said "not
+    /// expired" while every actual request still came back 401 "no
+    /// session", shown to the user as a misleading "login expired" message
+    /// even though nothing about their login had really expired. Only a
+    /// real sign-in (see AuthenticationStore) can produce a token the
+    /// server actually recognizes, so loadOrCreateToken must leave a
+    /// locally-expired-looking token alone and let the server's own 401 be
+    /// what triggers re-authentication.
+    func testLoadOrCreateTokenDoesNotSilentlyRotateAnExpiredStoredToken() {
         let ninetyOneDays: TimeInterval = 91 * 24 * 60 * 60
         let expired = token(issuedSecondsAgo: ninetyOneDays)
         MCPCloudCredentials.save(expired)
 
-        let refreshed = MCPCloudCredentials.loadOrCreateToken()
-
-        XCTAssertNotEqual(refreshed, expired)
-        XCTAssertFalse(MCPCloudCredentials.isExpired(refreshed))
+        XCTAssertEqual(MCPCloudCredentials.loadOrCreateToken(), expired)
     }
 
     func testLoadOrCreateTokenKeepsAnUnexpiredStoredToken() {
@@ -61,5 +76,25 @@ final class MCPCloudCredentialsExpiryTests: XCTestCase {
         let token = MCPCloudCredentials.generateAndSaveNewToken()
         XCTAssertFalse(MCPCloudCredentials.isExpired(token))
         XCTAssertEqual(MCPCloudCredentials.currentToken(), token)
+    }
+}
+
+final class MCPImportReceiptTests: XCTestCase {
+    @MainActor
+    func testImportedDocumentAndReceiptSurviveReloadTogether() throws {
+        let configuration = ModelConfiguration(schema: studiquoSchema, isStoredInMemoryOnly: true,
+                                               cloudKitDatabase: .none)
+        let container = try ModelContainer(for: studiquoSchema, configurations: configuration)
+        let context = ModelContext(container)
+        context.insert(TextDocument(title: "Claudeからの資料"))
+        context.insert(MCPImportReceipt(id: "request-1", title: "Claudeからの資料",
+                                        kind: "create_document", source: "Claude"))
+        try context.save()
+
+        let reloaded = ModelContext(container)
+        let receipts = try reloaded.fetch(FetchDescriptor<MCPImportReceipt>())
+        let documents = try reloaded.fetch(FetchDescriptor<TextDocument>())
+        XCTAssertEqual(receipts.map(\.id), ["request-1"])
+        XCTAssertEqual(documents.filter { $0.title == "Claudeからの資料" }.count, 1)
     }
 }

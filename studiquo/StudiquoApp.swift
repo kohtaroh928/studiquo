@@ -46,6 +46,25 @@ func L(_ value: String.LocalizationValue) -> String {
 
 func L(_ value: String) -> String { value }
 
+/// Saved in the same SwiftData transaction as an incoming MCP item, so a
+/// network retry after an app restart cannot create the item twice.
+@Model
+final class MCPImportReceipt {
+    var id: String = ""
+    var title: String = ""
+    var kind: String = ""
+    var source: String = ""
+    var importedAt: Date = Date.now
+
+    init(id: String, title: String, kind: String, source: String) {
+        self.id = id
+        self.title = title
+        self.kind = kind
+        self.source = source
+        self.importedAt = .now
+    }
+}
+
 let studiquoSchema = Schema([
     Notebook.self, NotePage.self, PageElement.self,
     FlashcardDeck.self, Flashcard.self, CalendarEvent.self, StudyActivity.self,
@@ -56,6 +75,7 @@ let studiquoSchema = Schema([
     DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
     AIReviewItem.self,
     Folder.self,
+    MCPImportReceipt.self,
 ])
 
 private let startupLogger = Logger(subsystem: "com.yabuko.studiquo", category: "Startup")
@@ -177,10 +197,20 @@ private struct FriendChatUITestRoot: View {
         }
         .onAppear {
             store.friends = [friend]
-            store.messages = [FriendMessage(
-                id: UUID(), friendID: friend.id, text: "可読性テスト",
-                sentAt: Date(), isMine: false, isCanceled: false
-            )]
+            if ProcessInfo.processInfo.arguments.contains("--friend-chat-scroll-test") {
+                store.messages = (0..<40).map { index in
+                    FriendMessage(
+                        id: UUID(), friendID: friend.id, text: "過去のメッセージ \(index)",
+                        sentAt: Date().addingTimeInterval(Double(index - 40) * 60),
+                        isMine: false, isCanceled: false
+                    )
+                }
+            } else {
+                store.messages = [FriendMessage(
+                    id: UUID(), friendID: friend.id, text: "可読性テスト",
+                    sentAt: Date(), isMine: false, isCanceled: false
+                )]
+            }
         }
     }
 }

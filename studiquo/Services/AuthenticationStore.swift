@@ -1,6 +1,19 @@
+import Combine
 import Foundation
 import Security
 import AuthenticationServices
+
+extension Notification.Name {
+    /// Posted by FriendChatService/AIProvider/DocumentCollabService whenever
+    /// the server rejects this device's cloud token with 401 — a
+    /// trustworthy signal now that MCPCloudCredentials.loadOrCreateToken()
+    /// no longer silently swaps in a token the server has never seen (see
+    /// its own doc comment in ContentView.swift). AuthenticationStore
+    /// observes this to sign the device out and return it to the login
+    /// screen, instead of leaving the user stuck on a screen that will keep
+    /// failing with the same token forever.
+    static let studiquoAuthFailed = Notification.Name("StudiquoAuthFailed")
+}
 
 @MainActor
 final class AuthenticationStore: ObservableObject {
@@ -34,6 +47,9 @@ final class AuthenticationStore: ObservableObject {
     /// a now-verified email, which covers both initial signup and "forgot
     /// password" identically (see EmailVerificationService.confirmCode).
     private var pendingSignUp: (email: String, password: String)?
+    /// Cancelled automatically on deinit — see .studiquoAuthFailed and
+    /// handleAuthFailure() below.
+    private var authFailureSubscription: AnyCancellable?
 
     /// `service`/`now`/`defaults` are overridable so tests can use an
     /// isolated Keychain service, a fake clock, and an isolated UserDefaults
@@ -51,6 +67,9 @@ final class AuthenticationStore: ObservableObject {
         self.now = now
         self.defaults = defaults
         restore()
+        authFailureSubscription = NotificationCenter.default.publisher(for: .studiquoAuthFailed)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.handleAuthFailure() }
     }
 
     var email: String {
@@ -130,6 +149,22 @@ final class AuthenticationStore: ObservableObject {
         state = .needsLogin
         // Best-effort and non-blocking: local sign-out must not wait on the network.
         Task { await MCPCloudCredentials.revoke() }
+    }
+
+    /// A definitive 401 from any authenticated server call (see
+    /// .studiquoAuthFailed) means this device's token is genuinely no good,
+    /// not a transient network blip — signs the device out so the user lands
+    /// back on the login screen instead of being stuck on a screen that will
+    /// keep failing with the same token. A no-op once already signed out, so
+    /// several independent polling loops firing this around the same moment
+    /// is harmless.
+    private func handleAuthFailure() {
+        guard state == .authenticated || state == .onboarding else { return }
+        let reallyExpired = MCPCloudCredentials.currentToken().map(MCPCloudCredentials.isExpired) ?? true
+        errorMessage = reallyExpired
+            ? "ログインの有効期限が切れました。もう一度サインインしてください。"
+            : "サインイン情報が確認できませんでした。もう一度サインインしてください。"
+        logout()
     }
 
     /// Re-sends the verification code for the sign-up (or reset) in progress

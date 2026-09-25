@@ -1021,6 +1021,7 @@ struct CalendarHomeView: View {
     @State private var universityStatus = ""
     @State private var isUniversitySyncing = false
     @State private var cachedEventKindsByDay: [Date: Set<CalendarEventKind>] = [:]
+    @State private var pendingReportIssue: PendingIssueReport?
 
     /// Includes anything running *through* the day, not just starting on it,
     /// so a multi-day entry stays visible for its whole span.
@@ -1134,6 +1135,9 @@ struct CalendarHomeView: View {
                     } label: {
                         Label("予定を追加", systemImage: "plus")
                     }
+                    ReportIssueButton {
+                        pendingReportIssue = PendingIssueReport(screenshot: ScreenshotCapture.captureFrontWindow())
+                    }
                 }
             }
         }
@@ -1142,6 +1146,9 @@ struct CalendarHomeView: View {
         }
         .sheet(item: $editingEvent) { event in
             CalendarEventEditor(event: event, initialDate: event.startDate)
+        }
+        .sheet(item: $pendingReportIssue) { pending in
+            ReportIssueSheet(capturedScreenshot: pending.screenshot)
         }
         .sheet(isPresented: $showsUniversityConnection) {
             NavigationStack {

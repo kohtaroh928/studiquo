@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class LibraryDropInteractionTests: XCTestCase {
     func testFriendChatRemainsLightAndReadableWhenDeviceUsesDarkAppearance() {
@@ -12,10 +13,16 @@ final class LibraryDropInteractionTests: XCTestCase {
         let scheme = app.staticTexts["friend-chat-color-scheme"]
         XCTAssertTrue(scheme.waitForExistence(timeout: 10))
         XCTAssertEqual(scheme.label, "light")
-        XCTAssertTrue(app.staticTexts["可読性テスト"].waitForExistence(timeout: 5))
+        let incomingMessage = app.staticTexts["可読性テスト"]
+        XCTAssertTrue(incomingMessage.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(
+            darkPixelCount(in: incomingMessage.frame, of: app.screenshot().image, appFrame: app.frame),
+            30,
+            "受信メッセージが白い吹き出し上で白文字になっていないこと"
+        )
     }
 
-    func testFailedFriendChatSendKeepsDraftAndShowsFailure() {
+    func testFailedFriendChatSendClearsDraftAndKeepsMessageInFailedBubble() {
         let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
         app.launchArguments = ["--friend-chat-ui-test"]
         app.launch()
@@ -28,7 +35,30 @@ final class LibraryDropInteractionTests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["送信できませんでした"].waitForExistence(timeout: 5))
         if app.alerts["エラー"].exists { app.alerts.buttons["OK"].tap() }
-        XCTAssertTrue(draft.valueString.contains("送信できなかった文章"))
+        XCTAssertFalse(draft.valueString.contains("送信できなかった文章"))
+        XCTAssertTrue(app.staticTexts["送信できなかった文章"].exists)
+    }
+
+    func testSendingScrollsToNewestMessage() {
+        let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
+        app.launchArguments = ["--friend-chat-ui-test", "--friend-chat-scroll-test"]
+        app.launch()
+
+        let draft = app.descendants(matching: .any)["friend-chat-draft"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 10))
+        let list = app.scrollViews.firstMatch
+        for _ in 0..<5 { list.swipeDown() }
+        draft.tap()
+        draft.typeText("最新の送信メッセージ")
+        app.buttons["friend-chat-send"].tap()
+        if app.alerts["エラー"].waitForExistence(timeout: 2) {
+            app.alerts.buttons["OK"].tap()
+        }
+        XCTAssertFalse(draft.valueString.contains("最新の送信メッセージ"))
+        let newest = app.staticTexts["最新の送信メッセージ"]
+        XCTAssertTrue(newest.waitForExistence(timeout: 5))
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: newest)
+        XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed)
     }
 
     func testCalendarEventNotesStayVisibleAndSave() {
@@ -466,5 +496,40 @@ final class LibraryDropInteractionTests: XCTestCase {
 private extension XCUIElement {
     var valueString: String {
         (value as? String) ?? ""
+    }
+}
+
+private func darkPixelCount(in elementFrame: CGRect, of image: UIImage, appFrame: CGRect) -> Int {
+    guard let cgImage = image.cgImage, appFrame.width > 0, appFrame.height > 0 else { return 0 }
+    let scaleX = CGFloat(cgImage.width) / appFrame.width
+    let scaleY = CGFloat(cgImage.height) / appFrame.height
+    let crop = CGRect(
+        x: (elementFrame.minX - appFrame.minX) * scaleX,
+        y: (elementFrame.minY - appFrame.minY) * scaleY,
+        width: elementFrame.width * scaleX,
+        height: elementFrame.height * scaleY
+    ).integral.intersection(CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+    guard !crop.isNull, let region = cgImage.cropping(to: crop) else { return 0 }
+
+    let width = region.width
+    let height = region.height
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    pixels.withUnsafeMutableBytes { bytes in
+        guard let context = CGContext(
+            data: bytes.baseAddress,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else { return }
+        context.draw(region, in: CGRect(x: 0, y: 0, width: width, height: height))
+    }
+    return stride(from: 0, to: pixels.count, by: 4).reduce(0) { count, index in
+        let red = Int(pixels[index])
+        let green = Int(pixels[index + 1])
+        let blue = Int(pixels[index + 2])
+        return count + ((red < 100 && green < 100 && blue < 100) ? 1 : 0)
     }
 }

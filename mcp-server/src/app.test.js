@@ -46,6 +46,7 @@ function environment({ strictSessions = false } = {}) {
     RATE_LIMIT_EMAIL_VERIFY_SEND: fakeCloudflareLimiter(),
     RATE_LIMIT_EMAIL_VERIFY_CONFIRM: fakeCloudflareLimiter(),
     RATE_LIMIT_LOCAL_LOGIN: fakeCloudflareLimiter(),
+    RATE_LIMIT_ISSUE_REPORT: fakeCloudflareLimiter(),
     RESEND_API_KEY: "test-key",
   };
 }
@@ -802,6 +803,123 @@ test("a token that /api/auth/local/login actually minted works even with strictS
 
   const actions = await worker.fetch(request("/api/actions", { token }), env, noopCtx);
   assert.equal(actions.status, 200);
+});
+
+function stubFetch(handler) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => handler(url, init);
+  return () => { globalThis.fetch = originalFetch; };
+}
+
+test("POST /api/issue-reports stores the report and posts it to Slack when a webhook is configured", async () => {
+  const env = environment();
+  env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.slack.test/services/xyz";
+  const token = freshToken("p");
+
+  let slackCall = null;
+  const restore = stubFetch(async (url, init) => {
+    slackCall = { url, body: JSON.parse(init.body) };
+    return new Response("ok", { status: 200 });
+  });
+  try {
+    const response = await worker.fetch(
+      request("/api/issue-reports", {
+        method: "POST",
+        token,
+        body: { description: "カレンダーが真っ白になる", appVersion: "1.4.0", osVersion: "18.1", deviceModel: "iPad Pro", language: "ja" },
+      }),
+      env,
+      noopCtx
+    );
+    assert.equal(response.status, 200);
+    const parsed = await response.json();
+    assert.equal(parsed.reported, true);
+    assert.match(parsed.id, /^[0-9a-f-]{36}$/);
+
+    assert.equal(slackCall.url, "https://hooks.slack.test/services/xyz");
+    const text = JSON.stringify(slackCall.body);
+    assert.match(text, /カレンダーが真っ白になる/);
+    assert.match(text, /1\.4\.0/);
+  } finally {
+    restore();
+  }
+});
+
+test("POST /api/issue-reports with a screenshot serves it back unauthenticated so Slack's preview fetch can reach it", async () => {
+  const env = environment();
+  env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.slack.test/services/xyz";
+  const token = freshToken("q");
+  const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
+
+  let sentImageURL = null;
+  const restore = stubFetch(async (_url, init) => {
+    const body = JSON.parse(init.body);
+    sentImageURL = body.blocks.find(block => block.type === "image")?.image_url ?? null;
+    return new Response("ok", { status: 200 });
+  });
+  let response;
+  try {
+    response = await worker.fetch(
+      request("/api/issue-reports", {
+        method: "POST",
+        token,
+        body: {
+          description: "ノートが保存されない",
+          screenshot: { contentType: "image/png", data: pngBytes.toString("base64") },
+        },
+      }),
+      env,
+      noopCtx
+    );
+  } finally {
+    restore();
+  }
+  assert.equal(response.status, 200);
+  assert.ok(sentImageURL, "expected the Slack message to include an image block");
+
+  const screenshotResponse = await worker.fetch(new Request(sentImageURL), env, noopCtx);
+  assert.equal(screenshotResponse.status, 200);
+  assert.equal(screenshotResponse.headers.get("content-type"), "image/png");
+  const returnedBytes = Buffer.from(await screenshotResponse.arrayBuffer());
+  assert.deepEqual(returnedBytes, pngBytes);
+});
+
+test("POST /api/issue-reports rejects an empty description with 400", async () => {
+  const env = environment();
+  const token = freshToken("r");
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", { method: "POST", token, body: { description: "   " } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 400);
+});
+
+test("POST /api/issue-reports without a bearer token is rejected with 401", async () => {
+  const env = environment();
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", { method: "POST", body: { description: "test" } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 401);
+});
+
+test("POST /api/issue-reports allows up to the limit, then 429s", async () => {
+  const env = environment();
+  const token = freshToken("s");
+
+  let last;
+  for (let i = 0; i < 6; i++) {
+    last = await worker.fetch(
+      request("/api/issue-reports", { method: "POST", token, body: { description: `report ${i}` } }),
+      env,
+      noopCtx
+    );
+  }
+  assert.equal(last.status, 429);
 });
 
 test("a token /api/auth/apple actually minted works even with strictSessions on", async () => {
