@@ -388,20 +388,20 @@ function fakeUserRegistryBinding(studiquoData) {
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
     if ((user.groups ?? []).some(item => item.roomID === roomID)) return { status: "already_member" };
-    if (!(user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
-      user.incomingGroupInvites = [
-        ...(user.incomingGroupInvites ?? []),
-        { roomID, name, inviterCode, inviterName, invitedAt: Date.now() },
-      ].slice(-500);
-      await studiquoData.put(storageKey, JSON.stringify(user));
-    }
+    if ((user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) return { status: "already_pending" };
+    user.incomingGroupInvites = [
+      ...(user.incomingGroupInvites ?? []),
+      { roomID, name, inviterCode, inviterName, invitedAt: Date.now() },
+    ].slice(-500);
+    await studiquoData.put(storageKey, JSON.stringify(user));
     return { status: "pending" };
   }
 
   async function resolveIncomingGroupInviteAtomic(key, action, roomID) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
-    if (!user || !(user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
+    const invite = (user?.incomingGroupInvites ?? []).find(item => item.roomID === roomID);
+    if (!user || !invite) {
       return { status: "not_found" };
     }
     user.incomingGroupInvites = (user.incomingGroupInvites ?? []).filter(item => item.roomID !== roomID);
@@ -409,7 +409,22 @@ function fakeUserRegistryBinding(studiquoData) {
       user.groups = [...(user.groups ?? []).filter(item => item.roomID !== roomID), { roomID }];
     }
     await studiquoData.put(storageKey, JSON.stringify(user));
-    return { status: action === "accept" ? "accepted" : "rejected" };
+    return { status: action === "accept" ? "accepted" : "rejected", invite };
+  }
+
+  async function undoAcceptedGroupInviteAtomic(key, roomID, name, inviterCode, inviterName) {
+    const storageKey = `chat:user:${key}`;
+    const user = await studiquoData.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    user.groups = (user.groups ?? []).filter(item => item.roomID !== roomID);
+    if (!(user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
+      user.incomingGroupInvites = [
+        ...(user.incomingGroupInvites ?? []),
+        { roomID, name, inviterCode, inviterName, invitedAt: Date.now() },
+      ].slice(-500);
+    }
+    await studiquoData.put(storageKey, JSON.stringify(user));
+    return { status: "restored" };
   }
 
   async function removeGroupAtomic(key, roomID) {
@@ -473,6 +488,9 @@ function fakeUserRegistryBinding(studiquoData) {
         },
         resolveIncomingGroupInvite(k, action, roomID) {
           return enqueue(key, () => resolveIncomingGroupInviteAtomic(k, action, roomID));
+        },
+        undoAcceptedGroupInvite(k, roomID, name, inviterCode, inviterName) {
+          return enqueue(key, () => undoAcceptedGroupInviteAtomic(k, roomID, name, inviterCode, inviterName));
         },
         removeGroup(k, roomID) {
           return enqueue(key, () => removeGroupAtomic(k, roomID));
@@ -701,6 +719,17 @@ async function removeGroupMember(env, token, roomID, code) {
   return worker.fetch(request(`/api/chat/groups/${roomID}/members/${code}`, { method: "DELETE", token }), env, noopCtx);
 }
 
+async function uploadGroupAvatar(env, token, roomID, contentType, data) {
+  return worker.fetch(
+    request(`/api/chat/groups/${roomID}/avatar`, { method: "POST", token, body: { contentType, data } }),
+    env, noopCtx
+  );
+}
+
+async function downloadGroupAvatar(env, token, roomID) {
+  return worker.fetch(request(`/api/chat/groups/${roomID}/avatar`, { token }), env, noopCtx);
+}
+
 // Registers three friends of each other (Alice, Bob, Carol — all mutual
 // friends) and returns their tokens/codes, so group tests can start from
 // "three people who could plausibly form a group" without repeating the
@@ -738,6 +767,15 @@ test("creating a group with someone who isn't the caller's own friend is rejecte
   const stranger = await registerUser(env, strangerToken, "Dave");
   const response = await createGroup(env, alice.token, "Study Group", [bob.code, stranger.code]);
   assert.equal(response.status, 400);
+});
+
+test("creating a group with the same friend listed twice sends only one invite, not two", async () => {
+  const env = environment();
+  const { alice, bob } = await threeMutualFriends(env, "g1b");
+  const response = await createGroup(env, alice.token, "Study Group", [bob.code, bob.code]);
+  assert.equal(response.status, 201);
+  const bobInvites = await groupInvites(env, bob.token);
+  assert.equal(bobInvites.length, 1);
 });
 
 test("creating a group adds only the creator immediately, and sends a pending invite to everyone else", async () => {
@@ -808,6 +846,146 @@ test("an existing member can invite one of their own friends into the group", as
   assert.equal(daveInvites[0].inviterCode, bob.code);
 });
 
+test("re-inviting someone who already has a pending invite to the group reports already_pending instead of pending", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g6b");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code])).json();
+
+  const daveToken = freshToken("g6bd");
+  const dave = await registerUser(env, daveToken, "Dave");
+  await addFriend(env, alice.token, dave.code);
+  await acceptRequest(env, daveToken, alice.code);
+
+  const first = await inviteToGroup(env, alice.token, created.roomID, dave.code);
+  assert.equal(first.status, 200);
+  assert.equal((await first.json()).status, "pending");
+
+  const second = await inviteToGroup(env, alice.token, created.roomID, dave.code);
+  assert.equal(second.status, 200);
+  assert.equal((await second.json()).status, "already_pending");
+});
+
+test("re-inviting someone who already has a pending invite does not create a second, duplicate invite on their side", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g6c");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code])).json();
+
+  const daveToken = freshToken("g6cd");
+  const dave = await registerUser(env, daveToken, "Dave");
+  await addFriend(env, alice.token, dave.code);
+  await acceptRequest(env, daveToken, alice.code);
+
+  await inviteToGroup(env, alice.token, created.roomID, dave.code);
+  await inviteToGroup(env, alice.token, created.roomID, dave.code);
+  await inviteToGroup(env, alice.token, created.roomID, dave.code);
+
+  const daveInvites = await groupInvites(env, daveToken);
+  assert.equal(daveInvites.length, 1);
+  assert.equal(daveInvites[0].roomID, created.roomID);
+});
+
+test("re-inviting someone already pending does not overwrite who invited them or when", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g6e");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+
+  const daveToken = freshToken("g6ed");
+  const dave = await registerUser(env, daveToken, "Dave");
+  await addFriend(env, alice.token, dave.code);
+  await acceptRequest(env, daveToken, alice.code);
+  await addFriend(env, bob.token, dave.code);
+  await acceptRequest(env, daveToken, bob.code);
+
+  await inviteToGroup(env, alice.token, created.roomID, dave.code);
+  const original = (await groupInvites(env, daveToken))[0];
+
+  // Bob (a different member) re-invites the same pending Dave.
+  await inviteToGroup(env, bob.token, created.roomID, dave.code);
+  const afterSecondInvite = (await groupInvites(env, daveToken))[0];
+
+  assert.equal(afterSecondInvite.inviterCode, original.inviterCode, "still credited to Alice, not overwritten by Bob's repeat invite");
+  assert.equal(afterSecondInvite.invitedAt, original.invitedAt, "the original invite timestamp is preserved, not refreshed");
+});
+
+test("rejecting an invite and then being re-invited creates a genuinely new, acceptable invite", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g6f");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code])).json();
+
+  const daveToken = freshToken("g6fd");
+  const dave = await registerUser(env, daveToken, "Dave");
+  await addFriend(env, alice.token, dave.code);
+  await acceptRequest(env, daveToken, alice.code);
+
+  await inviteToGroup(env, alice.token, created.roomID, dave.code);
+  const rejectResponse = await rejectGroupInvite(env, daveToken, created.roomID);
+  assert.equal(rejectResponse.status, 200);
+  assert.deepEqual(await groupInvites(env, daveToken), []);
+
+  const reinvite = await inviteToGroup(env, alice.token, created.roomID, dave.code);
+  assert.equal(reinvite.status, 200);
+  assert.equal((await reinvite.json()).status, "pending");
+  const daveInvites = await groupInvites(env, daveToken);
+  assert.equal(daveInvites.length, 1);
+  assert.equal(daveInvites[0].roomID, created.roomID);
+});
+
+test("accepting a re-invite sent after an earlier rejection joins the group normally", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g6g");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code])).json();
+
+  const daveToken = freshToken("g6gd");
+  const dave = await registerUser(env, daveToken, "Dave");
+  await addFriend(env, alice.token, dave.code);
+  await acceptRequest(env, daveToken, alice.code);
+
+  await inviteToGroup(env, alice.token, created.roomID, dave.code);
+  await rejectGroupInvite(env, daveToken, created.roomID);
+  await inviteToGroup(env, alice.token, created.roomID, dave.code);
+
+  const acceptResponse = await acceptGroupInvite(env, daveToken, created.roomID);
+  assert.equal(acceptResponse.status, 200);
+  const accepted = await acceptResponse.json();
+  assert.ok(accepted.members.some(member => member.code === dave.code));
+  assert.deepEqual((await groups(env, daveToken)).map(g => g.roomID), [created.roomID]);
+
+  const sent = await sendMessage(env, daveToken, created.roomID, "入りました");
+  assert.equal(sent.status, 200);
+});
+
+test("repeated invite-then-reject cycles keep working the same way each time, with no hidden cooldown", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g6h");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code])).json();
+
+  const daveToken = freshToken("g6hd");
+  const dave = await registerUser(env, daveToken, "Dave");
+  await addFriend(env, alice.token, dave.code);
+  await acceptRequest(env, daveToken, alice.code);
+
+  for (let cycle = 0; cycle < 3; cycle++) {
+    const inviteResponse = await inviteToGroup(env, alice.token, created.roomID, dave.code);
+    assert.equal(inviteResponse.status, 200, `cycle ${cycle}: invite should succeed`);
+    assert.equal((await inviteResponse.json()).status, "pending", `cycle ${cycle}: a fresh invite after a full reject cycle is pending, not already_pending`);
+    const rejectResponse = await rejectGroupInvite(env, daveToken, created.roomID);
+    assert.equal(rejectResponse.status, 200, `cycle ${cycle}: reject should succeed`);
+  }
+  assert.deepEqual(await groups(env, daveToken), [], "never actually joined across any of the cycles");
+});
+
+test("inviting someone who is already a current member of the group is rejected", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g6i");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+
+  const response = await inviteToGroup(env, alice.token, created.roomID, bob.code);
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /already a member/i);
+});
+
 test("inviting someone who is not the caller's own friend is rejected even by an existing group member", async () => {
   const env = environment();
   const { alice, bob, carol } = await threeMutualFriends(env, "g7");
@@ -833,6 +1011,69 @@ test("a member who leaves no longer sees the group, but the group survives for t
   const remaining = await groups(env, alice.token);
   assert.equal(remaining.length, 1);
   assert.equal(remaining[0].members.length, 2);
+});
+
+test("re-inviting someone who left the group is treated the same as inviting a brand-new member", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g8b");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+  await removeGroupMember(env, bob.token, created.roomID, bob.code);
+
+  const response = await inviteToGroup(env, alice.token, created.roomID, bob.code);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).status, "pending");
+  const bobInvites = await groupInvites(env, bob.token);
+  assert.equal(bobInvites.length, 1);
+  assert.equal(bobInvites[0].roomID, created.roomID);
+});
+
+// A former member's read position must not resurface once they rejoin —
+// otherwise leaving and being re-invited would either dump years of
+// history on them as unread, or (worse) silently mark genuinely new
+// messages as already read from their old position.
+test("accepting a re-invite after leaving starts unread counting fresh, not from the old membership's read position", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g8c");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+
+  await sendMessage(env, alice.token, created.roomID, "第一便");
+  await sendMessage(env, alice.token, created.roomID, "第二便");
+  const bobKey = await env.STUDIQUO_DATA.get(`chat:code:${bob.code}`);
+  const beforeLeave = await env.CHAT_ROOM.getByName(created.roomID).inboxState(bobKey);
+  assert.equal(beforeLeave.unreadCount, 2);
+  await env.CHAT_ROOM.getByName(created.roomID).markRead(bobKey, beforeLeave.latestID);
+
+  await removeGroupMember(env, bob.token, created.roomID, bob.code);
+  await sendMessage(env, alice.token, created.roomID, "抜けた後のメッセージ");
+
+  await inviteToGroup(env, alice.token, created.roomID, bob.code);
+  await acceptGroupInvite(env, bob.token, created.roomID);
+
+  const afterRejoin = await env.CHAT_ROOM.getByName(created.roomID).inboxState(bobKey);
+  assert.equal(afterRejoin.unreadCount, 0, "rejoining starts from the current end of history, not from the pre-leave read position");
+
+  await sendMessage(env, alice.token, created.roomID, "再参加後の新着");
+  const afterNewMessage = await env.CHAT_ROOM.getByName(created.roomID).inboxState(bobKey);
+  assert.equal(afterNewMessage.unreadCount, 1, "genuinely new messages after rejoining still count as unread");
+});
+
+test("re-inviting immediately after leaving does not trip the already-a-member check", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "g8d");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+
+  // No await gap between leaving and re-inviting — the very next call after
+  // removeParticipant resolves must already see the member gone.
+  await removeGroupMember(env, bob.token, created.roomID, bob.code);
+  const response = await inviteToGroup(env, alice.token, created.roomID, bob.code);
+
+  assert.equal(response.status, 200, "must not be rejected as \"already a member\" right after leaving");
+  assert.equal((await response.json()).status, "pending");
+  const bobInvites = await groupInvites(env, bob.token);
+  assert.equal(bobInvites.length, 1);
 });
 
 test("any current member can remove a different member, with no admin/owner distinction", async () => {
@@ -899,6 +1140,506 @@ test("POST /api/chat/groups allows up to 10 group actions per minute, then 429s"
     lastStatus = response.status;
   }
   assert.equal(lastStatus, 429);
+});
+
+test("a group member can upload a group photo, and it's stored under the group rather than any one member", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "ga1");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+
+  // Sized like an actual (resized) photo rather than a token few bytes —
+  // well under the 300KB raw cap, but big enough to have caught the group
+  // route once quietly capping the whole request body at 16KB regardless.
+  const photo = Buffer.alloc(80_000, 7).toString("base64");
+  const response = await uploadGroupAvatar(env, alice.token, created.roomID, "image/jpeg", photo);
+  assert.equal(response.status, 200);
+  const { avatarUpdatedAt } = await response.json();
+  assert.ok(avatarUpdatedAt);
+
+  const downloaded = await downloadGroupAvatar(env, alice.token, created.roomID);
+  assert.equal(downloaded.status, 200);
+  assert.equal(downloaded.headers.get("content-type"), "image/jpeg");
+  assert.equal(Buffer.from(await downloaded.arrayBuffer()).toString("base64"), photo);
+});
+
+test("an oversized group photo upload is rejected", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "ga2");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+
+  // Decodes to 320,000 bytes — over the 300,000 raw cap — while its base64
+  // encoding (~427,000 chars) still fits under the request body's own
+  // 450,000-char ceiling, so this exercises the decoded-size check itself
+  // rather than being rejected earlier for a merely-oversized request body.
+  const oversized = Buffer.alloc(320_000, 1).toString("base64");
+  const response = await uploadGroupAvatar(env, alice.token, created.roomID, "image/jpeg", oversized);
+  assert.equal(response.status, 400);
+});
+
+test("a group photo upload with a disallowed content type is rejected", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "ga3");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+
+  const response = await uploadGroupAvatar(env, alice.token, created.roomID, "image/gif", Buffer.from("fake gif bytes").toString("base64"));
+  assert.equal(response.status, 400);
+});
+
+test("a group photo upload with no image data is rejected", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "ga4");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+
+  const response = await uploadGroupAvatar(env, alice.token, created.roomID, "image/jpeg", "");
+  assert.equal(response.status, 400);
+});
+
+test("someone who isn't a member of the group cannot upload its photo", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "ga5");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  // Bob was invited but never accepted — not yet a member.
+
+  const response = await uploadGroupAvatar(env, bob.token, created.roomID, "image/jpeg", Buffer.from("fake jpeg bytes").toString("base64"));
+  assert.equal(response.status, 403);
+});
+
+test("uploading a photo for a group that doesn't exist is rejected the same way as not being a member", async () => {
+  const env = environment();
+  const { alice } = await threeMutualFriends(env, "ga6");
+
+  const response = await uploadGroupAvatar(env, alice.token, "f".repeat(64), "image/jpeg", Buffer.from("fake jpeg bytes").toString("base64"));
+  assert.equal(response.status, 403);
+});
+
+test("uploading a photo through a group-avatar URL that actually names a direct chat is rejected", async () => {
+  const env = environment();
+  const aliceToken = freshToken("ga7a");
+  const bobToken = freshToken("ga7b");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  await acceptRequest(env, bobToken, alice.code);
+  const directRoomID = (await friends(env, aliceToken))[0].roomID;
+
+  const response = await uploadGroupAvatar(env, aliceToken, directRoomID, "image/jpeg", Buffer.from("fake jpeg bytes").toString("base64"));
+  assert.equal(response.status, 400);
+});
+
+test("group photo uploads are rate-limited the same way other attachment uploads are", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "ga8");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+
+  let lastStatus = 200;
+  for (let i = 0; i < 11; i += 1) {
+    const response = await uploadGroupAvatar(env, alice.token, created.roomID, "image/jpeg", Buffer.from(`photo ${i}`).toString("base64"));
+    lastStatus = response.status;
+  }
+  assert.equal(lastStatus, 429);
+});
+
+test("uploading a new group photo replaces the old one rather than sitting alongside it", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "ga9");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+
+  await uploadGroupAvatar(env, alice.token, created.roomID, "image/jpeg", Buffer.from("first photo").toString("base64"));
+  await uploadGroupAvatar(env, alice.token, created.roomID, "image/png", Buffer.from("second photo").toString("base64"));
+
+  const downloaded = await downloadGroupAvatar(env, alice.token, created.roomID);
+  assert.equal(downloaded.headers.get("content-type"), "image/png");
+  assert.equal(Buffer.from(await downloaded.arrayBuffer()).toString(), "second photo");
+});
+
+test("any member of the group — not just whoever uploaded it — can download the group's photo", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "gb1");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  await acceptGroupInvite(env, bob.token, created.roomID);
+  await uploadGroupAvatar(env, alice.token, created.roomID, "image/jpeg", Buffer.from("fake jpeg bytes").toString("base64"));
+
+  const downloaded = await downloadGroupAvatar(env, bob.token, created.roomID);
+  assert.equal(downloaded.status, 200);
+  assert.equal(downloaded.headers.get("content-type"), "image/jpeg");
+  assert.equal(Buffer.from(await downloaded.arrayBuffer()).toString(), "fake jpeg bytes");
+});
+
+test("downloading a group's photo before anyone has uploaded one returns 404", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "gb2");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+
+  const response = await downloadGroupAvatar(env, alice.token, created.roomID);
+  assert.equal(response.status, 404);
+});
+
+test("someone who isn't a member of the group cannot download its photo", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "gb3");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  // Bob was invited but never accepted — not yet a member.
+  await uploadGroupAvatar(env, alice.token, created.roomID, "image/jpeg", Buffer.from("fake jpeg bytes").toString("base64"));
+
+  const response = await downloadGroupAvatar(env, bob.token, created.roomID);
+  assert.equal(response.status, 403);
+});
+
+test("downloading a photo for a group that doesn't exist is rejected the same way as not being a member", async () => {
+  const env = environment();
+  const { alice } = await threeMutualFriends(env, "gb4");
+
+  const response = await downloadGroupAvatar(env, alice.token, "f".repeat(64));
+  assert.equal(response.status, 403);
+});
+
+test("downloading a group photo through a URL that actually names a direct chat is rejected", async () => {
+  const env = environment();
+  const aliceToken = freshToken("gb5a");
+  const bobToken = freshToken("gb5b");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  await acceptRequest(env, bobToken, alice.code);
+  const directRoomID = (await friends(env, aliceToken))[0].roomID;
+
+  const response = await downloadGroupAvatar(env, aliceToken, directRoomID);
+  assert.equal(response.status, 400);
+});
+
+test("a downloaded group photo is cached only privately and only briefly", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "gb6");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  await uploadGroupAvatar(env, alice.token, created.roomID, "image/jpeg", Buffer.from("fake jpeg bytes").toString("base64"));
+
+  const downloaded = await downloadGroupAvatar(env, alice.token, created.roomID);
+  assert.equal(downloaded.headers.get("cache-control"), "private, max-age=60");
+});
+
+// Boundary coverage for the group member cap: chat-room.js's own
+// MAX_GROUP_MEMBERS (50) is the real, hard limit (enforced at accept time),
+// while groups.js's MAX_INVITED_MEMBERS (49) is a matching cap on a single
+// create-group request's invite list and a "soft", early check on sending a
+// further invite — the two are meant to describe the exact same limit from
+// either side of "creator" vs. "everyone else". Directly seeds a room's
+// participants (mirroring how the 500-friend-cap test below seeds a user's
+// `friends` array) instead of driving 49 real people through real invite
+// flows — only the one boundary-crossing action in each test needs to be
+// real. Filler participant keys don't correspond to registered users; that's
+// fine, since these tests only care about how many people are in the room.
+
+// Seeds `count` fake friend entries directly onto `key`'s own record, the
+// same shortcut the 500-friend-cap test below uses — these codes are never
+// looked up as real users, so a create-group request that only cares about
+// "how many codes were passed" doesn't need real registered friends.
+async function seedFakeFriends(env, key, count, prefix) {
+  const storageKey = `chat:user:${key}`;
+  const user = await env.STUDIQUO_DATA.get(storageKey, "json");
+  user.friends = [
+    ...(user.friends ?? []),
+    ...Array.from({ length: count }, (_, i) => ({
+      code: `${prefix}${String(i).padStart(4, "0")}`, name: `Friend ${i}`, roomID: `room-${prefix}${i}`,
+    })),
+  ];
+  await env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+}
+
+test("creating a group with exactly 49 invited friends succeeds — the cap is 49 invited plus the creator", async () => {
+  const env = environment();
+  const aliceToken = freshToken("cap1");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const aliceKey = await env.STUDIQUO_DATA.get(`chat:code:${alice.code}`);
+  await seedFakeFriends(env, aliceKey, 49, "CAP1F");
+
+  const codes = Array.from({ length: 49 }, (_, i) => `CAP1F${String(i).padStart(4, "0")}`);
+  const response = await createGroup(env, aliceToken, "Big Group", codes);
+  assert.equal(response.status, 201);
+});
+
+test("creating a group with 50 invited friends is rejected — one over the cap", async () => {
+  const env = environment();
+  const aliceToken = freshToken("cap2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const aliceKey = await env.STUDIQUO_DATA.get(`chat:code:${alice.code}`);
+  await seedFakeFriends(env, aliceKey, 50, "CAP2F");
+
+  const codes = Array.from({ length: 50 }, (_, i) => `CAP2F${String(i).padStart(4, "0")}`);
+  const response = await createGroup(env, aliceToken, "Too Big Group", codes);
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /many/i);
+});
+
+test("the 50th member can join once the group has exactly 49 — filling the very last seat", async () => {
+  const env = environment();
+  const aliceToken = freshToken("cap3a");
+  const bobToken = freshToken("cap3b");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  await acceptRequest(env, bobToken, alice.code);
+  const aliceKey = await env.STUDIQUO_DATA.get(`chat:code:${alice.code}`);
+
+  const roomID = "3".repeat(64);
+  const fillerKeys = Array.from({ length: 48 }, (_, i) => `filler-cap3-${i}`);
+  await env.CHAT_ROOM.getByName(roomID).initialize(
+    roomID, [aliceKey, ...fillerKeys], { kind: "group", name: "Almost Full Group", creatorCode: alice.code, creatorName: "Alice" },
+  );
+  assert.equal((await env.CHAT_ROOM.getByName(roomID).groupInfo(aliceKey)).members.length, 49);
+
+  const inviteResponse = await inviteToGroup(env, aliceToken, roomID, bob.code);
+  assert.equal(inviteResponse.status, 200);
+
+  const acceptResponse = await acceptGroupInvite(env, bobToken, roomID);
+  assert.equal(acceptResponse.status, 200);
+  const accepted = await acceptResponse.json();
+  assert.equal(accepted.members.length, 50);
+});
+
+test("inviting a new friend into an already-full (50-member) group is rejected before any invite is sent", async () => {
+  const env = environment();
+  const aliceToken = freshToken("cap4a");
+  const daveToken = freshToken("cap4d");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const dave = await registerUser(env, daveToken, "Dave");
+  await addFriend(env, aliceToken, dave.code);
+  await acceptRequest(env, daveToken, alice.code);
+  const aliceKey = await env.STUDIQUO_DATA.get(`chat:code:${alice.code}`);
+
+  const roomID = "4".repeat(64);
+  const fillerKeys = Array.from({ length: 49 }, (_, i) => `filler-cap4-${i}`);
+  await env.CHAT_ROOM.getByName(roomID).initialize(
+    roomID, [aliceKey, ...fillerKeys], { kind: "group", name: "Full Group", creatorCode: alice.code, creatorName: "Alice" },
+  );
+  assert.equal((await env.CHAT_ROOM.getByName(roomID).groupInfo(aliceKey)).members.length, 50);
+
+  const response = await inviteToGroup(env, aliceToken, roomID, dave.code);
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /full/i);
+  assert.deepEqual(await groupInvites(env, daveToken), []);
+});
+
+// Regression coverage for "accepting into a group that filled up in the
+// meantime leaves the invitee in limbo": groups.js's accept handler
+// atomically consumes the invitee's pending invite (and optimistically adds
+// the room to their own group list) *before* it knows whether
+// chat-room.js's addParticipant will actually succeed — that ordering exists
+// so an accept racing a reject of the very same invite still resolves
+// atomically (see resolveIncomingGroupInvite's own comment). If
+// addParticipant then fails because the group filled up first, that
+// optimistic mutation must be rolled back — otherwise the invitee is left
+// with a phantom `groups` entry for a room they were never actually added
+// to, and no invite left to retry once a seat opens up.
+test("accepting a pending invite into a group that filled up in the meantime is rejected, not silently added past the cap", async () => {
+  const env = environment();
+  const daveToken = freshToken("cap5d");
+  const dave = await registerUser(env, daveToken, "Dave");
+  const daveKey = await env.STUDIQUO_DATA.get(`chat:code:${dave.code}`);
+
+  const roomID = "5".repeat(64);
+  const fillerKeys = Array.from({ length: 50 }, (_, i) => `filler-cap5-${i}`);
+  await env.CHAT_ROOM.getByName(roomID).initialize(
+    roomID, fillerKeys, { kind: "group", name: "Full Group", creatorCode: "SEEDCODE", creatorName: "Seed" },
+  );
+  assert.equal((await env.CHAT_ROOM.getByName(roomID).groupInfo(fillerKeys[0])).members.length, 50);
+
+  // Dave's invite was issued back when the group still had room — seeded
+  // directly, since the real invite endpoint would itself now be blocked by
+  // the "already full" check exercised in the previous test.
+  await env.USER_REGISTRY.getByName(daveKey).addIncomingGroupInvite(daveKey, roomID, "Full Group", "SEEDCODE", "Seed");
+
+  const response = await acceptGroupInvite(env, daveToken, roomID);
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /full/i);
+
+  // Dave must not have actually joined the room...
+  const roomMembers = await env.CHAT_ROOM.getByName(roomID).groupInfo(fillerKeys[0]);
+  assert.equal(roomMembers.members.length, 50);
+  assert.ok(!roomMembers.members.some(member => member.key === daveKey));
+  // ...nor be left with a phantom entry in his own group list...
+  const daveRecord = await env.STUDIQUO_DATA.get(`chat:user:${daveKey}`, "json");
+  assert.ok(!(daveRecord.groups ?? []).some(item => item.roomID === roomID), "must not be left with a group entry for a room never actually joined");
+  // ...and his invite should still be there to retry once a seat opens up,
+  // not silently discarded.
+  assert.deepEqual((await groupInvites(env, daveToken)).map(item => item.roomID), [roomID]);
+});
+
+// End-to-end companion to the previous test: same "invite outlives the
+// group filling up" setup, but checked through the actual client-facing
+// endpoints (GET /api/chat/groups, GET /api/chat/group-invites) rather than
+// reading the invitee's own stored record directly, and carried all the way
+// through to a successful retry once a seat frees up — the two-part
+// behavior a real client would actually observe: no phantom membership
+// right after the failed accept, and a genuinely working invite afterward.
+test("a rejected accept leaves no phantom group in the invitee's own list, and a later retry once a seat frees up actually succeeds", async () => {
+  const env = environment();
+  const daveToken = freshToken("cap6d");
+  const dave = await registerUser(env, daveToken, "Dave");
+  const daveKey = await env.STUDIQUO_DATA.get(`chat:code:${dave.code}`);
+
+  const roomID = "6".repeat(64);
+  const fillerKeys = Array.from({ length: 50 }, (_, i) => `filler-cap6-${i}`);
+  await env.CHAT_ROOM.getByName(roomID).initialize(
+    roomID, fillerKeys, { kind: "group", name: "Full Group", creatorCode: "SEEDCODE", creatorName: "Seed" },
+  );
+  await env.USER_REGISTRY.getByName(daveKey).addIncomingGroupInvite(daveKey, roomID, "Full Group", "SEEDCODE", "Seed");
+
+  const firstAttempt = await acceptGroupInvite(env, daveToken, roomID);
+  assert.equal(firstAttempt.status, 400);
+
+  // Right after the failed accept: Dave's own "my groups" list must not
+  // show this room (he was never actually added to it)...
+  assert.deepEqual(await groups(env, daveToken), []);
+  // ...and his "pending invites" list must still show it, not have quietly
+  // lost it.
+  assert.deepEqual((await groupInvites(env, daveToken)).map(item => item.roomID), [roomID]);
+
+  // A seat frees up — one existing member leaves.
+  await env.CHAT_ROOM.getByName(roomID).removeParticipant(fillerKeys[0], fillerKeys[1]);
+  assert.equal((await env.CHAT_ROOM.getByName(roomID).groupInfo(fillerKeys[0])).members.length, 49);
+
+  // The same invite, retried, now actually succeeds — proof it wasn't just
+  // left dangling but genuinely still usable.
+  const secondAttempt = await acceptGroupInvite(env, daveToken, roomID);
+  assert.equal(secondAttempt.status, 200);
+  assert.deepEqual((await groups(env, daveToken)).map(item => item.roomID), [roomID]);
+  assert.deepEqual(await groupInvites(env, daveToken), []);
+});
+
+// Concurrency coverage for the group member cap: with exactly one seat left,
+// several people accepting their own (independently valid) pending invites
+// at nearly the same moment must not all get in — chat-room.js's
+// addParticipant is what actually enforces MAX_GROUP_MEMBERS, and it must do
+// so as a genuine "first past the post" race, not let the room's count
+// overshoot 50 just because several accepts were in flight together.
+test("when only one seat remains, simultaneous accepts from different people race for it — exactly one wins, the rest are rejected cleanly", async () => {
+  const env = environment();
+  const names = ["Bob", "Carol", "Dave"];
+  const tokens = names.map((_, i) => freshToken(`race${i}`));
+  const users = await Promise.all(names.map((name, i) => registerUser(env, tokens[i], name)));
+  const keys = await Promise.all(users.map(user => env.STUDIQUO_DATA.get(`chat:code:${user.code}`)));
+
+  const roomID = "7".repeat(64);
+  const fillerKeys = Array.from({ length: 49 }, (_, i) => `filler-cap7-${i}`);
+  await env.CHAT_ROOM.getByName(roomID).initialize(
+    roomID, fillerKeys, { kind: "group", name: "One Seat Left", creatorCode: "SEEDCODE", creatorName: "Seed" },
+  );
+  assert.equal((await env.CHAT_ROOM.getByName(roomID).groupInfo(fillerKeys[0])).members.length, 49);
+
+  // All three invites are independently valid — each of Bob, Carol, and Dave
+  // was genuinely invited while there was still room; the race is purely
+  // about who gets to the single remaining seat first.
+  await Promise.all(keys.map(key =>
+    env.USER_REGISTRY.getByName(key).addIncomingGroupInvite(key, roomID, "One Seat Left", "SEEDCODE", "Seed")
+  ));
+
+  const responses = await Promise.all(tokens.map(token => acceptGroupInvite(env, token, roomID)));
+  const statuses = responses.map(response => response.status);
+  assert.equal(statuses.filter(status => status === 200).length, 1, "exactly one of the three simultaneous accepts must win the last seat");
+  assert.equal(statuses.filter(status => status === 400).length, 2, "the other two must be rejected outright, not silently squeeze in past the cap");
+
+  const finalRoom = await env.CHAT_ROOM.getByName(roomID).groupInfo(fillerKeys[0]);
+  assert.equal(finalRoom.members.length, 50, "the room must land at exactly 50, never over");
+
+  // The losers of the race must not be left in limbo either — same
+  // rollback behavior as the sequential case, just now exercised under
+  // real concurrent load.
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (statuses[i] === 200) {
+      assert.deepEqual((await groups(env, tokens[i])).map(item => item.roomID), [roomID], `${names[i]} won the race and must actually be a member`);
+    } else {
+      assert.deepEqual(await groups(env, tokens[i]), [], `${names[i]} lost the race and must not show a phantom membership`);
+      assert.deepEqual((await groupInvites(env, tokens[i])).map(item => item.roomID), [roomID], `${names[i]}'s invite must survive the loss so they can retry`);
+    }
+  }
+});
+
+// Coverage for the cap not being a one-way ratchet: a group that has been
+// full stays that way only as long as it actually has 50 members — once one
+// leaves, both of the checks that enforce the cap (groups.js's own
+// early "is this group already full" check on sending an invite, and
+// chat-room.js's addParticipant at accept time) must let it fill back up to
+// 50 again, not stay stuck treating a group as full forever just because it
+// once was.
+test("after a full group loses a member, a new invite can be sent and accepted, refilling it back to exactly 50", async () => {
+  const env = environment();
+  const aliceToken = freshToken("cap8a");
+  const eveToken = freshToken("cap8e");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const eve = await registerUser(env, eveToken, "Eve");
+  await addFriend(env, aliceToken, eve.code);
+  await acceptRequest(env, eveToken, alice.code);
+  const aliceKey = await env.STUDIQUO_DATA.get(`chat:code:${alice.code}`);
+
+  const roomID = "8".repeat(64);
+  const fillerKeys = Array.from({ length: 49 }, (_, i) => `filler-cap8-${i}`);
+  await env.CHAT_ROOM.getByName(roomID).initialize(
+    roomID, [aliceKey, ...fillerKeys], { kind: "group", name: "Cap Test Group", creatorCode: alice.code, creatorName: "Alice" },
+  );
+  assert.equal((await env.CHAT_ROOM.getByName(roomID).groupInfo(aliceKey)).members.length, 50);
+
+  // While full, inviting Eve is rejected — same soft check exercised in the
+  // "already-full" boundary test above.
+  const blockedInvite = await inviteToGroup(env, aliceToken, roomID, eve.code);
+  assert.equal(blockedInvite.status, 400);
+  assert.match((await blockedInvite.json()).error, /full/i);
+
+  // One existing member leaves, freeing a seat.
+  await env.CHAT_ROOM.getByName(roomID).removeParticipant(fillerKeys[0], fillerKeys[0]);
+  assert.equal((await env.CHAT_ROOM.getByName(roomID).groupInfo(aliceKey)).members.length, 49);
+
+  // The exact same invite that was rejected a moment ago now goes through...
+  const inviteResponse = await inviteToGroup(env, aliceToken, roomID, eve.code);
+  assert.equal(inviteResponse.status, 200);
+
+  // ...and Eve can actually join, bringing the group back to exactly 50.
+  const acceptResponse = await acceptGroupInvite(env, eveToken, roomID);
+  assert.equal(acceptResponse.status, 200);
+  const accepted = await acceptResponse.json();
+  assert.equal(accepted.members.length, 50);
+});
+
+// Locks down the exact status code and wording for each of the three
+// distinct places the member cap can reject a request — earlier tests above
+// only loosely pattern-matched these (e.g. /full/i); this pins the literal
+// response body so a future refactor that quietly changes the status code
+// or rewords the message (breaking whatever the client matches on) fails a
+// test instead of only showing up as a support report.
+test("each cap-related rejection uses the expected HTTP status and a specific, matching error message", async () => {
+  const env = environment();
+  const aliceToken = freshToken("cap9a");
+  const daveToken = freshToken("cap9d");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const dave = await registerUser(env, daveToken, "Dave");
+  await addFriend(env, aliceToken, dave.code);
+  await acceptRequest(env, daveToken, alice.code);
+  const aliceKey = await env.STUDIQUO_DATA.get(`chat:code:${alice.code}`);
+
+  // 1) Creating a group with one too many invited friends.
+  await seedFakeFriends(env, aliceKey, 50, "CAP9F");
+  const codes = Array.from({ length: 50 }, (_, i) => `CAP9F${String(i).padStart(4, "0")}`);
+  const createResponse = await createGroup(env, aliceToken, "Too Big", codes);
+  assert.equal(createResponse.status, 400);
+  assert.deepEqual(await createResponse.json(), { error: "Too many members for one group." });
+
+  // 2) Sending a new invite into an already-full existing group.
+  const roomID = "9".repeat(64);
+  const fillerKeys = Array.from({ length: 49 }, (_, i) => `filler-cap9-${i}`);
+  await env.CHAT_ROOM.getByName(roomID).initialize(
+    roomID, [aliceKey, ...fillerKeys], { kind: "group", name: "Full Group", creatorCode: alice.code, creatorName: "Alice" },
+  );
+  const inviteResponse = await inviteToGroup(env, aliceToken, roomID, dave.code);
+  assert.equal(inviteResponse.status, 400);
+  assert.deepEqual(await inviteResponse.json(), { error: "This group is full." });
+
+  // 3) Accepting an invite into a group that has since filled up — same
+  // wording as (2), since the client can't distinguish the two situations
+  // (nor does it need to: both just mean "no room right now").
+  const daveKey = await env.STUDIQUO_DATA.get(`chat:code:${dave.code}`);
+  await env.USER_REGISTRY.getByName(daveKey).addIncomingGroupInvite(daveKey, roomID, "Full Group", alice.code, "Alice");
+  const acceptResponse = await acceptGroupInvite(env, daveToken, roomID);
+  assert.equal(acceptResponse.status, 400);
+  assert.deepEqual(await acceptResponse.json(), { error: "This group is full." });
 });
 
 // Regression coverage for "registering a brand-new user is a race condition":

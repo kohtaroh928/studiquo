@@ -209,13 +209,14 @@ export class UserRegistry extends DurableObject {
     if ((user.groups ?? []).some(item => item.roomID === roomID)) {
       return { status: "already_member" };
     }
-    if (!(user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
-      user.incomingGroupInvites = [
-        ...(user.incomingGroupInvites ?? []),
-        { roomID, name, inviterCode, inviterName, invitedAt: Date.now() },
-      ].slice(-500);
-      await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+    if ((user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
+      return { status: "already_pending" };
     }
+    user.incomingGroupInvites = [
+      ...(user.incomingGroupInvites ?? []),
+      { roomID, name, inviterCode, inviterName, invitedAt: Date.now() },
+    ].slice(-500);
+    await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
     return { status: "pending" };
   }
 
@@ -227,7 +228,8 @@ export class UserRegistry extends DurableObject {
   async resolveIncomingGroupInvite(key, action, roomID) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
-    if (!user || !(user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
+    const invite = (user?.incomingGroupInvites ?? []).find(item => item.roomID === roomID);
+    if (!user || !invite) {
       return { status: "not_found" };
     }
     user.incomingGroupInvites = (user.incomingGroupInvites ?? []).filter(item => item.roomID !== roomID);
@@ -235,7 +237,34 @@ export class UserRegistry extends DurableObject {
       user.groups = [...(user.groups ?? []).filter(item => item.roomID !== roomID), { roomID }];
     }
     await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
-    return { status: action === "accept" ? "accepted" : "rejected" };
+    // `invite` is handed back so groups.js can restore it verbatim if the
+    // accept it's about to attempt (addParticipant, one call up) turns out
+    // not to actually take — see undoAcceptedGroupInvite below.
+    return { status: action === "accept" ? "accepted" : "rejected", invite };
+  }
+
+  // Reverses exactly the "accept" mutation resolveIncomingGroupInvite just
+  // made, for the one case where it turns out to have been premature: the
+  // invite is consumed and `groups` optimistically updated *before*
+  // ChatRoom.addParticipant is actually attempted (see groups.js), so that
+  // an accept racing a reject of the same invite still resolves atomically.
+  // If addParticipant then fails (e.g. the group filled up in the meantime),
+  // the invitee must not be left with a phantom `groups` entry for a room
+  // they were never added to, nor with their invite silently discarded —
+  // this puts both back so they can retry once a seat opens up.
+  async undoAcceptedGroupInvite(key, roomID, name, inviterCode, inviterName) {
+    const storageKey = `chat:user:${key}`;
+    const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    user.groups = (user.groups ?? []).filter(item => item.roomID !== roomID);
+    if (!(user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
+      user.incomingGroupInvites = [
+        ...(user.incomingGroupInvites ?? []),
+        { roomID, name, inviterCode, inviterName, invitedAt: Date.now() },
+      ].slice(-500);
+    }
+    await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+    return { status: "restored" };
   }
 
   // Adds this key's own groups-list entry directly — used only for the

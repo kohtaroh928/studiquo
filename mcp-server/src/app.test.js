@@ -884,6 +884,106 @@ test("POST /api/issue-reports with a screenshot serves it back unauthenticated s
   assert.deepEqual(returnedBytes, pngBytes);
 });
 
+test("a report submitted with a screenshot is flagged hasScreenshot:true, with the image stored under its own KV key", async () => {
+  const env = environment();
+  const token = freshToken("w11");
+  const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", {
+      method: "POST",
+      token,
+      body: { description: "test", screenshot: { contentType: "image/png", data: pngBytes.toString("base64") } },
+    }),
+    env,
+    noopCtx
+  );
+  const { id } = await response.json();
+
+  const report = await env.STUDIQUO_DATA.get(`issue-report:${id}`, "json");
+  assert.equal(report.hasScreenshot, true);
+  assert.ok(!("screenshot" in report), "the report record itself should not carry the image data");
+
+  const screenshot = await env.STUDIQUO_DATA.get(`issue-report-screenshot:${id}`, "json");
+  assert.equal(screenshot.contentType, "image/png");
+  assert.equal(screenshot.data, pngBytes.toString("base64"));
+});
+
+test("a report submitted without a screenshot is flagged hasScreenshot:false, with no screenshot KV entry created", async () => {
+  const env = environment();
+  const token = freshToken("w12");
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", { method: "POST", token, body: { description: "test" } }),
+    env,
+    noopCtx
+  );
+  const { id } = await response.json();
+
+  const report = await env.STUDIQUO_DATA.get(`issue-report:${id}`, "json");
+  assert.equal(report.hasScreenshot, false);
+  assert.equal(await env.STUDIQUO_DATA.get(`issue-report-screenshot:${id}`), null);
+});
+
+test("a downloaded issue-report screenshot is cached only privately and only briefly", async () => {
+  const env = environment();
+  env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.slack.test/services/xyz";
+  const token = freshToken("w9");
+
+  let sentImageURL = null;
+  const restore = stubFetch(async (_url, init) => {
+    const body = JSON.parse(init.body);
+    sentImageURL = body.blocks.find(block => block.type === "image")?.image_url ?? null;
+    return new Response("ok", { status: 200 });
+  });
+  try {
+    await worker.fetch(
+      request("/api/issue-reports", {
+        method: "POST",
+        token,
+        body: { description: "test", screenshot: { contentType: "image/png", data: Buffer.from("x").toString("base64") } },
+      }),
+      env,
+      noopCtx
+    );
+  } finally {
+    restore();
+  }
+
+  const screenshotResponse = await worker.fetch(new Request(sentImageURL), env, noopCtx);
+  assert.equal(screenshotResponse.headers.get("cache-control"), "private, max-age=300");
+});
+
+test("GET /api/issue-reports/:id/screenshot for an id that was never submitted returns 404", async () => {
+  const env = environment();
+
+  const response = await worker.fetch(
+    new Request("https://example.test/api/issue-reports/00000000-0000-0000-0000-000000000000/screenshot"),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 404);
+});
+
+test("GET /api/issue-reports/:id/screenshot for a report that has no screenshot returns 404", async () => {
+  const env = environment();
+  const token = freshToken("w10");
+
+  const submitted = await worker.fetch(
+    request("/api/issue-reports", { method: "POST", token, body: { description: "test" } }),
+    env,
+    noopCtx
+  );
+  const { id } = await submitted.json();
+
+  const response = await worker.fetch(
+    new Request(`https://example.test/api/issue-reports/${id}/screenshot`),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 404);
+});
+
 test("POST /api/issue-reports rejects an empty description with 400", async () => {
   const env = environment();
   const token = freshToken("r");
@@ -920,6 +1020,184 @@ test("POST /api/issue-reports allows up to the limit, then 429s", async () => {
     );
   }
   assert.equal(last.status, 429);
+});
+
+test("POST /api/issue-reports with an expired token is rejected with 401", async () => {
+  const env = environment();
+  const ninetyOneDaysAgo = Math.floor(Date.now() / 1000) - 91 * 24 * 60 * 60;
+  const token = `${ninetyOneDaysAgo}.${"t".repeat(40)}`;
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", { method: "POST", token, body: { description: "test" } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 401);
+  assert.match((await response.json()).error, /expired/i);
+});
+
+test("POST /api/issue-reports with a token this server never minted is rejected with 401", async () => {
+  const env = environment({ strictSessions: true });
+  const token = freshToken("u");
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", { method: "POST", token, body: { description: "test" } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 401);
+});
+
+test("POST /api/issue-reports with a revoked token is rejected with 401", async () => {
+  const env = environment();
+  const token = freshToken("v");
+
+  await revokeToken(env, token);
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", { method: "POST", token, body: { description: "test" } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 401);
+  assert.match((await response.json()).error, /revoked/i);
+});
+
+test("POST /api/issue-reports with no description key at all is rejected with 400", async () => {
+  const env = environment();
+  const token = freshToken("w1");
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", { method: "POST", token, body: { appVersion: "1.0" } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 400);
+});
+
+test("POST /api/issue-reports with malformed JSON in the body is rejected with 400", async () => {
+  const env = environment();
+  const token = freshToken("w2");
+
+  const response = await worker.fetch(
+    new Request("https://example.test/api/issue-reports", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: "{not valid json",
+    }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 400);
+});
+
+test("POST /api/issue-reports with a request body over the size limit is rejected with 400", async () => {
+  const env = environment();
+  const token = freshToken("w3");
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", { method: "POST", token, body: { description: "x".repeat(4_300_000) } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 400);
+});
+
+test("POST /api/issue-reports truncates an overlong description to 2,000 characters rather than rejecting it", async () => {
+  const env = environment();
+  const token = freshToken("w4");
+  const longDescription = "あ".repeat(2_500);
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", { method: "POST", token, body: { description: longDescription } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 200);
+  const { id } = await response.json();
+  const stored = await env.STUDIQUO_DATA.get(`issue-report:${id}`, "json");
+  assert.equal(stored.description.length, 2_000);
+  assert.equal(stored.description, longDescription.slice(0, 2_000));
+});
+
+test("POST /api/issue-reports truncates overlong device-info fields rather than rejecting them", async () => {
+  const env = environment();
+  const token = freshToken("w5");
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", {
+      method: "POST",
+      token,
+      body: {
+        description: "test",
+        appVersion: "v".repeat(60),
+        osVersion: "o".repeat(60),
+        deviceModel: "d".repeat(80),
+        language: "l".repeat(40),
+      },
+    }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 200);
+  const { id } = await response.json();
+  const stored = await env.STUDIQUO_DATA.get(`issue-report:${id}`, "json");
+  assert.equal(stored.appVersion.length, 40);
+  assert.equal(stored.osVersion.length, 40);
+  assert.equal(stored.deviceModel.length, 60);
+  assert.equal(stored.language.length, 20);
+});
+
+test("POST /api/issue-reports with a screenshot content type outside image/jpeg and image/png is rejected with 400", async () => {
+  const env = environment();
+  const token = freshToken("w6");
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", {
+      method: "POST",
+      token,
+      body: { description: "test", screenshot: { contentType: "image/gif", data: Buffer.from("fake gif").toString("base64") } },
+    }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 400);
+});
+
+test("POST /api/issue-reports with an empty screenshot data string is rejected with 400", async () => {
+  const env = environment();
+  const token = freshToken("w7");
+
+  const response = await worker.fetch(
+    request("/api/issue-reports", {
+      method: "POST",
+      token,
+      body: { description: "test", screenshot: { contentType: "image/png", data: "" } },
+    }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 400);
+});
+
+test("POST /api/issue-reports with a screenshot decoding to over 3MB is rejected with 400", async () => {
+  const env = environment();
+  const token = freshToken("w8");
+
+  // 3,000,001 raw bytes — one over MAX_SCREENSHOT_BYTES — base64-encoded,
+  // while the whole request body still fits comfortably under the
+  // separate, much larger MAX_UPLOAD_BODY cap.
+  const oversizedScreenshot = Buffer.alloc(3_000_001, 9).toString("base64");
+  const response = await worker.fetch(
+    request("/api/issue-reports", {
+      method: "POST",
+      token,
+      body: { description: "test", screenshot: { contentType: "image/png", data: oversizedScreenshot } },
+    }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 400);
 });
 
 test("a token /api/auth/apple actually minted works even with strictSessions on", async () => {

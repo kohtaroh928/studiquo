@@ -23,6 +23,11 @@ const MAX_GROUP_NAME_LENGTH = 80;
 // same limit from either side of "creator" vs. "everyone".
 const MAX_INVITED_MEMBERS = 49;
 const FRIEND_CODE_PATTERN = /^[A-Z0-9]{6,32}$/;
+// Same pair as chat.js's own MAX_AVATAR_BYTES/MAX_AVATAR_UPLOAD_BODY: 300KB
+// raw is the actual limit, 450KB is just enough room for that raw size's
+// base64 encoding plus the JSON wrapper around it.
+const MAX_AVATAR_BYTES = 300_000;
+const MAX_AVATAR_UPLOAD_BODY = 450_000;
 
 function parseGroupName(body) {
   const name = String(body?.name ?? "").trim().slice(0, MAX_GROUP_NAME_LENGTH);
@@ -92,8 +97,8 @@ export async function handleGroupRoutes(url, request, env, key) {
     return null;
   }
 
-  async function readBody(request) {
-    return readJSONLimitedShared(request, 16_000);
+  async function readBody(request, maxBytes = 16_000) {
+    return readJSONLimitedShared(request, maxBytes);
   }
 
   if (url.pathname === "/api/chat/group-invites" && request.method === "GET") {
@@ -194,7 +199,17 @@ export async function handleGroupRoutes(url, request, env, key) {
       return json({ roomID, name: info.name, members: toClientMembers(info.members) });
     } catch (error) {
       const response = groupErrorResponse(error);
-      if (response) return response;
+      if (response) {
+        // The invite was already consumed (and `groups` optimistically
+        // updated) above, before we knew whether addParticipant would
+        // actually succeed — see resolveIncomingGroupInvite's own comment.
+        // Since it didn't, put the invitee back where they were instead of
+        // leaving a phantom group membership with no way to retry.
+        const invite = result.invite ?? {};
+        await env.USER_REGISTRY.getByName(key)
+          .undoAcceptedGroupInvite(key, roomID, invite.name, invite.inviterCode, invite.inviterName);
+        return response;
+      }
       throw error;
     }
   }
@@ -248,7 +263,7 @@ export async function handleGroupRoutes(url, request, env, key) {
       if (response) return response;
       throw error;
     }
-    const body = await readBody(request);
+    const body = await readBody(request, MAX_AVATAR_UPLOAD_BODY);
     const contentType = String(body?.contentType ?? "");
     const data = String(body?.data ?? "");
     if (!["image/jpeg", "image/png"].includes(contentType) || !data) {
@@ -256,7 +271,7 @@ export async function handleGroupRoutes(url, request, env, key) {
     }
     // 300KB raw, same cap as a profile photo (chat.js's MAX_AVATAR_BYTES) —
     // the client resizes before ever sending either.
-    if (Math.floor((data.length * 3) / 4) > 300_000) {
+    if (Math.floor((data.length * 3) / 4) > MAX_AVATAR_BYTES) {
       return json({ error: "Invalid avatar." }, 400);
     }
     const updatedAt = Date.now();

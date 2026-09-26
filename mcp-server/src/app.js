@@ -7,6 +7,7 @@ import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys } from "./passkeys.js";
 import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
+import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats } from "./admin.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired } from "./token.js";
 import { realSession } from "./session.js";
@@ -297,6 +298,14 @@ export default {
       if (chat) return chat;
       const issueReports = await handleIssueReports(url, request, env);
       if (issueReports) return issueReports;
+      const adminPage = handleAdminPage(url);
+      if (adminPage) return adminPage;
+      const adminWebhook = await handleAdminWebhook(url, request, env);
+      if (adminWebhook) return adminWebhook;
+      const adminStats = await handleAdminStats(url, request, env);
+      if (adminStats) return adminStats;
+      const usageEvent = await handleUsageEvent(url, request, env);
+      if (usageEvent) return usageEvent;
 
     if (url.pathname === "/mcp") {
       return handleMCP(request, env);
