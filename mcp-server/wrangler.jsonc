@@ -14,6 +14,13 @@
       "preview_id": "e117147925524e4080947d43af2cc09d"
     }
   ],
+  "d1_databases": [
+    {
+      "binding": "ADMIN_DB",
+      "database_name": "studiquo-admin",
+      "database_id": "fb64e302-1d42-4721-a039-e2e836000547"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       { "name": "CHAT_ROOM", "class_name": "ChatRoom" },
@@ -73,7 +80,14 @@
     { "name": "RATE_LIMIT_MCP_REGISTER", "namespace_id": "1016", "simple": { "limit": 5, "period": 60 } },
     { "name": "RATE_LIMIT_MCP_AUTHORIZE", "namespace_id": "1017", "simple": { "limit": 5, "period": 60 } },
     { "name": "RATE_LIMIT_MCP_TOKEN", "namespace_id": "1018", "simple": { "limit": 20, "period": 60 } },
-    { "name": "RATE_LIMIT_MCP_PAIR", "namespace_id": "1019", "simple": { "limit": 5, "period": 60 } }
+    { "name": "RATE_LIMIT_MCP_PAIR", "namespace_id": "1019", "simple": { "limit": 5, "period": 60 } },
+    // Keyed by clientKey(request), not a user — RevenueCat's servers call
+    // this, not a signed-in device. The shared secret is the real gate;
+    // this just bounds how much a leaked or guessed secret could do.
+    { "name": "RATE_LIMIT_ADMIN_WEBHOOK", "namespace_id": "1020", "simple": { "limit": 60, "period": 60 } },
+    // Keyed by userKey — one ping per app open/session is the expected
+    // shape, so this is generous headroom rather than a tight cap.
+    { "name": "RATE_LIMIT_USAGE_EVENT", "namespace_id": "1021", "simple": { "limit": 20, "period": 60 } }
   ],
   "vars": {
     // Marking asks for structured output, and Gemini emits that only once the
