@@ -116,6 +116,148 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(relaunched.friends.first?.id, friend.id)
     }
 
+    // Regression coverage for "the archive exists in the data model but
+    // nothing can ever reach it": these test the pieces that actually let a
+    // removed friend's history stay viewable, rather than just staying
+    // preserved-but-unreachable in `messages`.
+
+    func testRemovingFriendPopulatesArchivedFriendsWithItsInfo() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let contact = FriendChatService.BlockedContact(code: friend.code, name: friend.name, roomID: "room-a")
+        let client = MockFriendChatClient()
+        await client.setBlockedContacts([contact])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+
+        let removed = await store.removeFriend(contact)
+
+        XCTAssertTrue(removed)
+        XCTAssertEqual(store.archivedFriends.count, 1)
+        XCTAssertEqual(store.archivedFriends.first?.code, "ALICE1")
+        XCTAssertEqual(store.archivedFriends.first?.name, "Alice")
+        XCTAssertEqual(store.archivedFriends.first?.roomID, "room-a")
+    }
+
+    func testSendingToAnArchivedFriendReachesTheServerInsteadOfFailingSilently() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let contact = FriendChatService.BlockedContact(code: friend.code, name: friend.name, roomID: "room-a")
+        let client = MockFriendChatClient()
+        await client.setBlockedContacts([contact])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        _ = await store.removeFriend(contact)
+        XCTAssertTrue(store.friends.isEmpty, "the friend must actually be gone from the active list for this to be a real test of the archived fallback")
+
+        let attempted = store.send("hello after removal", to: friend)
+
+        XCTAssertTrue(attempted, "canonicalFriend must resolve the archived record so the local guard doesn't reject this before ever calling the network")
+        await waitUntil { await client.sentMessages().count == 1 }
+        let sent = await client.sentMessages()
+        XCTAssertEqual(sent.first?.roomID, "room-a")
+        XCTAssertEqual(sent.first?.text, "hello after removal")
+    }
+
+    func testSendingToAnArchivedFriendShowsADedicatedMessageWhenTheServerConfirmsTheFriendshipEnded() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let contact = FriendChatService.BlockedContact(code: friend.code, name: friend.name, roomID: "room-a")
+        let client = MockFriendChatClient()
+        await client.setBlockedContacts([contact])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        _ = await store.removeFriend(contact)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 403, message: "This friendship has ended."))
+
+        _ = store.send("hello", to: friend)
+
+        let expected = "このフレンドは削除済みのため、メッセージを送信できません。過去のやり取りは引き続き閲覧できます。"
+        await waitUntil { store.errorMessage == expected }
+        XCTAssertEqual(store.errorMessage, expected)
+    }
+
+    // Regression coverage for the previous test's fix: distinguishing
+    // "This friendship has ended." must not swallow every other 403 into
+    // the same specific wording — an unrelated room-access rejection still
+    // gets the older, more general message.
+    func testSendingToAnArchivedFriendKeepsTheGenericMessageForAnUnrelated403() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let contact = FriendChatService.BlockedContact(code: friend.code, name: friend.name, roomID: "room-a")
+        let client = MockFriendChatClient()
+        await client.setBlockedContacts([contact])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        _ = await store.removeFriend(contact)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 403, message: "You are not a participant in this room."))
+
+        _ = store.send("hello", to: friend)
+
+        let expected = "チャットルームにアクセスできません。フレンド情報を更新してください。"
+        await waitUntil { store.errorMessage == expected }
+        XCTAssertEqual(store.errorMessage, expected)
+    }
+
+    func testArchivedFriendsClearsTheEntryOnceReAddedAsAFriend() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let contact = FriendChatService.BlockedContact(code: friend.code, name: friend.name, roomID: "room-a")
+        let client = MockFriendChatClient()
+        await client.setBlockedContacts([contact])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        _ = await store.removeFriend(contact)
+        XCTAssertEqual(store.archivedFriends.count, 1)
+
+        // `refreshFriends()` alone won't do it: `locallyRemovedCodes` (set by
+        // `removeFriend`) deliberately suppresses this exact code from a
+        // plain friends poll, precisely so a stale in-flight response can't
+        // un-archive someone the instant they're removed. `refreshInbox()`
+        // is what actually detects "this retained room reopened" and lifts
+        // that suppression — see its own reopening branch.
+        await client.setFriends([.init(code: friend.code, name: friend.name, roomID: "room-a")])
+        await client.setInbox([.init(roomID: "room-a", latestID: 0, unreadCount: 0, closed: false)])
+        await store.refreshInbox()
+
+        XCTAssertTrue(store.archivedFriends.isEmpty, "once the person is a real friend again, they must not also linger in the archive")
+        XCTAssertEqual(store.friends.first?.code, "ALICE1")
+    }
+
+    func testArchivedFriendsNeverDuplicatesTheSamePersonAcrossRemoveReAddRemoveCycles() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let contact = FriendChatService.BlockedContact(code: friend.code, name: friend.name, roomID: "room-a")
+        let client = MockFriendChatClient()
+        await client.setBlockedContacts([contact])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+
+        _ = await store.removeFriend(contact)
+        XCTAssertEqual(store.archivedFriends.count, 1)
+
+        // Re-added as a real friend (see the previous test for why this
+        // needs refreshInbox(), not refreshFriends()), then removed again.
+        await client.setFriends([.init(code: friend.code, name: friend.name, roomID: "room-a")])
+        await client.setInbox([.init(roomID: "room-a", latestID: 0, unreadCount: 0, closed: false)])
+        await store.refreshInbox()
+        XCTAssertTrue(store.archivedFriends.isEmpty)
+        await client.setBlockedContacts([contact])
+        _ = await store.removeFriend(contact)
+
+        XCTAssertEqual(store.archivedFriends.count, 1, "removing the same person twice across a re-add cycle must not leave two archived entries for them")
+    }
+
+    func testArchivedFriendsPersistsAcrossRelaunch() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let contact = FriendChatService.BlockedContact(code: friend.code, name: friend.name, roomID: "room-a")
+        let client = MockFriendChatClient()
+        await client.setBlockedContacts([contact])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        _ = await store.removeFriend(contact)
+        XCTAssertEqual(store.archivedFriends.count, 1)
+
+        let relaunched = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        XCTAssertEqual(relaunched.archivedFriends.count, 1)
+        XCTAssertEqual(relaunched.archivedFriends.first?.code, "ALICE1")
+    }
+
     func testInboxClosesRemovedFriendEvenIfFriendsListIsTemporarilyStale() async {
         let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
         let client = MockFriendChatClient()
@@ -885,6 +1027,874 @@ final class FriendStoreTests: XCTestCase {
         await store.refreshFriends()
 
         XCTAssertEqual(store.errorMessage, "", "a stale sign-in-again message must not sit on screen forever once a fresh token actually starts working")
+    }
+
+    // MARK: - refreshGroups / refreshGroupInvites
+
+    func testRefreshGroupsPopulatesGroupsFromServer() async {
+        let client = MockFriendChatClient()
+        let group = FriendChatService.Group(
+            roomID: String(repeating: "a", count: 64), name: "受験対策",
+            members: [.init(code: "ME0000", name: "Me"), .init(code: "ALICE1", name: "Alice")]
+        )
+        await client.setGroups([group])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        await store.refreshGroups()
+
+        XCTAssertEqual(store.groups.map(\.roomID), [group.roomID])
+        XCTAssertEqual(store.groups.first?.name, "受験対策")
+        XCTAssertEqual(store.groups.first?.members.count, 2)
+    }
+
+    func testRefreshGroupInvitesPopulatesIncomingGroupInvitesFromServer() async {
+        let client = MockFriendChatClient()
+        let invite = FriendChatService.GroupInvite(
+            roomID: String(repeating: "b", count: 64), name: "受験対策",
+            inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000
+        )
+        await client.setGroupInvites([invite])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        await store.refreshGroupInvites()
+
+        XCTAssertEqual(store.incomingGroupInvites.map(\.roomID), [invite.roomID])
+        XCTAssertEqual(store.incomingGroupInvites.first?.inviterName, "Alice")
+    }
+
+    // Mirrors testConnectivityErrorClearsOnceThePollActuallyRecovers — groups
+    // and friends share the same notePollResult machinery, so a sustained
+    // failure while listing groups must behave identically.
+    func testRefreshGroupsConnectivityErrorSurfacesAfterThreeFailuresThenClearsOnRecovery() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(URLError(.notConnectedToInternet))
+
+        await store.refreshGroups()
+        XCTAssertEqual(store.errorMessage, "", "still within tolerance")
+        await store.refreshGroups()
+        XCTAssertEqual(store.errorMessage, "", "still within tolerance")
+        await store.refreshGroups()
+        XCTAssertNotEqual(store.errorMessage, "", "a sustained failure must surface something instead of silently going stale forever")
+
+        await client.setErrorToThrow(nil)
+        await store.refreshGroups()
+
+        XCTAssertEqual(store.errorMessage, "", "a stale connectivity error must not sit on screen forever once polling actually recovers")
+    }
+
+    // Mirrors testAnExpiredTokenSurfacesASignInAgainMessageImmediatelyInsteadOfWaitingForConsecutiveFailures.
+    func testRefreshGroupsExpiredTokenSurfacesSignInAgainMessageImmediately() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 401, message: "This token has expired. Reconnect from Studiquo to get a new one."))
+
+        await store.refreshGroups()
+
+        XCTAssertEqual(
+            store.errorMessage, "ログインの有効期限が切れています。一度サインアウトし、もう一度サインインしてください。",
+            "an expired token fails identically on every retry, so there's nothing to gain by waiting for the usual consecutive-failure threshold"
+        )
+    }
+
+    // Same as above, for the separate incoming-group-invites poll — a
+    // distinct code path from refreshGroups that funnels into the same
+    // shared auth-failure handling and must behave the same way.
+    func testRefreshGroupInvitesExpiredTokenSurfacesSignInAgainMessageImmediately() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 401, message: "This token has expired. Reconnect from Studiquo to get a new one."))
+
+        await store.refreshGroupInvites()
+
+        XCTAssertEqual(
+            store.errorMessage, "ログインの有効期限が切れています。一度サインアウトし、もう一度サインインしてください。"
+        )
+    }
+
+    // MARK: - createGroup
+
+    func testCreateGroupWithAnEmptyNameFailsWithoutCallingTheNetwork() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        let succeeded = await store.createGroup(name: "", memberCodes: ["ALICE1"])
+
+        XCTAssertFalse(succeeded)
+        XCTAssertTrue(store.groups.isEmpty)
+        let calls = await client.createGroupCallsSnapshot()
+        XCTAssertTrue(calls.isEmpty, "an empty name must be rejected locally, before ever reaching the network")
+    }
+
+    func testCreateGroupWithAWhitespaceOnlyNameFailsWithoutCallingTheNetwork() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        let succeeded = await store.createGroup(name: "   ", memberCodes: ["ALICE1"])
+
+        XCTAssertFalse(succeeded)
+        let calls = await client.createGroupCallsSnapshot()
+        XCTAssertTrue(calls.isEmpty)
+    }
+
+    func testCreateGroupWithNoInvitedFriendsStillSucceeds() async {
+        // A group can start as just its creator (see groups.js — no
+        // minimum invited-member count), the same way an ordinary
+        // conversation can start with nobody in it yet.
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        let succeeded = await store.createGroup(name: "一人グループ", memberCodes: [])
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(store.groups.count, 1)
+    }
+
+    func testCreateGroupSuccessAddsTheReturnedGroupToTheList() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        let succeeded = await store.createGroup(name: "受験対策", memberCodes: ["ALICE1", "BOB000"])
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(store.groups.count, 1)
+        XCTAssertEqual(store.groups.first?.name, "受験対策")
+        let calls = await client.createGroupCallsSnapshot()
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.name, "受験対策")
+        XCTAssertEqual(calls.first?.memberCodes, ["ALICE1", "BOB000"])
+    }
+
+    // Regression coverage for the same shape of bug notePollResult's own
+    // tests guard against elsewhere: a create that happens to echo back a
+    // group the client already knows about (e.g. a refresh() landing in
+    // between the request and its response) must not add a second, visibly
+    // duplicate entry.
+    func testCreateGroupDoesNotDuplicateAGroupAlreadyInTheList() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        let existing = FriendChatService.Group(roomID: await client.createdGroupRoomID, name: "既存", members: [])
+        store.groups = [existing]
+
+        let succeeded = await store.createGroup(name: "受験対策", memberCodes: ["ALICE1"])
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(store.groups.count, 1, "the same roomID must not appear twice")
+    }
+
+    func testCreateGroupMapsAServerErrorToASpecificJapaneseMessage() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 400, message: "You can only invite your own friends."))
+
+        let succeeded = await store.createGroup(name: "受験対策", memberCodes: ["STRANGER"])
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(store.errorMessage, "自分の友達だけを招待できます。")
+    }
+
+    func testCreateGroupFailureAddsNothingToTheList() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(URLError(.notConnectedToInternet))
+
+        let succeeded = await store.createGroup(name: "受験対策", memberCodes: ["ALICE1"])
+
+        XCTAssertFalse(succeeded)
+        XCTAssertTrue(store.groups.isEmpty)
+    }
+
+    // MARK: - inviteToGroup
+
+    func testInviteToGroupSuccessReturnsTrueAndClearsTheErrorMessage() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.errorMessage = "前回のエラー"
+        let roomID = String(repeating: "a", count: 64)
+
+        let succeeded = await store.inviteToGroup(roomID: roomID, code: "CAROL1")
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(store.errorMessage, "")
+        let calls = await client.inviteToGroupCallsSnapshot()
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.roomID, roomID)
+        XCTAssertEqual(calls.first?.code, "CAROL1")
+    }
+
+    // An invite only ever creates a pending invitation on the invitee's own
+    // side — the inviter's own membership list must not change until (and
+    // unless) that invite is actually accepted.
+    func testInviteToGroupDoesNotChangeTheLocalGroupsList() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        let roomID = String(repeating: "a", count: 64)
+        let group = FriendChatService.Group(roomID: roomID, name: "受験対策", members: [.init(code: "ME0000", name: "Me")])
+        store.groups = [group]
+
+        _ = await store.inviteToGroup(roomID: roomID, code: "CAROL1")
+
+        XCTAssertEqual(store.groups.count, 1)
+        XCTAssertEqual(store.groups.first?.members.map(\.code), ["ME0000"])
+    }
+
+    func testInviteToGroupMapsAServerErrorToASpecificJapaneseMessage() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 400, message: "This group is full."))
+
+        let succeeded = await store.inviteToGroup(roomID: String(repeating: "a", count: 64), code: "CAROL1")
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(store.errorMessage, "このグループは満員です。")
+    }
+
+    func testInviteToGroupFailureSetsAGenericErrorMessageForANonServerError() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(URLError(.notConnectedToInternet))
+
+        let succeeded = await store.inviteToGroup(roomID: String(repeating: "a", count: 64), code: "CAROL1")
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(store.errorMessage, "招待できませんでした。")
+    }
+
+    // Re-inviting someone who already has an unanswered invite to this same
+    // group must not read as a fresh success — the server reports
+    // "already_pending" (see user-registry.js's addIncomingGroupInvite) and
+    // the store must surface that distinctly instead of dismissing silently.
+    func testInviteToGroupAlreadyPendingReturnsFalseAndSetsAnAlreadySentMessage() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setInviteToGroupResultStatus("already_pending")
+
+        let succeeded = await store.inviteToGroup(roomID: String(repeating: "a", count: 64), code: "CAROL1")
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(store.errorMessage, "この招待はすでに送信済みです。")
+    }
+
+    // The already-pending response still means the request itself reached
+    // the server and was recognized — unlike the error-throwing paths above,
+    // this is not a transport/server failure, so no duplicate call retry
+    // logic should be needed; this just documents that the single call
+    // already made is what gets classified as "already_pending".
+    func testInviteToGroupAlreadyPendingStillRecordsExactlyOneCallToTheServer() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setInviteToGroupResultStatus("already_pending")
+        let roomID = String(repeating: "a", count: 64)
+
+        _ = await store.inviteToGroup(roomID: roomID, code: "CAROL1")
+
+        let calls = await client.inviteToGroupCallsSnapshot()
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.roomID, roomID)
+        XCTAssertEqual(calls.first?.code, "CAROL1")
+    }
+
+    // MARK: - acceptGroupInvite
+
+    func testAcceptGroupInviteMovesTheInviteIntoGroupsAndClearsIt() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let invite = FriendChatService.GroupInvite(roomID: roomID, name: "受験対策", inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000)
+        await client.setGroupInvites([invite])
+        let joined = FriendChatService.Group(roomID: roomID, name: "受験対策", members: [.init(code: "ME0000", name: "Me"), .init(code: "ALICE1", name: "Alice")])
+        await client.setAcceptGroupInviteResult(joined)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshGroupInvites()
+
+        store.acceptGroupInvite(store.incomingGroupInvites[0])
+        await waitUntil { await client.acceptedGroupInviteRoomIDsSnapshot() == [roomID] }
+
+        XCTAssertEqual(store.groups.map(\.roomID), [roomID])
+        XCTAssertEqual(store.groups.first?.members.count, 2)
+        XCTAssertTrue(store.incomingGroupInvites.isEmpty)
+    }
+
+    // Mirrors testAcceptDoesNotCreateADuplicateFriendIfOneAlreadyExists — a
+    // refresh() landing in between the request and its response can result
+    // in this group already being present.
+    func testAcceptGroupInviteDoesNotDuplicateAGroupAlreadyInTheList() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let invite = FriendChatService.GroupInvite(roomID: roomID, name: "受験対策", inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000)
+        await client.setGroupInvites([invite])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshGroupInvites()
+        store.groups = [FriendChatService.Group(roomID: roomID, name: "受験対策", members: [.init(code: "ME0000", name: "Me")])]
+
+        store.acceptGroupInvite(store.incomingGroupInvites[0])
+        await waitUntil { await client.acceptedGroupInviteRoomIDsSnapshot() == [roomID] }
+
+        XCTAssertEqual(store.groups.filter { $0.roomID == roomID }.count, 1)
+        XCTAssertTrue(store.incomingGroupInvites.isEmpty)
+    }
+
+    // Mirrors testAcceptIgnoresASecondCallForTheSameCodeWhileTheFirstIsStillInFlight.
+    func testAcceptGroupInviteIgnoresASecondCallForTheSameRoomWhileTheFirstIsStillInFlight() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let invite = FriendChatService.GroupInvite(roomID: roomID, name: "受験対策", inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000)
+        await client.setGroupInvites([invite])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshGroupInvites()
+
+        store.acceptGroupInvite(store.incomingGroupInvites[0])
+        store.acceptGroupInvite(store.incomingGroupInvites[0]) // simulates a rapid double-tap
+        await waitUntil { store.groups.contains(where: { $0.roomID == roomID }) }
+
+        let accepted = await client.acceptedGroupInviteRoomIDsSnapshot()
+        XCTAssertEqual(accepted, [roomID], "a second tap while the first is still in flight must not fire a second network call")
+    }
+
+    // Mirrors testPendingRequestActionsTracksAnAcceptInFlightAndClearsOnceItFinishes.
+    func testPendingGroupActionsTracksAnAcceptInFlightAndClearsOnceItFinishes() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let invite = FriendChatService.GroupInvite(roomID: roomID, name: "受験対策", inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000)
+        await client.setGroupInvites([invite])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshGroupInvites()
+
+        store.acceptGroupInvite(store.incomingGroupInvites[0])
+        XCTAssertTrue(store.pendingGroupActions.contains(roomID), "the room must be marked in-flight synchronously, before the network call resolves")
+
+        await waitUntil { !store.pendingGroupActions.contains(roomID) }
+    }
+
+    func testAcceptGroupInviteFailureLeavesTheInviteInPlaceAndSetsAnErrorMessage() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let invite = FriendChatService.GroupInvite(roomID: roomID, name: "受験対策", inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000)
+        await client.setGroupInvites([invite])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshGroupInvites()
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 404, message: "Invitation not found."))
+
+        store.acceptGroupInvite(store.incomingGroupInvites[0])
+        await waitUntil { !store.errorMessage.isEmpty }
+
+        XCTAssertEqual(store.incomingGroupInvites.map(\.roomID), [roomID], "a failed accept must leave the invite where the user can still see and retry it")
+        XCTAssertTrue(store.groups.isEmpty)
+    }
+
+    // MARK: - rejectGroupInvite
+
+    func testRejectGroupInviteClearsTheInviteWithoutCreatingAGroup() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let invite = FriendChatService.GroupInvite(roomID: roomID, name: "受験対策", inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000)
+        await client.setGroupInvites([invite])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshGroupInvites()
+
+        store.rejectGroupInvite(store.incomingGroupInvites[0])
+        await waitUntil { await client.rejectedGroupInviteRoomIDsSnapshot() == [roomID] }
+
+        XCTAssertTrue(store.groups.isEmpty)
+        XCTAssertTrue(store.incomingGroupInvites.isEmpty)
+    }
+
+    func testRejectGroupInviteSurfacesTheServersSpecificReason() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let invite = FriendChatService.GroupInvite(roomID: roomID, name: "受験対策", inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000)
+        await client.setGroupInvites([invite])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshGroupInvites()
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 404, message: "Invitation not found."))
+
+        store.rejectGroupInvite(store.incomingGroupInvites[0])
+        await waitUntil { !store.errorMessage.isEmpty }
+
+        XCTAssertEqual(store.errorMessage, "招待が見つかりません。")
+        XCTAssertEqual(store.incomingGroupInvites.map(\.roomID), [roomID], "a failed reject must leave the invite where the user can still see and retry it")
+    }
+
+    func testRejectGroupInviteIgnoresASecondCallForTheSameRoomWhileTheFirstIsStillInFlight() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let invite = FriendChatService.GroupInvite(roomID: roomID, name: "受験対策", inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000)
+        await client.setGroupInvites([invite])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshGroupInvites()
+
+        store.rejectGroupInvite(store.incomingGroupInvites[0])
+        store.rejectGroupInvite(store.incomingGroupInvites[0]) // simulates a rapid double-tap
+        await waitUntil { store.incomingGroupInvites.isEmpty }
+
+        let rejected = await client.rejectedGroupInviteRoomIDsSnapshot()
+        XCTAssertEqual(rejected, [roomID], "a second tap while the first is still in flight must not fire a second network call")
+    }
+
+    // Mirrors testRejectIsIgnoredWhileAnAcceptForTheSameCodeIsStillInFlight for
+    // the friend-request flow — accept and reject share pendingGroupActions
+    // keyed by roomID, so whichever fires first must own that room until it
+    // resolves.
+
+    func testRejectGroupInviteIsIgnoredWhileAnAcceptForTheSameRoomIsStillInFlight() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let invite = FriendChatService.GroupInvite(roomID: roomID, name: "受験対策", inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000)
+        await client.setGroupInvites([invite])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshGroupInvites()
+
+        store.acceptGroupInvite(store.incomingGroupInvites[0])
+        store.rejectGroupInvite(store.incomingGroupInvites[0]) // must be ignored — accept already owns this room
+        await waitUntil { store.groups.contains(where: { $0.roomID == roomID }) }
+
+        let rejected = await client.rejectedGroupInviteRoomIDsSnapshot()
+        XCTAssertTrue(rejected.isEmpty, "reject must not fire while accept is already in flight for the same room")
+    }
+
+    func testAcceptGroupInviteIsIgnoredWhileARejectForTheSameRoomIsStillInFlight() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let invite = FriendChatService.GroupInvite(roomID: roomID, name: "受験対策", inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000)
+        await client.setGroupInvites([invite])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshGroupInvites()
+
+        store.rejectGroupInvite(store.incomingGroupInvites[0])
+        store.acceptGroupInvite(store.incomingGroupInvites[0]) // must be ignored — reject already owns this room
+        await waitUntil { store.incomingGroupInvites.isEmpty }
+
+        let accepted = await client.acceptedGroupInviteRoomIDsSnapshot()
+        XCTAssertTrue(accepted.isEmpty, "accept must not fire while reject is already in flight for the same room")
+        XCTAssertTrue(store.groups.isEmpty)
+    }
+
+    func testPendingGroupActionsTracksARejectInFlightAndClearsOnceItFinishes() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let invite = FriendChatService.GroupInvite(roomID: roomID, name: "受験対策", inviterCode: "ALICE1", inviterName: "Alice", invitedAt: 1_700_000_000_000)
+        await client.setGroupInvites([invite])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshGroupInvites()
+
+        store.rejectGroupInvite(store.incomingGroupInvites[0])
+        XCTAssertTrue(store.pendingGroupActions.contains(roomID), "the room must be marked in-flight synchronously, before the network call resolves")
+
+        await waitUntil { !store.pendingGroupActions.contains(roomID) }
+    }
+
+    // MARK: - renameGroup
+
+    func testRenameGroupWithAnEmptyNameFailsWithoutCallingTheNetwork() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.groups = [FriendChatService.Group(roomID: roomID, name: "受験対策", members: [])]
+
+        let succeeded = await store.renameGroup(roomID: roomID, name: "")
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(store.groups.first?.name, "受験対策")
+        let calls = await client.renameGroupCallsSnapshot()
+        XCTAssertTrue(calls.isEmpty, "an empty name must be rejected locally, before ever reaching the network")
+    }
+
+    func testRenameGroupWithAWhitespaceOnlyNameFailsWithoutCallingTheNetwork() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.groups = [FriendChatService.Group(roomID: roomID, name: "受験対策", members: [])]
+
+        let succeeded = await store.renameGroup(roomID: roomID, name: "   ")
+
+        XCTAssertFalse(succeeded)
+        let calls = await client.renameGroupCallsSnapshot()
+        XCTAssertTrue(calls.isEmpty)
+    }
+
+    func testRenameGroupTrimsWhitespaceBeforeSendingIt() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.groups = [FriendChatService.Group(roomID: roomID, name: "受験対策", members: [])]
+
+        let succeeded = await store.renameGroup(roomID: roomID, name: "  英語部  ")
+
+        XCTAssertTrue(succeeded)
+        let calls = await client.renameGroupCallsSnapshot()
+        XCTAssertEqual(calls.first?.name, "英語部")
+    }
+
+    func testRenameGroupSuccessUpdatesTheNameInTheLocalListWithoutTouchingItsMembers() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let members = [FriendChatService.GroupMember(code: "ALICE1", name: "Alice")]
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.groups = [FriendChatService.Group(roomID: roomID, name: "受験対策", members: members)]
+
+        let succeeded = await store.renameGroup(roomID: roomID, name: "英語部")
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(store.groups.first?.name, "英語部")
+        XCTAssertEqual(store.groups.first?.members, members)
+        XCTAssertEqual(store.errorMessage, "")
+    }
+
+    func testRenameGroupForAGroupNotInTheLocalListStillSucceedsButChangesNothingLocally() async {
+        // Mirrors the accept/duplicate-guard tests elsewhere in this file: a
+        // rename can legitimately arrive for a room the local list doesn't
+        // (yet) know about — e.g. a refresh() racing ahead of it — and must
+        // not crash or insert a bogus entry.
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        let succeeded = await store.renameGroup(roomID: roomID, name: "英語部")
+
+        XCTAssertTrue(succeeded)
+        XCTAssertTrue(store.groups.isEmpty)
+    }
+
+    func testRenameGroupMapsAServerErrorToASpecificJapaneseMessage() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.groups = [FriendChatService.Group(roomID: roomID, name: "受験対策", members: [])]
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 403, message: "You are not a member of this group."))
+
+        let succeeded = await store.renameGroup(roomID: roomID, name: "英語部")
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(store.errorMessage, "このグループのメンバーではありません。")
+        XCTAssertEqual(store.groups.first?.name, "受験対策", "a failed rename must leave the locally-shown name untouched")
+    }
+
+    func testRenameGroupFailureLeavesTheNameUnchanged() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.groups = [FriendChatService.Group(roomID: roomID, name: "受験対策", members: [])]
+        await client.setErrorToThrow(URLError(.notConnectedToInternet))
+
+        let succeeded = await store.renameGroup(roomID: roomID, name: "英語部")
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(store.groups.first?.name, "受験対策")
+    }
+
+    // MARK: - removeGroupMember
+
+    func testRemoveGroupMemberRemovesAnotherMemberFromTheLocalMemberList() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.groups = [FriendChatService.Group(
+            roomID: roomID, name: "受験対策",
+            members: [.init(code: "ME0000", name: "Me"), .init(code: "BOB222", name: "Bob")]
+        )]
+
+        let succeeded = await store.removeGroupMember(roomID: roomID, code: "BOB222")
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(store.groups.count, 1, "removing a member must not remove the group itself")
+        XCTAssertEqual(store.groups.first?.members.map(\.code), ["ME0000"])
+        let calls = await client.removeGroupMemberCallsSnapshot()
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.code, "BOB222")
+    }
+
+    // Leaving is implemented as removing yourself — see removeGroupMember's
+    // own doc comment in ProfileAndFriendsView.swift.
+    func testRemoveGroupMemberForOnesOwnCodeLeavesTheGroupEntirely() async {
+        defaults.set("ME0000", forKey: "studiquoFriendCode")
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.groups = [FriendChatService.Group(
+            roomID: roomID, name: "受験対策",
+            members: [.init(code: "ME0000", name: "Me"), .init(code: "BOB222", name: "Bob")]
+        )]
+
+        let succeeded = await store.removeGroupMember(roomID: roomID, code: store.myCode)
+
+        XCTAssertTrue(succeeded)
+        XCTAssertTrue(store.groups.isEmpty, "removing yourself must drop the whole group from the local list, not just your own entry")
+    }
+
+    func testRemoveGroupMemberReturnsFalseWithoutCallingTheNetworkWhileAnotherGroupActionForTheSameRoomIsInFlight() async {
+        // Mirrors the double-tap guards on accept/rejectGroupInvite —
+        // removeGroupMember shares the same pendingGroupActions set keyed by
+        // roomID, so any other in-flight group action for this room (an
+        // accept, a reject, another remove) must block a second one here too.
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.groups = [FriendChatService.Group(roomID: roomID, name: "受験対策", members: [.init(code: "BOB222", name: "Bob")])]
+        store.pendingGroupActions.insert(roomID)
+
+        let succeeded = await store.removeGroupMember(roomID: roomID, code: "BOB222")
+
+        XCTAssertFalse(succeeded)
+        let calls = await client.removeGroupMemberCallsSnapshot()
+        XCTAssertTrue(calls.isEmpty, "a group action already in flight for this room must block a second one, without ever reaching the network")
+    }
+
+    func testRemoveGroupMemberMapsAServerErrorToASpecificJapaneseMessage() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.groups = [FriendChatService.Group(roomID: roomID, name: "受験対策", members: [.init(code: "BOB222", name: "Bob")])]
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 404, message: "Member not found."))
+
+        let succeeded = await store.removeGroupMember(roomID: roomID, code: "BOB222")
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(store.errorMessage, "メンバーが見つかりません。")
+    }
+
+    func testRemoveGroupMemberFailureLeavesTheMemberListUnchanged() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        let members = [FriendChatService.GroupMember(code: "ME0000", name: "Me"), .init(code: "BOB222", name: "Bob")]
+        store.groups = [FriendChatService.Group(roomID: roomID, name: "受験対策", members: members)]
+        await client.setErrorToThrow(URLError(.notConnectedToInternet))
+
+        let succeeded = await store.removeGroupMember(roomID: roomID, code: "BOB222")
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(store.groups.first?.members, members)
+    }
+
+    // MARK: - refreshGroupMessages
+
+    func testRefreshGroupMessagesFetchesOnlyWhatsNewAndKeepsOlderLocalHistory() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setMessages([roomID: [
+            .init(id: 1, text: "こんにちは", sentAt: 1_000, isMine: false),
+            .init(id: 2, text: "よろしく", sentAt: 2_000, isMine: true),
+        ]])
+
+        await store.refreshGroupMessages(roomID: roomID)
+        XCTAssertEqual(store.groupMessages[roomID]?.map(\.text), ["こんにちは", "よろしく"])
+
+        await client.appendMessage(.init(id: 3, text: "新着", sentAt: 3_000, isMine: false), to: roomID)
+        await store.refreshGroupMessages(roomID: roomID)
+
+        XCTAssertEqual(store.groupMessages[roomID]?.map(\.text), ["こんにちは", "よろしく", "新着"])
+        let requestedAfterValues = await client.messagesAfterRequestsSnapshot()
+        XCTAssertEqual(requestedAfterValues, [0, 2], "the second fetch must ask only for what's new, unlike the 1:1 flow this doesn't keep a trailing window")
+    }
+
+    func testRefreshGroupMessagesKeepsDifferentGroupsSeparate() async {
+        let client = MockFriendChatClient()
+        let roomA = String(repeating: "a", count: 64)
+        let roomB = String(repeating: "b", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setMessages([
+            roomA: [.init(id: 1, text: "Group A", sentAt: 1_000, isMine: false)],
+            roomB: [.init(id: 1, text: "Group B", sentAt: 1_000, isMine: false)],
+        ])
+
+        await store.refreshGroupMessages(roomID: roomA)
+        await store.refreshGroupMessages(roomID: roomB)
+
+        XCTAssertEqual(store.groupMessages[roomA]?.map(\.text), ["Group A"])
+        XCTAssertEqual(store.groupMessages[roomB]?.map(\.text), ["Group B"])
+    }
+
+    func testRefreshGroupMessagesDoesNotDuplicateAMessageAlreadyKnown() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setMessages([roomID: [.init(id: 1, text: "こんにちは", sentAt: 1_000, isMine: false)]])
+        await store.refreshGroupMessages(roomID: roomID)
+        // Simulates the same message arriving again in a later fetch's
+        // window (the request only ever asks for `after: lastID`, but a
+        // defensive filter still guards against a duplicate id showing up).
+        store.groupMessages[roomID] = [.init(id: 1, text: "こんにちは", sentAt: 1_000, isMine: false)]
+
+        await store.refreshGroupMessages(roomID: roomID)
+
+        XCTAssertEqual(store.groupMessages[roomID]?.count, 1)
+    }
+
+    func testRefreshGroupMessagesSilentlyIgnoresAnErrorAndKeepsExistingMessages() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setMessages([roomID: [.init(id: 1, text: "こんにちは", sentAt: 1_000, isMine: false)]])
+        await store.refreshGroupMessages(roomID: roomID)
+        await client.setErrorToThrow(URLError(.notConnectedToInternet))
+
+        await store.refreshGroupMessages(roomID: roomID)
+
+        XCTAssertEqual(store.groupMessages[roomID]?.map(\.text), ["こんにちは"], "a transient failure must not lose what's already been fetched")
+        XCTAssertEqual(store.errorMessage, "", "this polls every couple of seconds while the screen is open, so a blip must stay silent rather than flash an alert")
+    }
+
+    func testRefreshGroupMessagesTreatsAnEmptySuccessfulResponseAsANoOp() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        await store.refreshGroupMessages(roomID: roomID)
+
+        XCTAssertNil(store.groupMessages[roomID], "an empty response for a room with no history yet must not create a bogus empty entry")
+    }
+
+    // MARK: - sendGroupMessage
+
+    func testSendGroupMessageWithAnEmptyTextFailsWithoutCallingTheNetwork() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        let succeeded = await store.sendGroupMessage("", roomID: roomID)
+
+        XCTAssertFalse(succeeded)
+        XCTAssertTrue(store.groupMessages[roomID, default: []].isEmpty)
+        let sent = await client.sentMessages()
+        XCTAssertTrue(sent.isEmpty, "an empty message must be rejected locally, before ever reaching the network")
+    }
+
+    func testSendGroupMessageWithAWhitespaceOnlyTextFailsWithoutCallingTheNetwork() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        let succeeded = await store.sendGroupMessage("   \n  ", roomID: roomID)
+
+        XCTAssertFalse(succeeded)
+        let sent = await client.sentMessages()
+        XCTAssertTrue(sent.isEmpty)
+    }
+
+    // Unlike the 1:1 flow (which silently truncates an over-length message to
+    // the same limit), sendGroupMessage rejects it outright — see its own
+    // guard in ProfileAndFriendsView.swift.
+    func testSendGroupMessageWithTextOverTheLengthLimitFailsWithoutCallingTheNetwork() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        let tooLong = String(repeating: "あ", count: 2_001)
+
+        let succeeded = await store.sendGroupMessage(tooLong, roomID: roomID)
+
+        XCTAssertFalse(succeeded)
+        let sent = await client.sentMessages()
+        XCTAssertTrue(sent.isEmpty, "an over-length message must be rejected locally rather than silently truncated")
+    }
+
+    func testSendGroupMessageSuccessAppendsTheSentMessageToTheRoomsMessageList() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        let succeeded = await store.sendGroupMessage("こんにちは", roomID: roomID)
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(store.groupMessages[roomID]?.map(\.text), ["こんにちは"])
+        XCTAssertEqual(store.errorMessage, "")
+        let sent = await client.sentMessages()
+        XCTAssertEqual(sent, [.init(text: "こんにちは", roomID: roomID)])
+    }
+
+    func testSendGroupMessageTrimsSurroundingWhitespaceBeforeSendingIt() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        let succeeded = await store.sendGroupMessage("  こんにちは  ", roomID: roomID)
+
+        XCTAssertTrue(succeeded)
+        let sent = await client.sentMessages()
+        XCTAssertEqual(sent, [.init(text: "こんにちは", roomID: roomID)])
+    }
+
+    func testSendGroupMessageAppendsToExistingHistoryWithoutLosingIt() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setMessages([roomID: [.init(id: 1, text: "先に届いたメッセージ", sentAt: 1_000, isMine: false)]])
+        await store.refreshGroupMessages(roomID: roomID)
+
+        let succeeded = await store.sendGroupMessage("送信するメッセージ", roomID: roomID)
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(store.groupMessages[roomID]?.map(\.text), ["先に届いたメッセージ", "送信するメッセージ"])
+    }
+
+    func testSendGroupMessageMapsAServerErrorToASpecificJapaneseMessage() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 403, message: "You are not a member of this group."))
+
+        let succeeded = await store.sendGroupMessage("こんにちは", roomID: roomID)
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(store.errorMessage, "このグループのメンバーではありません。")
+    }
+
+    func testSendGroupMessageFailureAddsNothingToTheList() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await client.setErrorToThrow(URLError(.notConnectedToInternet))
+
+        let succeeded = await store.sendGroupMessage("こんにちは", roomID: roomID)
+
+        XCTAssertFalse(succeeded)
+        XCTAssertTrue(store.groupMessages[roomID, default: []].isEmpty)
+        XCTAssertEqual(store.errorMessage, "送信できませんでした。")
+    }
+
+    // MARK: - group list persistence
+
+    // Mirrors testSeenStatusPersistsAcrossARelaunchSoTheBadgeDoesNotReappearForAnAlreadySeenRequest
+    // for the group list: groups must survive a relaunch on their own,
+    // without waiting for the next refreshGroups() poll to repopulate them.
+    func testGroupsPersistAcrossARelaunch() async {
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let group = FriendChatService.Group(
+            roomID: roomID, name: "受験対策",
+            members: [.init(code: "ME0000", name: "Me"), .init(code: "ALICE1", name: "Alice")]
+        )
+        let firstLaunch = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        firstLaunch.groups = [group]
+
+        let secondLaunch = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        XCTAssertEqual(secondLaunch.groups.map(\.roomID), [roomID])
+        XCTAssertEqual(secondLaunch.groups.first?.name, "受験対策")
+        XCTAssertEqual(secondLaunch.groups.first?.members, group.members)
+    }
+
+    func testAnEmptyGroupsListPersistsJustAsWellAsANonEmptyOne() async {
+        // Regression coverage for the shape of bug this session's
+        // AppSchemaCloudKitCompatibilityTests fix guarded against elsewhere:
+        // leaving the last group must not leave stale data behind for the
+        // next launch to incorrectly resurrect.
+        let client = MockFriendChatClient()
+        let roomID = String(repeating: "a", count: 64)
+        let firstLaunch = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        firstLaunch.groups = [FriendChatService.Group(roomID: roomID, name: "受験対策", members: [])]
+        firstLaunch.groups = []
+
+        let secondLaunch = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        XCTAssertTrue(secondLaunch.groups.isEmpty)
+    }
+
+    func testCorruptedPersistedGroupsDataFallsBackToAnEmptyListInsteadOfCrashing() {
+        defaults.set(Data("not valid json".utf8), forKey: "studiquoGroups")
+
+        let store = FriendStore(client: MockFriendChatClient(), defaults: defaults, autoRefresh: false)
+
+        XCTAssertTrue(store.groups.isEmpty)
     }
 
     func testASuccessfulPollDoesNotClearAnUnrelatedErrorMessage() async {
@@ -2321,6 +3331,105 @@ private actor MockFriendChatClient: FriendChatClient {
         outgoingPendingRequests = requests
     }
 
+    var remoteGroups: [FriendChatService.Group] = []
+    var remoteGroupInvites: [FriendChatService.GroupInvite] = []
+
+    func groups() async throws -> [FriendChatService.Group] {
+        if let errorToThrow { throw errorToThrow }
+        return remoteGroups
+    }
+
+    func groupInvites() async throws -> [FriendChatService.GroupInvite] {
+        if let errorToThrow { throw errorToThrow }
+        return remoteGroupInvites
+    }
+
+    func setGroups(_ value: [FriendChatService.Group]) {
+        remoteGroups = value
+    }
+
+    func setGroupInvites(_ value: [FriendChatService.GroupInvite]) {
+        remoteGroupInvites = value
+    }
+
+    var createGroupCalls: [(name: String, memberCodes: [String])] = []
+    /// The roomID `createGroup` hands back — fixed rather than random so a
+    /// test can assert on it (e.g. to check for duplicate-add protection)
+    /// without having to capture whatever value was generated.
+    var createdGroupRoomID = String(repeating: "c", count: 64)
+
+    func createGroup(name: String, memberCodes: [String]) async throws -> FriendChatService.Group {
+        createGroupCalls.append((name, memberCodes))
+        if let errorToThrow { throw errorToThrow }
+        return FriendChatService.Group(
+            roomID: createdGroupRoomID, name: name,
+            members: [.init(code: identity.code, name: identity.name)]
+        )
+    }
+
+    func createGroupCallsSnapshot() -> [(name: String, memberCodes: [String])] { createGroupCalls }
+
+    var inviteToGroupCalls: [(roomID: String, code: String)] = []
+    var inviteToGroupResultStatus = "pending"
+
+    func setInviteToGroupResultStatus(_ status: String) {
+        inviteToGroupResultStatus = status
+    }
+
+    func inviteToGroup(roomID: String, code: String) async throws -> FriendChatService.GroupActionResult {
+        inviteToGroupCalls.append((roomID, code))
+        if let errorToThrow { throw errorToThrow }
+        return .init(status: inviteToGroupResultStatus)
+    }
+
+    func inviteToGroupCallsSnapshot() -> [(roomID: String, code: String)] { inviteToGroupCalls }
+
+    var acceptedGroupInviteRoomIDs: [String] = []
+    var acceptGroupInviteResult: FriendChatService.Group?
+
+    func acceptGroupInvite(roomID: String) async throws -> FriendChatService.Group {
+        acceptedGroupInviteRoomIDs.append(roomID)
+        if let errorToThrow { throw errorToThrow }
+        if let acceptGroupInviteResult { return acceptGroupInviteResult }
+        return FriendChatService.Group(roomID: roomID, name: "Group", members: [.init(code: identity.code, name: identity.name)])
+    }
+
+    func acceptedGroupInviteRoomIDsSnapshot() -> [String] { acceptedGroupInviteRoomIDs }
+
+    func setAcceptGroupInviteResult(_ value: FriendChatService.Group) {
+        acceptGroupInviteResult = value
+    }
+
+    var rejectedGroupInviteRoomIDs: [String] = []
+
+    func rejectGroupInvite(roomID: String) async throws -> FriendChatService.GroupActionResult {
+        rejectedGroupInviteRoomIDs.append(roomID)
+        if let errorToThrow { throw errorToThrow }
+        return .init(status: "rejected")
+    }
+
+    func rejectedGroupInviteRoomIDsSnapshot() -> [String] { rejectedGroupInviteRoomIDs }
+
+    var renameGroupCalls: [(roomID: String, name: String)] = []
+
+    func renameGroup(roomID: String, name: String) async throws -> FriendChatService.RenameGroupResult {
+        renameGroupCalls.append((roomID, name))
+        if let errorToThrow { throw errorToThrow }
+        return .init(status: "ok", name: name)
+    }
+
+    func renameGroupCallsSnapshot() -> [(roomID: String, name: String)] { renameGroupCalls }
+
+    var removeGroupMemberCalls: [(roomID: String, code: String)] = []
+
+    func removeGroupMember(roomID: String, code: String) async throws -> FriendChatService.GroupActionResult {
+        removeGroupMemberCalls.append((roomID, code))
+        if let errorToThrow { throw errorToThrow }
+        return .init(status: "removed")
+    }
+
+    func removeGroupMemberCallsSnapshot() -> [(roomID: String, code: String)] { removeGroupMemberCalls }
+
     func accept(code: String) async throws -> FriendChatService.Friend {
         if let errorToThrow { throw errorToThrow }
         guard let friend = remoteFriends.first(where: { $0.code == code }) else {
@@ -2443,12 +3552,21 @@ private actor MockFriendChatClient: FriendChatClient {
     func block(roomID: String) async throws -> FriendChatService.BlockResult {
         if let errorToThrow { throw errorToThrow }
         blockedByMeRooms.insert(roomID)
+        // Keeps `blocked` (what blockedContacts() reads back) in sync with
+        // blockedByMeRooms — the store's own block() re-fetches via
+        // refreshBlockedContacts() right after this call, so a mock that
+        // only updated blockedByMeRooms would have that refresh silently
+        // wipe the block back out.
+        if !blocked.contains(where: { $0.roomID == roomID }) {
+            blocked.append(.init(code: roomID, name: roomID, roomID: roomID))
+        }
         return .init(status: "blocked")
     }
 
     func unblock(roomID: String) async throws -> FriendChatService.BlockResult {
         if let errorToThrow { throw errorToThrow }
         blockedByMeRooms.remove(roomID)
+        blocked.removeAll { $0.roomID == roomID }
         return .init(status: "unblocked")
     }
 

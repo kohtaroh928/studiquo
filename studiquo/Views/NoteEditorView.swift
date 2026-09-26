@@ -374,6 +374,10 @@ struct NoteEditorView: View {
     @State private var calculatorResult = "0"
     @State private var calculatorCenter: CGPoint?
     @State private var calculatorDragOrigin: CGPoint?
+    @State private var calculatorAngleMode: CalculatorAngleMode = .degrees
+    @State private var calculatorMemory: Double = 0
+    @State private var calculatorLastAnswer: Double = 0
+    @State private var calculatorDisplayAsFraction = false
     @State private var temporaryAIChatCenter: CGPoint?
     @State private var temporaryAIChatDragOrigin: CGPoint?
     @State private var temporaryAIChatSize: CGSize?
@@ -470,6 +474,10 @@ struct NoteEditorView: View {
                         expression: $calculatorExpression,
                         result: $calculatorResult,
                         center: $calculatorCenter,
+                        angleMode: $calculatorAngleMode,
+                        memory: $calculatorMemory,
+                        lastAnswer: $calculatorLastAnswer,
+                        displayAsFraction: $calculatorDisplayAsFraction,
                         containerSize: geometry.size,
                         onClose: { showsCalculator = false }
                     )
@@ -3849,83 +3857,317 @@ struct PDFSaveModifier: ViewModifier {
     }
 }
 
+// MARK: - Scientific calculator engine
+//
+// Pure logic (expression building, evaluation, formatting) lives here, free
+// of SwiftUI, so it can be unit tested directly — see
+// studiquoTests/ScientificCalculatorTests.swift. `ScientificCalculatorPanel`
+// below is a thin View wrapper that just renders `ScientificCalculator`'s
+// key catalog and calls into it on every tap.
+
+/// Angle unit sin/cos/tan (and their inverses) operate in. Cycled by the
+/// DRG key. Hyperbolic functions are unit-independent, so this doesn't
+/// affect them.
+enum CalculatorAngleMode: String, CaseIterable {
+    case degrees = "DEG"
+    case radians = "RAD"
+    case gradians = "GRAD"
+
+    func cycled() -> CalculatorAngleMode {
+        switch self {
+        case .degrees: return .radians
+        case .radians: return .gradians
+        case .gradians: return .degrees
+        }
+    }
+}
+
+/// One physical calculator key. `shiftLabel` is nil for a key with no
+/// secondary function, in which case SHIFT leaves its label unchanged.
+struct CalculatorKey: Identifiable, Equatable {
+    let id: String
+    let shiftLabel: String?
+
+    init(_ id: String, shift: String? = nil) {
+        self.id = id
+        self.shiftLabel = shift
+    }
+}
+
+enum ScientificCalculator {
+    /// Scientific/function keys, top to bottom then left to right within
+    /// each row of 4. The digit/operator block below is separate since it
+    /// never changes with SHIFT.
+    static let functionKeys: [CalculatorKey] = [
+        .init("SHIFT"), .init("DRG"), .init("("), .init(")"),
+        .init("sin", shift: "sin⁻¹"), .init("cos", shift: "cos⁻¹"), .init("tan", shift: "tan⁻¹"), .init("^", shift: "^√"),
+        .init("sinh", shift: "sinh⁻¹"), .init("cosh", shift: "cosh⁻¹"), .init("tanh", shift: "tanh⁻¹"), .init("√", shift: "x²"),
+        .init("ln", shift: "eˣ"), .init("log", shift: "10ˣ"), .init("∛", shift: "x³"), .init("1/x", shift: "|x|"),
+        .init("n!", shift: "nPr"), .init("%", shift: "nCr"), .init(","), .init("Ans"),
+        .init("M+", shift: "MR"), .init("MC"), .init("EXP"), .init("Ran#", shift: "S⇔D"),
+        .init("π"), .init("AC"), .init("⌫"),
+    ]
+
+    static let digitKeys: [CalculatorKey] = [
+        .init("7"), .init("8"), .init("9"), .init("÷"),
+        .init("4"), .init("5"), .init("6"), .init("−"),
+        .init("1"), .init("2"), .init("3"), .init("+"),
+        .init("±"), .init("0"), .init("."), .init("="),
+    ]
+
+    static func label(for key: CalculatorKey, shiftActive: Bool) -> String {
+        if shiftActive, let shiftLabel = key.shiftLabel { return shiftLabel }
+        return key.id
+    }
+
+    /// Applies one key press to `expression`, returning the new expression.
+    /// Keys that don't touch the expression (AC, ⌫, SHIFT, DRG, MC, a
+    /// non-shifted M+, a shifted Ran#, =) are handled by the caller instead,
+    /// since they need to mutate other state (memory, the result, the angle
+    /// mode) that this pure function has no access to.
+    static func inserted(
+        pressing keyID: String, shiftActive: Bool, into expression: String,
+        lastAnswer: Double, memory: Double, random: Double
+    ) -> String {
+        switch keyID {
+        case "(": return appending("(", to: expression)
+        case ")": return expression + ")"
+        case "sin": return appending(shiftActive ? "asin(" : "sin(", to: expression)
+        case "cos": return appending(shiftActive ? "acos(" : "cos(", to: expression)
+        case "tan": return appending(shiftActive ? "atan(" : "tan(", to: expression)
+        case "^": return shiftActive ? appending("nthroot(", to: expression) : expression + "^"
+        case "sinh": return appending(shiftActive ? "asinh(" : "sinh(", to: expression)
+        case "cosh": return appending(shiftActive ? "acosh(" : "cosh(", to: expression)
+        case "tanh": return appending(shiftActive ? "atanh(" : "tanh(", to: expression)
+        case "√": return shiftActive ? expression + "^2" : appending("sqrt(", to: expression)
+        case "ln": return appending(shiftActive ? "exp(" : "ln(", to: expression)
+        case "log": return appending(shiftActive ? "pow10(" : "log(", to: expression)
+        case "∛": return shiftActive ? expression + "^3" : appending("cbrt(", to: expression)
+        case "1/x": return appending(shiftActive ? "abs(" : "recip(", to: expression)
+        case "n!": return shiftActive ? appending("nPr(", to: expression) : expression + "!"
+        case "%": return shiftActive ? appending("nCr(", to: expression) : expression + "%"
+        case ",": return expression + ","
+        case "Ans": return appending(formattedOperand(lastAnswer), to: expression)
+        case "M+": return shiftActive ? appending(formattedOperand(memory), to: expression) : expression
+        case "EXP": return expression + "e"
+        case "Ran#": return shiftActive ? expression : appending(formattedOperand(random), to: expression)
+        case "π": return appending("π", to: expression)
+        case "÷": return expression + "/"
+        case "×": return expression + "*"
+        case "−": return expression + "-"
+        case "+": return expression + "+"
+        case "±": return negated(expression)
+        case ".": return expression + "."
+        case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9": return appending(keyID, to: expression)
+        default: return expression
+        }
+    }
+
+    /// Wraps (or unwraps) the whole expression in a leading minus, for the
+    /// ± key. A flat expression string has no notion of "the last entered
+    /// number" to negate in isolation, so this negates the whole thing —
+    /// simpler and still reversible with a second press.
+    static func negated(_ expression: String) -> String {
+        if expression.hasPrefix("-(") && expression.hasSuffix(")") {
+            return String(expression.dropFirst(2).dropLast())
+        }
+        guard !expression.isEmpty else { return expression }
+        return "-(" + expression + ")"
+    }
+
+    enum EvaluationOutcome: Equatable {
+        case success(display: String, value: Double)
+        case failure
+    }
+
+    static func evaluate(_ expression: String, angleMode: CalculatorAngleMode, asFraction: Bool = false) -> EvaluationOutcome {
+        guard !expression.isEmpty else { return .failure }
+        let processed = applyingPostfixOperators(expression)
+        let transformed = processed
+            .replacingOccurrences(of: "π", with: "Math.PI")
+            .replacingOccurrences(of: "^", with: "**")
+        let toRadians: String
+        let fromRadians: String
+        switch angleMode {
+        case .degrees: toRadians = "(Math.PI/180)"; fromRadians = "(180/Math.PI)"
+        case .radians: toRadians = "1"; fromRadians = "1"
+        case .gradians: toRadians = "(Math.PI/200)"; fromRadians = "(200/Math.PI)"
+        }
+        let script = """
+        const sin = x => Math.sin(x * \(toRadians));
+        const cos = x => Math.cos(x * \(toRadians));
+        const tan = x => Math.tan(x * \(toRadians));
+        const asin = x => Math.asin(x) * \(fromRadians);
+        const acos = x => Math.acos(x) * \(fromRadians);
+        const atan = x => Math.atan(x) * \(fromRadians);
+        const sinh = Math.sinh, cosh = Math.cosh, tanh = Math.tanh;
+        const asinh = Math.asinh, acosh = Math.acosh, atanh = Math.atanh;
+        const ln = x => Math.log(x);
+        const log = x => Math.log10(x);
+        const exp = x => Math.exp(x);
+        const pow10 = x => Math.pow(10, x);
+        const sqrt = x => Math.sqrt(x);
+        const cbrt = x => Math.cbrt(x);
+        const abs = x => Math.abs(x);
+        const recip = x => 1 / x;
+        const fact = n => {
+            if (n < 0 || Math.floor(n) !== n) return NaN;
+            let r = 1;
+            for (let i = 2; i <= n; i++) r *= i;
+            return r;
+        };
+        const nPr = (n, r) => fact(n) / fact(n - r);
+        const nCr = (n, r) => fact(n) / (fact(r) * fact(n - r));
+        const nthroot = (n, x) => (x < 0 && n % 2 !== 0) ? -Math.pow(-x, 1 / n) : Math.pow(x, 1 / n);
+        \(transformed)
+        """
+        guard let value = JSContext()?.evaluateScript(script), !value.isUndefined, value.isNumber else {
+            return .failure
+        }
+        let number = value.toDouble()
+        guard number.isFinite else { return .failure }
+        return .success(display: format(number, asFraction: asFraction), value: number)
+    }
+
+    static func format(_ value: Double, asFraction: Bool) -> String {
+        if asFraction, let approximation = fraction(from: value), approximation.denominator != 1 {
+            let whole = approximation.numerator / approximation.denominator
+            let remainder = abs(approximation.numerator % approximation.denominator)
+            return whole != 0 ? "\(whole) \(remainder)/\(approximation.denominator)" : "\(approximation.numerator)/\(approximation.denominator)"
+        }
+        return value.rounded() == value && abs(value) < 1e15
+            ? String(format: "%.0f", value)
+            : String(format: "%.10g", value)
+    }
+
+    /// Approximates `value` as a fraction via the standard continued-fraction
+    /// algorithm, reduced to lowest terms. Returns nil for a value too large
+    /// or non-finite to display sensibly as a fraction.
+    static func fraction(from value: Double, maxDenominator: Int = 9_999) -> (numerator: Int, denominator: Int)? {
+        guard value.isFinite, abs(value) < 1e9 else { return nil }
+        let isNegative = value < 0
+        var h0 = 0.0, h1 = 1.0
+        var k0 = 1.0, k1 = 0.0
+        var b = abs(value)
+        for _ in 0..<40 {
+            let a = b.rounded(.down)
+            let h = a * h1 + h0
+            let k = a * k1 + k0
+            if k > Double(maxDenominator) { break }
+            h0 = h1; h1 = h
+            k0 = k1; k1 = k
+            let remainder = b - a
+            if remainder < 1e-9 { break }
+            b = 1 / remainder
+        }
+        guard k1 >= 1 else { return nil }
+        let numerator = Int((isNegative ? -h1 : h1).rounded())
+        let denominator = Int(k1.rounded())
+        guard denominator != 0 else { return nil }
+        let divisor = greatestCommonDivisor(abs(numerator), denominator)
+        return divisor > 1 ? (numerator / divisor, denominator / divisor) : (numerator, denominator)
+    }
+
+    /// Rewrites postfix `!` and `%` (e.g. "5!", "50%", "(2+3)!") into the
+    /// prefix-function form the rest of `evaluate` understands ("fact(5)",
+    /// "(50/100)"). Only matches a plain number or a single (non-nested)
+    /// parenthesized/function-call group immediately before the operator —
+    /// deeply nested chains like "((2+3)!)%" aren't specially handled and
+    /// will surface as a plain syntax error rather than silently
+    /// mis-evaluating.
+    static func applyingPostfixOperators(_ expression: String) -> String {
+        var current = expression
+        for _ in 0..<20 {
+            let ns = current as NSString
+            guard let match = postfixPattern.firstMatch(in: current, range: NSRange(location: 0, length: ns.length)) else {
+                return current
+            }
+            let group = ns.substring(with: match.range(at: 1))
+            let op = ns.substring(with: match.range(at: 2))
+            let replacement = op == "!" ? "fact(\(group))" : "(\(group)/100)"
+            current = ns.replacingCharacters(in: match.range, with: replacement)
+        }
+        return current
+    }
+
+    private static let postfixPattern = try! NSRegularExpression(
+        pattern: "([A-Za-z_]*\\([^()]*\\)|\\d+\\.?\\d*|\\.\\d+)([!%])"
+    )
+
+    private static func isValueEnding(_ character: Character) -> Bool {
+        character.isNumber || character == ")" || character == "!" || character == "%" || character == "π"
+    }
+
+    private static func isValueStarting(_ character: Character) -> Bool {
+        character.isLetter || character.isNumber || character == "(" || character == "π"
+    }
+
+    /// Appends `token`, inserting an implicit `*` first when it would
+    /// otherwise run two values together with no operator between them
+    /// (e.g. "2" followed by "π", or ")" followed by "5").
+    private static func appending(_ token: String, to expression: String) -> String {
+        guard let lastCharacter = expression.last, let firstCharacter = token.first,
+              isValueEnding(lastCharacter), isValueStarting(firstCharacter) else {
+            return expression + token
+        }
+        return expression + "*" + token
+    }
+
+    private static func formattedOperand(_ value: Double) -> String {
+        let text = value.rounded() == value && abs(value) < 1e15
+            ? String(format: "%.0f", value)
+            : String(format: "%.10g", value)
+        return value < 0 ? "(\(text))" : text
+    }
+
+    private static func greatestCommonDivisor(_ a: Int, _ b: Int) -> Int {
+        var a = a, b = b
+        while b != 0 { (a, b) = (b, a % b) }
+        return a
+    }
+}
+
 private struct ScientificCalculatorPanel: View {
     @Binding var expression: String
     @Binding var result: String
     @Binding var center: CGPoint?
+    @Binding var angleMode: CalculatorAngleMode
+    @Binding var memory: Double
+    @Binding var lastAnswer: Double
+    @Binding var displayAsFraction: Bool
     let containerSize: CGSize
     let onClose: () -> Void
     @State private var dragOrigin: CGPoint?
+    @State private var shiftActive = false
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 7), count: 4)
-    private let keys = [
-        "sin", "cos", "tan", "AC",
-        "ln", "log", "sqrt", "⌫",
-        "(", ")", "^", "÷",
-        "7", "8", "9", "×",
-        "4", "5", "6", "−",
-        "1", "2", "3", "+",
-        "π", "0", ".", "=",
+
+    private static let functionLikeKeys: Set<String> = [
+        "sin", "cos", "tan", "sinh", "cosh", "tanh", "ln", "log", "√", "∛",
+        "1/x", "n!", "%", "(", ")", "π", "Ans", "EXP", ",",
     ]
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Label("関数電卓", systemImage: "function")
-                    .font(.headline)
-                Spacer()
-                Text("DEG").font(.caption2.bold()).foregroundStyle(.secondary)
-                Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
-            .background(Color.indigo.opacity(0.16))
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 8, coordinateSpace: .global)
-                    .onChanged { value in
-                        let initial = dragOrigin ?? resolvedCenter
-                        if dragOrigin == nil { dragOrigin = initial }
-                        center = clamped(CGPoint(
-                            x: initial.x + value.translation.width,
-                            y: initial.y + value.translation.height
-                        ))
+            header
+            displayArea
+            ScrollView {
+                VStack(spacing: 7) {
+                    LazyVGrid(columns: columns, spacing: 7) {
+                        ForEach(ScientificCalculator.functionKeys) { key in
+                            keyButton(key.id, label: ScientificCalculator.label(for: key, shiftActive: shiftActive))
+                        }
                     }
-                    .onEnded { _ in dragOrigin = nil }
-            )
-
-            VStack(alignment: .trailing, spacing: 6) {
-                Text(expression.isEmpty ? "0" : expression)
-                    .font(.title3.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.6)
-                Text(result)
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.55)
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(14)
-            .background(Color(.secondarySystemBackground))
-
-            LazyVGrid(columns: columns, spacing: 7) {
-                ForEach(keys, id: \.self) { key in
-                    Button { handle(key) } label: {
-                        Text(key == "sqrt" ? "√" : key)
-                            .font(.system(size: 17, weight: .semibold, design: .rounded))
-                            .frame(maxWidth: .infinity, minHeight: 42)
-                            .background(keyColor(key), in: RoundedRectangle(cornerRadius: 10))
-                            .foregroundStyle(keyForeground(key))
+                    LazyVGrid(columns: columns, spacing: 7) {
+                        ForEach(ScientificCalculator.digitKeys) { key in
+                            keyButton(key.id, label: key.id)
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(10)
             }
-            .padding(10)
         }
-        .frame(width: 350, height: 500)
+        .frame(width: 380, height: 600)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.indigo.opacity(0.35)))
@@ -3936,78 +4178,143 @@ private struct ScientificCalculatorPanel: View {
         }
     }
 
+    private var header: some View {
+        HStack {
+            Label("関数電卓", systemImage: "function")
+                .font(.headline)
+            Spacer()
+            if shiftActive {
+                Text("SHIFT").font(.caption2.bold()).foregroundStyle(.yellow)
+            }
+            Text(angleMode.rawValue).font(.caption2.bold()).foregroundStyle(.secondary)
+            Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(Color.indigo.opacity(0.16))
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 8, coordinateSpace: .global)
+                .onChanged { value in
+                    let initial = dragOrigin ?? resolvedCenter
+                    if dragOrigin == nil { dragOrigin = initial }
+                    center = clamped(CGPoint(
+                        x: initial.x + value.translation.width,
+                        y: initial.y + value.translation.height
+                    ))
+                }
+                .onEnded { _ in dragOrigin = nil }
+        )
+    }
+
+    private var displayArea: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            if memory != 0 {
+                Text("M").font(.caption2.bold()).foregroundStyle(.purple).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Text(expression.isEmpty ? "0" : expression)
+                .font(.title3.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.6)
+            Text(result)
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(14)
+        .background(Color(.secondarySystemBackground))
+    }
+
+    private func keyButton(_ id: String, label: String) -> some View {
+        Button { handle(id) } label: {
+            Text(label)
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .frame(maxWidth: .infinity, minHeight: 42)
+                .background(keyColor(id), in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(keyForeground(id))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.yellow, lineWidth: id == "SHIFT" && shiftActive ? 2 : 0)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
     private var resolvedCenter: CGPoint {
         clamped(center ?? CGPoint(x: containerSize.width / 2, y: containerSize.height / 2))
     }
 
     private func clamped(_ point: CGPoint) -> CGPoint {
-        let halfWidth: CGFloat = min(175, containerSize.width / 2)
-        let halfHeight: CGFloat = min(250, containerSize.height / 2)
+        let halfWidth: CGFloat = min(190, containerSize.width / 2)
+        let halfHeight: CGFloat = min(300, containerSize.height / 2)
         return CGPoint(
             x: min(max(point.x, halfWidth), max(halfWidth, containerSize.width - halfWidth)),
             y: min(max(point.y, halfHeight), max(halfHeight, containerSize.height - halfHeight))
         )
     }
 
-    private func keyColor(_ key: String) -> Color {
-        if key == "=" { return .indigo }
-        if ["÷", "×", "−", "+", "^"].contains(key) { return .orange.opacity(0.82) }
-        if ["sin", "cos", "tan", "ln", "log", "sqrt", "(", ")", "π"].contains(key) {
-            return .teal.opacity(0.18)
-        }
-        if key == "AC" || key == "⌫" { return .red.opacity(0.16) }
+    private func keyColor(_ id: String) -> Color {
+        if id == "=" { return .indigo }
+        if ["÷", "×", "−", "+", "^"].contains(id) { return .orange.opacity(0.82) }
+        if id == "SHIFT" { return shiftActive ? Color.yellow.opacity(0.55) : Color.yellow.opacity(0.22) }
+        if id == "AC" || id == "⌫" { return .red.opacity(0.16) }
+        if ["DRG", "MC", "M+", "Ran#"].contains(id) { return .purple.opacity(0.16) }
+        if Self.functionLikeKeys.contains(id) { return .teal.opacity(0.18) }
         return Color(.tertiarySystemFill)
     }
 
-    private func keyForeground(_ key: String) -> Color {
-        if key == "=" || ["÷", "×", "−", "+", "^"].contains(key) { return .white }
-        if key == "AC" || key == "⌫" { return .red }
+    private func keyForeground(_ id: String) -> Color {
+        if id == "=" || ["÷", "×", "−", "+", "^"].contains(id) { return .white }
+        if id == "AC" || id == "⌫" { return .red }
         return .primary
     }
 
-    private func handle(_ key: String) {
-        switch key {
+    private func handle(_ id: String) {
+        defer {
+            if id != "SHIFT" { shiftActive = false }
+        }
+        switch id {
         case "AC":
             expression = ""
             result = "0"
         case "⌫":
             if !expression.isEmpty { expression.removeLast() }
+        case "SHIFT":
+            shiftActive.toggle()
+        case "DRG":
+            angleMode = angleMode.cycled()
+        case "MC":
+            memory = 0
+        case "M+" where !shiftActive:
+            applyEvaluation { value in memory += value }
+        case "Ran#" where shiftActive:
+            displayAsFraction.toggle()
+            result = ScientificCalculator.format(lastAnswer, asFraction: displayAsFraction)
         case "=":
-            evaluate()
-        case "sin", "cos", "tan", "ln", "log", "sqrt":
-            expression += "\(key)("
-        case "÷": expression += "/"
-        case "×": expression += "*"
-        case "−": expression += "-"
-        case "^": expression += "^"
-        case "π": expression += "π"
-        default: expression += key
+            applyEvaluation()
+        default:
+            expression = ScientificCalculator.inserted(
+                pressing: id, shiftActive: shiftActive, into: expression,
+                lastAnswer: lastAnswer, memory: memory, random: Double.random(in: 0..<1)
+            )
         }
     }
 
-    private func evaluate() {
-        guard !expression.isEmpty else { return }
-        let transformed = expression
-            .replacingOccurrences(of: "π", with: "Math.PI")
-            .replacingOccurrences(of: "^", with: "**")
-        let script = """
-        const sin = x => Math.sin(x * Math.PI / 180);
-        const cos = x => Math.cos(x * Math.PI / 180);
-        const tan = x => Math.tan(x * Math.PI / 180);
-        const ln = x => Math.log(x);
-        const log = x => Math.log10(x);
-        const sqrt = x => Math.sqrt(x);
-        \(transformed)
-        """
-        guard let value = JSContext()?.evaluateScript(script), !value.isUndefined else {
+    private func applyEvaluation(_ onSuccess: (Double) -> Void = { _ in }) {
+        switch ScientificCalculator.evaluate(expression, angleMode: angleMode, asFraction: displayAsFraction) {
+        case .success(let display, let value):
+            result = display
+            lastAnswer = value
+            onSuccess(value)
+        case .failure:
             result = "エラー"
-            return
         }
-        let number = value.toDouble()
-        guard number.isFinite else { result = "エラー"; return }
-        result = number.rounded() == number
-            ? String(format: "%.0f", number)
-            : String(format: "%.10g", number)
     }
 }
 
@@ -7196,27 +7503,45 @@ struct PageCanvasContainer: View {
                                 shapeSelectionDragOffsets = offsets
                             },
                             onShapeSelectionMoved: { ids, offset in
+                                var moved: [(slot: ElementSlot, before: PageElementSnapshot)] = []
                                 for id in ids {
                                     guard let pid = id.base as? PersistentIdentifier,
                                           let element = page.allElements.first(where: { $0.persistentModelID == pid })
                                     else { continue }
-                                    let moved = Self.movedShapeCenter(
+                                    let before = PageElementSnapshot(element)
+                                    let newCenter = Self.movedShapeCenter(
                                         centerX: element.centerX, centerY: element.centerY, offset: offset,
                                         pageWidth: page.pageWidth, pageHeight: page.pageHeight
                                     )
-                                    element.centerX = moved.centerX
-                                    element.centerY = moved.centerY
+                                    element.centerX = newCenter.centerX
+                                    element.centerY = newCenter.centerY
+                                    moved.append((ElementSlot(element), before))
                                 }
                                 shapeSelectionDragOffsets = [:]
                                 page.notebook?.updatedAt = .now
                                 try? modelContext.save()
+                                // One undo entry for the whole lasso-dragged
+                                // group, not one per shape — matches what the
+                                // drag itself looks like from the student's side.
+                                let afters = moved.compactMap { entry -> (ElementSlot, PageElementSnapshot)? in
+                                    guard let element = entry.slot.element else { return nil }
+                                    return (entry.slot, PageElementSnapshot(element))
+                                }
+                                if !moved.isEmpty {
+                                    NoteActionHistory.shared.record(
+                                        undo: { for (slot, before) in moved { guard let el = slot.element else { continue }; before.apply(to: el) } },
+                                        redo: { for (slot, after) in afters { guard let el = slot.element else { continue }; after.apply(to: el) } }
+                                    )
+                                }
                             },
                             onShapeSelectionReceived: { ids, localCenter, sourceCenter, scaleX, scaleY in
+                                var transfers: [(slot: ElementSlot, source: PageSlot, before: PageElementSnapshot)] = []
                                 for id in ids {
                                     guard let pid = id.base as? PersistentIdentifier,
                                           let element = modelContext.model(for: pid) as? PageElement,
                                           let sourcePage = element.page
                                     else { continue }
+                                    let before = PageElementSnapshot(element)
                                     let geometry = Self.transferredShapeGeometry(
                                         sourceCenterX: element.centerX, sourceCenterY: element.centerY,
                                         sourceWidth: element.width, sourceHeight: element.height,
@@ -7232,9 +7557,39 @@ struct PageCanvasContainer: View {
                                     element.height = geometry.height
                                     element.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
                                     page.addElement(element)
+                                    transfers.append((ElementSlot(element), PageSlot(sourcePage), before))
                                 }
                                 page.notebook?.updatedAt = .now
                                 try? modelContext.save()
+                                if !transfers.isEmpty {
+                                    let destinationSlot = PageSlot(page)
+                                    let afters = transfers.compactMap { entry -> (ElementSlot, PageElementSnapshot)? in
+                                        guard let element = entry.slot.element else { return nil }
+                                        return (entry.slot, PageElementSnapshot(element))
+                                    }
+                                    NoteActionHistory.shared.record(
+                                        undo: {
+                                            guard let dst = destinationSlot.page else { return }
+                                            for (slot, source, before) in transfers {
+                                                guard let el = slot.element, let src = source.page else { continue }
+                                                dst.elements?.removeAll { $0 === el }
+                                                el.page = src
+                                                before.apply(to: el)
+                                                src.addElement(el)
+                                            }
+                                        },
+                                        redo: {
+                                            guard let dst = destinationSlot.page else { return }
+                                            for (slot, after) in afters {
+                                                guard let el = slot.element, let src = el.page else { continue }
+                                                src.elements?.removeAll { $0 === el }
+                                                el.page = dst
+                                                after.apply(to: el)
+                                                dst.addElement(el)
+                                            }
+                                        }
+                                    )
+                                }
                             },
                             onShapeSelectionHidden: { ids, hidden in
                                 let pids = Set(ids.compactMap { $0.base as? PersistentIdentifier })
@@ -7280,6 +7635,10 @@ struct PageCanvasContainer: View {
                         destinationPageWidth: page.pageWidth, destinationPageHeight: page.pageHeight
                     )
                     transfer.wasAccepted = true
+                    let elementSlot = ElementSlot(element)
+                    let sourcePageSlot = PageSlot(sourcePage)
+                    let destinationPageSlot = PageSlot(page)
+                    let before = PageElementSnapshot(element)
                     sourcePage.elements?.removeAll { $0 === element }
                     element.page = page
                     element.centerX = geometry.centerX
@@ -7290,6 +7649,23 @@ struct PageCanvasContainer: View {
                     page.addElement(element)
                     page.notebook?.updatedAt = .now
                     try? modelContext.save()
+                    let after = PageElementSnapshot(element)
+                    NoteActionHistory.shared.record(
+                        undo: {
+                            guard let el = elementSlot.element, let src = sourcePageSlot.page, let dst = destinationPageSlot.page else { return }
+                            dst.elements?.removeAll { $0 === el }
+                            el.page = src
+                            before.apply(to: el)
+                            src.addElement(el)
+                        },
+                        redo: {
+                            guard let el = elementSlot.element, let src = sourcePageSlot.page, let dst = destinationPageSlot.page else { return }
+                            src.elements?.removeAll { $0 === el }
+                            el.page = dst
+                            after.apply(to: el)
+                            dst.addElement(el)
+                        }
+                    )
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -8030,6 +8406,10 @@ private struct EditablePageElement: View {
     var pageGlobalFrame: CGRect = .zero
 
     @State private var dragOrigin: CGPoint?
+    /// The element's full state at the start of a same-page drag — captured
+    /// alongside `dragOrigin` so `moveGesture`'s `onEnded` can push an undo
+    /// entry for the move, the same way adding/removing an element does.
+    @State private var moveSnapshot: PageElementSnapshot?
     @State private var sizeOrigin: CGSize?
     /// True once a photo's own drag has carried it past `pageGlobalFrame` —
     /// see `moveGesture`.
@@ -8042,6 +8422,14 @@ private struct EditablePageElement: View {
     @State private var rotationOrigin: Double?
     @State private var isStudyTapeRevealed = false
     @State private var handleOrigin: ElementFrame?
+    /// The element's full state at the start of a resize/rotate gesture —
+    /// same idea as `moveSnapshot`, one per gesture since more than one kind
+    /// of handle can exist at once (a corner handle vs. the rotation grip
+    /// vs. a two-finger pinch/twist).
+    @State private var resizeHandleSnapshot: PageElementSnapshot?
+    @State private var rotationHandleSnapshot: PageElementSnapshot?
+    @State private var pinchSnapshot: PageElementSnapshot?
+    @State private var twistSnapshot: PageElementSnapshot?
 
     private var elementSize: CGSize {
         CGSize(
@@ -8318,12 +8706,18 @@ private struct EditablePageElement: View {
                         width: element.width,
                         height: element.height
                     )
+                    resizeHandleSnapshot = PageElementSnapshot(element)
                 }
                 guard let origin = handleOrigin else { return }
                 applyResize(anchor: anchor, from: origin, translation: value.translation)
             }
             .onEnded { _ in
-                handleOrigin = nil
+                defer { handleOrigin = nil; resizeHandleSnapshot = nil }
+                if let before = resizeHandleSnapshot,
+                   before.width != element.width || before.height != element.height
+                    || before.centerX != element.centerX || before.centerY != element.centerY {
+                    recordElementTransform(before: before)
+                }
                 markUpdated()
             }
     }
@@ -8372,6 +8766,7 @@ private struct EditablePageElement: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(PageElementsLayer.coordinateSpace))
             .onChanged { value in
                 guard !element.isLocked else { return }
+                if rotationHandleSnapshot == nil { rotationHandleSnapshot = PageElementSnapshot(element) }
                 let center = CGPoint(
                     x: pageSize.width * element.centerX,
                     y: pageSize.height * element.centerY
@@ -8380,7 +8775,13 @@ private struct EditablePageElement: View {
                 element.rotation = angle * 180 / .pi + 90
                 markUpdated()
             }
-            .onEnded { _ in markUpdated() }
+            .onEnded { _ in
+                defer { rotationHandleSnapshot = nil }
+                if let before = rotationHandleSnapshot, before.rotation != element.rotation {
+                    recordElementTransform(before: before)
+                }
+                markUpdated()
+            }
     }
 
     /// A photo's own thumbnail, used as the floating ghost while its drag
@@ -8397,6 +8798,7 @@ private struct EditablePageElement: View {
                 guard !element.isLocked else { return }
                 if dragOrigin == nil {
                     dragOrigin = CGPoint(x: element.centerX, y: element.centerY)
+                    moveSnapshot = PageElementSnapshot(element)
                 }
                 guard let origin = dragOrigin else { return }
                 // Only photos hand off to another page/pane — shapes already
@@ -8426,14 +8828,25 @@ private struct EditablePageElement: View {
                 element.page?.notebook?.updatedAt = .now
             }
             .onEnded { value in
-                defer { dragOrigin = nil }
+                defer { dragOrigin = nil; moveSnapshot = nil }
                 guard !element.isLocked else { return }
-                guard isDraggingAcrossBoundary else { return }
+                guard isDraggingAcrossBoundary else {
+                    // An ordinary same-page drop: the position was already
+                    // committed live in onChanged, so this is the only place
+                    // left to record it as one undoable move.
+                    if let before = moveSnapshot, before.centerX != element.centerX || before.centerY != element.centerY {
+                        recordElementTransform(before: before)
+                    }
+                    return
+                }
                 isDraggingAcrossBoundary = false
                 NotificationCenter.default.post(name: Notification.Name("StudiquoSelectionDragMoved"), object: nil)
                 // If no page/pane on screen claims it (dropped somewhere
                 // with no page underneath), this element's real position was
-                // never touched while ghosting, so it simply stays put.
+                // never touched while ghosting, so it simply stays put — no
+                // undo entry needed. If a page does claim it, that page's own
+                // drop handler records the undo (it also has to know the
+                // source page, which isn't available here).
                 let transfer = ElementDragTransfer(elementID: element.persistentModelID, screenPoint: value.location)
                 NotificationCenter.default.post(name: .studiquoElementDragDropped, object: transfer)
             }
@@ -8445,24 +8858,38 @@ private struct EditablePageElement: View {
                 guard !element.isLocked else { return }
                 if sizeOrigin == nil {
                     sizeOrigin = CGSize(width: element.width, height: element.height)
+                    pinchSnapshot = PageElementSnapshot(element)
                 }
                 guard let origin = sizeOrigin else { return }
                 element.width = min(max(origin.width * value.magnification, 0.08), 0.9)
                 element.height = min(max(origin.height * value.magnification, 0.04), 0.9)
                 element.page?.notebook?.updatedAt = .now
             }
-            .onEnded { _ in sizeOrigin = nil }
+            .onEnded { _ in
+                defer { sizeOrigin = nil; pinchSnapshot = nil }
+                if let before = pinchSnapshot, before.width != element.width || before.height != element.height {
+                    recordElementTransform(before: before)
+                }
+            }
     }
 
     private var rotationGesture: some Gesture {
         RotateGesture()
             .onChanged { value in
                 guard !element.isLocked else { return }
-                if rotationOrigin == nil { rotationOrigin = element.rotation }
+                if rotationOrigin == nil {
+                    rotationOrigin = element.rotation
+                    twistSnapshot = PageElementSnapshot(element)
+                }
                 element.rotation = (rotationOrigin ?? 0) + value.rotation.degrees
                 markUpdated()
             }
-            .onEnded { _ in rotationOrigin = nil }
+            .onEnded { _ in
+                defer { rotationOrigin = nil; twistSnapshot = nil }
+                if let before = twistSnapshot, before.rotation != element.rotation {
+                    recordElementTransform(before: before)
+                }
+            }
     }
 
     private func duplicateElement() {
@@ -8545,16 +8972,34 @@ private struct EditablePageElement: View {
         )
     }
 
+    /// Records a same-page move as one undoable step — call after the
+    /// mutation has already happened, passing the state from just before it
+    /// started. Unlike add/remove, nothing is created or destroyed here, so
+    /// both directions just replay a `PageElementSnapshot` over the element
+    /// that's still there.
+    private func recordElementTransform(before: PageElementSnapshot) {
+        let slot = ElementSlot(element)
+        let after = PageElementSnapshot(element)
+        NoteActionHistory.shared.record(
+            undo: { guard let element = slot.element else { return }; before.apply(to: element) },
+            redo: { guard let element = slot.element else { return }; after.apply(to: element) }
+        )
+    }
+
     private func bringToFront() {
         guard let page = element.page else { return }
+        let before = PageElementSnapshot(element)
         element.layerIndex = (page.allElements.map(\.layerIndex).max() ?? 0) + 1
         markUpdated()
+        recordElementTransform(before: before)
     }
 
     private func sendToBack() {
         guard let page = element.page else { return }
+        let before = PageElementSnapshot(element)
         element.layerIndex = (page.allElements.map(\.layerIndex).min() ?? 0) - 1
         markUpdated()
+        recordElementTransform(before: before)
     }
 
     private func markUpdated() {
@@ -8852,6 +9297,7 @@ private struct PageSidebar: View {
         let selectedPage = notebook.sortedPages.indices.contains(currentPageIndex)
             ? notebook.sortedPages[currentPageIndex]
             : nil
+        let before = notebook.sortedPages.map { (PageSlot($0), $0.order) }
         var reordered = notebook.sortedPages
         reordered.move(fromOffsets: source, toOffset: destination)
         for (order, page) in reordered.enumerated() {
@@ -8862,6 +9308,11 @@ private struct PageSidebar: View {
            let newIndex = reordered.firstIndex(where: { $0 === selectedPage }) {
             currentPageIndex = newIndex
         }
+        let after = reordered.map { (PageSlot($0), $0.order) }
+        NoteActionHistory.shared.record(
+            undo: { for (slot, order) in before { slot.page?.order = order } },
+            redo: { for (slot, order) in after { slot.page?.order = order } }
+        )
     }
 }
 

@@ -26,6 +26,7 @@ final class AppSchemaCloudKitCompatibilityTests: XCTestCase {
         DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
         AIReviewItem.self,
         Folder.self,
+        MCPImportReceipt.self,
     ])
 
     /// A schema with a missing inverse fails here, synchronously and without
