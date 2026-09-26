@@ -14,6 +14,13 @@ final class QRScannerController: UIViewController, AVCaptureMetadataOutputObject
     var onScan: ((String) -> Void)?
     private let session = AVCaptureSession()
     private var previewLayer: AVCaptureVideoPreviewLayer?
+    // Keeps the preview's rotation angle in sync with the interface
+    // orientation for as long as this controller is alive — without it, the
+    // feed only ever matches whatever orientation the session happened to
+    // start in. Unlike a portrait-locked iPhone flow, iPad rotates freely,
+    // so this actually matters here.
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    private var rotationObservation: NSKeyValueObservation?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -24,6 +31,15 @@ final class QRScannerController: UIViewController, AVCaptureMetadataOutputObject
         guard session.canAddOutput(output) else { return }
         session.addOutput(output); output.setMetadataObjectsDelegate(self, queue: .main); output.metadataObjectTypes = [.qr]
         let preview = AVCaptureVideoPreviewLayer(session: session); preview.videoGravity = .resizeAspectFill; view.layer.addSublayer(preview); previewLayer = preview
+
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: preview)
+        rotationCoordinator = coordinator
+        preview.connection?.videoRotationAngle = coordinator.videoRotationAngleForHorizonLevelPreview
+        rotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.new]) { [weak preview] _, change in
+            guard let angle = change.newValue else { return }
+            DispatchQueue.main.async { preview?.connection?.videoRotationAngle = angle }
+        }
+
         DispatchQueue.global(qos: .userInitiated).async { self.session.startRunning() }
     }
 
@@ -32,8 +48,10 @@ final class QRScannerController: UIViewController, AVCaptureMetadataOutputObject
     func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
         guard let value = (metadataObjects.first as? AVMetadataMachineReadableCodeObject)?.stringValue else { return }
         session.stopRunning()
-        if let url = URL(string: value), let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "code" })?.value { onScan?(code) }
-        else { onScan?(value) }
+        // What this string means (an invitation link vs. a bare manually-
+        // typed-style code) is app-specific — leave that to the caller
+        // rather than guessing here.
+        onScan?(value)
         navigationController?.popViewController(animated: true)
     }
 }

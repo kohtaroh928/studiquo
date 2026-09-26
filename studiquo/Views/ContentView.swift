@@ -2058,11 +2058,15 @@ struct ContentView: View {
             StudyTimeTracker.shared.handle(scenePhase: scenePhase)
             StudyTimeTracker.shared.setStudying(isStudySurfaceOpen)
             friendStore.handle(scenePhase: scenePhase)
+            if scenePhase == .active { Task { await UsageEventService.ping() } }
         }
         .onChange(of: scenePhase) { _, phase in
             StudyTimeTracker.shared.handle(scenePhase: phase)
             friendStore.handle(scenePhase: phase)
-            if phase == .active { Task { await pullMCPInbox() } }
+            if phase == .active {
+                Task { await pullMCPInbox() }
+                Task { await UsageEventService.ping() }
+            }
         }
         // Count study time only while an actual study surface is open — not
         // while browsing the library or the calendar.

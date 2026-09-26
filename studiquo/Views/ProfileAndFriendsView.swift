@@ -321,7 +321,12 @@ final class FriendStore: ObservableObject {
     private let messagesKey = "studiquoFriendMessages"
     private let unreadCountsKey = "studiquoFriendUnreadCounts"
     private let archivedFriendsKey = "studiquoArchivedFriends"
-    private var archivedFriends: [FriendRecord] = [] { didSet { persist(archivedFriends, key: archivedFriendsKey) } }
+    /// A friend removed from the active friends list (see `archiveFriend`)
+    /// — the server keeps their chat room around (closed to new messages,
+    /// but its history stays readable; see `close()` in chat-room.js), and
+    /// this is what lets the app still show that history rather than
+    /// losing all trace of the conversation the moment the friendship ends.
+    @Published private(set) var archivedFriends: [FriendRecord] = [] { didSet { persist(archivedFriends, key: archivedFriendsKey) } }
     private let groupsKey = "studiquoGroups"
     private let seenIncomingRequestCodesKey = "studiquoSeenIncomingRequestCodes"
     /// A digest of whichever `profileImage` bytes were last successfully
@@ -923,7 +928,11 @@ final class FriendStore: ObservableObject {
     @discardableResult
     func inviteToGroup(roomID: String, code: String) async -> Bool {
         do {
-            _ = try await client.inviteToGroup(roomID: roomID, code: code)
+            let result = try await client.inviteToGroup(roomID: roomID, code: code)
+            if result.status == "already_pending" {
+                errorMessage = "この招待はすでに送信済みです。"
+                return false
+            }
             errorMessage = ""
             return true
         } catch let error as FriendChatService.ServerError {
@@ -1148,8 +1157,20 @@ final class FriendStore: ObservableObject {
             return "コードの形式が正しくありません。"
         case "Friend not found.", "Request not found.":
             return "フレンドコードが見つかりません。"
+        // Kept as two distinct messages on purpose, even though both used to
+        // collapse into the same generic fallback text: which one actually
+        // fires is the difference between "the scanned string itself is
+        // malformed" (never reaches a KV lookup) and "it's well-formed but
+        // no one currently holds this token" (a real, addressable state).
+        case "Invalid invite link.":
+            return "招待リンクの形式が正しくありません。もう一度QRコードを読み取ってください。"
         case "This invite link is no longer valid.":
-            return "この招待リンクは無効です。"
+            return "このリンクの相手が見つかりませんでした。相手にもう一度QRコードを表示してもらってください。"
+        // Returned by the server when a block exists between the two
+        // accounts on either side (manual code request, invite link, or
+        // accept — see chat.js) — same three call sites, same wording here.
+        case "This friend cannot be added right now.":
+            return "この相手はブロックされているため追加できません。「ブロック一覧」から解除してから、もう一度お試しください。"
         case "Group name is required.":
             return "グループ名を入力してください。"
         case "You can only invite your own friends.":
@@ -1238,9 +1259,16 @@ final class FriendStore: ObservableObject {
             } catch is FriendChatService.RateLimitedError {
                 errorMessage = "フレンド申請の送信回数が上限に達しました。しばらくしてからもう一度お試しください。"
             } catch let error as FriendChatService.ServerError {
-                errorMessage = Self.message(for: error, fallback: "この招待リンクは無効です。")
+                // A 401 here means the *scanning* device's own session is
+                // the problem, not the link — showing "invalid link" for
+                // that would point the student at the wrong thing entirely.
+                if error.status == 401 {
+                    errorMessage = "サインインの有効期限が切れています。Studiquoに再接続してから、もう一度お試しください。"
+                } else {
+                    errorMessage = Self.message(for: error, fallback: "招待リンクを確認できませんでした(サーバーエラー: \(error.message))。")
+                }
             } catch {
-                errorMessage = "この招待リンクは無効です。"
+                errorMessage = "通信に失敗しました。ネットワーク状況を確認して、もう一度お試しください。"
             }
         }
     }
@@ -1283,7 +1311,7 @@ final class FriendStore: ObservableObject {
                     messages[index].sendFailed = true
                 }
                 errorMessage = "メッセージを送信できませんでした。フレンド情報を更新してからもう一度お試しください。"
-                return true
+                return false
             }
             Task {
                 do {
@@ -1314,11 +1342,19 @@ final class FriendStore: ObservableObject {
                     }
                 } catch let error as FriendChatService.ServerError where error.status == 403 {
                     pendingCancellations.remove(messageID)
-                    errorMessage = Self.roomAccessErrorMessage
                     if let index = messages.firstIndex(where: { $0.id == messageID }) {
                         messages[index].sendFailed = true
                     }
+                    // refreshFriends() below reports its own 403s through
+                    // notePollResult, which sets the generic
+                    // roomAccessErrorMessage unconditionally — assigning our
+                    // more specific text only after it returns is what keeps
+                    // that from immediately clobbering this one back to the
+                    // generic wording.
                     await refreshFriends()
+                    errorMessage = error.message == "This friendship has ended."
+                        ? "このフレンドは削除済みのため、メッセージを送信できません。過去のやり取りは引き続き閲覧できます。"
+                        : Self.roomAccessErrorMessage
                 } catch {
                     pendingCancellations.remove(messageID)
                     errorMessage = "メッセージを送信できませんでした。"
@@ -1573,6 +1609,12 @@ final class FriendStore: ObservableObject {
             ?? friends.first(where: { $0.roomID != nil && $0.roomID == friend.roomID })
             ?? friends.first(where: { $0.code == friend.code && $0.roomID != nil })
             ?? friends.first(where: { $0.code == friend.code })
+            // A removed friend isn't a current friend, but their room still
+            // exists (see `archivedFriends`'s doc comment) — resolving them
+            // here is what lets `send(_:to:)` actually reach the server and
+            // get back its real "This friendship has ended." rejection,
+            // instead of failing silently before ever making the request.
+            ?? archivedFriends.first(where: { $0.id == friend.id })
     }
 
     /// Fetches only what's new since the last-seen server message id and
@@ -2010,6 +2052,23 @@ struct FriendsHomeView: View {
                 }
             }
 
+            // Removing a friend ends the chat (no new messages either side
+            // can send), but the past conversation itself is kept — this is
+            // the only way to actually reach it, since it's no longer a
+            // current friend. See `FriendStore.archivedFriends`.
+            if !store.archivedFriends.isEmpty {
+                Section("削除済みのやり取り") {
+                    ForEach(store.archivedFriends) { friend in
+                        Button { selection = .chat(friend.id) } label: {
+                            FriendSidebarRow(
+                                profile: FriendProfile(friend: friend, blockedByMeRoomIDs: store.blockedByMeRoomIDs),
+                                unreadCount: 0
+                            )
+                        }
+                    }
+                }
+            }
+
             Section("グループ") {
                 ForEach(store.groups, id: \.roomID) { group in
                     Button { selection = .group(group.roomID) } label: {
@@ -2047,7 +2106,7 @@ struct FriendsHomeView: View {
                 openChat: { selection = .chat($0.id) }
             )
         case .chat(let id):
-            if let friend = store.friends.first(where: { $0.id == id }) {
+            if let friend = store.friends.first(where: { $0.id == id }) ?? store.archivedFriends.first(where: { $0.id == id }) {
                 FriendChatView(
                     friend: friend,
                     store: store,
@@ -2539,7 +2598,7 @@ private struct AddFriendView: View {
                     }
                 }
                 Section {
-                    NavigationLink { QRScannerView { value in submit(code: value) } } label: {
+                    NavigationLink { QRScannerView { value in handleScan(value) } } label: {
                         Label("QRコードを読み取る", systemImage: "qrcode.viewfinder")
                     }
                 }
@@ -2594,6 +2653,24 @@ private struct AddFriendView: View {
             let succeeded = await store.addAndWait(code: code)
             isSending = false
             if succeeded { dismiss() }
+        }
+    }
+
+    /// A scanned QR code is always a `studiquo://friend/add?token=…`
+    /// invitation link (see `FriendStore.invitationURL`) — route it through
+    /// the same `add(url:)` path a tapped/shared link uses, so the usual
+    /// "フレンドになりますか？" confirmation on `FriendsHomeView` is what
+    /// actually redeems it, instead of treating the raw URL text as if it
+    /// were a manually-typed friend code. Dismissing this sheet is what lets
+    /// that confirmation alert — attached to the view underneath — appear.
+    /// Anything that isn't one of our own links (e.g. a stray QR code) falls
+    /// back to the manual-code flow, same as before.
+    private func handleScan(_ value: String) {
+        if let url = URL(string: value), url.scheme?.lowercased() == "studiquo" {
+            store.add(url: url)
+            dismiss()
+        } else {
+            submit(code: value)
         }
     }
 }
