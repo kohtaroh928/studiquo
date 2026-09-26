@@ -44,6 +44,14 @@ targets:
         TARGETED_DEVICE_FAMILY: "2"
         SWIFT_VERSION: "5.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquo
+        # Neither key existed anywhere in the project before (not here, not
+        # in the generated Info.plist) — an archive built without them has
+        # no CFBundleShortVersionString/CFBundleVersion at all, which
+        # App Store Connect rejects outright. 1.0/1 is a starting point,
+        # not a guess at what's already live — bump CURRENT_PROJECT_VERSION
+        # before any upload that isn't the very first one.
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 972G4VGUA6
         GENERATE_INFOPLIST_FILE: YES
