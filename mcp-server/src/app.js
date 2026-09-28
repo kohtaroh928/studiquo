@@ -8,6 +8,7 @@ import { associationFile, handlePasskeys } from "./passkeys.js";
 import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
 import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats } from "./admin.js";
+import { handleInvitePage } from "./invite.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired } from "./token.js";
 import { realSession } from "./session.js";
@@ -288,6 +289,8 @@ export default {
       const oauth = await handleMCPOAuth(url, request, env);
       if (oauth) return oauth;
       if (url.pathname === "/.well-known/apple-app-site-association") return associationFile();
+      const invitePage = handleInvitePage(url);
+      if (invitePage) return invitePage;
 
       const legal = handleLegal(url);
       if (legal) return legal;

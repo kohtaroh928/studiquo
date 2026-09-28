@@ -128,10 +128,9 @@ final class InkCanvasEraserTests: XCTestCase {
     // MARK: - 4: slow eraser movement never triggers pen straightening (regression, see InkCanvasHighlighterSpecTests)
 
     func testHoldCorrectionIsNeverConsideredWhileErasingRegardlessOfOtherFlags() {
-        // The same guard that stops the highlighter from snapping into a
-        // shape already excludes the eraser too — this is the fix for
-        // "消しゴムをゆっくり動かすと直線に補正されてしまう". Verified again
-        // here alongside the rest of the eraser's own behavior.
+        // shouldConsiderHoldCorrection excludes the eraser outright — this is
+        // the fix for "消しゴムをゆっくり動かすと直線に補正されてしまう".
+        // Verified again here alongside the rest of the eraser's own behavior.
         XCTAssertFalse(
             InkCanvasView.shouldConsiderHoldCorrection(
                 isEraser: true, isHighlighter: false, isStraightened: false, isEllipseLocked: false,

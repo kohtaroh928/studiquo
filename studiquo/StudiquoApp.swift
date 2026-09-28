@@ -129,6 +129,8 @@ struct StudiquoApp: App {
                     LibraryDropUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test") {
                     FriendChatUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") {
+                    TabPickerCreateUITestRoot()
                 } else {
                     normalRoot
                 }
@@ -141,7 +143,8 @@ struct StudiquoApp: App {
                 #if DEBUG
                 guard !ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--startup-ui-test"),
-                      !ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test") else { return }
+                      !ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") else { return }
                 #endif
                 startup.start()
             }
@@ -331,6 +334,43 @@ private enum LibraryDropUITestStore {
         let staleRelationship = Notebook(title: "Stale relationship")
         staleRelationship.folder = target
         container.mainContext.insert(staleRelationship)
+        try! container.mainContext.save()
+        return container
+    }()
+}
+
+/// A disposable in-memory library, seeded with exactly one notebook, for the
+/// "create a new item from the tab picker's own +" UI regression test. One
+/// notebook is enough to open so the tab bar (and its own "+") becomes
+/// visible — see `notebookTabBar` in ContentView.swift, which only renders
+/// once something is already open.
+private struct TabPickerCreateUITestRoot: View {
+    @StateObject private var authentication = AuthenticationStore(service: "com.yabuko.studiquo.tab-picker-create-ui-tests")
+
+    init() {
+        AIDataDisclosure.acknowledge()
+        UserDefaults.standard.set("", forKey: "libraryFolderNames")
+        UserDefaults.standard.set(true, forKey: "didMigrateFoldersToHierarchy")
+        _ = TabPickerCreateUITestStore.container
+    }
+
+    var body: some View {
+        ContentView()
+            .modelContainer(TabPickerCreateUITestStore.container)
+            .environmentObject(authentication)
+    }
+}
+
+@MainActor
+private enum TabPickerCreateUITestStore {
+    static let container: ModelContainer = {
+        let configuration = ModelConfiguration(schema: studiquoSchema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        let container = try! ModelContainer(for: studiquoSchema, configurations: configuration)
+        let notebook = Notebook(title: "既存のノート")
+        let page = NotePage(order: 0)
+        page.notebook = notebook
+        notebook.addPage(page)
+        container.mainContext.insert(notebook)
         try! container.mainContext.save()
         return container
     }()

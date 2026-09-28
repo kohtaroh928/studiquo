@@ -573,6 +573,13 @@ private struct PendingRemoval {
     let password: String
 }
 
+/// Which of `TabPickerView`'s own "+" buttons was tapped — read back by
+/// `ContentView` once the picker sheet has actually finished dismissing,
+/// so it knows which "new item" alert/sheet to present next.
+private enum TabPickerCreationKind {
+    case notebook, deck, document, slideDeck
+}
+
 private struct TabPickerView: View {
     let notebooks: [Notebook]
     let decks: [FlashcardDeck]
@@ -582,6 +589,10 @@ private struct TabPickerView: View {
     let onSelectDeck: (FlashcardDeck) -> Void
     let onSelectDocument: (TextDocument) -> Void
     let onSelectSlideDeck: (SlideDeck) -> Void
+    let onCreateNotebook: () -> Void
+    let onCreateDeck: () -> Void
+    let onCreateDocument: () -> Void
+    let onCreateSlideDeck: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
@@ -606,10 +617,25 @@ private struct TabPickerView: View {
         return slideDecks.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
     }
 
+    /// A section header with a trailing "+" for creating a brand-new item of
+    /// that section's kind, right from this picker, instead of only being
+    /// able to pick from what already exists below it.
+    private func sectionHeader(_ title: String, identifier: String, onCreate: @escaping () -> Void) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Button(action: onCreate) {
+                Image(systemName: "plus.circle.fill")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(identifier)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                Section("ノート・PDF") {
+                Section {
                     if filteredNotebooks.isEmpty {
                         Text("ノートはありません").foregroundStyle(.secondary)
                     }
@@ -632,9 +658,11 @@ private struct TabPickerView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                } header: {
+                    sectionHeader("ノート・PDF", identifier: "tab-picker-create-notebook", onCreate: onCreateNotebook)
                 }
 
-                Section("暗記帳") {
+                Section {
                     if filteredDecks.isEmpty {
                         Text("暗記帳はありません").foregroundStyle(.secondary)
                     }
@@ -657,38 +685,46 @@ private struct TabPickerView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                } header: {
+                    sectionHeader("暗記帳", identifier: "tab-picker-create-deck", onCreate: onCreateDeck)
                 }
 
-                if !filteredDocuments.isEmpty {
-                    Section("文書") {
-                        ForEach(filteredDocuments) { document in
-                            Button { onSelectDocument(document) } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "doc.text").foregroundStyle(.teal)
-                                    Text(document.title).lineLimit(1)
-                                    Spacer()
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
+                Section {
+                    if filteredDocuments.isEmpty {
+                        Text("文書はありません").foregroundStyle(.secondary)
                     }
+                    ForEach(filteredDocuments) { document in
+                        Button { onSelectDocument(document) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "doc.text").foregroundStyle(.teal)
+                                Text(document.title).lineLimit(1)
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    sectionHeader("文書", identifier: "tab-picker-create-document", onCreate: onCreateDocument)
                 }
 
-                if !filteredSlideDecks.isEmpty {
-                    Section("スライド") {
-                        ForEach(filteredSlideDecks) { deck in
-                            Button { onSelectSlideDeck(deck) } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "rectangle.on.rectangle").foregroundStyle(.orange)
-                                    Text(deck.title).lineLimit(1)
-                                    Spacer()
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
+                Section {
+                    if filteredSlideDecks.isEmpty {
+                        Text("スライドはありません").foregroundStyle(.secondary)
                     }
+                    ForEach(filteredSlideDecks) { deck in
+                        Button { onSelectSlideDeck(deck) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "rectangle.on.rectangle").foregroundStyle(.orange)
+                                Text(deck.title).lineLimit(1)
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    sectionHeader("スライド", identifier: "tab-picker-create-slideDeck", onCreate: onCreateSlideDeck)
                 }
             }
             .searchable(text: $searchText, prompt: "名前で検索")
@@ -1273,6 +1309,12 @@ struct ContentView: View {
     @State private var pendingReportIssue: PendingIssueReport?
     @AppStorage("profileImage") private var profileImageData = Data()
     @State private var showsTabPicker = false
+    /// Which "+ create new" the tab picker's own section header was tapped
+    /// for, if any — read once the sheet has actually finished dismissing
+    /// (see its `onDismiss`), rather than setting a second alert/sheet's
+    /// `isPresented` in the same tick as this one's, which SwiftUI does not
+    /// reliably present.
+    @State private var pendingTabPickerCreation: TabPickerCreationKind?
     @State private var cachedStudyNotifications: [StudyNotification] = []
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -1947,7 +1989,7 @@ struct ContentView: View {
         .sheet(item: $pendingReportIssue) { pending in
             ReportIssueSheet(capturedScreenshot: pending.screenshot)
         }
-        .sheet(isPresented: $showsTabPicker) {
+        .sheet(isPresented: $showsTabPicker, onDismiss: presentPendingTabPickerCreation) {
             TabPickerView(
                 notebooks: allNotebooks.filter { !$0.isTrashed },
                 decks: flashcardDecks.filter { !$0.isTrashed },
@@ -1968,7 +2010,11 @@ struct ContentView: View {
                 onSelectSlideDeck: { deck in
                     showsTabPicker = false
                     openSlideDeck(deck)
-                }
+                },
+                onCreateNotebook: { pendingTabPickerCreation = .notebook; showsTabPicker = false },
+                onCreateDeck: { pendingTabPickerCreation = .deck; showsTabPicker = false },
+                onCreateDocument: { pendingTabPickerCreation = .document; showsTabPicker = false },
+                onCreateSlideDeck: { pendingTabPickerCreation = .slideDeck; showsTabPicker = false }
             )
         }
         .onChange(of: libraryMode) { _, _ in
@@ -2322,6 +2368,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("新しいタブを追加")
+                .accessibilityIdentifier("tab-picker-add-tab")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -3059,9 +3106,6 @@ struct ContentView: View {
                     }
                     Spacer()
                     folderDropBadge(folder)
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
                 }
                 .allowsHitTesting(false)
             }
@@ -3625,26 +3669,35 @@ struct ContentView: View {
         return ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: 18)], spacing: 24) {
                 ForEach(visibleFolderPaths, id: \.self) { folder in
-                    HomeFolderTile(
-                        name: folderDisplayName(folder),
-                        isFavorite: favoriteFolderPaths.contains(folder),
-                        itemCount: notebookCounts[folder, default: 0]
-                            + deckCounts[folder, default: 0]
-                            + documentCounts[folder, default: 0]
-                            + slideCounts[folder, default: 0]
-                    ) {
-                        selectedFolder = folder
+                    // A plain SwiftUI `.onDrag`/`.dropDestination` pair on a
+                    // `LazyVGrid` cell doesn't reliably deliver drops on
+                    // iPad — the same iPad-only gap `folderRow`'s list-mode
+                    // row hit here first, fixed there by routing the drop
+                    // through a real `UIDropInteraction` instead (see
+                    // `LibraryFolderDropSurface`). The tile stays the visual
+                    // layer (non-interactive); the drop surface underneath
+                    // it is what actually receives taps and drops.
+                    ZStack {
+                        HomeFolderTile(
+                            name: folderDisplayName(folder),
+                            isFavorite: favoriteFolderPaths.contains(folder),
+                            itemCount: notebookCounts[folder, default: 0]
+                                + deckCounts[folder, default: 0]
+                                + documentCounts[folder, default: 0]
+                                + slideCounts[folder, default: 0]
+                        ) {}
+                        .allowsHitTesting(false)
+                        LibraryFolderDropSurface(
+                            identifier: "library-folder-\(folder)",
+                            onTap: { selectedFolder = folder },
+                            onDrop: { values in handleFolderDrop(values, into: folder) },
+                            onTargeted: { isTargeted in
+                                setFolderDropTarget(folder, isTargeted: isTargeted)
+                            }
+                        )
                     }
-                    .accessibilityIdentifier("library-folder-\(folder)")
                     .onDrag { folderDragProvider(for: folder) }
                     .overlay(alignment: .bottomTrailing) { folderDropBadge(folder) }
-                    .dropDestination(
-                        for: String.self,
-                        action: { items, _ in handleFolderDrop(items, into: folder) },
-                        isTargeted: { isTargeted in
-                            setFolderDropTarget(folder, isTargeted: isTargeted)
-                        }
-                    )
                     .contextMenu {
                         Button {
                             toggleFolderFavorite(folder)
@@ -3916,7 +3969,6 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                     }
                     .contentShape(Rectangle())
                 }
@@ -3977,7 +4029,6 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                     }
                     .contentShape(Rectangle())
                 }
@@ -4022,7 +4073,6 @@ struct ContentView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                     }
                     .contentShape(Rectangle())
                 }
@@ -4201,6 +4251,21 @@ struct ContentView: View {
         guard let path else { return [] }
         let components = path.split(separator: "/").map(String.init)
         return components.indices.map { components[0...$0].joined(separator: "/") }
+    }
+
+    /// Called from `showsTabPicker`'s own `onDismiss` — presenting the
+    /// matching "new item" alert/sheet only once that dismissal has
+    /// actually finished (rather than in the same tick the "+" was tapped
+    /// in) is what makes it reliably appear instead of silently no-op'ing.
+    private func presentPendingTabPickerCreation() {
+        guard let kind = pendingTabPickerCreation else { return }
+        pendingTabPickerCreation = nil
+        switch kind {
+        case .notebook: isShowingNewNotebookAlert = true
+        case .deck: isShowingNewFlashcardDeckAlert = true
+        case .document: isShowingNewDocumentAlert = true
+        case .slideDeck: isShowingNewSlideDeckAlert = true
+        }
     }
 
     private func createTextDocument() {

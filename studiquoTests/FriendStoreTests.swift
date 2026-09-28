@@ -2777,7 +2777,53 @@ final class FriendStoreTests: XCTestCase {
         let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
         await store.refresh()
 
-        XCTAssertEqual(store.invitationURL.absoluteString, "studiquo://friend/add?token=LINKTOKEN1")
+        XCTAssertEqual(store.invitationURL.absoluteString, "\(WorkerAIProvider.defaultEndpoint)/invite?token=LINKTOKEN1")
+    }
+
+    // Regression coverage for "a friend-invite link shared through LINE or
+    // Snapchat does nothing when tapped": those apps' in-app browsers
+    // generally won't hand a studiquo:// custom-scheme link off to iOS at
+    // all, only a real https:// Universal Link — see invitationURL's own
+    // doc comment and invite.js server-side.
+    func testAddURLAcceptsTheHTTPSUniversalLinkFormat() async {
+        let client = MockFriendChatClient()
+        await client.setLinkTokenOwner(.init(code: "ALICE1", name: "Alice", roomID: "room-a"), token: "LINKTOKEN1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        store.add(url: URL(string: "\(WorkerAIProvider.defaultEndpoint)/invite?token=LINKTOKEN1")!)
+
+        XCTAssertEqual(store.pendingLinkToken, "LINKTOKEN1")
+    }
+
+    func testAddURLIgnoresAnHTTPSLinkOnAnUnrelatedHostEvenWithTheRightPath() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        store.add(url: URL(string: "https://not-studiquo.example.com/invite?token=LINKTOKEN1")!)
+
+        XCTAssertNil(store.pendingLinkToken)
+    }
+
+    func testAddURLWithTheHTTPSFormatButNoTokenQueryItemDoesNothing() async {
+        let client = MockFriendChatClient()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        store.add(url: URL(string: "\(WorkerAIProvider.defaultEndpoint)/invite")!)
+
+        XCTAssertNil(store.pendingLinkToken)
+    }
+
+    /// The older `studiquo://friend/add?token=…` form must keep working —
+    /// someone may already have a link in this shape sitting in a Mail or
+    /// Messages thread from before `invitationURL` switched formats.
+    func testAddURLStillAcceptsTheOlderCustomSchemeTokenFormat() async {
+        let client = MockFriendChatClient()
+        await client.setLinkTokenOwner(.init(code: "ALICE1", name: "Alice", roomID: "room-a"), token: "LINKTOKEN1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        store.add(url: URL(string: "studiquo://friend/add?token=LINKTOKEN1")!)
+
+        XCTAssertEqual(store.pendingLinkToken, "LINKTOKEN1")
     }
 
     func testAddURLWithATokenStagesItWithoutRedeemingItImmediately() async {
@@ -2804,6 +2850,61 @@ final class FriendStoreTests: XCTestCase {
 
         XCTAssertNil(store.pendingLinkToken)
         XCTAssertTrue(store.outgoingRequests.isEmpty, "a link add must never go through the pending-request system")
+    }
+
+    // Regression coverage for "the friend appears then immediately
+    // disappears": tapping an invite link navigates straight to the friends
+    // screen, whose own poll (FriendsHomeView's `.task`) starts right away
+    // and can still be in flight — reflecting pre-add server state — when
+    // confirmPendingLinkAdd() finishes. Without `friendsGeneration` guarding
+    // against it, that stale response arrives afterward, sees the just-added
+    // friend missing from its own snapshot, and archives them again.
+    func testConfirmingAPendingLinkAddSurvivesAStaleFriendsFetchThatWasAlreadyInFlight() async {
+        let client = MockFriendChatClient()
+        await client.setLinkTokenOwner(.init(code: "ALICE1", name: "Alice", roomID: "room-a"), token: "LINKTOKEN1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.add(url: URL(string: "studiquo://friend/add?token=LINKTOKEN1")!)
+
+        // Simulates FriendsHomeView's `.task` poll, already fetching the
+        // (friend-less) pre-add friends list when the link was opened.
+        await client.holdFriends()
+        let staleFetch = Task { await store.refreshFriends() }
+        try? await Task.sleep(for: .milliseconds(20))
+
+        store.confirmPendingLinkAdd()
+        await waitUntil { store.friends.contains { $0.code == "ALICE1" } }
+
+        // The stale fetch (started before the add) now resolves, still
+        // showing no friends — this must not undo the add that just happened.
+        await client.releaseFriends()
+        await staleFetch.value
+
+        XCTAssertTrue(store.friends.contains { $0.code == "ALICE1" }, "a friend that was just added must not be reverted by a slower, now-stale fetch")
+        XCTAssertTrue(store.archivedFriends.isEmpty, "the friend must not have been archived by the stale response either")
+    }
+
+    /// Same race as the test above, but through `refresh()` (the full
+    /// register()+friends() call made once at launch) instead of
+    /// `refreshFriends()` — a separate code path with its own
+    /// `friendsGeneration` guard that needs its own coverage.
+    func testRefreshSurvivesAStaleFriendsFetchThatWasAlreadyInFlight() async {
+        let client = MockFriendChatClient()
+        await client.setLinkTokenOwner(.init(code: "ALICE1", name: "Alice", roomID: "room-a"), token: "LINKTOKEN1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.add(url: URL(string: "studiquo://friend/add?token=LINKTOKEN1")!)
+
+        await client.holdFriends()
+        let staleRefresh = Task { await store.refresh() }
+        try? await Task.sleep(for: .milliseconds(20))
+
+        store.confirmPendingLinkAdd()
+        await waitUntil { store.friends.contains { $0.code == "ALICE1" } }
+
+        await client.releaseFriends()
+        await staleRefresh.value
+
+        XCTAssertTrue(store.friends.contains { $0.code == "ALICE1" }, "a friend just added must not be reverted by refresh()'s own stale fetch")
+        XCTAssertTrue(store.archivedFriends.isEmpty)
     }
 
     func testCancelingAPendingLinkAddNeverRedeemsIt() async {
@@ -2833,6 +2934,23 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(store.errorMessage, "自分自身をフレンドに追加することはできません。")
         let redeemed = await client.linkAddedTokensSnapshot()
         XCTAssertEqual(redeemed, [], "a self-add must be caught before ever reaching the server")
+    }
+
+    // Same server rejection as the manual-code path above, reached instead
+    // through redeeming a QR/invite link — must show the same dedicated
+    // wording, not the link-specific "invalid link" fallback.
+    func testConfirmingAPendingLinkAddShowsADedicatedMessageWhenTheOtherPersonIsBlocked() async {
+        let client = MockFriendChatClient()
+        await client.setLinkTokenOwner(.init(code: "ALICE1", name: "Alice", roomID: "room-a"), token: "LINKTOKEN1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.add(url: URL(string: "studiquo://friend/add?token=LINKTOKEN1")!)
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 403, message: "This friend cannot be added right now."))
+
+        store.confirmPendingLinkAdd()
+        await waitUntil { !store.errorMessage.isEmpty }
+
+        XCTAssertEqual(store.errorMessage, "この相手はブロックされているため追加できません。「ブロック一覧」から解除してから、もう一度お試しください。")
+        XCTAssertTrue(store.friends.isEmpty)
     }
 
     func testAddSurfacesADedicatedMessageWhenRateLimited() async {
@@ -2910,6 +3028,22 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(store.errorMessage, "自分自身をフレンドに追加することはできません。")
     }
 
+    // Regression coverage: adding a code by hand (the QR-scan fallback path
+    // too, via submit(code:)) must tell the student *why* it failed when the
+    // other person has this room blocked, not the generic "code not found"
+    // fallback — same server message, same three call sites, as the block
+    // dialog itself.
+    func testAddAndWaitShowsADedicatedMessageWhenTheOtherPersonIsBlocked() async {
+        let client = MockFriendChatClient()
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 403, message: "This friend cannot be added right now."))
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        let succeeded = await store.addAndWait(code: "ALICE1")
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(store.errorMessage, "この相手はブロックされているため追加できません。「ブロック一覧」から解除してから、もう一度お試しください。")
+    }
+
     func testAddAndWaitReturnsFalseForAnAlreadyAddedFriendWithoutCallingTheServer() async {
         let client = MockFriendChatClient(friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a")])
         let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
@@ -2931,6 +3065,23 @@ final class FriendStoreTests: XCTestCase {
         await waitUntil { !store.errorMessage.isEmpty }
 
         XCTAssertEqual(store.errorMessage, "フレンドの上限に達しているため追加できません。")
+        XCTAssertTrue(store.friends.isEmpty)
+    }
+
+    // Third and last of the three call sites that can return this server
+    // message (see chat.js) — accepting an incoming request from someone
+    // this account has blocked must show the same dedicated wording too.
+    func testAcceptShowsADedicatedMessageWhenTheOtherPersonIsBlocked() async {
+        let client = MockFriendChatClient()
+        await client.setPendingRequests([.init(code: "ALICE1", name: "Alice", requestedAt: 1_700_000_000_000)])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refreshIncomingRequests()
+        await client.setErrorToThrow(FriendChatService.ServerError(status: 403, message: "This friend cannot be added right now."))
+
+        store.accept(store.incomingRequests[0])
+        await waitUntil { !store.errorMessage.isEmpty }
+
+        XCTAssertEqual(store.errorMessage, "この相手はブロックされているため追加できません。「ブロック一覧」から解除してから、もう一度お試しください。")
         XCTAssertTrue(store.friends.isEmpty)
     }
 
@@ -3219,8 +3370,29 @@ private actor MockFriendChatClient: FriendChatClient {
         reportedStudyStats
     }
 
+    private var friendsGateOpen = true
+    private var friendsWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Makes the next `friends()` call(s) suspend until `releaseFriends()`
+    /// is called — lets a test hold a friends-list fetch "in flight" while
+    /// it performs some other, more-recent action, to reproduce a stale
+    /// response arriving late.
+    func holdFriends() {
+        friendsGateOpen = false
+    }
+
+    func releaseFriends() {
+        friendsGateOpen = true
+        let waiters = friendsWaiters
+        friendsWaiters = []
+        for waiter in waiters { waiter.resume() }
+    }
+
     func friends() async throws -> [FriendChatService.Friend] {
         if let errorToThrow { throw errorToThrow }
+        if !friendsGateOpen {
+            await withCheckedContinuation { friendsWaiters.append($0) }
+        }
         return remoteFriends
     }
 

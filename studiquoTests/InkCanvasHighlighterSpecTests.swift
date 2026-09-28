@@ -1,10 +1,11 @@
 import XCTest
 @testable import studiquo
 
-/// Coverage for two 蛍光ペン (highlighter) spec changes:
-/// 1. The pen's hold-to-correct machinery (straighten, snap to
-///    ellipse/rectangle/triangle/parabola/curve) must never engage for a
-///    highlighter stroke — a highlight is meant to stay freehand.
+/// Coverage for two 蛍光ペン (highlighter) spec points:
+/// 1. The hold-to-correct machinery (straighten, snap to
+///    ellipse/rectangle/triangle/parabola/curve) engages for a highlighter
+///    stroke exactly the same as it does for the pen — a straight
+///    underline or a boxed-in region is just as easy to draw with either.
 /// 2. The tool-size slider's heading should say "蛍光ペンの太さ" while the
 ///    highlighter is active, not the generic "ペンの太さ".
 final class InkCanvasHighlighterSpecTests: XCTestCase {
@@ -20,15 +21,16 @@ final class InkCanvasHighlighterSpecTests: XCTestCase {
         )
     }
 
-    /// The core regression test: even with nothing else locked, a
-    /// highlighter stroke must never proceed to shape correction.
-    func testHoldCorrectionIsNeverConsideredForAHighlighterStroke() {
-        XCTAssertFalse(
+    /// The core regression test: with nothing else excluding it, a
+    /// highlighter stroke must be just as eligible for shape correction as
+    /// an ordinary pen stroke.
+    func testHoldCorrectionIsConsideredForAHighlighterStrokeJustLikeAPenStroke() {
+        XCTAssertTrue(
             InkCanvasView.shouldConsiderHoldCorrection(
                 isEraser: false, isHighlighter: true, isStraightened: false, isEllipseLocked: false,
                 isRectangleLocked: false, isTriangleLocked: false, isParabolaLocked: false
             ),
-            "蛍光ペンで描いているときは、直線や図形への補正を検討してはいけません。"
+            "蛍光ペンで描いているときも、ペンと同様に直線や図形への補正を検討してよい必要があります。"
         )
     }
 
@@ -69,16 +71,23 @@ final class InkCanvasHighlighterSpecTests: XCTestCase {
         }
     }
 
-    /// A highlighter stroke must be rejected even when combined with every
-    /// other disqualifying flag at once — the highlighter check can't be
-    /// accidentally short-circuited by the others.
-    func testHoldCorrectionIsNeverConsideredForAHighlighterStrokeEvenCombinedWithOtherFlags() {
+    /// Being a highlighter stroke no longer disqualifies correction on its
+    /// own — only the other, still-genuine exclusions (erasing, or a shape
+    /// already locked) do, exactly as for the pen.
+    func testHighlighterFlagAloneNeverDisqualifiesHoldCorrection() {
+        XCTAssertTrue(
+            InkCanvasView.shouldConsiderHoldCorrection(
+                isEraser: false, isHighlighter: true, isStraightened: false, isEllipseLocked: false,
+                isRectangleLocked: false, isTriangleLocked: false, isParabolaLocked: false
+            ),
+            "蛍光ペンであること自体は、もはや補正の可否に影響しない必要があります。"
+        )
         XCTAssertFalse(
             InkCanvasView.shouldConsiderHoldCorrection(
-                isEraser: true, isHighlighter: true, isStraightened: true, isEllipseLocked: true,
-                isRectangleLocked: true, isTriangleLocked: true, isParabolaLocked: true
+                isEraser: true, isHighlighter: true, isStraightened: false, isEllipseLocked: false,
+                isRectangleLocked: false, isTriangleLocked: false, isParabolaLocked: false
             ),
-            "他の条件と組み合わさっていても、蛍光ペンでの補正はやはり無効である必要があります。"
+            "蛍光ペンであっても、消しゴム操作中であれば従来通り補正を検討してはいけません。"
         )
     }
 
