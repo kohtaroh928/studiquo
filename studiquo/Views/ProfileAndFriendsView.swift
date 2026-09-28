@@ -342,6 +342,18 @@ final class FriendStore: ObservableObject {
     private var inboxPollTask: Task<Void, Never>?
     private var groupPollTask: Task<Void, Never>?
     private var locallyRemovedCodes: Set<String> = []
+    /// Bumped whenever `friends` is authoritatively changed by a definitive
+    /// local action — right now, only a successfully redeemed invite link
+    /// (see `confirmPendingLinkAdd()`) — rather than by a server poll.
+    /// `refresh()`/`refreshFriends()` capture this before their network call
+    /// and discard the response if it changed by the time that call
+    /// resolves. Without this, tapping an invite link navigates straight to
+    /// the friends screen, whose own poll starts immediately and can still
+    /// be in flight — reflecting pre-add server state — when the add
+    /// finishes; that stale response would otherwise arrive afterward,
+    /// see the just-added friend missing from ITS snapshot, and archive
+    /// them again a moment after they appeared.
+    private var friendsGeneration = 0
     private static let codePattern = /^[A-Z0-9]{6,32}$/
     /// Shared cadence for every "list" poll below (incoming requests,
     /// groups, group invites, the friends list itself) — these used to run
@@ -504,7 +516,15 @@ final class FriendStore: ObservableObject {
     /// immediate, no-approval friendship (see `myLinkToken`'s doc comment
     /// and `add(url:)`), a deliberately different mechanism from typing
     /// `myCode` by hand.
-    var invitationURL: URL { URL(string: "studiquo://friend/add?token=\(myLinkToken)")! }
+    ///
+    /// A real `https://` Universal Link, not `studiquo://friend/add?token=…`
+    /// — a link shared through LINE, Snapchat, and similar apps opens inside
+    /// their own in-app browser, which generally won't hand a custom-scheme
+    /// URL off to iOS at all, but does honor a Universal Link for a path
+    /// declared in the server's apple-app-site-association file (see
+    /// invite.js). That page falls back to the studiquo:// scheme itself for
+    /// the rare case Universal Links don't fire either.
+    var invitationURL: URL { URL(string: "\(WorkerAIProvider.defaultEndpoint)/invite?token=\(myLinkToken)")! }
 
     /// False only during the narrow window on a brand-new install before the
     /// first registration completes — sharing/scanning a QR code before this
@@ -521,9 +541,13 @@ final class FriendStore: ObservableObject {
                 myLinkToken = linkToken
                 defaults.set(myLinkToken, forKey: "studiquoFriendLinkToken")
             }
+            let generation = friendsGeneration
             let remote = try await client.friends()
-            applyRemoteFriends(remote)
-            await syncFriendAvatarsIfNeeded(remote: remote)
+            // See `friendsGeneration`'s doc comment.
+            if generation == friendsGeneration {
+                applyRemoteFriends(remote)
+                await syncFriendAvatarsIfNeeded(remote: remote)
+            }
             errorMessage = ""
         } catch {
             errorMessage = Self.isAuthFailure(error) ? Self.authExpiredErrorMessage : Self.connectivityErrorMessage
@@ -538,9 +562,14 @@ final class FriendStore: ObservableObject {
     /// friend who just accepted this user's request shows up without
     /// waiting for a full refresh() (app relaunch, or another add()).
     func refreshFriends() async {
+        let generation = friendsGeneration
         do {
             let remote = try await client.friends()
             notePollResult("friends", succeeded: true)
+            // See `friendsGeneration`'s doc comment: a more authoritative
+            // local change happened while this fetch was in flight, so its
+            // now-stale snapshot must not be applied.
+            guard generation == friendsGeneration else { return }
             applyRemoteFriends(remote)
             await syncFriendAvatarsIfNeeded(remote: remote)
         } catch {
@@ -1215,10 +1244,20 @@ final class FriendStore: ObservableObject {
     /// for. Both formats only ever stage something here; `FriendsHomeView`
     /// shows a confirmation alert, and nothing happens unless the student
     /// accepts it there.
+    ///
+    /// Accepts either shape a genuine invite can arrive in: the current
+    /// `https://…/invite?token=…` Universal Link (see `invitationURL`'s doc
+    /// comment for why that's the one actually shared now), or the older
+    /// `studiquo://friend/add?token=…` custom-scheme link — kept working so
+    /// a link someone already sent through Mail/Messages before this change
+    /// still redeems.
     func add(url: URL) {
-        guard url.scheme?.lowercased() == "studiquo",
-              url.host?.lowercased() == "friend",
-              url.path == "/add",
+        let isLegacyCustomSchemeLink = url.scheme?.lowercased() == "studiquo"
+            && url.host?.lowercased() == "friend" && url.path == "/add"
+        let isUniversalLink = url.scheme?.lowercased() == "https"
+            && url.host?.lowercased() == URL(string: WorkerAIProvider.defaultEndpoint)?.host?.lowercased()
+            && url.path == "/invite"
+        guard isLegacyCustomSchemeLink || isUniversalLink,
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return }
         if let token = items.first(where: { $0.name == "token" })?.value {
             pendingLinkToken = token
@@ -1255,6 +1294,9 @@ final class FriendStore: ObservableObject {
                 if !friends.contains(where: { $0.code == result.code }) {
                     friends.append(FriendRecord(id: UUID(), name: result.name, code: result.code, todayStudySeconds: 0, roomID: result.roomID, isDemo: false, sharesStudyTime: false))
                 }
+                // See `friendsGeneration`'s doc comment: invalidates any
+                // friends-list fetch already in flight from before this add.
+                friendsGeneration += 1
                 errorMessage = ""
             } catch is FriendChatService.RateLimitedError {
                 errorMessage = "フレンド申請の送信回数が上限に達しました。しばらくしてからもう一度お試しください。"
@@ -2666,7 +2708,12 @@ private struct AddFriendView: View {
     /// Anything that isn't one of our own links (e.g. a stray QR code) falls
     /// back to the manual-code flow, same as before.
     private func handleScan(_ value: String) {
-        if let url = URL(string: value), url.scheme?.lowercased() == "studiquo" {
+        // A QR code from this app only ever encodes an invite link — either
+        // the current https:// Universal Link or the older studiquo://
+        // scheme (see `FriendStore.add(url:)`) — never an arbitrary
+        // manually-typed-style code, so both schemes route the same way.
+        // See `QRScanRoutingPolicy` for the (independently testable) rule.
+        if QRScanRoutingPolicy.isInviteLink(value), let url = URL(string: value) {
             store.add(url: url)
             dismiss()
         } else {

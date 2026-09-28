@@ -24,7 +24,17 @@ function transactionID() {
 }
 
 export function associationFile() {
-  return json({ webcredentials: { apps: [APP_ID] } });
+  return json({
+    webcredentials: { apps: [APP_ID] },
+    // Lets a friend-invite link use a real https:// URL (see invite.js)
+    // instead of only the studiquo:// custom scheme — a share sent through
+    // LINE, Snapchat, etc. opens in that app's own in-app browser, which
+    // generally won't hand off a custom scheme to iOS at all, but does
+    // respect a Universal Link for a path listed here.
+    applinks: {
+      details: [{ appIDs: [APP_ID], components: [{ "/": "/invite" }] }],
+    },
+  });
 }
 
 export async function handlePasskeys(url, request, env) {

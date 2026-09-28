@@ -359,8 +359,8 @@ struct NoteEditorView: View {
     @State private var usesDarkPageDisplay = false
     @State private var isShowingTextAlert = false
     @State private var textToInsert = ""
-    @State private var selectedPhotoItem: PhotosPickerItem?
-    @State private var selectedBackgroundPhotoItem: PhotosPickerItem?
+    @State private var showsImagePicker = false
+    @State private var showsBackgroundImagePicker = false
     @State private var isRecognizingHandwriting = false
     @State private var recognitionProgress = ""
     @State private var isFocusMode = false
@@ -594,13 +594,21 @@ struct NoteEditorView: View {
                 }
             )
         }
-        .onChange(of: selectedPhotoItem) { _, item in
-            guard let item else { return }
-            Task { await addImageElement(from: item) }
+        .fullScreenCover(isPresented: $showsImagePicker) {
+            FullScreenPhotoPicker { data in
+                showsImagePicker = false
+                guard let data else { return }
+                Task { await addImageElement(from: data) }
+            }
+            .ignoresSafeArea()
         }
-        .onChange(of: selectedBackgroundPhotoItem) { _, item in
-            guard let item else { return }
-            Task { await applyBackgroundImage(from: item) }
+        .fullScreenCover(isPresented: $showsBackgroundImagePicker) {
+            FullScreenPhotoPicker { data in
+                showsBackgroundImagePicker = false
+                guard let data else { return }
+                Task { await applyBackgroundImage(from: data) }
+            }
+            .ignoresSafeArea()
         }
         .onChange(of: notebook.sortedPages.count) { _, count in
             primaryPageIndex = clamped(primaryPageIndex, pageCount: count)
@@ -1579,7 +1587,9 @@ struct NoteEditorView: View {
                 } label: {
                     Label("集中モード", systemImage: "arrow.up.left.and.arrow.down.right")
                 }
-                PhotosPicker(selection: $selectedBackgroundPhotoItem, matching: .images) {
+                Button {
+                    showsBackgroundImagePicker = true
+                } label: {
                     Label("写真を背景に設定", systemImage: "photo.on.rectangle")
                 }
                 if let page = currentPrimaryPage, page.backgroundImageData != nil {
@@ -1625,7 +1635,9 @@ struct NoteEditorView: View {
                 Label("テキスト", systemImage: "textformat")
             }
 
-            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+            Button {
+                showsImagePicker = true
+            } label: {
                 Label("写真", systemImage: "photo")
             }
 
@@ -1848,9 +1860,7 @@ struct NoteEditorView: View {
                 } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "") }
 
                 toolStripButton("テキスト", icon: "textformat", action: addTextElement)
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    toolStripLabel("写真", icon: "photo")
-                }
+                toolStripButton("写真", icon: "photo") { showsImagePicker = true }
                 toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
                 Menu {
                     Toggle("直線補正", isOn: $isLineCorrectionEnabled)
@@ -2022,15 +2032,24 @@ struct NoteEditorView: View {
     }
 
     private func openFriendChat(_ friend: FriendRecord) {
-        if isFriendChatVisibleInSplit {
+        // See `FriendChatSplitPolicy` for the (independently testable) rule
+        // this follows — `isFriendChatVisibleInSplit` used to gate this
+        // instead, which only asked "is some friend chat open," so picking
+        // a *different* friend while one was already open closed the split
+        // instead of switching it to show the newly picked friend.
+        switch FriendChatSplitPolicy.action(forTapping: friend.id, primaryFriendChatID: primaryFriendChatID, secondaryFriendChatID: secondaryFriendChatID) {
+        case .collapse:
             collapseSplit()
             return
+        case .openInPrimary:
+            primaryFriendChatID = friend.id
+        case .openInSecondary:
+            secondaryNotebook = nil
+            secondaryFlashcardDeck = nil
+            secondaryShowsWeb = false
+            secondaryShowsAIChat = false
+            secondaryFriendChatID = friend.id
         }
-        secondaryNotebook = nil
-        secondaryFlashcardDeck = nil
-        secondaryShowsWeb = false
-        secondaryShowsAIChat = false
-        secondaryFriendChatID = friend.id
         splitMode = isPortraitLayout ? .vertical : .horizontal
         splitRatio = 0.5
         activePane = .primary
@@ -3674,10 +3693,8 @@ struct NoteEditorView: View {
     }
 
     @MainActor
-    private func addImageElement(from item: PhotosPickerItem) async {
-        defer { selectedPhotoItem = nil }
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              let page = currentPrimaryPage else { return }
+    private func addImageElement(from data: Data) async {
+        guard let page = currentPrimaryPage else { return }
         let element = PageElement(kind: .image, imageData: data, width: 0.42, height: 0.28)
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
@@ -3687,10 +3704,8 @@ struct NoteEditorView: View {
     }
 
     @MainActor
-    private func applyBackgroundImage(from item: PhotosPickerItem) async {
-        defer { selectedBackgroundPhotoItem = nil }
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              let image = UIImage(data: data),
+    private func applyBackgroundImage(from data: Data) async {
+        guard let image = UIImage(data: data),
               let page = currentPrimaryPage else { return }
         page.backgroundImageData = image.jpegData(compressionQuality: 0.92)
         page.pageWidth = max(100, image.size.width)
@@ -3853,6 +3868,51 @@ struct PDFSaveModifier: ViewModifier {
             defaultFilename: filename
         ) { _ in
             document = nil
+        }
+    }
+}
+
+// MARK: - Full-screen photo picker
+//
+// `PhotosPicker` presents its system picker as an iPad "page sheet" — a
+// card that leaves the presenting note page visible (and dimmed) around
+// its edges, which reads as a blurry backdrop. Wrapping `PHPickerViewController`
+// directly and presenting it with `.fullScreenCover` instead covers the
+// whole screen with nothing left showing behind it, so there's no dimmed
+// page to see, while still picking from the photo library the same way.
+private struct FullScreenPhotoPicker: UIViewControllerRepresentable {
+    /// Called with the picked image's data, or nil if the user picked
+    /// nothing (cancelled, or the picked item wasn't loadable as an image).
+    let onPick: (Data?) -> Void
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var configuration = PHPickerConfiguration()
+        configuration.filter = .images
+        configuration.selectionLimit = 1
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        let onPick: (Data?) -> Void
+        init(onPick: @escaping (Data?) -> Void) { self.onPick = onPick }
+
+        /// Called both when the user picks something and when they cancel —
+        /// dismissal itself is left to the SwiftUI `.fullScreenCover` binding
+        /// the caller controls, not done here.
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            guard let provider = results.first?.itemProvider, provider.canLoadObject(ofClass: UIImage.self) else {
+                onPick(nil)
+                return
+            }
+            provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+                DispatchQueue.main.async { self.onPick(data) }
+            }
         }
     }
 }

@@ -1368,18 +1368,18 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
 
     // MARK: Straighten / circle (live, both triggered by holding still)
 
-    /// Whether the pen's hold-to-correct machinery (straighten, snap to
+    /// Whether the hold-to-correct machinery (straighten, snap to
     /// ellipse/rectangle/triangle/parabola/curve) should even be considered
-    /// right now. Erasing and highlighting are both deliberately excluded —
-    /// a highlight is usually a wobbly underline or box drawn by eye, and
-    /// snapping it into a geometric shape would fight that instead of
-    /// helping it — and any lock already in effect means a shape already
-    /// won and there's nothing left to (re-)decide.
+    /// right now — shared by the pen and the highlighter alike, so a
+    /// straight underline or a boxed-in region is just as easy to draw with
+    /// either. Erasing is excluded since there's no ink being shaped, and
+    /// any lock already in effect means a shape already won and there's
+    /// nothing left to (re-)decide.
     static func shouldConsiderHoldCorrection(
         isEraser: Bool, isHighlighter: Bool, isStraightened: Bool, isEllipseLocked: Bool,
         isRectangleLocked: Bool, isTriangleLocked: Bool, isParabolaLocked: Bool
     ) -> Bool {
-        !isEraser && !isHighlighter && !isStraightened && !isEllipseLocked
+        !isEraser && !isStraightened && !isEllipseLocked
             && !isRectangleLocked && !isTriangleLocked && !isParabolaLocked
     }
 
@@ -1402,14 +1402,17 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             guard let start = self.strokeStartLocation, let current = self.lastMovementLocation else { return }
             let distanceFromStart = hypot(current.x - start.x, current.y - start.y)
 
-            // A scribble is an erase gesture, not a shape to correct. If the
+            // A scribble is an erase gesture (for the pen — see the lift-time
+            // check below, which is pen-only), not a shape to correct. If the
             // stroke so far turns back on itself over existing ink, don't let
-            // the hold lock it into a shape — leave it for the erase check on
-            // lift. Uses the same loose motion test as the erase path so a
-            // brief pause mid-scribble can't turn it into a line or ellipse.
+            // the hold lock it into a shape either way — for the pen, that
+            // leaves it for the erase check on lift; for the highlighter,
+            // which never erases by scribbling, it simply stays freehand
+            // ink instead of accidentally snapping into a shape. Uses the
+            // same loose motion test as the erase path so a brief pause
+            // mid-scribble can't turn it into a line or ellipse.
             let preview = self.previewStroke()
-            if !self.isHighlighter,
-               Self.hasScratchMotion(preview.points.map(\.location)),
+            if Self.hasScratchMotion(preview.points.map(\.location)),
                self.drawing.strokes.contains(where: { self.strokeIsCoveredBy($0, scribble: preview) }) {
                 return
             }
