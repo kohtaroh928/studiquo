@@ -768,11 +768,30 @@ private struct AppSettingsView: View {
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = true
     @State private var showsAIDataDisclosure = false
     @State private var showsPrivacyPolicy = false
+    @State private var showsSubscriptionPlans = false
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Button {
+                        showsSubscriptionPlans = true
+                    } label: {
+                        HStack {
+                            Label("プランとお支払い", systemImage: "creditcard")
+                            Spacer()
+                            Text(subscriptionStore.currentPlan.title)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Studiquoプラン")
+                } footer: {
+                    Text("Plus・Proへの変更や購入履歴の復元ができます。")
+                }
+
                 Section {
                     Picker("言語", selection: $appLanguage) {
                         ForEach(AppLanguage.allCases) { language in
@@ -827,6 +846,9 @@ private struct AppSettingsView: View {
             }
             .sheet(isPresented: $showsPrivacyPolicy) {
                 PrivacyPolicyView()
+            }
+            .sheet(isPresented: $showsSubscriptionPlans) {
+                SubscriptionPlansView()
             }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -1195,6 +1217,7 @@ private struct PrivacyPolicyView: View {
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var allNotebooks: [Notebook]
     @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
     @Query(sort: \TextDocument.updatedAt, order: .reverse) private var textDocuments: [TextDocument]
@@ -4441,9 +4464,23 @@ struct ContentView: View {
             return
         }
 
+        let extractedPages = PDFImportService.extractPages(from: url, password: password)
+        // Checked once for the whole import, before any page is written —
+        // a multi-page PDF can be tens of megabytes; failing partway through
+        // would leave a notebook with only some of its pages. Mirrors
+        // ProfileAndFriendsView.uploadIfPossible's "check the size before
+        // doing the work" shape.
+        let importedBytes = extractedPages.reduce(0) { $0 + $1.imageData.count }
+        guard !StorageUsageCache.shared.wouldExceedLimit(
+            addingBytes: importedBytes, plan: subscriptionStore.currentPlan, in: modelContext
+        ) else {
+            pdfPrepareError = L("クラウド同期の容量上限に達しました。Proプランへのアップグレードをご検討ください。")
+            return
+        }
+
         let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
         assignToCurrentFolder(notebook)
-        for (index, pageData) in PDFImportService.extractPages(from: url, password: password).enumerated() {
+        for (index, pageData) in extractedPages.enumerated() {
             let page = NotePage(order: index, backgroundImageData: pageData.imageData, pageWidth: pageData.width, pageHeight: pageData.height)
             page.recognizedText = pageData.text
             page.textRecognitionDate = .now
@@ -4453,6 +4490,7 @@ struct ContentView: View {
         guard !notebook.sortedPages.isEmpty else { return }
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
+        StorageUsageCache.shared.adjust(by: importedBytes)
         openNotebookTab(notebook)
         selectedNotebook = notebook
         libraryMode = .documents

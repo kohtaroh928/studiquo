@@ -179,6 +179,7 @@ final class WorkerAIProvider: AIProvider {
             "noteContext": noteContext,
             "images": encodedImages,
             "requiresImage": expectsImages,
+            "model": AIModelSelection.current.rawValue,
         ]
         let request = try request(path: "api/ai/chat", body: payload)
 
@@ -221,6 +222,7 @@ final class WorkerAIProvider: AIProvider {
         var body: [String: Any] = [
             "question": submission.questionText,
             "modelAnswer": submission.modelAnswer,
+            "model": AIModelSelection.current.rawValue,
         ]
         if let png = Self.encoded(submission.questionImage) {
             body["questionImageBase64"] = png
@@ -235,6 +237,7 @@ final class WorkerAIProvider: AIProvider {
             "criteria": rubric.criteria.map {
                 ["name": $0.name, "maxPoints": $0.maxPoints, "requirement": $0.requirement]
             },
+            "model": AIModelSelection.current.rawValue,
         ]
         if let png = Self.encoded(submission.answerImage) { body["imageBase64"] = png }
         if let png = Self.encoded(submission.questionImage) { body["questionImageBase64"] = png }
@@ -244,7 +247,11 @@ final class WorkerAIProvider: AIProvider {
     // MARK: Day-after review
 
     func researchReview(question: String, context: String) async throws -> AIReviewResult {
-        try await streamedResult(path: "api/ai/review", body: ["question": question, "context": context])
+        try await streamedResult(path: "api/ai/review", body: [
+            "question": question,
+            "context": context,
+            "model": AIModelSelection.current.rawValue,
+        ])
     }
 
     private static func encoded(_ image: UIImage?) -> String? {
