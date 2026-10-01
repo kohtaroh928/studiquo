@@ -25,6 +25,7 @@ import XCTest
 ///   (`eraseShapeElements`/`shapeOutline`) makes the eraser rub them out
 ///   along their outline anyway, so the *visible* behavior still matches
 ///   "the eraser can remove it."
+@MainActor
 final class ShapeToolTests: XCTestCase {
     // MARK: - 1: the shape is drawn at exactly the dragged size and position
 

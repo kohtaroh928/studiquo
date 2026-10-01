@@ -29,6 +29,7 @@ enum ExportService {
         }
     }
 
+    @MainActor
     static func pdfData(from notebook: Notebook) -> Data? {
         pdfData(pages: notebook.sortedPages)
     }
@@ -202,6 +203,7 @@ enum ExportService {
         }
     }
 
+    @MainActor
     static func makePNG(from page: NotePage, notebookTitle: String) -> URL? {
         guard let data = makeImage(from: page).pngData() else { return nil }
         let safeTitle = notebookTitle.replacingOccurrences(of: "/", with: "-")
@@ -210,19 +212,44 @@ enum ExportService {
         return url
     }
 
+    /// Draws a page's background exactly as the live editor shows it: an
+    /// imported scan/photo when the page has one, otherwise the procedural
+    /// ruled/grid/dotted/cornell/etc. pattern `PageTemplateBackground` draws
+    /// on screen — not just a flat paper-color fill. `makeImage` (PNG
+    /// export, the snip tool, and the proof marker) and `pdfData(pages:)`
+    /// (PDF export) both call this, so the pattern can't silently drift out
+    /// of sync between the two, or quietly go missing from one of them the
+    /// way it previously did: a page using a template with no imported
+    /// background rendered as a blank sheet in every exported/snipped
+    /// image, because neither function drew anything beyond a flat fill for
+    /// that case.
+    @MainActor
+    private static func drawPageBackground(_ page: NotePage, size: CGSize) {
+        if let bgData = page.backgroundImageData, let bgImage = UIImage(data: bgData) {
+            bgImage.draw(in: CGRect(origin: .zero, size: size))
+            return
+        }
+        let pattern = PageTemplateBackground(template: page.pageTemplate, isDark: false, paperColorHex: page.paperColorHex)
+            .frame(width: size.width, height: size.height)
+        let renderer = ImageRenderer(content: pattern)
+        renderer.scale = 2
+        if let image = renderer.uiImage {
+            image.draw(in: CGRect(origin: .zero, size: size))
+        } else {
+            UIColor(hex: page.paperColorHex).setFill()
+            UIGraphicsGetCurrentContext()?.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+
     /// The page exactly as it is drawn — background, ink and elements — at
     /// page size. Used both for PNG export and for handing a handwritten
     /// answer to the proof marker, which reads the image rather than any
     /// recognised text.
+    @MainActor
     static func makeImage(from page: NotePage, drawing drawingOverride: InkDrawing? = nil) -> UIImage {
         let size = CGSize(width: page.pageWidth, height: page.pageHeight)
-        return UIGraphicsImageRenderer(size: size).image { context in
-            if let bgData = page.backgroundImageData, let bgImage = UIImage(data: bgData) {
-                bgImage.draw(in: CGRect(origin: .zero, size: size))
-            } else {
-                UIColor(hex: page.paperColorHex).setFill()
-                context.fill(CGRect(origin: .zero, size: size))
-            }
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            drawPageBackground(page, size: size)
             let drawing = drawingOverride ?? page.drawingData.flatMap(InkDrawing.load(from:))
             if let drawing {
                 drawing.image(from: CGRect(origin: .zero, size: size), scale: 2).draw(in: CGRect(origin: .zero, size: size))
@@ -233,14 +260,17 @@ enum ExportService {
         }
     }
 
+    @MainActor
     static func makePDF(from notebook: Notebook) -> URL? {
         makePDF(pages: notebook.sortedPages, filename: notebook.title)
     }
 
+    @MainActor
     static func makePDF(from page: NotePage, notebookTitle: String) -> URL? {
         makePDF(pages: [page], filename: "\(notebookTitle)-page-\(page.order + 1)")
     }
 
+    @MainActor
     private static func makePDF(pages: [NotePage], filename: String) -> URL? {
         guard let data = pdfData(pages: pages) else { return nil }
 
@@ -254,6 +284,7 @@ enum ExportService {
         }
     }
 
+    @MainActor
     private static func pdfData(pages: [NotePage]) -> Data? {
         guard !pages.isEmpty else { return nil }
 
@@ -263,12 +294,7 @@ enum ExportService {
                 let size = CGSize(width: page.pageWidth, height: page.pageHeight)
                 context.beginPage(withBounds: CGRect(origin: .zero, size: size), pageInfo: [:])
 
-                if let bgData = page.backgroundImageData, let bgImage = UIImage(data: bgData) {
-                    bgImage.draw(in: CGRect(origin: .zero, size: size))
-                } else {
-                    UIColor(hex: page.paperColorHex).setFill()
-                    context.fill(CGRect(origin: .zero, size: size))
-                }
+                drawPageBackground(page, size: size)
 
                 if let drawingData = page.drawingData,
                    let drawing = InkDrawing.load(from: drawingData) {

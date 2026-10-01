@@ -34,6 +34,7 @@ extension UTType {
 /// Renders a region of a page as a standalone image.
 enum PageSnippetRenderer {
     /// - Parameter rect: the region in page units, as the canvas reports it.
+    @MainActor
     static func snippet(
         of page: NotePage,
         rect: CGRect,
