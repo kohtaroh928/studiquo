@@ -340,3 +340,253 @@ test("review neutralizes a tag-breaking sequence inside the question before embe
     globalThis.fetch = originalFetch;
   }
 });
+
+// MARK: Plan-gated models (Phase B)
+
+function chatRequest(body) {
+  return new Request("https://example.test/api/ai/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+test("chat omitting model keeps the pre-existing Gemini-only behavior on every plan", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "こんにちは" }] } }] })}\n\n`,
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  );
+  try {
+    const ctx = executionContext();
+    const response = await handleAI(
+      new URL("https://example.test/api/ai/chat"),
+      chatRequest({ messages: [{ role: "user", text: "こんにちは" }] }),
+      environment(), "device", ctx, { sub: "user-1" }, "standard",
+    );
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /こんにちは/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("chat rejects a model the caller's plan does not include, with 403", async () => {
+  const ctx = executionContext();
+  const response = await handleAI(
+    new URL("https://example.test/api/ai/chat"),
+    chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "claude-haiku-4-5-20251001" }),
+    environment(), "device", ctx, { sub: "user-1" }, "standard",
+  );
+  assert.equal(response.status, 403);
+});
+
+test("chat allows an Anthropic model on the plus plan and normalizes its SSE to the app's data:{text} shape", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstreamURL;
+  let upstreamOptions;
+  globalThis.fetch = async (url, options) => {
+    upstreamURL = url;
+    upstreamOptions = options;
+    const events = [
+      { type: "message_start", message: {} },
+      { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "やっ" } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ほー" } },
+      { type: "content_block_stop", index: 0 },
+      { type: "message_stop" },
+    ];
+    const body = events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("");
+    return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+  };
+
+  try {
+    const env = environment();
+    env.ANTHROPIC_API_KEY = "anthropic-test-key";
+    const ctx = executionContext();
+    const response = await handleAI(
+      new URL("https://example.test/api/ai/chat"),
+      chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "claude-haiku-4-5-20251001" }),
+      env, "device", ctx, { sub: "user-1" }, "plus",
+    );
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    await Promise.all(ctx.promises);
+
+    // The app only ever sees the small normalized shape, never Anthropic's
+    // own event envelope.
+    assert.match(body, /data: \{"text":"やっ"\}/);
+    assert.match(body, /data: \{"text":"ほー"\}/);
+    assert.equal(body.includes("content_block_delta"), false);
+
+    assert.equal(upstreamURL, "https://api.anthropic.com/v1/messages");
+    assert.equal(upstreamOptions.headers["x-api-key"], "anthropic-test-key");
+    assert.equal(upstreamOptions.headers["anthropic-version"], "2023-06-01");
+    const sentBody = JSON.parse(upstreamOptions.body);
+    assert.equal(sentBody.model, "claude-haiku-4-5-20251001");
+    assert.equal(sentBody.stream, true);
+    assert.equal(sentBody.messages[0].role, "user");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("chat allows an OpenAI logical model on the pro plan, resolving it via env.OPENAI_FLAGSHIP_MODEL", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstreamURL;
+  let upstreamOptions;
+  globalThis.fetch = async (url, options) => {
+    upstreamURL = url;
+    upstreamOptions = options;
+    const chunks = [
+      { choices: [{ delta: { content: "やっ" } }] },
+      { choices: [{ delta: { content: "ほー" } }] },
+    ];
+    const body = chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n";
+    return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+  };
+
+  try {
+    const env = environment();
+    env.OPENAI_API_KEY = "openai-test-key";
+    env.OPENAI_FLAGSHIP_MODEL = "gpt-test-flagship";
+    const ctx = executionContext();
+    const response = await handleAI(
+      new URL("https://example.test/api/ai/chat"),
+      chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "openai-flagship" }),
+      env, "device", ctx, { sub: "user-1" }, "pro",
+    );
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    await Promise.all(ctx.promises);
+
+    assert.match(body, /data: \{"text":"やっ"\}/);
+    assert.match(body, /data: \{"text":"ほー"\}/);
+
+    assert.equal(upstreamURL, "https://api.openai.com/v1/chat/completions");
+    assert.equal(upstreamOptions.headers.authorization, "Bearer openai-test-key");
+    const sentBody = JSON.parse(upstreamOptions.body);
+    // The logical name in PLAN_MODELS/the request body is never sent
+    // upstream — only the real id from OPENAI_FLAGSHIP_MODEL is.
+    assert.equal(sentBody.model, "gpt-test-flagship");
+    assert.equal(sentBody.messages[0].role, "system");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("chat 503s an OpenAI logical model this Worker hasn't configured a real model id for", async () => {
+  const env = environment();
+  env.OPENAI_API_KEY = "openai-test-key";
+  // OPENAI_MID_MODEL deliberately left unset.
+  const ctx = executionContext();
+  const response = await handleAI(
+    new URL("https://example.test/api/ai/chat"),
+    chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "openai-mid" }),
+    env, "device", ctx, { sub: "user-1" }, "plus",
+  );
+  assert.equal(response.status, 503);
+});
+
+// Records every RateCounter bucket a call touches, so the plan-derived
+// per-device limit (ai.js's planLimit/PLAN_LIMITS) can be asserted directly
+// instead of requiring hundreds of requests in a loop to find where a plan
+// actually 429s.
+function capturingRateCounterBinding() {
+  const calls = [];
+  return {
+    calls,
+    getByName(name) {
+      return {
+        async bump(limit) {
+          calls.push({ name, limit });
+          return true;
+        },
+      };
+    },
+  };
+}
+
+test("each plan's chat quota uses PLAN_LIMITS, not one fixed number for everyone", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] })}\n\n`,
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  );
+
+  try {
+    for (const [plan, expectedLimit] of [["standard", 30], ["plus", 750], ["pro", 2000]]) {
+      const env = environment();
+      const rateCounter = capturingRateCounterBinding();
+      env.RATE_COUNTER = rateCounter;
+      const ctx = executionContext();
+      const response = await handleAI(
+        new URL("https://example.test/api/ai/chat"),
+        chatRequest({ messages: [{ role: "user", text: "こんにちは" }] }),
+        env, "device", ctx, { sub: "user-1" }, plan,
+      );
+      assert.equal(response.status, 200);
+      await response.text();
+      await Promise.all(ctx.promises);
+
+      const deviceCall = rateCounter.calls.find(call => call.name === `ai:chat:device`);
+      assert.ok(deviceCall, `expected a per-device rate-counter call for plan ${plan}`);
+      assert.equal(deviceCall.limit, expectedLimit);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("an explicit CHAT_DAILY_LIMIT env var still overrides the plan table", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] })}\n\n`,
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  );
+
+  try {
+    const env = environment();
+    env.CHAT_DAILY_LIMIT = "5";
+    const rateCounter = capturingRateCounterBinding();
+    env.RATE_COUNTER = rateCounter;
+    const ctx = executionContext();
+    const response = await handleAI(
+      new URL("https://example.test/api/ai/chat"),
+      chatRequest({ messages: [{ role: "user", text: "こんにちは" }] }),
+      env, "device", ctx, { sub: "user-1" }, "pro",
+    );
+    assert.equal(response.status, 200);
+    await response.text();
+    await Promise.all(ctx.promises);
+
+    const deviceCall = rateCounter.calls.find(call => call.name === `ai:chat:device`);
+    assert.equal(deviceCall.limit, 5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handleAI with no plan argument at all (every pre-Phase-B caller) defaults to the standard plan", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] })}\n\n`,
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  );
+  try {
+    const env = environment();
+    const rateCounter = capturingRateCounterBinding();
+    env.RATE_COUNTER = rateCounter;
+    const ctx = executionContext();
+    // Same 5-argument call shape the pre-existing tests above all use.
+    const response = await handleAI(new URL("https://example.test/api/ai/chat"), chatRequest({ messages: [{ role: "user", text: "こんにちは" }] }), env, "device", ctx);
+    assert.equal(response.status, 200);
+    await response.text();
+    await Promise.all(ctx.promises);
+
+    const deviceCall = rateCounter.calls.find(call => call.name === `ai:chat:device`);
+    assert.equal(deviceCall.limit, 30);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
