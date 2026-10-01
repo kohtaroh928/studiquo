@@ -193,6 +193,28 @@ export class UserRegistry extends DurableObject {
     return { status: "removed" };
   }
 
+  async removeAccountReferences(key, deletedCode) {
+    const storageKey = `chat:user:${key}`;
+    const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    const deletedFriend = (user.friends ?? []).find(item => item.code === deletedCode);
+    const blockedContact = (user.blockedContacts ?? []).find(item => item.code === deletedCode);
+    user.friends = (user.friends ?? []).filter(item => item.code !== deletedCode);
+    user.blockedContacts = (user.blockedContacts ?? []).filter(item => item.code !== deletedCode);
+    const historicalContact = deletedFriend ?? blockedContact;
+    if (historicalContact) {
+      user.blockedContacts = [
+        ...(user.blockedContacts ?? []),
+        { ...historicalContact, name: "削除済みユーザー", deleted: true },
+      ];
+    }
+    user.incomingRequests = (user.incomingRequests ?? []).filter(item => item.code !== deletedCode);
+    user.outgoingRequests = (user.outgoingRequests ?? []).filter(item => item.code !== deletedCode);
+    user.incomingGroupInvites = (user.incomingGroupInvites ?? []).filter(item => item.inviterCode !== deletedCode);
+    await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+    return { status: "removed" };
+  }
+
   // Records a pending group invitation on the invitee's own record — routed
   // through this per-key instance (getByName(key), the invitee's own key)
   // for the same race-safety reason addIncomingRequest is: two different

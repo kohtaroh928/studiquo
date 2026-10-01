@@ -260,10 +260,16 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             // step instead of one for the whole drag (see
             // `isMidEraserGesture`). Suppressed here; `touchesEnded` reports
             // the net result exactly once when the gesture actually ends.
-            guard Self.shouldReportDrawingChangeImmediately(isMidEraserGesture: isMidEraserGesture) else { return }
+            guard !isApplyingExternalDrawing,
+                  Self.shouldReportDrawingChangeImmediately(isMidEraserGesture: isMidEraserGesture) else { return }
             onDrawingChanged?(drawing)
         }
     }
+    /// `setDrawing` is the SwiftUI-to-UIKit synchronization path. Its value
+    /// already came from the binding, so echoing it back through
+    /// `onDrawingChanged` would mutate that binding from inside
+    /// `UIViewRepresentable.updateUIView`.
+    private var isApplyingExternalDrawing = false
     /// True from the moment an eraser touch begins until it lifts (or is
     /// cancelled) — see the `didSet` above.
     private var isMidEraserGesture = false
@@ -294,6 +300,8 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// redundant (and, for undo/redo, actively wrong).
     func setDrawing(_ newValue: InkDrawing) {
         clearLassoSelection()
+        isApplyingExternalDrawing = true
+        defer { isApplyingExternalDrawing = false }
         drawing = newValue
         rebuildCommittedLayers()
     }
@@ -638,7 +646,9 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     static func snipCaptureRect(from start: CGPoint, to current: CGPoint, canvasSize: CGSize) -> CGRect? {
         let rect = snipDragRect(from: start, to: current)
         guard rect.width >= 16, rect.height >= 16 else { return nil }
-        return rect.intersection(CGRect(origin: .zero, size: canvasSize))
+        let clipped = rect.intersection(CGRect(origin: .zero, size: canvasSize))
+        guard clipped.width >= 16, clipped.height >= 16 else { return nil }
+        return clipped
     }
 
     private func updateSnipPreview() {

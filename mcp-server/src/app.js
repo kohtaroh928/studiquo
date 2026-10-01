@@ -18,6 +18,7 @@ import { verifyGoogleIdentityToken } from "./google-auth.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
 import { upsertLocalAccount, verifyLocalAccount } from "./local-auth.js";
+import { deleteAccount } from "./account-deletion.js";
 import { mintSession, hasRealSession } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
@@ -297,7 +298,7 @@ export default {
 
       const passkeys = await handlePasskeys(url, request, env);
       if (passkeys) return passkeys;
-      const chat = await handleChat(url, request, env);
+      const chat = await handleChat(url, request, env, ctx);
       if (chat) return chat;
       const issueReports = await handleIssueReports(url, request, env);
       if (issueReports) return issueReports;
@@ -348,6 +349,12 @@ export default {
 
       const session = await realSession(env, token);
       const accountHash = session ? await sha256Hex(`mcp-account:${session.sub}`) : null;
+      if (url.pathname === "/api/account" && request.method === "DELETE") {
+        if (!session) return json({ error: "Sign in again." }, 401);
+        const body = await readJSONLimited(request, 1_000);
+        if (body?.confirmation !== "DELETE") return json({ error: "Confirmation is required." }, 400);
+        return json(await deleteAccount(env, session.sub));
+      }
       if (url.pathname === "/api/mcp/pair" && request.method === "GET") {
         return json(await pairingInfo(env, url.searchParams.get("code") ?? "") ?? { error: "Code expired or invalid." });
       }
@@ -406,7 +413,7 @@ export default {
       const ai = await handleAI(url, request, env, key, ctx);
       if (ai) return ai;
 
-      const documentCollab = await handleDocumentCollab(url, request, env, key);
+      const documentCollab = await handleDocumentCollab(url, request, env, key, ctx);
       if (documentCollab) return documentCollab;
 
       return json({ error: "Not found" }, 404);
@@ -471,6 +478,7 @@ async function handleAppleSignIn(request, env) {
     await env.STUDIQUO_DATA.put(accountKey, JSON.stringify({
       sub,
       email,
+      emailVerified,
       emailIsPrivateRelay,
       createdAt: new Date().toISOString(),
     }));
@@ -481,11 +489,18 @@ async function handleAppleSignIn(request, env) {
   // is per-app and can never actually match the same person's Google/local
   // email, so it must not join the cross-provider link index (see
   // oauth-links.js's header comment).
-  if (email && !emailIsPrivateRelay) {
-    await linkVerifiedEmail(env, { provider: "apple", sub, email, emailVerified });
+  let identityKey = sub;
+  const accountEmail = email ?? existingAccount?.email;
+  const accountEmailVerified = email ? emailVerified : existingAccount?.emailVerified === true;
+  const accountUsesPrivateRelay = email ? emailIsPrivateRelay : existingAccount?.emailIsPrivateRelay === true;
+  if (accountEmail && accountEmailVerified && !accountUsesPrivateRelay) {
+    const link = await linkVerifiedEmail(env, {
+      provider: "apple", sub, email: accountEmail, emailVerified: true,
+    });
+    identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
-  const token = await mintSession(env, sub, randomValue);
+  const token = await mintSession(env, identityKey, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
   return json({ token });
 }
@@ -540,11 +555,13 @@ async function handleGoogleSignIn(request, env) {
     emailVerified,
     createdAt: existingAccount?.createdAt ?? new Date().toISOString(),
   }));
+  let identityKey = `google:${sub}`;
   if (email) {
-    await linkVerifiedEmail(env, { provider: "google", sub, email, emailVerified });
+    const link = await linkVerifiedEmail(env, { provider: "google", sub, email, emailVerified });
+    identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
-  const token = await mintSession(env, `google:${sub}`, randomValue);
+  const token = await mintSession(env, identityKey, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
 
   return json({ token });
@@ -626,7 +643,10 @@ async function handleConfirmEmailVerification(request, env) {
     return json({ error: "Could not save the account." }, 400);
   }
 
-  const token = await mintSession(env, `email:${normalizedEmail}`, randomValue);
+  const link = await linkVerifiedEmail(env, {
+    provider: "email", sub: normalizedEmail, email: normalizedEmail, emailVerified: true,
+  });
+  const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
   return json({ verified: true, token });
 }
@@ -662,7 +682,11 @@ async function handleLocalLogin(request, env) {
     return json({ error: "メールアドレスまたはパスワードが違います。" }, 401);
   }
 
-  const token = await mintSession(env, `email:${email.trim().toLowerCase()}`, randomValue);
+  const normalizedEmail = email.trim().toLowerCase();
+  const link = await linkVerifiedEmail(env, {
+    provider: "email", sub: normalizedEmail, email: normalizedEmail, emailVerified: true,
+  });
+  const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
   return json({ token });
 }

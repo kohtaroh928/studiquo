@@ -193,7 +193,10 @@ final class ShapeToolTests: XCTestCase {
     func testTheRectanglePreviewIsAClosedFourCornerOutline() {
         let points = InkCanvasView.shapePoints(kind: .rectangle, from: CGPoint(x: 0, y: 0), to: CGPoint(x: 100, y: 50))
         XCTAssertEqual(points.first?.location, points.last?.location, "四角形のプレビューの輪郭は、始点と終点が同じ点で閉じている必要があります。")
-        XCTAssertEqual(Set(points.map(\.location)).count, 4, "四角形のプレビューは、4つの角を持つ必要があります。")
+        let uniqueCorners = points.map(\.location).reduce(into: [CGPoint]()) { result, point in
+            if !result.contains(point) { result.append(point) }
+        }
+        XCTAssertEqual(uniqueCorners.count, 4, "四角形のプレビューは、4つの角を持つ必要があります。")
     }
 
     func testTheEllipsePreviewStaysWithinTheDraggedBoundingBox() {

@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import Security
 import AuthenticationServices
+import SwiftData
 
 extension Notification.Name {
     /// Posted by FriendChatService/AIProvider/DocumentCollabService whenever
@@ -31,6 +32,7 @@ final class AuthenticationStore: ObservableObject {
     @Published private(set) var isGoogleSignInBusy = false
     @Published private(set) var isEmailVerifyBusy = false
     @Published private(set) var isLoginBusy = false
+    @Published private(set) var isAccountDeletionBusy = false
 
     private let sessionAccount = "session"
     private let service: String
@@ -39,6 +41,9 @@ final class AuthenticationStore: ObservableObject {
     private let oauthIdentityAccount = "oauth-identity"
     private let now: () -> Date
     private let defaults: UserDefaults
+    private let unregisterPushDevice: () async -> Void
+    private let revokeCloudCredentials: () async -> Void
+    private let deleteAccountOnServer: () async throws -> Void
     /// Email + new password held only in memory between `beginAccountCreation`
     /// and a successful `confirmEmailVerification` — nothing is written to
     /// Keychain until the code is confirmed, so an abandoned sign-up (or
@@ -61,11 +66,17 @@ final class AuthenticationStore: ObservableObject {
     init(
         service: String = "com.yabuko.studiquo.authentication",
         now: @escaping () -> Date = Date.init,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        unregisterPushDevice: @escaping () async -> Void = { await PushNotificationRegistration.unregisterCurrentDevice() },
+        revokeCloudCredentials: @escaping () async -> Void = { await MCPCloudCredentials.revoke() },
+        deleteAccountOnServer: @escaping () async throws -> Void = { try await AccountDeletionService.deleteAccount() }
     ) {
         self.service = service
         self.now = now
         self.defaults = defaults
+        self.unregisterPushDevice = unregisterPushDevice
+        self.revokeCloudCredentials = revokeCloudCredentials
+        self.deleteAccountOnServer = deleteAccountOnServer
         restore()
         authFailureSubscription = NotificationCenter.default.publisher(for: .studiquoAuthFailed)
             .receive(on: DispatchQueue.main)
@@ -147,8 +158,38 @@ final class AuthenticationStore: ObservableObject {
     func logout() {
         delete(account: sessionAccount)
         state = .needsLogin
-        // Best-effort and non-blocking: local sign-out must not wait on the network.
-        Task { await MCPCloudCredentials.revoke() }
+        // Best-effort and non-blocking: remove this device while the bearer
+        // token is still available, then revoke that token. Local sign-out
+        // itself never waits on either network call.
+        Task {
+            await unregisterPushDevice()
+            await revokeCloudCredentials()
+        }
+    }
+
+    func requestAccountDeletion() async -> Bool {
+        guard !isAccountDeletionBusy else { return false }
+        isAccountDeletionBusy = true
+        defer { isAccountDeletionBusy = false }
+        do {
+            try await deleteAccountOnServer()
+            errorMessage = ""
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func finishAccountDeletion() {
+        MCPCloudCredentials.clear()
+        delete(account: sessionAccount)
+        delete(account: passkeyIdentityAccount)
+        delete(account: oauthIdentityAccount)
+        pendingSignUp = nil
+        defaults.removeObject(forKey: onboardingKey)
+        errorMessage = ""
+        state = .needsLogin
     }
 
     /// A definitive 401 from any authenticated server call (see
@@ -391,4 +432,115 @@ private struct OAuthIdentity: Codable {
     let provider: String
     let subject: String
     let email: String?
+}
+
+enum AccountDeletionService {
+    static func deleteAccount() async throws {
+        guard let token = MCPCloudCredentials.currentToken(),
+              let endpoint = MCPCloudCredentials.configuredEndpoint() else {
+            throw AccountDeletionError.notSignedIn
+        }
+        var request = URLRequest(url: endpoint.appending(path: "api/account"))
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["confirmation": "DELETE"])
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+            throw AccountDeletionError.rejected
+        }
+    }
+}
+
+enum AccountDeletionError: LocalizedError {
+    case notSignedIn, rejected
+
+    var errorDescription: String? {
+        switch self {
+        case .notSignedIn: "ログイン情報を確認できませんでした。もう一度ログインしてください。"
+        case .rejected: "アカウントを削除できませんでした。通信状態を確認して、もう一度お試しください。"
+        }
+    }
+}
+
+enum AccountDeletionUI {
+    static let accountButtonTitle = "アカウントを削除"
+    static let requiredConfirmation = "削除"
+    static let subscriptionManagementURL = URL(string: "https://apps.apple.com/account/subscriptions")!
+    static let localEraseFailureMessage = "サーバー上のアカウントは削除されましたが、この端末の資料を消去できませんでした。アプリを終了して、もう一度開いてください。"
+
+    static func canSubmit(confirmation: String, isBusy: Bool) -> Bool {
+        confirmation == requiredConfirmation && !isBusy
+    }
+
+    static func canDismiss(isBusy: Bool) -> Bool { !isBusy }
+}
+
+enum AccountLocalPreferences {
+    static func clear(defaults: UserDefaults = .standard) {
+        let preservedLanguage = defaults.string(forKey: "appLanguage")
+        for key in defaults.dictionaryRepresentation().keys {
+            defaults.removeObject(forKey: key)
+        }
+        if let preservedLanguage { defaults.set(preservedLanguage, forKey: "appLanguage") }
+    }
+}
+
+@MainActor
+enum AccountDeletionWorkflow {
+    enum Result: Equatable {
+        case success
+        case serverFailure
+        case localFailure(String)
+    }
+
+    static func run(
+        authentication: AuthenticationStore,
+        eraseLocalData: () throws -> Void,
+        clearPreferences: () -> Void = { AccountLocalPreferences.clear() }
+    ) async -> Result {
+        guard await authentication.requestAccountDeletion() else { return .serverFailure }
+        do {
+            try eraseLocalData()
+            clearPreferences()
+            authentication.finishAccountDeletion()
+            return .success
+        } catch {
+            return .localFailure(AccountDeletionUI.localEraseFailureMessage)
+        }
+    }
+}
+
+@MainActor
+enum AccountDataEraser {
+    static func eraseAll(from context: ModelContext) throws {
+        try context.delete(model: MCPImportReceipt.self)
+        try context.delete(model: AIReviewItem.self)
+        try context.delete(model: AIChatMessage.self)
+        try context.delete(model: AIChatThread.self)
+        try context.delete(model: Flashcard.self)
+        try context.delete(model: FlashcardDeck.self)
+        try context.delete(model: CalendarEvent.self)
+        try context.delete(model: StudyActivity.self)
+        try context.delete(model: PageElement.self)
+        try context.delete(model: NotePage.self)
+        try context.delete(model: Notebook.self)
+        try context.delete(model: SlideElement.self)
+        try context.delete(model: SlidePlaceholder.self)
+        try context.delete(model: SlideLayoutTemplate.self)
+        try context.delete(model: SlideMaster.self)
+        try context.delete(model: Slide.self)
+        try context.delete(model: SlideDeck.self)
+        try context.delete(model: DocumentComment.self)
+        try context.delete(model: DocumentChangeRecord.self)
+        try context.delete(model: DocumentFootnote.self)
+        try context.delete(model: DocumentTableCell.self)
+        try context.delete(model: DocumentTableRow.self)
+        try context.delete(model: DocumentHeaderFooter.self)
+        try context.delete(model: DocumentBlock.self)
+        try context.delete(model: TextDocument.self)
+        try context.delete(model: Folder.self)
+        try context.save()
+    }
 }

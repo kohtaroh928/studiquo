@@ -22,7 +22,7 @@ final class LibraryDropInteractionTests: XCTestCase {
         )
     }
 
-    func testFailedFriendChatSendClearsDraftAndKeepsMessageInFailedBubble() {
+    func testFailedFriendChatSendPreservesDraftAndKeepsMessageInFailedBubble() {
         let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
         app.launchArguments = ["--friend-chat-ui-test"]
         app.launch()
@@ -35,7 +35,10 @@ final class LibraryDropInteractionTests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["送信できませんでした"].waitForExistence(timeout: 5))
         if app.alerts["エラー"].exists { app.alerts.buttons["OK"].tap() }
-        XCTAssertFalse(draft.valueString.contains("送信できなかった文章"))
+        XCTAssertTrue(
+            draft.valueString.contains("送信できなかった文章"),
+            "通信失敗時は入力した文章を消さず、再試行できる状態にする必要があります。"
+        )
         XCTAssertTrue(app.staticTexts["送信できなかった文章"].exists)
     }
 
@@ -492,6 +495,165 @@ final class LibraryDropInteractionTests: XCTestCase {
     }
 }
 
+
+/// End-to-end regression coverage for sending a dashed note selection to a
+/// direct chat from a single-pane editor. The lower-level split routing
+/// policy has separate unit tests; this verifies the actual UI wiring.
+final class NoteSnippetFriendChatTests: XCTestCase {
+    func testSnipToolIsAvailableInTheTopNoteToolbar() {
+        let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
+        app.launchArguments = ["--note-snippet-friend-drag-ui-test"]
+        app.launch()
+
+        XCTAssertTrue(
+            app.buttons["note-snip-toolbar-button"].waitForExistence(timeout: 15),
+            "ノート上部のツールバーに切り抜きツールが表示されていません。"
+        )
+    }
+
+    func testSinglePaneSnippetOpensSelectedFriendInSplitAndLoadsImage() {
+        let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
+        app.launchArguments = ["--note-snippet-friend-ui-test"]
+        app.launch()
+
+        let primaryPane = app.scrollViews["split-pane-primary"].firstMatch
+        XCTAssertTrue(primaryPane.waitForExistence(timeout: 15), "ノートの1画面表示を開始できません。")
+
+        let draft = app.descendants(matching: .any)["friend-chat-draft"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 5), "選択した個人チャットの入力欄がありません。")
+        let isBesideNote = draft.frame.midX > primaryPane.frame.midX
+        let isBelowNote = draft.frame.midY > primaryPane.frame.midY
+        XCTAssertTrue(isBesideNote || isBelowNote, "個人チャットがノートと2分割されず、同じ領域を覆っています。")
+        XCTAssertTrue(
+            app.staticTexts["切り抜き・回帰テスト"].waitForExistence(timeout: 5),
+            "切り抜き画像がチャット入力欄に読み込まれません。"
+        )
+        XCTAssertFalse(
+            app.buttons["snippet-add-to-chat"].exists,
+            "送信先を選んだ後も切り抜き操作パネルが残っています。"
+        )
+        XCTAssertTrue(primaryPane.exists, "チャットを開いたとき元のノート画面が消えました。")
+    }
+
+    func testSinglePaneSnippetOpensSelectedGroupInSplitAndLoadsImage() {
+        let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
+        app.launchArguments = ["--note-snippet-group-ui-test"]
+        app.launch()
+
+        let primaryPane = app.scrollViews["split-pane-primary"].firstMatch
+        XCTAssertTrue(primaryPane.waitForExistence(timeout: 15), "ノートの1画面表示を開始できません。")
+
+        let draft = app.descendants(matching: .any)["group-chat-draft"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 5), "選択したグループチャットの入力欄がありません。")
+        let isBesideNote = draft.frame.midX > primaryPane.frame.midX
+        let isBelowNote = draft.frame.midY > primaryPane.frame.midY
+        XCTAssertTrue(isBesideNote || isBelowNote, "グループチャットがノートと2分割されず、同じ領域を覆っています。")
+        XCTAssertTrue(
+            app.staticTexts["切り抜き・回帰テスト"].waitForExistence(timeout: 5),
+            "切り抜き画像がグループチャットの入力欄に読み込まれません。"
+        )
+        XCTAssertFalse(
+            app.buttons["snippet-add-to-chat"].exists,
+            "グループの送信先を選んだ後も切り抜き操作パネルが残っています。"
+        )
+        XCTAssertTrue(primaryPane.exists, "グループチャットを開いたとき元のノート画面が消えました。")
+    }
+
+    func testVisibleFriendComposerLoadsSecondSnippetWithoutChangingSplit() {
+        let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
+        app.launchArguments = ["--note-snippet-friend-drag-ui-test"]
+        app.launch()
+
+        let primaryPane = app.scrollViews["split-pane-primary"].firstMatch
+        XCTAssertTrue(primaryPane.waitForExistence(timeout: 15), "ノート画面を開始できません。")
+
+        let draft = app.descendants(matching: .any)["friend-chat-draft"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 8), "個人チャットとの2分割を準備できません。")
+        XCTAssertTrue(
+            app.staticTexts["切り抜き・準備"].waitForExistence(timeout: 5),
+            "追加テスト用の個人チャットを準備できません。"
+        )
+
+        let snippet = app.descendants(matching: .any)["snippet-thumbnail-ドラッグ回帰"]
+        XCTAssertTrue(snippet.waitForExistence(timeout: 5), "ドラッグする切り抜き画像が表示されません。")
+        XCTAssertFalse(app.staticTexts["切り抜き・ドラッグ回帰"].exists)
+
+        let addToChat = app.buttons["snippet-add-to-chat"]
+        XCTAssertTrue(addToChat.waitForExistence(timeout: 5), "チャットへの追加ボタンがありません。")
+        addToChat.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["切り抜き・ドラッグ回帰"].waitForExistence(timeout: 8),
+            "2分割済みの個人チャットへ2枚目の切り抜き画像を読み込めません。"
+        )
+        XCTAssertFalse(
+            addToChat.waitForExistence(timeout: 1),
+            "チャットに追加した後も切り抜き操作パネルが残っています。"
+        )
+        XCTAssertEqual(
+            app.staticTexts.matching(identifier: "切り抜き・ドラッグ回帰").count,
+            1,
+            "切り抜き画像の添付プレビューは1つだけである必要があります。"
+        )
+        XCTAssertTrue(primaryPane.exists, "追加後に元のノート画面が消えました。")
+        XCTAssertTrue(draft.exists, "追加後に個人チャットの入力欄が消えました。")
+    }
+
+    func testRotationKeepsTheNoteChatSplitAndLoadedSnippet() {
+        let device = XCUIDevice.shared
+        device.orientation = .landscapeLeft
+        defer { device.orientation = .portrait }
+
+        let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
+        app.launchArguments = ["--note-snippet-friend-drag-ui-test"]
+        app.launch()
+
+        let primaryPane = app.scrollViews["split-pane-primary"].firstMatch
+        let draft = app.descendants(matching: .any)["friend-chat-draft"]
+        let attachment = app.staticTexts["切り抜き・準備"]
+        XCTAssertTrue(primaryPane.waitForExistence(timeout: 15))
+        XCTAssertTrue(draft.waitForExistence(timeout: 8))
+        XCTAssertTrue(attachment.waitForExistence(timeout: 5))
+
+        device.orientation = .portrait
+
+        XCTAssertTrue(primaryPane.waitForExistence(timeout: 8), "回転後も元のノートを維持する必要があります。")
+        XCTAssertTrue(draft.waitForExistence(timeout: 8), "回転後もチャット入力欄を維持する必要があります。")
+        XCTAssertTrue(attachment.waitForExistence(timeout: 8), "回転後も読み込み済み画像を維持する必要があります。")
+    }
+
+    func testVisibleGroupComposerLoadsSecondSnippetWithoutChangingSplit() {
+        let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
+        app.launchArguments = ["--note-snippet-group-drag-ui-test"]
+        app.launch()
+
+        let primaryPane = app.scrollViews["split-pane-primary"].firstMatch
+        XCTAssertTrue(primaryPane.waitForExistence(timeout: 15), "ノート画面を開始できません。")
+
+        let draft = app.descendants(matching: .any)["group-chat-draft"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 8), "グループチャットとの2分割を準備できません。")
+        XCTAssertTrue(
+            app.staticTexts["切り抜き・準備"].waitForExistence(timeout: 5),
+            "追加テスト用のグループチャットを準備できません。"
+        )
+        XCTAssertFalse(app.staticTexts["切り抜き・ドラッグ回帰"].exists)
+
+        let addToChat = app.buttons["snippet-add-to-chat"]
+        XCTAssertTrue(addToChat.waitForExistence(timeout: 5), "チャットへの追加ボタンがありません。")
+        addToChat.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["切り抜き・ドラッグ回帰"].waitForExistence(timeout: 8),
+            "2分割済みのグループチャットへ2枚目の切り抜き画像を読み込めません。"
+        )
+        XCTAssertFalse(
+            addToChat.waitForExistence(timeout: 1),
+            "グループチャットに追加した後も切り抜き操作パネルが残っています。"
+        )
+        XCTAssertTrue(primaryPane.exists, "追加後に元のノート画面が消えました。")
+        XCTAssertTrue(draft.exists, "追加後にグループチャットの入力欄が消えました。")
+    }
+}
 
 private extension XCUIElement {
     var valueString: String {

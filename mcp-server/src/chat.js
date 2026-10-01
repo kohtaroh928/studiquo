@@ -5,6 +5,9 @@ import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { realSession } from "./session.js";
 import { handleGroupRoutes } from "./groups.js";
+import { sendPush } from "./push.js";
+import { chatMessageNotification } from "./message-notification.js";
+import { handleDeviceRoutes } from "./devices.js";
 
 const MAX_BODY = 16_000;
 // Attachment uploads carry base64-encoded image/file bytes (up to
@@ -176,7 +179,10 @@ async function withSenderNames(env, result) {
   })));
   const resolved = messages.map(({ senderKey, ...rest }) => {
     const sender = senderKey ? senders.get(senderKey) : null;
-    return sender ? { ...rest, senderCode: sender.code, senderName: sender.name } : rest;
+    if (sender) return { ...rest, senderCode: sender.code, senderName: sender.name };
+    return senderKey?.startsWith("deleted:")
+      ? { ...rest, senderCode: null, senderName: "削除済みユーザー" }
+      : rest;
   });
   return Array.isArray(result) ? resolved : resolved[0];
 }
@@ -201,7 +207,23 @@ async function roomResponse(promise) {
   }
 }
 
-export async function handleChat(url, request, env) {
+async function messageNotificationContext(env, senderKey, roomIDValue) {
+  const sender = await ensureUser(env, senderKey);
+  const group = (sender.groups ?? []).find(item => item.roomID === roomIDValue);
+  if (group) {
+    const info = await env.CHAT_ROOM.getByName(roomIDValue).groupInfo(senderKey);
+    return {
+      senderName: sender.name,
+      groupName: info.name || "グループチャット",
+      recipientKeys: info.members.map(member => member.key).filter(memberKey => memberKey !== senderKey),
+    };
+  }
+  const friend = (sender.friends ?? []).find(item => item.roomID === roomIDValue);
+  const recipientKey = friend ? await env.STUDIQUO_DATA.get(`chat:code:${friend.code}`) : null;
+  return { senderName: sender.name, groupName: null, recipientKeys: recipientKey ? [recipientKey] : [] };
+}
+
+export async function handleChat(url, request, env, ctx) {
   if (!url.pathname.startsWith("/api/chat/")) return null;
   const token = bearerToken(request);
   if (!token) return json({ error: "Authentication required." }, 401);
@@ -215,6 +237,9 @@ export async function handleChat(url, request, env) {
   // its friend codes and room participants remain usable after token rotation.
   const identityHash = await sha256Hex(`chat-account:${session.sub}`);
   const key = await env.USER_REGISTRY.getByName(identityHash).resolveChatKey(identityHash, tokenKey);
+
+  const devices = await handleDeviceRoutes(url, request, env, key, ctx);
+  if (devices) return devices;
 
   if (url.pathname === "/api/chat/me" && request.method === "POST") {
     const body = await readBody(request);
@@ -297,14 +322,18 @@ export async function handleChat(url, request, env) {
 
   if (url.pathname === "/api/chat/inbox" && request.method === "GET") {
     const user = await ensureUser(env, key);
-    const friends = user.friends ?? [];
+    const rooms = [
+      ...(user.friends ?? []).map(friend => ({ roomID: friend.roomID, kind: "direct" })),
+      ...(user.groups ?? []).map(group => ({ roomID: group.roomID, kind: "group" })),
+    ];
     const result = [];
-    // Bound concurrent room calls even for a user at the friend limit.
-    for (let start = 0; start < friends.length; start += 20) {
-      const batch = await Promise.all(friends.slice(start, start + 20).map(async friend => {
+    // Bound concurrent Durable Object calls even for an account with many
+    // direct and group conversations.
+    for (let start = 0; start < rooms.length; start += 20) {
+      const batch = await Promise.all(rooms.slice(start, start + 20).map(async room => {
         try {
-          const state = await env.CHAT_ROOM.getByName(friend.roomID).inboxState(key);
-          return { roomID: friend.roomID, ...state };
+          const state = await env.CHAT_ROOM.getByName(room.roomID).inboxState(key);
+          return { roomID: room.roomID, kind: room.kind, ...state };
         } catch (error) {
           if (error instanceof Error && error.message === "Forbidden") return null;
           throw error;
@@ -397,6 +426,12 @@ export async function handleChat(url, request, env) {
     if (result.status === "not_found") return json({ error: "Friend not found." }, 404);
     if (result.status === "pending") {
       await env.USER_REGISTRY.getByName(key).addOutgoingRequest(key, result.recipient.code, result.recipient.name);
+      ctx?.waitUntil(sendPush(env, otherKey, {
+        category: "friendRequest",
+        title: "フレンド申請",
+        body: `${user.name}さんからフレンド申請が届きました。`,
+        data: { route: "friendRequest" },
+      }));
     }
     return json({ status: result.status });
   }
@@ -515,7 +550,24 @@ export async function handleChat(url, request, env) {
     const text = String(body?.text ?? "").trim().slice(0, 2_000);
     if (!text) return json({ error: "Message is required." }, 400);
     const clientMessageID = typeof body?.clientMessageID === "string" ? body.clientMessageID.slice(0, 100) : null;
-    return messageRoomResponse(env, env.CHAT_ROOM.getByName(match[1]).sendMessage(key, text, clientMessageID));
+    const room = env.CHAT_ROOM.getByName(match[1]);
+    try {
+      const result = await withSenderNames(env, await room.sendMessage(key, text, clientMessageID));
+      const delivery = await messageNotificationContext(env, key, match[1]);
+      const notification = chatMessageNotification({
+        roomID: match[1], text, senderName: delivery.senderName, groupName: delivery.groupName,
+      });
+      const pushes = Promise.all(delivery.recipientKeys.map(recipientKey =>
+        sendPush(env, recipientKey, notification)
+      ));
+      if (ctx?.waitUntil) ctx.waitUntil(pushes);
+      else await pushes;
+      return json(result);
+    } catch (error) {
+      const forbidden = roomForbiddenResponse(error);
+      if (forbidden) return forbidden;
+      throw error;
+    }
   }
 
   // Retracts one of the caller's own messages for real: the stored text is
@@ -667,7 +719,7 @@ export async function handleChat(url, request, env) {
   // handler the way ai.js/document-collab.js are) — tried last, after every
   // route above, so an unmatched group path still falls through to this
   // function's own 404 below.
-  const groups = await handleGroupRoutes(url, request, env, key);
+  const groups = await handleGroupRoutes(url, request, env, key, ctx);
   if (groups) return groups;
 
   return json({ error: "Not found" }, 404);

@@ -28,6 +28,14 @@ final class NoteEditorPhotosPickerStyleTests: XCTestCase {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
+    private func photoStudyLibraryViewSource() throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // studiquoTests/
+            .deletingLastPathComponent()  // project root
+            .appendingPathComponent("studiquo/Views/PhotoStudyLibraryView.swift")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
     /// The core regression test: SwiftUI's `PhotosPicker` must never be
     /// embedded inline in the toolbar or a menu row again.
     func testNoteEditorViewNeverEmbedsAnInlinePhotosPicker() throws {
@@ -98,5 +106,154 @@ final class NoteEditorPhotosPickerStyleTests: XCTestCase {
                 "ポップオーバー、インライン表示に変更すると、画面の端で" +
                 "案内文がはみ出す不具合が再発する可能性があります。"
         )
+    }
+
+    func testPhotoStudyReplacesThePaneOppositeTheLastEditedNote() {
+        XCTAssertEqual(
+            PhotoStudyPlacementPolicy.photoPane(
+                lastActive: .primary,
+                primaryCanEdit: true,
+                secondaryCanEdit: true
+            ),
+            .secondary
+        )
+        XCTAssertEqual(
+            PhotoStudyPlacementPolicy.photoPane(
+                lastActive: .secondary,
+                primaryCanEdit: true,
+                secondaryCanEdit: true
+            ),
+            .primary
+        )
+    }
+
+    func testPhotoStudyKeepsTheOnlyEditableNoteVisible() {
+        XCTAssertEqual(
+            PhotoStudyPlacementPolicy.photoPane(
+                lastActive: .primary,
+                primaryCanEdit: false,
+                secondaryCanEdit: true
+            ),
+            .primary
+        )
+        XCTAssertEqual(
+            PhotoStudyPlacementPolicy.photoPane(
+                lastActive: .secondary,
+                primaryCanEdit: true,
+                secondaryCanEdit: false
+            ),
+            .secondary
+        )
+    }
+
+    /// Regression coverage for a selected reference photo covering both
+    /// halves of the editor. The viewer used to be attached to the root of
+    /// `NoteEditorView` as an overlay, so its black background hid the note.
+    /// It must stay inside `photoStudyLibraryPane`, which is already bounded
+    /// by the split layout.
+    func testSelectedPhotoViewerIsHostedOnlyInsidePhotoStudyPane() throws {
+        let source = try noteEditorViewSource()
+        let paneStart = try XCTUnwrap(source.range(of: "private var photoStudyLibraryPane"))
+        let followingSource = source[paneStart.lowerBound...]
+        let paneEnd = try XCTUnwrap(followingSource.range(of: "private func temporaryChatMaterialView"))
+        let paneImplementation = followingSource[..<paneEnd.lowerBound]
+
+        XCTAssertTrue(
+            paneImplementation.contains("PhotoStudyPaneViewer("),
+            "選択した写真は、分割された写真資料ペインの中で表示する必要があります。"
+        )
+        XCTAssertEqual(
+            source.components(separatedBy: "PhotoStudyPaneViewer(").count - 1,
+            1,
+            "PhotoStudyPaneViewer をNoteEditorView全体のoverlayなどにも追加すると、" +
+                "ノート側まで覆う不具合が再発します。表示場所は写真資料ペイン内の1か所だけにしてください。"
+        )
+    }
+
+    /// Even when hosted by the correct pane, ignoring safe areas lets the
+    /// viewer paint outside its proposed split bounds. Clipping at the pane
+    /// viewer is the second guard that keeps the image on one half only.
+    func testSelectedPhotoViewerCannotEscapeItsSplitPaneBounds() throws {
+        let source = try photoStudyLibraryViewSource()
+        let viewerStart = try XCTUnwrap(source.range(of: "struct PhotoStudyPaneViewer"))
+        let viewerSource = source[viewerStart.lowerBound...]
+
+        XCTAssertTrue(
+            viewerSource.contains(".clipped()"),
+            "写真ビューは分割ペインの境界でクリップし、ノート側へ描画がはみ出さないようにしてください。"
+        )
+        XCTAssertFalse(
+            viewerSource.contains(".ignoresSafeArea()"),
+            "写真ビュー内で ignoresSafeArea を使うと、半画面の境界を越えて全画面を覆う可能性があります。"
+        )
+    }
+
+    func testPhotoStudySplitSurvivesRotationAndOnlyChangesItsAxis() throws {
+        let source = try noteEditorViewSource()
+        let orientationStart = try XCTUnwrap(source.range(of: "private func updateOrientation"))
+        let following = source[orientationStart.lowerBound...]
+        let orientationEnd = try XCTUnwrap(following.range(of: "private func collapseSplit"))
+        let implementation = following[..<orientationEnd.lowerBound]
+
+        XCTAssertTrue(implementation.contains("photoStudyPane != nil"))
+        XCTAssertTrue(implementation.contains("splitMode = portrait ? .vertical : .horizontal"))
+        XCTAssertFalse(
+            implementation.contains("photoStudyPane = nil"),
+            "端末回転で写真資料を閉じたり、選択写真を全画面側へ逃がしてはいけません。"
+        )
+    }
+
+    func testPhotoStudyDisablesPaneSwapThatWouldMoveToolsOntoThePhotoPane() throws {
+        let source = try noteEditorViewSource()
+        let swapStart = try XCTUnwrap(source.range(of: "private func swapSplitPanes"))
+        let following = source[swapStart.lowerBound...]
+        let swapEnd = try XCTUnwrap(following.range(of: "private var drawingTool"))
+        let implementation = following[..<swapEnd.lowerBound]
+
+        XCTAssertTrue(
+            implementation.contains("guard splitMode != .single, photoStudyPane == nil else { return }"),
+            "写真表示中の左右入れ替えで、ノート用ツールが写真ペインを操作する状態を作ってはいけません。"
+        )
+    }
+
+    func testAIAndFriendChatSnippetRoutesRemainIndependent() throws {
+        let source = try noteEditorViewSource()
+
+        let friendStart = try XCTUnwrap(source.range(of: "private func addSnippetToChat"))
+        let friendFollowing = source[friendStart.lowerBound...]
+        let friendEnd = try XCTUnwrap(friendFollowing.range(of: "private func openChat(_ target: NoteChatTarget, attaching snippet: PageSnippet)"))
+        let friendRoute = friendFollowing[..<friendEnd.lowerBound]
+        XCTAssertTrue(friendRoute.contains("pendingChatSnippet"))
+        XCTAssertFalse(friendRoute.contains("askAIAboutSnippet"), "フレンド送信用の切り抜きをAI質問へ誤配送してはいけません。")
+
+        let aiStart = try XCTUnwrap(source.range(of: "private func askAIAboutSnippet"))
+        let aiFollowing = source[aiStart.lowerBound...]
+        let aiEnd = try XCTUnwrap(aiFollowing.range(of: "private func attachmentForDroppedTab"))
+        let aiRoute = aiFollowing[..<aiEnd.lowerBound]
+        XCTAssertTrue(aiRoute.contains("AIChatAttachment"))
+        XCTAssertTrue(aiRoute.contains("sendAIChatMessage"))
+        XCTAssertFalse(aiRoute.contains("pendingChatSnippet"), "AI質問用の切り抜きが個人・グループチャットの入力欄へ介入してはいけません。")
+    }
+
+    func testTransientSnippetSelectionAndPickerStateIsNeverPersistedAcrossRelaunch() throws {
+        let source = try noteEditorViewSource()
+        for declaration in [
+            "@State private var snippetAwaitingChatPicker",
+            "@State private var pendingChatSnippet",
+            "@State private var pendingProofQuestionSnippet",
+            "@State private var pendingProofAnswerSnippet",
+            "@State private var showsChatPicker",
+        ] {
+            XCTAssertTrue(source.contains(declaration), "一時UI状態はNoteEditorViewの起動中だけ保持する必要があります: \(declaration)")
+        }
+        for persistedName in [
+            "@AppStorage(\"snippetAwaitingChatPicker\")",
+            "@AppStorage(\"pendingChatSnippet\")",
+            "@AppStorage(\"pendingProofQuestionSnippet\")",
+            "@AppStorage(\"pendingProofAnswerSnippet\")",
+            "@AppStorage(\"showsChatPicker\")",
+        ] {
+            XCTAssertFalse(source.contains(persistedName), "再起動後に点線枠や送信先選択画面を復元してはいけません。")
+        }
     }
 }

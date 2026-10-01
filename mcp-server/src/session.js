@@ -7,6 +7,7 @@ import { sha256Hex } from "./auth.js";
 import { VALIDITY_SECONDS } from "./token.js";
 
 const SESSION_PREFIX = "session:";
+const IDENTITY_CANONICAL_PREFIX = "identity-canonical:";
 
 /**
  * Mints a "<issued-at epoch>.<randomValue>" token for `identityKey`, records
@@ -21,6 +22,8 @@ export async function mintSession(env, identityKey, randomValue) {
   const issuedAt = Math.floor(Date.now() / 1000);
   const token = `${issuedAt}.${randomValue}`;
   if (token.length < 32 || token.length > 256) return null;
+  const deletionState = await env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(identityKey)}`, "json");
+  if (deletionState?.status === "deleting") return null;
   const key = await sha256Hex(token);
   await env.STUDIQUO_DATA.put(`${SESSION_PREFIX}${key}`, JSON.stringify({ sub: identityKey, issuedAt }), {
     expirationTtl: VALIDITY_SECONDS,
@@ -41,5 +44,15 @@ export async function hasRealSession(env, token) {
 export async function realSession(env, token) {
   const key = await sha256Hex(token);
   const session = await env.STUDIQUO_DATA.get(`${SESSION_PREFIX}${key}`, "json");
-  return typeof session?.sub === "string" && session.sub.length > 0 ? session : null;
+  if (typeof session?.sub !== "string" || session.sub.length === 0) return null;
+  // Linking providers must also affect already-issued sessions. Otherwise a
+  // user switching sign-in method would remain split until every old token
+  // expired. Keep the original subject for diagnostics, but expose the
+  // canonical account to every authenticated feature immediately.
+  const canonical = await env.STUDIQUO_DATA.get(`${IDENTITY_CANONICAL_PREFIX}${session.sub}`);
+  const resolved = canonical && canonical !== session.sub
+    ? { ...session, originalSub: session.sub, sub: canonical }
+    : session;
+  const deletionState = await env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(resolved.sub)}`, "json");
+  return deletionState?.status === "deleting" ? null : resolved;
 }

@@ -53,6 +53,32 @@ npx wrangler deploy
 curl -s https://studiquo-mcp.studiquo-mcp-server.workers.dev/health
 ```
 
+## APNsプッシュ通知
+
+iOSアプリは、通知を初めて必要とする画面で許可を求め、許可後に
+`POST /api/chat/devices`へAPNsデバイストークンを登録します。許可済みの
+端末では起動・ログイン時に再登録し、ログアウト時は
+`DELETE /api/chat/devices`でこの端末だけを解除します。
+
+Apple DeveloperでProduction用とSandbox用のAPNs認証キーを発行し、
+次の5項目をWrangler secretsへ登録してください。秘密鍵はヘッダーと
+フッターを含む`.p8`ファイルの全文です。
+
+```bash
+npx wrangler secret put APNS_PRODUCTION_AUTH_KEY
+npx wrangler secret put APNS_PRODUCTION_KEY_ID
+npx wrangler secret put APNS_SANDBOX_AUTH_KEY
+npx wrangler secret put APNS_SANDBOX_KEY_ID
+npx wrangler secret put APNS_TEAM_ID
+```
+
+移行互換のため、従来の`APNS_AUTH_KEY` / `APNS_KEY_ID`は両環境で使える
+旧形式キーまたはProduction用キーとして引き続きフォールバックされます。
+
+Bundle IDに対応する`APNS_TOPIC`は`wrangler.jsonc`で
+`com.yabuko.studiquo`に設定済みです。秘密鍵はコードや設定ファイルへ
+直接書き込まないでください。
+
 ## 開発
 
 ```bash

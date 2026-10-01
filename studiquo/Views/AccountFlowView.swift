@@ -20,6 +20,10 @@ struct AccountGateView: View {
         }
         .environmentObject(authentication)
         .animation(.easeInOut(duration: 0.2), value: authentication.state)
+        .task(id: authentication.state) {
+            guard authentication.state == .authenticated else { return }
+            await PushNotificationRegistration.refreshIfAuthorized()
+        }
     }
 }
 

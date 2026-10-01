@@ -10,10 +10,18 @@ import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readJSONLimited } from "./http.js";
 import { mintSession, hasRealSession } from "./session.js";
+import { linkVerifiedEmail } from "./oauth-links.js";
 
 const RP_ID = "studiquo-mcp.studiquo-mcp-server.workers.dev";
 const ORIGIN = `https://${RP_ID}`;
 const APP_ID = "972G4VGUA6.com.yabuko.studiquo";
+
+export async function mintPasskeySession(env, email, randomValue) {
+  const link = await linkVerifiedEmail(env, {
+    provider: "email", sub: email, email, emailVerified: true,
+  });
+  return mintSession(env, link.canonicalIdentityKey ?? `email:${email}`, randomValue);
+}
 
 async function body(request) {
   return readJSONLimited(request, 100_000);
@@ -174,7 +182,7 @@ export async function handlePasskeys(url, request, env) {
       // as a verified Apple/Google token — mint a real session the same way
       // those exchanges do, rather than leaving the client to keep reusing
       // whatever bearer token it happened to already hold.
-      const token = await mintSession(env, `email:${record.email}`, randomValue);
+      const token = await mintPasskeySession(env, record.email, randomValue);
       if (!token) return json({ error: "Invalid randomValue." }, 400);
       return json({ authenticated: true, email: record.email, token });
     } catch {

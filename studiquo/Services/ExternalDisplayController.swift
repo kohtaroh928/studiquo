@@ -2,13 +2,9 @@ import SwiftUI
 import UIKit
 import Combine
 
-/// Watches for a connected external display — a cable, or AirPlay "Screen
-/// Mirroring" started from Control Center, which iOS exposes as a regular
-/// extra `UIScreen` the same as a physical monitor, so no `AVRoutePickerView`
-/// wiring is needed to detect one — and hosts a SwiftUI view on it via a
-/// plain `UIWindow` (no multi-scene `Info.plist` setup required; assigning
-/// `.screen` directly is still the standard, supported way to do this for a
-/// single-scene app). `SlidePresentationView` uses this for design step 7's
+/// Watches for a connected external-display scene — a cable or AirPlay —
+/// and hosts a SwiftUI view in that scene. `SlidePresentationView` uses this
+/// for design step 7's
 /// presenter mode: the audience sees only the slide on the external screen,
 /// while the device itself switches to a presenter layout.
 ///
@@ -24,16 +20,26 @@ final class ExternalDisplayController: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
 
     init() {
-        isConnected = UIScreen.screens.count > 1
-        NotificationCenter.default.publisher(for: UIScreen.didConnectNotification)
-            .merge(with: NotificationCenter.default.publisher(for: UIScreen.didDisconnectNotification))
+        isConnected = Self.externalWindowScene() != nil
+        NotificationCenter.default.publisher(for: UIScene.didActivateNotification)
+            .merge(with: NotificationCenter.default.publisher(for: UIScene.didDisconnectNotification))
             .sink { [weak self] _ in self?.refresh() }
             .store(in: &cancellables)
     }
 
     private func refresh() {
-        isConnected = UIScreen.screens.count > 1
-        if !isConnected { window = nil }
+        isConnected = Self.externalWindowScene() != nil
+        if !isConnected { hide() }
+    }
+
+    /// `openSessions` is the scene-lifecycle replacement for the deprecated
+    /// global `UIScreen.screens` list. Archived sessions have no live scene,
+    /// so the cast also filters those out.
+    private static func externalWindowScene() -> UIWindowScene? {
+        UIApplication.shared.openSessions.lazy
+            .filter { $0.role == .windowExternalDisplayNonInteractive }
+            .compactMap { $0.scene as? UIWindowScene }
+            .first
     }
 
     /// Mounts (or, if already showing, updates in place) `content` on the
@@ -42,20 +48,20 @@ final class ExternalDisplayController: ObservableObject {
     /// than tearing the window down each time, so the external screen
     /// doesn't flash between updates.
     func show(@ViewBuilder content: () -> AnyView) {
-        guard let externalScreen = UIScreen.screens.first(where: { $0 !== UIScreen.main }) else { return }
+        guard let externalScene = Self.externalWindowScene() else { return }
         if let hosting = window?.rootViewController as? UIHostingController<AnyView> {
             hosting.rootView = content()
             return
         }
         let hosting = UIHostingController(rootView: content())
-        let newWindow = window ?? UIWindow(frame: externalScreen.bounds)
-        newWindow.screen = externalScreen
+        let newWindow = UIWindow(windowScene: externalScene)
         newWindow.rootViewController = hosting
-        newWindow.isHidden = false
+        newWindow.makeKeyAndVisible()
         window = newWindow
     }
 
     func hide() {
+        window?.isHidden = true
         window = nil
     }
 }

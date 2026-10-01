@@ -13,6 +13,7 @@
  */
 
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { sendPush } from "./push.js";
 
 const API_ROOT = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -258,6 +259,7 @@ async function handleChat(request, env, key, ctx) {
     const writer = writable.getWriter();
     let buffer = "";
     let clientGone = false;
+    let completed = false;
 
     // Every write is guarded. Once the app has the answer it closes the
     // connection, and a write into a stream nobody is reading rejects — the
@@ -275,7 +277,6 @@ async function handleChat(request, env, key, ctx) {
 
     try {
       for await (const chunk of upstream.body) {
-        if (clientGone) break;
         buffer += decoder.decode(chunk, { stream: true });
         // A chunk can split mid-line, so only whole `data:` lines are parsed
         // and the remainder is carried into the next read.
@@ -296,6 +297,7 @@ async function handleChat(request, env, key, ctx) {
           if (text) await send(text);
         }
       }
+      completed = true;
     } catch (error) {
       await send(`\n\n（通信が中断しました: ${error?.message ?? "unknown"}）`);
     } finally {
@@ -305,6 +307,14 @@ async function handleChat(request, env, key, ctx) {
         await writer.close();
       } catch {
         // Already closed or errored by the client going away.
+      }
+      if (completed) {
+        await sendPush(env, key, {
+          category: "aiTaskComplete",
+          title: "AIの回答が完成しました",
+          body: "Studiquoで回答を確認できます。",
+          data: { route: "aiTaskComplete" },
+        });
       }
     }
   })();

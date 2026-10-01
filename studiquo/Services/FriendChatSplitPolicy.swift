@@ -1,22 +1,60 @@
 import Foundation
 
-/// What tapping a friend's chat button in the note toolbar should do to the
-/// split panel, given which friend (if any) each pane currently shows.
-/// Pulled out of `NoteEditorView.openFriendChat(_:)` (deeply embedded
-/// `@State` on a large SwiftUI view, not directly testable) into its own
-/// pure function, the same way `SplitPaneResizeRenderPolicy` is.
-public enum FriendChatSplitAction: Equatable {
-    /// The tapped friend is already showing (in either pane) — close the
-    /// split entirely, same as tapping it again to dismiss.
+/// A conversation that can occupy either side of the note split view.
+/// Keeping direct and group chats in one mutually-exclusive value prevents
+/// two chat surfaces from accidentally being active in the same pane.
+public enum NoteChatTarget: Equatable {
+    case friend(UUID)
+    case group(roomID: String)
+}
+
+public enum NoteChatPane: Equatable {
+    case primary
+    case secondary
+}
+
+/// What selecting a chat in the note toolbar should do to the split panel.
+public enum NoteChatSplitAction: Equatable {
+    /// The selected conversation is already showing — close the split,
+    /// preserving the toolbar's tap-again-to-dismiss behaviour.
     case collapse
-    /// No friend chat is currently in the primary pane — put this friend's
-    /// chat in the secondary pane (opening the split if it wasn't already).
+    /// No chat currently occupies the primary pane, so use the secondary.
     case openInSecondary
-    /// A friend chat already occupies the primary pane (e.g. after swapping
-    /// panes) — replace it there instead of opening a second, competing
-    /// friend chat in secondary alongside it.
+    /// A chat occupies the primary pane (for example after swapping panes),
+    /// so replace it there rather than opening two competing chat surfaces.
     case openInPrimary
 }
+
+public enum NoteChatSplitPolicy {
+    public static func action(
+        forTapping target: NoteChatTarget,
+        primaryTarget: NoteChatTarget?,
+        secondaryTarget: NoteChatTarget?
+    ) -> NoteChatSplitAction {
+        if primaryTarget == target || secondaryTarget == target {
+            return .collapse
+        }
+        return primaryTarget != nil ? .openInPrimary : .openInSecondary
+    }
+
+    /// Attachment routing is intentionally not a toggle. Selecting the chat
+    /// that is already visible must keep it open and load the image, whereas
+    /// tapping the normal toolbar chat entry again still collapses it.
+    public static func actionForAttachment(
+        to target: NoteChatTarget,
+        sourcePane: NoteChatPane,
+        primaryTarget: NoteChatTarget?,
+        secondaryTarget: NoteChatTarget?
+    ) -> NoteChatSplitAction {
+        if primaryTarget == target { return .openInPrimary }
+        if secondaryTarget == target { return .openInSecondary }
+        return sourcePane == .primary ? .openInSecondary : .openInPrimary
+    }
+}
+
+// Compatibility wrapper for callers and regression tests that still express
+// the older friend-only rule. New note-toolbar code uses NoteChatSplitPolicy.
+public typealias FriendChatSplitAction = NoteChatSplitAction
 
 public enum FriendChatSplitPolicy {
     public static func action(
@@ -24,9 +62,10 @@ public enum FriendChatSplitPolicy {
         primaryFriendChatID: UUID?,
         secondaryFriendChatID: UUID?
     ) -> FriendChatSplitAction {
-        if primaryFriendChatID == friendID || secondaryFriendChatID == friendID {
-            return .collapse
-        }
-        return primaryFriendChatID != nil ? .openInPrimary : .openInSecondary
+        NoteChatSplitPolicy.action(
+            forTapping: .friend(friendID),
+            primaryTarget: primaryFriendChatID.map(NoteChatTarget.friend),
+            secondaryTarget: secondaryFriendChatID.map(NoteChatTarget.friend)
+        )
     }
 }

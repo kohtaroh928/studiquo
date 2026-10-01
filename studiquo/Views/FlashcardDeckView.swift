@@ -76,6 +76,7 @@ struct FlashcardDeckView: View {
 /// One study flow shared by the full-screen deck and split-pane deck.
 struct FlashcardStudyContent: View {
     @Bindable var deck: FlashcardDeck
+    @Query private var allDecks: [FlashcardDeck]
     var onHome: () -> Void = {}
     @State private var phase: Phase = .setup
     @State private var cards: [Flashcard] = []
@@ -363,8 +364,9 @@ struct FlashcardStudyContent: View {
     private func grade(correct: Bool) {
         guard cards.indices.contains(index) else { return }
         let card = cards[index]
+        let reviewedAt = Date.now
         card.reviewCount += 1
-        card.lastReviewedAt = .now
+        card.lastReviewedAt = reviewedAt
         deck.totalAnswered += 1
         if correct {
             correctCount += 1
@@ -374,8 +376,14 @@ struct FlashcardStudyContent: View {
             incorrectCards.append(card)
             card.mastery = max(0, card.mastery - 1)
         }
+        card.nextReviewAt = FlashcardReviewNotifications.nextReviewDate(
+            after: reviewedAt,
+            mastery: card.mastery,
+            correct: correct
+        )
         deck.updatedAt = .now
         deck.lastStudiedAt = .now
+        Task { await FlashcardReviewNotifications.reschedule(decks: allDecks) }
         if index + 1 < cards.count {
             index += 1
             showsAnswer = false

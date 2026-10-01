@@ -26,6 +26,7 @@ function fakeChatRoomBinding() {
   }
   return {
     initializeCalls,
+    _rooms: rooms,
     getByName(name) {
       const state = room(name);
       const other = userKey => [...state.participants].find(candidate => candidate !== userKey) ?? null;
@@ -208,7 +209,7 @@ function fakeChatRoomBinding() {
             if (Date.now() - existing.createdAt >= FAKE_ATTACHMENT_RETENTION_MS) state.attachments.delete(existingId);
           }
           const id = `00000000-0000-4000-8000-${String(nextAttachmentId++).padStart(12, "0")}`;
-          state.attachments.set(id, { contentType: type, data, createdAt: Date.now() });
+          state.attachments.set(id, { contentType: type, data, createdAt: Date.now(), uploadedBy: userKey });
           return { id };
         },
         async getAttachment(userKey, id) {
@@ -221,6 +222,20 @@ function fakeChatRoomBinding() {
         async _setAttachmentCreatedAtForTesting(id, createdAt) {
           const entry = state.attachments.get(id);
           if (entry) entry.createdAt = createdAt;
+        },
+        async removeDeletedAccount(userKey) {
+          const deletedSenderKey = `deleted:${createHash("sha256").update(userKey).digest("hex")}`;
+          for (const message of state.messages) {
+            if (message.senderKey === userKey) message.senderKey = deletedSenderKey;
+          }
+          for (const [id, attachment] of state.attachments) {
+            if (attachment.uploadedBy === userKey) state.attachments.delete(id);
+          }
+          state.participants.delete(userKey);
+          state.memberInfo.delete(userKey);
+          state.readPositions.delete(userKey);
+          state.blocks.delete(userKey);
+          return { status: "removed" };
         },
       };
     },
@@ -310,6 +325,25 @@ function fakeUserRegistryBinding(studiquoData) {
     if (blockedContact && !(user.blockedContacts ?? []).some(item => item.code === otherCode)) {
       user.blockedContacts = [...(user.blockedContacts ?? []), blockedContact];
     }
+    await studiquoData.put(storageKey, JSON.stringify(user));
+    return { status: "removed" };
+  }
+
+  async function removeAccountReferencesAtomic(key, deletedCode) {
+    const storageKey = `chat:user:${key}`;
+    const user = await studiquoData.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    const deletedFriend = (user.friends ?? []).find(item => item.code === deletedCode);
+    const blockedContact = (user.blockedContacts ?? []).find(item => item.code === deletedCode);
+    user.friends = (user.friends ?? []).filter(item => item.code !== deletedCode);
+    user.blockedContacts = (user.blockedContacts ?? []).filter(item => item.code !== deletedCode);
+    const historicalContact = deletedFriend ?? blockedContact;
+    if (historicalContact) {
+      user.blockedContacts.push({ ...historicalContact, name: "削除済みユーザー", deleted: true });
+    }
+    user.incomingRequests = (user.incomingRequests ?? []).filter(item => item.code !== deletedCode);
+    user.outgoingRequests = (user.outgoingRequests ?? []).filter(item => item.code !== deletedCode);
+    user.incomingGroupInvites = (user.incomingGroupInvites ?? []).filter(item => item.inviterCode !== deletedCode);
     await studiquoData.put(storageKey, JSON.stringify(user));
     return { status: "removed" };
   }
@@ -480,6 +514,9 @@ function fakeUserRegistryBinding(studiquoData) {
         removeFriend(k, otherCode, blockedContact) {
           return enqueue(key, () => removeFriendAtomic(k, otherCode, blockedContact));
         },
+        removeAccountReferences(k, deletedCode) {
+          return enqueue(key, () => removeAccountReferencesAtomic(k, deletedCode));
+        },
         addGroupForCreator(k, roomID) {
           return enqueue(key, () => addGroupForCreatorAtomic(k, roomID));
         },
@@ -522,6 +559,13 @@ function environment() {
     },
     async put(key, value) { values.set(key, value); },
     async delete(key) { values.delete(key); },
+    async list({ prefix = "", cursor } = {}) {
+      void cursor;
+      return {
+        keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })),
+        list_complete: true,
+      };
+    },
   };
   return {
     STUDIQUO_DATA: studiquoData,
@@ -683,6 +727,48 @@ async function downloadAvatar(env, token, code) {
   return worker.fetch(request(`/api/chat/avatar/${code}`, { token }), env, noopCtx);
 }
 
+async function seedAccountSession(env, token, sub) {
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  await env.STUDIQUO_DATA.put(`session:${tokenHash}`, JSON.stringify({ sub, issuedAt: Math.floor(Date.now() / 1000) }));
+  await env.STUDIQUO_DATA.put(`identity-canonical:${sub}`, sub);
+  return createHash("sha256").update(`chat-account:${sub}`).digest("hex");
+}
+
+async function deleteAccount(env, token) {
+  return worker.fetch(request("/api/account", { method: "DELETE", token, body: { confirmation: "DELETE" } }), env, noopCtx);
+}
+
+async function deletionFriendFixture() {
+  const env = environment();
+  const aliceToken = freshToken("da");
+  const bobToken = freshToken("db");
+  const aliceSub = "email:deleted-alice@example.test";
+  const bobSub = "email:remaining-bob@example.test";
+  const aliceKey = await seedAccountSession(env, aliceToken, aliceSub);
+  const bobKey = await seedAccountSession(env, bobToken, bobSub);
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  return { env, aliceToken, bobToken, aliceSub, bobSub, aliceKey, bobKey, alice, bob, roomID: accepted.roomID };
+}
+
+async function deletionGroupFixture({ acceptInvite = true, solo = false } = {}) {
+  const fixture = await deletionFriendFixture();
+  const createdResponse = await createGroup(
+    fixture.env,
+    fixture.aliceToken,
+    "削除テストグループ",
+    solo ? [] : [fixture.bob.code],
+  );
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json();
+  if (!solo && acceptInvite) {
+    assert.equal((await acceptGroupInvite(fixture.env, fixture.bobToken, created.roomID)).status, 200);
+  }
+  return { ...fixture, groupRoomID: created.roomID };
+}
+
 async function createGroup(env, token, name, memberCodes) {
   return worker.fetch(request("/api/chat/groups", { method: "POST", token, body: { name, memberCodes } }), env, noopCtx);
 }
@@ -756,8 +842,12 @@ test("a group can be created with no invited friends at all — just its creator
   const response = await createGroup(env, alice.token, "Study Group", []);
   assert.equal(response.status, 201);
   const created = await response.json();
+  assert.match(created.code, /^[A-HJ-NP-Z2-9]{10}$/);
   assert.deepEqual(created.members, [{ code: alice.code, name: "Alice" }]);
-  assert.deepEqual((await groups(env, alice.token)).map(g => g.roomID), [created.roomID]);
+  const listed = await groups(env, alice.token);
+  assert.deepEqual(listed.map(g => g.roomID), [created.roomID]);
+  assert.equal(listed[0].code, created.code, "the public group code remains stable across refreshes");
+  assert.equal(listed[0].avatarUpdatedAt, null);
 });
 
 test("creating a group with someone who isn't the caller's own friend is rejected", async () => {
@@ -1130,6 +1220,43 @@ test("group messages carry the sender's code and name, resolved once per distinc
   assert.ok(list.every(m => m.senderKey === undefined));
 });
 
+test("inbox includes group conversations with their unread message count", async () => {
+  const fixture = await deletionGroupFixture();
+  await sendMessage(fixture.env, fixture.aliceToken, fixture.groupRoomID, "一件目");
+  await sendMessage(fixture.env, fixture.aliceToken, fixture.groupRoomID, "二件目");
+
+  const response = await worker.fetch(request("/api/chat/inbox", { token: fixture.bobToken }), fixture.env, noopCtx);
+  assert.equal(response.status, 200);
+  const entries = await response.json();
+  const group = entries.find(entry => entry.roomID === fixture.groupRoomID);
+
+  assert.ok(group, "the joined group must be present beside direct chats");
+  assert.equal(group.kind, "group");
+  assert.equal(group.unreadCount, 2);
+  assert.equal(group.latestID, 2);
+});
+
+test("a group sender can cancel their message and every member sees it retracted", async () => {
+  const fixture = await deletionGroupFixture();
+  const sent = await (await sendMessage(
+    fixture.env, fixture.aliceToken, fixture.groupRoomID, "取り消すメッセージ",
+  )).json();
+
+  const response = await cancelMessage(fixture.env, fixture.aliceToken, fixture.groupRoomID, sent.id);
+  assert.equal(response.status, 200);
+
+  const sendersView = await (await readMessages(
+    fixture.env, fixture.aliceToken, fixture.groupRoomID,
+  )).json();
+  const membersView = await (await readMessages(
+    fixture.env, fixture.bobToken, fixture.groupRoomID,
+  )).json();
+  for (const messages of [sendersView, membersView]) {
+    assert.equal(messages[0].text, "");
+    assert.equal(messages[0].isCanceled, true);
+  }
+});
+
 test("POST /api/chat/groups allows up to 10 group actions per minute, then 429s", async () => {
   const env = environment();
   const { alice, bob, carol } = await threeMutualFriends(env, "g12");
@@ -1155,6 +1282,10 @@ test("a group member can upload a group photo, and it's stored under the group r
   assert.equal(response.status, 200);
   const { avatarUpdatedAt } = await response.json();
   assert.ok(avatarUpdatedAt);
+
+  const listed = await groups(env, alice.token);
+  assert.equal(listed[0].avatarUpdatedAt, avatarUpdatedAt, "group listings expose the current icon revision");
+  assert.equal(listed[0].code, created.code, "changing the icon does not rotate the group code");
 
   const downloaded = await downloadGroupAvatar(env, alice.token, created.roomID);
   assert.equal(downloaded.status, 200);
@@ -2288,6 +2419,40 @@ test("a new session for the same account keeps its friend code and access to bot
   assert.deepEqual(received.map(message => message.text), ["before sign-in", "after sign-in"]);
 });
 
+test("switching login methods preserves the friend code, groups, and chat history", async () => {
+  const env = environment();
+  const googleToken = freshToken("q");
+  const localToken = freshToken("w");
+  const bobToken = freshToken("e");
+  const canonical = "google:shared-google-sub";
+  const tokenHash = token => createHash("sha256").update(token).digest("hex");
+
+  await env.STUDIQUO_DATA.put(`session:${tokenHash(googleToken)}`, JSON.stringify({ sub: "google:shared-google-sub" }));
+  await env.STUDIQUO_DATA.put(`session:${tokenHash(localToken)}`, JSON.stringify({ sub: "email:alice@example.test" }));
+  await env.STUDIQUO_DATA.put("identity-canonical:google:shared-google-sub", canonical);
+  await env.STUDIQUO_DATA.put("identity-canonical:email:alice@example.test", canonical);
+
+  const alice = await registerUser(env, googleToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, googleToken, bob.code);
+  const directRoomID = (await (await acceptRequest(env, bobToken, alice.code)).json()).roomID;
+  assert.equal((await sendMessage(env, googleToken, directRoomID, "direct history")).status, 200);
+
+  const group = await (await createGroup(env, googleToken, "Shared Study Group", [bob.code])).json();
+  assert.equal((await acceptGroupInvite(env, bobToken, group.roomID)).status, 200);
+  assert.equal((await sendMessage(env, googleToken, group.roomID, "group history")).status, 200);
+
+  const switched = await registerUser(env, localToken, "Alice");
+  assert.equal(switched.code, alice.code);
+  assert.equal((await friends(env, localToken))[0].roomID, directRoomID);
+  assert.deepEqual((await groups(env, localToken)).map(item => item.roomID), [group.roomID]);
+
+  const directHistory = await (await readMessages(env, localToken, directRoomID)).json();
+  const groupHistory = await (await readMessages(env, localToken, group.roomID)).json();
+  assert.deepEqual(directHistory.map(message => message.text), ["direct history"]);
+  assert.deepEqual(groupHistory.map(message => message.text), ["group history"]);
+});
+
 test("an existing token-derived friendship and room survive a later sign-in", async () => {
   const env = environment();
   const oldToken = freshToken("lu");
@@ -3170,4 +3335,215 @@ test("POST /api/chat/rooms/:id/messages/:id/report allows up to 5 per minute, th
     lastStatus = response.status;
   }
   assert.equal(lastStatus, 429);
+});
+
+// Account deletion regressions 21-31: social data must be removed without
+// destroying the remaining participant's legitimate copy of shared history.
+
+test("21: a deleted account disappears from the other user's friend list", async () => {
+  const fixture = await deletionFriendFixture();
+  assert.equal((await deleteAccount(fixture.env, fixture.aliceToken)).status, 200);
+  assert.deepEqual(await friends(fixture.env, fixture.bobToken), []);
+});
+
+test("22: the remaining user can still read the historical direct chat", async () => {
+  const fixture = await deletionFriendFixture();
+  await sendMessage(fixture.env, fixture.aliceToken, fixture.roomID, "残してよい履歴");
+  assert.equal((await deleteAccount(fixture.env, fixture.aliceToken)).status, 200);
+  const response = await readMessages(fixture.env, fixture.bobToken, fixture.roomID);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json())[0].text, "残してよい履歴");
+});
+
+test("23: messages from a deleted account display an anonymized sender", async () => {
+  const fixture = await deletionFriendFixture();
+  await sendMessage(fixture.env, fixture.aliceToken, fixture.roomID, "匿名化される発言");
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  const messages = await (await readMessages(fixture.env, fixture.bobToken, fixture.roomID)).json();
+  assert.equal(messages[0].senderName, "削除済みユーザー");
+  assert.equal(messages[0].senderCode, null);
+});
+
+test("24: deleting an account removes its profile avatar", async () => {
+  const fixture = await deletionFriendFixture();
+  assert.equal((await uploadAvatar(fixture.env, fixture.aliceToken, "image/png", "aGVsbG8=")).status, 200);
+  assert.ok(fixture.env._kv.has(`chat:avatar:${fixture.alice.code}`));
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  assert.equal(fixture.env._kv.has(`chat:avatar:${fixture.alice.code}`), false);
+  assert.notEqual((await downloadAvatar(fixture.env, fixture.bobToken, fixture.alice.code)).status, 200);
+});
+
+test("25: deleting an account removes attachments it uploaded", async () => {
+  const fixture = await deletionFriendFixture();
+  const upload = await uploadAttachment(fixture.env, fixture.aliceToken, fixture.roomID, "image/png", "YWxpY2U=");
+  const { id } = await upload.json();
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  assert.equal((await downloadAttachment(fixture.env, fixture.bobToken, fixture.roomID, id)).status, 404);
+});
+
+test("26: deleting an account preserves attachments uploaded by the remaining user", async () => {
+  const fixture = await deletionFriendFixture();
+  const upload = await uploadAttachment(fixture.env, fixture.bobToken, fixture.roomID, "image/png", "Ym9i");
+  const { id } = await upload.json();
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  const downloaded = await downloadAttachment(fixture.env, fixture.bobToken, fixture.roomID, id);
+  assert.equal(downloaded.status, 200);
+  assert.equal(await downloaded.text(), "bob");
+});
+
+test("27: deletion clears incoming and outgoing friend requests on both sides", async () => {
+  const env = environment();
+  const aliceToken = freshToken("pa");
+  const bobToken = freshToken("pb");
+  const carolToken = freshToken("pc");
+  await seedAccountSession(env, aliceToken, "email:pending-alice@example.test");
+  await seedAccountSession(env, bobToken, "email:pending-bob@example.test");
+  await seedAccountSession(env, carolToken, "email:pending-carol@example.test");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  const carol = await registerUser(env, carolToken, "Carol");
+  await addFriend(env, aliceToken, bob.code);
+  await addFriend(env, carolToken, alice.code);
+  assert.equal((await incomingRequests(env, bobToken)).length, 1);
+  assert.equal((await outgoingRequests(env, carolToken)).length, 1);
+  await deleteAccount(env, aliceToken);
+  assert.deepEqual(await incomingRequests(env, bobToken), []);
+  assert.deepEqual(await outgoingRequests(env, bobToken), []);
+  assert.deepEqual(await incomingRequests(env, carolToken), []);
+  assert.deepEqual(await outgoingRequests(env, carolToken), []);
+});
+
+test("28: a deleted blocked contact is retained only as an anonymized historical record", async () => {
+  const fixture = await deletionFriendFixture();
+  const storageKey = `chat:user:${fixture.bobKey}`;
+  const bobRecord = JSON.parse(fixture.env._kv.get(storageKey));
+  bobRecord.blockedContacts = [{ code: fixture.alice.code, name: "Alice", roomID: fixture.roomID }];
+  fixture.env._kv.set(storageKey, JSON.stringify(bobRecord));
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  const updated = JSON.parse(fixture.env._kv.get(storageKey));
+  assert.equal(updated.blockedContacts.length, 1);
+  assert.equal(updated.blockedContacts[0].name, "削除済みユーザー");
+  assert.equal(updated.blockedContacts[0].deleted, true);
+});
+
+test("29: a deleted friend code can no longer be used to add the account", async () => {
+  const fixture = await deletionFriendFixture();
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  assert.equal((await addFriend(fixture.env, fixture.bobToken, fixture.alice.code)).status, 404);
+});
+
+test("30: registering again after deletion starts with a new friend code and empty social data", async () => {
+  const fixture = await deletionFriendFixture();
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  const newToken = freshToken("dn");
+  await seedAccountSession(fixture.env, newToken, fixture.aliceSub);
+  const recreated = await registerUser(fixture.env, newToken, "Alice Again");
+  assert.notEqual(recreated.code, fixture.alice.code);
+  assert.deepEqual(await friends(fixture.env, newToken), []);
+  assert.deepEqual(await incomingRequests(fixture.env, newToken), []);
+  assert.deepEqual(await outgoingRequests(fixture.env, newToken), []);
+});
+
+test("31: deletion removes push devices and their owner indexes", async () => {
+  const fixture = await deletionFriendFixture();
+  const deviceToken = "push-device-token-for-deleted-account";
+  fixture.env._kv.set(`chat:devices:${fixture.aliceKey}`, JSON.stringify([{ token: deviceToken, environment: "sandbox" }]));
+  fixture.env._kv.set(`chat:device-owner:${deviceToken}`, fixture.aliceKey);
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  assert.equal(fixture.env._kv.has(`chat:devices:${fixture.aliceKey}`), false);
+  assert.equal(fixture.env._kv.has(`chat:device-owner:${deviceToken}`), false);
+});
+
+test("32: a deleted account is removed from every group it belonged to", async () => {
+  const fixture = await deletionGroupFixture();
+  const second = await (await createGroup(fixture.env, fixture.aliceToken, "第二グループ", [fixture.bob.code])).json();
+  await acceptGroupInvite(fixture.env, fixture.bobToken, second.roomID);
+  await deleteAccount(fixture.env, fixture.aliceToken);
+
+  for (const roomID of [fixture.groupRoomID, second.roomID]) {
+    const members = (await groups(fixture.env, fixture.bobToken)).find(group => group.roomID === roomID)?.members ?? [];
+    assert.deepEqual(members.map(member => member.code), [fixture.bob.code]);
+  }
+});
+
+test("33: remaining members can continue using a group after account deletion", async () => {
+  const fixture = await deletionGroupFixture();
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  const sent = await sendMessage(fixture.env, fixture.bobToken, fixture.groupRoomID, "削除後も利用できる");
+  assert.equal(sent.status, 200);
+  const messages = await (await readMessages(fixture.env, fixture.bobToken, fixture.groupRoomID)).json();
+  assert.equal(messages.at(-1).text, "削除後も利用できる");
+});
+
+test("34: historical group messages show the deleted-account label", async () => {
+  const fixture = await deletionGroupFixture();
+  await sendMessage(fixture.env, fixture.aliceToken, fixture.groupRoomID, "過去のグループ発言");
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  const messages = await (await readMessages(fixture.env, fixture.bobToken, fixture.groupRoomID)).json();
+  assert.equal(messages[0].senderName, "削除済みユーザー");
+  assert.equal(messages[0].senderCode, null);
+});
+
+test("35: deleting a group member removes that member's read position", async () => {
+  const fixture = await deletionGroupFixture();
+  const room = fixture.env.CHAT_ROOM._rooms.get(fixture.groupRoomID);
+  await fixture.env.CHAT_ROOM.getByName(fixture.groupRoomID).markRead(fixture.aliceKey, 0);
+  assert.equal(room.readPositions.has(fixture.aliceKey), true);
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  assert.equal(room.readPositions.has(fixture.aliceKey), false);
+});
+
+test("36: group deletion removes only attachments uploaded by the deleted member", async () => {
+  const fixture = await deletionGroupFixture();
+  const aliceUpload = await uploadAttachment(fixture.env, fixture.aliceToken, fixture.groupRoomID, "image/png", "YWxpY2U=");
+  const bobUpload = await uploadAttachment(fixture.env, fixture.bobToken, fixture.groupRoomID, "image/png", "Ym9i");
+  const aliceAttachment = await aliceUpload.json();
+  const bobAttachment = await bobUpload.json();
+  await deleteAccount(fixture.env, fixture.aliceToken);
+
+  assert.equal((await downloadAttachment(fixture.env, fixture.bobToken, fixture.groupRoomID, aliceAttachment.id)).status, 404);
+  const remaining = await downloadAttachment(fixture.env, fixture.bobToken, fixture.groupRoomID, bobAttachment.id);
+  assert.equal(remaining.status, 200);
+  assert.equal(await remaining.text(), "bob");
+});
+
+test("37: deleting the final member leaves an empty group without failing", async () => {
+  const fixture = await deletionGroupFixture({ solo: true });
+  const response = await deleteAccount(fixture.env, fixture.aliceToken);
+  assert.equal(response.status, 200);
+  const room = fixture.env.CHAT_ROOM._rooms.get(fixture.groupRoomID);
+  assert.equal(room.participants.size, 0);
+  assert.equal(room.readPositions.size, 0);
+});
+
+test("38: pending group invitations from a deleted account are removed", async () => {
+  const fixture = await deletionGroupFixture({ acceptInvite: false });
+  assert.deepEqual((await groupInvites(fixture.env, fixture.bobToken)).map(invite => invite.roomID), [fixture.groupRoomID]);
+  await deleteAccount(fixture.env, fixture.aliceToken);
+  assert.deepEqual(await groupInvites(fixture.env, fixture.bobToken), []);
+});
+
+test("39: concurrent deletion and group-invite acceptance cannot resurrect membership", async () => {
+  const fixture = await deletionGroupFixture({ acceptInvite: false });
+  const [deletion] = await Promise.all([
+    deleteAccount(fixture.env, fixture.bobToken),
+    acceptGroupInvite(fixture.env, fixture.bobToken, fixture.groupRoomID),
+  ]);
+  assert.equal(deletion.status, 200);
+  assert.equal(fixture.env._kv.has(`chat:user:${fixture.bobKey}`), false);
+  assert.equal(fixture.env.CHAT_ROOM._rooms.get(fixture.groupRoomID).participants.has(fixture.bobKey), false);
+});
+
+test("40: once concurrent deletion removes group membership, the deleting account cannot write", async () => {
+  const fixture = await deletionGroupFixture();
+  const deletion = deleteAccount(fixture.env, fixture.aliceToken);
+  const room = fixture.env.CHAT_ROOM._rooms.get(fixture.groupRoomID);
+  for (let attempt = 0; attempt < 100 && room.participants.has(fixture.aliceKey); attempt += 1) {
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  const send = await sendMessage(fixture.env, fixture.aliceToken, fixture.groupRoomID, "削除中の書き込み");
+  assert.equal(send.status, 403);
+  assert.equal((await deletion).status, 200);
+  const messages = await (await readMessages(fixture.env, fixture.bobToken, fixture.groupRoomID)).json();
+  assert.equal(messages.some(message => message.text === "削除中の書き込み"), false);
 });

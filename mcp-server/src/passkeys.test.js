@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { associationFile, handlePasskeys } from "./passkeys.js";
+import { associationFile, handlePasskeys, mintPasskeySession } from "./passkeys.js";
+import { linkVerifiedEmail } from "./oauth-links.js";
+import { realSession } from "./session.js";
 import { revoke } from "./revocation.js";
 
 function sha256Hex(value) {
@@ -89,6 +91,38 @@ test("serves the Apple web-credentials association", async () => {
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.deepEqual(payload.webcredentials.apps, ["972G4VGUA6.com.yabuko.studiquo"]);
+});
+
+test("passkey login resolves to the same canonical account as another verified login method", async () => {
+  const env = environment();
+  await linkVerifiedEmail(env, {
+    provider: "google", sub: "google-sub-1", email: "person@example.com", emailVerified: true,
+  });
+
+  const token = await mintPasskeySession(env, "person@example.com", "p".repeat(40));
+
+  assert.equal((await realSession(env, token)).sub, "google:google-sub-1");
+  assert.equal(await env.STUDIQUO_DATA.get("identity-canonical:email:person@example.com"), "google:google-sub-1");
+});
+
+test("17. 削除済みのパスキーCredentialではログインできない", async () => {
+  const env = environment();
+  await env.STUDIQUO_DATA.put("passkeys:challenge:deleted-login", JSON.stringify({
+    kind: "authentication", challenge: "challenge-value",
+  }));
+  const request = new Request("https://example.test/api/passkeys/login/verify", {
+    method: "POST",
+    headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.77" },
+    body: JSON.stringify({
+      transaction: "deleted-login",
+      randomValue: "p".repeat(40),
+      credential: { id: "deleted-credential" },
+    }),
+  });
+
+  const response = await handlePasskeys(new URL(request.url), request, env);
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /expired/i);
 });
 
 test("creates bounded, user-verified passkey registration options", async () => {

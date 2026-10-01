@@ -177,6 +177,17 @@ export class ChatRoom extends DurableObject {
     return { status: "removed" };
   }
 
+  async removeDeletedAccount(userKey) {
+    const marker = `deleted:${await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userKey)).then(buffer =>
+      Array.from(new Uint8Array(buffer), byte => byte.toString(16).padStart(2, "0")).join(""))}`;
+    this.ctx.storage.sql.exec("UPDATE messages SET sender_key = ? WHERE sender_key = ?", marker, userKey);
+    this.ctx.storage.sql.exec("DELETE FROM attachments WHERE uploaded_by = ?", userKey);
+    this.ctx.storage.sql.exec("DELETE FROM participants WHERE user_key = ?", userKey);
+    this.ctx.storage.sql.exec("DELETE FROM read_positions WHERE user_key = ?", userKey);
+    this.ctx.storage.sql.exec("DELETE FROM blocks WHERE blocker_key = ?", userKey);
+    return { status: "removed" };
+  }
+
   async renameRoom(callerKey, name) {
     this.requireGroup(callerKey);
     const trimmed = String(name ?? "").trim().slice(0, 80);

@@ -193,6 +193,20 @@ final class InkCanvasEraserTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testReplacingDrawingFromSwiftUIDoesNotEchoBackIntoTheBinding() {
+        let canvas = InkCanvasView()
+        var reportedDrawings: [InkDrawing] = []
+        canvas.onDrawingChanged = { reportedDrawings.append($0) }
+
+        canvas.setDrawing(InkDrawing(strokes: [horizontalLineStroke()]))
+
+        XCTAssertTrue(
+            reportedDrawings.isEmpty,
+            "SwiftUIから反映した描画をupdateUIView中にBindingへ書き戻してはいけません。"
+        )
+    }
+
     func testAnEraserGestureThatActuallyErasedSomethingReportsOnceWhenItEnds() {
         let untouched = InkDrawing(strokes: [horizontalLineStroke()])
         var erased = untouched

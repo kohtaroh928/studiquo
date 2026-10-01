@@ -14,6 +14,16 @@ import XCTest
 /// `finishSnip()`/`onSnipCaptured` in `InkCanvasView.swift`). The tests
 /// below instead cover what the snip tool actually does, item by item.
 final class InkCanvasSnipToolTests: XCTestCase {
+    @MainActor
+    private func representable(tool: DrawingToolKind) -> InkCanvasRepresentable {
+        InkCanvasRepresentable(
+            drawing: .constant(InkDrawing()),
+            selectedTool: .constant(tool),
+            color: .black,
+            width: 3
+        )
+    }
+
     // MARK: - 1: a normal drag captures the dragged rectangle
 
     func testDraggingTopLeftToBottomRightCapturesThatRectangle() {
@@ -88,11 +98,18 @@ final class InkCanvasSnipToolTests: XCTestCase {
         XCTAssertEqual(rect, CGRect(x: 0, y: 0, width: 50, height: 50), "ページの左端・上端をはみ出しても、実際に切り取られる範囲はページ内に収まる必要があります。")
     }
 
-    func testDraggingEntirelyOutsideThePageCapturesAnEmptyRectangle() {
+    func testDraggingEntirelyOutsideThePageCapturesNothing() {
         let rect = InkCanvasView.snipCaptureRect(
             from: CGPoint(x: 600, y: 600), to: CGPoint(x: 700, y: 700), canvasSize: CGSize(width: 500, height: 500)
         )
-        XCTAssertEqual(rect?.isEmpty, true, "ページの外だけをドラッグした場合、切り取り範囲はページと重ならず空になる必要があります。")
+        XCTAssertNil(rect, "ページの外だけをドラッグした場合、空画像を添付してはいけません。")
+    }
+
+    func testClippingCannotTurnALargeOutsideDragIntoATinyAttachment() {
+        let rect = InkCanvasView.snipCaptureRect(
+            from: CGPoint(x: -100, y: -100), to: CGPoint(x: 5, y: 5), canvasSize: CGSize(width: 500, height: 500)
+        )
+        XCTAssertNil(rect, "補正後に最小サイズ未満になる範囲は、空に近い画像として添付してはいけません。")
     }
 
     // MARK: - 5: the live preview rectangle (unclipped) matches the drag exactly
@@ -122,6 +139,59 @@ final class InkCanvasSnipToolTests: XCTestCase {
                 InkCanvasView.snipDragRect(from: start, to: current), expected,
                 "ドラッグ中に指(ペン先)が動くたびに、プレビュー枠はその時点の位置に合わせて更新される必要があります。"
             )
+        }
+    }
+
+    // MARK: - Returning to ordinary note editing
+
+    @MainActor
+    func testLeavingSnipForPenRestoresOrdinaryDrawingAndClearsCompetingModes() {
+        let canvas = InkCanvasView()
+        representable(tool: .snip).applyConfiguration(to: canvas)
+        XCTAssertTrue(canvas.isSnipping)
+
+        representable(tool: .pen).applyConfiguration(to: canvas)
+
+        XCTAssertFalse(canvas.isSnipping, "切り抜き終了後も点線選択が残ってはいけません。")
+        XCTAssertFalse(canvas.isEraser)
+        XCTAssertFalse(canvas.isLasso)
+        XCTAssertTrue(canvas.isDrawingEnabled, "ペンへ戻した直後から通常どおり書ける必要があります。")
+    }
+
+    @MainActor
+    func testLeavingSnipForEraserEnablesOnlyTheEraserMode() {
+        let canvas = InkCanvasView()
+        representable(tool: .snip).applyConfiguration(to: canvas)
+        representable(tool: .eraser).applyConfiguration(to: canvas)
+
+        XCTAssertFalse(canvas.isSnipping)
+        XCTAssertTrue(canvas.isEraser)
+        XCTAssertFalse(canvas.isLasso)
+        XCTAssertTrue(canvas.isDrawingEnabled)
+    }
+
+    @MainActor
+    func testDeselectingSnipReturnsTheCanvasToScrollOnlyMode() {
+        let canvas = InkCanvasView()
+        representable(tool: .snip).applyConfiguration(to: canvas)
+        representable(tool: .none).applyConfiguration(to: canvas)
+
+        XCTAssertFalse(canvas.isSnipping)
+        XCTAssertFalse(canvas.isEraser)
+        XCTAssertFalse(canvas.isLasso)
+        XCTAssertFalse(canvas.isDrawingEnabled, "ツール解除後はキャンバスがタッチを奪わず、スクロールと拡大縮小へ戻る必要があります。")
+        XCTAssertFalse(canvas.isUserInteractionEnabled)
+    }
+
+    @MainActor
+    func testEveryToolbarToolActivatesWithoutLeavingSnipArmed() {
+        let canvas = InkCanvasView()
+        representable(tool: .snip).applyConfiguration(to: canvas)
+
+        for tool in [DrawingToolKind.pen, .highlighter, .eraser, .lasso] {
+            representable(tool: tool).applyConfiguration(to: canvas)
+            XCTAssertFalse(canvas.isSnipping, "\(tool.rawValue)へ切り替えた後に切り抜きモードが介入してはいけません。")
+            XCTAssertTrue(canvas.isDrawingEnabled)
         }
     }
 }

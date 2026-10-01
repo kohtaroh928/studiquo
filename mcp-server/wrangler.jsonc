@@ -87,7 +87,10 @@
     { "name": "RATE_LIMIT_ADMIN_WEBHOOK", "namespace_id": "1020", "simple": { "limit": 60, "period": 60 } },
     // Keyed by userKey — one ping per app open/session is the expected
     // shape, so this is generous headroom rather than a tight cap.
-    { "name": "RATE_LIMIT_USAGE_EVENT", "namespace_id": "1021", "simple": { "limit": 20, "period": 60 } }
+    { "name": "RATE_LIMIT_USAGE_EVENT", "namespace_id": "1021", "simple": { "limit": 20, "period": 60 } },
+    // Keyed by the authenticated user's stable chat key. Registration is
+    // idempotent and normally happens once per launch/login.
+    { "name": "RATE_LIMIT_CHAT_DEVICE_REGISTER", "namespace_id": "1022", "simple": { "limit": 5, "period": 60 } }
   ],
   "vars": {
     // Marking asks for structured output, and Gemini emits that only once the
@@ -95,7 +98,8 @@
     // stronger model a two-image request stayed silent past two minutes, and
     // Cloudflare cut the idle outbound connection with a 524 before any
     // result existed. The faster model finishes inside the budget.
-    "GEMINI_GRADING_MODEL": "gemini-3.5-flash"
+    "GEMINI_GRADING_MODEL": "gemini-3.5-flash",
+    "APNS_TOPIC": "com.yabuko.studiquo"
   },
   "observability": {
     "enabled": true,

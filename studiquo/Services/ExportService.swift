@@ -9,6 +9,7 @@ enum ExportService {
     /// can never be handed over directly — a PDF is the shared, self-contained
     /// stand-in both sides can open the same way an uploaded photo or file
     /// already is.
+    @MainActor
     static func chatAttachmentPDFData(sourceKind: String, sourceID: String, notebooks: [Notebook], flashcardDecks: [FlashcardDeck], textDocuments: [TextDocument], slideDecks: [SlideDeck]) -> Data? {
         switch sourceKind {
         case "notebook":
@@ -139,6 +140,7 @@ enum ExportService {
         cgContext.restoreGState()
     }
 
+    @MainActor
     static func pdfData(from deck: SlideDeck) -> Data? {
         let size = deck.aspect.size
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: size))

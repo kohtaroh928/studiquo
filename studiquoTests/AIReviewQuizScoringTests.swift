@@ -32,4 +32,53 @@ final class AIReviewQuizScoringTests: XCTestCase {
     func testASingleQuestionAnsweredCorrectlyIsOneHundredPercent() {
         XCTAssertEqual(quizScorePercentage(correct: 1, total: 1), 100)
     }
+
+    func testProofSubmissionAcceptsTypedOrImageQuestionAndAnswer() {
+        XCTAssertTrue(ProofSubmission(questionText: "証明せよ", answerText: "証明").hasQuestion)
+        XCTAssertTrue(ProofSubmission(questionText: "証明せよ", answerText: "証明").hasAnswer)
+
+        let image = UIImage(systemName: "doc.text")
+        XCTAssertTrue(ProofSubmission(questionImage: image, answerImage: image).hasQuestion)
+        XCTAssertTrue(ProofSubmission(questionImage: image, answerImage: image).hasAnswer)
+        XCTAssertFalse(ProofSubmission().hasQuestion)
+        XCTAssertFalse(ProofSubmission().hasAnswer)
+    }
+
+    func testProofSubmissionSummaryShowsBothSelectedImages() {
+        let image = UIImage(systemName: "doc.text")
+        let summary = NoteEditorView.submissionSummary(
+            ProofSubmission(questionImage: image, answerImage: image)
+        )
+
+        XCTAssertTrue(summary.contains("この証明を添削してください。"))
+        XCTAssertTrue(summary.contains("【問題】画像を添付しました。"))
+        XCTAssertTrue(summary.contains("【解答】画像を添付しました。"))
+    }
+
+    func testMarkingReportDisplaysScoreBreakdownIssuesAndAICaution() {
+        let review = ProofReviewResult(
+            score: 7,
+            maxScore: 10,
+            verdict: "概ね正しいです。",
+            criteria: [
+                ProofCriterionResult(name: "論理", earnedPoints: 4, maxPoints: 5, comment: "一段補足してください。")
+            ],
+            issues: [
+                ProofIssue(
+                    step: 2,
+                    kindRawValue: ProofIssue.Kind.logicalGap.rawValue,
+                    excerpt: "したがって",
+                    explanation: "根拠が省略されています。",
+                    suggestion: "使った定理を書いてください。"
+                )
+            ]
+        )
+
+        let report = NoteEditorView.markingReport(review)
+
+        XCTAssertTrue(report.contains("【7 / 10点】"))
+        XCTAssertTrue(report.contains("論理　4/5点"))
+        XCTAssertTrue(report.contains("[論理の飛躍] したがって"))
+        XCTAssertTrue(report.contains("AIによるものです"), "AI採点結果には注意書きを必ず表示する必要があります。")
+    }
 }

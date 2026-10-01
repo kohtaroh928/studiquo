@@ -4,6 +4,31 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum AvatarImageProcessor {
+    static let maximumUploadBytes = 300_000
+
+    /// Crops to a square and strips metadata. Quality is reduced only when
+    /// necessary so even detailed photos stay under the server's 300 KB cap.
+    static func jpegData(from image: UIImage) -> Data? {
+        for side: CGFloat in [512, 384, 256] {
+            let scale = max(side / image.size.width, side / image.size.height)
+            let scaled = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+            let origin = CGPoint(x: (side - scaled.width) / 2, y: (side - scaled.height) / 2)
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = 1
+            let rendered = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+                image.draw(in: CGRect(origin: origin, size: scaled))
+            }
+            for quality: CGFloat in [0.82, 0.7, 0.58, 0.46] {
+                if let data = rendered.jpegData(compressionQuality: quality), data.count <= maximumUploadBytes {
+                    return data
+                }
+            }
+        }
+        return nil
+    }
+}
+
 struct UserProfileView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
     @Environment(\.dismiss) private var dismiss
@@ -69,7 +94,7 @@ struct UserProfileView: View {
                 Task {
                     guard let data = try? await item?.loadTransferable(type: Data.self),
                           let image = UIImage(data: data),
-                          let normalized = Self.profileImageData(from: image) else { return }
+                          let normalized = AvatarImageProcessor.jpegData(from: image) else { return }
                     imageData = normalized
                 }
             }
@@ -84,20 +109,6 @@ struct UserProfileView: View {
         }
     }
 
-    /// Profile photos live in UserDefaults, so keep them small and strip the
-    /// original file's metadata before persisting them.
-    private static func profileImageData(from image: UIImage) -> Data? {
-        let side: CGFloat = 512
-        let scale = max(side / image.size.width, side / image.size.height)
-        let scaled = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let origin = CGPoint(x: (side - scaled.width) / 2, y: (side - scaled.height) / 2)
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = 1
-        let rendered = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
-            image.draw(in: CGRect(origin: origin, size: scaled))
-        }
-        return rendered.jpegData(compressionQuality: 0.82)
-    }
 }
 
 struct FriendRecord: Identifiable, Codable, Hashable {
@@ -218,6 +229,51 @@ struct FriendChatSummary: Identifiable, Hashable {
     }
 }
 
+struct GroupChatSummary: Identifiable {
+    var id: String { group.roomID }
+    let group: FriendChatService.Group
+    let avatarData: Data?
+    let latestDate: Date?
+    let previewText: String
+    let unreadCount: Int
+
+    static func summaries(
+        groups: [FriendChatService.Group],
+        messagesByRoomID: [String: [FriendChatService.Message]],
+        unreadCounts: [String: Int] = [:],
+        avatarsByRoomID: [String: Data] = [:]
+    ) -> [GroupChatSummary] {
+        groups.map { group in
+            let latest = messagesByRoomID[group.roomID]?.max { $0.sentAt < $1.sentAt }
+            return GroupChatSummary(
+                group: group,
+                avatarData: avatarsByRoomID[group.roomID],
+                latestDate: latest.map { Date(timeIntervalSince1970: $0.sentAt / 1_000) },
+                previewText: latest.map(previewText(for:)) ?? "",
+                unreadCount: unreadCounts[group.roomID, default: 0]
+            )
+        }
+        .sorted { lhs, rhs in
+            switch (lhs.latestDate, rhs.latestDate) {
+            case let (left?, right?):
+                if left != right { return left > right }
+                return lhs.group.name.localizedStandardCompare(rhs.group.name) == .orderedAscending
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil):
+                return lhs.group.name.localizedStandardCompare(rhs.group.name) == .orderedAscending
+            }
+        }
+    }
+
+    private static func previewText(for message: FriendChatService.Message) -> String {
+        if message.isCanceled == true { return "メッセージを取り消しました" }
+        let parts = FriendMessageParts(text: message.text)
+        if let attachment = parts.attachments.first { return attachment.title }
+        return parts.body.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 struct IncomingFriendRequest: Identifiable, Codable, Hashable {
     var id: String { code }
     var code: String
@@ -284,11 +340,15 @@ final class FriendStore: ObservableObject {
     /// underlying messages (which genuinely hadn't been read yet) were
     /// still there.
     @Published var unreadCounts: [UUID: Int] = [:] { didSet { persist(unreadCounts, key: unreadCountsKey) } }
+    @Published var groupUnreadCounts: [String: Int] = [:] { didSet { persist(groupUnreadCounts, key: groupUnreadCountsKey) } }
     @Published private(set) var blockedContacts: [FriendChatService.BlockedContact] = []
     @Published private(set) var pendingRemovalCodes: Set<String> = []
     /// Groups the user has actually joined — never one they've only been
     /// invited to (see `incomingGroupInvites`).
     @Published var groups: [FriendChatService.Group] = [] { didSet { persist(groups, key: groupsKey) } }
+    @Published private(set) var groupAvatars: [String: Data] = [:]
+    @Published private(set) var pendingGroupAvatarUploads: Set<String> = []
+    private var groupAvatarRevisions: [String: Double] = [:]
     @Published var incomingGroupInvites: [FriendChatService.GroupInvite] = []
     /// Keyed by roomID — unlike `messages` (friend-keyed, persisted across
     /// launches, with a whole local optimistic-echo/attachment apparatus
@@ -301,6 +361,7 @@ final class FriendStore: ObservableObject {
     /// own reasoning for friend requests.
     @Published var pendingGroupActions: Set<String> = []
     @Published var activeFriendID: UUID?
+    @Published private(set) var activeGroupRoomID: String?
     @Published var myCode: String
     /// A second code, embedded only in `invitationURL`'s link/QR — never
     /// shown for manual entry. Redeeming it (see `confirmPendingLinkAdd()`)
@@ -320,6 +381,7 @@ final class FriendStore: ObservableObject {
     private let friendsKey = "studiquoFriends"
     private let messagesKey = "studiquoFriendMessages"
     private let unreadCountsKey = "studiquoFriendUnreadCounts"
+    private let groupUnreadCountsKey = "studiquoGroupUnreadCounts"
     private let archivedFriendsKey = "studiquoArchivedFriends"
     /// A friend removed from the active friends list (see `archiveFriend`)
     /// — the server keeps their chat room around (closed to new messages,
@@ -329,6 +391,7 @@ final class FriendStore: ObservableObject {
     @Published private(set) var archivedFriends: [FriendRecord] = [] { didSet { persist(archivedFriends, key: archivedFriendsKey) } }
     private let groupsKey = "studiquoGroups"
     private let seenIncomingRequestCodesKey = "studiquoSeenIncomingRequestCodes"
+    private let locallyRemovedCodesKey = "studiquoLocallyRemovedFriendCodes"
     /// A digest of whichever `profileImage` bytes were last successfully
     /// uploaded via `syncMyAvatarIfNeeded` — compared against the profile
     /// screen's current photo on every `refresh()` so a changed (or
@@ -341,7 +404,18 @@ final class FriendStore: ObservableObject {
     private var incomingRequestPollTask: Task<Void, Never>?
     private var inboxPollTask: Task<Void, Never>?
     private var groupPollTask: Task<Void, Never>?
-    private var locallyRemovedCodes: Set<String> = []
+    /// Invalidates a group-list response that started before a successful
+    /// local group mutation. Without this, the background poll can fetch an
+    /// empty/pre-mutation snapshot, then arrive after create/accept and
+    /// overwrite the group we just inserted, making it disappear from the
+    /// list until a later poll happens to catch up.
+    private var groupsGeneration = 0
+    /// Persisted because the first friends response after a relaunch can
+    /// still be an eventually-consistent pre-removal snapshot. Keeping this
+    /// tombstone prevents an archived conversation briefly becoming active.
+    private var locallyRemovedCodes: Set<String> = [] {
+        didSet { persist(locallyRemovedCodes, key: locallyRemovedCodesKey) }
+    }
     /// Bumped whenever `friends` is authoritatively changed by a definitive
     /// local action — right now, only a successfully redeemed invite link
     /// (see `confirmPendingLinkAdd()`) — rather than by a server poll.
@@ -354,6 +428,9 @@ final class FriendStore: ObservableObject {
     /// see the just-added friend missing from ITS snapshot, and archive
     /// them again a moment after they appeared.
     private var friendsGeneration = 0
+    /// Launch and foreground refreshes may overlap. Only the newest-started
+    /// response is allowed to update the visible list.
+    private var friendsRequestSequence = 0
     private static let codePattern = /^[A-Z0-9]{6,32}$/
     /// Shared cadence for every "list" poll below (incoming requests,
     /// groups, group invites, the friends list itself) — these used to run
@@ -388,6 +465,9 @@ final class FriendStore: ObservableObject {
         if let data = defaults.data(forKey: archivedFriendsKey) {
             archivedFriends = (try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? []
         }
+        if let data = defaults.data(forKey: locallyRemovedCodesKey) {
+            locallyRemovedCodes = (try? JSONDecoder().decode(Set<String>.self, from: data)) ?? []
+        }
         if let data = defaults.data(forKey: groupsKey) {
             groups = (try? JSONDecoder().decode([FriendChatService.Group].self, from: data)) ?? []
         }
@@ -413,6 +493,9 @@ final class FriendStore: ObservableObject {
         }
         if let data = defaults.data(forKey: unreadCountsKey) {
             unreadCounts = (try? JSONDecoder().decode([UUID: Int].self, from: data)) ?? [:]
+        }
+        if let data = defaults.data(forKey: groupUnreadCountsKey) {
+            groupUnreadCounts = (try? JSONDecoder().decode([String: Int].self, from: data)) ?? [:]
         }
         if let data = defaults.data(forKey: seenIncomingRequestCodesKey) {
             seenIncomingRequestCodes = (try? JSONDecoder().decode(Set<String>.self, from: data)) ?? []
@@ -542,9 +625,11 @@ final class FriendStore: ObservableObject {
                 defaults.set(myLinkToken, forKey: "studiquoFriendLinkToken")
             }
             let generation = friendsGeneration
+            friendsRequestSequence += 1
+            let requestSequence = friendsRequestSequence
             let remote = try await client.friends()
             // See `friendsGeneration`'s doc comment.
-            if generation == friendsGeneration {
+            if generation == friendsGeneration, requestSequence == friendsRequestSequence {
                 applyRemoteFriends(remote)
                 await syncFriendAvatarsIfNeeded(remote: remote)
             }
@@ -563,13 +648,15 @@ final class FriendStore: ObservableObject {
     /// waiting for a full refresh() (app relaunch, or another add()).
     func refreshFriends() async {
         let generation = friendsGeneration
+        friendsRequestSequence += 1
+        let requestSequence = friendsRequestSequence
         do {
             let remote = try await client.friends()
             notePollResult("friends", succeeded: true)
             // See `friendsGeneration`'s doc comment: a more authoritative
             // local change happened while this fetch was in flight, so its
             // now-stale snapshot must not be applied.
-            guard generation == friendsGeneration else { return }
+            guard generation == friendsGeneration, requestSequence == friendsRequestSequence else { return }
             applyRemoteFriends(remote)
             await syncFriendAvatarsIfNeeded(remote: remote)
         } catch {
@@ -838,7 +925,6 @@ final class FriendStore: ObservableObject {
     }
 
     func refreshInbox() async {
-        guard !friends.isEmpty || !archivedFriends.isEmpty else { return }
         let states: [FriendChatService.InboxState]
         do {
             states = try await client.inbox()
@@ -848,6 +934,16 @@ final class FriendStore: ObservableObject {
         }
         notePollResult("inbox", succeeded: true)
         for state in states {
+            if state.kind == "group" || groups.contains(where: { $0.roomID == state.roomID }) {
+                let newestLocalID = groupMessages[state.roomID]?.map(\.id).max() ?? 0
+                if state.latestID > newestLocalID { await refreshGroupMessages(roomID: state.roomID) }
+                if activeGroupRoomID == state.roomID {
+                    await markGroupRead(roomID: state.roomID)
+                } else {
+                    groupUnreadCounts[state.roomID] = state.unreadCount
+                }
+                continue
+            }
             if state.closed != true,
                let archived = archivedFriends.first(where: { $0.roomID == state.roomID }),
                locallyRemovedCodes.contains(archived.code) {
@@ -913,9 +1009,16 @@ final class FriendStore: ObservableObject {
     /// Groups this user has actually joined — never one they've only been
     /// invited to (see `refreshGroupInvites`).
     func refreshGroups() async {
+        let generation = groupsGeneration
         do {
-            groups = try await client.groups()
+            let remote = try await client.groups()
             notePollResult("groups", succeeded: true)
+            guard generation == groupsGeneration else { return }
+            groups = remote
+            let activeRoomIDs = Set(remote.map(\.roomID))
+            groupUnreadCounts = groupUnreadCounts.filter { activeRoomIDs.contains($0.key) }
+            groupMessages = groupMessages.filter { activeRoomIDs.contains($0.key) }
+            await syncGroupAvatarsIfNeeded(remote: remote)
         } catch {
             notePollResult("groups", succeeded: false, error: error)
         }
@@ -941,6 +1044,7 @@ final class FriendStore: ObservableObject {
         do {
             let created = try await client.createGroup(name: trimmed, memberCodes: memberCodes)
             if !groups.contains(where: { $0.roomID == created.roomID }) { groups.append(created) }
+            groupsGeneration += 1
             errorMessage = ""
             return true
         } catch let error as FriendChatService.ServerError {
@@ -981,6 +1085,7 @@ final class FriendStore: ObservableObject {
             do {
                 let joined = try await client.acceptGroupInvite(roomID: invite.roomID)
                 if !groups.contains(where: { $0.roomID == joined.roomID }) { groups.append(joined) }
+                groupsGeneration += 1
                 incomingGroupInvites.removeAll { $0.roomID == invite.roomID }
                 errorMessage = ""
             } catch let error as FriendChatService.ServerError {
@@ -1015,8 +1120,15 @@ final class FriendStore: ObservableObject {
         do {
             _ = try await client.renameGroup(roomID: roomID, name: trimmed)
             if let index = groups.firstIndex(where: { $0.roomID == roomID }) {
-                groups[index] = FriendChatService.Group(roomID: roomID, name: trimmed, members: groups[index].members)
+                groups[index] = FriendChatService.Group(
+                    roomID: roomID,
+                    name: trimmed,
+                    members: groups[index].members,
+                    code: groups[index].code,
+                    avatarUpdatedAt: groups[index].avatarUpdatedAt
+                )
             }
+            groupsGeneration += 1
             errorMessage = ""
             return true
         } catch let error as FriendChatService.ServerError {
@@ -1039,12 +1151,19 @@ final class FriendStore: ObservableObject {
             _ = try await client.removeGroupMember(roomID: roomID, code: code)
             if code == myCode {
                 groups.removeAll { $0.roomID == roomID }
+                groupMessages.removeValue(forKey: roomID)
+                groupUnreadCounts.removeValue(forKey: roomID)
+                groupAvatars.removeValue(forKey: roomID)
+                groupAvatarRevisions.removeValue(forKey: roomID)
             } else if let index = groups.firstIndex(where: { $0.roomID == roomID }) {
                 groups[index] = FriendChatService.Group(
                     roomID: roomID, name: groups[index].name,
-                    members: groups[index].members.filter { $0.code != code }
+                    members: groups[index].members.filter { $0.code != code },
+                    code: groups[index].code,
+                    avatarUpdatedAt: groups[index].avatarUpdatedAt
                 )
             }
+            groupsGeneration += 1
             errorMessage = ""
             return true
         } catch let error as FriendChatService.ServerError {
@@ -1053,6 +1172,65 @@ final class FriendStore: ObservableObject {
         } catch {
             errorMessage = "メンバーを削除できませんでした。"
             return false
+        }
+    }
+
+    func refreshGroupAvatar(roomID: String) async {
+        do {
+            groupAvatars[roomID] = try await client.downloadGroupAvatar(roomID: roomID)
+            groupAvatarRevisions[roomID] = groups.first(where: { $0.roomID == roomID })?.avatarUpdatedAt
+        } catch let error as FriendChatService.ServerError where error.status == 404 {
+            groupAvatars.removeValue(forKey: roomID)
+            groupAvatarRevisions.removeValue(forKey: roomID)
+        } catch {
+            // A missing or temporarily unavailable image should fall back to
+            // the group glyph without turning the whole profile into an error.
+        }
+    }
+
+    @discardableResult
+    func updateGroupAvatar(roomID: String, data: Data) async -> Bool {
+        guard !data.isEmpty,
+              data.count <= AvatarImageProcessor.maximumUploadBytes,
+              !pendingGroupAvatarUploads.contains(roomID) else { return false }
+        pendingGroupAvatarUploads.insert(roomID)
+        defer { pendingGroupAvatarUploads.remove(roomID) }
+        do {
+            let result = try await client.uploadGroupAvatar(roomID: roomID, contentType: "image/jpeg", data: data)
+            groupAvatars[roomID] = data
+            groupAvatarRevisions[roomID] = result.avatarUpdatedAt
+            if let index = groups.firstIndex(where: { $0.roomID == roomID }) {
+                let current = groups[index]
+                groups[index] = FriendChatService.Group(
+                    roomID: current.roomID,
+                    name: current.name,
+                    members: current.members,
+                    code: current.code,
+                    avatarUpdatedAt: result.avatarUpdatedAt
+                )
+            }
+            errorMessage = ""
+            return true
+        } catch {
+            errorMessage = "グループの写真を変更できませんでした。もう一度お試しください。"
+            return false
+        }
+    }
+
+    private func syncGroupAvatarsIfNeeded(remote: [FriendChatService.Group]) async {
+        let activeRoomIDs = Set(remote.map(\.roomID))
+        groupAvatars = groupAvatars.filter { activeRoomIDs.contains($0.key) }
+        groupAvatarRevisions = groupAvatarRevisions.filter { activeRoomIDs.contains($0.key) }
+        for group in remote {
+            guard let revision = group.avatarUpdatedAt else {
+                groupAvatars.removeValue(forKey: group.roomID)
+                groupAvatarRevisions.removeValue(forKey: group.roomID)
+                continue
+            }
+            guard groupAvatarRevisions[group.roomID] != revision || groupAvatars[group.roomID] == nil else { continue }
+            guard let data = try? await client.downloadGroupAvatar(roomID: group.roomID) else { continue }
+            groupAvatars[group.roomID] = data
+            groupAvatarRevisions[group.roomID] = revision
         }
     }
 
@@ -1071,6 +1249,7 @@ final class FriendStore: ObservableObject {
             let existingIDs = Set(current.map(\.id))
             current.append(contentsOf: newOnes.filter { !existingIDs.contains($0.id) })
             groupMessages[roomID] = current
+            if activeGroupRoomID == roomID { await markGroupRead(roomID: roomID) }
         } catch {
             // Deliberately silent: this polls every couple of seconds while
             // the screen is open, and a transient blip shouldn't flash an
@@ -1095,6 +1274,39 @@ final class FriendStore: ObservableObject {
         } catch {
             errorMessage = "送信できませんでした。"
             return false
+        }
+    }
+
+    /// Retracts one of the signed-in member's own group messages. Group and
+    /// direct rooms share the same server operation; keeping the state update
+    /// here also makes every open group surface refresh immediately.
+    func cancelGroupMessage(_ message: FriendChatService.Message, roomID: String) async {
+        guard message.isMine, message.isCanceled != true,
+              let index = groupMessages[roomID]?.firstIndex(where: { $0.id == message.id }) else { return }
+        let original = groupMessages[roomID]![index]
+        groupMessages[roomID]![index] = FriendChatService.Message(
+            id: original.id, text: "", sentAt: original.sentAt, isMine: original.isMine,
+            clientMessageID: original.clientMessageID, isCanceled: true,
+            senderCode: original.senderCode, senderName: original.senderName
+        )
+        do {
+            _ = try await client.cancelMessage(roomID: roomID, messageID: message.id)
+            errorMessage = ""
+        } catch {
+            if let revertIndex = groupMessages[roomID]?.firstIndex(where: { $0.id == message.id }) {
+                groupMessages[roomID]![revertIndex] = original
+            }
+            errorMessage = "メッセージを取り消せませんでした。もう一度お試しください。"
+        }
+    }
+
+    func reportGroupMessage(_ message: FriendChatService.Message, roomID: String, reason: String) async {
+        guard !message.isMine, message.isCanceled != true else { return }
+        do {
+            _ = try await client.report(roomID: roomID, messageID: message.id, reason: reason)
+            errorMessage = ""
+        } catch {
+            errorMessage = "通報を送信できませんでした。もう一度お試しください。"
         }
     }
 
@@ -1323,6 +1535,15 @@ final class FriendStore: ObservableObject {
     func send(_ text: String, to friend: FriendRecord) -> Bool {
         let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let recipient = canonicalFriend(matching: friend), Self.hasVisibleContent(cleaned) else { return false }
+        let isActiveFriend = friends.contains { candidate in
+            candidate.id == recipient.id
+                || (candidate.roomID != nil && candidate.roomID == recipient.roomID)
+                || candidate.code == recipient.code
+        }
+        if isActiveFriend, let roomID = recipient.roomID, blockedByMeRoomIDs.contains(roomID) {
+            errorMessage = "このフレンドはブロック中です。送信するにはブロックを解除してください。"
+            return false
+        }
         let messageText = String(cleaned.prefix(Self.maximumMessageLength))
         let messageID = UUID()
         var working = messages
@@ -1424,6 +1645,23 @@ final class FriendStore: ObservableObject {
     private func markDisplayedMessagesRead(for friend: FriendRecord) async {
         guard let roomID = canonicalFriend(matching: friend)?.roomID else { return }
         let latestDisplayedID = messages(for: friend).compactMap(\.serverID).max() ?? 0
+        guard latestDisplayedID > 0 else { return }
+        _ = try? await client.markRead(roomID: roomID, throughID: latestDisplayedID)
+    }
+
+    func startReadingGroup(roomID: String) {
+        activeGroupRoomID = roomID
+        groupUnreadCounts[roomID] = 0
+        Task { await markGroupRead(roomID: roomID) }
+    }
+
+    func stopReadingGroup(roomID: String) {
+        if activeGroupRoomID == roomID { activeGroupRoomID = nil }
+    }
+
+    private func markGroupRead(roomID: String) async {
+        groupUnreadCounts[roomID] = 0
+        let latestDisplayedID = groupMessages[roomID]?.map(\.id).max() ?? 0
         guard latestDisplayedID > 0 else { return }
         _ = try? await client.markRead(roomID: roomID, throughID: latestDisplayedID)
     }
@@ -1637,7 +1875,7 @@ final class FriendStore: ObservableObject {
     }
 
     var totalUnreadCount: Int {
-        unreadCounts.values.reduce(0, +)
+        unreadCounts.values.reduce(0, +) + groupUnreadCounts.values.reduce(0, +)
     }
 
     func messages(for friend: FriendRecord) -> [FriendMessage] {
@@ -1885,6 +2123,7 @@ struct FriendsHomeView: View {
         case me
         case requests
         case profile(UUID)
+        case group(String)
         case settings
         case groupInvites
 
@@ -1893,6 +2132,7 @@ struct FriendsHomeView: View {
             case .me: return "me"
             case .requests: return "requests"
             case .profile(let id): return "profile-\(id.uuidString)"
+            case .group(let roomID): return "group-\(roomID)"
             case .settings: return "settings"
             case .groupInvites: return "groupInvites"
             }
@@ -1948,6 +2188,12 @@ struct FriendsHomeView: View {
             store.reportMyStudyTime(myStudySeconds, sharesStudyTime: shareStudyTime)
         }
         .onChange(of: store.incomingRequests) { _, _ in store.markIncomingRequestsSeen() }
+        .task {
+            // Opening the friends/chat area gives the permission prompt a
+            // clear purpose. If permission was already decided this simply
+            // refreshes the current APNs token without prompting again.
+            await PushNotificationRegistration.requestAuthorizationInContext()
+        }
         .task {
             while !Task.isCancelled {
                 // Without this, a friend who just accepted this user's
@@ -2113,12 +2359,13 @@ struct FriendsHomeView: View {
 
             Section("グループ") {
                 ForEach(store.groups, id: \.roomID) { group in
-                    Button { selection = .group(group.roomID) } label: {
+                    Button { popover = .group(group.roomID) } label: {
                         HStack(spacing: 12) {
-                            Image(systemName: "person.3.fill")
-                                .font(.title3)
-                                .foregroundStyle(.tint)
-                                .frame(width: 34)
+                            FriendAvatarView(
+                                avatarData: store.groupAvatars[group.roomID],
+                                iconSystemName: "person.3.fill",
+                                size: 34
+                            )
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(group.name)
                                 Text("\(group.members.count)人のメンバー")
@@ -2145,7 +2392,14 @@ struct FriendsHomeView: View {
                     messages: store.messages,
                     unreadCounts: store.unreadCounts
                 ),
-                openChat: { selection = .chat($0.id) }
+                groupSummaries: GroupChatSummary.summaries(
+                    groups: store.groups,
+                    messagesByRoomID: store.groupMessages,
+                    unreadCounts: store.groupUnreadCounts,
+                    avatarsByRoomID: store.groupAvatars
+                ),
+                openChat: { selection = .chat($0.id) },
+                openGroup: { selection = .group($0.roomID) }
             )
         case .chat(let id):
             if let friend = store.friends.first(where: { $0.id == id }) ?? store.archivedFriends.first(where: { $0.id == id }) {
@@ -2161,7 +2415,13 @@ struct FriendsHomeView: View {
             }
         case .group(let roomID):
             if store.groups.contains(where: { $0.roomID == roomID }) {
-                GroupChatView(roomID: roomID, store: store, onBack: { selection = .chats })
+                GroupChatView(
+                    roomID: roomID,
+                    store: store,
+                    appAttachments: appAttachments,
+                    resolveAppAttachment: resolveAppAttachment,
+                    onBack: { selection = .chats }
+                )
             } else {
                 ContentUnavailableView("グループを選択してください", systemImage: "person.3")
             }
@@ -2189,6 +2449,23 @@ struct FriendsHomeView: View {
                 )
             } else {
                 ContentUnavailableView("フレンドを選択してください", systemImage: "person.crop.circle")
+            }
+        case .group(let roomID):
+            if let group = store.groups.first(where: { $0.roomID == roomID }) {
+                GroupProfileView(
+                    group: group,
+                    store: store,
+                    openChat: {
+                        popover = nil
+                        selection = .group(roomID)
+                    },
+                    didLeave: {
+                        popover = nil
+                        selection = .chats
+                    }
+                )
+            } else {
+                ContentUnavailableView("グループを選択してください", systemImage: "person.3")
             }
         case .settings:
             FriendPrivacySettingsView(shareStudyTime: $shareStudyTime, store: store)
@@ -2368,7 +2645,9 @@ private struct FriendSidebarRow: View {
 
 private struct FriendChatListView: View {
     let summaries: [FriendChatSummary]
+    let groupSummaries: [GroupChatSummary]
     let openChat: (FriendRecord) -> Void
+    let openGroup: (FriendChatService.Group) -> Void
 
     var body: some View {
         List {
@@ -2378,14 +2657,63 @@ private struct FriendChatListView: View {
                         FriendChatSummaryRow(summary: summary)
                     }
                 }
+                ForEach(groupSummaries) { summary in
+                    Button { openGroup(summary.group) } label: {
+                        GroupChatSummaryRow(summary: summary)
+                    }
+                }
             }
         }
         .navigationTitle("メッセージ")
         .overlay {
-            if summaries.isEmpty {
-                ContentUnavailableView("メッセージがありません", systemImage: "message", description: Text("フレンドを追加すると、ここにチャットが表示されます。"))
+            if summaries.isEmpty && groupSummaries.isEmpty {
+                ContentUnavailableView("メッセージがありません", systemImage: "message", description: Text("フレンドまたはグループを追加すると、ここにチャットが表示されます。"))
             }
         }
+    }
+}
+
+private struct GroupChatSummaryRow: View {
+    let summary: GroupChatSummary
+
+    var body: some View {
+        HStack(spacing: 12) {
+            FriendAvatarView(avatarData: summary.avatarData, iconSystemName: "person.3.fill", size: 38)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(summary.group.name)
+                        .font(.body.weight(.semibold))
+                    Spacer()
+                    if let latestDate = summary.latestDate {
+                        Text(Self.timeText(for: latestDate))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                HStack(spacing: 8) {
+                    Text(summary.previewText.isEmpty ? "\(summary.group.members.count)人のメンバー" : summary.previewText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    if summary.unreadCount > 0 {
+                        Text(summary.unreadCount > 99 ? "99+" : "\(summary.unreadCount)")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.red, in: Capsule())
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private static func timeText(for date: Date) -> String {
+        Calendar.current.isDateInToday(date)
+            ? date.formatted(.dateTime.hour().minute())
+            : date.formatted(.dateTime.month().day())
     }
 }
 
@@ -2519,6 +2847,114 @@ private struct FriendProfileView: View {
             Text("ブロックすると、相手からのメッセージが届かなくなります。相手には通知されません。")
         }
         .task { await store.refreshBlockStatus(for: friend) }
+    }
+}
+
+private struct GroupProfileView: View {
+    let group: FriendChatService.Group
+    @ObservedObject var store: FriendStore
+    let openChat: () -> Void
+    let didLeave: () -> Void
+
+    @State private var showsInvite = false
+    @State private var showsLeaveConfirmation = false
+    @State private var selectedPhoto: PhotosPickerItem?
+
+    var body: some View {
+        let avatarData = store.groupAvatars[group.roomID]
+        let isUploadingPhoto = store.pendingGroupAvatarUploads.contains(group.roomID)
+        Form {
+            Section {
+                VStack(spacing: 14) {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        FriendAvatarView(
+                            avatarData: avatarData,
+                            iconSystemName: "person.3.fill",
+                            size: 70
+                        )
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "camera.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(6)
+                                .background(Color.accentColor, in: Circle())
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isUploadingPhoto)
+                    .accessibilityLabel("グループの写真を変更")
+                    if isUploadingPhoto {
+                        ProgressView("写真を変更中")
+                            .font(.caption)
+                    } else {
+                        Text("写真を変更")
+                            .font(.caption)
+                            .foregroundStyle(.tint)
+                    }
+                    Text(group.name)
+                        .font(.title.bold())
+                    Text("\(group.members.count)人のメンバー")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            }
+            Section("グループ情報") {
+                LabeledContent("グループコード", value: group.code ?? "取得中")
+            }
+            Section {
+                Button { openChat() } label: {
+                    Label("メッセージ", systemImage: "message.fill")
+                }
+                Button { showsInvite = true } label: {
+                    Label("フレンドを招待", systemImage: "person.badge.plus")
+                }
+            }
+            Section {
+                Button(role: .destructive) { showsLeaveConfirmation = true } label: {
+                    Label("グループから退出", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+                .disabled(store.pendingGroupActions.contains(group.roomID))
+            }
+        }
+        .navigationTitle(group.name)
+        .sheet(isPresented: $showsInvite) {
+            InviteToGroupView(
+                roomID: group.roomID,
+                existingCodes: Set(group.members.map(\.code)),
+                store: store
+            )
+        }
+        .confirmationDialog(
+            "「\(group.name)」から退出しますか？",
+            isPresented: $showsLeaveConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("退出する", role: .destructive) {
+                Task {
+                    if await store.removeGroupMember(roomID: group.roomID, code: store.myCode) {
+                        didLeave()
+                    }
+                }
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("退出すると、このグループのメッセージを確認できなくなります。")
+        }
+        .onChange(of: selectedPhoto) { _, item in
+            Task {
+                defer { selectedPhoto = nil }
+                guard let data = try? await item?.loadTransferable(type: Data.self),
+                      let image = UIImage(data: data),
+                      let normalized = AvatarImageProcessor.jpegData(from: image) else {
+                    store.errorMessage = "写真を読み込めませんでした。別の写真を選択してください。"
+                    return
+                }
+                await store.updateGroupAvatar(roomID: group.roomID, data: normalized)
+            }
+        }
+        .task { await store.refreshGroupAvatar(roomID: group.roomID) }
     }
 }
 
@@ -2793,21 +3229,73 @@ private struct CreateGroupView: View {
     }
 }
 
-/// A group's own chat screen. Deliberately simpler than `FriendChatView`
-/// (no attachments, no edit/cancel, no per-message read state) — those all
-/// still work server-side for a group's room (see groups.js's own doc
-/// comment on why message routes are reused unchanged), so this can grow
-/// to match `FriendChatView` later without any server-side work; keeping
-/// v1 to plain text keeps this new surface reviewable on its own.
+private struct ChatComposerAttachmentChip: View {
+    let attachment: FriendMessageAttachment
+    let onRemove: () -> Void
+
+    private var localImage: UIImage? {
+        guard attachment.sourceKind == "photo",
+              let sourcePath = attachment.sourcePath,
+              !sourcePath.isEmpty else { return nil }
+        return UIImage(contentsOfFile: sourcePath)
+    }
+
+    var body: some View {
+        HStack(spacing: 7) {
+            if let localImage {
+                Image(uiImage: localImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 42, height: 34)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            } else {
+                Image(systemName: attachment.icon)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28)
+            }
+            Text(attachment.title)
+                .font(.caption)
+                .lineLimit(1)
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("添付を外す")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// A group's own chat screen. Its conversation surface deliberately follows
+/// `FriendChatView`'s visual language (background, spacing, date pills,
+/// avatars, bubbles, timestamps and composer) so switching between a direct
+/// and group conversation does not feel like entering a different feature.
 struct GroupChatView: View {
     let roomID: String
     @ObservedObject var store: FriendStore
+    var appAttachments: [FriendMessageAttachment] = []
+    var resolveAppAttachment: (FriendMessageAttachment, FriendRecord) async -> FriendMessageAttachment = { attachment, _ in attachment }
     var onBack: () -> Void
+    var pendingSnippet: PageSnippet? = nil
+    var onConsumePendingSnippet: (UUID) -> Void = { _ in }
 
     @State private var draft = ""
+    @State private var attachments: [FriendMessageAttachment] = []
+    @State private var isImportingFiles = false
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showsCameraScanner = false
+    @State private var isAttachingAppMaterial = false
+    @State private var isComposerDropTargeted = false
+    @State private var snippetAttachmentTracker = ChatSnippetAttachmentTracker()
+    @State private var partialCopyText: PartialCopyText?
+    @State private var reportingMessage: GroupReportMessage?
     @State private var showsMembers = false
     @State private var showsRename = false
     @State private var renameDraft = ""
+    @State private var scrollRequest = 0
 
     private var group: FriendChatService.Group? {
         store.groups.first(where: { $0.roomID == roomID })
@@ -2820,36 +3308,141 @@ struct GroupChatView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(messages, id: \.id) { message in
-                            GroupMessageBubble(message: message)
-                                .id(message.id)
+                    LazyVStack(spacing: 10) {
+                        ForEach(groupChatRows) { row in
+                            switch row {
+                            case .date(let id, let date):
+                                Text(Self.dateFormatter.string(from: date))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 5)
+                                    .background(Color.black.opacity(0.55), in: Capsule())
+                                    .frame(maxWidth: .infinity)
+                                    .accessibilityIdentifier(id)
+                            case .message(let message):
+                                GroupMessageBubble(
+                                    message: message,
+                                    onOpenAttachment: openAttachment,
+                                    onPartialCopy: { partialCopyText = PartialCopyText(text: $0) },
+                                    onCancel: { message in
+                                        Task { await store.cancelGroupMessage(message, roomID: roomID) }
+                                    },
+                                    onReport: { reportingMessage = GroupReportMessage(message: $0) }
+                                )
+                            }
                         }
+                        Color.clear.frame(height: 1).id("group-chat-bottom")
                     }
                     .padding()
                 }
-                .onChange(of: messages.count) { _, _ in
-                    if let lastID = messages.last?.id {
-                        withAnimation { proxy.scrollTo(lastID, anchor: .bottom) }
+                .onAppear {
+                    DispatchQueue.main.async { proxy.scrollTo("group-chat-bottom", anchor: .bottom) }
+                }
+                .onChange(of: scrollRequest) { _, _ in
+                    DispatchQueue.main.async {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo("group-chat-bottom", anchor: .bottom)
+                        }
                     }
+                }
+                .onChange(of: messages.count) { _, _ in
+                    DispatchQueue.main.async { proxy.scrollTo("group-chat-bottom", anchor: .bottom) }
                 }
             }
             Divider()
-            HStack(spacing: 8) {
-                TextField("メッセージを入力", text: $draft, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                Button {
-                    let text = draft
-                    draft = ""
-                    Task { await store.sendGroupMessage(text, roomID: roomID) }
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.title2)
+            VStack(alignment: .leading, spacing: 8) {
+                if isComposerDropTargeted {
+                    Label("ここに画像を追加", systemImage: "photo.badge.plus")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.accentColor.opacity(0.12), in: Capsule())
                 }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if isAttachingAppMaterial {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("資料を準備しています…").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if !attachments.isEmpty {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            ForEach(attachments) { attachment in
+                                ChatComposerAttachmentChip(attachment: attachment) {
+                                    removeAttachment(attachment.id)
+                                }
+                            }
+                        }
+                    }
+                    .scrollIndicators(.hidden)
+                }
+                HStack(alignment: .bottom, spacing: 6) {
+                    Menu {
+                        Menu("アプリ内の資料を追加") {
+                            ForEach(appAttachments) { item in
+                                Button {
+                                    isAttachingAppMaterial = true
+                                    Task {
+                                        let target = FriendRecord(id: UUID(), name: group?.name ?? "グループ", code: group?.code ?? "", todayStudySeconds: 0, roomID: roomID, isDemo: false, sharesStudyTime: false)
+                                        let resolved = await resolveAppAttachment(item, target)
+                                        isAttachingAppMaterial = false
+                                        attachments.append(resolved)
+                                    }
+                                } label: { Label(item.title, systemImage: item.icon) }
+                            }
+                            if appAttachments.isEmpty { Text("追加できる資料がありません") }
+                        }
+                        Button { isImportingFiles = true } label: { Label("ファイルから追加", systemImage: "doc.badge.plus") }
+                    } label: {
+                        Image(systemName: "plus").frame(width: 32, height: 34)
+                            .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                    }
+                    .accessibilityLabel("追加")
+                    Button { showsCameraScanner = true } label: {
+                        Image(systemName: "camera").frame(width: 32, height: 34)
+                    }
+                    .accessibilityLabel("カメラで撮影")
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        Image(systemName: "photo").frame(width: 32, height: 34)
+                    }
+                    .accessibilityLabel("写真から追加")
+                TextField("メッセージ", text: $draft, axis: .vertical)
+                    .accessibilityIdentifier("group-chat-draft")
+                    .lineLimit(1...5)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                    .submitLabel(.send)
+                    .onSubmit(send)
+                    .frame(minWidth: 0, maxWidth: .infinity)
+                    .layoutPriority(1)
+                Button(action: send) {
+                    Image(systemName: canSend ? "arrow.up.circle.fill" : "mic")
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(canSend ? Color.accentColor : .primary)
+                        .frame(width: 34, height: 34)
+                }
+                .disabled(!canSend)
+                .buttonStyle(.plain)
+                .fixedSize()
+                }
             }
-            .padding()
+            .padding(12)
+            .background(Color(uiColor: .systemBackground))
+            .scaleEffect(isComposerDropTargeted ? 1.01 : 1)
+            .dropDestination(for: PageSnippet.self) { snippets, _ in
+                guard !snippets.isEmpty else { return false }
+                for snippet in snippets { Task { await attachSnippet(snippet) } }
+                return true
+            } isTargeted: { targeted in
+                withAnimation(.easeOut(duration: 0.15)) { isComposerDropTargeted = targeted }
+            }
         }
         .navigationTitle(group?.name ?? "グループ")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { onBack() } label: { Image(systemName: "chevron.left") }
@@ -2882,6 +3475,45 @@ struct GroupChatView: View {
             Button("キャンセル", role: .cancel) {}
             Button("変更") { Task { await store.renameGroup(roomID: roomID, name: renameDraft) } }
         }
+        .sheet(item: $partialCopyText) { item in
+            NavigationStack {
+                ScrollView {
+                    Text(item.text).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding()
+                }
+                .navigationTitle("部分コピー")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { partialCopyText = nil } } }
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $reportingMessage) { item in
+            ReportMessageSheet(onSubmit: { reason in
+                Task { await store.reportGroupMessage(item.message, roomID: roomID, reason: reason) }
+                reportingMessage = nil
+            }, onCancel: { reportingMessage = nil })
+        }
+        .fileImporter(isPresented: $isImportingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            Task { for url in urls { if let item = await saveFileAttachment(from: url) { attachments.append(item) } } }
+        }
+        .onChange(of: selectedPhoto) { _, item in
+            guard let item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self),
+                   let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.82),
+                   let saved = await saveImageAttachment(jpeg, title: "写真", icon: "photo") { attachments.append(saved) }
+                selectedPhoto = nil
+            }
+        }
+        .sheet(isPresented: $showsCameraScanner) {
+            DocumentScannerView { images in
+                Task { for (index, image) in images.enumerated() {
+                    if let data = image.jpegData(compressionQuality: 0.82),
+                       let saved = await saveImageAttachment(data, title: images.count == 1 ? "撮影した写真" : "撮影した写真 \(index + 1)", icon: "camera") { attachments.append(saved) }
+                } }
+            }
+        }
         .alert("エラー", isPresented: Binding(
             get: { !store.errorMessage.isEmpty },
             set: { isPresented in if !isPresented { store.errorMessage = "" } }
@@ -2890,34 +3522,253 @@ struct GroupChatView: View {
         } message: {
             Text(store.errorMessage)
         }
+        .background(Color(red: 0.84, green: 0.94, blue: 1.0))
+        .onAppear { store.startReadingGroup(roomID: roomID) }
+        .onDisappear { store.stopReadingGroup(roomID: roomID) }
         .task {
             while !Task.isCancelled {
                 await store.refreshGroupMessages(roomID: roomID)
                 try? await Task.sleep(for: .seconds(2))
             }
         }
+        .task(id: pendingSnippet?.id) {
+            guard let pendingSnippet else { return }
+            await attachSnippet(pendingSnippet)
+            onConsumePendingSnippet(pendingSnippet.id)
+        }
     }
+
+    private var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+    }
+
+    private func removeAttachment(_ attachmentID: String) {
+        attachments.removeAll { $0.id == attachmentID }
+        snippetAttachmentTracker.removeAttachment(attachmentID)
+    }
+
+    private func retainSnippetMappings(for remaining: [FriendMessageAttachment]) {
+        snippetAttachmentTracker.retainAttachments(withIDs: Set(remaining.map(\.id)))
+    }
+
+    private func send() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            var sentAnything = false
+            if !text.isEmpty, await store.sendGroupMessage(text, roomID: roomID) { draft = ""; sentAnything = true }
+            var unsent: [FriendMessageAttachment] = []
+            for attachment in attachments {
+                if await store.sendGroupMessage(attachment.messageLine, roomID: roomID) { sentAnything = true }
+                else { unsent.append(attachment) }
+            }
+            attachments = unsent
+            retainSnippetMappings(for: unsent)
+            if sentAnything {
+                scrollRequest += 1
+            }
+        }
+    }
+
+    private func openAttachment(_ attachment: FriendMessageAttachment) {
+        NotificationCenter.default.post(name: Notification.Name("StudiquoOpenFriendAttachment"), object: FriendAttachmentOpenRequest(attachment: attachment))
+    }
+
+    private func saveImageAttachment(_ data: Data, title: String, icon: String) async -> FriendMessageAttachment? {
+        await saveAttachment(data: data, filename: "\(UUID().uuidString).jpg", title: title, kind: "写真", icon: icon, contentType: "image/jpeg")
+    }
+
+    @MainActor
+    private func attachSnippet(_ snippet: PageSnippet) async {
+        guard snippetAttachmentTracker.begin(snippet.id) else { return }
+        isAttachingAppMaterial = true
+        defer { isAttachingAppMaterial = false }
+        guard let data = ChatSnippetImageEncoder.jpegData(for: snippet) else {
+            snippetAttachmentTracker.fail(snippet.id)
+            store.errorMessage = "切り抜き画像を3MB以下に準備できませんでした。範囲を小さくしてお試しください。"
+            return
+        }
+        guard let attachment = await saveImageAttachment(
+            data,
+            title: "切り抜き・\(snippet.sourceLabel)",
+            icon: "rectangle.dashed"
+        ) else {
+            snippetAttachmentTracker.fail(snippet.id)
+            if store.errorMessage.isEmpty { store.errorMessage = "切り抜き画像を準備できませんでした。" }
+            return
+        }
+        attachments.append(attachment)
+        snippetAttachmentTracker.complete(snippet.id, attachmentID: attachment.id)
+    }
+
+    private func saveFileAttachment(from source: URL) async -> FriendMessageAttachment? {
+        let accessing = source.startAccessingSecurityScopedResource()
+        defer { if accessing { source.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: source) else { return nil }
+        let name = FriendMessageAttachment.boundedFilename(source.lastPathComponent)
+        let type = UTType(filenameExtension: source.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        return await saveAttachment(data: data, filename: "\(UUID().uuidString)-\(name)", title: name, kind: source.pathExtension.lowercased() == "pdf" ? "PDF" : "ファイル", icon: source.pathExtension.lowercased() == "pdf" ? "doc.richtext" : "doc", contentType: type)
+    }
+
+    private func saveAttachment(data: Data, filename: String, title: String, kind: String, icon: String, contentType: String) async -> FriendMessageAttachment? {
+        guard data.count <= 3 * 1024 * 1024 else { store.errorMessage = "添付ファイルのサイズが大きすぎます（上限3MB）。"; return nil }
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appending(path: "FriendChatAttachments", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appending(path: filename)
+        guard (try? data.write(to: destination, options: [.atomic])) != nil else { return nil }
+        let remoteID: String?
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test") ||
+            ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test") {
+            // The UI fixture verifies the local crop-to-composer handoff and
+            // intentionally has no server account. A stable synthetic id
+            // keeps that test isolated while production still requires the
+            // real room upload below.
+            remoteID = "group-snippet-ui-test"
+        } else {
+            remoteID = await store.uploadAttachment(data: data, contentType: contentType, roomID: roomID)
+        }
+        #else
+        remoteID = await store.uploadAttachment(data: data, contentType: contentType, roomID: roomID)
+        #endif
+        guard let remoteID else { return nil }
+        return FriendMessageAttachment(id: "file-\(destination.path)-\(UUID().uuidString)", title: title, kind: kind, icon: icon, sourceKind: kind == "写真" ? "photo" : (kind == "PDF" ? "pdf" : "file"), sourceID: remoteID, sourcePath: destination.path, remoteRoomID: roomID)
+    }
+
+    private var groupChatRows: [GroupChatRow] {
+        var rows: [GroupChatRow] = []
+        var previousDay: Date?
+        let calendar = Calendar.current
+        for message in messages {
+            let date = Date(timeIntervalSince1970: message.sentAt / 1_000)
+            let day = calendar.startOfDay(for: date)
+            if previousDay.map({ !calendar.isDate($0, inSameDayAs: day) }) ?? true {
+                rows.append(.date(id: "group-date-\(day.timeIntervalSince1970)", date: day))
+                previousDay = day
+            }
+            rows.append(.message(message))
+        }
+        return rows
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.dateFormat = "M/d(E)"
+        return formatter
+    }()
+}
+
+private enum GroupChatRow: Identifiable {
+    case date(id: String, date: Date)
+    case message(FriendChatService.Message)
+
+    var id: String {
+        switch self {
+        case .date(let id, _): id
+        case .message(let message): "group-message-\(message.id)"
+        }
+    }
+}
+
+private struct GroupReportMessage: Identifiable {
+    let message: FriendChatService.Message
+    var id: Int { message.id }
 }
 
 private struct GroupMessageBubble: View {
     let message: FriendChatService.Message
+    let onOpenAttachment: (FriendMessageAttachment) -> Void
+    let onPartialCopy: (String) -> Void
+    let onCancel: (FriendChatService.Message) -> Void
+    let onReport: (FriendChatService.Message) -> Void
 
     var body: some View {
-        VStack(alignment: message.isMine ? .trailing : .leading, spacing: 2) {
-            if !message.isMine, let senderName = message.senderName {
-                Text(senderName)
+        HStack(alignment: .top, spacing: 8) {
+            if message.isMine { Spacer(minLength: 54) }
+            if !message.isMine {
+                FriendAvatarView(avatarData: nil, iconSystemName: "person.crop.circle.fill", size: 30)
+                    .padding(.top, 4)
+            }
+            VStack(alignment: message.isMine ? .trailing : .leading, spacing: 4) {
+                if !message.isMine, let senderName = message.senderName {
+                    Text(senderName)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if message.isCanceled == true {
+                    Text("メッセージの送信を取り消しました")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 18))
+                } else {
+                    let parts = FriendMessageParts(text: message.text)
+                    if !parts.body.isEmpty {
+                        Text(parts.body)
+                            .textSelection(.enabled)
+                            .font(.body.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 11)
+                            .background(message.isMine ? Color(red: 0.37, green: 0.92, blue: 0.40) : .white, in: RoundedRectangle(cornerRadius: 20))
+                            .foregroundStyle(Color.black)
+                            .frame(maxWidth: 280, alignment: message.isMine ? .trailing : .leading)
+                            .contextMenu { messageActions(parts: parts) }
+                    }
+                    ForEach(parts.attachments) { attachment in
+                        Button { onOpenAttachment(attachment) } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: attachment.icon).font(.title3).foregroundStyle(Color.accentColor)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(attachment.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                                    Text(attachment.kind).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                            }
+                            .padding(10).frame(maxWidth: 260)
+                            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button { UIPasteboard.general.string = attachment.title } label: { Label("ファイル名をコピー", systemImage: "doc.on.doc") }
+                            if message.isMine { Button(role: .destructive) { onCancel(message) } label: { Label("送信取消", systemImage: "arrow.uturn.backward.circle") } }
+                            else { Button(role: .destructive) { onReport(message) } label: { Label("通報する", systemImage: "flag") } }
+                        }
+                    }
+                }
+                Text(Self.timeFormatter.string(from: Date(timeIntervalSince1970: message.sentAt / 1_000)))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .frame(maxWidth: 280, alignment: message.isMine ? .trailing : .leading)
             }
-            Text(message.isCanceled == true ? "メッセージが取り消されました" : message.text)
-                .italic(message.isCanceled == true)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(message.isMine ? Color.accentColor : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-                .foregroundStyle(message.isMine ? .white : .primary)
+            if !message.isMine { Spacer(minLength: 54) }
         }
         .frame(maxWidth: .infinity, alignment: message.isMine ? .trailing : .leading)
     }
+
+    @ViewBuilder private func messageActions(parts: FriendMessageParts) -> some View {
+        Button { UIPasteboard.general.string = copyableText(parts) } label: { Label("全てコピー", systemImage: "doc.on.doc") }
+        Button { onPartialCopy(parts.body) } label: { Label("部分コピー", systemImage: "text.cursor") }
+        Divider()
+        if message.isMine {
+            Button(role: .destructive) { onCancel(message) } label: { Label("送信取消", systemImage: "arrow.uturn.backward.circle") }
+        } else {
+            Button(role: .destructive) { onReport(message) } label: { Label("通報する", systemImage: "flag") }
+        }
+    }
+
+    private func copyableText(_ parts: FriendMessageParts) -> String {
+        ([parts.body].filter { !$0.isEmpty } + parts.attachments.map { "[添付: \($0.title)]" }).joined(separator: "\n")
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.dateFormat = "H:mm"
+        return formatter
+    }()
 }
 
 private struct GroupMembersView: View {
@@ -3025,6 +3876,8 @@ struct FriendChatView: View {
     var onPaneDrop: (String) -> Bool = { _ in false }
     var onOpenAttachment: ((FriendMessageAttachment) -> Void)?
     var onBack: (() -> Void)?
+    var pendingSnippet: PageSnippet? = nil
+    var onConsumePendingSnippet: (UUID) -> Void = { _ in }
     @State private var draft = ""
     @State private var attachments: [FriendMessageAttachment] = []
     @State private var isDropTargeted = false
@@ -3034,6 +3887,7 @@ struct FriendChatView: View {
     @State private var showsCameraScanner = false
     @State private var partialCopyText: PartialCopyText?
     @State private var isAttachingAppMaterial = false
+    @State private var snippetAttachmentTracker = ChatSnippetAttachmentTracker()
     @State private var showsBlockConfirmation = false
     @State private var reportingMessage: FriendMessage?
     @State private var scrollRequest = 0
@@ -3094,20 +3948,9 @@ struct FriendChatView: View {
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
                             ForEach(attachments) { attachment in
-                                HStack(spacing: 6) {
-                                    Image(systemName: attachment.icon).foregroundStyle(.secondary)
-                                    Text(attachment.title).lineLimit(1)
-                                    Button {
-                                        attachments.removeAll { $0.id == attachment.id }
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                                    }
-                                    .buttonStyle(.plain)
+                                ChatComposerAttachmentChip(attachment: attachment) {
+                                    removeAttachment(attachment.id)
                                 }
-                                .font(.caption)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
                             }
                         }
                     }
@@ -3205,6 +4048,13 @@ struct FriendChatView: View {
             } isTargeted: { targeted in
                 withAnimation(.easeOut(duration: 0.15)) { isComposerDropTargeted = targeted }
             }
+            .dropDestination(for: PageSnippet.self) { snippets, _ in
+                guard !snippets.isEmpty else { return false }
+                for snippet in snippets { Task { await attachSnippet(snippet) } }
+                return true
+            } isTargeted: { targeted in
+                withAnimation(.easeOut(duration: 0.15)) { isComposerDropTargeted = targeted }
+            }
         }
         .navigationTitle(currentFriend.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -3271,6 +4121,11 @@ struct FriendChatView: View {
                     await store.refreshBlockStatus(for: currentFriend)
                 }
             )
+        }
+        .task(id: pendingSnippet?.id) {
+            guard let pendingSnippet else { return }
+            await attachSnippet(pendingSnippet)
+            onConsumePendingSnippet(pendingSnippet.id)
         }
         .onDisappear { store.stopReading(currentFriend) }
         .fileImporter(isPresented: $isImportingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
@@ -3354,6 +4209,15 @@ struct FriendChatView: View {
 
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+    }
+
+    private func removeAttachment(_ attachmentID: String) {
+        attachments.removeAll { $0.id == attachmentID }
+        snippetAttachmentTracker.removeAttachment(attachmentID)
+    }
+
+    private func retainSnippetMappings(for remaining: [FriendMessageAttachment]) {
+        snippetAttachmentTracker.retainAttachments(withIDs: Set(remaining.map(\.id)))
     }
 
     private func appendDroppedText(_ value: String) {
@@ -3442,6 +4306,7 @@ struct FriendChatView: View {
         let sentAttachmentCount = attachments.count - unsentAttachments.count
         if bodyWasQueued { draft = "" }
         attachments = unsentAttachments
+        retainSnippetMappings(for: unsentAttachments)
         if bodyWasQueued || sentAttachmentCount > 0 {
             scrollRequest += 1
         }
@@ -3470,6 +4335,34 @@ struct FriendChatView: View {
         } catch {
             return nil
         }
+    }
+
+    @MainActor
+    private func attachSnippet(_ snippet: PageSnippet) async {
+        guard snippetAttachmentTracker.begin(snippet.id) else { return }
+        isAttachingAppMaterial = true
+        defer { isAttachingAppMaterial = false }
+        guard let data = ChatSnippetImageEncoder.jpegData(for: snippet) else {
+            snippetAttachmentTracker.fail(snippet.id)
+            store.errorMessage = "切り抜き画像を3MB以下に準備できませんでした。範囲を小さくしてお試しください。"
+            return
+        }
+        guard let attachment = await savePhotoAttachment(
+            data: data,
+            title: "切り抜き・\(snippet.sourceLabel)",
+            icon: "rectangle.dashed"
+        ) else {
+            snippetAttachmentTracker.fail(snippet.id)
+            store.errorMessage = "切り抜き画像を準備できませんでした。"
+            return
+        }
+        if currentFriend.isDemo != true, attachment.remoteRoomID == nil {
+            snippetAttachmentTracker.fail(snippet.id)
+            if store.errorMessage.isEmpty { store.errorMessage = "切り抜き画像をアップロードできませんでした。" }
+            return
+        }
+        attachments.append(attachment)
+        snippetAttachmentTracker.complete(snippet.id, attachmentID: attachment.id)
     }
 
     /// Uploads to the room this chat is for, unless it's a demo (no server

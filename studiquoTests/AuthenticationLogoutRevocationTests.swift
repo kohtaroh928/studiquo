@@ -1,4 +1,5 @@
 import XCTest
+import UserNotifications
 @testable import studiquo
 
 /// Regression coverage for "logging out doesn't revoke the cloud sync token".
@@ -110,6 +111,132 @@ final class AuthenticationLogoutRevocationTests: XCTestCase {
 
         await fulfillment(of: [expectation], timeout: 0.5)
         XCTAssertEqual(store.state, .needsLogin)
+    }
+}
+
+@MainActor
+final class PushNotificationRegistrationTests: XCTestCase {
+    private func dependencies(
+        status: @escaping () async -> UNAuthorizationStatus,
+        requestAuthorization: @escaping () async -> Bool = { false },
+        registerForRemoteNotifications: @escaping @MainActor () -> Void = {},
+        currentAuthorizationToken: @escaping () -> String? = { nil },
+        storedDeviceToken: @escaping @MainActor () -> String? = { nil },
+        saveDeviceToken: @escaping @MainActor (String) -> Void = { _ in },
+        removeStoredDeviceToken: @escaping @MainActor () -> Void = {},
+        registerDevice: @escaping (String, PushDeviceService.Environment, String) async throws -> Void = { _, _, _ in },
+        unregisterDevice: @escaping (String, String) async throws -> Void = { _, _ in }
+    ) -> PushNotificationRegistration.Dependencies {
+        .init(
+            authorizationStatus: status,
+            requestAuthorization: requestAuthorization,
+            registerForRemoteNotifications: registerForRemoteNotifications,
+            currentAuthorizationToken: currentAuthorizationToken,
+            storedDeviceToken: storedDeviceToken,
+            saveDeviceToken: saveDeviceToken,
+            removeStoredDeviceToken: removeStoredDeviceToken,
+            registerDevice: registerDevice,
+            unregisterDevice: unregisterDevice
+        )
+    }
+
+    /// A silent launch/login refresh must never produce the permission
+    /// prompt. Only the contextual entry point used by chat/reminders may do
+    /// so, and a grant immediately starts APNs registration.
+    func testPermissionPromptOnlyOccursFromContextualEntryPoint() async {
+        var promptCount = 0
+        var registrationCount = 0
+        let sut = dependencies(
+            status: { .notDetermined },
+            requestAuthorization: { promptCount += 1; return true },
+            registerForRemoteNotifications: { registrationCount += 1 }
+        )
+
+        await PushNotificationRegistration.refreshIfAuthorized(dependencies: sut)
+        XCTAssertEqual(promptCount, 0)
+        XCTAssertEqual(registrationCount, 0)
+
+        await PushNotificationRegistration.requestAuthorizationInContext(dependencies: sut)
+        XCTAssertEqual(promptCount, 1)
+        XCTAssertEqual(registrationCount, 1)
+    }
+
+    /// With permission already granted, the launch/login refresh asks APNs
+    /// for the current token again; the simulated callback then uploads that
+    /// token to the account without showing another prompt.
+    func testAuthorizedLaunchRefreshReregistersTheDevice() async {
+        let uploaded = expectation(description: "device token uploaded")
+        let tokenData = Data([0x01, 0xab, 0xff])
+        var promptCount = 0
+        var uploadedToken: String?
+        var uploadedAuthorization: String?
+        var sut: PushNotificationRegistration.Dependencies!
+        sut = dependencies(
+            status: { .authorized },
+            requestAuthorization: { promptCount += 1; return true },
+            registerForRemoteNotifications: {
+                PushNotificationRegistration.didRegister(deviceToken: tokenData, dependencies: sut)
+            },
+            currentAuthorizationToken: { "account-token" },
+            registerDevice: { token, _, authorization in
+                uploadedToken = token
+                uploadedAuthorization = authorization
+                uploaded.fulfill()
+            }
+        )
+
+        await PushNotificationRegistration.refreshIfAuthorized(dependencies: sut)
+        await fulfillment(of: [uploaded], timeout: 1)
+
+        XCTAssertEqual(promptCount, 0)
+        XCTAssertEqual(uploadedToken, "01abff")
+        XCTAssertEqual(uploadedAuthorization, "account-token")
+    }
+
+    func testDeniedNotificationsUnregisterTheStoredDevice() async {
+        var storedToken: String? = "stored-device-token"
+        var unregisteredToken: String?
+        var unregisteredAuthorization: String?
+        let sut = dependencies(
+            status: { .denied },
+            currentAuthorizationToken: { "account-token" },
+            storedDeviceToken: { storedToken },
+            removeStoredDeviceToken: { storedToken = nil },
+            unregisterDevice: { token, authorization in
+                unregisteredToken = token
+                unregisteredAuthorization = authorization
+            }
+        )
+
+        await PushNotificationRegistration.refreshIfAuthorized(dependencies: sut)
+
+        XCTAssertEqual(unregisteredToken, "stored-device-token")
+        XCTAssertEqual(unregisteredAuthorization, "account-token")
+        XCTAssertNil(storedToken)
+    }
+
+    func testLogoutUnregistersTheDeviceBeforeRevokingCredentials() async {
+        let finished = expectation(description: "logout actions complete")
+        var order: [String] = []
+        let store = AuthenticationStore(
+            service: "com.yabuko.studiquo.tests.\(UUID().uuidString)",
+            unregisterPushDevice: { order.append("unregister-device") },
+            revokeCloudCredentials: {
+                order.append("revoke-credentials")
+                finished.fulfill()
+            }
+        )
+
+        store.logout()
+        await fulfillment(of: [finished], timeout: 1)
+
+        XCTAssertEqual(order, ["unregister-device", "revoke-credentials"])
+    }
+
+    func testAPNsBinaryTokenConvertsToLowercaseHex() {
+        let data = Data([0x00, 0x01, 0x0f, 0x10, 0xab, 0xff])
+
+        XCTAssertEqual(PushNotificationRegistration.hexToken(from: data), "00010f10abff")
     }
 }
 

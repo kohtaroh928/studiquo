@@ -171,7 +171,9 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         if patched > 0 { coordinator.hasPatchedAncestors = true }
     }
 
-    private func applyConfiguration(to view: InkCanvasView) {
+    /// Internal so regression tests can verify that moving between tools
+    /// clears every mutually-exclusive mode on the same live canvas.
+    func applyConfiguration(to view: InkCanvasView) {
         view.contentScale = contentScale
         view.strokeColorHex = color.toHex()
         view.strokeWidth = width
