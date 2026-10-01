@@ -4,6 +4,7 @@
 
 # Build products
 build/
+build_out/
 DerivedData/
 *.ipa
 *.dSYM.zip
