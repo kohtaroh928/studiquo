@@ -34,9 +34,93 @@ function homePageHTML() {
 <h2>お問い合わせ</h2>
 <p><a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a></p>
 
-<p><a href="/privacy">プライバシーポリシー</a></p>
+<p><a href="/terms">利用規約</a> ・ <a href="/privacy">プライバシーポリシー</a></p>
 </body>
 </html>`;
+}
+
+// Kept in sync by hand with TermsOfUseView's body text in ContentView.swift,
+// the same "two renderings of one document" relationship privacyPolicyHTML
+// above has with PrivacyPolicyView — and linked from SubscriptionPlansView
+// next to the purchase buttons, per App Store Review Guideline 3.1.2's
+// requirement that an auto-renewable subscription link to its Terms of Use
+// (EULA) from inside the app, not just from the App Store listing.
+function termsOfUseHTML() {
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>studiquo 利用規約</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif; line-height: 1.8; max-width: 680px; margin: 0 auto; padding: 32px 20px 80px; color: #1c1c1e; }
+  h1 { font-size: 1.4em; }
+  h2 { font-size: 1.1em; margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: 0.3em; }
+  .updated { color: #666; font-size: 0.9em; }
+  ol { padding-left: 1.4em; }
+  ul { padding-left: 1.4em; }
+</style>
+</head>
+<body>
+<h1>studiquo 利用規約</h1>
+<p class="updated">最終更新日: ${PUBLISHED_DATE}</p>
+
+<p>この利用規約(以下「本規約」)は、学習アプリ「studiquo」(以下「本アプリ」)の利用条件を定めるものです。本アプリをダウンロード、インストール、または利用することで、本規約に同意したものとみなされます。本規約に同意できない場合は、本アプリを利用しないでください。</p>
+
+<h2>1. サービスの内容</h2>
+<p>本アプリは、ノート、暗記帳、学習計画、カレンダーを管理するための学生向け学習支援アプリです。機能の一部は、利用者自身のApple IDまたはGoogleアカウントでのサインインを必要とします。</p>
+
+<h2>2. アカウント</h2>
+<ul>
+  <li>利用者は、登録情報を正確に保つ責任を負います。</li>
+  <li>アカウントおよびログイン情報の管理は利用者自身の責任で行ってください。アカウントを通じて行われた操作については、利用者本人が行ったものとみなされます。</li>
+  <li>本アプリは学生の学習を主な想定用途としていますが、年齢確認の仕組みはありません。未成年者が利用する場合は、保護者の方の責任のもとでご利用ください。</li>
+</ul>
+
+<h2>3. 利用者が作成するコンテンツ</h2>
+<p>ノート、暗記帳、文書、スライドなど、利用者が本アプリ内で作成するコンテンツの権利は利用者に帰属します。運営は、本アプリの機能(保存、同期、友達・グループへの共有、AI機能への送信など、利用者自身が指示した処理)を提供するために必要な範囲でのみ、これらのコンテンツを取り扱います。</p>
+
+<h2>4. AI機能について</h2>
+<p>AIトーク・添削・翌日復習などの機能は、Google GeminiなどのAI連携先サービスを利用して応答を生成します。AIの回答は誤りを含む可能性があり、学習の参考情報として提供されるものであって、内容の正確性・完全性を保証するものではありません。成績や試験結果等に関する判断は、利用者自身の責任で行ってください。送信される情報の詳細は<a href="/privacy">プライバシーポリシー</a>をご確認ください。</p>
+
+<h2>5. サブスクリプションと支払い</h2>
+<ul>
+  <li>Plus・Proプランは、App Storeを通じた自動更新のサブスクリプションです。</li>
+  <li>購入はApple IDに設定した決済手段で行われ、料金・購読期間は購入画面に表示される内容のとおりです。</li>
+  <li>サブスクリプションは、現在の購読期間が終了する24時間前までに解約しない限り、同一期間で自動的に更新されます。更新の請求は、期間終了前24時間以内に行われます。</li>
+  <li>解約は、App Storeの「設定」からAppleアカウントのサブスクリプション管理画面で行ってください。本アプリ内からApp Storeの契約を直接解約することはできません。購入後のキャンセル期間を過ぎた分の未使用期間についての返金は、Appleの規定に従います。</li>
+  <li>プラン別に提供されるAIクレジットの上限・利用可能なAIモデル・クラウド同期容量の上限は、本アプリ内の表示および運営の判断により変更される場合があります。</li>
+</ul>
+
+<h2>6. 禁止事項</h2>
+<ul>
+  <li>法令または公序良俗に違反する行為</li>
+  <li>他の利用者への嫌がらせ、誹謗中傷、迷惑行為</li>
+  <li>本アプリまたは関連サーバーへの不正アクセス、リバースエンジニアリング、過度な負荷をかける行為</li>
+  <li>他者の知的財産権、プライバシー、その他の権利を侵害する行為</li>
+  <li>本アプリを不正または詐欺的な目的で利用する行為</li>
+</ul>
+
+<h2>7. 本アプリの変更・中断・終了</h2>
+<p>運営は、事前の通知なく本アプリの内容を変更し、提供を一時的に中断し、または終了することがあります。これにより利用者に生じた損害について、運営は法令上許容される範囲で責任を負いません。</p>
+
+<h2>8. アカウントの削除・利用停止</h2>
+<p>利用者は、「設定」からいつでも自身のアカウントを削除できます。削除すると、学習資料・プロフィール・フレンド・グループ情報等が削除されます。詳しくは<a href="/privacy">プライバシーポリシー</a>をご確認ください。運営は、本規約に違反した利用者について、通知なくアカウントの利用を停止する場合があります。App Storeのサブスクリプションは、アカウント削除だけでは解約されないため、App Storeで別途解約の手続きを行ってください。</p>
+
+<h2>9. 免責事項</h2>
+<p>本アプリは「現状有姿」で提供され、特定の目的への適合性、正確性、継続的な可用性について、明示または黙示を問わずいかなる保証も行いません。本アプリの利用により生じた損害について、運営は法令上許容される最大限の範囲で責任を負いません。</p>
+
+<h2>10. 準拠法・管轄</h2>
+<p>本規約の解釈には日本法を準拠法とします。本アプリに関して生じた紛争については、運営の所在地を管轄する裁判所を第一審の専属的合意管轄裁判所とします。</p>
+
+<h2>11. 本規約の変更</h2>
+<p>運営は、本規約を変更することがあります。重要な変更がある場合は、アプリ内でお知らせします。変更後も本アプリの利用を継続した場合、変更後の規約に同意したものとみなされます。</p>
+
+<h2>お問い合わせ先</h2>
+<p>本規約に関するご質問は、<a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a> までご連絡ください。</p>
+</body>
+</html>
+`;
 }
 
 // Kept in sync by hand with PrivacyPolicyView's body text in
@@ -136,6 +220,15 @@ export function handleLegal(url) {
         // readable without it, but unstyled. No script of any kind runs on
         // this static, un-templated page, so allowing inline styles alone
         // (nothing else) keeps the same protection against injected scripts.
+        "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+      }),
+    });
+  }
+  if (url.pathname === "/terms") {
+    return new Response(termsOfUseHTML(), {
+      status: 200,
+      headers: securityHeaders({
+        "content-type": "text/html; charset=utf-8",
         "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
       }),
     });

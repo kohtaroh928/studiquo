@@ -4,6 +4,8 @@ import SwiftUI
 struct SubscriptionPlansView: View {
     @EnvironmentObject private var store: SubscriptionStore
     @Environment(\.dismiss) private var dismiss
+    @State private var showsTermsOfUse = false
+    @State private var showsPrivacyPolicy = false
 
     var body: some View {
         NavigationStack {
@@ -24,6 +26,16 @@ struct SubscriptionPlansView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
+
+                    // App Store Review Guideline 3.1.2 requires an
+                    // auto-renewable subscription's purchase screen to link
+                    // to both the Terms of Use (EULA) and Privacy Policy,
+                    // not just list them elsewhere in the app.
+                    HStack(spacing: 16) {
+                        Button("利用規約") { showsTermsOfUse = true }
+                        Button("プライバシーポリシー") { showsPrivacyPolicy = true }
+                    }
+                    .font(.footnote)
                 }
                 .padding()
             }
@@ -45,6 +57,12 @@ struct SubscriptionPlansView: View {
                 Button("OK") { store.message = nil }
             } message: {
                 Text(store.message ?? "")
+            }
+            .sheet(isPresented: $showsTermsOfUse) {
+                TermsOfUseView()
+            }
+            .sheet(isPresented: $showsPrivacyPolicy) {
+                PrivacyPolicyView()
             }
             .task { await store.refresh() }
         }
