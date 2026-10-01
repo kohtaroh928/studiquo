@@ -7,6 +7,9 @@ packages:
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS
     from: 7.1.0
+  RevenueCat:
+    url: https://github.com/RevenueCat/purchases-ios
+    from: 5.0.0
 targets:
   studiquo:
     type: application
@@ -19,10 +22,12 @@ targets:
       properties:
         com.apple.developer.applesignin:
           - Default
-        com.apple.developer.icloud-services:
-          - CloudKit
+        com.apple.developer.associated-domains:
+          - applinks:studiquo-mcp.studiquo-mcp-server.workers.dev
         com.apple.developer.icloud-container-identifiers:
           - iCloud.com.yabuko.studiquo
+        com.apple.developer.icloud-services:
+          - CloudKit
     # Sign in with Apple's SystemCapabilities entry can't be expressed here:
     # xcodegen 2.46.0 mis-serializes a 2-level-nested `attributes` dict into a
     # single string, corrupting project.pbxproj. It must be re-added by hand
@@ -39,6 +44,8 @@ targets:
         product: GoogleSignIn
       - package: GoogleSignIn
         product: GoogleSignInSwift
+      - package: RevenueCat
+        product: RevenueCat
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "2"

@@ -110,6 +110,16 @@ struct StudiquoApp: App {
     @StateObject private var startup = StartupStoreLoader(openStore: makeStudiquoModelContainer)
     @AppStorage("appLanguage") private var appLanguage = "system"
     @StateObject private var cloudSyncStatus = CloudKitSyncStatus()
+    @StateObject private var subscriptionStore = SubscriptionStore()
+
+    /// Every other `SubscriptionStore` call (purchase, restore, the model
+    /// picker's plan check, the storage-limit check) assumes RevenueCat is
+    /// already configured — this has to run before `subscriptionStore`'s own
+    /// `init()` above makes its first `Purchases.shared` call, so it can't
+    /// simply live inside `body`'s `.task` alongside `startup.start()`.
+    init() {
+        SubscriptionStore.configureSDK()
+    }
 
     private var resolvedLocale: Locale {
         switch appLanguage {
@@ -155,6 +165,7 @@ struct StudiquoApp: App {
         if case .ready(let modelContainer) = startup.state {
             AccountGateView()
                 .modelContainer(modelContainer)
+                .environmentObject(subscriptionStore)
                 .tint(Color(red: 0.16, green: 0.33, blue: 0.63))
                 .environment(\.locale, resolvedLocale)
                 .overlay(alignment: .top) {
@@ -226,6 +237,7 @@ private struct StartupUITestRoot: View {
         return try ModelContainer(for: studiquoSchema, configurations: configuration)
     }
     @StateObject private var authentication = AuthenticationStore(service: "com.yabuko.studiquo.startup-ui-tests")
+    @StateObject private var subscriptionStore = SubscriptionStore()
 
     init() {
         AIDataDisclosure.acknowledge()
@@ -239,6 +251,7 @@ private struct StartupUITestRoot: View {
                 ContentView()
                     .modelContainer(container)
                     .environmentObject(authentication)
+                    .environmentObject(subscriptionStore)
             } else {
                 LaunchLoadingView(state: loader.state, retry: loader.start)
             }
@@ -259,12 +272,14 @@ private struct LibraryDropUITestRoot: View {
         ContentView()
             .modelContainer(LibraryDropUITestStore.container)
             .environmentObject(LibraryDropUITestStore.authentication)
+            .environmentObject(LibraryDropUITestStore.subscriptionStore)
     }
 }
 
 @MainActor
 private enum LibraryDropUITestStore {
     static let authentication = AuthenticationStore(service: "com.yabuko.studiquo.library-drop-ui-tests")
+    static let subscriptionStore = SubscriptionStore()
 
     static let container: ModelContainer = {
         let arguments = ProcessInfo.processInfo.arguments
@@ -346,6 +361,7 @@ private enum LibraryDropUITestStore {
 /// once something is already open.
 private struct TabPickerCreateUITestRoot: View {
     @StateObject private var authentication = AuthenticationStore(service: "com.yabuko.studiquo.tab-picker-create-ui-tests")
+    @StateObject private var subscriptionStore = SubscriptionStore()
 
     init() {
         AIDataDisclosure.acknowledge()
@@ -358,6 +374,7 @@ private struct TabPickerCreateUITestRoot: View {
         ContentView()
             .modelContainer(TabPickerCreateUITestStore.container)
             .environmentObject(authentication)
+            .environmentObject(subscriptionStore)
     }
 }
 

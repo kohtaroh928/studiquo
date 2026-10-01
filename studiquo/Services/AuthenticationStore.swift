@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import RevenueCat
 import Security
 import AuthenticationServices
 
@@ -130,6 +131,7 @@ final class AuthenticationStore: ObservableObject {
             MCPCloudCredentials.save(token)
             persistOAuthIdentity(provider: "email", subject: normalized, email: normalized)
             createSession()
+            syncRevenueCatIdentity(provider: "email", subject: normalized)
             errorMessage = ""
             state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
@@ -149,6 +151,11 @@ final class AuthenticationStore: ObservableObject {
         state = .needsLogin
         // Best-effort and non-blocking: local sign-out must not wait on the network.
         Task { await MCPCloudCredentials.revoke() }
+        // Detaches this device from whichever account it was just logged in
+        // as — the next sign-in calls `logIn(_:)` again (possibly as a
+        // different person on a shared device), and RevenueCat must not
+        // keep attributing their purchases to whoever signed out.
+        Task { _ = try? await Purchases.shared.logOut() }
     }
 
     /// A definitive 401 from any authenticated server call (see
@@ -203,6 +210,7 @@ final class AuthenticationStore: ObservableObject {
             persistOAuthIdentity(provider: "email", subject: pending.email, email: pending.email)
             pendingSignUp = nil
             createSession()
+            syncRevenueCatIdentity(provider: "email", subject: pending.email)
             errorMessage = ""
             state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
@@ -251,6 +259,7 @@ final class AuthenticationStore: ObservableObject {
                 throw PasskeyError.invalidResponse
             }
             createSession()
+            syncRevenueCatIdentity(provider: "email", subject: identity.email)
             errorMessage = ""
             state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
@@ -285,6 +294,7 @@ final class AuthenticationStore: ObservableObject {
                 // what an earlier one already learned.
                 persistOAuthIdentity(provider: "apple", subject: identity.subject, email: identity.email)
                 createSession()
+                syncRevenueCatIdentity(provider: "apple", subject: identity.subject)
                 errorMessage = ""
                 state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
                 return true
@@ -309,6 +319,7 @@ final class AuthenticationStore: ObservableObject {
             // screen on every cold launch despite a valid session.
             persistOAuthIdentity(provider: "google", subject: identity.subject, email: identity.email)
             createSession()
+            syncRevenueCatIdentity(provider: "google", subject: identity.subject)
             errorMessage = ""
             state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
@@ -335,6 +346,27 @@ final class AuthenticationStore: ObservableObject {
     private func createSession() {
         guard let expiresAt = Calendar.current.date(byAdding: .month, value: 6, to: Date()) else { return }
         _ = save(SessionRecord(token: UUID().uuidString, expiresAt: expiresAt), account: sessionAccount)
+    }
+
+    /// Logs this device into RevenueCat as the same canonical identity the
+    /// server computes as `session.sub` for `mintSession`'s `identityKey`
+    /// (see app.js's handleAppleSignIn/handleGoogleSignIn/local email+passkey
+    /// paths) — without this, the RevenueCat webhook's `app_user_id` and this
+    /// account's `sub` never match, and `getPlan` in entitlements.js can
+    /// never see this account actually has an active purchase.
+    ///
+    /// Fire-and-forget: a failed RevenueCat login must never block sign-in
+    /// itself, and there's no useful recovery to show the student for it —
+    /// the next successful RevenueCat call (e.g. opening プラン) re-sends
+    /// whichever `app_user_id` is currently logged in.
+    private func syncRevenueCatIdentity(provider: String, subject: String) {
+        let canonicalIdentity: String
+        switch provider {
+        case "google": canonicalIdentity = "google:\(subject)"
+        case "email": canonicalIdentity = "email:\(subject)"
+        default: canonicalIdentity = subject // Apple: the bare JWT `sub`, unprefixed.
+        }
+        Task { _ = try? await Purchases.shared.logIn(canonicalIdentity) }
     }
 
     private func passkeyIdentity() -> PasskeyIdentity? { load(account: passkeyIdentityAccount) }
