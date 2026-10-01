@@ -1,4 +1,5 @@
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { sendPush } from "./push.js";
 
 // A full block snapshot for a modest document (well past what any
 // reasonably-sized study document needs) plus JSON overhead — same
@@ -79,7 +80,7 @@ async function roomResponse(promise) {
  * does (chat's early registration exists only for its own pre-token
  * sign-in exchange endpoints, which this has no equivalent of).
  */
-export async function handleDocumentCollab(url, request, env, key) {
+export async function handleDocumentCollab(url, request, env, key, ctx) {
   if (!url.pathname.startsWith("/api/document/")) return null;
 
   const initMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/init$/.exec(url.pathname);
@@ -108,7 +109,17 @@ export async function handleDocumentCollab(url, request, env, key) {
     const userKey = await env.STUDIQUO_DATA.get(`chat:code:${code}`);
     if (!userKey) return json({ error: "No user found for that code." }, 404);
     try {
-      return json(await env.DOCUMENT_ROOM.getByName(inviteMatch[1]).invite(key, userKey, role));
+      const result = await env.DOCUMENT_ROOM.getByName(inviteMatch[1]).invite(key, userKey, role);
+      const inviterName = await friendDisplayName(env, key);
+      const delivery = sendPush(env, userKey, {
+        category: "shareInvite",
+        title: "共有招待",
+        body: `${inviterName || "フレンド"}さんからノートの共有招待が届きました。`,
+        data: { route: "shareInvite", roomID: inviteMatch[1] },
+      });
+      if (ctx?.waitUntil) ctx.waitUntil(delivery);
+      else await delivery;
+      return json(result);
     } catch (error) {
       const forbidden = roomForbiddenResponse(error);
       if (forbidden) return forbidden;

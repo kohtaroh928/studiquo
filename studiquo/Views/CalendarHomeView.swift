@@ -651,14 +651,15 @@ enum UniversityCalendar {
     private static let notificationIdentifierPrefix = "university-deadline-"
 
     static func requestNotificationPermission() async {
-        let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-        guard settings.authorizationStatus == .notDetermined else { return }
-        _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+        await PushNotificationRegistration.requestAuthorizationInContext()
     }
 
     static func scheduleDeadlineNotifications(for items: [Event], university: String) async {
         let center = UNUserNotificationCenter.current()
+        guard AppNotificationPreferences.isEnabled(.calendarDeadline) else {
+            cancelAllDeadlineNotifications()
+            return
+        }
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
 
@@ -683,6 +684,8 @@ enum UniversityCalendar {
                 ? item.title
                 : L("\(item.title)・\(item.endDate.formatted(date: .omitted, time: .shortened))まで")
             content.sound = .default
+            content.categoryIdentifier = AppNotificationKind.calendarDeadline.categoryIdentifier
+            content.userInfo = ["route": AppNotificationKind.calendarDeadline.rawValue]
 
             let trigger = UNCalendarNotificationTrigger(
                 dateMatching: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate),
@@ -1916,6 +1919,8 @@ enum EventReminderNotifications {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [identifier])
 
+        guard AppNotificationPreferences.isEnabled(.calendarDeadline) else { return }
+
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
 
@@ -1941,6 +1946,8 @@ enum EventReminderNotifications {
         content.title = event.title
         content.body = calendarEventReminderBody(for: event)
         content.sound = .default
+        content.categoryIdentifier = AppNotificationKind.calendarDeadline.categoryIdentifier
+        content.userInfo = ["route": AppNotificationKind.calendarDeadline.rawValue]
 
         let trigger = UNCalendarNotificationTrigger(
             dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate),

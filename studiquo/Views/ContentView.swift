@@ -3,6 +3,7 @@ import SwiftData
 import UniformTypeIdentifiers
 import UIKit
 import Security
+import UserNotifications
 
 private struct MCPSnapshot: Codable {
     let version: Int
@@ -768,11 +769,26 @@ private struct AppSettingsView: View {
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = true
     @State private var showsAIDataDisclosure = false
     @State private var showsPrivacyPolicy = false
+    @State private var showsSubscriptionPlans = false
+    @State private var showsAccountDeletion = false
+    @EnvironmentObject private var authentication: AuthenticationStore
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Button {
+                        showsSubscriptionPlans = true
+                    } label: {
+                        Label("プランとお支払い", systemImage: "creditcard")
+                    }
+                } header: {
+                    Text("Studiquoプラン")
+                } footer: {
+                    Text("Plus・Proへの変更や購入履歴の復元ができます。")
+                }
+
                 Section {
                     Picker("言語", selection: $appLanguage) {
                         ForEach(AppLanguage.allCases) { language in
@@ -793,6 +809,18 @@ private struct AppSettingsView: View {
                     Text("学習記録")
                 } footer: {
                     Text("ノート・暗記帳・文書・スライドを開いている間の時間だけを記録します。オフにすると勉強時間と連続学習日数の記録を止めます。")
+                }
+
+                Section {
+                    NavigationLink {
+                        NotificationSettingsView()
+                    } label: {
+                        Label("通知", systemImage: "bell.badge")
+                    }
+                } header: {
+                    Text("通知")
+                } footer: {
+                    Text("予定、チャット、招待、復習、AI処理などの通知を個別に設定できます。")
                 }
 
                 Section {
@@ -819,6 +847,14 @@ private struct AppSettingsView: View {
                 } footer: {
                     Text("AIトーク・添削・翌日復習を使うと、質問文やノートの内容、答案の写真がGoogleのGeminiに送信されます。詳しくはこちらをご確認ください。")
                 }
+
+                Section {
+                    Button(AccountDeletionUI.accountButtonTitle, role: .destructive) { showsAccountDeletion = true }
+                } header: {
+                    Text("アカウント")
+                } footer: {
+                    Text("すべての資料、フレンド、グループ、チャット履歴、ログイン情報が完全に削除されます。")
+                }
             }
             .navigationTitle("設定")
             .navigationBarTitleDisplayMode(.inline)
@@ -828,11 +864,242 @@ private struct AppSettingsView: View {
             .sheet(isPresented: $showsPrivacyPolicy) {
                 PrivacyPolicyView()
             }
+            .sheet(isPresented: $showsSubscriptionPlans) {
+                SubscriptionPlansView()
+            }
+            .sheet(isPresented: $showsAccountDeletion) {
+                DeleteAccountView()
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完了") { dismiss() }
                 }
             }
+        }
+    }
+}
+
+private struct NotificationSettingsView: View {
+    @Query(sort: \CalendarEvent.startDate) private var calendarEvents: [CalendarEvent]
+    @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
+    @Query(sort: \StudyActivity.startedAt, order: .reverse) private var studyActivities: [StudyActivity]
+    @AppStorage(AppNotificationPreferences.masterDefaultsKey) private var masterEnabled = true
+    @State private var authorizationStatus: UNAuthorizationStatus = .notDetermined
+
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    Label("システム通知", systemImage: authorizationStatusIcon)
+                    Spacer()
+                    Text(authorizationStatusText)
+                        .foregroundStyle(authorizationStatus == .authorized ? .green : .secondary)
+                }
+                if authorizationStatus == .denied {
+                    Button("端末の通知設定を開く") { openSystemSettings() }
+                } else if authorizationStatus == .notDetermined {
+                    Button("通知を許可する") { requestPermission() }
+                }
+                Toggle("すべての通知", isOn: $masterEnabled)
+                    .onChange(of: masterEnabled) { _, enabled in
+                        masterChanged(enabled)
+                    }
+            } footer: {
+                Text("端末側で通知が許可されていない場合、個別設定がオンでもバナーは表示されません。")
+            }
+
+            Section("予定・学習") {
+                NotificationPreferenceToggle(kind: .calendarDeadline, masterEnabled: masterEnabled, onChange: preferenceChanged)
+                NotificationPreferenceToggle(kind: .flashcardReview, masterEnabled: masterEnabled, onChange: preferenceChanged)
+                NotificationPreferenceToggle(kind: .studyStreak, masterEnabled: masterEnabled, onChange: preferenceChanged)
+            }
+
+            Section("コミュニケーション") {
+                NotificationPreferenceToggle(kind: .friendMessage, masterEnabled: masterEnabled, onChange: preferenceChanged)
+                NotificationPreferenceToggle(kind: .friendRequest, masterEnabled: masterEnabled, onChange: preferenceChanged)
+                NotificationPreferenceToggle(kind: .groupInvite, masterEnabled: masterEnabled, onChange: preferenceChanged)
+                NotificationPreferenceToggle(kind: .shareInvite, masterEnabled: masterEnabled, onChange: preferenceChanged)
+            }
+
+            Section("AI・セキュリティ") {
+                NotificationPreferenceToggle(kind: .aiTaskComplete, masterEnabled: masterEnabled, onChange: preferenceChanged)
+                NotificationPreferenceToggle(kind: .newDeviceLogin, masterEnabled: masterEnabled, onChange: preferenceChanged)
+            }
+        }
+        .navigationTitle("通知")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await refreshAuthorizationStatus()
+            AppNotificationPreferences.synchronizeRemoteDevice()
+        }
+    }
+
+    private var authorizationStatusText: String {
+        switch authorizationStatus {
+        case .authorized, .provisional, .ephemeral: "許可済み"
+        case .denied: "許可されていません"
+        case .notDetermined: "未設定"
+        @unknown default: "不明"
+        }
+    }
+
+    private var authorizationStatusIcon: String {
+        switch authorizationStatus {
+        case .authorized, .provisional, .ephemeral: "checkmark.circle.fill"
+        case .denied: "exclamationmark.triangle.fill"
+        default: "bell"
+        }
+    }
+
+    private func requestPermission() {
+        Task {
+            await PushNotificationRegistration.requestAuthorizationInContext()
+            await refreshAuthorizationStatus()
+            await rescheduleAllLocalNotifications()
+            AppNotificationPreferences.synchronizeRemoteDevice()
+        }
+    }
+
+    private func masterChanged(_ enabled: Bool) {
+        if !enabled {
+            AppNotificationKind.allCases.forEach(AppNotificationPreferences.cancelPending)
+        }
+        AppNotificationPreferences.synchronizeRemoteDevice()
+        guard enabled else { return }
+        requestPermission()
+    }
+
+    private func preferenceChanged(_ kind: AppNotificationKind, _ enabled: Bool) {
+        if !enabled { AppNotificationPreferences.cancelPending(for: kind) }
+        AppNotificationPreferences.synchronizeRemoteDevice()
+        guard enabled, masterEnabled else { return }
+        Task {
+            await PushNotificationRegistration.requestAuthorizationInContext()
+            await refreshAuthorizationStatus()
+            await rescheduleLocalNotification(for: kind)
+        }
+    }
+
+    @MainActor
+    private func rescheduleAllLocalNotifications() async {
+        await rescheduleLocalNotification(for: .calendarDeadline)
+        await rescheduleLocalNotification(for: .flashcardReview)
+        await rescheduleLocalNotification(for: .studyStreak)
+    }
+
+    @MainActor
+    private func rescheduleLocalNotification(for kind: AppNotificationKind) async {
+        switch kind {
+        case .calendarDeadline:
+            for event in calendarEvents { await EventReminderNotifications.schedule(for: event) }
+        case .flashcardReview:
+            await FlashcardReviewNotifications.reschedule(decks: flashcardDecks)
+        case .studyStreak:
+            await StudyStreakNotifications.reschedule(activities: studyActivities)
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    private func refreshAuthorizationStatus() async {
+        authorizationStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+}
+
+private struct NotificationPreferenceToggle: View {
+    let kind: AppNotificationKind
+    let masterEnabled: Bool
+    let onChange: (AppNotificationKind, Bool) -> Void
+    @AppStorage private var enabled: Bool
+
+    init(
+        kind: AppNotificationKind,
+        masterEnabled: Bool,
+        onChange: @escaping (AppNotificationKind, Bool) -> Void
+    ) {
+        self.kind = kind
+        self.masterEnabled = masterEnabled
+        self.onChange = onChange
+        _enabled = AppStorage(wrappedValue: true, kind.defaultsKey)
+    }
+
+    var body: some View {
+        Toggle(kind.title, isOn: $enabled)
+            .disabled(!masterEnabled)
+            .onChange(of: enabled) { _, value in onChange(kind, value) }
+    }
+}
+
+private struct DeleteAccountView: View {
+    @EnvironmentObject private var authentication: AuthenticationStore
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmation = ""
+    @State private var localError = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("この操作は元に戻せません。ノート、暗記帳、文書、スライド、学習履歴、フレンド、グループ、チャット、プロフィール、すべてのログイン方法を削除します。")
+                        .foregroundStyle(.red)
+                }
+                Section("確認") {
+                    Text("確認のため「削除」と入力してください。")
+                    TextField(AccountDeletionUI.requiredConfirmation, text: $confirmation)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                Section {
+                    Link("サブスクリプションを確認・解約", destination: AccountDeletionUI.subscriptionManagementURL)
+                } footer: {
+                    Text("アカウントを削除しても、App Storeのサブスクリプションは自動では解約されません。")
+                }
+                if !localError.isEmpty || !authentication.errorMessage.isEmpty {
+                    Section {
+                        Text(localError.isEmpty ? authentication.errorMessage : localError)
+                            .foregroundStyle(.red)
+                    }
+                }
+                Section {
+                    Button("完全に削除", role: .destructive) {
+                        Task { await deleteEverything() }
+                    }
+                    .disabled(!AccountDeletionUI.canSubmit(confirmation: confirmation, isBusy: authentication.isAccountDeletionBusy))
+                }
+            }
+            .navigationTitle("アカウントを削除")
+            .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(!AccountDeletionUI.canDismiss(isBusy: authentication.isAccountDeletionBusy))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("キャンセル") { dismiss() }
+                        .disabled(authentication.isAccountDeletionBusy)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func deleteEverything() async {
+        guard confirmation == AccountDeletionUI.requiredConfirmation else { return }
+        let result = await AccountDeletionWorkflow.run(
+            authentication: authentication,
+            eraseLocalData: { try AccountDataEraser.eraseAll(from: modelContext) }
+        )
+        switch result {
+        case .success:
+            dismiss()
+        case .serverFailure:
+            break
+        case .localFailure(let message):
+            localError = message
         }
     }
 }
@@ -981,6 +1248,18 @@ private struct AIReviewIntegration: ViewModifier {
             .sheet(item: $presentedItem) { item in
                 AIReviewDetailView(item: item)
             }
+    }
+}
+
+/// Keeps notification-center observation out of ContentView's already large
+/// generic body expression, which otherwise becomes expensive to type-check.
+private struct AppNotificationRoutingModifier: ViewModifier {
+    let route: ([AnyHashable: Any]?) -> Void
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .studiquoNotificationRoute)) { notification in
+            route(notification.userInfo)
+        }
     }
 }
 
@@ -1147,7 +1426,7 @@ private struct PrivacyPolicyView: View {
                     }
 
                     policySection(title: "データの削除について") {
-                        Text("Google連携はアプリ内からいつでも解除できます。同期したGoogleカレンダーの予定およびその他のアカウントデータの削除をご希望の場合は、お問い合わせ先までご連絡ください。")
+                        Text("設定からアカウントを削除できます。削除すると、端末およびクラウド上の学習資料、プロフィール、フレンド・グループ情報、ログイン情報など、アカウントに関連するデータが削除されます。他の利用者との会話を維持するため、その利用者側に残る過去のメッセージは「削除済みユーザー」の発言として匿名化される場合があります。App Storeのサブスクリプションはアカウント削除だけでは解約されないため、App Storeで別途管理してください。")
                             .font(.subheadline)
                     }
 
@@ -2041,6 +2320,7 @@ struct ContentView: View {
                 openNotebookTab(notebook)
             }
         }
+        .modifier(AppNotificationRoutingModifier(route: routeNotification))
         .onReceive(NotificationCenter.default.publisher(for: .studiquoOpenAIChatTab)) { notification in
             guard let tab = notification.object as? AIChatTabInfo else { return }
             if let index = openAIChatTabs.firstIndex(where: { $0.id == tab.id }) {
@@ -2081,7 +2361,10 @@ struct ContentView: View {
             refreshStudyNotifications()
         }
         .onChange(of: calendarEvents.count) { _, _ in refreshStudyNotifications() }
-        .onChange(of: studyActivities.count) { _, _ in refreshStudyNotifications() }
+        .onChange(of: studyActivities.count) { _, _ in
+            refreshStudyNotifications()
+            Task { await StudyStreakNotifications.reschedule(activities: studyActivities) }
+        }
         .modifier(AIReviewIntegration(count: aiReviewItems.count, presentedItem: $presentedAIReviewItem, onCountChange: refreshStudyNotifications))
         .modifier(AIDataDisclosureGate())
         .task {
@@ -2105,6 +2388,10 @@ struct ContentView: View {
             StudyTimeTracker.shared.setStudying(isStudySurfaceOpen)
             friendStore.handle(scenePhase: scenePhase)
             if scenePhase == .active { Task { await UsageEventService.ping() } }
+            Task {
+                await FlashcardReviewNotifications.reschedule(decks: flashcardDecks)
+                await StudyStreakNotifications.reschedule(activities: studyActivities)
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             StudyTimeTracker.shared.handle(scenePhase: phase)
@@ -2549,6 +2836,27 @@ struct ContentView: View {
         libraryMode = .documents
         searchText = ""
         columnVisibility = .detailOnly
+    }
+
+    private func routeNotification(_ userInfo: [AnyHashable: Any]?) {
+        guard let raw = userInfo?["route"] as? String,
+              let kind = AppNotificationKind(rawValue: raw) else { return }
+        returnToHome()
+        switch kind {
+        case .calendarDeadline, .studyStreak:
+            homeSection = .calendar
+        case .friendMessage, .friendRequest, .groupInvite, .shareInvite:
+            homeSection = .friends
+        case .flashcardReview:
+            libraryMode = .studyCards
+        case .newDeviceLogin:
+            showsAppSettings = true
+        case .aiTaskComplete:
+            // AI tabs are restored by their normal tab-sync path. Returning
+            // home keeps the completed answer discoverable without guessing
+            // at a SwiftData identifier from an external payload.
+            break
+        }
     }
 
     private func notebookID(_ notebook: Notebook) -> String {
@@ -5453,9 +5761,13 @@ struct ContentView: View {
                 }
             }
             .modifier(DocumentLibraryRowStyle(enabled: libraryMode == .documents))
-            .onDrag {
-                return NSItemProvider(object: "notebook:\(notebookID(notebook))" as NSString)
-            }
+            // Matches the modern drag API every sibling row (documentRows,
+            // slideRows, …) already uses, and what dragPayload(for:)'s own
+            // doc comment already claimed this row did. This alone does not
+            // explain testListRowDropsIntoFolder's failure — see that test
+            // for the still-open investigation; keeping this change since
+            // it's a real inconsistency fix regardless.
+            .draggable(dragPayload(for: .notebook(notebook)))
             .overlay(alignment: .trailing) { entryDropBadge(HomeEntry.notebook(notebook).id).padding(.trailing, 12) }
             .dropDestination(
                 for: String.self,

@@ -64,10 +64,11 @@ enum IssueReportService {
         request.timeoutInterval = 20
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let osVersion = await UIDevice.current.systemVersion
         let body = SubmitBody(
             description: description,
             appVersion: appVersion,
-            osVersion: UIDevice.current.systemVersion,
+            osVersion: osVersion,
             deviceModel: deviceModel,
             language: language,
             screenshot: screenshot.map { ScreenshotPayload(contentType: $0.contentType, data: $0.data.base64EncodedString()) }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mintSession, hasRealSession } from "./session.js";
+import { mintSession, hasRealSession, realSession } from "./session.js";
 
 function environment() {
   const values = new Map();
@@ -38,7 +38,7 @@ test("mintSession refuses a randomValue that would make the token too short", as
   assert.equal(token, null);
 });
 
-test("two different identities minting a session each get their own, independently valid token", async () => {
+test("two unlinked identities mint their own independently valid sessions", async () => {
   const env = environment();
   const a = await mintSession(env, "apple-sub-1", "a".repeat(40));
   const b = await mintSession(env, "apple-sub-2", "b".repeat(40));
@@ -46,4 +46,15 @@ test("two different identities minting a session each get their own, independent
   assert.equal(await hasRealSession(env, a), true);
   assert.equal(await hasRealSession(env, b), true);
   assert.notEqual(a, b);
+});
+
+test("an already-issued provider session resolves to the shared canonical account after linking", async () => {
+  const env = environment();
+  const token = await mintSession(env, "google:google-sub-1", "g".repeat(40));
+  await env.STUDIQUO_DATA.put("identity-canonical:google:google-sub-1", "apple-sub-1");
+
+  const session = await realSession(env, token);
+
+  assert.equal(session.sub, "apple-sub-1");
+  assert.equal(session.originalSub, "google:google-sub-1");
 });

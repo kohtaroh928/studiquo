@@ -1,5 +1,6 @@
 import { checkRateLimit } from "./rate-limit.js";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { sendPush } from "./push.js";
 
 /**
  * Group chat: multiple people sharing one ChatRoom (kind: "group" — see
@@ -28,6 +29,8 @@ const FRIEND_CODE_PATTERN = /^[A-Z0-9]{6,32}$/;
 // base64 encoding plus the JSON wrapper around it.
 const MAX_AVATAR_BYTES = 300_000;
 const MAX_AVATAR_UPLOAD_BODY = 450_000;
+const GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const GROUP_CODE_LENGTH = 10;
 
 function parseGroupName(body) {
   const name = String(body?.name ?? "").trim().slice(0, MAX_GROUP_NAME_LENGTH);
@@ -57,6 +60,45 @@ async function mintRoomID() {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function mintGroupCode() {
+  const bytes = new Uint8Array(GROUP_CODE_LENGTH);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, byte => GROUP_CODE_ALPHABET[byte % GROUP_CODE_ALPHABET.length]).join("");
+}
+
+// Public group metadata is deliberately separate from the internal 64-hex
+// room id. Existing groups predate this record, so the first list/detail
+// request lazily gives them a stable, human-shareable code too.
+async function ensureGroupMetadata(env, roomID) {
+  const metadataKey = `chat:group-meta:${roomID}`;
+  const existing = await env.STUDIQUO_DATA.get(metadataKey, "json");
+  if (existing?.code) return existing;
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const code = mintGroupCode();
+    const ownerKey = `chat:group-code:${code}`;
+    const owner = await env.STUDIQUO_DATA.get(ownerKey);
+    if (owner && owner !== roomID) continue;
+    const avatar = await env.STUDIQUO_DATA.get(`chat:group-avatar:${roomID}`, "json");
+    const metadata = { code, avatarUpdatedAt: avatar?.updatedAt ?? null };
+    await env.STUDIQUO_DATA.put(ownerKey, roomID);
+    await env.STUDIQUO_DATA.put(metadataKey, JSON.stringify(metadata));
+    return metadata;
+  }
+  throw new Error("Unable to allocate a group code.");
+}
+
+async function toClientGroup(env, roomID, info) {
+  const metadata = await ensureGroupMetadata(env, roomID);
+  return {
+    roomID,
+    code: metadata.code,
+    name: info.name,
+    members: toClientMembers(info.members),
+    avatarUpdatedAt: metadata.avatarUpdatedAt ?? null,
+  };
 }
 
 // ChatRoom throws plain Error(...) for every failure case — translated here
@@ -92,7 +134,7 @@ function toClientMembers(members) {
   return members.map(({ code, name }) => ({ code, name }));
 }
 
-export async function handleGroupRoutes(url, request, env, key) {
+export async function handleGroupRoutes(url, request, env, key, ctx) {
   if (!url.pathname.startsWith("/api/chat/groups") && url.pathname !== "/api/chat/group-invites") {
     return null;
   }
@@ -112,7 +154,7 @@ export async function handleGroupRoutes(url, request, env, key) {
     const groups = (await Promise.all(entries.map(async entry => {
       try {
         const info = await env.CHAT_ROOM.getByName(entry.roomID).groupInfo(key);
-        return { roomID: entry.roomID, name: info.name, members: toClientMembers(info.members) };
+        return await toClientGroup(env, entry.roomID, info);
       } catch (error) {
         if (error instanceof Error && error.message === "Forbidden") return null;
         throw error;
@@ -147,12 +189,27 @@ export async function handleGroupRoutes(url, request, env, key) {
       roomID, [key], { kind: "group", name, creatorCode: user.code, creatorName: user.name },
     );
     await env.USER_REGISTRY.getByName(key).addGroupForCreator(key, roomID);
+    const metadata = await ensureGroupMetadata(env, roomID);
     await Promise.all(memberCodes.map(async code => {
       const otherKey = await env.STUDIQUO_DATA.get(`chat:code:${code}`);
       if (!otherKey) return;
       await env.USER_REGISTRY.getByName(otherKey).addIncomingGroupInvite(otherKey, roomID, name, user.code, user.name);
+      const delivery = sendPush(env, otherKey, {
+        category: "groupInvite",
+        title: "グループ招待",
+        body: `${user.name}さんから「${name}」に招待されました。`,
+        data: { route: "groupInvite", roomID },
+      });
+      if (ctx?.waitUntil) ctx.waitUntil(delivery);
+      else await delivery;
     }));
-    return json({ roomID, name, members: [{ code: user.code, name: user.name }] }, 201);
+    return json({
+      roomID,
+      code: metadata.code,
+      name,
+      members: [{ code: user.code, name: user.name }],
+      avatarUpdatedAt: null,
+    }, 201);
   }
 
   const inviteMatch = /^\/api\/chat\/groups\/([a-f0-9]{64})\/invites$/.exec(url.pathname);
@@ -184,6 +241,16 @@ export async function handleGroupRoutes(url, request, env, key) {
     if (info.members.length > MAX_INVITED_MEMBERS) return json({ error: "This group is full." }, 400);
     const result = await env.USER_REGISTRY.getByName(otherKey)
       .addIncomingGroupInvite(otherKey, roomID, info.name, user.code, user.name);
+    if (result.status === "pending") {
+      const delivery = sendPush(env, otherKey, {
+        category: "groupInvite",
+        title: "グループ招待",
+        body: `${user.name}さんから「${info.name}」に招待されました。`,
+        data: { route: "groupInvite", roomID },
+      });
+      if (ctx?.waitUntil) ctx.waitUntil(delivery);
+      else await delivery;
+    }
     return json({ status: result.status });
   }
 
@@ -196,7 +263,7 @@ export async function handleGroupRoutes(url, request, env, key) {
       const user = await currentUser(env, key);
       await env.CHAT_ROOM.getByName(roomID).addParticipant(key, user?.code ?? null, user?.name ?? null);
       const info = await env.CHAT_ROOM.getByName(roomID).groupInfo(key);
-      return json({ roomID, name: info.name, members: toClientMembers(info.members) });
+      return json(await toClientGroup(env, roomID, info));
     } catch (error) {
       const response = groupErrorResponse(error);
       if (response) {
@@ -276,6 +343,11 @@ export async function handleGroupRoutes(url, request, env, key) {
     }
     const updatedAt = Date.now();
     await env.STUDIQUO_DATA.put(`chat:group-avatar:${roomID}`, JSON.stringify({ contentType, data, updatedAt }));
+    const metadata = await ensureGroupMetadata(env, roomID);
+    await env.STUDIQUO_DATA.put(
+      `chat:group-meta:${roomID}`,
+      JSON.stringify({ ...metadata, avatarUpdatedAt: updatedAt }),
+    );
     return json({ avatarUpdatedAt: updatedAt });
   }
 

@@ -36,6 +36,22 @@ enum KeychainCredentialFixtures {
         )
     }
 
+    static func seedAllAccountCredentials(service: String, email: String) {
+        seedSignedInDevice(service: service, email: email)
+        writeJSONItem(service: service, account: "passkey-identity", json: ["email": email], file: #filePath, line: #line)
+    }
+
+    static func containsItem(service: String, account: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
+    }
+
     private static func writeJSONItem(
         service: String, account: String, json: [String: Any],
         file: StaticString, line: UInt

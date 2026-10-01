@@ -2,6 +2,11 @@ import { DurableObject } from "cloudflare:workers";
 
 // One object per Studiquo account serializes submissions and acknowledgements.
 export class MCPInbox extends DurableObject {
+  async purge() {
+    this.ctx.storage.sql.exec("DELETE FROM items");
+    this.ctx.storage.sql.exec("DELETE FROM consumed_tokens");
+    return { deleted: true };
+  }
   constructor(ctx, env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;

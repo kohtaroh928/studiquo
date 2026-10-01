@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import worker from "./app.js";
+import { realSession } from "./session.js";
 
 // Regression coverage for "logging out doesn't revoke the cloud sync token":
 // once a token is revoked, it must be rejected everywhere it used to work,
@@ -39,6 +40,9 @@ function environment({ strictSessions = false } = {}) {
       },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
+      async list({ prefix }) {
+        return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
+      },
     },
     CHAT_ROOM: { getByName() { throw new Error("not used in these tests"); } },
     RATE_LIMIT_APPLE_AUTH: fakeCloudflareLimiter(),
@@ -165,6 +169,96 @@ test("POST /api/session/revoke is the endpoint logout calls, and it actually rev
 
   const reused = await worker.fetch(request("/api/actions", { token }), env, noopCtx);
   assert.equal(reused.status, 401);
+});
+
+test("DELETE /api/account removes every linked login identity and invalidates all sessions", async () => {
+  const env = environment({ strictSessions: true });
+  const appleToken = freshToken("da");
+  const googleToken = freshToken("dg");
+  const appleHash = sha256Hex(appleToken);
+  const googleHash = sha256Hex(googleToken);
+  const canonical = "apple-delete-sub";
+  await env.STUDIQUO_DATA.put(`session:${appleHash}`, JSON.stringify({ sub: canonical }));
+  await env.STUDIQUO_DATA.put(`session:${googleHash}`, JSON.stringify({ sub: "google:delete-sub" }));
+  await env.STUDIQUO_DATA.put("identity-canonical:apple-delete-sub", canonical);
+  await env.STUDIQUO_DATA.put("identity-canonical:google:delete-sub", canonical);
+  await env.STUDIQUO_DATA.put("email-account-owner:delete@example.com", canonical);
+  await env.STUDIQUO_DATA.put("email-accounts:delete@example.com", JSON.stringify([
+    { provider: "apple", sub: "apple-delete-sub" },
+    { provider: "google", sub: "delete-sub" },
+    { provider: "email", sub: "delete@example.com" },
+  ]));
+  await env.STUDIQUO_DATA.put("account:apple-delete-sub", "{}");
+  await env.STUDIQUO_DATA.put("account:google:delete-sub", "{}");
+  await env.STUDIQUO_DATA.put("account:local:delete@example.com", "{}");
+
+  const response = await worker.fetch(request("/api/account", {
+    method: "DELETE", token: googleToken, body: { confirmation: "DELETE" },
+  }), env, noopCtx);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { deleted: true });
+  for (const key of [
+    `session:${appleHash}`, `session:${googleHash}`,
+    "identity-canonical:apple-delete-sub", "identity-canonical:google:delete-sub",
+    "email-account-owner:delete@example.com", "email-accounts:delete@example.com",
+    "account:apple-delete-sub", "account:google:delete-sub", "account:local:delete@example.com",
+  ]) assert.equal(await env.STUDIQUO_DATA.get(key), null, `${key} should be deleted`);
+  assert.equal((await worker.fetch(request("/api/actions", { token: appleToken }), env, noopCtx)).status, 401);
+  assert.equal((await worker.fetch(request("/api/actions", { token: googleToken }), env, noopCtx)).status, 401);
+
+  const google = await makeGoogleSigningKey();
+  await seedGoogleJWKS(env, google.jwk);
+  const idToken = await signGoogleIdentityToken(google.privateKey, google.jwk.kid, {
+    sub: "delete-sub", email: "delete@example.com", emailVerified: true,
+  });
+  const recreated = await worker.fetch(request("/api/auth/google", {
+    method: "POST", body: { idToken, randomValue: "n".repeat(40) },
+  }), env, noopCtx);
+  assert.equal(recreated.status, 200);
+  const recreatedToken = (await recreated.json()).token;
+  assert.equal((await realSession(env, recreatedToken)).sub, "google:delete-sub");
+  assert.deepEqual(await env.STUDIQUO_DATA.get("email-accounts:delete@example.com", "json"), [
+    { provider: "google", sub: "delete-sub" },
+  ]);
+});
+
+test("7. confirmationが未指定またはDELETE以外なら何も削除されない", async () => {
+  const env = environment({ strictSessions: true });
+  const token = freshToken("dc");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "account-1" }));
+  const response = await worker.fetch(request("/api/account", {
+    method: "DELETE", token, body: { confirmation: "wrong" },
+  }), env, noopCtx);
+  assert.equal(response.status, 400);
+  assert.notEqual(await env.STUDIQUO_DATA.get(`session:${sha256Hex(token)}`), null);
+});
+
+test("8. 未認証・期限切れ・失効済みセッションではアカウントを削除できない", async () => {
+  const env = environment({ strictSessions: true });
+  const activeToken = freshToken("dx");
+  const activeKey = `session:${sha256Hex(activeToken)}`;
+  await env.STUDIQUO_DATA.put(activeKey, JSON.stringify({ sub: "protected-account" }));
+  await env.STUDIQUO_DATA.put("account:protected-account", "{}");
+
+  const unauthenticated = await worker.fetch(request("/api/account", {
+    method: "DELETE", body: { confirmation: "DELETE" },
+  }), env, noopCtx);
+  assert.equal(unauthenticated.status, 401);
+
+  const expiredToken = `${Math.floor(Date.now() / 1000) - 91 * 24 * 60 * 60}.${"e".repeat(40)}`;
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(expiredToken)}`, JSON.stringify({ sub: "protected-account" }));
+  const expired = await worker.fetch(request("/api/account", {
+    method: "DELETE", token: expiredToken, body: { confirmation: "DELETE" },
+  }), env, noopCtx);
+  assert.equal(expired.status, 401);
+
+  await revokeToken(env, activeToken);
+  const revoked = await worker.fetch(request("/api/account", {
+    method: "DELETE", token: activeToken, body: { confirmation: "DELETE" },
+  }), env, noopCtx);
+  assert.equal(revoked.status, 401);
+  assert.notEqual(await env.STUDIQUO_DATA.get("account:protected-account"), null);
 });
 
 test("a revoked token can no longer reach synced cloud data via /mcp, even though it could before", async () => {
@@ -443,7 +537,7 @@ test("POST /api/auth/google: allows up to the limit, then 429s, even against inv
 
 // MARK: - Cross-provider account linking by verified email
 
-test("signing in with Google using the same verified email as an existing Apple account links the two", async () => {
+test("Apple and Google sign-ins with the same verified email authenticate as one canonical account", async () => {
   const env = environment();
   const { privateKey: applePrivateKey, jwk: appleJWK } = await makeAppleSigningKey();
   await seedAppleJWKS(env, appleJWK);
@@ -453,11 +547,12 @@ test("signing in with Google using the same verified email as an existing Apple 
     isPrivateEmail: false,
     emailVerified: true,
   });
-  await worker.fetch(
+  const appleResponse = await worker.fetch(
     request("/api/auth/apple", { method: "POST", body: { identityToken: appleToken, randomValue: "a".repeat(40) } }),
     env,
     noopCtx
   );
+  const { token: appleSessionToken } = await appleResponse.json();
 
   const { privateKey: googlePrivateKey, jwk: googleJWK } = await makeGoogleSigningKey();
   await seedGoogleJWKS(env, googleJWK);
@@ -466,17 +561,24 @@ test("signing in with Google using the same verified email as an existing Apple 
     email: "person@example.com",
     emailVerified: true,
   });
-  await worker.fetch(
+  const googleResponse = await worker.fetch(
     request("/api/auth/google", { method: "POST", body: { idToken: googleToken, randomValue: "b".repeat(40) } }),
     env,
     noopCtx
   );
+  const { token: googleSessionToken } = await googleResponse.json();
 
   const linked = await env.STUDIQUO_DATA.get("email-accounts:person@example.com", "json");
   assert.deepEqual(linked, [
     { provider: "apple", sub: "000123.apple-sub.4567" },
     { provider: "google", sub: "108234567890123456789" },
   ]);
+  assert.equal((await realSession(env, appleSessionToken)).sub, "000123.apple-sub.4567");
+  assert.equal(
+    (await realSession(env, googleSessionToken)).sub,
+    "000123.apple-sub.4567",
+    "same verified email must authenticate both providers as one account"
+  );
 });
 
 test("an Apple sign-in whose token omits email_verified does not create a link", async () => {
@@ -610,7 +712,7 @@ test("POST /api/auth/email/send-code: allows up to the limit, then 429s", async 
   }
 });
 
-test("email verification, then a Google sign-in with the same address, links both under one email", async () => {
+test("local and Google sign-ins with the same verified email authenticate as one canonical account", async () => {
   const env = environment();
   const stub = stubResendCapturingCode();
   await worker.fetch(
@@ -619,7 +721,7 @@ test("email verification, then a Google sign-in with the same address, links bot
     noopCtx
   );
   stub.restore();
-  await worker.fetch(
+  const localResponse = await worker.fetch(
     request("/api/auth/email/confirm-code", {
       method: "POST",
       body: { email: "person@example.com", code: stub.code(), password: "correct-horse-battery", randomValue: "r".repeat(40) },
@@ -627,6 +729,7 @@ test("email verification, then a Google sign-in with the same address, links bot
     env,
     noopCtx
   );
+  const { token: localSessionToken } = await localResponse.json();
 
   const { privateKey, jwk } = await makeGoogleSigningKey();
   await seedGoogleJWKS(env, jwk);
@@ -635,17 +738,20 @@ test("email verification, then a Google sign-in with the same address, links bot
     email: "person@example.com",
     emailVerified: true,
   });
-  await worker.fetch(
+  const googleResponse = await worker.fetch(
     request("/api/auth/google", { method: "POST", body: { idToken, randomValue: "g".repeat(40) } }),
     env,
     noopCtx
   );
+  const { token: googleSessionToken } = await googleResponse.json();
 
   const linked = await env.STUDIQUO_DATA.get("email-accounts:person@example.com", "json");
   assert.deepEqual(linked, [
     { provider: "email", sub: "person@example.com" },
     { provider: "google", sub: "108234567890123456789" },
   ]);
+  assert.equal((await realSession(env, localSessionToken)).sub, "email:person@example.com");
+  assert.equal((await realSession(env, googleSessionToken)).sub, "email:person@example.com");
 });
 
 // MARK: - Local email/password login
@@ -665,6 +771,133 @@ async function createLocalAccount(env, email, password) {
   assert.equal(response.status, 200);
   return response.json();
 }
+
+async function signInAppleForTest(env, privateKey, kid, claims, randomValue = "a".repeat(40)) {
+  const identityToken = await signAppleIdentityToken(privateKey, kid, claims);
+  const response = await worker.fetch(
+    request("/api/auth/apple", { method: "POST", body: { identityToken, randomValue } }), env, noopCtx
+  );
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+async function signInGoogleForTest(env, privateKey, kid, claims, randomValue = "g".repeat(40)) {
+  const idToken = await signGoogleIdentityToken(privateKey, kid, claims);
+  const response = await worker.fetch(
+    request("/api/auth/google", { method: "POST", body: { idToken, randomValue } }), env, noopCtx
+  );
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+async function localLoginForTest(env, email, password, randomValue = "l".repeat(40)) {
+  const response = await worker.fetch(
+    request("/api/auth/local/login", { method: "POST", body: { email, password, randomValue } }), env, noopCtx
+  );
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+test("Google remains the canonical account when Apple and local sign-ins are added later", async () => {
+  const env = environment();
+  const google = await makeGoogleSigningKey();
+  const apple = await makeAppleSigningKey();
+  await seedGoogleJWKS(env, google.jwk);
+  await seedAppleJWKS(env, apple.jwk);
+
+  const googleLogin = await signInGoogleForTest(env, google.privateKey, google.jwk.kid, {
+    sub: "google-first", email: "person@example.com", emailVerified: true,
+  });
+  const appleLogin = await signInAppleForTest(env, apple.privateKey, apple.jwk.kid, {
+    sub: "apple-second", email: "person@example.com", isPrivateEmail: false, emailVerified: true,
+  });
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  const localLogin = await localLoginForTest(env, "person@example.com", "correct-horse-battery");
+
+  for (const login of [googleLogin, appleLogin, localLogin]) {
+    assert.equal((await realSession(env, login.token)).sub, "google:google-first");
+  }
+});
+
+test("Apple, Google, and local sign-ins with one verified email share one account", async () => {
+  const env = environment();
+  const apple = await makeAppleSigningKey();
+  const google = await makeGoogleSigningKey();
+  await seedAppleJWKS(env, apple.jwk);
+  await seedGoogleJWKS(env, google.jwk);
+
+  const appleLogin = await signInAppleForTest(env, apple.privateKey, apple.jwk.kid, {
+    sub: "apple-owner", email: "all@example.com", isPrivateEmail: false, emailVerified: true,
+  });
+  const googleLogin = await signInGoogleForTest(env, google.privateKey, google.jwk.kid, {
+    sub: "google-linked", email: "all@example.com", emailVerified: true,
+  });
+  const localLogin = await createLocalAccount(env, "all@example.com", "correct-horse-battery");
+
+  const subjects = await Promise.all([appleLogin, googleLogin, localLogin].map(async login =>
+    (await realSession(env, login.token)).sub
+  ));
+  assert.deepEqual(subjects, ["apple-owner", "apple-owner", "apple-owner"]);
+});
+
+test("different verified emails are not merged", async () => {
+  const env = environment();
+  const apple = await makeAppleSigningKey();
+  const google = await makeGoogleSigningKey();
+  await seedAppleJWKS(env, apple.jwk);
+  await seedGoogleJWKS(env, google.jwk);
+
+  const appleLogin = await signInAppleForTest(env, apple.privateKey, apple.jwk.kid, {
+    sub: "apple-distinct", email: "apple@example.com", isPrivateEmail: false, emailVerified: true,
+  });
+  const googleLogin = await signInGoogleForTest(env, google.privateKey, google.jwk.kid, {
+    sub: "google-distinct", email: "google@example.com", emailVerified: true,
+  });
+
+  assert.equal((await realSession(env, appleLogin.token)).sub, "apple-distinct");
+  assert.equal((await realSession(env, googleLogin.token)).sub, "google:google-distinct");
+});
+
+test("Apple private relay email is not merged with Google or local accounts", async () => {
+  const env = environment();
+  const apple = await makeAppleSigningKey();
+  const google = await makeGoogleSigningKey();
+  await seedAppleJWKS(env, apple.jwk);
+  await seedGoogleJWKS(env, google.jwk);
+
+  const appleLogin = await signInAppleForTest(env, apple.privateKey, apple.jwk.kid, {
+    sub: "apple-relay", email: "relay@privaterelay.appleid.com", isPrivateEmail: true, emailVerified: true,
+  });
+  const googleLogin = await signInGoogleForTest(env, google.privateKey, google.jwk.kid, {
+    sub: "google-real", email: "person@example.com", emailVerified: true,
+  });
+  const localLogin = await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  assert.equal((await realSession(env, appleLogin.token)).sub, "apple-relay");
+  assert.equal((await realSession(env, googleLogin.token)).sub, "google:google-real");
+  assert.equal((await realSession(env, localLogin.token)).sub, "google:google-real");
+  assert.equal(await env.STUDIQUO_DATA.get("email-accounts:relay@privaterelay.appleid.com"), null);
+});
+
+test("a later Apple login without email restores the shared account from the saved email", async () => {
+  const env = environment();
+  const apple = await makeAppleSigningKey();
+  const google = await makeGoogleSigningKey();
+  await seedAppleJWKS(env, apple.jwk);
+  await seedGoogleJWKS(env, google.jwk);
+  await signInGoogleForTest(env, google.privateKey, google.jwk.kid, {
+    sub: "google-owner", email: "person@example.com", emailVerified: true,
+  });
+  await signInAppleForTest(env, apple.privateKey, apple.jwk.kid, {
+    sub: "apple-repeat", email: "person@example.com", isPrivateEmail: false, emailVerified: true,
+  });
+
+  const repeated = await signInAppleForTest(env, apple.privateKey, apple.jwk.kid, {
+    sub: "apple-repeat",
+  }, "z".repeat(40));
+
+  assert.equal((await realSession(env, repeated.token)).sub, "google:google-owner");
+});
 
 test("POST /api/auth/local/login: the correct password mints a working token", async () => {
   const env = environment();

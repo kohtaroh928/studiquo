@@ -3,13 +3,10 @@
 // signing in with a different provider than usual doesn't read as a second,
 // unrelated account.
 //
-// Deliberately narrow in scope: this only maintains an index of which
-// provider identities share a verified email. It does not change how either
-// provider's own account:* record is keyed, or how cloud-sync tokens map to
-// storage — those already mint an independent, per-sign-in token/bucket and
-// are out of scope here. This index exists so features built on "is this
-// the same person" (support, entitlements, de-duplicating a friends list)
-// have a real answer instead of none at all.
+// The first verified identity linked to an email becomes that email's stable
+// account owner. Every later identity is mapped to that same owner, so all
+// sign-in methods mint sessions for one account and therefore share chat,
+// cloud-sync, usage and connection storage.
 //
 // Only a *verified* email participates: an unverified one is self-asserted
 // and not trustworthy enough to use as a join key between two accounts —
@@ -17,6 +14,8 @@
 // (Apple's `is_private_email`-free email is always verified; Google's own
 // `email_verified` claim gates it explicitly).
 const EMAIL_LINK_PREFIX = "email-accounts:";
+const EMAIL_OWNER_PREFIX = "email-account-owner:";
+export const IDENTITY_CANONICAL_PREFIX = "identity-canonical:";
 const MAX_LINKED_IDENTITIES = 10;
 
 function normalizeEmail(email) {
@@ -40,11 +39,29 @@ export async function linkVerifiedEmail(env, { provider, sub, email, emailVerifi
   const linkKey = `${EMAIL_LINK_PREFIX}${normalized}`;
   const existing = (await env.STUDIQUO_DATA.get(linkKey, "json")) ?? [];
   const alreadyLinked = existing.some(identity => identity.provider === provider && identity.sub === sub);
-  if (alreadyLinked) return { normalizedEmail: normalized, linkedIdentities: existing };
+  const updated = alreadyLinked ? existing : [...existing, { provider, sub }].slice(-MAX_LINKED_IDENTITIES);
+  if (!alreadyLinked) await env.STUDIQUO_DATA.put(linkKey, JSON.stringify(updated));
 
-  const updated = [...existing, { provider, sub }].slice(-MAX_LINKED_IDENTITIES);
-  await env.STUDIQUO_DATA.put(linkKey, JSON.stringify(updated));
-  return { normalizedEmail: normalized, linkedIdentities: updated };
+  // Preserve the first account that claimed this verified address, including
+  // for link indexes created by older deployments before owner records
+  // existed. This avoids changing the user's primary data bucket depending
+  // on which provider they happen to use next.
+  const ownerKey = `${EMAIL_OWNER_PREFIX}${normalized}`;
+  let canonicalIdentityKey = await env.STUDIQUO_DATA.get(ownerKey);
+  if (!canonicalIdentityKey) {
+    canonicalIdentityKey = identityKey(updated[0]);
+    await env.STUDIQUO_DATA.put(ownerKey, canonicalIdentityKey);
+  }
+  await Promise.all(updated.map(identity =>
+    env.STUDIQUO_DATA.put(`${IDENTITY_CANONICAL_PREFIX}${identityKey(identity)}`, canonicalIdentityKey)
+  ));
+  return { normalizedEmail: normalized, linkedIdentities: updated, canonicalIdentityKey };
+}
+
+function identityKey(identity) {
+  if (identity.provider === "google") return `google:${identity.sub}`;
+  if (identity.provider === "email") return `email:${identity.sub}`;
+  return identity.sub; // Apple keeps its historical bare-sub session key.
 }
 
 /** Returns every `{ provider, sub }` known to share `email` (verified sign-ins only), or `[]`. */

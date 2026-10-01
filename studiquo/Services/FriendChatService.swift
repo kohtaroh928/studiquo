@@ -1,4 +1,194 @@
 import Foundation
+import UIKit
+import UserNotifications
+
+enum PushDeviceService {
+    enum Environment: String, Encodable {
+        case sandbox, production
+    }
+
+    private struct DeviceBody: Encodable {
+        let deviceToken: String
+        var environment: Environment? = nil
+        var installationID: String? = nil
+        var deviceName: String? = nil
+        var preferences: [String: Bool]? = nil
+    }
+
+    private struct ServerResponse: Decodable { let status: String }
+    private struct ErrorResponse: Decodable { let error: String }
+
+    static func register(deviceToken: String, environment: Environment, authorizationToken: String) async throws {
+        _ = try await request(
+            method: "POST",
+            body: DeviceBody(deviceToken: deviceToken, environment: environment),
+            authorizationToken: authorizationToken
+        )
+    }
+
+    static func registerCurrentInstallation(
+        deviceToken: String,
+        environment: Environment,
+        authorizationToken: String
+    ) async throws {
+        _ = try await request(
+            method: "POST",
+            body: DeviceBody(
+                deviceToken: deviceToken,
+                environment: environment,
+                installationID: NotificationInstallationIdentity.id,
+                deviceName: NotificationInstallationIdentity.deviceName,
+                preferences: AppNotificationPreferences.serverPayload
+            ),
+            authorizationToken: authorizationToken
+        )
+    }
+
+    static func unregister(deviceToken: String, authorizationToken: String) async throws {
+        _ = try await request(
+            method: "DELETE",
+            body: DeviceBody(deviceToken: deviceToken),
+            authorizationToken: authorizationToken
+        )
+    }
+
+    private static func request(
+        method: String,
+        body: DeviceBody,
+        authorizationToken: String
+    ) async throws -> ServerResponse {
+        guard let endpoint = MCPCloudCredentials.configuredEndpoint() else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: endpoint.appending(path: "api/chat/devices"))
+        request.httpMethod = method
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(authorizationToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard 200..<300 ~= http.statusCode else {
+            let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data).error) ?? "Device registration failed."
+            throw FriendChatService.ServerError(status: http.statusCode, message: message)
+        }
+        return try JSONDecoder().decode(ServerResponse.self, from: data)
+    }
+}
+
+/// Owns the APNs token lifecycle. Permission prompts are only initiated by
+/// `requestAuthorizationInContext()` from a screen where notifications have
+/// an obvious purpose. Launch/login refreshes call `refreshIfAuthorized()`;
+/// that path never displays the system prompt.
+@MainActor
+enum PushNotificationRegistration {
+    private static let tokenDefaultsKey = "studiquoAPNsDeviceToken"
+
+    struct Dependencies {
+        var authorizationStatus: () async -> UNAuthorizationStatus
+        var requestAuthorization: () async -> Bool
+        var registerForRemoteNotifications: @MainActor () -> Void
+        var currentAuthorizationToken: () -> String?
+        var storedDeviceToken: @MainActor () -> String?
+        var saveDeviceToken: @MainActor (String) -> Void
+        var removeStoredDeviceToken: @MainActor () -> Void
+        var registerDevice: (String, PushDeviceService.Environment, String) async throws -> Void
+        var unregisterDevice: (String, String) async throws -> Void
+
+        static var live: Self {
+            Self(
+                authorizationStatus: {
+                    let settings = await UNUserNotificationCenter.current().notificationSettings()
+                    return settings.authorizationStatus
+                },
+                requestAuthorization: {
+                    (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) == true
+                },
+                registerForRemoteNotifications: {
+                    UIApplication.shared.registerForRemoteNotifications()
+                },
+                currentAuthorizationToken: MCPCloudCredentials.currentToken,
+                storedDeviceToken: { UserDefaults.standard.string(forKey: tokenDefaultsKey) },
+                saveDeviceToken: { UserDefaults.standard.set($0, forKey: tokenDefaultsKey) },
+                removeStoredDeviceToken: { UserDefaults.standard.removeObject(forKey: tokenDefaultsKey) },
+                registerDevice: { try await PushDeviceService.registerCurrentInstallation(deviceToken: $0, environment: $1, authorizationToken: $2) },
+                unregisterDevice: { try await PushDeviceService.unregister(deviceToken: $0, authorizationToken: $1) }
+            )
+        }
+    }
+
+    private static var environment: PushDeviceService.Environment {
+        #if DEBUG
+        return .sandbox
+        #else
+        return .production
+        #endif
+    }
+
+    static func requestAuthorizationInContext(dependencies: Dependencies = .live) async {
+        let status = await dependencies.authorizationStatus()
+        let allowed: Bool
+        if status == .notDetermined {
+            allowed = await dependencies.requestAuthorization()
+        } else {
+            allowed = isAuthorized(status)
+        }
+        if allowed {
+            dependencies.registerForRemoteNotifications()
+        } else if status == .denied {
+            await unregisterCurrentDevice(dependencies: dependencies)
+        }
+    }
+
+    /// Re-fetch the token on every authenticated launch/login, as Apple
+    /// recommends. This is intentionally silent when permission has never
+    /// been requested or was denied.
+    static func refreshIfAuthorized(dependencies: Dependencies = .live) async {
+        let status = await dependencies.authorizationStatus()
+        guard isAuthorized(status) else {
+            if status == .denied { await unregisterCurrentDevice(dependencies: dependencies) }
+            return
+        }
+        dependencies.registerForRemoteNotifications()
+    }
+
+    static func didRegister(deviceToken data: Data, dependencies: Dependencies = .live) {
+        guard let authorizationToken = dependencies.currentAuthorizationToken() else { return }
+        let token = hexToken(from: data)
+        dependencies.saveDeviceToken(token)
+        Task {
+            try? await dependencies.registerDevice(token, environment, authorizationToken)
+        }
+    }
+
+    static func updateCurrentDevicePreferences(dependencies: Dependencies = .live) async {
+        guard let token = dependencies.storedDeviceToken(),
+              let authorizationToken = dependencies.currentAuthorizationToken() else { return }
+        try? await PushDeviceService.registerCurrentInstallation(
+            deviceToken: token,
+            environment: environment,
+            authorizationToken: authorizationToken
+        )
+    }
+
+    static func hexToken(from data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Removes only this installation from the account. Local cleanup still
+    /// happens if the network is unavailable, and a later registration also
+    /// transfers a token away from any stale previous owner server-side.
+    static func unregisterCurrentDevice(dependencies: Dependencies = .live) async {
+        guard let token = dependencies.storedDeviceToken() else { return }
+        defer { dependencies.removeStoredDeviceToken() }
+        guard let authorizationToken = dependencies.currentAuthorizationToken() else { return }
+        try? await dependencies.unregisterDevice(token, authorizationToken)
+    }
+
+    private static func isAuthorized(_ status: UNAuthorizationStatus) -> Bool {
+        status == .authorized || status == .provisional || status == .ephemeral
+    }
+}
 
 enum FriendChatService {
     private static var endpoint: URL {
@@ -85,6 +275,7 @@ enum FriendChatService {
         let latestID: Int
         let unreadCount: Int
         var closed: Bool? = nil
+        var kind: String? = nil
     }
     struct RemoveFriendResult: Codable { let status: String }
     struct ReadResult: Codable { let status: String; let throughID: Int }
@@ -93,7 +284,40 @@ enum FriendChatService {
     /// The same shape whether just created, freshly joined, or listed —
     /// `members` always reflects who has actually accepted, never who's
     /// still only pending an invite (see `GroupInvite`).
-    struct Group: Codable { let roomID: String; let name: String; let members: [GroupMember] }
+    struct Group: Codable {
+        let roomID: String
+        let code: String?
+        let name: String
+        let members: [GroupMember]
+        let avatarUpdatedAt: Double?
+
+        init(
+            roomID: String,
+            name: String,
+            members: [GroupMember],
+            code: String? = nil,
+            avatarUpdatedAt: Double? = nil
+        ) {
+            self.roomID = roomID
+            self.code = code
+            self.name = name
+            self.members = members
+            self.avatarUpdatedAt = avatarUpdatedAt
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case roomID, code, name, members, avatarUpdatedAt
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            roomID = try values.decode(String.self, forKey: .roomID)
+            code = try values.decodeIfPresent(String.self, forKey: .code)
+            name = try values.decode(String.self, forKey: .name)
+            members = try values.decode([GroupMember].self, forKey: .members)
+            avatarUpdatedAt = try values.decodeIfPresent(Double.self, forKey: .avatarUpdatedAt)
+        }
+    }
     /// A still-unanswered invitation sitting in the current user's own
     /// list — `name`/`inviterName` are a snapshot from invite time (the
     /// server denormalizes them the same way it already does for a 1:1

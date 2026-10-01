@@ -179,15 +179,37 @@ private struct PaneIsZoomedKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct PaneZoomScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
+
 extension EnvironmentValues {
     fileprivate var paneIsZoomed: Bool {
         get { self[PaneIsZoomedKey.self] }
         set { self[PaneIsZoomedKey.self] = newValue }
     }
+
+    fileprivate var paneZoomScale: CGFloat {
+        get { self[PaneZoomScaleKey.self] }
+        set { self[PaneZoomScaleKey.self] = newValue }
+    }
 }
 
 private enum ActivePane { case primary, secondary }
 private enum PaneDropTarget: Equatable { case primary, secondary }
+
+struct PendingChatSnippet: Equatable {
+    let target: NoteChatTarget
+    let snippet: PageSnippet
+
+    func snippet(for requestedTarget: NoteChatTarget) -> PageSnippet? {
+        requestedTarget == target ? snippet : nil
+    }
+
+    func matchesConsumption(snippetID: UUID, target requestedTarget: NoteChatTarget) -> Bool {
+        requestedTarget == target && snippetID == snippet.id
+    }
+}
 
 /// What a top tab-bar selection (or drag) should load into a split pane.
 /// Posted cross-file via `StudiquoSwitchPaneTarget` from ContentView,
@@ -201,6 +223,7 @@ enum PaneSwitchTarget {
     case web(title: String, homeURL: String)
     case ai(PersistentIdentifier)
     case friend(UUID)
+    case group(String)
 }
 
 private enum TemporaryChatMaterial: Identifiable {
@@ -329,9 +352,9 @@ struct NoteEditorView: View {
     @State private var primaryShowsAIChat = false
     @State private var secondaryShowsWeb = false
     @State private var secondaryShowsAIChat = false
-    @State private var primaryFriendChatID: UUID?
-    @State private var secondaryFriendChatID: UUID?
-    @State private var showsFriendChatPicker = false
+    @State private var primaryChatTarget: NoteChatTarget?
+    @State private var secondaryChatTarget: NoteChatTarget?
+    @State private var showsChatPicker = false
     @State private var primaryTemporaryChatMaterial: TemporaryChatMaterial?
     @State private var secondaryTemporaryChatMaterial: TemporaryChatMaterial?
     @State private var primaryTemporaryChatMaterialPageIndex = 0
@@ -344,6 +367,9 @@ struct NoteEditorView: View {
     @State private var aiChatContextOverrides: [String: String] = [:]
     /// Regions cut out with the snip tool, waiting to be dragged into a chat.
     @State private var snippetTray: [PageSnippet] = []
+    @State private var snippetOriginPanes: [UUID: ActivePane] = [:]
+    @State private var snippetAwaitingChatPicker: PageSnippet?
+    @State private var pendingChatSnippet: PendingChatSnippet?
     @State private var pendingProofQuestionSnippet: PageSnippet?
     @State private var pendingProofAnswerSnippet: PageSnippet?
     @State private var aiChatRespondingThreadIDs: Set<String> = []
@@ -361,6 +387,14 @@ struct NoteEditorView: View {
     @State private var textToInsert = ""
     @State private var showsImagePicker = false
     @State private var showsBackgroundImagePicker = false
+    /// The photo library temporarily covers the pane opposite the note being
+    /// edited. The pane's original content stays in state underneath it, so
+    /// closing Photo Study restores an existing note/Web/chat split exactly.
+    @State private var photoStudyPane: ActivePane?
+    @State private var photoStudyPreviousSplitMode: SplitMode?
+    @State private var photoStudyPreviousSplitRatio: CGFloat?
+    @State private var photoStudyPreviousActivePane: ActivePane?
+    @State private var selectedPhotoStudyAssetID: String?
     @State private var isRecognizingHandwriting = false
     @State private var recognitionProgress = ""
     @State private var isFocusMode = false
@@ -638,8 +672,20 @@ struct NoteEditorView: View {
             loadAIChatThreads()
         }
         .onChange(of: splitMode) { _, mode in splitState.isSplit = mode != .single }
+        .onChange(of: showsChatPicker) { _, isPresented in
+            guard !isPresented, let abandonedSnippet = snippetAwaitingChatPicker else { return }
+            // Closing the destination picker without making a selection also
+            // ends the attachment flow. The tray has already been dismissed,
+            // so release the retained source-pane routing information here.
+            snippetOriginPanes[abandonedSnippet.id] = nil
+            snippetAwaitingChatPicker = nil
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
+                // A full-screen photo should never remain above the editor
+                // after the app is backgrounded (and its image request is
+                // cancelled when the viewer leaves the hierarchy).
+                selectedPhotoStudyAssetID = nil
                 if notebook.isLocked { NotebookEncryptionService.lock(notebook) }
                 NotebookBackupService.saveAutomaticBackup(for: notebook)
             }
@@ -676,7 +722,14 @@ struct NoteEditorView: View {
             pendingQuestion: $pendingProofQuestionSnippet,
             pendingAnswer: $pendingProofAnswerSnippet,
             onAskAI: askAIAboutSnippet,
-            onProofRoleSelected: handleProofSnippet
+            onProofRoleSelected: handleProofSnippet,
+            onAddToChat: addSnippetToChat,
+            onSnippetReceived: { snippet in
+                snippetOriginPanes[snippet.id] = activePane
+            },
+            onSnippetRemoved: { snippet in
+                snippetOriginPanes[snippet.id] = nil
+            }
         ))
         .modifier(AIChatTabSyncModifier(
             openThreadID: selectedAIChatThread?.persistentModelID,
@@ -967,21 +1020,20 @@ struct NoteEditorView: View {
         }
     }
 
-    /// The lasso has no thickness to set — it traces a selection rather than
-    /// laying down ink — so the size slider (and the preview it drives) is
-    /// dropped from the bar entirely while it's the active tool, instead of
-    /// sitting there adjusting a pen the user isn't holding.
+    /// Selection and snipping trace regions rather than laying down ink, so
+    /// the size slider (and the preview it drives) is hidden for both.
     private var showsToolSizeControl: Bool {
-        drawingTool != .lasso
+        drawingTool != .lasso && drawingTool != .snip
     }
 
     private var shouldShowDrawingToolbarInPrimaryPane: Bool {
         !isReadOnlyMode
             && showsDrawingToolbar
+            && photoStudyPane != .primary
             && primaryFlashcardDeck == nil
             && !primaryShowsWeb
             && !primaryShowsAIChat
-            && primaryFriendChatID == nil
+            && primaryChatTarget == nil
             && primaryTemporaryChatMaterial == nil
     }
 
@@ -989,6 +1041,7 @@ struct NoteEditorView: View {
         splitMode != .single
             && !isReadOnlyMode
             && showsDrawingToolbar
+            && photoStudyPane != .secondary
             && secondaryNotebook != nil
             && secondaryFlashcardDeck == nil
             && !secondaryShowsWeb
@@ -1140,13 +1193,14 @@ struct NoteEditorView: View {
     /// of a page and into that same page.
     private var panesShowSameNotebook: Bool {
         splitMode != .single
+            && photoStudyPane == nil
             && primaryFlashcardDeck == nil
             && secondaryFlashcardDeck == nil
             && !primaryShowsWeb
             && !secondaryShowsWeb
             && !secondaryShowsAIChat
-            && primaryFriendChatID == nil
-            && secondaryFriendChatID == nil
+            && primaryChatTarget == nil
+            && secondaryChatTarget == nil
             && secondaryNotebook === displayedPrimaryNotebook
     }
 
@@ -1179,32 +1233,28 @@ struct NoteEditorView: View {
         case .single:
             primaryPane
 
-        case .horizontal:
-            HStack(spacing: 0) {
+        case .horizontal, .vertical:
+            let isHorizontal = splitMode == .horizontal
+            let layout = isHorizontal
+                ? AnyLayout(HStackLayout(spacing: 0))
+                : AnyLayout(VStackLayout(spacing: 0))
+            layout {
                 splitPaneContent(.primary)
-                    .frame(width: max(260, size.width * splitRatio - 5))
+                    .frame(
+                        width: isHorizontal ? max(260, size.width * splitRatio - 5) : nil,
+                        height: isHorizontal ? nil : max(220, size.height * splitRatio - 5)
+                    )
 
-                SplitDivider(axis: .horizontal, onSwap: swapSplitPanes, onEditingChanged: { isDraggingSplitDivider = $0 }) { translation in
+                SplitDivider(
+                    axis: isHorizontal ? .horizontal : .vertical,
+                    onSwap: swapSplitPanes,
+                    onEditingChanged: { isDraggingSplitDivider = $0 }
+                ) { translation in
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
-                        splitRatio = limitedRatio(splitRatio + translation / max(size.width, 1))
-                    }
-                }
-
-                splitPaneContent(.secondary)
-            }
-
-        case .vertical:
-            VStack(spacing: 0) {
-                splitPaneContent(.primary)
-                    .frame(height: max(220, size.height * splitRatio - 5))
-
-                SplitDivider(axis: .vertical, onSwap: swapSplitPanes, onEditingChanged: { isDraggingSplitDivider = $0 }) { translation in
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        splitRatio = limitedRatio(splitRatio + translation / max(size.height, 1))
+                        let availableLength = isHorizontal ? size.width : size.height
+                        splitRatio = limitedRatio(splitRatio + translation / max(availableLength, 1))
                     }
                 }
 
@@ -1246,11 +1296,13 @@ struct NoteEditorView: View {
     }
 
     private func splitDragPlaceholderLabel(for pane: ActivePane) -> (title: String, icon: String) {
+        if photoStudyPane == pane { return ("写真資料", "photo.stack") }
         if pane == .primary {
             if let material = primaryTemporaryChatMaterial { return (material.title, "doc.viewfinder") }
             if primaryShowsWeb { return ("Web", "globe") }
             if primaryShowsAIChat { return ("AIトーク", "sparkles") }
             if let friend = primaryFriendChat { return (friend.name, "person.crop.circle") }
+            if let group = primaryGroupChat { return (group.name, "person.3") }
             if let deck = primaryFlashcardDeck { return (deck.title, "rectangle.on.rectangle.angled") }
             return (displayedPrimaryNotebook.title, displayedPrimaryNotebook.containsPDF ? "doc.richtext" : "note.text")
         }
@@ -1259,6 +1311,7 @@ struct NoteEditorView: View {
         if secondaryShowsWeb { return ("Web", "globe") }
         if secondaryShowsAIChat { return ("AIトーク", "sparkles") }
         if let friend = secondaryFriendChat { return (friend.name, "person.crop.circle") }
+        if let group = secondaryGroupChat { return (group.name, "person.3") }
         if let deck = secondaryFlashcardDeck { return (deck.title, "rectangle.on.rectangle.angled") }
         if let notebook = secondaryNotebook { return (notebook.title, notebook.containsPDF ? "doc.richtext" : "note.text") }
         return ("未選択", "rectangle.dashed")
@@ -1267,7 +1320,9 @@ struct NoteEditorView: View {
     @ViewBuilder
     private var primaryPane: some View {
         Group {
-            if let material = primaryTemporaryChatMaterial {
+            if photoStudyPane == .primary {
+                photoStudyLibraryPane
+            } else if let material = primaryTemporaryChatMaterial {
                 temporaryChatMaterialView(material, pane: .primary)
             } else if primaryShowsWeb {
                 WebSearchPane(browser: webBrowser)
@@ -1305,8 +1360,22 @@ struct NoteEditorView: View {
                     resolveAppAttachment: resolvedAppMessageAttachment,
                     onAttachDroppedTab: friendAttachmentForDroppedTab,
                     onPaneDrop: { handlePaneDrop($0, target: .primary) },
-                    onOpenAttachment: { openFriendAttachment($0, target: .primary) }
+                    onOpenAttachment: { openFriendAttachment($0, target: .primary) },
+                    pendingSnippet: pendingSnippet(for: .friend(primaryFriend.id)),
+                    onConsumePendingSnippet: { consumePendingChatSnippet($0, target: .friend(primaryFriend.id)) }
                 )
+                .id("note-friend-\(primaryFriend.id.uuidString)")
+            } else if let primaryGroup = primaryGroupChat {
+                GroupChatView(
+                    roomID: primaryGroup.roomID,
+                    store: friendStore,
+                    appAttachments: friendMessageAttachmentOptions(),
+                    resolveAppAttachment: resolvedAppMessageAttachment,
+                    onBack: collapseSplit,
+                    pendingSnippet: pendingSnippet(for: .group(roomID: primaryGroup.roomID)),
+                    onConsumePendingSnippet: { consumePendingChatSnippet($0, target: .group(roomID: primaryGroup.roomID)) }
+                )
+                .id("note-group-\(primaryGroup.roomID)")
             } else if let primaryFlashcardDeck {
                 FlashcardPaneView(deck: primaryFlashcardDeck, onHome: onHome)
             } else {
@@ -1339,17 +1408,22 @@ struct NoteEditorView: View {
         }
         .contentShape(Rectangle())
         .accessibilityIdentifier("split-pane-primary")
-        .simultaneousGesture(TapGesture().onEnded { activePane = .primary })
+        .simultaneousGesture(TapGesture().onEnded {
+            if photoStudyPane != .primary { activePane = .primary }
+        })
         .dropDestination(for: String.self) { items, _ in
+            guard photoStudyPane != .primary else { return false }
             guard let value = items.first else { return false }
-            guard splitMode != .single || value.hasPrefix("ai:") || value.hasPrefix("friend:") else { return false }
+            guard splitMode != .single || value.hasPrefix("ai:") || value.hasPrefix("friend:") || value.hasPrefix("group:") else { return false }
             return handlePaneDrop(value, target: .primary)
         }
     }
 
     @ViewBuilder
     private var secondaryPane: some View {
-        if let material = secondaryTemporaryChatMaterial {
+        if photoStudyPane == .secondary {
+            photoStudyLibraryPane
+        } else if let material = secondaryTemporaryChatMaterial {
             temporaryChatMaterialView(material, pane: .secondary)
                 .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
                 .dropDestination(for: String.self) { items, _ in
@@ -1392,8 +1466,22 @@ struct NoteEditorView: View {
                 resolveAppAttachment: resolvedAppMessageAttachment,
                 onAttachDroppedTab: friendAttachmentForDroppedTab,
                 onPaneDrop: { handlePaneDrop($0, target: .secondary) },
-                onOpenAttachment: { openFriendAttachment($0, target: .secondary) }
+                onOpenAttachment: { openFriendAttachment($0, target: .secondary) },
+                pendingSnippet: pendingSnippet(for: .friend(secondaryFriend.id)),
+                onConsumePendingSnippet: { consumePendingChatSnippet($0, target: .friend(secondaryFriend.id)) }
             )
+            .id("note-friend-\(secondaryFriend.id.uuidString)")
+        } else if let secondaryGroup = secondaryGroupChat {
+            GroupChatView(
+                roomID: secondaryGroup.roomID,
+                store: friendStore,
+                appAttachments: friendMessageAttachmentOptions(),
+                resolveAppAttachment: resolvedAppMessageAttachment,
+                onBack: collapseSplit,
+                pendingSnippet: pendingSnippet(for: .group(roomID: secondaryGroup.roomID)),
+                onConsumePendingSnippet: { consumePendingChatSnippet($0, target: .group(roomID: secondaryGroup.roomID)) }
+            )
+            .id("note-group-\(secondaryGroup.roomID)")
         } else if let secondaryFlashcardDeck {
             FlashcardPaneView(deck: secondaryFlashcardDeck, onHome: onHome)
                 .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
@@ -1448,6 +1536,22 @@ struct NoteEditorView: View {
                 return handlePaneDrop(value, target: .secondary)
             }
             .accessibilityIdentifier("split-pane-secondary")
+        }
+    }
+
+    @ViewBuilder
+    private var photoStudyLibraryPane: some View {
+        if let assetIdentifier = selectedPhotoStudyAssetID {
+            PhotoStudyPaneViewer(
+                assetIdentifier: assetIdentifier,
+                onClose: { selectedPhotoStudyAssetID = nil }
+            )
+            .transition(.opacity)
+        } else {
+            PhotoStudyLibraryView(
+                onSelect: { selectedPhotoStudyAssetID = $0 },
+                onClose: { dismissPhotoStudy(restorePreviousLayout: true) }
+            )
         }
     }
 
@@ -1812,15 +1916,20 @@ struct NoteEditorView: View {
                     presentAIChat()
                 }
                 Button {
-                    presentFriendChat()
+                    presentChatPicker()
                 } label: {
-                    toolStripLabel("フレンドチャット", icon: "person.crop.circle", isActive: isFriendChatVisibleInSplit)
+                    toolStripLabel("チャット", icon: "message.fill", isActive: isChatVisibleInSplit)
                 }
-                .popover(isPresented: $showsFriendChatPicker, arrowEdge: .top) {
-                    NoteFriendChatPickerPopover(store: friendStore) { friend in
-                        showsFriendChatPicker = false
-                        openFriendChat(friend)
-                    }
+                .popover(isPresented: $showsChatPicker, arrowEdge: .top) {
+                    NoteChatPickerPopover(
+                        store: friendStore,
+                        onSelectFriend: { friend in
+                            selectChatFromPicker(.friend(friend.id))
+                        },
+                        onSelectGroup: { group in
+                            selectChatFromPicker(.group(roomID: group.roomID))
+                        }
+                    )
                 }
                 toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode, action: selectPen)
                     .disabled(primaryFlashcardDeck != nil)
@@ -1828,6 +1937,9 @@ struct NoteEditorView: View {
                     .disabled(primaryFlashcardDeck != nil)
                 toolStripButton("選択", icon: "lasso", isActive: drawingTool == .lasso && !isReadOnlyMode, action: selectLasso)
                     .disabled(primaryFlashcardDeck != nil)
+                toolStripButton("切り抜き", icon: "rectangle.dashed", isActive: drawingTool == .snip && !isReadOnlyMode, action: selectSnip)
+                    .disabled(primaryFlashcardDeck != nil)
+                    .accessibilityIdentifier("note-snip-toolbar-button")
                 toolStripButton("時間", icon: "timer") {
                     showsTimeTool = true
                 }
@@ -1861,6 +1973,13 @@ struct NoteEditorView: View {
 
                 toolStripButton("テキスト", icon: "textformat", action: addTextElement)
                 toolStripButton("写真", icon: "photo") { showsImagePicker = true }
+                toolStripButton(
+                    "写真資料",
+                    icon: "photo.stack",
+                    isActive: photoStudyPane != nil,
+                    action: togglePhotoStudy
+                )
+                .accessibilityIdentifier("photo-study-toolbar-button")
                 toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
                 Menu {
                     Toggle("直線補正", isOn: $isLineCorrectionEnabled)
@@ -1887,7 +2006,7 @@ struct NoteEditorView: View {
                 ) { showsPageTemplatePicker = true }
 
                 Menu {
-                    Button("1画面", systemImage: "rectangle") { splitMode = .single }
+                    Button("1画面", systemImage: "rectangle") { collapseSplit() }
                     Button("左右に2分割", systemImage: "rectangle.split.2x1") {
                         prepareSplit(.horizontal)
                     }
@@ -1906,6 +2025,7 @@ struct NoteEditorView: View {
                         Menu("ノート・PDF") {
                             ForEach(notebooks) { candidate in
                                 Button(candidate.title) {
+                                    dismissPhotoStudy(restorePreviousLayout: false)
                                     secondaryNotebook = candidate
                                     secondaryFlashcardDeck = nil
                                     secondaryShowsWeb = false
@@ -1917,6 +2037,7 @@ struct NoteEditorView: View {
                         Menu("暗記カード") {
                             ForEach(flashcardDecks) { deck in
                                 Button(deck.title) {
+                                    dismissPhotoStudy(restorePreviousLayout: false)
                                     secondaryFlashcardDeck = deck
                                     secondaryNotebook = nil
                                     secondaryShowsWeb = false
@@ -1925,6 +2046,7 @@ struct NoteEditorView: View {
                             }
                         }
                         Button("白紙ノートを作る", systemImage: "square.and.pencil") {
+                            dismissPhotoStudy(restorePreviousLayout: false)
                             secondaryNotebook = createCompanionNotebook()
                             secondaryFlashcardDeck = nil
                             secondaryShowsWeb = false
@@ -2012,12 +2134,13 @@ struct NoteEditorView: View {
     }
 
     private func openWebSplit(title: String, homeURL: String) {
+        dismissPhotoStudy(restorePreviousLayout: false)
         webBrowser.openHomeIfNeeded(homeURL)
         secondaryNotebook = nil
         secondaryFlashcardDeck = nil
         secondaryShowsWeb = true
         secondaryShowsAIChat = false
-        secondaryFriendChatID = nil
+        secondaryChatTarget = nil
         splitMode = isPortraitLayout ? .vertical : .horizontal
         splitRatio = 0.5
         activePane = .primary
@@ -2027,28 +2150,115 @@ struct NoteEditorView: View {
         )
     }
 
-    private func presentFriendChat() {
-        showsFriendChatPicker = true
+    private func presentChatPicker() {
+        snippetAwaitingChatPicker = nil
+        showsChatPicker = true
     }
 
-    private func openFriendChat(_ friend: FriendRecord) {
-        // See `FriendChatSplitPolicy` for the (independently testable) rule
-        // this follows — `isFriendChatVisibleInSplit` used to gate this
-        // instead, which only asked "is some friend chat open," so picking
-        // a *different* friend while one was already open closed the split
-        // instead of switching it to show the newly picked friend.
-        switch FriendChatSplitPolicy.action(forTapping: friend.id, primaryFriendChatID: primaryFriendChatID, secondaryFriendChatID: secondaryFriendChatID) {
+    private func selectChatFromPicker(_ target: NoteChatTarget) {
+        let snippet = snippetAwaitingChatPicker
+        snippetAwaitingChatPicker = nil
+        showsChatPicker = false
+        if let snippet {
+            openChat(target, attaching: snippet)
+        } else {
+            openChat(target)
+        }
+    }
+
+    private var visibleChatTarget: NoteChatTarget? {
+        guard splitMode != .single else { return nil }
+        return primaryChatTarget ?? secondaryChatTarget
+    }
+
+    private func pendingSnippet(for target: NoteChatTarget) -> PageSnippet? {
+        pendingChatSnippet?.snippet(for: target)
+    }
+
+    private func addSnippetToChat(_ snippet: PageSnippet) {
+        if let target = visibleChatTarget {
+            pendingChatSnippet = PendingChatSnippet(target: target, snippet: snippet)
+        } else {
+            snippetAwaitingChatPicker = snippet
+            showsChatPicker = true
+            #if DEBUG
+            // The iOS 26.5 simulator can leave XCTest waiting indefinitely
+            // for this SwiftUI popover's event loop to become idle. Keep the
+            // production path untouched; the dedicated fixture advances the
+            // one seeded friend through the same selection handler itself.
+            if (ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test") ||
+                ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test")),
+               let group = friendStore.groups.first {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    selectChatFromPicker(.group(roomID: group.roomID))
+                }
+            } else if (ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test") ||
+                       ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test")),
+                      let friend = friendStore.friends.first {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    selectChatFromPicker(.friend(friend.id))
+                }
+            }
+            #endif
+        }
+    }
+
+    private func openChat(_ target: NoteChatTarget, attaching snippet: PageSnippet) {
+        dismissPhotoStudy(restorePreviousLayout: false)
+        let source = snippetOriginPanes[snippet.id] ?? activePane
+        let sourcePane: NoteChatPane = source == .primary ? .primary : .secondary
+        switch NoteChatSplitPolicy.actionForAttachment(
+            to: target,
+            sourcePane: sourcePane,
+            primaryTarget: primaryChatTarget,
+            secondaryTarget: secondaryChatTarget
+        ) {
         case .collapse:
-            collapseSplit()
-            return
+            // Attachment routing never collapses; retained for exhaustivity.
+            break
         case .openInPrimary:
-            primaryFriendChatID = friend.id
+            primaryOverrideNotebook = nil
+            primaryFlashcardDeck = nil
+            primaryShowsWeb = false
+            primaryShowsAIChat = false
+            primaryChatTarget = target
         case .openInSecondary:
             secondaryNotebook = nil
             secondaryFlashcardDeck = nil
             secondaryShowsWeb = false
             secondaryShowsAIChat = false
-            secondaryFriendChatID = friend.id
+            secondaryChatTarget = target
+        }
+        pendingChatSnippet = PendingChatSnippet(target: target, snippet: snippet)
+        splitMode = isPortraitLayout ? .vertical : .horizontal
+        splitRatio = 0.5
+        activePane = source
+    }
+
+    private func consumePendingChatSnippet(_ snippetID: UUID, target: NoteChatTarget) {
+        guard pendingChatSnippet?.matchesConsumption(snippetID: snippetID, target: target) == true else { return }
+        snippetOriginPanes[snippetID] = nil
+        pendingChatSnippet = nil
+    }
+
+    private func openChat(_ target: NoteChatTarget) {
+        dismissPhotoStudy(restorePreviousLayout: false)
+        switch NoteChatSplitPolicy.action(
+            forTapping: target,
+            primaryTarget: primaryChatTarget,
+            secondaryTarget: secondaryChatTarget
+        ) {
+        case .collapse:
+            collapseSplit()
+            return
+        case .openInPrimary:
+            primaryChatTarget = target
+        case .openInSecondary:
+            secondaryNotebook = nil
+            secondaryFlashcardDeck = nil
+            secondaryShowsWeb = false
+            secondaryShowsAIChat = false
+            secondaryChatTarget = target
         }
         splitMode = isPortraitLayout ? .vertical : .horizontal
         splitRatio = 0.5
@@ -2084,6 +2294,7 @@ struct NoteEditorView: View {
     }
 
     private func presentAIChat() {
+        dismissPhotoStudy(restorePreviousLayout: false)
         if isAIChatVisibleInSplit {
             showsTemporaryAIChat = false
             collapseSplit()
@@ -2116,6 +2327,7 @@ struct NoteEditorView: View {
         secondaryFlashcardDeck = nil
         secondaryShowsWeb = false
         secondaryShowsAIChat = true
+        secondaryChatTarget = nil
         splitMode = isPortraitLayout ? .vertical : .horizontal
         splitRatio = 0.5
         activePane = .primary
@@ -2126,17 +2338,27 @@ struct NoteEditorView: View {
     }
 
     private var primaryFriendChat: FriendRecord? {
-        guard let primaryFriendChatID else { return nil }
-        return friendStore.friends.first { $0.id == primaryFriendChatID }
+        guard case .friend(let id) = primaryChatTarget else { return nil }
+        return friendStore.friends.first { $0.id == id }
     }
 
     private var secondaryFriendChat: FriendRecord? {
-        guard let secondaryFriendChatID else { return nil }
-        return friendStore.friends.first { $0.id == secondaryFriendChatID }
+        guard case .friend(let id) = secondaryChatTarget else { return nil }
+        return friendStore.friends.first { $0.id == id }
     }
 
-    private var isFriendChatVisibleInSplit: Bool {
-        splitMode != .single && (primaryFriendChatID != nil || secondaryFriendChatID != nil)
+    private var primaryGroupChat: FriendChatService.Group? {
+        guard case .group(let roomID) = primaryChatTarget else { return nil }
+        return friendStore.groups.first { $0.roomID == roomID }
+    }
+
+    private var secondaryGroupChat: FriendChatService.Group? {
+        guard case .group(let roomID) = secondaryChatTarget else { return nil }
+        return friendStore.groups.first { $0.roomID == roomID }
+    }
+
+    private var isChatVisibleInSplit: Bool {
+        splitMode != .single && (primaryChatTarget != nil || secondaryChatTarget != nil)
     }
 
     private func friendMessageAttachmentOptions() -> [FriendMessageAttachment] {
@@ -2926,7 +3148,7 @@ struct NoteEditorView: View {
     /// What the student's side of the exchange says, so the thread reads as a
     /// conversation rather than starting with an answer to an invisible
     /// question.
-    private static func submissionSummary(_ submission: ProofSubmission) -> String {
+    static func submissionSummary(_ submission: ProofSubmission) -> String {
         // Text halves are quoted; image halves are described in words rather
         // than left as a bare "（画像）" placeholder, so the student's bubble
         // reads like a request.
@@ -2945,7 +3167,7 @@ struct NoteEditorView: View {
 
     /// Lays the marking out as text, so it renders in an ordinary chat
     /// bubble and stays in the thread's history like any other reply.
-    private static func markingReport(_ review: ProofReviewResult) -> String {
+    static func markingReport(_ review: ProofReviewResult) -> String {
         var lines = ["【\(review.score) / \(review.maxScore)点】", "", review.verdict, ""]
         // AI-generated grading can be wrong — a logically valid proof marked
         // down, or a flawed one marked correct — so every report says so up
@@ -3039,6 +3261,7 @@ struct NoteEditorView: View {
     /// tabs while split never disturbs the pane they're actively working
     /// in. With no split active there's only the primary pane to target.
     private func routeTabSelection(_ target: PaneSwitchTarget) {
+        dismissPhotoStudy(restorePreviousLayout: false)
         let destination: ActivePane = splitMode == .single
             ? .primary
             : (activePane == .primary ? .secondary : .primary)
@@ -3047,6 +3270,7 @@ struct NoteEditorView: View {
     }
 
     private func applyPaneTarget(_ target: PaneSwitchTarget, to pane: ActivePane) {
+        dismissPhotoStudy(restorePreviousLayout: false)
         closeTemporaryChatMaterial(in: pane)
         switch target {
         case .notebook(let targetNotebook):
@@ -3055,14 +3279,14 @@ struct NoteEditorView: View {
                 primaryFlashcardDeck = nil
                 primaryShowsWeb = false
                 primaryShowsAIChat = false
-                primaryFriendChatID = nil
+                primaryChatTarget = nil
                 primaryPageIndex = 0
             } else {
                 secondaryNotebook = targetNotebook
                 secondaryFlashcardDeck = nil
                 secondaryShowsWeb = false
                 secondaryShowsAIChat = false
-                secondaryFriendChatID = nil
+                secondaryChatTarget = nil
                 secondaryPageIndex = 0
             }
         case .flashcardDeck(let deck):
@@ -3071,13 +3295,13 @@ struct NoteEditorView: View {
                 primaryOverrideNotebook = nil
                 primaryShowsWeb = false
                 primaryShowsAIChat = false
-                primaryFriendChatID = nil
+                primaryChatTarget = nil
             } else {
                 secondaryFlashcardDeck = deck
                 secondaryNotebook = nil
                 secondaryShowsWeb = false
                 secondaryShowsAIChat = false
-                secondaryFriendChatID = nil
+                secondaryChatTarget = nil
             }
         case .document(let document):
             setTemporaryChatMaterial(.document(document), in: pane)
@@ -3092,13 +3316,13 @@ struct NoteEditorView: View {
                 primaryFlashcardDeck = nil
                 primaryShowsWeb = true
                 primaryShowsAIChat = false
-                primaryFriendChatID = nil
+                primaryChatTarget = nil
             } else {
                 secondaryNotebook = nil
                 secondaryFlashcardDeck = nil
                 secondaryShowsWeb = true
                 secondaryShowsAIChat = false
-                secondaryFriendChatID = nil
+                secondaryChatTarget = nil
             }
             if splitMode == .single { splitMode = isPortraitLayout ? .vertical : .horizontal }
             activePane = pane
@@ -3118,13 +3342,13 @@ struct NoteEditorView: View {
                 primaryFlashcardDeck = nil
                 primaryShowsWeb = false
                 primaryShowsAIChat = true
-                primaryFriendChatID = nil
+                primaryChatTarget = nil
             } else {
                 secondaryNotebook = nil
                 secondaryFlashcardDeck = nil
                 secondaryShowsWeb = false
                 secondaryShowsAIChat = true
-                secondaryFriendChatID = nil
+                secondaryChatTarget = nil
             }
         case .friend(let id):
             guard friendStore.friends.contains(where: { $0.id == id }) else { return }
@@ -3133,26 +3357,44 @@ struct NoteEditorView: View {
                 primaryFlashcardDeck = nil
                 primaryShowsWeb = false
                 primaryShowsAIChat = false
-                primaryFriendChatID = id
+                primaryChatTarget = .friend(id)
             } else {
                 secondaryNotebook = nil
                 secondaryFlashcardDeck = nil
                 secondaryShowsWeb = false
                 secondaryShowsAIChat = false
-                secondaryFriendChatID = id
+                secondaryChatTarget = .friend(id)
+            }
+        case .group(let roomID):
+            guard friendStore.groups.contains(where: { $0.roomID == roomID }) else { return }
+            if pane == .primary {
+                primaryOverrideNotebook = nil
+                primaryFlashcardDeck = nil
+                primaryShowsWeb = false
+                primaryShowsAIChat = false
+                primaryChatTarget = .group(roomID: roomID)
+            } else {
+                secondaryNotebook = nil
+                secondaryFlashcardDeck = nil
+                secondaryShowsWeb = false
+                secondaryShowsAIChat = false
+                secondaryChatTarget = .group(roomID: roomID)
             }
         }
     }
 
     private func swapSplitPanes() {
-        guard splitMode != .single else { return }
+        // Photo Study deliberately pins its reference library opposite the
+        // editable note. Swapping while it is active would make page tools
+        // target a non-page pane, so the divider keeps resize but not swap.
+        guard splitMode != .single, photoStudyPane == nil else { return }
 
         let primaryNotebook = primaryOverrideNotebook
             ?? (
                 primaryFlashcardDeck == nil
                 && !primaryShowsWeb
                 && !primaryShowsAIChat
-                && primaryFriendChatID == nil
+                && primaryChatTarget == nil
                 && primaryTemporaryChatMaterial == nil
                     ? displayedPrimaryNotebook
                     : nil
@@ -3161,7 +3403,7 @@ struct NoteEditorView: View {
         let oldPrimaryFlashcardDeck = primaryFlashcardDeck
         let oldPrimaryShowsWeb = primaryShowsWeb
         let oldPrimaryShowsAIChat = primaryShowsAIChat
-        let oldPrimaryFriendChatID = primaryFriendChatID
+        let oldPrimaryFriendChatID = primaryChatTarget
         let oldPrimaryTemporaryChatMaterial = primaryTemporaryChatMaterial
         let oldPrimaryTemporaryPageIndex = primaryTemporaryChatMaterialPageIndex
 
@@ -3170,7 +3412,7 @@ struct NoteEditorView: View {
         let oldSecondaryFlashcardDeck = secondaryFlashcardDeck
         let oldSecondaryShowsWeb = secondaryShowsWeb
         let oldSecondaryShowsAIChat = secondaryShowsAIChat
-        let oldSecondaryFriendChatID = secondaryFriendChatID
+        let oldSecondaryFriendChatID = secondaryChatTarget
         let oldSecondaryTemporaryChatMaterial = secondaryTemporaryChatMaterial
         let oldSecondaryTemporaryPageIndex = secondaryTemporaryChatMaterialPageIndex
 
@@ -3179,7 +3421,7 @@ struct NoteEditorView: View {
         primaryFlashcardDeck = oldSecondaryFlashcardDeck
         primaryShowsWeb = oldSecondaryShowsWeb
         primaryShowsAIChat = oldSecondaryShowsAIChat
-        primaryFriendChatID = oldSecondaryFriendChatID
+        primaryChatTarget = oldSecondaryFriendChatID
         primaryTemporaryChatMaterial = oldSecondaryTemporaryChatMaterial
         primaryTemporaryChatMaterialPageIndex = oldSecondaryTemporaryPageIndex
 
@@ -3188,7 +3430,7 @@ struct NoteEditorView: View {
         secondaryFlashcardDeck = oldPrimaryFlashcardDeck
         secondaryShowsWeb = oldPrimaryShowsWeb
         secondaryShowsAIChat = oldPrimaryShowsAIChat
-        secondaryFriendChatID = oldPrimaryFriendChatID
+        secondaryChatTarget = oldPrimaryFriendChatID
         secondaryTemporaryChatMaterial = oldPrimaryTemporaryChatMaterial
         secondaryTemporaryChatMaterialPageIndex = oldPrimaryTemporaryPageIndex
 
@@ -3236,7 +3478,102 @@ struct NoteEditorView: View {
         }
     }
 
+    private func selectSnip() {
+        isReadOnlyMode = false
+        pendingShapeKindRaw = ""
+        if drawingTool == .snip {
+            drawingToolRaw = DrawingToolKind.none.rawValue
+            showsDrawingToolbar = false
+        } else {
+            drawingToolRaw = DrawingToolKind.snip.rawValue
+            showsDrawingToolbar = true
+        }
+    }
+
+    private var primaryPaneCanEditNote: Bool {
+        primaryTemporaryChatMaterial == nil
+            && !primaryShowsWeb
+            && !primaryShowsAIChat
+            && primaryChatTarget == nil
+            && primaryFlashcardDeck == nil
+    }
+
+    private var secondaryPaneCanEditNote: Bool {
+        secondaryTemporaryChatMaterial == nil
+            && !secondaryShowsWeb
+            && !secondaryShowsAIChat
+            && secondaryChatTarget == nil
+            && secondaryFlashcardDeck == nil
+            && secondaryNotebook != nil
+    }
+
+    /// Photo Study never destroys a pane's current material. It records only
+    /// the layout, then temporarily renders the library over the pane opposite
+    /// the last editable note. This is what lets a Web/AI/second-note split
+    /// return exactly as it was when the library closes.
+    private func togglePhotoStudy() {
+        if photoStudyPane != nil {
+            dismissPhotoStudy(restorePreviousLayout: true)
+            return
+        }
+
+        photoStudyPreviousSplitMode = splitMode
+        photoStudyPreviousSplitRatio = splitRatio
+        photoStudyPreviousActivePane = activePane
+
+        let lastActive: PhotoStudyPane = activePane == .primary ? .primary : .secondary
+        let notePane = PhotoStudyPlacementPolicy.notePane(
+            lastActive: lastActive,
+            primaryCanEdit: primaryPaneCanEditNote,
+            secondaryCanEdit: secondaryPaneCanEditNote
+        )
+        let placement = PhotoStudyPlacementPolicy.photoPane(
+            lastActive: lastActive,
+            primaryCanEdit: primaryPaneCanEditNote,
+            secondaryCanEdit: secondaryPaneCanEditNote
+        )
+
+        photoStudyPane = placement == .primary ? .primary : .secondary
+        activePane = notePane == .primary ? .primary : .secondary
+        splitMode = isPortraitLayout ? .vertical : .horizontal
+        splitRatio = 0.5
+    }
+
+    /// `restorePreviousLayout` is false when the user explicitly chooses a
+    /// different tool. In that case their new choice wins and the current
+    /// two-pane layout remains available for the incoming tool.
+    private func dismissPhotoStudy(restorePreviousLayout: Bool) {
+        guard photoStudyPane != nil
+                || photoStudyPreviousSplitMode != nil
+                || selectedPhotoStudyAssetID != nil else { return }
+
+        selectedPhotoStudyAssetID = nil
+        photoStudyPane = nil
+
+        if restorePreviousLayout {
+            if let previousMode = photoStudyPreviousSplitMode {
+                // A split captured in landscape must not be restored as a
+                // squeezed left/right layout after the device turned upright
+                // while the photo viewer was open.
+                splitMode = previousMode == .horizontal && isPortraitLayout
+                    ? .vertical
+                    : previousMode
+            }
+            if let previousRatio = photoStudyPreviousSplitRatio {
+                splitRatio = previousRatio
+            }
+            if let previousPane = photoStudyPreviousActivePane {
+                activePane = previousPane
+            }
+        }
+
+        photoStudyPreviousSplitMode = nil
+        photoStudyPreviousSplitRatio = nil
+        photoStudyPreviousActivePane = nil
+    }
+
     private func prepareSplit(_ mode: SplitMode) {
+        dismissPhotoStudy(restorePreviousLayout: false)
         pendingSplitMode = isPortraitLayout ? .vertical : mode
         showsSplitSourcePicker = true
     }
@@ -3258,7 +3595,16 @@ struct NoteEditorView: View {
         // already upright, on the very next layout pass. `wasPortrait` is
         // nil until the first pass, so launching in portrait isn't mistaken
         // for a rotation into it.
-        if portrait, wasPortrait == false, splitMode != .single {
+        // A photo or chat is an intentional study companion. Keep that
+        // companion visible across rotation and only change the split axis;
+        // clearing the split here also discarded an in-flight snippet
+        // preview from the composer.
+        let keepsCompanionSplit = photoStudyPane != nil
+            || primaryChatTarget != nil
+            || secondaryChatTarget != nil
+        if keepsCompanionSplit {
+            splitMode = portrait ? .vertical : .horizontal
+        } else if portrait, wasPortrait == false, splitMode != .single {
             collapseSplit()
         }
         if portrait, pendingSplitMode == .horizontal {
@@ -3269,16 +3615,17 @@ struct NoteEditorView: View {
     /// Returns to a single pane and discards whatever the secondary pane was
     /// showing, so the closed split leaves nothing half-alive behind it.
     private func collapseSplit() {
+        dismissPhotoStudy(restorePreviousLayout: false)
         splitMode = .single
         splitRatio = 0.5
         primaryShowsAIChat = false
         primaryShowsWeb = false
-        primaryFriendChatID = nil
+        primaryChatTarget = nil
         secondaryNotebook = nil
         secondaryFlashcardDeck = nil
         secondaryShowsWeb = false
         secondaryShowsAIChat = false
-        secondaryFriendChatID = nil
+        secondaryChatTarget = nil
         pendingSplitMode = nil
         activePane = .primary
     }
@@ -3319,6 +3666,13 @@ struct NoteEditorView: View {
         if parts[0] == "friend", let friendID = UUID(uuidString: parts[1]) {
             guard friendStore.friends.contains(where: { $0.id == friendID }) else { return false }
             applyPaneTarget(.friend(friendID), to: pane)
+            activePane = pane
+            return true
+        }
+
+        if parts[0] == "group" {
+            guard friendStore.groups.contains(where: { $0.roomID == parts[1] }) else { return false }
+            applyPaneTarget(.group(parts[1]), to: pane)
             activePane = pane
             return true
         }
@@ -3695,7 +4049,11 @@ struct NoteEditorView: View {
     @MainActor
     private func addImageElement(from data: Data) async {
         guard let page = currentPrimaryPage else { return }
-        let element = PageElement(kind: .image, imageData: data, width: 0.42, height: 0.28)
+        // Photo-library assets can be tens of megapixels. Persist a bounded
+        // representation so every later render, sync, backup and duplicate
+        // does not carry the original camera-sized payload.
+        let storedData = await NoteImagePipeline.optimizedStorageDataAsync(from: data) ?? data
+        let element = PageElement(kind: .image, imageData: storedData, width: 0.42, height: 0.28)
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.addElement(element)
@@ -4896,6 +5254,7 @@ private struct ZoomableWorkspace<Content: View>: View {
                 // views are fine here — UIKit arbitrates them natively now
                 // that no SwiftUI gesture is competing for the same touch.
                 .environment(\.paneIsZoomed, isZoomed)
+                .environment(\.paneZoomScale, zoomScale)
                 .overlay(alignment: .topTrailing) {
                     if isZoomed {
                         Text("\(Int(zoomScale * 100))%")
@@ -5142,7 +5501,7 @@ private final class SpeechInputController: ObservableObject {
         }
 
         let micAllowed = await withCheckedContinuation { continuation in
-            AVAudioSession.sharedInstance().requestRecordPermission { allowed in
+            AVAudioApplication.requestRecordPermission { allowed in
                 continuation.resume(returning: allowed)
             }
         }
@@ -5604,6 +5963,7 @@ private struct AIChatPane: View {
             || value.hasPrefix("web:")
             || value.hasPrefix("ai:")
             || value.hasPrefix("friend:")
+            || value.hasPrefix("group:")
     }
 
     private var historySidebar: some View {
@@ -6068,16 +6428,39 @@ private struct SnippetTrayModifier: ViewModifier {
     @Binding var pendingAnswer: PageSnippet?
     let onAskAI: (PageSnippet) -> Void
     let onProofRoleSelected: (PageSnippet, AIChatAttachment.ProofRole) -> Void
-    @State private var isSelectingProofSnippets = false
+    let onAddToChat: (PageSnippet) -> Void
+    let onSnippetReceived: (PageSnippet) -> Void
+    let onSnippetRemoved: (PageSnippet) -> Void
 
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .bottomLeading) { tray }
             .onReceive(NotificationCenter.default.publisher(for: .studiquoPageSnipped)) { note in
                 guard let snippet = note.object as? PageSnippet else { return }
+                onSnippetReceived(snippet)
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     snippets.append(snippet)
                 }
+                #if DEBUG
+                // The UI-test fixture starts after the crop gesture itself.
+                // Route the seeded crop through the exact same handler as
+                // the visible "チャットに追加" button, avoiding brittle
+                // Pencil-coordinate automation while preserving the real
+                // picker, split transition and composer attachment flow.
+                let arguments = ProcessInfo.processInfo.arguments
+                let shouldOpenFriendDragFixture =
+                    arguments.contains("--note-snippet-friend-drag-ui-test") &&
+                    snippet.sourceLabel == "準備"
+                let shouldOpenGroupDragFixture =
+                    arguments.contains("--note-snippet-group-drag-ui-test") &&
+                    snippet.sourceLabel == "準備"
+                if arguments.contains("--note-snippet-friend-ui-test") ||
+                    arguments.contains("--note-snippet-group-ui-test") ||
+                    shouldOpenFriendDragFixture ||
+                    shouldOpenGroupDragFixture {
+                    DispatchQueue.main.async { addToChatAndDismiss(snippet) }
+                }
+                #endif
             }
     }
 
@@ -6092,10 +6475,9 @@ private struct SnippetTrayModifier: ViewModifier {
                     Spacer(minLength: 8)
                     Button {
                         withAnimation {
-                            snippets.removeAll()
+                            removeAllSnippets()
                             pendingQuestion = nil
                             pendingAnswer = nil
-                            isSelectingProofSnippets = false
                         }
                     } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -6116,7 +6498,7 @@ private struct SnippetTrayModifier: ViewModifier {
                     HStack(spacing: 8) {
                         Button {
                             onAskAI(latest)
-                            withAnimation { snippets.removeAll { $0.id == latest.id } }
+                            dismissTray()
                         } label: {
                             Label("AIに質問する", systemImage: "sparkles")
                                 .frame(maxWidth: .infinity)
@@ -6124,24 +6506,28 @@ private struct SnippetTrayModifier: ViewModifier {
                         .buttonStyle(.borderedProminent)
 
                         Button {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                                pendingQuestion = nil
-                                pendingAnswer = nil
-                                isSelectingProofSnippets = true
-                            }
+                            gradeAndDismiss(latest)
                         } label: {
-                            Label("AIに採点する", systemImage: "checkmark.seal")
+                            Label(
+                                pendingQuestion == nil ? "AIに採点する" : "解答として採点する",
+                                systemImage: "checkmark.seal"
+                            )
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
                     }
                     .font(.caption.weight(.semibold))
 
-                    if isSelectingProofSnippets {
-                        Text(pendingQuestion == nil ? "問題の切り抜き画像をタップしてください" : "解答の切り抜き画像をタップしてください")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                    Button {
+                        addToChatAndDismiss(latest)
+                    } label: {
+                        Label("チャットに追加", systemImage: "message.badge.plus")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.bordered)
+                    .font(.caption.weight(.semibold))
+                    .accessibilityIdentifier("snippet-add-to-chat")
+
                 }
             }
             .padding(10)
@@ -6168,6 +6554,7 @@ private struct SnippetTrayModifier: ViewModifier {
             }
         }
         .frame(width: 92, height: 62)
+        .accessibilityIdentifier("snippet-thumbnail-\(snippet.sourceLabel)")
         .background(Color(uiColor: .systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(alignment: .bottomTrailing) {
@@ -6184,7 +6571,7 @@ private struct SnippetTrayModifier: ViewModifier {
         }
         .overlay(alignment: .topTrailing) {
             Button {
-                withAnimation { snippets.removeAll { $0.id == snippet.id } }
+                withAnimation { remove(snippet) }
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 17, weight: .semibold))
@@ -6209,7 +6596,7 @@ private struct SnippetTrayModifier: ViewModifier {
         }
         .contextMenu {
             Button(role: .destructive) {
-                withAnimation { snippets.removeAll { $0.id == snippet.id } }
+                withAnimation { remove(snippet) }
             } label: {
                 Label(L("削除"), systemImage: "trash")
             }
@@ -6225,30 +6612,59 @@ private struct SnippetTrayModifier: ViewModifier {
                     .padding(3)
             }
         }
-        .onTapGesture {
-            guard isSelectingProofSnippets else { return }
-            selectProofSnippet(snippet)
+    }
+
+    private func gradeAndDismiss(_ latest: PageSnippet) {
+        if pendingQuestion != nil {
+            onProofRoleSelected(latest, .answer)
+            dismissTray()
+        } else if snippets.count >= 2 {
+            let question = snippets[snippets.count - 2]
+            onProofRoleSelected(question, .question)
+            onProofRoleSelected(latest, .answer)
+            dismissTray()
+        } else {
+            // Grading needs a question and an answer. Keep the first crop as
+            // the question in parent state, while still closing this panel;
+            // the next crop can then be graded as the answer with one tap.
+            onProofRoleSelected(latest, .question)
+            dismissTray(clearingProofSelection: false)
         }
     }
 
-    private func selectProofSnippet(_ snippet: PageSnippet) {
-        if pendingQuestion == nil || pendingQuestion?.id == snippet.id {
-            pendingQuestion = snippet
-            if pendingAnswer?.id == snippet.id { pendingAnswer = nil }
-            return
-        }
+    private func addToChatAndDismiss(_ snippet: PageSnippet) {
+        // Route first while the source-pane metadata is still available. Keep
+        // this one entry until the picker/composer consumes or cancels it, but
+        // remove every visible tray item immediately so the action panel does
+        // not linger over the note.
+        onAddToChat(snippet)
+        dismissTray(preservingOriginFor: snippet)
+    }
 
-        pendingAnswer = snippet
-        if let question = pendingQuestion {
-            onProofRoleSelected(question, .question)
-            onProofRoleSelected(snippet, .answer)
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                snippets.removeAll { $0.id == question.id || $0.id == snippet.id }
+    private func dismissTray(
+        preservingOriginFor retainedSnippet: PageSnippet? = nil,
+        clearingProofSelection: Bool = true
+    ) {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+            snippets
+                .filter { $0.id != retainedSnippet?.id }
+                .forEach(onSnippetRemoved)
+            snippets.removeAll()
+            if clearingProofSelection {
                 pendingQuestion = nil
                 pendingAnswer = nil
-                isSelectingProofSnippets = false
             }
         }
+    }
+
+    private func remove(_ snippet: PageSnippet) {
+        onSnippetRemoved(snippet)
+        snippets.removeAll { $0.id == snippet.id }
+    }
+
+    private func removeAllSnippets() {
+        snippets.forEach(onSnippetRemoved)
+        snippets.removeAll()
     }
 }
 
@@ -6736,6 +7152,8 @@ private struct TopOverscrollObserver: UIViewRepresentable {
         var onChange: ((CGFloat) -> Void)?
         private weak var observedScrollView: UIScrollView?
         private var observation: NSKeyValueObservation?
+        private var pendingOverscroll: CGFloat?
+        private var isDeliveryScheduled = false
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -6755,6 +7173,24 @@ private struct TopOverscrollObserver: UIViewRepresentable {
             observation = scrollView.observe(\.contentOffset, options: [.initial, .new]) { [weak self, weak scrollView] _, _ in
                 guard let self, let scrollView else { return }
                 let overscroll = max(0, -(scrollView.contentOffset.y + scrollView.adjustedContentInset.top))
+                self.deliverOnNextRunLoop(overscroll)
+            }
+        }
+
+        /// KVO can fire synchronously while SwiftUI is updating this
+        /// representable. Calling `onChange` in that stack writes to the
+        /// owning view's `@State` and produces "Modifying state during view
+        /// update". Defer the write by one main-run-loop turn and coalesce
+        /// rapid offset samples so only the newest position is published.
+        private func deliverOnNextRunLoop(_ overscroll: CGFloat) {
+            pendingOverscroll = overscroll
+            guard !isDeliveryScheduled else { return }
+            isDeliveryScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isDeliveryScheduled = false
+                guard let overscroll = self.pendingOverscroll else { return }
+                self.pendingOverscroll = nil
                 self.onChange?(overscroll)
             }
         }
@@ -7425,7 +7861,7 @@ struct PageCanvasContainer: View {
     /// directly-dragged photo (see `EditablePageElement.moveGesture`) tell
     /// whether it has crossed this page's own edge, and lets every OTHER
     /// `PageCanvasContainer` on screen tell whether a drop landed on it.
-    @State private var pageGlobalFrame: CGRect = .zero
+    @State private var pageGlobalFrameTracker = PageGlobalFrameTracker()
     @AppStorage("drawingTool") private var drawingToolRaw = DrawingToolKind.pen.rawValue
     @AppStorage("drawingColor") private var drawingColorHex = "#1C1C1E"
     @AppStorage("drawingWidth") private var drawingWidth = 4.0
@@ -7664,7 +8100,7 @@ struct PageCanvasContainer: View {
                             page: page, isDark: usesDarkPageDisplay, lassoDragOffsets: shapeSelectionDragOffsets,
                             hiddenElementIDs: hiddenShapeSelectionIDs,
                             stopsElementTouches: Self.stopsElementTouches(for: drawingTool.wrappedValue),
-                            pageGlobalFrame: pageGlobalFrame
+                            pageGlobalFrameTracker: pageGlobalFrameTracker
                         )
                             .allowsHitTesting(!isReadOnlyMode)
                     }
@@ -7676,20 +8112,22 @@ struct PageCanvasContainer: View {
                 .background(
                     GeometryReader { pageProxy in
                         Color.clear
-                            .onAppear { pageGlobalFrame = pageProxy.frame(in: .global) }
-                            .onChange(of: pageProxy.frame(in: .global)) { _, newValue in pageGlobalFrame = newValue }
+                            .onAppear { pageGlobalFrameTracker.frame = pageProxy.frame(in: .global) }
+                            .onChange(of: pageProxy.frame(in: .global)) { _, newValue in
+                                pageGlobalFrameTracker.frame = newValue
+                            }
                     }
                 )
                 .clipShape(Rectangle())
                 .shadow(color: .black.opacity(0.14), radius: 3, y: 1)
                 .onReceive(NotificationCenter.default.publisher(for: .studiquoElementDragDropped)) { notification in
                     guard let transfer = notification.object as? ElementDragTransfer, !transfer.wasAccepted,
-                          pageGlobalFrame.contains(transfer.screenPoint),
+                          pageGlobalFrameTracker.frame.contains(transfer.screenPoint),
                           let element = modelContext.model(for: transfer.elementID) as? PageElement,
                           let sourcePage = element.page
                     else { return }
                     let geometry = Self.droppedElementGeometry(
-                        screenPoint: transfer.screenPoint, destinationPageGlobalFrame: pageGlobalFrame,
+                        screenPoint: transfer.screenPoint, destinationPageGlobalFrame: pageGlobalFrameTracker.frame,
                         sourceWidth: element.width, sourceHeight: element.height,
                         sourcePageWidth: sourcePage.pageWidth, sourcePageHeight: sourcePage.pageHeight,
                         destinationPageWidth: page.pageWidth, destinationPageHeight: page.pageHeight
@@ -8359,10 +8797,10 @@ private struct PageElementsLayer: View {
     /// recognizers first.
     var stopsElementTouches: Bool = false
     /// This page's own rectangle in window coordinates — see
-    /// `PageCanvasContainer.pageGlobalFrame`. Passed through to each element
+    /// `PageCanvasContainer`'s global frame tracker. Passed through to each element
     /// so a directly-dragged photo can tell whether it has crossed this
     /// page's own edge.
-    var pageGlobalFrame: CGRect = .zero
+    let pageGlobalFrameTracker: PageGlobalFrameTracker
 
     /// At most one element carries the resize/rotate chrome at a time, so
     /// the state lives here rather than in each element.
@@ -8384,7 +8822,7 @@ private struct PageElementsLayer: View {
                     lassoDragOffset: lassoDragOffsets[element.persistentModelID] ?? .zero,
                     isHiddenForLasso: hiddenElementIDs.contains(element.persistentModelID),
                     stopsElementTouches: stopsElementTouches,
-                    pageGlobalFrame: pageGlobalFrame
+                    pageGlobalFrameTracker: pageGlobalFrameTracker
                 )
                 // A selected element floats above the rest so its handles
                 // are never buried under a neighbour that happens to sit on
@@ -8438,6 +8876,8 @@ private struct ElementFrame {
 private struct EditablePageElement: View {
     @Bindable var element: PageElement
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.paneZoomScale) private var paneZoomScale
     let pageSize: CGSize
     let isDark: Bool
 
@@ -8459,11 +8899,11 @@ private struct EditablePageElement: View {
     /// this view's own `.contentShape`/gestures claiming it first.
     var stopsElementTouches: Bool = false
     /// This page's own rectangle in window coordinates — see
-    /// `PageCanvasContainer.pageGlobalFrame`. Only consulted for `.image`
+    /// `PageCanvasContainer`'s frame tracker. Only consulted for `.image`
     /// elements, whose own move handle can carry them across a page/pane
     /// boundary (see `moveGesture`); every other kind keeps its lasso-based
     /// (shapes) or purely local (text, etc.) behavior unchanged.
-    var pageGlobalFrame: CGRect = .zero
+    let pageGlobalFrameTracker: PageGlobalFrameTracker
 
     @State private var dragOrigin: CGPoint?
     /// The element's full state at the start of a same-page drag — captured
@@ -8490,6 +8930,10 @@ private struct EditablePageElement: View {
     @State private var rotationHandleSnapshot: PageElementSnapshot?
     @State private var pinchSnapshot: PageElementSnapshot?
     @State private var twistSnapshot: PageElementSnapshot?
+    /// A downsampled, decoded preview loaded once off the main thread. This
+    /// replaces synchronous `UIImage(data:)` calls from `body`, which used
+    /// to repeat on every scroll-driven view evaluation.
+    @State private var displayedImage: UIImage?
 
     private var elementSize: CGSize {
         CGSize(
@@ -8594,6 +9038,9 @@ private struct EditablePageElement: View {
                     markUpdated()
                 }
             }
+            .task(id: imageLoadKey) {
+                await loadImageIfNeeded()
+            }
     }
 
     @ViewBuilder
@@ -8611,7 +9058,7 @@ private struct EditablePageElement: View {
                 .background(.thinMaterial.opacity(0.25))
                 .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.accentColor.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4])))
         case .image:
-            if let data = element.imageData, let image = UIImage(data: data) {
+            if let image = displayedImage {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
@@ -8844,12 +9291,66 @@ private struct EditablePageElement: View {
             }
     }
 
+    private var imageLoadKey: String {
+        guard element.kind == .image, let data = element.imageData else { return "none" }
+        return NoteImagePipeline.cacheKey(
+            elementID: String(describing: element.persistentModelID),
+            data: data,
+            thumbnailPixelSize: requestedThumbnailTier.maximumPixelSize
+        )
+    }
+
+    private var requestedThumbnailTier: NoteImagePipeline.ThumbnailTier {
+        NoteImagePipeline.thumbnailTier(
+            forDisplayedSize: elementSize,
+            displayScale: displayScale,
+            zoomScale: paneZoomScale
+        )
+    }
+
+    @MainActor
+    private func loadImageIfNeeded() async {
+        guard element.kind == .image, let originalData = element.imageData else {
+            displayedImage = nil
+            return
+        }
+        let key = imageLoadKey
+        let tier = requestedThumbnailTier
+
+        // During resize or pinch zoom, keep the current bitmap visible and
+        // wait briefly for the gesture to settle. Because the task identity
+        // is tier-based, movement within one tier never starts new work.
+        if displayedImage != nil {
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+        }
+        if let image = await NoteImageCache.shared.image(
+            for: key,
+            data: originalData,
+            maximumPixelSize: tier.maximumPixelSize
+        ), !Task.isCancelled {
+            displayedImage = image
+        }
+
+        // Lazy, bounded migration for photos saved by older app versions.
+        // It happens only after the preview is available, so it never blocks
+        // the first visible frame or scrolling.
+        guard NoteImagePipeline.needsStorageOptimization(originalData),
+              await NoteImageMigrationBudget.shared.claim(key),
+              let optimized = await NoteImagePipeline.optimizedStorageDataAsync(from: originalData),
+              optimized.count < originalData.count,
+              element.imageData == originalData else { return }
+        element.imageData = optimized
+        element.page?.notebook?.updatedAt = .now
+        try? modelContext.save()
+    }
+
     /// A photo's own thumbnail, used as the floating ghost while its drag
     /// carries it past this page's edge (see `moveGesture`) — it's already
     /// just flat image bytes, so unlike a lasso selection there's nothing
     /// to render/rasterize.
     private var dragPreviewImage: UIImage? {
-        element.imageData.flatMap(UIImage.init(data:))
+        displayedImage
     }
 
     private var moveGesture: some Gesture {
@@ -8864,7 +9365,7 @@ private struct EditablePageElement: View {
                 // Only photos hand off to another page/pane — shapes already
                 // have the lasso for that, and every other kind (text, study
                 // tape, ...) keeps its purely local move.
-                if element.kind == .image, !pageGlobalFrame.contains(value.location) {
+                if element.kind == .image, !pageGlobalFrameTracker.frame.contains(value.location) {
                     if !isDraggingAcrossBoundary { cachedDragPreviewImage = dragPreviewImage }
                     isDraggingAcrossBoundary = true
                     NotificationCenter.default.post(
@@ -9631,16 +10132,17 @@ private enum ElementColorPreset: String, CaseIterable, Identifiable {
     }
 }
 
-private struct NoteFriendChatPickerPopover: View {
+private struct NoteChatPickerPopover: View {
     @ObservedObject var store: FriendStore
-    let onSelect: (FriendRecord) -> Void
+    let onSelectFriend: (FriendRecord) -> Void
+    let onSelectGroup: (FriendChatService.Group) -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 HStack {
-                    Text("フレンド")
+                    Text("チャット")
                         .font(.subheadline.weight(.semibold))
                     Spacer()
                     Button {
@@ -9658,64 +10160,89 @@ private struct NoteFriendChatPickerPopover: View {
 
                 Divider()
 
-                if store.friends.isEmpty {
-                    ContentUnavailableView(
-                        "フレンドがいません",
-                        systemImage: "person.2",
-                        description: Text("ホームのフレンド画面から追加できます。")
-                    )
-                    .frame(maxHeight: .infinity)
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
+                List {
+                    Section("フレンド") {
+                        if store.friends.isEmpty {
+                            Label("フレンドがいません", systemImage: "person.2")
+                                .foregroundStyle(.secondary)
+                        } else {
                             ForEach(store.friends) { friend in
                                 Button {
-                                    onSelect(friend)
+                                    onSelectFriend(friend)
                                 } label: {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "person.crop.circle.fill")
-                                            .font(.title3)
-                                            .foregroundStyle(Color.accentColor)
-                                            .frame(width: 32)
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(friend.name)
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundStyle(.primary)
-                                            if let latest = store.messages(for: friend).last {
-                                                Text(latest.text)
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                                    .lineLimit(1)
-                                            } else {
-                                                Text("チャットを開く")
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                        }
-                                        Spacer()
-                                        if let count = store.unreadCounts[friend.id], count > 0 {
-                                            Text("\(min(count, 99))")
-                                                .font(.caption2.weight(.bold))
-                                                .foregroundStyle(.white)
-                                                .frame(minWidth: 20, minHeight: 20)
-                                                .background(.red, in: Circle())
-                                        }
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 10)
-                                    .contentShape(Rectangle())
+                                    chatRow(
+                                        title: friend.name,
+                                        preview: store.messages(for: friend).last?.text,
+                                        icon: "person.crop.circle.fill",
+                                        unreadCount: store.unreadCounts[friend.id, default: 0]
+                                    )
                                 }
                                 .buttonStyle(.plain)
-                                Divider()
+                                .accessibilityIdentifier("note-chat-picker-friend-\(friend.id.uuidString)")
+                            }
+                        }
+                    }
+
+                    Section("グループ") {
+                        if store.groups.isEmpty {
+                            Label("参加中のグループがありません", systemImage: "person.3")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(store.groups, id: \.roomID) { group in
+                                Button {
+                                    onSelectGroup(group)
+                                } label: {
+                                    chatRow(
+                                        title: group.name,
+                                        preview: store.groupMessages[group.roomID]?.last?.text,
+                                        icon: "person.3.fill",
+                                        unreadCount: store.groupUnreadCounts[group.roomID, default: 0]
+                                    )
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
                 }
+                .listStyle(.insetGrouped)
             }
             .navigationBarHidden(true)
         }
         .frame(minWidth: 320, idealWidth: 360, minHeight: 280, idealHeight: 460)
         .presentationCompactAdaptation(.popover)
+    }
+
+    private func chatRow(
+        title: String,
+        preview: String?,
+        icon: String,
+        unreadCount: Int
+    ) -> some View {
+        let subtitle = preview.flatMap { $0.isEmpty ? nil : $0 } ?? "チャットを開く"
+        return HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if unreadCount > 0 {
+                Text("\(min(unreadCount, 99))")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 20, minHeight: 20)
+                    .background(.red, in: Circle())
+            }
+        }
+        .contentShape(Rectangle())
     }
 }
 

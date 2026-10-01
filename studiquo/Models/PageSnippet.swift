@@ -24,6 +24,7 @@ struct PageSnippet: Codable, Transferable, Hashable, Identifiable {
         CodableRepresentation(contentType: .studiquoPageSnippet)
         DataRepresentation(exportedContentType: .png) { $0.pngData }
     }
+
 }
 
 extension UTType {
@@ -66,5 +67,76 @@ enum PageSnippetRenderer {
             usedLiveDrawing: drawing != nil
         )
         return PageSnippet(pngData: data, sourceLabel: label)
+    }
+}
+
+/// Produces a chat-safe image from a page crop. Chat attachments are capped
+/// at 3 MB by the server, while a full-resolution PNG crop can easily exceed
+/// that even when the selected rectangle looks small on screen.
+enum ChatSnippetImageEncoder {
+    static let maximumBytes = 3 * 1024 * 1024
+    static let maximumDimension: CGFloat = 2_048
+
+    static func jpegData(for snippet: PageSnippet) -> Data? {
+        guard let source = snippet.image else { return nil }
+        let longest = max(source.size.width, source.size.height)
+        let scale = longest > maximumDimension ? maximumDimension / longest : 1
+        let targetSize = CGSize(
+            width: max(1, source.size.width * scale),
+            height: max(1, source.size.height * scale)
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let rendered = UIGraphicsImageRenderer(size: targetSize, format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: targetSize))
+            source.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+        for quality in [0.82, 0.70, 0.58, 0.45, 0.32] {
+            if let data = rendered.jpegData(compressionQuality: quality), data.count <= maximumBytes {
+                return data
+            }
+        }
+        return nil
+    }
+}
+
+/// Tracks snippet-to-composer handoffs independently for each chat surface.
+///
+/// A snippet can arrive through both the pending-item task and a drop event
+/// during a rapid pane update. Treating `begin` as an atomic claim prevents
+/// duplicate attachment chips and duplicate sends, while `fail`/`remove`
+/// deliberately release that claim so the user can retry.
+struct ChatSnippetAttachmentTracker: Equatable {
+    private(set) var acceptedSnippetIDs: Set<UUID> = []
+    private(set) var attachmentIDBySnippetID: [UUID: String] = [:]
+
+    mutating func begin(_ snippetID: UUID) -> Bool {
+        acceptedSnippetIDs.insert(snippetID).inserted
+    }
+
+    mutating func complete(_ snippetID: UUID, attachmentID: String) {
+        acceptedSnippetIDs.insert(snippetID)
+        attachmentIDBySnippetID[snippetID] = attachmentID
+    }
+
+    mutating func fail(_ snippetID: UUID) {
+        acceptedSnippetIDs.remove(snippetID)
+        attachmentIDBySnippetID[snippetID] = nil
+    }
+
+    mutating func removeAttachment(_ attachmentID: String) {
+        let snippetIDs = attachmentIDBySnippetID.compactMap {
+            $0.value == attachmentID ? $0.key : nil
+        }
+        for snippetID in snippetIDs { fail(snippetID) }
+    }
+
+    mutating func retainAttachments(withIDs remainingAttachmentIDs: Set<String>) {
+        let removedSnippetIDs = attachmentIDBySnippetID.compactMap {
+            remainingAttachmentIDs.contains($0.value) ? nil : $0.key
+        }
+        for snippetID in removedSnippetIDs { fail(snippetID) }
     }
 }

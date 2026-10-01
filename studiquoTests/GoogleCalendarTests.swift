@@ -48,8 +48,8 @@ final class GoogleCalendarTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer secret")
         XCTAssertEqual(query["singleEvents"], "true")
         XCTAssertEqual(query["orderBy"], "startTime")
-        XCTAssertNotNil(query["timeMin"])
-        XCTAssertNotNil(query["timeMax"])
+        XCTAssertNotNil(query["timeMin"] ?? nil)
+        XCTAssertNotNil(query["timeMax"] ?? nil)
     }
 
     func testTimedEventIsDecodedWithDescriptionAndStableExternalID() throws {

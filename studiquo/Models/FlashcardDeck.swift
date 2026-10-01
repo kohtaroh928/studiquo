@@ -72,6 +72,9 @@ final class Flashcard {
     var mastery: Int = 0
     var reviewCount: Int = 0
     var lastReviewedAt: Date?
+    /// The next spaced-repetition due date. Optional so existing CloudKit
+    /// records migrate without needing a backfill before the app can open.
+    var nextReviewAt: Date?
     var deck: FlashcardDeck?
 
     init(question: String, answer: String, order: Int) {

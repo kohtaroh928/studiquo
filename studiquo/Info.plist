@@ -37,6 +37,19 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Studiquo Page Snippet</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.studiquo.page-snippet</string>
+		</dict>
+	</array>
 	<key>GIDClientID</key>
 	<string>812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd.apps.googleusercontent.com</string>
 	<key>GIDServerClientID</key>
@@ -47,6 +60,12 @@
 	<string>ロックしたノートを安全に開くためにFace IDを使用します。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>AIトークの通話機能と文字起こし機能で音声を入力するためにマイクを使用します。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ノートを見ながら資料写真を表示するために写真ライブラリを使用します。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

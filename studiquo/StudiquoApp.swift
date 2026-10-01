@@ -3,6 +3,8 @@ import OSLog
 import GoogleSignIn
 import SwiftUI
 import SwiftData
+import UIKit
+import UserNotifications
 
 /// The language chosen in Settings, independent of the device's own
 /// language. Read directly from `UserDefaults` (the `@AppStorage` key is
@@ -80,6 +82,62 @@ let studiquoSchema = Schema([
 
 private let startupLogger = Logger(subsystem: "com.yabuko.studiquo", category: "Startup")
 
+@MainActor
+final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        AppNotificationPreferences.registerCategories()
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        PushNotificationRegistration.didRegister(deviceToken: deviceToken)
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        startupLogger.error("APNs registration failed: \(String(describing: error), privacy: .public)")
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        let identifier = notification.request.content.categoryIdentifier
+        if let kind = AppNotificationKind.allCases.first(where: { $0.categoryIdentifier == identifier }),
+           !AppNotificationPreferences.isEnabled(kind) {
+            return []
+        }
+        // Show a real system banner while Studiquo is foregrounded too. The
+        // destination view still remains the source of truth and refreshes
+        // from the server when the banner is tapped.
+        return [.banner, .list, .sound]
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let content = response.notification.request.content
+        await MainActor.run {
+            NotificationCenter.default.post(
+                name: .studiquoNotificationRoute,
+                object: nil,
+                userInfo: content.userInfo
+            )
+        }
+    }
+}
+
 /// Only fall back after the cloud attempt has actually returned an error.
 /// A deadline cannot cancel ModelContainer.init; opening another container
 /// on the same store while migration is still running can contend for its lock.
@@ -107,7 +165,10 @@ private func makeStudiquoModelContainer() throws -> ModelContainer {
 
 @main
 struct StudiquoApp: App {
-    @StateObject private var startup = StartupStoreLoader(openStore: makeStudiquoModelContainer)
+    @UIApplicationDelegateAdaptor(StudiquoAppDelegate.self) private var appDelegate
+    @StateObject private var startup = StartupStoreLoader {
+        try makeStudiquoModelContainer()
+    }
     @AppStorage("appLanguage") private var appLanguage = "system"
     @StateObject private var cloudSyncStatus = CloudKitSyncStatus()
 
@@ -129,6 +190,11 @@ struct StudiquoApp: App {
                     LibraryDropUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test") {
                     FriendChatUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test") ||
+                            ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test") ||
+                            ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test") ||
+                            ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test") {
+                    NoteSnippetFriendUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") {
                     TabPickerCreateUITestRoot()
                 } else {
@@ -144,6 +210,10 @@ struct StudiquoApp: App {
                 guard !ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--startup-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") else { return }
                 #endif
                 startup.start()
@@ -215,6 +285,120 @@ private struct FriendChatUITestRoot: View {
                 )]
             }
         }
+    }
+}
+
+/// Hosts the real note editor with one disposable notebook and one demo
+/// friend. It supplies the same `PageSnippet` notification emitted by the
+/// dashed selection tool, letting UI tests cover split-screen handoff without
+/// relying on Pencil coordinates or persistent user data.
+private struct NoteSnippetFriendUITestRoot: View {
+    @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
+    @State private var seededSnippet = false
+    @StateObject private var splitState = EditorSplitState()
+    @StateObject private var friendStore: FriendStore
+
+    init() {
+        AIDataDisclosure.acknowledge()
+        let store = FriendStore(
+            defaults: UserDefaults(suiteName: "NoteSnippetFriendUITest-\(UUID().uuidString)")!,
+            autoRefresh: false
+        )
+        store.friends = [Self.friend]
+        store.groups = [Self.group]
+        _friendStore = StateObject(wrappedValue: store)
+        _ = NoteSnippetFriendUITestStore.container
+    }
+
+    var body: some View {
+        NoteEditorView(
+            notebook: NoteSnippetFriendUITestStore.notebook,
+            columnVisibility: $columnVisibility,
+            onHome: {}
+        )
+        .modelContainer(NoteSnippetFriendUITestStore.container)
+        .environmentObject(splitState)
+        .environmentObject(friendStore)
+        .task {
+            guard !seededSnippet else { return }
+            try? await Task.sleep(for: .milliseconds(600))
+            seededSnippet = true
+            if ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test") ||
+                ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test") {
+                NotificationCenter.default.post(
+                    name: .studiquoPageSnipped,
+                    object: Self.openingSnippet
+                )
+                try? await Task.sleep(for: .milliseconds(800))
+                NotificationCenter.default.post(
+                    name: .studiquoPageSnipped,
+                    object: Self.dragSnippet
+                )
+                return
+            }
+            NotificationCenter.default.post(
+                name: .studiquoPageSnipped,
+                object: Self.snippet
+            )
+        }
+    }
+
+    static let friendID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+    static let friend = FriendRecord(
+        id: friendID,
+        name: "テスト太郎",
+        code: "TEST01",
+        todayStudySeconds: 0,
+        roomID: nil,
+        isDemo: true
+    )
+    static let group = FriendChatService.Group(
+        roomID: "group-regression-room",
+        name: "回帰テスト勉強会",
+        members: [.init(code: "ME0000", name: "自分")]
+    )
+
+    static let snippet: PageSnippet = {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 240, height: 160))
+        let image = renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 240, height: 160))
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 20, y: 20, width: 200, height: 120))
+        }
+        return PageSnippet(pngData: image.pngData()!, sourceLabel: "回帰テスト")
+    }()
+
+    static let openingSnippet = PageSnippet(
+        pngData: snippet.pngData,
+        sourceLabel: "準備"
+    )
+    static let dragSnippet = PageSnippet(
+        pngData: snippet.pngData,
+        sourceLabel: "ドラッグ回帰"
+    )
+}
+
+@MainActor
+private enum NoteSnippetFriendUITestStore {
+    static let container: ModelContainer = {
+        let configuration = ModelConfiguration(
+            schema: studiquoSchema,
+            isStoredInMemoryOnly: true,
+            cloudKitDatabase: .none
+        )
+        let container = try! ModelContainer(for: studiquoSchema, configurations: configuration)
+        let notebook = Notebook(title: "切り抜き送信テスト")
+        let page = NotePage(order: 0)
+        page.notebook = notebook
+        notebook.addPage(page)
+        container.mainContext.insert(notebook)
+        try! container.mainContext.save()
+        return container
+    }()
+
+    static var notebook: Notebook {
+        try! container.mainContext.fetch(FetchDescriptor<Notebook>()).first!
     }
 }
 
