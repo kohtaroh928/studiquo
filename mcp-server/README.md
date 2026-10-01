@@ -21,27 +21,39 @@ Studiquoアプリから同期したノート・OCRテキスト・暗記カード
 
 リモートMCPの認証は動的クライアント登録、OAuth認可コード＋PKCE、アクセストークン更新を使います。初回接続時の確認はログイン済みiPadでのコード承認です。作成内容はアカウントごとのDurable Object受信箱に保持し、iPadのSwiftData保存記録と同じトランザクションで取り込み済みとして記録します。ChatGPT側の書き込み機能の利用可否は契約プランとクライアントの対応状況に依存します。
 
-## AI（Gemini）プロキシ
+## AI（Gemini / Anthropic / OpenAI）プロキシ
 
-アプリのAIトークと証明添削は、Geminiを直接呼ばずにこのWorkerを経由します。**APIキーはこのWorkerだけが持ち、アプリには一切入りません。**
+アプリのAIトークと証明添削は、各社のAPIを直接呼ばずにこのWorkerを経由します。**APIキーはこのWorkerだけが持ち、アプリには一切入りません。**
 
 | エンドポイント | 用途 |
 | --- | --- |
-| `POST /api/ai/chat` | AIトーク（SSEで逐次返す） |
-| `POST /api/ai/rubric` | 模範解答から採点基準を作る |
-| `POST /api/ai/grade` | 答案画像を採点基準で採点する |
+| `POST /api/ai/chat` | AIトーク（SSEで逐次返す）。プラン対応モデルを選べる |
+| `POST /api/ai/rubric` | 模範解答から採点基準を作る（Gemini固定） |
+| `POST /api/ai/grade` | 答案画像を採点基準で採点する（Gemini固定） |
+| `POST /api/ai/review` | 復習教材（解説＋一問一答）を作る（Gemini固定） |
 
-認証は `/api/*` と同じ端末トークンです。1端末あたりの1日の上限（チャット120回・添削20回）をKVで数えており、`CHAT_DAILY_LIMIT` / `GRADING_DAILY_LIMIT` で変更できます。
+認証は `/api/*` と同じ端末トークンで、`session.sub` を `entitlements.js`の`getPlan`でRevenueCatの`subscribers`テーブル（D1 `ADMIN_DB`、`admin.js`のWebhookが書き込む）に照会し、standard/plus/proのいずれかを解決します。RevenueCatの`app_user_id`はiOS側が`Purchases.shared.logIn(session.sub)`を呼ぶ前提でstudiquoの`sub`と一致させています（呼ばれていないと常にstandard扱いになります）。
 
-システムプロンプトと採点スキーマはWorker側にあるので、**採点の指示を直すのにアプリの再申請は要りません。** モデルも `GEMINI_CHAT_MODEL` / `GEMINI_GRADING_MODEL` で差し替えられます。
+1端末・1日あたりのAIクレジット上限はプラン別（standard 30 / plus 750 / pro 2000、`ai.js`の`PLAN_LIMITS`）で、`CHAT_DAILY_LIMIT` / `GRADING_DAILY_LIMIT` / `REVIEW_DAILY_LIMIT` で上書きできます。`/api/ai/chat`のみ、リクエストボディの`model`でプラン対応モデル（standardはGemini、plus以降でAnthropic Haiku/Sonnet・OpenAIミッド、proでAnthropic Opus・OpenAIフラッグシップまで）を選べ、プラン外のモデルを指定すると403になります。`model`を省略した場合は従来通りGeminiのみを呼びます。
+
+システムプロンプトと採点スキーマはWorker側にあるので、**採点の指示を直すのにアプリの再申請は要りません。** Geminiのモデルは `GEMINI_CHAT_MODEL` / `GEMINI_GRADING_MODEL` で差し替えられます。
 
 ### 初回セットアップ
 
 ```bash
 npx wrangler secret put GEMINI_API_KEY
+npx wrangler secret put ANTHROPIC_API_KEY
+npx wrangler secret put OPENAI_API_KEY
 ```
 
-プロンプトが出たらキーを貼り付けます。キーはCloudflareに保存され、コードにもgitにも残りません。
+プロンプトが出たらキーを貼り付けます。キーはCloudflareに保存され、コードにもgitにも残りません。OpenAIの実際のモデルIDは本リポジトリでは未確定のため、OpenAIの最新ドキュメントを見て決め、下記も設定してください（モデル名自体は機密情報ではないので `wrangler.jsonc` の `vars` に書いても構いません）。
+
+```bash
+npx wrangler secret put OPENAI_MID_MODEL
+npx wrangler secret put OPENAI_FLAGSHIP_MODEL
+```
+
+`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` が未設定のまま該当プロバイダのモデルを選ぶとそのリクエストだけがエラーになり（Geminiや設定済みの他モデルには影響しません）、`OPENAI_MID_MODEL` / `OPENAI_FLAGSHIP_MODEL` が未設定のまま`"openai-mid"` / `"openai-flagship"`を選ぶと503を返します。
 
 ```bash
 npx wrangler deploy
