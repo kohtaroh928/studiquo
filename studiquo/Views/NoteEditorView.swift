@@ -318,6 +318,7 @@ struct NoteEditorView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var splitState: EditorSplitState
     @EnvironmentObject private var friendStore: FriendStore
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     // The browser view observes this model directly. Keeping the reference in
     // State prevents every loading-progress change from rebuilding all pages.
     @State private var webBrowser = WebBrowserModel()
@@ -395,6 +396,10 @@ struct NoteEditorView: View {
     @State private var photoStudyPreviousSplitRatio: CGFloat?
     @State private var photoStudyPreviousActivePane: ActivePane?
     @State private var selectedPhotoStudyAssetID: String?
+    /// Set when a new image/page would push this account's approximate
+    /// cloud-sync footprint over its plan's limit — see
+    /// `exceedsStorageLimit(addingBytes:)`.
+    @State private var storageLimitMessage: String?
     @State private var isRecognizingHandwriting = false
     @State private var recognitionProgress = ""
     @State private var isFocusMode = false
@@ -643,6 +648,14 @@ struct NoteEditorView: View {
                 Task { await applyBackgroundImage(from: data) }
             }
             .ignoresSafeArea()
+        }
+        .alert("Studiquo", isPresented: Binding(
+            get: { storageLimitMessage != nil },
+            set: { if !$0 { storageLimitMessage = nil } }
+        )) {
+            Button("OK") { storageLimitMessage = nil }
+        } message: {
+            Text(storageLimitMessage ?? "")
         }
         .onChange(of: notebook.sortedPages.count) { _, count in
             primaryPageIndex = clamped(primaryPageIndex, pageCount: count)
@@ -4046,30 +4059,52 @@ struct NoteEditorView: View {
         notebook.updatedAt = .now
     }
 
+    /// Whether writing `addingBytes` more externally-stored content would
+    /// push this account's approximate cloud-sync footprint past its plan's
+    /// limit (see `StorageUsageEstimator`). Sets `storageLimitMessage` and
+    /// returns `true` when it would, so callers can bail out before the
+    /// write — mirrors `ProfileAndFriendsView.uploadIfPossible`'s
+    /// check-then-bail shape for its own (unrelated) attachment-size limit.
+    @MainActor
+    private func exceedsStorageLimit(addingBytes: Int) -> Bool {
+        guard StorageUsageCache.shared.wouldExceedLimit(
+            addingBytes: addingBytes, plan: subscriptionStore.currentPlan, in: modelContext
+        ) else { return false }
+        storageLimitMessage = L("クラウド同期の容量上限に達しました。Proプランへのアップグレードをご検討ください。")
+        return true
+    }
+
     @MainActor
     private func addImageElement(from data: Data) async {
         guard let page = currentPrimaryPage else { return }
         // Photo-library assets can be tens of megapixels. Persist a bounded
         // representation so every later render, sync, backup and duplicate
-        // does not carry the original camera-sized payload.
+        // does not carry the original camera-sized payload — and so the
+        // storage-limit check below (and the cache adjustment after) count
+        // what is actually persisted, not the raw camera-sized input.
         let storedData = await NoteImagePipeline.optimizedStorageDataAsync(from: data) ?? data
+        guard !exceedsStorageLimit(addingBytes: storedData.count) else { return }
         let element = PageElement(kind: .image, imageData: storedData, width: 0.42, height: 0.28)
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
         notebook.updatedAt = .now
+        StorageUsageCache.shared.adjust(by: storedData.count)
     }
 
     @MainActor
     private func applyBackgroundImage(from data: Data) async {
         guard let image = UIImage(data: data),
               let page = currentPrimaryPage else { return }
-        page.backgroundImageData = image.jpegData(compressionQuality: 0.92)
+        let encoded = image.jpegData(compressionQuality: 0.92)
+        guard !exceedsStorageLimit(addingBytes: encoded?.count ?? 0) else { return }
+        page.backgroundImageData = encoded
         page.pageWidth = max(100, image.size.width)
         page.pageHeight = max(100, image.size.height)
         page.notebook?.refreshLibraryMetadata()
         notebook.updatedAt = .now
+        StorageUsageCache.shared.adjust(by: encoded?.count ?? 0)
     }
 
     /// Arms the shape tool for rectangle/ellipse/line: the shape itself
@@ -5630,6 +5665,11 @@ private struct AIChatPane: View {
     /// Whether the app knows where its AI server is. The API key itself lives
     /// on that server, so there is nothing for the student to enter.
     @State private var hasKey = AI.provider.isConfigured
+    /// Mirrors `AIModelSelection.current` into `@State` so picking a model
+    /// from `modelPickerButton`'s menu redraws the header immediately,
+    /// rather than waiting for the next time this view happens to rebuild.
+    @State private var selectedModel = AIModelSelection.current
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @State private var isHistorySidebarVisible = true
     @State private var pendingDeleteThread: AIChatThread?
     @State private var attachmentPickerMode: AttachmentPickerMode?
@@ -5664,6 +5704,39 @@ private struct AIChatPane: View {
         }
     }
 
+    /// Shows the model AIトーク currently talks to, and lets the student
+    /// switch — scoped by `subscriptionStore.currentPlan`: a model the plan
+    /// doesn't unlock yet shows a lock icon and which plan would unlock it,
+    /// and tapping it does nothing (the Worker would reject it with 403
+    /// anyway; this just avoids a round trip to find that out).
+    private var modelPickerButton: some View {
+        Menu {
+            ForEach(AIModelCatalog.all) { model in
+                let isAvailable = AIModelCatalog.isAvailable(model.id, for: subscriptionStore.currentPlan)
+                Button {
+                    guard isAvailable else { return }
+                    selectedModel = model.id
+                    AIModelSelection.current = model.id
+                } label: {
+                    if isAvailable {
+                        Text(model.displayName)
+                    } else {
+                        Label(L("\(model.displayName)（\(model.requiredPlan.title)で利用可能）"), systemImage: "lock.fill")
+                    }
+                }
+                .disabled(!isAvailable)
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(AIModelCatalog.info(for: selectedModel)?.displayName ?? selectedModel.rawValue)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
@@ -5692,9 +5765,13 @@ private struct AIChatPane: View {
                             Text(selectedThread?.title ?? L("新しいトーク"))
                                 .font(.headline)
                                 .lineLimit(1)
-                            Text(hasKey ? AI.provider.displayName : L("AIサーバー未設定"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            if hasKey {
+                                modelPickerButton
+                            } else {
+                                Text(L("AIサーバー未設定"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         Image(systemName: hasKey ? "sparkles" : "exclamationmark.triangle")
