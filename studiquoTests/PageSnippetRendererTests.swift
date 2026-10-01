@@ -9,6 +9,7 @@ import XCTest
 /// not just ink), and a defense-in-depth check for a degenerate region —
 /// items already covered at the `InkCanvasView` level (small/out-of-bounds
 /// drags) are not repeated here.
+@MainActor
 final class PageSnippetRendererTests: XCTestCase {
     /// A page whose "printed" background is red on the left half and blue
     /// on the right half — standing in for a rasterized PDF page, the way
@@ -115,6 +116,35 @@ final class PageSnippetRendererTests: XCTestCase {
         let offStroke = try XCTUnwrap(pixel(of: image, atPixelX: width / 2, y: Int(Double(cg.height) * 0.1)))
         XCTAssertGreaterThan(onStroke.g, 150, "ペンで書いた部分は、緑色のインクが写る必要があります。")
         XCTAssertGreaterThan(offStroke.r, 150, "ペンが通っていない部分では、背景(印刷された内容)がそのまま透けて見える必要があります。")
+    }
+
+    // MARK: - regression: the procedural template pattern (方眼/横罫/etc.),
+    // not just an imported scan, must also survive into the snip
+
+    /// Before this fix, `ExportService.makeImage` (which the snip tool
+    /// renders the whole page through before cropping) only ever drew a
+    /// flat `paperColorHex` fill for a page with no `backgroundImageData` —
+    /// it never drew the procedural 方眼/横罫/ドット/etc. pattern that
+    /// `PageTemplateBackground` renders live on screen. A page using a
+    /// template (rather than an imported scan/PDF) and little or no ink in
+    /// the dragged rectangle therefore came back as an indistinguishable
+    /// flat white crop. Comparing against a `.blank` template's render
+    /// (rather than asserting an exact pixel color) keeps this test
+    /// independent of the pattern's exact line width/opacity/anti-aliasing.
+    func testSnippetOfARuledTemplatePageDiffersFromABlankTemplatePage() throws {
+        let ruledPage = NotePage(order: 0, pageWidth: 200, pageHeight: 200)
+        ruledPage.pageTemplate = .ruled
+        let blankPage = NotePage(order: 0, pageWidth: 200, pageHeight: 200)
+        blankPage.pageTemplate = .blank
+
+        let wholePage = CGRect(x: 0, y: 0, width: 200, height: 200)
+        let ruledSnippet = try XCTUnwrap(PageSnippetRenderer.snippet(of: ruledPage, rect: wholePage, label: "test"))
+        let blankSnippet = try XCTUnwrap(PageSnippetRenderer.snippet(of: blankPage, rect: wholePage, label: "test"))
+
+        XCTAssertNotEqual(
+            ruledSnippet.pngData, blankSnippet.pngData,
+            "横罫テンプレートのページは、白紙テンプレートと見た目が同じであってはいけません(罫線が切り抜きに写っていない)。"
+        )
     }
 
     // MARK: - defense in depth: a degenerate region never produces a corrupt image
