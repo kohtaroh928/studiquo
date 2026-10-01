@@ -356,7 +356,7 @@ async function handleChat(request, env, key, ctx, plan) {
     return json({ error: await readError(upstream) }, upstream.status || 502);
   }
 
-  return streamNormalizedText(upstream, extractText, ctx, {
+  return streamNormalizedText(upstream, extractText, ctx, env, key, {
     "x-studiquo-images-received": String(images.length),
   });
 }
@@ -375,7 +375,7 @@ async function handleChat(request, env, key, ctx, plan) {
  * runtime cancelled it. Here the buffer is an ordinary local and the
  * response is returned immediately while the pump runs behind it.
  */
-function streamNormalizedText(upstream, extractText, ctx, extraHeaders = {}) {
+function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders = {}) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
