@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import * as z from "zod/v4";
 import { handleAI } from "./ai.js";
+import { getPlan } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys } from "./passkeys.js";
@@ -407,11 +408,18 @@ export default {
         return json({ cleared: true });
       }
 
-      // Gemini proxy. Deliberately not gated on a synced snapshot the way
-      // /mcp is — the AI features work on a fresh install, before the user
-      // has ever run a sync.
-      const ai = await handleAI(url, request, env, key, ctx);
-      if (ai) return ai;
+      // AI proxy (Gemini/Anthropic/OpenAI, gated and rate-limited by plan).
+      // Deliberately not gated on a synced snapshot the way /mcp is — the AI
+      // features work on a fresh install, before the user has ever run a
+      // sync. The plan is resolved here, once, right before the one route
+      // that needs it — not for every /api/* request above — since it costs
+      // a D1 read (entitlements.js's getPlan) that every other route here
+      // has no use for.
+      if (url.pathname.startsWith("/api/ai/")) {
+        const plan = session ? await getPlan(env, session.sub) : "standard";
+        const ai = await handleAI(url, request, env, key, ctx, session, plan);
+        if (ai) return ai;
+      }
 
       const documentCollab = await handleDocumentCollab(url, request, env, key, ctx);
       if (documentCollab) return documentCollab;
