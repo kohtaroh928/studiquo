@@ -89,6 +89,14 @@ targets:
         NSPhotoLibraryUsageDescription: "ノートを見ながら資料写真を表示するために写真ライブラリを使用します。"
         UIBackgroundModes:
           - remote-notification
+        # Exported type for page snippets (drag/copy between notes). Kept here
+        # because xcodegen regenerates studiquo/Info.plist from this block and
+        # drops any key that only exists in the plist file.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.studiquo.page-snippet
+            UTTypeDescription: Studiquo Page Snippet
+            UTTypeConformsTo:
+              - public.data
         GIDClientID: "812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd.apps.googleusercontent.com"
         GIDServerClientID: "812858933445-q6j9uih0o702884hemnk2okiet26gv1j.apps.googleusercontent.com"
         CFBundleURLTypes:
