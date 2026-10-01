@@ -769,6 +769,7 @@ private struct AppSettingsView: View {
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = true
     @State private var showsAIDataDisclosure = false
     @State private var showsPrivacyPolicy = false
+    @State private var showsTermsOfUse = false
     @State private var showsSubscriptionPlans = false
     @State private var showsAccountDeletion = false
     @EnvironmentObject private var authentication: AuthenticationStore
@@ -848,6 +849,7 @@ private struct AppSettingsView: View {
                 Section {
                     Button("AI機能とデータ送信について") { showsAIDataDisclosure = true }
                     Button("プライバシーポリシーを見る") { showsPrivacyPolicy = true }
+                    Button("利用規約を見る") { showsTermsOfUse = true }
                 } header: {
                     Text("プライバシー")
                 } footer: {
@@ -869,6 +871,9 @@ private struct AppSettingsView: View {
             }
             .sheet(isPresented: $showsPrivacyPolicy) {
                 PrivacyPolicyView()
+            }
+            .sheet(isPresented: $showsTermsOfUse) {
+                TermsOfUseView()
             }
             .sheet(isPresented: $showsSubscriptionPlans) {
                 SubscriptionPlansView()
@@ -1390,7 +1395,112 @@ private struct AIDataDisclosureView: View {
 /// App Store Connect / Sign in with Apple configuration and anyone sharing a
 /// link to it; this sheet is the same wording for someone already inside the
 /// app. Editing one without the other lets them drift out of sync.
-private struct PrivacyPolicyView: View {
+/// Not `private`: also presented from `SubscriptionPlansView` next to the
+/// purchase buttons, per App Store Review Guideline 3.1.2's requirement
+/// that an auto-renewable subscription link to its Terms of Use (EULA)
+/// from inside the app, not just from the App Store listing.
+struct TermsOfUseView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Text("studiquoをダウンロード、インストール、または利用することで、この利用規約に同意したものとみなされます。")
+                        .foregroundStyle(.secondary)
+
+                    policySection(title: "1. サービスの内容") {
+                        Text("本アプリは、ノート、暗記帳、学習計画、カレンダーを管理するための学生向け学習支援アプリです。機能の一部は、利用者自身のApple IDまたはGoogleアカウントでのサインインを必要とします。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "2. アカウント") {
+                        bullet("登録情報", "利用者は、登録情報を正確に保つ責任を負います。")
+                        bullet("管理責任", "アカウントおよびログイン情報の管理は利用者自身の責任で行ってください。アカウントを通じて行われた操作は、利用者本人が行ったものとみなされます。")
+                        bullet("未成年者の利用", "本アプリに年齢確認の仕組みはありません。未成年者が利用する場合は、保護者の方の責任のもとでご利用ください。")
+                    }
+
+                    policySection(title: "3. 利用者が作成するコンテンツ") {
+                        Text("ノート、暗記帳、文書、スライドなど、利用者が本アプリ内で作成するコンテンツの権利は利用者に帰属します。運営は、保存・同期・共有・AI機能への送信など、利用者自身が指示した処理を提供するために必要な範囲でのみ、これらのコンテンツを取り扱います。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "4. AI機能について") {
+                        Text("AIトーク・添削・翌日復習などの機能は、外部のAIサービスを利用して応答を生成します。AIの回答は誤りを含む可能性があり、学習の参考情報として提供されるものであって、正確性・完全性を保証するものではありません。成績や試験結果等に関する判断は、利用者自身の責任で行ってください。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "5. サブスクリプションと支払い") {
+                        bullet("自動更新", "Plus・Proプランは、App Storeを通じた自動更新のサブスクリプションです。購入はApple IDに設定した決済手段で行われます。")
+                        bullet("更新と解約", "現在の購読期間が終了する24時間前までに解約しない限り、同一期間で自動的に更新されます。解約はApp Storeの設定からいつでも行えます。本アプリ内からApp Storeの契約を直接解約することはできません。")
+                        bullet("プラン内容の変更", "プラン別のAIクレジット上限・利用可能なAIモデル・クラウド同期容量の上限は、本アプリ内の表示および運営の判断により変更される場合があります。")
+                    }
+
+                    policySection(title: "6. 禁止事項") {
+                        Text("法令または公序良俗に違反する行為、他の利用者への嫌がらせ・誹謗中傷、本アプリまたは関連サーバーへの不正アクセス、他者の権利を侵害する行為、本アプリを不正または詐欺的な目的で利用する行為を禁止します。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "7. 本アプリの変更・中断・終了") {
+                        Text("運営は、事前の通知なく本アプリの内容を変更し、提供を一時的に中断し、または終了することがあります。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "8. アカウントの削除・利用停止") {
+                        Text("利用者は、設定からいつでも自身のアカウントを削除できます。運営は、本規約に違反した利用者について、通知なくアカウントの利用を停止する場合があります。App Storeのサブスクリプションは、アカウント削除だけでは解約されないため、App Storeで別途解約の手続きを行ってください。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "9. 免責事項") {
+                        Text("本アプリは現状有姿で提供され、特定の目的への適合性、正確性、継続的な可用性について、いかなる保証も行いません。本アプリの利用により生じた損害について、運営は法令上許容される最大限の範囲で責任を負いません。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "10. 準拠法・管轄") {
+                        Text("本規約の解釈には日本法を準拠法とします。本アプリに関して生じた紛争については、運営の所在地を管轄する裁判所を第一審の専属的合意管轄裁判所とします。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "11. 本規約の変更") {
+                        Text("運営は、本規約を変更することがあります。重要な変更がある場合は、アプリ内でお知らせします。変更後も本アプリの利用を継続した場合、変更後の規約に同意したものとみなされます。")
+                            .font(.subheadline)
+                    }
+
+                    policySection(title: "お問い合わせ先") {
+                        Text("本規約に関するご質問は、yabukohtaroh@gmail.comまでご連絡ください。")
+                            .font(.subheadline)
+                    }
+                }
+                .padding(22)
+            }
+            .navigationTitle("利用規約")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("閉じる") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func policySection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.headline)
+            content()
+        }
+    }
+
+    private func bullet(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.subheadline.weight(.semibold))
+            Text(detail).font(.subheadline).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Not `private`: also presented from `SubscriptionPlansView` next to the
+/// purchase buttons (see `TermsOfUseView`'s doc comment above for why).
+struct PrivacyPolicyView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {

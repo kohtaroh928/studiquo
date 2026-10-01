@@ -12,6 +12,7 @@ test("GET / serves the public Studiquo home page", async () => {
   assert.match(body, /studiquo/);
   assert.match(body, /Googleカレンダー連携/);
   assert.match(body, /href="\/privacy"/);
+  assert.match(body, /href="\/terms"/);
 });
 
 test("GET Search Console verification file proves site ownership", async () => {
@@ -34,6 +35,46 @@ test("GET /privacy serves the privacy policy without a bearer token", async () =
   assert.match(body, /Google Calendar API/);
   assert.match(body, /yabukohtaroh@gmail\.com/);
   assert.doesNotMatch(body, /【/);
+});
+
+test("GET /terms serves the terms of use without a bearer token", async () => {
+  const response = await worker.fetch(new Request("https://example.test/terms"), {}, noopCtx);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /text\/html/);
+  const body = await response.text();
+  assert.match(body, /利用規約/);
+  assert.match(body, /自動的に更新/);
+  assert.match(body, /App Store/);
+  assert.match(body, /yabukohtaroh@gmail\.com/);
+  assert.doesNotMatch(body, /【/);
+});
+
+// App Store Review Guideline 3.1.2: an auto-renewable subscription's terms
+// must disclose the renewal/cancellation mechanics, not just that it
+// renews. These phrases are what SubscriptionPlansView's purchase screen
+// links out to — losing any of them silently would still pass the plain
+// "renders a page" check above.
+test("GET /terms discloses the auto-renewal cancellation window and how to cancel", async () => {
+  const response = await worker.fetch(new Request("https://example.test/terms"), {}, noopCtx);
+  const body = await response.text();
+  assert.match(body, /24時間/);
+  assert.match(body, /解約/);
+  assert.match(body, /プライバシーポリシー/);
+});
+
+// The CSP that keeps these static, un-templated legal pages from running
+// injected scripts (see privacyPolicyHTML's own doc comment) must cover
+// /terms too — it is easy to add a new route under handleLegal and forget
+// the header options that make its inline <style> block render correctly.
+test("/privacy and /terms both ship the inline-style-only CSP", async () => {
+  for (const path of ["/privacy", "/terms"]) {
+    const response = await worker.fetch(new Request(`https://example.test${path}`), {}, noopCtx);
+    assert.equal(
+      response.headers.get("content-security-policy"),
+      "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+      `${path} should ship the inline-style CSP`,
+    );
+  }
 });
 
 test("a request to an unrelated path is not intercepted by the legal router", async () => {
