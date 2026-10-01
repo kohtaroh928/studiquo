@@ -25,6 +25,7 @@ final class StorageUsageEstimatorTests: XCTestCase {
 
         let notebook = Notebook(title: "ノート")
         notebook.encryptedContent = Data(repeating: 1, count: 10)
+        notebook.lockedPDFData = Data(repeating: 1, count: 15)
         context.insert(notebook)
 
         let page = NotePage(order: 0)
@@ -89,7 +90,7 @@ final class StorageUsageEstimatorTests: XCTestCase {
 
         try context.save()
 
-        let expected = 10 + 20 + 30 + 40 + 50 + 60 + 70 + 80 + 90 + 100 + 110 + 120 + quizBytes
+        let expected = 10 + 15 + 20 + 30 + 40 + 50 + 60 + 70 + 80 + 90 + 100 + 110 + 120 + quizBytes
         XCTAssertEqual(try StorageUsageEstimator.totalBytes(in: context), expected)
     }
 

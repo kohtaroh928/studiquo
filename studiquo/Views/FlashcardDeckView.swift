@@ -9,7 +9,17 @@ import SwiftData
 struct FlashcardDeckView: View {
     @Bindable var deck: FlashcardDeck
     var onHome: () -> Void = {}
-    @State private var mode: Mode = .edit
+    /// Set when opened from a "missed cards" notification or banner: jump
+    /// straight into a study session over the cards that need review.
+    var startsWithMistakeReview = false
+    @State private var mode: Mode
+
+    init(deck: FlashcardDeck, onHome: @escaping () -> Void = {}, startsWithMistakeReview: Bool = false) {
+        self.deck = deck
+        self.onHome = onHome
+        self.startsWithMistakeReview = startsWithMistakeReview
+        _mode = State(initialValue: startsWithMistakeReview ? .study : .edit)
+    }
 
     private enum Mode: String, CaseIterable, Identifiable {
         case edit = "カード作成"
@@ -69,7 +79,7 @@ struct FlashcardDeckView: View {
     }
 
     private var study: some View {
-        FlashcardStudyContent(deck: deck, onHome: onHome)
+        FlashcardStudyContent(deck: deck, onHome: onHome, startsWithMistakeReview: startsWithMistakeReview)
     }
 }
 
@@ -78,6 +88,7 @@ struct FlashcardStudyContent: View {
     @Bindable var deck: FlashcardDeck
     @Query private var allDecks: [FlashcardDeck]
     var onHome: () -> Void = {}
+    var startsWithMistakeReview = false
     @State private var phase: Phase = .setup
     @State private var cards: [Flashcard] = []
     @State private var index = 0
@@ -113,6 +124,16 @@ struct FlashcardStudyContent: View {
         .fullScreenCover(isPresented: $adGate.isShowingAd) {
             InterstitialAdPlaceholder { adGate.dismiss() }
         }
+        .onAppear {
+            guard startsWithMistakeReview, phase == .setup else { return }
+            let due = MistakeReviewPolicy.dueCards(in: deck.sortedCards)
+            startStudy(with: due.isEmpty ? missedCards : due)
+        }
+    }
+
+    /// Every card on the missed list, due or not.
+    private var missedCards: [Flashcard] {
+        deck.sortedCards.filter(\.needsReview)
     }
 
     private var setupView: some View {
@@ -127,6 +148,20 @@ struct FlashcardStudyContent: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.indigo)
                 .disabled(deck.sortedCards.isEmpty)
+
+                if !missedCards.isEmpty {
+                    Button {
+                        startStudy(with: missedCards)
+                    } label: {
+                        Label("間違えた問題を復習(\(missedCards.count)問)", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .accessibilityIdentifier("flashcard-mistake-review-start")
+                }
 
                 studySetting(
                     title: "出題順",
@@ -376,6 +411,7 @@ struct FlashcardStudyContent: View {
             incorrectCards.append(card)
             card.mastery = max(0, card.mastery - 1)
         }
+        MistakeReviewPolicy.record(correct: correct, on: card, at: reviewedAt)
         card.nextReviewAt = FlashcardReviewNotifications.nextReviewDate(
             after: reviewedAt,
             mastery: card.mastery,

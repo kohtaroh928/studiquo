@@ -22,6 +22,14 @@ final class Notebook {
     /// the notebook isn't locked at all, or because it's the one currently
     /// open in the editor.
     @Attribute(.externalStorage) var encryptedContent: Data?
+    /// The original, still-encrypted PDF bytes, kept only when this notebook
+    /// was imported from a password-protected PDF (see `importPDF` in
+    /// ContentView.swift) — so "PDFのパスワードを解除" can operate on it
+    /// later from the library's long-press menu without asking the student
+    /// to re-locate the original file. Cleared once the password has
+    /// actually been removed (either from that menu or from the
+    /// post-import "save a password-free copy too?" offer).
+    @Attribute(.externalStorage) var lockedPDFData: Data?
     var cachedPageCount: Int = 0
     var cachedContainsPDF: Bool = false
     var libraryMetadataVersion: Int = 0
@@ -49,6 +57,10 @@ final class Notebook {
 
     var containsPDF: Bool {
         cachedContainsPDF
+    }
+
+    var hasLockedPDFToUnlock: Bool {
+        lockedPDFData != nil
     }
 
     var pageCountForLibrary: Int {

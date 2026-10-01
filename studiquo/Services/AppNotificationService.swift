@@ -56,8 +56,20 @@ enum AppNotificationPreferences {
     }
 
     static func registerCategories() {
-        let categories = Set(AppNotificationKind.allCases.map {
-            UNNotificationCategory(identifier: $0.categoryIdentifier, actions: [], intentIdentifiers: [])
+        let categories = Set(AppNotificationKind.allCases.map { kind -> UNNotificationCategory in
+            let actions: [UNNotificationAction] = kind == .flashcardReview ? [
+                UNNotificationAction(
+                    identifier: FlashcardReviewNotifications.reviewActionIdentifier,
+                    title: L("今すぐ復習"),
+                    options: [.foreground]
+                ),
+                UNNotificationAction(
+                    identifier: FlashcardReviewNotifications.snoozeActionIdentifier,
+                    title: L("あとで"),
+                    options: []
+                ),
+            ] : []
+            return UNNotificationCategory(identifier: kind.categoryIdentifier, actions: actions, intentIdentifiers: [])
         })
         UNUserNotificationCenter.current().setNotificationCategories(categories)
     }
@@ -68,7 +80,7 @@ enum AppNotificationPreferences {
         case .calendarDeadline:
             prefixes = ["event-reminder-", "university-deadline-"]
         case .flashcardReview:
-            prefixes = ["flashcard-review-"]
+            prefixes = ["flashcard-review-", "flashcard-snooze-"]
         case .studyStreak:
             prefixes = ["study-streak-"]
         case .aiTaskComplete:
@@ -133,8 +145,36 @@ enum NotificationInstallationIdentity {
     }
 }
 
+/// A value-type view of one card, so the scheduling plan below can be built
+/// and tested without SwiftData or UserNotifications.
+struct FlashcardReviewSnapshot {
+    var deckKey: String
+    var deckTitle: String
+    var question: String
+    /// The regular spaced-repetition due date, if the card has been studied.
+    var regularDue: Date?
+    var needsReview: Bool
+    var retryDueAt: Date?
+}
+
+struct PlannedFlashcardNotification: Equatable {
+    var day: Date
+    var fireDate: Date
+    var title: String
+    var body: String
+    /// Deck to open when the notification is tapped (mistake reviews only).
+    var deckKey: String?
+    var isMistakeReview: Bool
+}
+
 enum FlashcardReviewNotifications {
     private static let identifierPrefix = "flashcard-review-"
+    private static let snoozePrefix = "flashcard-snooze-"
+    static let reviewActionIdentifier = "studiquo.flashcard.reviewNow"
+    static let snoozeActionIdentifier = "studiquo.flashcard.snooze"
+    private static let mistakeWindowDays = 14
+    private static let maximumRequests = 60
+    private static let detailedMistakeLimit = 3
 
     static func nextReviewDate(after date: Date, mastery: Int, correct: Bool, calendar: Calendar = .current) -> Date {
         let days: Int
@@ -151,6 +191,117 @@ enum FlashcardReviewNotifications {
         return calendar.date(bySettingHour: 9, minute: 0, second: 0, of: day) ?? day
     }
 
+    static func snapshots(of decks: [FlashcardDeck], calendar: Calendar = .current) -> [FlashcardReviewSnapshot] {
+        decks.filter { !$0.isTrashed }.flatMap { deck in
+            let key = String(describing: deck.persistentModelID)
+            return deck.sortedCards.map { card in
+                FlashcardReviewSnapshot(
+                    deckKey: key,
+                    deckTitle: deck.title,
+                    question: card.question,
+                    regularDue: card.nextReviewAt
+                        ?? card.lastReviewedAt.map { nextReviewDate(after: $0, mastery: card.mastery, correct: card.mastery > 0, calendar: calendar) },
+                    needsReview: card.needsReview,
+                    retryDueAt: card.retryDueAt
+                )
+            }
+        }
+    }
+
+    /// Builds at most one notification per day. Days with missed cards get the
+    /// missed-card message (which replaces the generic "N cards due" one).
+    static func plan(
+        snapshots: [FlashcardReviewSnapshot],
+        now: Date = .now,
+        calendar: Calendar = .current,
+        mistakeReviewEnabled: Bool = MistakeReviewPreferences.isEnabled,
+        hour: Int = MistakeReviewPreferences.hour,
+        frequency: MistakeReviewFrequency = MistakeReviewPreferences.frequency,
+        showsQuestion: Bool = MistakeReviewPreferences.showsQuestion
+    ) -> [PlannedFlashcardNotification] {
+        func fire(on day: Date) -> Date {
+            calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day) ?? day
+        }
+
+        var planned: [Date: PlannedFlashcardNotification] = [:]
+        let today = calendar.startOfDay(for: now)
+
+        if mistakeReviewEnabled {
+            let missed = snapshots.filter(\.needsReview)
+            var lastFiredDay: Date?
+            for offset in 0..<mistakeWindowDays {
+                guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { continue }
+                let fireDate = fire(on: day)
+                guard fireDate > now else { continue }
+                let due = missed.filter { ($0.retryDueAt ?? now) <= fireDate }
+                guard !due.isEmpty else { continue }
+                switch frequency {
+                case .daily: break
+                case .everyOtherDay:
+                    if let last = lastFiredDay,
+                       (calendar.dateComponents([.day], from: last, to: day).day ?? 0) < 2 { continue }
+                case .whenFiveOrMore:
+                    if due.count < 5 { continue }
+                }
+                lastFiredDay = day
+                planned[day] = mistakeNotification(due: due, day: day, fireDate: fireDate, showsQuestion: showsQuestion)
+            }
+        }
+
+        var counts: [Date: Int] = [:]
+        for card in snapshots where !(mistakeReviewEnabled && card.needsReview) {
+            guard let due = card.regularDue else { continue }
+            counts[calendar.startOfDay(for: max(due, now)), default: 0] += 1
+        }
+        for (day, count) in counts where planned[day] == nil {
+            var fireDate = fire(on: day)
+            if fireDate <= now { fireDate = now.addingTimeInterval(60) }
+            planned[day] = PlannedFlashcardNotification(
+                day: day,
+                fireDate: fireDate,
+                title: L("暗記カードの復習"),
+                body: L("今日の復習対象が\(count)枚あります"),
+                deckKey: nil,
+                isMistakeReview: false
+            )
+        }
+        return planned.values.sorted { $0.day < $1.day }.prefix(maximumRequests).map { $0 }
+    }
+
+    private static func mistakeNotification(
+        due: [FlashcardReviewSnapshot],
+        day: Date,
+        fireDate: Date,
+        showsQuestion: Bool
+    ) -> PlannedFlashcardNotification {
+        let grouped = Dictionary(grouping: due, by: \.deckKey)
+        let topKey = grouped.max { lhs, rhs in
+            lhs.value.count != rhs.value.count
+                ? lhs.value.count < rhs.value.count
+                : lhs.value[0].deckTitle > rhs.value[0].deckTitle
+        }?.key
+        let count = due.count
+        let body: String
+        if showsQuestion, count <= detailedMistakeLimit, grouped.count == 1, let first = due.first {
+            let question = first.question
+                .components(separatedBy: .whitespacesAndNewlines)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            let sample = question.count > 40 ? String(question.prefix(40)) + "…" : question
+            body = L("『\(first.deckTitle)』の\(count)問を復習しましょう。Q. \(sample)")
+        } else {
+            body = L("間違えた問題が\(count)問あります")
+        }
+        return PlannedFlashcardNotification(
+            day: day,
+            fireDate: fireDate,
+            title: L("間違えた問題の復習"),
+            body: body,
+            deckKey: topKey,
+            isMistakeReview: true
+        )
+    }
+
     @MainActor
     static func reschedule(decks: [FlashcardDeck], now: Date = .now, calendar: Calendar = .current) async {
         cancelAll()
@@ -158,31 +309,41 @@ enum FlashcardReviewNotifications {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
 
-        let cards = decks.filter { !$0.isTrashed }.flatMap(\.sortedCards)
-        var counts: [Date: Int] = [:]
-        for card in cards {
-            let due = card.nextReviewAt
-                ?? card.lastReviewedAt.map { nextReviewDate(after: $0, mastery: card.mastery, correct: card.mastery > 0, calendar: calendar) }
-            guard let due else { continue }
-            let day = calendar.startOfDay(for: max(due, now))
-            counts[day, default: 0] += 1
-        }
-
-        for (day, count) in counts.sorted(by: { $0.key < $1.key }).prefix(60) {
-            var fireDate = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: day) ?? day
-            if fireDate <= now { fireDate = now.addingTimeInterval(60) }
+        let requests = plan(snapshots: snapshots(of: decks, calendar: calendar), now: now, calendar: calendar)
+        for item in requests {
             let content = UNMutableNotificationContent()
-            content.title = L("暗記カードの復習")
-            content.body = L("今日の復習対象が\(count)枚あります")
+            content.title = item.title
+            content.body = item.body
             content.sound = .default
             content.categoryIdentifier = AppNotificationKind.flashcardReview.categoryIdentifier
-            content.userInfo = ["route": AppNotificationKind.flashcardReview.rawValue]
-            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
-            let id = identifierPrefix + String(Int(day.timeIntervalSince1970))
+            var info: [String: Any] = ["route": AppNotificationKind.flashcardReview.rawValue]
+            if item.isMistakeReview {
+                info["mistakeReview"] = true
+                if let deckKey = item.deckKey { info["deckID"] = deckKey }
+            }
+            content.userInfo = info
+            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: item.fireDate)
+            let id = identifierPrefix + String(Int(item.day.timeIntervalSince1970))
             try? await UNUserNotificationCenter.current().add(
                 UNNotificationRequest(identifier: id, content: content, trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false))
             )
         }
+    }
+
+    /// "Later" action: repeat the same notification this evening at 20:00, or
+    /// in three hours when that has already passed.
+    static func snooze(_ original: UNNotificationContent, now: Date = .now, calendar: Calendar = .current) async {
+        let content = original.mutableCopy() as? UNMutableNotificationContent ?? UNMutableNotificationContent()
+        let evening = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: now) ?? now
+        let fireDate = evening > now.addingTimeInterval(60) ? evening : now.addingTimeInterval(3 * 3600)
+        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
+        try? await UNUserNotificationCenter.current().add(
+            UNNotificationRequest(
+                identifier: snoozePrefix + UUID().uuidString,
+                content: content,
+                trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            )
+        )
     }
 
     static func cancelAll() {

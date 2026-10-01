@@ -47,7 +47,7 @@ enum StorageUsageEstimator {
     @MainActor
     static func totalBytes(in context: ModelContext) throws -> Int {
         var total = 0
-        total += try sumExternalStorage(Notebook.self, in: context) { [$0.encryptedContent] }
+        total += try sumExternalStorage(Notebook.self, in: context) { [$0.encryptedContent, $0.lockedPDFData] }
         total += try sumExternalStorage(NotePage.self, in: context) { [$0.drawingData, $0.backgroundImageData, $0.proofReviewData] }
         total += try sumExternalStorage(PageElement.self, in: context) { [$0.imageData] }
         total += try sumExternalStorage(TextDocument.self, in: context) { [$0.bodyData] }

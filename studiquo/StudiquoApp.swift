@@ -128,6 +128,10 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         didReceive response: UNNotificationResponse
     ) async {
         let content = response.notification.request.content
+        if response.actionIdentifier == FlashcardReviewNotifications.snoozeActionIdentifier {
+            await FlashcardReviewNotifications.snooze(content)
+            return
+        }
         await MainActor.run {
             NotificationCenter.default.post(
                 name: .studiquoNotificationRoute,
@@ -467,7 +471,7 @@ private enum LibraryDropUITestStore {
 
     static let container: ModelContainer = {
         let arguments = ProcessInfo.processInfo.arguments
-        let mode = arguments.contains("--column-mode") ? "column" : "list"
+        let mode = arguments.contains("--column-mode") ? "column" : arguments.contains("--icon-mode") ? "icon" : "list"
         let compact = arguments.contains("--resource-types-fixture")
         UserDefaults.standard.set(mode, forKey: "homeViewMode")
         let folderPaths = compact ? ["Target"] : ["Parent", "Parent/Source", "Parent/Destination", "Parent/Empty", "Sibling", "Target"]

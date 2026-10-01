@@ -75,6 +75,13 @@ final class Flashcard {
     /// The next spaced-repetition due date. Optional so existing CloudKit
     /// records migrate without needing a backfill before the app can open.
     var nextReviewAt: Date?
+    /// "Missed it" state, independent of `mastery`: set when answered wrong,
+    /// cleared once the card has been answered correctly enough times in a
+    /// row (see `MistakeReviewPolicy`). Defaults keep CloudKit migration free.
+    var needsReview: Bool = false
+    var reviewStreak: Int = 0
+    var retryStage: Int = 0
+    var retryDueAt: Date?
     var deck: FlashcardDeck?
 
     init(question: String, answer: String, order: Int) {
