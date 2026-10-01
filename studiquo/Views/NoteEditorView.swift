@@ -1932,6 +1932,7 @@ struct NoteEditorView: View {
                 toolStripButton("AIトーク", icon: "sparkles", isActive: primaryShowsAIChat || secondaryShowsAIChat || showsTemporaryAIChat) {
                     presentAIChat()
                 }
+                .accessibilityIdentifier("note-ai-toolbar-button")
                 Button {
                     presentChatPicker()
                 } label: {
@@ -5912,6 +5913,7 @@ private struct AIChatPane: View {
                                 .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
                                 .submitLabel(.send)
                                 .onSubmit(onSend)
+                                .accessibilityIdentifier("ai-chat-draft")
 
                             Button {
                                 speechInput.toggleDictation(draft: $draft)
@@ -5948,6 +5950,7 @@ private struct AIChatPane: View {
                             }
                             .disabled(!isResponding && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             .accessibilityLabel(isResponding ? L("生成を止める") : L("送信"))
+                            .accessibilityIdentifier(isResponding ? "ai-chat-stop" : "ai-chat-send")
                         }
 
                         if !speechInput.statusText.isEmpty {
@@ -6072,6 +6075,7 @@ private struct AIChatPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.bordered)
+            .accessibilityIdentifier("ai-chat-new-thread")
 
             Text("履歴")
                 .font(.caption.weight(.semibold))
@@ -6105,6 +6109,7 @@ private struct AIChatPane: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("ai-chat-thread-\(thread.title)")
                     .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
                     .listRowBackground(Color.clear)
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -6181,6 +6186,7 @@ private struct AIChatPane: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
+                    .accessibilityIdentifier("ai-chat-delete-confirm")
                 }
             }
             .padding(18)

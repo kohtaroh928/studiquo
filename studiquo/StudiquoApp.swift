@@ -209,6 +209,8 @@ struct StudiquoApp: App {
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test") ||
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test") {
                     NoteSnippetFriendUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--note-ai-chat-ui-test") {
+                    NoteAIChatUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") {
                     TabPickerCreateUITestRoot()
                 } else {
@@ -228,6 +230,7 @@ struct StudiquoApp: App {
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--note-ai-chat-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") else { return }
                 #endif
                 startup.start()
@@ -414,6 +417,122 @@ private enum NoteSnippetFriendUITestStore {
 
     static var notebook: Notebook {
         try! container.mainContext.fetch(FetchDescriptor<Notebook>()).first!
+    }
+}
+
+/// Hosts the real note editor with a deterministic AI provider so UI tests can
+/// pin the AIトーク behaviour (send, stop, history, drafts, delete) without a
+/// network. Reachable only through the test runner's launch argument.
+private struct NoteAIChatUITestRoot: View {
+    @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
+    @StateObject private var splitState = EditorSplitState()
+    @StateObject private var friendStore: FriendStore
+
+    init() {
+        AIDataDisclosure.acknowledge()
+        AI.provider = UITestAIProvider()
+        let store = FriendStore(
+            defaults: UserDefaults(suiteName: "NoteAIChatUITest-\(UUID().uuidString)")!,
+            autoRefresh: false
+        )
+        _friendStore = StateObject(wrappedValue: store)
+        _ = NoteAIChatUITestStore.container
+    }
+
+    var body: some View {
+        NoteEditorView(
+            notebook: NoteAIChatUITestStore.notebook,
+            columnVisibility: $columnVisibility,
+            onHome: {}
+        )
+        .modelContainer(NoteAIChatUITestStore.container)
+        .environmentObject(splitState)
+        .environmentObject(friendStore)
+        .task {
+            // Opens the chat without a tap so the layout can be profiled
+            // without an automation session attached.
+            guard ProcessInfo.processInfo.arguments.contains("--note-ai-chat-auto-open") else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            NotificationCenter.default.post(
+                name: .studiquoSelectAIChatTab,
+                object: NoteAIChatUITestStore.seededThread.persistentModelID
+            )
+        }
+    }
+}
+
+@MainActor
+private enum NoteAIChatUITestStore {
+    static var seededThread: AIChatThread {
+        try! container.mainContext.fetch(FetchDescriptor<AIChatThread>()).first!
+    }
+
+    static let container: ModelContainer = {
+        let configuration = ModelConfiguration(
+            schema: studiquoSchema,
+            isStoredInMemoryOnly: true,
+            cloudKitDatabase: .none
+        )
+        let container = try! ModelContainer(for: studiquoSchema, configurations: configuration)
+        let notebook = Notebook(title: "AIトーク回帰テスト")
+        let page = NotePage(order: 0)
+        page.notebook = notebook
+        notebook.addPage(page)
+        container.mainContext.insert(notebook)
+        if ProcessInfo.processInfo.arguments.contains("--note-ai-chat-auto-open") {
+            let thread = AIChatThread(title: "既存の会話")
+            container.mainContext.insert(thread)
+            let question = AIChatMessage(text: "既存の質問", role: .user)
+            question.thread = thread
+            thread.addMessage(question)
+            let reply = AIChatMessage(text: "既存の返答", role: .assistant)
+            reply.thread = thread
+            thread.addMessage(reply)
+        }
+        try! container.mainContext.save()
+        return container
+    }()
+
+    static var notebook: Notebook {
+        try! container.mainContext.fetch(FetchDescriptor<Notebook>()).first!
+    }
+}
+
+/// Echoes the last user turn after a short delay. A message containing
+/// "ゆっくり" streams for about thirty seconds so tests can press stop.
+private struct UITestAIProvider: AIProvider {
+    var isConfigured: Bool { true }
+    var displayName: String { "UITest" }
+
+    func streamChat(
+        turns: [AITurn],
+        noteContext: String,
+        images: [UIImage],
+        expectsImages: Bool,
+        onDelta: @escaping (String) -> Void
+    ) async throws {
+        let question = turns.last(where: { $0.role == .user })?.text ?? ""
+        if question.contains("ゆっくり") {
+            for _ in 0..<300 {
+                try await Task.sleep(for: .milliseconds(100))
+                await MainActor.run { onDelta("…") }
+            }
+            return
+        }
+        try await Task.sleep(for: .milliseconds(150))
+        await MainActor.run { onDelta("テスト返答: \(question)") }
+    }
+
+    func buildRubric(for submission: ProofSubmission) async throws -> ProofRubric {
+        throw WorkerAIProvider.ProviderError.malformedResponse
+    }
+
+    func grade(_ submission: ProofSubmission, rubric: ProofRubric) async throws -> ProofReviewResult {
+        throw WorkerAIProvider.ProviderError.malformedResponse
+    }
+
+    func researchReview(question: String, context: String) async throws -> AIReviewResult {
+        AIReviewResult(isStudyRelevant: false, explanationMarkdown: "", quiz: [])
     }
 }
 
