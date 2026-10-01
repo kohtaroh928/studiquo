@@ -1,8 +1,8 @@
-import StoreKit
+import RevenueCat
 import SwiftUI
 
 struct SubscriptionPlansView: View {
-    @StateObject private var store = SubscriptionStore()
+    @EnvironmentObject private var store: SubscriptionStore
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -10,21 +10,9 @@ struct SubscriptionPlansView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     currentPlanHeader
-                    planCard(
-                        plan: .standard,
-                        subtitle: "ずっと無料",
-                        features: ["月30 AIクレジット", "Gemini 3.5 Flash-Lite", "資料作成・共同編集は無制限"]
-                    )
-                    planCard(
-                        plan: .plus,
-                        subtitle: "学習をもっと深く",
-                        features: ["月750 AIクレジット", "Haiku・Terra・Sonnet・GPT-6 Sol", "5GBの個人用クラウド同期"]
-                    )
-                    planCard(
-                        plan: .pro,
-                        subtitle: "難関課題・研究に",
-                        features: ["月2,000 AIクレジット", "Plusの全モデル＋Opus・GPT-6 Astra", "50GBの個人用クラウド同期"]
-                    )
+                    planCard(plan: .standard, subtitle: "ずっと無料", features: standardFeatures)
+                    planCard(plan: .plus, subtitle: "学習をもっと深く", features: plusFeatures)
+                    planCard(plan: .pro, subtitle: "難関課題・研究に", features: proFeatures)
 
                     Button("購入履歴を復元") {
                         Task { await store.restorePurchases() }
@@ -47,7 +35,7 @@ struct SubscriptionPlansView: View {
                 }
             }
             .overlay {
-                if store.isLoading && store.products.isEmpty {
+                if store.isLoading && store.packages.isEmpty {
                     ProgressView("プランを読み込み中…")
                         .padding(24)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
@@ -58,6 +46,7 @@ struct SubscriptionPlansView: View {
             } message: {
                 Text(store.message ?? "")
             }
+            .task { await store.refresh() }
         }
     }
 
@@ -86,6 +75,26 @@ struct SubscriptionPlansView: View {
         .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 18))
     }
 
+    // MARK: Feature copy
+
+    /// Pulled from `AIModelCatalog` rather than hardcoded, so the models
+    /// listed here can never drift from the ones the chat model picker (and
+    /// the Worker's own plan gate) actually offer.
+    private var standardFeatures: [String] {
+        let models = AIModelCatalog.all.filter { $0.requiredPlan == .standard }.map(\.displayName)
+        return ["月30 AIクレジット", models.joined(separator: "・"), "資料作成・共同編集は無制限"]
+    }
+
+    private var plusFeatures: [String] {
+        let models = AIModelCatalog.all.filter { $0.requiredPlan == .plus }.map(\.displayName)
+        return ["月750 AIクレジット", models.joined(separator: "・"), "5GBの個人用クラウド同期"]
+    }
+
+    private var proFeatures: [String] {
+        let models = AIModelCatalog.all.filter { $0.requiredPlan == .pro }.map(\.displayName)
+        return ["月2,000 AIクレジット", "Plusの全モデル＋" + models.joined(separator: "・"), "50GBの個人用クラウド同期"]
+    }
+
     private func planCard(plan: StudiquoPlan, subtitle: String, features: [String]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
@@ -112,13 +121,13 @@ struct SubscriptionPlansView: View {
             if plan == .standard {
                 Text("無料")
                     .font(.headline)
-            } else if store.products(for: plan).isEmpty {
+            } else if store.packages(for: plan).isEmpty {
                 Text("App Storeで準備中")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(store.products(for: plan), id: \.id) { product in
-                    purchaseButton(product, plan: plan)
+                ForEach(store.packages(for: plan), id: \.identifier) { package in
+                    purchaseButton(package, plan: plan)
                 }
             }
         }
@@ -131,15 +140,16 @@ struct SubscriptionPlansView: View {
         }
     }
 
-    private func purchaseButton(_ product: Product, plan: StudiquoPlan) -> some View {
-        Button {
-            Task { await store.purchase(product) }
+    private func purchaseButton(_ package: Package, plan: StudiquoPlan) -> some View {
+        let isYearly = package.storeProduct.productIdentifier.hasSuffix(".yearly")
+        return Button {
+            Task { await store.purchase(package) }
         } label: {
             HStack {
-                Text(product.id.hasSuffix(".yearly") ? "年額" : "月額")
+                Text(isYearly ? "年額" : "月額")
                 Spacer()
-                Text(product.displayPrice)
-                if product.id.hasSuffix(".yearly") { Text("／年") } else { Text("／月") }
+                Text(package.storeProduct.localizedPriceString)
+                Text(isYearly ? "／年" : "／月")
             }
             .font(.headline)
             .frame(maxWidth: .infinity)
