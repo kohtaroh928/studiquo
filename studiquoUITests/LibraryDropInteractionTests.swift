@@ -493,6 +493,68 @@ final class LibraryDropInteractionTests: XCTestCase {
         folder.tap()
         XCTAssertTrue(source.waitForExistence(timeout: 5), "The source did not appear inside the folder in \(mode) mode")
     }
+
+    // MARK: - Notebook long-press menu parity across view modes
+
+    func testIconViewLongPressShowsTheSameNotebookMenuAsListView() {
+        exerciseNotebookContextMenuIncludesRename(arguments: ["--library-drop-ui-test", "--icon-mode"])
+    }
+
+    func testColumnViewLongPressShowsTheSameNotebookMenuAsListView() {
+        exerciseNotebookContextMenuIncludesRename(arguments: ["--library-drop-ui-test", "--column-mode"])
+    }
+
+    /// Regression for icon/column view's notebook long-press menu once
+    /// showing fewer options than list view — icon view had only a
+    /// favorite/PDF-password/trash subset, and column view had no
+    /// long-press menu on entries at all (only on folder rows). Both now
+    /// route through the same `notebookActions(_:)` list view already
+    /// used. "名前を変更" is a plain item only that shared menu has ever
+    /// offered, so finding it here confirms this view mode got the same
+    /// menu, not the old narrower (or missing) one.
+    private func exerciseNotebookContextMenuIncludesRename(arguments: [String]) {
+        let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
+        app.launchArguments = arguments
+        app.launch()
+
+        let source = app.buttons["library-entry-Drag me"]
+        XCTAssertTrue(source.waitForExistence(timeout: 15), "The notebook tile did not render for \(arguments)")
+        source.press(forDuration: 1)
+
+        let rename = app.buttons["名前を変更"]
+        XCTAssertTrue(rename.waitForExistence(timeout: 5), "長押しメニューに「名前を変更」が見つかりません(\(arguments))")
+    }
+
+    // MARK: - Flashcard decks / documents / slide decks now have a long-press menu
+
+    func testFlashcardDeckLongPressShowsAContextMenu() {
+        exerciseEntryContextMenuIncludesRename(identifier: "library-entry-Cards")
+    }
+
+    func testTextDocumentLongPressShowsAContextMenu() {
+        exerciseEntryContextMenuIncludesRename(identifier: "library-entry-Document")
+    }
+
+    func testSlideDeckLongPressShowsAContextMenu() {
+        exerciseEntryContextMenuIncludesRename(identifier: "library-entry-Y")
+    }
+
+    /// Regression: flashcard decks, text documents and slide decks had no
+    /// `.contextMenu` anywhere (list, icon, or column view) before this —
+    /// only notebooks did. "名前を変更" is new for these three kinds, added
+    /// via the shared `entryActions(_:)`.
+    private func exerciseEntryContextMenuIncludesRename(identifier: String) {
+        let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
+        app.launchArguments = ["--library-drop-ui-test"]
+        app.launch()
+
+        let source = app.descendants(matching: .any)[identifier]
+        XCTAssertTrue(source.waitForExistence(timeout: 15), "\(identifier) did not render")
+        source.press(forDuration: 1)
+
+        let rename = app.buttons["名前を変更"]
+        XCTAssertTrue(rename.waitForExistence(timeout: 5), "長押しメニューに「名前を変更」が見つかりません(\(identifier))")
+    }
 }
 
 

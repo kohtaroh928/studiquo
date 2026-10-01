@@ -1395,21 +1395,18 @@ struct NoteEditorView: View {
                 GeometryReader { geometry in
                     ZStack {
                         ZoomableWorkspace(size: geometry.size) {
-                            NotebookPaneView(
-                                notebook: displayedPrimaryNotebook,
-                                currentPageIndex: $primaryPageIndex,
-                                showsTitle: splitMode != .single || displayedPrimaryNotebook.containsPDF,
-                                usesDarkPageDisplay: usesDarkPageDisplay,
-                                onRequestAddPage: { requestPageAddition(to: displayedPrimaryNotebook) },
-                                onSummarizeCurrentPDFPage: {
-                                    summarizePDFPage(in: displayedPrimaryNotebook, pageIndex: primaryPageIndex)
-                                },
-                                onSummarizeAllPDFPages: {
-                                    summarizePDFDocument(displayedPrimaryNotebook)
-                                },
-                                onQuickAddPage: { quickAddPage(to: displayedPrimaryNotebook) },
-                                onQuickAddPageAtTop: { quickAddPageAtTop(to: displayedPrimaryNotebook) }
-                            )
+                            // Always gated — whether this is the notebook
+                            // this editor instance was created for, or a
+                            // `primaryOverrideNotebook` swapped in later via
+                            // a tab/"資料を選ぶ" switch. Gating only the pane
+                            // content (not the whole editor, as a previous
+                            // version of this did via `ProtectedNotebookView`)
+                            // keeps the toolbar, tab bar, and everything else
+                            // around it looking like a normal note screen
+                            // while this one pane is locked.
+                            NotebookLockGate(notebook: displayedPrimaryNotebook) {
+                                primaryNotebookPane
+                            }
                         }
 
                         if shouldShowDrawingToolbarInPrimaryPane {
@@ -1507,20 +1504,27 @@ struct NoteEditorView: View {
             GeometryReader { geometry in
                 ZStack {
                     ZoomableWorkspace(size: geometry.size) {
-                        NotebookPaneView(
-                            notebook: secondaryNotebook,
-                            currentPageIndex: $secondaryPageIndex,
-                            showsTitle: true,
-                            onRequestAddPage: { requestPageAddition(to: secondaryNotebook) },
-                            onSummarizeCurrentPDFPage: {
-                                summarizePDFPage(in: secondaryNotebook, pageIndex: secondaryPageIndex)
-                            },
-                            onSummarizeAllPDFPages: {
-                                summarizePDFDocument(secondaryNotebook)
-                            },
-                            onQuickAddPage: { quickAddPage(to: secondaryNotebook) },
-                            onQuickAddPageAtTop: { quickAddPageAtTop(to: secondaryNotebook) }
-                        )
+                        // The secondary pane is always a notebook distinct
+                        // from the one this editor instance was created
+                        // for (and already gated via `ProtectedNotebookView`
+                        // before mounting), so it always needs its own
+                        // `NotebookLockGate`.
+                        NotebookLockGate(notebook: secondaryNotebook) {
+                            NotebookPaneView(
+                                notebook: secondaryNotebook,
+                                currentPageIndex: $secondaryPageIndex,
+                                showsTitle: true,
+                                onRequestAddPage: { requestPageAddition(to: secondaryNotebook) },
+                                onSummarizeCurrentPDFPage: {
+                                    summarizePDFPage(in: secondaryNotebook, pageIndex: secondaryPageIndex)
+                                },
+                                onSummarizeAllPDFPages: {
+                                    summarizePDFDocument(secondaryNotebook)
+                                },
+                                onQuickAddPage: { quickAddPage(to: secondaryNotebook) },
+                                onQuickAddPageAtTop: { quickAddPageAtTop(to: secondaryNotebook) }
+                            )
+                        }
                     }
 
                     if shouldShowDrawingToolbarInSecondaryPane {
@@ -3645,6 +3649,24 @@ struct NoteEditorView: View {
 
     private var displayedPrimaryNotebook: Notebook {
         primaryOverrideNotebook ?? notebook
+    }
+
+    private var primaryNotebookPane: some View {
+        NotebookPaneView(
+            notebook: displayedPrimaryNotebook,
+            currentPageIndex: $primaryPageIndex,
+            showsTitle: splitMode != .single || displayedPrimaryNotebook.containsPDF,
+            usesDarkPageDisplay: usesDarkPageDisplay,
+            onRequestAddPage: { requestPageAddition(to: displayedPrimaryNotebook) },
+            onSummarizeCurrentPDFPage: {
+                summarizePDFPage(in: displayedPrimaryNotebook, pageIndex: primaryPageIndex)
+            },
+            onSummarizeAllPDFPages: {
+                summarizePDFDocument(displayedPrimaryNotebook)
+            },
+            onQuickAddPage: { quickAddPage(to: displayedPrimaryNotebook) },
+            onQuickAddPageAtTop: { quickAddPageAtTop(to: displayedPrimaryNotebook) }
+        )
     }
 
     private func handlePaneDrop(_ value: String, target: PaneDropTarget) -> Bool {
