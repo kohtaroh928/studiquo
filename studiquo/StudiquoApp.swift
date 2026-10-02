@@ -335,6 +335,7 @@ private struct NoteSnippetFriendUITestRoot: View {
             onHome: {}
         )
         .modelContainer(NoteSnippetFriendUITestStore.container)
+        .environmentObject(AIChatStore.shared(for: NoteSnippetFriendUITestStore.container.mainContext))
         .environmentObject(splitState)
         .environmentObject(friendStore)
         .task {
@@ -446,6 +447,7 @@ private struct NoteAIChatUITestRoot: View {
             onHome: {}
         )
         .modelContainer(NoteAIChatUITestStore.container)
+        .environmentObject(AIChatStore.shared(for: NoteAIChatUITestStore.container.mainContext))
         .environmentObject(splitState)
         .environmentObject(friendStore)
         .task {

@@ -96,6 +96,24 @@ final class NoteAIChatTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["テスト返答: 二番目の質問"].exists, "別の会話の内容が混ざっています。")
     }
 
+    /// A brand-new conversation used to have a temporary identifier until its
+    /// first save, so "replying" was recorded under a key the pane never
+    /// looked up: no stop button, and a second message could be sent
+    /// mid-reply. The first reply of a new talk must behave like any other.
+    func testTheFirstReplyOfANewTalkShowsTheStopButtonAndCanBeStopped() {
+        button("ai-chat-new-thread").tap()
+        send("ゆっくり新しい質問")
+
+        let stop = button("ai-chat-stop")
+        XCTAssertTrue(stop.waitForExistence(timeout: 10), "新しい会話の最初の返答中に停止ボタンが出ません。")
+        stop.tap()
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "（中断しました）")).firstMatch
+                .waitForExistence(timeout: 10),
+            "新しい会話の最初の返答を中断できません。"
+        )
+    }
+
     func testUnsentDraftIsKeptPerThread() {
         let draft = draftField
         draft.tap()

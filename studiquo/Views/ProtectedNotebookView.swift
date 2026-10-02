@@ -30,6 +30,7 @@ struct ProtectedNotebookView: View {
     @Bindable var notebook: Notebook
     @Binding var columnVisibility: NavigationSplitViewVisibility
     var onHome: () -> Void
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         NoteEditorView(
@@ -37,6 +38,7 @@ struct ProtectedNotebookView: View {
             columnVisibility: $columnVisibility,
             onHome: onHome
         )
+        .environmentObject(AIChatStore.shared(for: modelContext))
     }
 }
 

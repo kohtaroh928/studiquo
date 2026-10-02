@@ -266,6 +266,9 @@ struct NoteEditorView: View {
     @State private var pendingSplitMode: SplitMode?
     @State private var showsSplitSourcePicker = false
     @State private var primaryShowsWeb = false
+    /// Conversations, drafts and the replying state are shared app-wide, so
+    /// the note editor, its floating panel and the home AI screen stay in sync.
+    @EnvironmentObject private var aiChat: AIChatStore
     @State private var primaryShowsAIChat = false
     @State private var secondaryShowsWeb = false
     @State private var secondaryShowsAIChat = false
@@ -277,11 +280,6 @@ struct NoteEditorView: View {
     @State private var primaryTemporaryChatMaterialPageIndex = 0
     @State private var secondaryTemporaryChatMaterialPageIndex = 0
     @State private var showsTemporaryAIChat = false
-    @State private var aiChatThreads: [AIChatThread] = []
-    @State private var selectedAIChatThread: AIChatThread?
-    @State private var aiChatDrafts: [String: String] = [:]
-    @State private var aiChatAttachments: [String: [AIChatAttachment]] = [:]
-    @State private var aiChatContextOverrides: [String: String] = [:]
     /// Regions cut out with the snip tool, waiting to be dragged into a chat.
     @State private var snippetTray: [PageSnippet] = []
     @State private var snippetOriginPanes: [UUID: ActivePane] = [:]
@@ -289,8 +287,6 @@ struct NoteEditorView: View {
     @State private var pendingChatSnippet: PendingChatSnippet?
     @State private var pendingProofQuestionSnippet: PageSnippet?
     @State private var pendingProofAnswerSnippet: PageSnippet?
-    @State private var aiChatRespondingThreadIDs: Set<String> = []
-    @State private var aiChatTasks: [String: Task<Void, Never>] = [:]
     @State private var secondaryFlashcardDeck: FlashcardDeck?
     @State private var showsDeletePagePicker = false
     @State private var notebookPendingTrash: Notebook?
@@ -598,7 +594,7 @@ struct NoteEditorView: View {
         }
         .onAppear {
             splitState.isSplit = splitMode != .single
-            loadAIChatThreads()
+            aiChat.loadThreads()
         }
         .onChange(of: splitMode) { _, mode in splitState.isSplit = mode != .single }
         .onChange(of: showsChatPicker) { _, isPresented in
@@ -661,8 +657,8 @@ struct NoteEditorView: View {
             }
         ))
         .modifier(AIChatTabSyncModifier(
-            openThreadID: selectedAIChatThread?.persistentModelID,
-            onAnnounce: { if let thread = selectedAIChatThread { announceAIChatTab(thread) } },
+            openThreadID: aiChat.selectedThread?.persistentModelID,
+            onAnnounce: { if let thread = aiChat.selectedThread { aiChat.announceThread(thread) } },
             onSelect: openAIChatThread
         ))
     }
@@ -724,22 +720,17 @@ struct NoteEditorView: View {
                 .background(.regularMaterial)
 
                 AIChatPane(
-                    threads: aiChatThreads,
-                    selectedThread: selectedAIChatThread,
+                    threads: aiChat.threads,
+                    selectedThread: aiChat.selectedThread,
                     draft: activeAIChatDraft,
                     attachments: activeAIChatAttachments,
-                    onSelectThread: { selectedAIChatThread = $0 },
-                    onNewThread: {
-                        selectedAIChatThread = nil
-                        aiChatDrafts["new"] = ""
-                        aiChatAttachments["new"] = []
-                        aiChatContextOverrides["new"] = nil
-                    },
-                    onDeleteThread: deleteAIChatThread,
+                    onSelectThread: { aiChat.selectedThread = $0 },
+                    onNewThread: { aiChat.startNewThread() },
+                    onDeleteThread: { aiChat.delete($0) },
                     onSend: { sendAIChatMessage() },
-                    respondingThreadIDs: aiChatRespondingThreadIDs,
-                    onCancel: cancelAIChatResponse,
-                    onGradeProof: gradeProof,
+                    respondingThreadIDs: aiChat.respondingThreadIDs,
+                    onCancel: { aiChat.cancelResponse() },
+                    onGradeProof: { aiChat.submitProof($0) },
                     onInsertAssistantMessage: insertAIResponseOnPage,
                     onAttachDroppedTab: attachmentForDroppedTab,
                     onSelectAppAttachment: appAttachmentOptions,
@@ -1257,24 +1248,19 @@ struct NoteEditorView: View {
                 WebSearchPane(browser: webBrowser)
             } else if primaryShowsAIChat {
                 AIChatPane(
-                    threads: aiChatThreads,
-                    selectedThread: selectedAIChatThread,
+                    threads: aiChat.threads,
+                    selectedThread: aiChat.selectedThread,
                     draft: activeAIChatDraft,
                     attachments: activeAIChatAttachments,
                     onSelectThread: { thread in
-                        selectedAIChatThread = thread
+                        aiChat.selectedThread = thread
                     },
-                    onNewThread: {
-                        selectedAIChatThread = nil
-                        aiChatDrafts["new"] = ""
-                        aiChatAttachments["new"] = []
-                        aiChatContextOverrides["new"] = nil
-                    },
-                    onDeleteThread: deleteAIChatThread,
+                    onNewThread: { aiChat.startNewThread() },
+                    onDeleteThread: { aiChat.delete($0) },
                     onSend: { sendAIChatMessage() },
-                    respondingThreadIDs: aiChatRespondingThreadIDs,
-                    onCancel: cancelAIChatResponse,
-                    onGradeProof: gradeProof,
+                    respondingThreadIDs: aiChat.respondingThreadIDs,
+                    onCancel: { aiChat.cancelResponse() },
+                    onGradeProof: { aiChat.submitProof($0) },
                     onInsertAssistantMessage: insertAIResponseOnPage,
                     onAttachDroppedTab: attachmentForDroppedTab,
                     onSelectAppAttachment: appAttachmentOptions,
@@ -1360,24 +1346,19 @@ struct NoteEditorView: View {
             WebSearchPane(browser: webBrowser)
         } else if secondaryShowsAIChat {
             AIChatPane(
-                threads: aiChatThreads,
-                selectedThread: selectedAIChatThread,
+                threads: aiChat.threads,
+                selectedThread: aiChat.selectedThread,
                 draft: activeAIChatDraft,
                 attachments: activeAIChatAttachments,
                 onSelectThread: { thread in
-                    selectedAIChatThread = thread
+                    aiChat.selectedThread = thread
                 },
-                onNewThread: {
-                    selectedAIChatThread = nil
-                    aiChatDrafts["new"] = ""
-                    aiChatAttachments["new"] = []
-                    aiChatContextOverrides["new"] = nil
-                },
-                onDeleteThread: deleteAIChatThread,
+                onNewThread: { aiChat.startNewThread() },
+                onDeleteThread: { aiChat.delete($0) },
                 onSend: { sendAIChatMessage() },
-                respondingThreadIDs: aiChatRespondingThreadIDs,
-                onCancel: cancelAIChatResponse,
-                onGradeProof: gradeProof,
+                respondingThreadIDs: aiChat.respondingThreadIDs,
+                onCancel: { aiChat.cancelResponse() },
+                onGradeProof: { aiChat.submitProof($0) },
                 onInsertAssistantMessage: insertAIResponseOnPage,
                 onAttachDroppedTab: attachmentForDroppedTab,
                 onSelectAppAttachment: appAttachmentOptions,
@@ -2199,27 +2180,15 @@ struct NoteEditorView: View {
         activePane = .primary
     }
 
-    /// Tells the tab bar that this conversation is open, and what to call it.
-    ///
-    /// Sent again after each exchange because a thread is titled from its
-    /// first message — without the repeat, every tab would read
-    /// "新しいトーク" forever.
-    private func announceAIChatTab(_ thread: AIChatThread) {
-        NotificationCenter.default.post(
-            name: .studiquoOpenAIChatTab,
-            object: AIChatTabInfo(id: thread.persistentModelID, title: thread.title)
-        )
-    }
-
     /// Brings a conversation to the front, opening the chat pane if the
     /// editor is not already showing one.
     private func openAIChatThread(_ id: PersistentIdentifier) {
-        loadAIChatThreads()
-        guard let thread = aiChatThreads.first(where: { $0.persistentModelID == id }) else { return }
-        selectedAIChatThread = thread
+        aiChat.loadThreads()
+        guard let thread = aiChat.threads.first(where: { $0.persistentModelID == id }) else { return }
+        aiChat.selectedThread = thread
         if isAIChatVisibleInSplit {
             showsTemporaryAIChat = false
-            announceAIChatTab(thread)
+            aiChat.announceThread(thread)
         } else if splitMode == .single {
             openAIChatSplit()
         } else {
@@ -2242,9 +2211,9 @@ struct NoteEditorView: View {
     }
 
     private func presentTemporaryAIChat() {
-        loadAIChatThreads()
-        selectedAIChatThread = selectedAIChatThread ?? aiChatThreads.first
-        if let thread = selectedAIChatThread { announceAIChatTab(thread) }
+        aiChat.loadThreads()
+        aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
+        if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
         guard !isAIChatVisibleInSplit else {
             showsTemporaryAIChat = false
             return
@@ -2253,9 +2222,9 @@ struct NoteEditorView: View {
     }
 
     private func openAIChatSplit() {
-        loadAIChatThreads()
-        selectedAIChatThread = selectedAIChatThread ?? aiChatThreads.first
-        if let thread = selectedAIChatThread { announceAIChatTab(thread) }
+        aiChat.loadThreads()
+        aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
+        if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
         showsTemporaryAIChat = false
         secondaryNotebook = nil
         secondaryFlashcardDeck = nil
@@ -2579,153 +2548,36 @@ struct NoteEditorView: View {
         }
     }
 
-    private func loadAIChatThreads() {
-        let descriptor = FetchDescriptor<AIChatThread>(
-            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
-        )
-        aiChatThreads = ((try? modelContext.fetch(descriptor)) ?? [])
-            .filter { !$0.sortedMessages.isEmpty }
-    }
-
     private var activeAIChatDraft: Binding<String> {
         Binding(
-            get: {
-                aiChatDrafts[activeAIChatDraftKey] ?? ""
-            },
-            set: { newValue in
-                aiChatDrafts[activeAIChatDraftKey] = newValue
-            }
+            get: { aiChat.activeDraft },
+            set: { aiChat.activeDraft = $0 }
         )
     }
 
     private var activeAIChatAttachments: Binding<[AIChatAttachment]> {
         Binding(
-            get: {
-                aiChatAttachments[activeAIChatDraftKey] ?? []
-            },
-            set: { newValue in
-                aiChatAttachments[activeAIChatDraftKey] = newValue
-            }
+            get: { aiChat.activeAttachments },
+            set: { aiChat.activeAttachments = $0 }
         )
     }
 
-    private var activeAIChatDraftKey: String {
-        selectedAIChatThread.map(aiChatThreadKey) ?? "new"
-    }
-
-    private func aiChatThreadKey(_ thread: AIChatThread) -> String {
-        String(describing: thread.persistentModelID)
-    }
-
-    private func aiChatThreadForSending() -> AIChatThread {
-        if let selectedAIChatThread { return selectedAIChatThread }
-        let thread = AIChatThread()
-        modelContext.insert(thread)
-        selectedAIChatThread = thread
-        return thread
-    }
-
     private func sendAIChatMessage(
-        draftKey overrideDraftKey: String? = nil,
-        text overrideText: String? = nil,
-        attachments overrideAttachments: [AIChatAttachment]? = nil
+        draftKey: String? = nil,
+        text: String? = nil,
+        attachments: [AIChatAttachment]? = nil
     ) {
-        let draftKey = overrideDraftKey ?? activeAIChatDraftKey
-        let trimmed = (overrideText ?? aiChatDrafts[draftKey] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let attachments = overrideAttachments ?? aiChatAttachments[draftKey] ?? []
-        let thread = aiChatThreadForSending()
-        let threadKey = aiChatThreadKey(thread)
-        guard !aiChatRespondingThreadIDs.contains(threadKey) else { return }
-
-        let userMessage = AIChatMessage(text: messageText(trimmed, with: attachments), role: .user)
-        userMessage.thread = thread
-        thread.addMessage(userMessage)
-
-        if thread.sortedMessages.filter({ $0.role == .user }).count == 1 {
-            thread.title = String(trimmed.prefix(24))
-        }
-
-        // The reply is appended empty and filled in as the stream arrives, so
-        // the answer appears as it is written instead of after a blank wait.
-        let reply = AIChatMessage(text: "", role: .assistant)
-        reply.thread = thread
-        thread.addMessage(reply)
-        thread.updatedAt = .now
-        aiChatDrafts[draftKey] = ""
-        aiChatDrafts[aiChatThreadKey(thread)] = ""
-        aiChatAttachments[draftKey] = []
-        aiChatAttachments[aiChatThreadKey(thread)] = []
-        let contextOverride = aiChatContextOverrides[draftKey] ?? aiChatContextOverrides[threadKey] ?? ""
-        let attachmentContext = attachments
-            .map { attachment -> String in
-                let text = attachment.contextText.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { return "" }
-                return "【\(attachment.name)】\n\(text)"
-            }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
-        aiChatContextOverrides[draftKey] = nil
-        aiChatContextOverrides[threadKey] = nil
-        try? modelContext.save()
-        loadAIChatThreads()
-        selectedAIChatThread = thread
-        announceAIChatTab(thread)
-
-        let history = thread.sortedMessages
-            .filter { $0 !== reply }
-            .map { AITurn(role: $0.role == .user ? .user : .assistant, text: $0.text) }
-            .filter { !$0.text.isEmpty }
-        let context = [aiChatNoteContext(), contextOverride, attachmentContext]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
-        let images = attachments.compactMap(\.image)
-        let expectsImages = attachments.contains { $0.kind == .snippet || $0.kind == .camera }
-
-        aiChatRespondingThreadIDs.insert(threadKey)
-        aiChatTasks[threadKey] = Task { @MainActor in
-            defer {
-                aiChatRespondingThreadIDs.remove(threadKey)
-                aiChatTasks[threadKey] = nil
-            }
-            do {
-                try await AI.provider.streamChat(
-                    turns: history,
-                    noteContext: context,
-                    images: images,
-                    expectsImages: expectsImages
-                ) { delta in
-                    reply.text += delta
-                }
-                if reply.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    reply.text = L("返答が空でした。もう一度試してください。")
-                }
-                // Fire-and-forget: researches whether this question is worth
-                // reviewing tomorrow, independently of this task so it never
-                // delays clearing aiChatRespondingThreadIDs above.
-                Task { @MainActor in
-                    await AIReviewService.considerForReview(
-                        questionText: trimmed,
-                        threadTitle: thread.title,
-                        askedAt: userMessage.createdAt,
-                        modelContext: modelContext
-                    )
-                }
-            } catch is CancellationError {
-                reply.text += reply.text.isEmpty ? L("（中断しました）") : L("（中断しました）")
-            } catch {
-                reply.text = (error as? LocalizedError)?.errorDescription
-                    ?? error.localizedDescription
-            }
-            thread.updatedAt = .now
-            try? modelContext.save()
-        }
+        aiChat.send(
+            draftKey: draftKey,
+            text: text,
+            attachments: attachments,
+            noteContext: aiChatNoteContext()
+        )
     }
 
     private func askAIAboutSnippet(_ snippet: PageSnippet) {
         presentAIChat()
-        let key = activeAIChatDraftKey
+        let key = aiChat.activeDraftKey
         let snippetAttachment = AIChatAttachment(
             name: snippet.sourceLabel,
             path: "",
@@ -2748,8 +2600,8 @@ struct NoteEditorView: View {
         let source = readablePDFTextForAI(in: notebook, pageIndex: pageIndex)
         guard !source.isEmpty else { return }
         presentAIForPDFSummary()
-        let key = activeAIChatDraftKey
-        aiChatContextOverrides[key] = pdfContextPrompt(source)
+        let key = aiChat.activeDraftKey
+        aiChat.setContextOverride(pdfContextPrompt(source), forKey: key)
         sendAIChatMessage(
             draftKey: key,
             text: """
@@ -2768,8 +2620,8 @@ struct NoteEditorView: View {
         let source = readablePDFTextForAI(in: notebook)
         guard !source.isEmpty else { return }
         presentAIForPDFSummary()
-        let key = activeAIChatDraftKey
-        aiChatContextOverrides[key] = pdfContextPrompt(source)
+        let key = aiChat.activeDraftKey
+        aiChat.setContextOverride(pdfContextPrompt(source), forKey: key)
         sendAIChatMessage(
             draftKey: key,
             text: """
@@ -3011,7 +2863,7 @@ struct NoteEditorView: View {
         if let question = pendingProofQuestionSnippet,
            let answer = pendingProofAnswerSnippet {
             presentAIChat()
-            gradeProof(ProofSubmission(
+            aiChat.submitProof(ProofSubmission(
                 questionText: "",
                 questionImage: question.image,
                 answerText: "",
@@ -3019,63 +2871,6 @@ struct NoteEditorView: View {
             ))
             pendingProofQuestionSnippet = nil
             pendingProofAnswerSnippet = nil
-        }
-    }
-
-    /// Marks a proof, from whatever the student handed over.
-    ///
-    /// It runs as a normal exchange in the thread — a question from the
-    /// student, an answer from the AI — so the marking stays in the
-    /// conversation and can be asked about afterwards ("なぜここが減点なの？").
-    ///
-    /// Two calls, deliberately. A rubric is derived from the question alone
-    /// first, and only then is the student's work looked at. Asking for a
-    /// score in one shot makes the result drift between runs; fixing the
-    /// criteria before the answer is visible is what makes two runs of the
-    /// same page agree.
-    private func gradeProof(_ submission: ProofSubmission) {
-        guard submission.hasQuestion, submission.hasAnswer else { return }
-        let thread = aiChatThreadForSending()
-        let threadKey = aiChatThreadKey(thread)
-        guard !aiChatRespondingThreadIDs.contains(threadKey) else { return }
-
-        let userMessage = AIChatMessage(text: Self.submissionSummary(submission), role: .user)
-        userMessage.thread = thread
-        thread.addMessage(userMessage)
-
-        if thread.sortedMessages.filter({ $0.role == .user }).count == 1 {
-            thread.title = L("証明の添削")
-        }
-
-        let reply = AIChatMessage(text: L("採点基準を作っています…"), role: .assistant)
-        reply.thread = thread
-        thread.addMessage(reply)
-        thread.updatedAt = .now
-        try? modelContext.save()
-        loadAIChatThreads()
-        selectedAIChatThread = thread
-        announceAIChatTab(thread)
-
-        aiChatRespondingThreadIDs.insert(threadKey)
-        aiChatTasks[threadKey] = Task { @MainActor in
-            defer {
-                aiChatRespondingThreadIDs.remove(threadKey)
-                aiChatTasks[threadKey] = nil
-            }
-            do {
-                let rubric = try await AI.provider.buildRubric(for: submission)
-                try Task.checkCancellation()
-                reply.text = L("答案を読んでいます…")
-                let review = try await AI.provider.grade(submission, rubric: rubric)
-                reply.text = Self.markingReport(review)
-            } catch is CancellationError {
-                reply.text = L("（中断しました）")
-            } catch {
-                reply.text = (error as? LocalizedError)?.errorDescription
-                    ?? error.localizedDescription
-            }
-            thread.updatedAt = .now
-            try? modelContext.save()
         }
     }
 
@@ -3087,44 +2882,6 @@ struct NoteEditorView: View {
     /// Lays the marking out as text. See `AIChatFormatting`.
     static func markingReport(_ review: ProofReviewResult) -> String {
         AIChatFormatting.markingReport(review)
-    }
-
-    private func cancelAIChatResponse() {
-        guard let selectedAIChatThread else { return }
-        let threadKey = aiChatThreadKey(selectedAIChatThread)
-        aiChatTasks[threadKey]?.cancel()
-        aiChatTasks[threadKey] = nil
-        aiChatRespondingThreadIDs.remove(threadKey)
-    }
-
-    private func deleteAIChatThread(_ thread: AIChatThread) {
-        NotificationCenter.default.post(
-            name: .studiquoCloseAIChatTab,
-            object: thread.persistentModelID
-        )
-        let threadKey = aiChatThreadKey(thread)
-        aiChatTasks[threadKey]?.cancel()
-        aiChatTasks[threadKey] = nil
-        aiChatRespondingThreadIDs.remove(threadKey)
-        aiChatDrafts[threadKey] = nil
-        aiChatAttachments[threadKey] = nil
-        aiChatContextOverrides[threadKey] = nil
-
-        if selectedAIChatThread?.persistentModelID == thread.persistentModelID {
-            selectedAIChatThread = nil
-        }
-
-        modelContext.delete(thread)
-        try? modelContext.save()
-        loadAIChatThreads()
-
-        if selectedAIChatThread == nil {
-            selectedAIChatThread = aiChatThreads.first
-        }
-    }
-
-    private func messageText(_ text: String, with attachments: [AIChatAttachment]) -> String {
-        AIChatFormatting.messageText(text, with: attachments)
     }
 
     /// Hands the model the text of the page the student is looking at, so
@@ -3216,10 +2973,10 @@ struct NoteEditorView: View {
             activePane = pane
             return
         case .ai(let id):
-            loadAIChatThreads()
-            guard let thread = aiChatThreads.first(where: { $0.persistentModelID == id }) else { return }
-            selectedAIChatThread = thread
-            announceAIChatTab(thread)
+            aiChat.loadThreads()
+            guard let thread = aiChat.threads.first(where: { $0.persistentModelID == id }) else { return }
+            aiChat.selectedThread = thread
+            aiChat.announceThread(thread)
             showsTemporaryAIChat = false
             if isAIChatVisibleInSplit {
                 activePane = primaryShowsAIChat ? .primary : .secondary
@@ -3561,8 +3318,8 @@ struct NoteEditorView: View {
         }
 
         if parts[0] == "ai" {
-            loadAIChatThreads()
-            guard let thread = aiChatThreads.first(where: {
+            aiChat.loadThreads()
+            guard let thread = aiChat.threads.first(where: {
                 String(describing: $0.persistentModelID) == parts[1]
             }) else { return false }
             applyPaneTarget(.ai(thread.persistentModelID), to: pane)
