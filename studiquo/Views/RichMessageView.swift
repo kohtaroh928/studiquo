@@ -29,8 +29,8 @@ struct RichMessageView: View {
     var body: some View {
         RichBlocksView(blocks: blocks, style: RichStyle(fontSize: fontSize, color: color))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(MathTextFormatter.plainText(from: source))
+            // One element read as plain words: the typeset formulas are images with no text of their own.
+            .accessibilityRepresentation { Text(MathTextFormatter.plainText(from: source)) }
     }
 }
 

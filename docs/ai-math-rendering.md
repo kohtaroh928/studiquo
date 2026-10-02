@@ -169,3 +169,11 @@ UIテストでは、テスト用のAIに `sample:<id>` と送ると、そのサ�
 ### 確認
 - 実機相当のシミュレータで幅700・420の画面を目視確認(日本語+行内数式、分数・根号・総和・極限、表、引用、コード内の `$HOME`、`$100`/`$200` の価格表記、採点レポートの改行保持)。
 - `MathRenderingTests`(正規化・描画可否・画像の向き・キャッシュ・日本語・全サンプルのレイアウト・生成途中の各状態・速度)。
+
+## ステップ5(AIチャットの吹き出し)の結果
+
+- `AIChatBubble` のAI側を `RichMessageView` に置き換えた(文字サイズは Dynamic Type に追従)。ユーザー側の吹き出しは変更なし。
+- 長押しメニューに「コピー」を追加。コピーされるのは `MathTextFormatter.plainText` の読めるテキストで、LaTeX ではない。「ページに貼り付け」は従来どおり(貼り付ける中身の変換はステップ6)。
+- VoiceOver は `accessibilityRepresentation` で、数式を読み上げ用の文章にしたテキスト1つとして読む。(`accessibilityElement(.ignore)`+`accessibilityLabel` では、画像の数式が抜けた文字が読まれてしまった。)
+- 長押しメニューは、吹き出し全体に `contentShape(Rectangle())` を付けないと、エディタ側の分割表示で出なかった。
+- UIテスト `AIMathRenderingChatTests`: 読み上げが LaTeX でなく式を含む/長い返信が最後まで流れる/長押しで「コピー」が出る。既存のAIチャット系UIテスト(HomeAIChat/NoteAIChat/AIChatNotification)も全て通過。
