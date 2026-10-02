@@ -522,7 +522,7 @@ private struct UITestAIProvider: AIProvider {
             return
         }
         // "少し待って" takes a few seconds, long enough to leave the screen first.
-        try await Task.sleep(for: .milliseconds(question.contains("少し待って") ? 3000 : 150))
+        try await Task.sleep(for: .milliseconds(question.contains("少し待って") ? 3000 : (question.contains("ちょっと待って") ? 1000 : 150)))
         await MainActor.run { onDelta("テスト返答: \(question)") }
     }
 
@@ -581,12 +581,15 @@ private struct LibraryDropUITestRoot: View {
         // Lets UI tests drive the AIトーク (home tab and editor) without a network.
         if ProcessInfo.processInfo.arguments.contains("--ui-test-fake-ai") {
             AI.provider = UITestAIProvider()
-            // Record "answer ready" notifications instead of sending real ones.
-            let context = LibraryDropUITestStore.container.mainContext
-            let store = AIChatStore.shared(for: context)
-            let recorder = LibraryDropUITestStore.completionRecorder
-            store.deliverCompletion = { recorder.delivered.append($0.title) }
-            store.clearCompletion = { recorder.cleared.append($0.title) }
+            // Record "answer ready" notifications instead of sending real ones,
+            // unless the test is about the real delivery.
+            if !ProcessInfo.processInfo.arguments.contains("--ui-test-real-notifications") {
+                let context = LibraryDropUITestStore.container.mainContext
+                let store = AIChatStore.shared(for: context)
+                let recorder = LibraryDropUITestStore.completionRecorder
+                store.deliverCompletion = { recorder.delivered.append($0.title) }
+                store.clearCompletion = { recorder.cleared.append($0.title) }
+            }
         }
         _ = LibraryDropUITestStore.container
         if ProcessInfo.processInfo.arguments.contains("--ui-test-ai-notification-route") {
@@ -615,6 +618,12 @@ private struct LibraryDropUITestRoot: View {
                         AIViewingProbe(store: AIChatStore.shared(for: LibraryDropUITestStore.container.mainContext))
                         AICompletionProbe(recorder: LibraryDropUITestStore.completionRecorder)
                     }
+                }
+            }
+            .task {
+                // The real-notification test needs the system permission.
+                if ProcessInfo.processInfo.arguments.contains("--ui-test-real-notifications") {
+                    _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
                 }
             }
             .task {

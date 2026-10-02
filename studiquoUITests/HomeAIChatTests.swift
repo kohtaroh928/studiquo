@@ -17,6 +17,14 @@ final class HomeAIChatTests: XCTestCase {
         XCTAssertTrue(app.buttons["home-tab-ai"].waitForExistence(timeout: 20), "ホーム下部に「AI」タブがありません。")
     }
 
+
+    override func tearDown() {
+        // The orientation outlives the test run; leave the simulator portrait
+        // for other UI tests that compare screenshot pixels.
+        XCUIDevice.shared.orientation = .portrait
+        super.tearDown()
+    }
+
     // MARK: Helpers
 
     private func openHomeAI() {

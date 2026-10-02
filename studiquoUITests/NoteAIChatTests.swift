@@ -14,7 +14,7 @@ final class NoteAIChatTests: XCTestCase {
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
-        XCUIDevice.shared.orientation = .landscapeLeft
+        XCUIDevice.shared.orientation = .portrait
         app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
         app.launchArguments = ["--note-ai-chat-ui-test", "--note-ai-chat-auto-open"]
         app.launch()
@@ -165,6 +165,11 @@ final class NoteAIChatOpenTests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
+    }
+
+    override func tearDown() {
+        XCUIDevice.shared.orientation = .portrait
+        super.tearDown()
     }
 
     func testOpeningTheChatFromTheToolbarWithNoConversationKeepsTheAppResponsive() {
