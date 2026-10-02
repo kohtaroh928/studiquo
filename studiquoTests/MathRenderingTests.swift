@@ -129,4 +129,15 @@ final class MathRenderingTests: XCTestCase {
         print("PERF layout of \(text.count) characters: \(String(format: "%.1f", ms)) ms each")
         XCTAssertLessThan(ms, 250)
     }
+
+    /// Large text (Dynamic Type's biggest sizes) still fits the width and grows taller.
+    func testLargeTextStillFitsTheWidth() {
+        let text = AIMathSamples.sample(id: "reply-quadratic-extremum")!.text
+        let normal = UIHostingController(rootView: RichMessageView(source: text, fontSize: 17))
+            .sizeThatFits(in: CGSize(width: 400, height: CGFloat.greatestFiniteMagnitude))
+        let large = UIHostingController(rootView: RichMessageView(source: text, fontSize: 36))
+            .sizeThatFits(in: CGSize(width: 400, height: CGFloat.greatestFiniteMagnitude))
+        XCTAssertLessThanOrEqual(large.width, 400.5)
+        XCTAssertGreaterThan(large.height, normal.height * 1.5)
+    }
 }
