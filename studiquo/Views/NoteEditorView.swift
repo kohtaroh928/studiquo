@@ -2606,7 +2606,8 @@ struct NoteEditorView: View {
     }
 
     private func insertAIResponseOnPage(_ text: String) {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A page's text box shows plain text: no LaTeX, no Markdown markers.
+        let value = MathTextFormatter.plainText(from: text).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, !activePaneShowsFlashcards, let page = activePage ?? currentPrimaryPage else { return }
         let lineCount = max(1, value.components(separatedBy: .newlines).count)
         let estimatedRows = min(18, max(6, lineCount + value.count / 44))

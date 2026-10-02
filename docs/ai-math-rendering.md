@@ -177,3 +177,18 @@ UIテストでは、テスト用のAIに `sample:<id>` と送ると、そのサ�
 - VoiceOver は `accessibilityRepresentation` で、数式を読み上げ用の文章にしたテキスト1つとして読む。(`accessibilityElement(.ignore)`+`accessibilityLabel` では、画像の数式が抜けた文字が読まれてしまった。)
 - 長押しメニューは、吹き出し全体に `contentShape(Rectangle())` を付けないと、エディタ側の分割表示で出なかった。
 - UIテスト `AIMathRenderingChatTests`: 読み上げが LaTeX でなく式を含む/長い返信が最後まで流れる/長押しで「コピー」が出る。既存のAIチャット系UIテスト(HomeAIChat/NoteAIChat/AIChatNotification)も全て通過。
+
+## ステップ6(その他の出力箇所)の結果
+
+| 場所 | 対応 |
+|---|---|
+| 採点レポート | 返答としてチャットに出るので、ステップ5で対応済み(改行も保たれる) |
+| 復習の解説 | `AIReviewDetailView` が AI の Markdown 原文を `RichMessageView` で表示(原文が無い古いデータは従来どおり文書本文) |
+| 復習のクイズ | 問題・答えを `RichMessageView` で表示 |
+| 通知の詳細(ベルの一覧) | 復習の通知だけ `RichMessageView`。カレンダーなどの本文は従来どおり |
+| 復習用ドキュメントの生成 | 文書は書式つきの文字なので、`MathTextFormatter.readableText` で読める形にしてから保存(PDFも同じ)。復習データには AI の原文を残す |
+| ページへの貼り付け | ページのテキスト枠は文字だけなので `MathTextFormatter.plainText`(LaTeX も Markdown 記号も無し) |
+
+- 端末の通知(バナー)の本文はユーザー自身の質問文なので変更なし。
+- MCP 経由の `create_document`(外部ツールが作る文書)は、AIの出力ではなく外部の内容なので変換しない。
+- テスト: `AIReviewServiceTests` に、文書は読める形・復習データは原文のまま、を追加。
