@@ -8,6 +8,13 @@ import XCTest
 final class AIChatNotificationTests: XCTestCase {
     private var app: XCUIApplication!
 
+    override func tearDown() {
+        // The orientation outlives the test run; leave the simulator portrait
+        // for other UI tests that compare screenshot pixels.
+        XCUIDevice.shared.orientation = .portrait
+        super.tearDown()
+    }
+
     private func launch(_ extra: [String] = []) {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
