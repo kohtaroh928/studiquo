@@ -574,6 +574,10 @@ private struct StartupUITestRoot: View {
 private struct LibraryDropUITestRoot: View {
     init() {
         AIDataDisclosure.acknowledge()
+        // Lets UI tests drive the AIトーク (home tab and editor) without a network.
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-fake-ai") {
+            AI.provider = UITestAIProvider()
+        }
         _ = LibraryDropUITestStore.container
     }
 
