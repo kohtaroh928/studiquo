@@ -209,6 +209,8 @@ struct StudiquoApp: App {
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test") ||
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test") {
                     NoteSnippetFriendUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--math-spike") {
+                    MathSpikeView()
                 } else if ProcessInfo.processInfo.arguments.contains("--note-ai-chat-ui-test") {
                     NoteAIChatUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") {
@@ -230,6 +232,7 @@ struct StudiquoApp: App {
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--math-spike"),
                       !ProcessInfo.processInfo.arguments.contains("--note-ai-chat-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") else { return }
                 #endif
