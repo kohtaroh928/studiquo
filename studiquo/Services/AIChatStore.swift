@@ -87,7 +87,11 @@ final class AIChatStore: ObservableObject {
     /// Keys (see `threadKey`) of conversations that are being answered.
     @Published private(set) var respondingThreadIDs: Set<String> = []
 
-    /// Tells the tab bar a conversation is open (and what it is called).
+    /// Tells the tab bar that this conversation is open, and what to call it.
+    ///
+    /// Sent again after each exchange because a thread is titled from its
+    /// first message — without the repeat, every tab would read
+    /// "新しいトーク" forever.
     var announceThread: (AIChatThread) -> Void = { thread in
         NotificationCenter.default.post(
             name: .studiquoOpenAIChatTab,
@@ -101,6 +105,21 @@ final class AIChatStore: ObservableObject {
 
     private let modelContext: ModelContext
     private var tasks: [String: Task<Void, Never>] = [:]
+
+    /// One store per model context, so every screen of the app that shares a
+    /// container (the note editor's chat, the floating panel, the home AI
+    /// screen) sees the same conversations, drafts and "replying" state.
+    private static let registry = NSMapTable<ModelContext, AIChatStore>(
+        keyOptions: .weakMemory,
+        valueOptions: .strongMemory
+    )
+
+    static func shared(for modelContext: ModelContext) -> AIChatStore {
+        if let existing = registry.object(forKey: modelContext) { return existing }
+        let store = AIChatStore(modelContext: modelContext)
+        registry.setObject(store, forKey: modelContext)
+        return store
+    }
 
     /// The draft key used before any conversation exists.
     static let newThreadKey = "new"
@@ -279,8 +298,17 @@ final class AIChatStore: ObservableObject {
         }
     }
 
-    /// Runs the two-stage marker over a question and a student's answer and
-    /// puts the result in the conversation like any other exchange.
+    /// Marks a proof, from whatever the student handed over.
+    ///
+    /// It runs as a normal exchange in the thread — a question from the
+    /// student, an answer from the AI — so the marking stays in the
+    /// conversation and can be asked about afterwards ("なぜここが減点なの？").
+    ///
+    /// Two calls, deliberately. A rubric is derived from the question alone
+    /// first, and only then is the student's work looked at. Asking for a
+    /// score in one shot makes the result drift between runs; fixing the
+    /// criteria before the answer is visible is what makes two runs of the
+    /// same page agree.
     func submitProof(_ submission: ProofSubmission) {
         guard submission.hasQuestion, submission.hasAnswer else { return }
         let thread = threadForSending()
