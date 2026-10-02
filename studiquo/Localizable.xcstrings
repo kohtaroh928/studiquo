@@ -9632,6 +9632,16 @@
         }
       }
     },
+    "コピー" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy"
+          }
+        }
+      }
+    },
     "ページに貼り付け" : {
       "localizations" : {
         "en" : {
