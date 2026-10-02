@@ -103,8 +103,20 @@ final class AIChatStore: ObservableObject {
         NotificationCenter.default.post(name: .studiquoCloseAIChatTab, object: thread.persistentModelID)
     }
 
+    // MARK: Is anyone looking?
+
+    /// The screens currently showing the conversation (the home AI tab, the
+    /// editor's chat pane, its floating panel). Only a screen that is really
+    /// on display is in here: a tab that merely exists in the tab bar, or a
+    /// chat pane that is not the pane on screen, is not.
+    @Published private(set) var visibleSurfaces: Set<UUID> = []
+    /// False while the app is in the background, the screen is locked or
+    /// another app is in front.
+    @Published var isAppActive: Bool
+
     private let modelContext: ModelContext
     private var tasks: [String: Task<Void, Never>] = [:]
+    private var lifecycleObservers: [NSObjectProtocol] = []
 
     /// One store per model context, so every screen of the app that shares a
     /// container (the note editor's chat, the floating panel, the home AI
@@ -124,9 +136,53 @@ final class AIChatStore: ObservableObject {
     /// The draft key used before any conversation exists.
     static let newThreadKey = "new"
 
-    init(modelContext: ModelContext) {
+    init(modelContext: ModelContext, isAppActive: Bool? = nil) {
         self.modelContext = modelContext
+        self.isAppActive = isAppActive ?? (UIApplication.shared.applicationState == .active)
+        let center = NotificationCenter.default
+        lifecycleObservers = [
+            center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.isAppActive = true }
+            },
+            center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.isAppActive = false }
+            },
+        ]
     }
+
+    deinit {
+        for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    // MARK: Visibility
+
+    func surfaceDidAppear(_ id: UUID) {
+        visibleSurfaces.insert(id)
+    }
+
+    func surfaceDidDisappear(_ id: UUID) {
+        visibleSurfaces.remove(id)
+    }
+
+    /// The conversation the student can actually see right now, if any: one
+    /// is selected, a chat screen is on display, and the app is in front.
+    var viewedThread: AIChatThread? {
+        guard isAppActive, !visibleSurfaces.isEmpty else { return nil }
+        return selectedThread
+    }
+
+    /// Whether `thread` is on screen in front of the student. A reply that
+    /// finishes while this is false is worth a notification.
+    func isViewing(_ thread: AIChatThread) -> Bool {
+        viewedThread?.persistentModelID == thread.persistentModelID
+    }
+
+    #if DEBUG
+    /// What UI tests read to see the real screens register and unregister.
+    var debugViewingDescription: String {
+        "screens=\(visibleSurfaces.count);viewing=\(viewedThread?.title ?? "-")"
+    }
+    #endif
 
     // MARK: Keys and per-conversation state
 

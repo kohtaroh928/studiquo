@@ -313,6 +313,93 @@ final class AIChatStoreTests: XCTestCase {
         XCTAssertTrue(report.contains("AIによるものです"))
     }
 
+    // MARK: Is anyone looking?
+
+    /// Starts a conversation and leaves it selected.
+    private func startThread(_ store: AIChatStore, _ text: String) async -> AIChatThread {
+        provider.chat = { _, _, _, _, onDelta in onDelta("返答") }
+        store.activeDraft = text
+        store.send()
+        await settle(store)
+        return store.selectedThread!
+    }
+
+    func testNothingIsViewedWhileNoChatScreenIsOnDisplay() async {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+        let thread = await startThread(store, "質問")
+
+        XCTAssertNil(store.viewedThread, "選択中でも、表示している画面がなければ見ていない")
+        XCTAssertFalse(store.isViewing(thread))
+    }
+
+    func testAThreadIsViewedOnlyWhileAChatScreenShowsItAndTheAppIsInFront() async {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+        let thread = await startThread(store, "質問")
+        let screen = UUID()
+
+        store.surfaceDidAppear(screen)
+        XCTAssertTrue(store.isViewing(thread))
+        XCTAssertTrue(store.viewedThread === thread)
+
+        store.isAppActive = false
+        XCTAssertFalse(store.isViewing(thread), "画面ロック・別アプリ・バックグラウンドでは見ていない")
+        store.isAppActive = true
+        XCTAssertTrue(store.isViewing(thread))
+
+        store.surfaceDidDisappear(screen)
+        XCTAssertFalse(store.isViewing(thread), "画面が消えたら見ていない")
+    }
+
+    func testOnlyTheSelectedThreadIsViewed() async {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+        let first = await startThread(store, "一つ目")
+        store.startNewThread()
+        let second = await startThread(store, "二つ目")
+        store.surfaceDidAppear(UUID())
+
+        XCTAssertTrue(store.isViewing(second))
+        XCTAssertFalse(store.isViewing(first), "画面に出ているのは選択中の会話だけ")
+
+        store.select(first)
+        XCTAssertTrue(store.isViewing(first))
+        XCTAssertFalse(store.isViewing(second))
+
+        store.startNewThread()
+        XCTAssertFalse(store.isViewing(first), "新しいトークを表示中は、どの会話も見ていない")
+        XCTAssertNil(store.viewedThread)
+    }
+
+    func testTheConversationStaysViewedUntilEveryScreenShowingItIsGone() async {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+        let thread = await startThread(store, "質問")
+        let home = UUID(), editor = UUID()
+
+        store.surfaceDidAppear(home)
+        store.surfaceDidAppear(editor)
+        store.surfaceDidAppear(editor) // appearing twice must not count twice
+        store.surfaceDidDisappear(home)
+        XCTAssertTrue(store.isViewing(thread), "もう一方の画面にまだ出ている")
+
+        store.surfaceDidDisappear(editor)
+        XCTAssertFalse(store.isViewing(thread))
+        XCTAssertTrue(store.visibleSurfaces.isEmpty)
+    }
+
+    func testTheStoreFollowsTheAppsActiveState() {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+
+        NotificationCenter.default.post(name: UIApplication.willResignActiveNotification, object: nil)
+        XCTAssertFalse(store.isAppActive)
+
+        NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        XCTAssertTrue(store.isAppActive)
+    }
+
     // MARK: Formatting
 
     func testMessageTextListsAttachmentsOnlyWhenThereAreAny() {

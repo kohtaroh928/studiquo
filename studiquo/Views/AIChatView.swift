@@ -32,6 +32,10 @@ struct AIChatPanel: View {
     let onOpenAttachment: (AIChatAttachment) -> Void
     var onPaneDrop: ((String) -> Bool)? = nil
 
+    /// Identifies this on-screen instance to the store's "is anyone looking"
+    /// tracking. One per instance, so two panels cannot cancel each other.
+    @State private var surfaceID = UUID()
+
     var body: some View {
         AIChatPane(
             threads: store.threads,
@@ -51,6 +55,8 @@ struct AIChatPanel: View {
             onOpenAttachment: onOpenAttachment,
             onPaneDrop: onPaneDrop
         )
+        .onAppear { store.surfaceDidAppear(surfaceID) }
+        .onDisappear { store.surfaceDidDisappear(surfaceID) }
     }
 }
 
