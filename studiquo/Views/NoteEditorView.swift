@@ -82,90 +82,6 @@ extension EnvironmentValues {
     }
 }
 
-private struct AIChatAttachment: Identifiable, Hashable {
-    enum Kind: String {
-        case file
-        case folder
-        case camera
-        case notebook
-        case flashcards
-        case document
-        case slideDeck
-        /// A rectangle cut out of a page — see `PageSnippet`.
-        case snippet
-
-        var label: String {
-            switch self {
-            case .file: return L("ファイル")
-            case .folder: return L("フォルダー")
-            case .camera: return L("撮影画像")
-            case .notebook: return L("ノート・PDF")
-            case .flashcards: return L("暗記カード")
-            case .document: return L("文書")
-            case .slideDeck: return L("スライド")
-            case .snippet: return L("切り抜き")
-            }
-        }
-
-    var icon: String {
-        switch self {
-        case .file: return "doc"
-            case .folder: return "folder"
-            case .camera: return "camera"
-            case .notebook: return "doc.richtext"
-            case .flashcards: return "rectangle.on.rectangle.angled"
-            case .document: return "doc.text"
-            case .slideDeck: return "rectangle.on.rectangle"
-            case .snippet: return "rectangle.dashed"
-            }
-        }
-    }
-
-    /// What a dropped snippet is, as far as the marker is concerned.
-    ///
-    /// One question and one answer is what turns an ordinary chat message
-    /// into a marking request; anything else is just a picture to talk about.
-    enum ProofRole: String, CaseIterable, Identifiable {
-        case none
-        case question
-        case answer
-
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .none: return L("画像として送る")
-            case .question: return L("問題")
-            case .answer: return L("解答")
-            }
-        }
-
-        var tint: Color {
-            switch self {
-            case .none: return .secondary
-            case .question: return .indigo
-            case .answer: return .teal
-            }
-        }
-    }
-
-    let id = UUID()
-    let name: String
-    let path: String
-    let kind: Kind
-    var sourceID: String? = nil
-    var snippet: PageSnippet?
-    var imageData: Data?
-    var contextText: String = ""
-    var proofRole: ProofRole = .none
-
-    var image: UIImage? {
-        if let snippet { return snippet.image }
-        if let imageData { return UIImage(data: imageData) }
-        return nil
-    }
-}
-
 struct StudiquoSelectionDrop {
     let text: String
     let screenPoint: CGPoint
@@ -3163,51 +3079,14 @@ struct NoteEditorView: View {
         }
     }
 
-    /// What the student's side of the exchange says, so the thread reads as a
-    /// conversation rather than starting with an answer to an invisible
-    /// question.
+    /// What the student's side of the exchange says. See `AIChatFormatting`.
     static func submissionSummary(_ submission: ProofSubmission) -> String {
-        // Text halves are quoted; image halves are described in words rather
-        // than left as a bare "（画像）" placeholder, so the student's bubble
-        // reads like a request.
-        func describe(text: String, image: Bool, label: String) -> String {
-            if !text.isEmpty { return "【\(label)】\n\(text)" }
-            if image { return L("【\(label)】画像を添付しました。") }
-            return ""
-        }
-        var lines = [L("この証明を添削してください。"), ""]
-        let question = describe(text: submission.questionText, image: submission.questionImage != nil, label: L("問題"))
-        let answer = describe(text: submission.answerText, image: submission.answerImage != nil, label: L("解答"))
-        if !question.isEmpty { lines.append(question); lines.append("") }
-        if !answer.isEmpty { lines.append(answer) }
-        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        AIChatFormatting.submissionSummary(submission)
     }
 
-    /// Lays the marking out as text, so it renders in an ordinary chat
-    /// bubble and stays in the thread's history like any other reply.
+    /// Lays the marking out as text. See `AIChatFormatting`.
     static func markingReport(_ review: ProofReviewResult) -> String {
-        var lines = ["【\(review.score) / \(review.maxScore)点】", "", review.verdict, ""]
-        // AI-generated grading can be wrong — a logically valid proof marked
-        // down, or a flawed one marked correct — so every report says so up
-        // front, not just once in a settings screen the student may never
-        // open, before the score itself might be taken at face value.
-        lines.append(L("※ この採点はAIによるものです。誤りを含むことがあるため、参考としてご利用ください。"))
-        lines.append("")
-        lines.append(L("■ 採点内訳"))
-        for item in review.criteria {
-            lines.append("・\(item.name)　\(item.earnedPoints)/\(item.maxPoints)点")
-            if !item.comment.isEmpty { lines.append("　　\(item.comment)") }
-        }
-        if !review.issues.isEmpty {
-            lines.append("")
-            lines.append(L("■ 指摘"))
-            for issue in review.issues {
-                lines.append("・[\(issue.kind.title)] \(issue.excerpt)")
-                lines.append("　　\(issue.explanation)")
-                if !issue.suggestion.isEmpty { lines.append(L("　　→ \(issue.suggestion)")) }
-            }
-        }
-        return lines.joined(separator: "\n")
+        AIChatFormatting.markingReport(review)
     }
 
     private func cancelAIChatResponse() {
@@ -3245,16 +3124,7 @@ struct NoteEditorView: View {
     }
 
     private func messageText(_ text: String, with attachments: [AIChatAttachment]) -> String {
-        guard !attachments.isEmpty else { return text }
-        let attachmentLines = attachments.map { attachment in
-            "- \(attachment.kind.label): \(attachment.name)"
-        }.joined(separator: "\n")
-        return """
-        \(text)
-
-        \(L("添付された資料"))
-        \(attachmentLines)
-        """
+        AIChatFormatting.messageText(text, with: attachments)
     }
 
     /// Hands the model the text of the page the student is looking at, so
