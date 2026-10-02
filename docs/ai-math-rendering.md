@@ -89,3 +89,31 @@ UIテストでは、テスト用のAIに `sample:<id>` と送ると、そのサ�
 8. アプリは全体がライトモード固定(`StudiquoApp.swift` の `.preferredColorScheme(.light)`)。
    色は環境から取る形にしておき、ダークモード対応が必要になったときに備える。
 
+## ステップ2(読みやすいテキストへの変換)の結果
+実装: `Services/MathSegmenter.swift`(区切りの切り出し)、`Services/MathTextFormatter.swift`(変換)、
+`Services/MathSymbols.swift`(記号の表)。
+
+### 使い方
+- `MathSegmenter.segments(in:)`: 文章を `text / inlineMath / displayMath / code / incomplete` に分ける。
+  ステップ3以降の構造の分解と描画の入力にもなる。
+- `MathTextFormatter.readableMath(from:)`: 1つの式(区切りなし)を読みやすいテキストにする。
+- `MathTextFormatter.readableText(from:)`: 返答全体の数式だけを変換(Markdownの記号はそのまま)。
+- `MathTextFormatter.plainText(from:)`: さらにMarkdownの記号(`**`、`##`、`- `、表、リンク)も取る。
+  コピー、ページへの貼り付け、VoiceOver、通知、描画に失敗したときの代替表示で使う。
+
+### 変換の例
+`x^2+y^2=r^2` → `x² + y² = r²` / `\frac{a+b}{2}` → `(a + b)/2` / `\sqrt{b^2-4ac}` → `√(b² − 4ac)` /
+`\sum_{k=1}^{n}` → `Σ(k = 1〜n)` / `\int_0^1 x^2\,dx` → `∫₀¹ x² dx` / `\binom{n}{k}` → `ₙCₖ` /
+`\mathbb{R}` → `ℝ` / `\begin{pmatrix}1&2\\3&4\end{pmatrix}` → `(1, 2; 3, 4)` / `\ce{H2O}` → `H₂O`
+
+### 守っていること
+- コードブロックとインラインコードは変換しない。`$100`、`$HOME`、`\$` は式にしない。
+- 返答が生成の途中で、閉じていない式は、そのまま残す(`incomplete`)。すべての途中状態でクラッシュしない。
+- 未対応のコマンドは消さない(`\name(引数)` の形で残す)。
+- 曖昧になる所は括弧を付ける(`(a + b)/2`、`1/(2a)`、`√(x²)`、`e^(−x²)`)。
+- 1回の変換は約1ミリ秒未満(長い返答でも20ミリ秒以内を保証するテストあり)。
+
+### サンプル集に対する確認
+- 変換後に、`\command` が残らない(コード・未対応のサンプルを除く)。`$` も残らない。
+- 価格・シェル変数・すでに読める文字は変わらない。変換は冪等(2回かけても同じ)。
+
