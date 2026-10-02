@@ -221,6 +221,22 @@ struct MathSpikeView: View {
     }
 
     private func card(for sample: AIMathSample) -> some View {
+        if ProcessInfo.processInfo.arguments.contains("--math-spike-rich") {
+            return AnyView(
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(sample.id).font(.caption.bold()).foregroundStyle(.secondary)
+                    Divider()
+                    RichMessageView(source: sample.text, fontSize: fontSize)
+                }
+                .padding(12)
+                .frame(width: width + 24, alignment: .leading)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            )
+        }
+        return AnyView(spikeCard(for: sample))
+    }
+
+    private func spikeCard(for sample: AIMathSample) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(sample.id).font(.caption.bold()).foregroundStyle(.secondary)
             Text(sample.text)
