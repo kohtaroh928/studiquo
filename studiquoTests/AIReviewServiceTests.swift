@@ -98,6 +98,31 @@ final class AIReviewServiceTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<AIReviewItem>()), 1)
     }
 
+    // MARK: 数式
+
+    /// The filed document is plain formatted text, so a formula in the AI's
+    /// explanation must be readable there; the item keeps the AI's own text
+    /// so the review screen can typeset it.
+    func testTheReviewDocumentHasReadableMathWhileTheItemKeepsTheOriginal() async throws {
+        let markdown = "## 解の公式\n\n$x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}$ です。"
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: markdown, quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+
+        await AIReviewService.considerForReview(
+            questionText: "解の公式", threadTitle: "数学", askedAt: .now, modelContext: context
+        )
+
+        let document = try XCTUnwrap(try context.fetch(FetchDescriptor<TextDocument>()).first)
+        XCTAssertFalse(document.plainText.contains("\\frac"), document.plainText)
+        XCTAssertFalse(document.plainText.contains("$"), document.plainText)
+        XCTAssertTrue(document.plainText.contains("√"), document.plainText)
+        XCTAssertTrue(document.plainText.contains("解の公式"))
+        let item = try XCTUnwrap(try context.fetch(FetchDescriptor<AIReviewItem>()).first)
+        XCTAssertEqual(item.explanationMarkdown, markdown)
+    }
+
     // MARK: Category 1 — AIの判定
 
     func testIdleChatProducesNoReviewItemOrDocument() async throws {

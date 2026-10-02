@@ -234,6 +234,24 @@ async function readError(response) {
   }
 }
 
+// MARK: Math notation
+
+/**
+ * How the model must write math. The app typesets `$…$` and `$$…$$` (and
+ * turns anything it cannot typeset into readable text), so replies must
+ * delimit every formula. Appended to every prompt whose output is shown to
+ * a student. Keep in step with `ClaudeChatService.systemPrompt` in the app.
+ */
+const MATH_RULES = `
+
+数式の書き方:
+- 数式や数学記号は LaTeX で書き、文中の式は $...$、独立した行の式は $$...$$ で囲むこと。囲まずに \\frac などを裸で書かないこと。
+- 式の中に日本語を入れるときは \\text{距離} のように \\text{...} を使うこと。
+- 通貨の記号として $ を使わず、「100円」「5ドル」のように書くこと。
+- 数式をコードブロックやバッククォートの中に入れないこと。
+- \\boxed、\\ce、\\underbrace、\\xcancel のような特殊なコマンドは避け、複数行の式は aligned 環境を使うこと。
+- 簡単な数（例: 3個、2倍）は式にせず、そのまま書いてよい。`;
+
 // MARK: Chat
 
 const CHAT_SYSTEM = `あなたは学習アプリ「Studiquo」に組み込まれた学習パートナーです。相手は勉強中の学生です。
@@ -242,7 +260,8 @@ const CHAT_SYSTEM = `あなたは学習アプリ「Studiquo」に組み込まれ
 - 相手が解いている途中なら、次の一手をひとつだけ示すこと。
 - 用語は定義してから使うこと。
 - わからないことは推測せず、わからないと言うこと。
-- 返答は日本語で、簡潔に。長い前置きは書かないこと。`;
+- 返答は日本語で、簡潔に。長い前置きは書かないこと。`
+  + MATH_RULES;
 
 /**
  * Streams a reply as SSE. Whichever upstream answers — Gemini, Anthropic,
@@ -472,7 +491,8 @@ const RUBRIC_SYSTEM = `あなたは数学の証明を採点する教員です。
 - 各基準には「その点を得るために答案が満たさなければならない条件」を具体的に書くこと。
 - 配点の合計は100点にすること。
 - 表記の丁寧さより、論理の正しさに配点を厚くすること。
-- 基準は4〜8個に収めること。`;
+- 基準は4〜8個に収めること。`
+  + MATH_RULES;
 
 const RUBRIC_SCHEMA = {
   type: "OBJECT",
@@ -512,7 +532,8 @@ const GRADE_SYSTEM = `あなたは数学の証明を採点する教員です。�
 - excerpt には学生自身が書いた表現を短く引用すること。
 - suggestion は「次にどう直すか」を1文で書くこと。
 - verdict は2文以内で、まず良い点、次に最大の課題を述べること。
-- 日本語で書くこと。`;
+- 日本語で書くこと。`
+  + MATH_RULES;
 
 const GRADE_SCHEMA = {
   type: "OBJECT",
@@ -755,7 +776,8 @@ const REVIEW_SYSTEM = `あなたは学習アプリ「Studiquo」の復習教材�
 
 復習する価値がない場合は isStudyRelevant を false にし、explanationMarkdown は空文字、quiz は空配列にしてください。
 
-日本語で書くこと。`;
+日本語で書くこと。`
+  + MATH_RULES;
 
 const REVIEW_SCHEMA = {
   type: "OBJECT",

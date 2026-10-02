@@ -209,6 +209,8 @@ struct StudiquoApp: App {
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test") ||
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test") {
                     NoteSnippetFriendUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--math-spike") {
+                    MathSpikeView()
                 } else if ProcessInfo.processInfo.arguments.contains("--note-ai-chat-ui-test") {
                     NoteAIChatUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") {
@@ -230,6 +232,7 @@ struct StudiquoApp: App {
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--math-spike"),
                       !ProcessInfo.processInfo.arguments.contains("--note-ai-chat-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") else { return }
                 #endif
@@ -514,6 +517,18 @@ private struct UITestAIProvider: AIProvider {
         onDelta: @escaping (String) -> Void
     ) async throws {
         let question = turns.last(where: { $0.role == .user })?.text ?? ""
+        // "sample:<id>" replies with that AI-output sample (see AIMathSamples),
+        // a few characters at a time like a real streamed reply.
+        if question.hasPrefix("sample:"),
+           let sample = AIMathSamples.sample(id: String(question.dropFirst("sample:".count)).trimmingCharacters(in: .whitespacesAndNewlines)) {
+            for piece in AIMathSamples.streamingPrefixes(of: sample.text, step: 12).enumerated().map({ index, prefix in
+                String(prefix.dropFirst(index * 12))
+            }) {
+                try await Task.sleep(for: .milliseconds(15))
+                await MainActor.run { onDelta(piece) }
+            }
+            return
+        }
         if question.contains("ゆっくり") {
             for _ in 0..<300 {
                 try await Task.sleep(for: .milliseconds(100))
