@@ -451,6 +451,11 @@ private struct NoteAIChatUITestRoot: View {
         .task {
             // Opens the chat without a tap so the layout can be profiled
             // without an automation session attached.
+            if ProcessInfo.processInfo.arguments.contains("--note-ai-chat-open-empty") {
+                try? await Task.sleep(for: .seconds(1.5))
+                NotificationCenter.default.post(name: .studiquoDebugOpenAIChat, object: nil)
+                return
+            }
             guard ProcessInfo.processInfo.arguments.contains("--note-ai-chat-auto-open") else { return }
             try? await Task.sleep(for: .seconds(1.5))
             NotificationCenter.default.post(
