@@ -3127,10 +3127,14 @@ struct ContentView: View {
         case .newDeviceLogin:
             showsAppSettings = true
         case .aiTaskComplete:
-            // AI tabs are restored by their normal tab-sync path. Returning
-            // home keeps the completed answer discoverable without guessing
-            // at a SwiftData identifier from an external payload.
-            break
+            // Open the AI tab on the conversation whose answer is ready. If it
+            // was deleted since, fall back to the most recent one.
+            homeSection = .ai
+            let store = AIChatStore.shared(for: modelContext)
+            store.prepareForDisplay()
+            if let key = AICompletionNotifications.threadKey(from: userInfo) {
+                store.selectThread(withKey: key)
+            }
         }
     }
 
