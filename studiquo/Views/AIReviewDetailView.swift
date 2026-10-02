@@ -38,10 +38,15 @@ struct AIReviewDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.purple.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
 
-                    Text(explanationText)
-                        .font(.body)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if item.explanationMarkdown.isEmpty {
+                        Text(explanationText)
+                            .font(.body)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        // The AI's own Markdown, with its math typeset.
+                        RichMessageView(source: item.explanationMarkdown)
+                    }
 
                     if !item.quiz.isEmpty {
                         Button {
@@ -150,10 +155,11 @@ struct AIReviewQuizView: View {
                 }
 
                 VStack(spacing: 20) {
-                    Text(showsAnswer ? question.answer : question.question)
-                        .font(showsAnswer ? .title3 : .title2.bold())
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(showsAnswer ? .purple : .primary)
+                    RichMessageView(
+                        source: showsAnswer ? question.answer : question.question,
+                        fontSize: showsAnswer ? 20 : 22,
+                        color: showsAnswer ? .systemPurple : .label
+                    )
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

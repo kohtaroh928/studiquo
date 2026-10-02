@@ -51,7 +51,10 @@ enum AIReviewService {
 
         let document = TextDocument(title: reviewDocumentTitle(for: question))
         document.folderName = reviewFolderName
-        let attributed = DocumentBody.attributedString(fromMarkup: result.explanationMarkdown)
+        let attributed = DocumentBody.attributedString(
+            // A document is plain formatted text, so formulas become readable text.
+            fromMarkup: MathTextFormatter.readableText(from: result.explanationMarkdown)
+        )
         document.bodyData = DocumentBody.encode(attributed)
         document.plainText = attributed.string
         modelContext.insert(document)

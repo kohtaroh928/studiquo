@@ -1135,13 +1135,21 @@ struct AIChatBubble: View {
     /// `nil` where there is no page to paste onto (the home AI screen).
     let onInsertOnPage: (() -> Void)?
 
+    /// Follows Dynamic Type like the `.body` text it replaces.
+    @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 17
+
     var body: some View {
         if message.role == .assistant {
-            Text(message.text)
-                .font(.body)
-                .foregroundStyle(.primary)
+            RichMessageView(source: message.text, fontSize: bodySize)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
                 .contextMenu {
+                    // Copies readable text, never the raw LaTeX.
+                    Button {
+                        UIPasteboard.general.string = MathTextFormatter.plainText(from: message.text)
+                    } label: {
+                        Label(L("コピー"), systemImage: "doc.on.doc")
+                    }
                     if let onInsertOnPage {
                         Button(action: onInsertOnPage) {
                             Label(L("ページに貼り付け"), systemImage: "text.badge.plus")

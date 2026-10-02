@@ -276,6 +276,9 @@ private struct StudyNotificationDetail: View {
                     Text("このお知らせに本文はありません。")
                         .font(.body)
                         .foregroundStyle(.secondary)
+                } else if notification.destination == .aiReview {
+                    // The AI's explanation: Markdown and math, typeset.
+                    RichMessageView(source: notification.detail)
                 } else {
                     Text(notification.detail)
                         .font(.body)
