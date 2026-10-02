@@ -170,6 +170,14 @@ final class AIChatStore: ObservableObject {
         selectedThread = thread
     }
 
+    /// Called when a screen showing the conversations appears: refreshes the
+    /// list and, if nothing is selected, picks up the most recent one, the
+    /// same way the note editor does when its chat opens.
+    func prepareForDisplay() {
+        loadThreads()
+        if selectedThread == nil { selectedThread = threads.first }
+    }
+
     /// Leaves the current conversation and starts an empty one.
     func startNewThread() {
         selectedThread = nil

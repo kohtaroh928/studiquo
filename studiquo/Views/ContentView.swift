@@ -1802,9 +1802,23 @@ struct ContentView: View {
         case notes = "ノート"
         case calendar = "カレンダー"
         case friends = "フレンド"
+        case ai = "AI"
         var id: String { rawValue }
         var icon: String {
-            switch self { case .notes: "note.text"; case .calendar: "calendar"; case .friends: "person.2" }
+            switch self {
+            case .notes: "note.text"
+            case .calendar: "calendar"
+            case .friends: "person.2"
+            case .ai: "sparkles"
+            }
+        }
+        var identifier: String {
+            switch self {
+            case .notes: "home-tab-notes"
+            case .calendar: "home-tab-calendar"
+            case .friends: "home-tab-friends"
+            case .ai: "home-tab-ai"
+            }
         }
         var title: String { L(rawValue) }
     }
@@ -2084,6 +2098,10 @@ struct ContentView: View {
                         .environmentObject(editorSplitState)
                         .environmentObject(friendStore)
                 }
+                // `.contain` keeps this identifier on the container only; a
+                // plain identifier here is stamped onto every descendant and
+                // hides each child's own (e.g. the AIトーク controls).
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("library-open-notebook-\(selectedNotebook.title)")
             } else if let selectedFlashcardDeck {
                 VStack(spacing: 0) {
@@ -2118,10 +2136,10 @@ struct ContentView: View {
         }
     }
 
-    /// Calendar and friends are shown full-width from the home dashboard —
-    /// neither inherits the notebook library sidebar.
+    /// Calendar, friends and the AI chat are shown full-width from the home
+    /// dashboard — none inherits the notebook library sidebar.
     private var isAuxiliaryHomeFullScreen: Bool {
-        homeSection == .calendar || homeSection == .friends
+        homeSection == .calendar || homeSection == .friends || homeSection == .ai
     }
 
     var body: some View {
@@ -2588,10 +2606,10 @@ struct ContentView: View {
             StudyTimeTracker.shared.setStudying(isStudySurfaceOpen)
         }
         .onChange(of: homeSection) { _, section in
-            // Calendar and friends are independent home destinations. Clear
-            // every editor selection so the notebook split view can never
-            // leak its sidebar into either screen.
-            if section == .calendar || section == .friends {
+            // Calendar, friends and the AI chat are independent home
+            // destinations. Clear every editor selection so the notebook
+            // split view can never leak its sidebar into them.
+            if section == .calendar || section == .friends || section == .ai {
                 returnToHome()
             }
         }
@@ -2599,6 +2617,58 @@ struct ContentView: View {
             friendStore.add(url: url)
             returnToHome()
             homeSection = .friends
+        }
+    }
+
+    /// The AI chat as a full-screen home destination. It shows the same
+    /// store as the note editor's AIトーク tool, so a conversation started in
+    /// either is there in the other. There is no page to read or paste onto,
+    /// so neither is offered.
+    private var homeAIChat: some View {
+        AIChatPanel(
+            store: AIChatStore.shared(for: modelContext),
+            onSelectAppAttachment: {
+                AIAppAttachmentCatalog.options(
+                    notebooks: allNotebooks,
+                    flashcardDecks: flashcardDecks,
+                    textDocuments: textDocuments,
+                    slideDecks: slideDecks
+                )
+            },
+            onOpenAttachment: openAIAttachmentFromHome
+        )
+        .toolbar(.hidden, for: .navigationBar)
+        .onAppear { AIChatStore.shared(for: modelContext).prepareForDisplay() }
+    }
+
+    /// Opens what an attachment chip points at, from the home AI screen:
+    /// back to the library with that notebook, deck, document or slide deck
+    /// opened.
+    private func openAIAttachmentFromHome(_ attachment: AIChatAttachment) {
+        guard let sourceID = attachment.sourceID else { return }
+        let parts = sourceID.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return }
+        let id = parts[1]
+        switch parts[0] {
+        case "notebook":
+            guard let notebook = allNotebooks.first(where: { !$0.isTrashed && notebookID($0) == id }) else { return }
+            homeSection = .notes
+            openNotebookTab(notebook)
+            selectNotebookTab(notebook)
+        case "deck":
+            guard let deck = flashcardDecks.first(where: { !$0.isTrashed && deckID($0) == id }) else { return }
+            homeSection = .notes
+            openFlashcardDeck(deck)
+        case "document":
+            guard let document = textDocuments.first(where: { !$0.isTrashed && textDocumentID($0) == id }) else { return }
+            homeSection = .notes
+            openTextDocument(document)
+        case "slide":
+            guard let deck = slideDecks.first(where: { !$0.isTrashed && String(describing: $0.persistentModelID) == id }) else { return }
+            homeSection = .notes
+            openSlideDeck(deck)
+        default:
+            return
         }
     }
 
@@ -2611,6 +2681,8 @@ struct ContentView: View {
                     showsNotifications: $showsNotifications,
                     notificationPanel: { AnyView(notificationPanel) }
                 )
+            } else if homeSection == .ai {
+                homeAIChat
             } else {
                 FriendsHomeView(
                     store: friendStore,
@@ -2661,6 +2733,7 @@ struct ContentView: View {
                             }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier(section.identifier)
                 }
             }
             .padding(.horizontal, 18)
