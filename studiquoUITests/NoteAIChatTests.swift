@@ -134,3 +134,35 @@ final class NoteAIChatTests: XCTestCase {
         )
     }
 }
+
+
+/// Regression: opening the chat beside a one-page note, with no earlier
+/// conversation, used to send `ContinuousPagesView` into an endless layout
+/// pass (100% CPU, app never idle) whenever the pane was about as tall as one
+/// page. Every later query then timed out. Tapping the toolbar button is what
+/// reproduced it, so this goes through the real tap rather than the fixture's
+/// auto-open.
+final class NoteAIChatOpenTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+    }
+
+    func testOpeningTheChatFromTheToolbarWithNoConversationKeepsTheAppResponsive() {
+        let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
+        app.launchArguments = ["--note-ai-chat-ui-test"]
+        app.launch()
+
+        let toolbar = app.buttons["note-ai-toolbar-button"]
+        XCTAssertTrue(toolbar.waitForExistence(timeout: 20), "ツールバーのAIトークボタンが見つかりません。")
+        toolbar.tap()
+
+        XCTAssertTrue(
+            app.buttons["ai-chat-new-thread"].waitForExistence(timeout: 15),
+            "AIチャットを開いた後にアプリが応答しません(レイアウトの無限ループ)。"
+        )
+        let draft = app.textViews["ai-chat-draft"].exists ? app.textViews["ai-chat-draft"] : app.textFields["ai-chat-draft"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 10), "AIチャットの入力欄が見つかりません。")
+    }
+}

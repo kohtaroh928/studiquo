@@ -749,9 +749,6 @@ struct NoteEditorView: View {
             onAnnounce: { if let thread = selectedAIChatThread { announceAIChatTab(thread) } },
             onSelect: openAIChatThread
         ))
-        #if DEBUG
-        .modifier(DebugOpenAIChatModifier(onOpen: presentAIChat))
-        #endif
     }
 
     /// The floating pen bar, rendered by a child view that owns its own
@@ -6513,24 +6510,6 @@ private struct AIChatPane: View {
 /// Split out of the editor's body for the same reason the snippet tray was:
 /// that body is long enough that two more chained modifiers put the
 /// type-checker over its budget.
-#if DEBUG
-extension Notification.Name {
-    /// Opens the AIトーク exactly like the toolbar button, for UI-test
-    /// fixtures that must profile the layout without an automation session.
-    static let studiquoDebugOpenAIChat = Notification.Name("StudiquoDebugOpenAIChat")
-}
-
-private struct DebugOpenAIChatModifier: ViewModifier {
-    let onOpen: () -> Void
-
-    func body(content: Content) -> some View {
-        content.onReceive(NotificationCenter.default.publisher(for: .studiquoDebugOpenAIChat)) { _ in
-            onOpen()
-        }
-    }
-}
-#endif
-
 private struct AIChatTabSyncModifier: ViewModifier {
     let openThreadID: PersistentIdentifier?
     let onAnnounce: () -> Void
@@ -7336,11 +7315,6 @@ private struct PagesContentHeightPreferenceKey: PreferenceKey {
     }
 }
 
-/// Holds values that layout callbacks record but the view never renders.
-private final class PagesLayoutMetrics {
-    var contentHeight: CGFloat = 0
-}
-
 private struct ContinuousPagesView: View {
     @Bindable var notebook: Notebook
     @Binding var currentPageIndex: Int
@@ -7354,12 +7328,7 @@ private struct ContinuousPagesView: View {
     @State private var pullHoldStartedAt: Date?
     @State private var topPullProgress: CGFloat = 0
     @State private var hasTriggeredTopPageAdd = false
-    /// Reference-typed on purpose. `contentHeight` is only read by the
-    /// preference callbacks below. As `@State` every write invalidated this
-    /// view, which re-laid-out the lazy stack and reported a different height
-    /// (878 ↔ ~1055) on the next pass — an endless update loop at 100% CPU
-    /// that began whenever the pane was resized, e.g. when a split opened.
-    @State private var metrics = PagesLayoutMetrics()
+    @State private var contentHeight: CGFloat = 0
     @State private var pageNumberRevision = 0
     @State private var knownFirstPageID = ""
     /// Rubber-band overscroll needed to fill the gauge. UIKit damps
@@ -7371,13 +7340,20 @@ private struct ContinuousPagesView: View {
     private static let contentBottomPadding: CGFloat = 18
 
     var body: some View {
-        let _ = Self._logChanges()
         let pages = notebook.sortedPages
         GeometryReader { geometry in
             let availableWidth = max(240, geometry.size.width - 32)
 
             ScrollView(.vertical) {
-                LazyVStack(spacing: 18) {
+                // The two page-adder rows are deliberately outside the lazy
+                // stack. A lazy stack sizes rows it has not realised from the
+                // average of those it has, and these rows (92pt) are far
+                // shorter than a page (~620pt). When the pane is about as
+                // tall as one page, whether the top adder was realised
+                // flipped with every scroll re-centre — the content height
+                // alternated 878 ↔ 1055 forever (100% CPU). Kept in a plain
+                // VStack they are always realised, so the estimate is stable.
+                VStack(spacing: 18) {
                     TopPageAdder(
                         progress: topPullProgress,
                         holdDuration: Self.pullHoldDuration,
@@ -7403,35 +7379,38 @@ private struct ContinuousPagesView: View {
                                 }
                             }
                         )
-                    ForEach(Array(pages.enumerated()), id: \.element.persistentModelID) { index, page in
-                        let aspect = max(page.pageWidth / page.pageHeight, 0.1)
-                        // At 100%, fit the whole page within the current pane.
-                        // This intentionally leaves blank space beside a
-                        // portrait page when the pane is wider than the page.
-                        let fittedWidth = min(
-                            availableWidth,
-                            max(120, geometry.size.height - 48) * aspect
-                        )
-
-                        VStack(spacing: 6) {
-                            PageCanvasContainer(page: page, usesDarkPageDisplay: usesDarkPageDisplay)
-                                .id(page.persistentModelID)
-                                .frame(width: fittedWidth, height: fittedWidth / aspect)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                                .onTapGesture {
-                                    currentPageIndex = index
-                                    scrollTarget = page.persistentModelID
-                                }
-
-                            LivePageNumberLabel(
-                                notebook: notebook,
-                                page: page,
-                                displayIndex: index,
-                                revision: pageNumberRevision
+                    LazyVStack(spacing: 18) {
+                        ForEach(Array(pages.enumerated()), id: \.element.persistentModelID) { index, page in
+                            let aspect = max(page.pageWidth / page.pageHeight, 0.1)
+                            // At 100%, fit the whole page within the current pane.
+                            // This intentionally leaves blank space beside a
+                            // portrait page when the pane is wider than the page.
+                            let fittedWidth = min(
+                                availableWidth,
+                                max(120, geometry.size.height - 48) * aspect
                             )
+
+                            VStack(spacing: 6) {
+                                PageCanvasContainer(page: page, usesDarkPageDisplay: usesDarkPageDisplay)
+                                    .id(page.persistentModelID)
+                                    .frame(width: fittedWidth, height: fittedWidth / aspect)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                    .onTapGesture {
+                                        currentPageIndex = index
+                                        scrollTarget = page.persistentModelID
+                                    }
+
+                                LivePageNumberLabel(
+                                    notebook: notebook,
+                                    page: page,
+                                    displayIndex: index,
+                                    revision: pageNumberRevision
+                                )
+                            }
+                            .id(page.persistentModelID)
                         }
-                        .id(page.persistentModelID)
                     }
+                    .scrollTargetLayout()
                     BottomPageAdder(progress: bottomPullProgress)
                         .contentShape(Rectangle())
                         .onTapGesture { onAddPage() }
@@ -7444,7 +7423,6 @@ private struct ContinuousPagesView: View {
                             }
                         )
                 }
-                .scrollTargetLayout()
                 .padding(.vertical, Self.contentBottomPadding)
                 .frame(maxWidth: .infinity)
                 .background(
@@ -7505,7 +7483,7 @@ private struct ContinuousPagesView: View {
                     }
                 }
             }
-            .onPreferenceChange(PagesContentHeightPreferenceKey.self) { metrics.contentHeight = $0 }
+            .onPreferenceChange(PagesContentHeightPreferenceKey.self) { contentHeight = $0 }
             .onPreferenceChange(TopAdderMinYPreferenceKey.self) { minY in
                 guard minY.isFinite else { return }
                 let geometryOverscroll = max(0, minY - Self.contentBottomPadding)
@@ -7521,7 +7499,7 @@ private struct ContinuousPagesView: View {
                 // Pencil included, and took them away from PencilKit
                 // mid-stroke, so ink vanished on lift. Reading geometry keeps
                 // the whole interaction passive.
-                guard maxY.isFinite, metrics.contentHeight > geometry.size.height else {
+                guard maxY.isFinite, contentHeight > geometry.size.height else {
                     if bottomPullProgress != 0 { bottomPullProgress = 0 }
                     hasTriggeredPageAdd = false
                     return
@@ -8026,7 +8004,6 @@ struct PageCanvasContainer: View {
     }
 
     var body: some View {
-        let _ = Self._logChanges()
         GeometryReader { geometry in
             let aspect = page.pageWidth / page.pageHeight
             let displaySize = fitSize(container: geometry.size, aspect: aspect)
