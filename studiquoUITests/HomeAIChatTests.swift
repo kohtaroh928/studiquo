@@ -120,4 +120,54 @@ final class HomeAIChatTests: XCTestCase {
         XCTAssertTrue(app.buttons["ai-chat-thread-エディタから"].waitForExistence(timeout: 10), "ホームの履歴にエディタの会話がありません。")
         XCTAssertTrue(app.staticTexts["テスト返答: エディタから"].exists, "ホームが同じ会話を選択していません。")
     }
+
+    // MARK: Is anyone looking? (the store's view of the real screens)
+
+    private var probe: String {
+        app.otherElements["ai-viewing-probe"].label
+    }
+
+    private func waitForProbe(_ expected: String, timeout: TimeInterval = 10) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if probe == expected { return }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        XCTAssertEqual(probe, expected, "AIチャットの表示状況が違います。")
+    }
+
+    func testTheHomeAITabCountsAsViewedOnlyWhileItIsOnScreen() {
+        XCTAssertTrue(app.otherElements["ai-viewing-probe"].waitForExistence(timeout: 10))
+        waitForProbe("screens=0;viewing=-")
+
+        openHomeAI()
+        send("ホームで見る")
+        XCTAssertTrue(app.staticTexts["テスト返答: ホームで見る"].waitForExistence(timeout: 10))
+        waitForProbe("screens=1;viewing=ホームで見る")
+
+        app.buttons["home-tab-calendar"].tap()
+        waitForProbe("screens=0;viewing=-")
+
+        app.buttons["home-tab-ai"].tap()
+        waitForProbe("screens=1;viewing=ホームで見る")
+    }
+
+    func testAnAITabInTheNoteTabBarIsNotViewingUntilItsChatIsOpen() {
+        // A conversation exists, so the note's tab bar will carry its tab.
+        openHomeAI()
+        send("タブだけある")
+        XCTAssertTrue(app.staticTexts["テスト返答: タブだけある"].waitForExistence(timeout: 10))
+        waitForProbe("screens=1;viewing=タブだけある")
+
+        openNotebookFromLibrary()
+        // The tab exists, but no chat is on display.
+        waitForProbe("screens=0;viewing=-")
+
+        openEditorAI()
+        waitForProbe("screens=1;viewing=タブだけある")
+
+        // Closing the chat pane (the tool toggles it) removes the screen again.
+        app.buttons["note-ai-toolbar-button"].tap()
+        waitForProbe("screens=0;viewing=-")
+    }
 }

@@ -586,6 +586,27 @@ private struct LibraryDropUITestRoot: View {
             .modelContainer(LibraryDropUITestStore.container)
             .environmentObject(LibraryDropUITestStore.authentication)
             .environmentObject(LibraryDropUITestStore.subscriptionStore)
+            .overlay(alignment: .topLeading) {
+                if ProcessInfo.processInfo.arguments.contains("--ui-test-fake-ai") {
+                    AIViewingProbe(store: AIChatStore.shared(for: LibraryDropUITestStore.container.mainContext))
+                }
+            }
+    }
+}
+
+/// A 2pt invisible element whose label says how many AI chat screens are on
+/// display and which conversation is being viewed, so UI tests can check the
+/// store's "is anyone looking" tracking against the real screens.
+private struct AIViewingProbe: View {
+    @ObservedObject var store: AIChatStore
+
+    var body: some View {
+        Color.clear
+            .frame(width: 2, height: 2)
+            .allowsHitTesting(false)
+            .accessibilityElement()
+            .accessibilityLabel(store.debugViewingDescription)
+            .accessibilityIdentifier("ai-viewing-probe")
     }
 }
 
