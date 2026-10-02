@@ -10,6 +10,11 @@ packages:
   RevenueCat:
     url: https://github.com/RevenueCat/purchases-ios
     from: 5.0.0
+  SwiftMath:
+    url: https://github.com/mgriebling/SwiftMath
+    # Pinned to a commit on main: the latest release (1.7.2) has neither line
+    # wrapping nor $...$ delimiters, and the 1.7.3 tag cannot be fetched.
+    revision: 1d2c90827e9c3908269d810d055fb03b7da5fd53
 targets:
   studiquo:
     type: application
@@ -47,6 +52,8 @@ targets:
         product: GoogleSignInSwift
       - package: RevenueCat
         product: RevenueCat
+      - package: SwiftMath
+        product: SwiftMath
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "2"
