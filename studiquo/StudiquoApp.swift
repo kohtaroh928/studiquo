@@ -521,7 +521,8 @@ private struct UITestAIProvider: AIProvider {
             }
             return
         }
-        try await Task.sleep(for: .milliseconds(150))
+        // "少し待って" takes a few seconds, long enough to leave the screen first.
+        try await Task.sleep(for: .milliseconds(question.contains("少し待って") ? 3000 : 150))
         await MainActor.run { onDelta("テスト返答: \(question)") }
     }
 
@@ -572,13 +573,35 @@ private struct StartupUITestRoot: View {
 /// A disposable in-memory library for the drag-and-drop UI regression test.
 /// It is reachable only through the test runner's launch argument.
 private struct LibraryDropUITestRoot: View {
+    /// Set when the test asks for a notification tap to be simulated.
+    @State private var routeThreadKey: String?
+
     init() {
         AIDataDisclosure.acknowledge()
         // Lets UI tests drive the AIトーク (home tab and editor) without a network.
         if ProcessInfo.processInfo.arguments.contains("--ui-test-fake-ai") {
             AI.provider = UITestAIProvider()
+            // Record "answer ready" notifications instead of sending real ones.
+            let context = LibraryDropUITestStore.container.mainContext
+            let store = AIChatStore.shared(for: context)
+            let recorder = LibraryDropUITestStore.completionRecorder
+            store.deliverCompletion = { recorder.delivered.append($0.title) }
+            store.clearCompletion = { recorder.cleared.append($0.title) }
         }
         _ = LibraryDropUITestStore.container
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-ai-notification-route") {
+            let context = LibraryDropUITestStore.container.mainContext
+            let thread = AIChatThread(title: "通知から")
+            context.insert(thread)
+            let question = AIChatMessage(text: "通知の質問", role: .user)
+            question.thread = thread
+            thread.addMessage(question)
+            let reply = AIChatMessage(text: "通知の返答", role: .assistant)
+            reply.thread = thread
+            thread.addMessage(reply)
+            try? context.save()
+            _routeThreadKey = State(initialValue: AIChatStore.threadKey(thread))
+        }
     }
 
     var body: some View {
@@ -588,9 +611,45 @@ private struct LibraryDropUITestRoot: View {
             .environmentObject(LibraryDropUITestStore.subscriptionStore)
             .overlay(alignment: .topLeading) {
                 if ProcessInfo.processInfo.arguments.contains("--ui-test-fake-ai") {
-                    AIViewingProbe(store: AIChatStore.shared(for: LibraryDropUITestStore.container.mainContext))
+                    VStack(spacing: 0) {
+                        AIViewingProbe(store: AIChatStore.shared(for: LibraryDropUITestStore.container.mainContext))
+                        AICompletionProbe(recorder: LibraryDropUITestStore.completionRecorder)
+                    }
                 }
             }
+            .task {
+                // Simulates tapping an "answer ready" notification.
+                guard let key = routeThreadKey else { return }
+                try? await Task.sleep(for: .seconds(2.5))
+                NotificationCenter.default.post(
+                    name: .studiquoNotificationRoute,
+                    object: nil,
+                    userInfo: [
+                        "route": AppNotificationKind.aiTaskComplete.rawValue,
+                        AICompletionNotifications.threadKeyUserInfoKey: key,
+                    ]
+                )
+            }
+    }
+}
+
+/// Which "answer ready" notifications the app asked to send, and which it took back.
+@MainActor
+final class AICompletionRecorder: ObservableObject {
+    @Published var delivered: [String] = []
+    @Published var cleared: [String] = []
+}
+
+private struct AICompletionProbe: View {
+    @ObservedObject var recorder: AICompletionRecorder
+
+    var body: some View {
+        Color.clear
+            .frame(width: 2, height: 2)
+            .allowsHitTesting(false)
+            .accessibilityElement()
+            .accessibilityLabel("notified=\(recorder.delivered.joined(separator: ","));cleared=\(recorder.cleared.joined(separator: ","))")
+            .accessibilityIdentifier("ai-completion-probe")
     }
 }
 
@@ -612,6 +671,7 @@ private struct AIViewingProbe: View {
 
 @MainActor
 private enum LibraryDropUITestStore {
+    static let completionRecorder = AICompletionRecorder()
     static let authentication = AuthenticationStore(service: "com.yabuko.studiquo.library-drop-ui-tests")
     static let subscriptionStore = SubscriptionStore()
 

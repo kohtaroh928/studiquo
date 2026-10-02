@@ -401,8 +401,25 @@ enum StudyStreakNotifications {
     }
 }
 
+/// The "your AI answer is ready" notification.
+///
+/// One per conversation: a second answer in the same conversation replaces the
+/// first rather than stacking. The text is only the conversation's title, never
+/// the answer, because it shows on the lock screen.
 enum AICompletionNotifications {
-    static func deliver(threadTitle: String) async {
+    static let identifierPrefix = "ai-complete-"
+    static let threadKeyUserInfoKey = "threadKey"
+
+    static func identifier(forThreadKey key: String) -> String {
+        identifierPrefix + key
+    }
+
+    /// The conversation a tapped notification belongs to.
+    static func threadKey(from userInfo: [AnyHashable: Any]?) -> String? {
+        userInfo?[threadKeyUserInfoKey] as? String
+    }
+
+    static func deliver(threadTitle: String, threadKey: String) async {
         guard AppNotificationPreferences.isEnabled(.aiTaskComplete) else { return }
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
@@ -412,7 +429,24 @@ enum AICompletionNotifications {
         content.body = threadTitle
         content.sound = .default
         content.categoryIdentifier = AppNotificationKind.aiTaskComplete.categoryIdentifier
-        content.userInfo = ["route": AppNotificationKind.aiTaskComplete.rawValue]
-        try? await center.add(UNNotificationRequest(identifier: "ai-complete-\(UUID().uuidString)", content: content, trigger: nil))
+        content.threadIdentifier = identifier(forThreadKey: threadKey)
+        content.userInfo = [
+            "route": AppNotificationKind.aiTaskComplete.rawValue,
+            threadKeyUserInfoKey: threadKey,
+        ]
+        try? await center.add(UNNotificationRequest(
+            identifier: identifier(forThreadKey: threadKey),
+            content: content,
+            trigger: nil
+        ))
+    }
+
+    /// Takes the notification for a conversation off the lock screen and out
+    /// of the notification centre — the student has now seen the answer.
+    static func clear(threadKey: String) {
+        let center = UNUserNotificationCenter.current()
+        let id = identifier(forThreadKey: threadKey)
+        center.removeDeliveredNotifications(withIdentifiers: [id])
+        center.removePendingNotificationRequests(withIdentifiers: [id])
     }
 }

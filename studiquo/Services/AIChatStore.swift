@@ -80,7 +80,9 @@ final class AIChatStore: ObservableObject {
     /// Conversations that have at least one message, newest first.
     @Published private(set) var threads: [AIChatThread] = []
     /// The conversation on screen. `nil` means a new, not yet started one.
-    @Published var selectedThread: AIChatThread?
+    @Published var selectedThread: AIChatThread? {
+        didSet { refreshViewing() }
+    }
     @Published private(set) var drafts: [String: String] = [:]
     @Published private(set) var attachments: [String: [AIChatAttachment]] = [:]
     @Published private(set) var contextOverrides: [String: String] = [:]
@@ -109,13 +111,32 @@ final class AIChatStore: ObservableObject {
     /// editor's chat pane, its floating panel). Only a screen that is really
     /// on display is in here: a tab that merely exists in the tab bar, or a
     /// chat pane that is not the pane on screen, is not.
-    @Published private(set) var visibleSurfaces: Set<UUID> = []
+    @Published private(set) var visibleSurfaces: Set<UUID> = [] {
+        didSet { refreshViewing() }
+    }
     /// False while the app is in the background, the screen is locked or
     /// another app is in front.
-    @Published var isAppActive: Bool
+    @Published var isAppActive: Bool {
+        didSet { refreshViewing() }
+    }
+
+    /// Called when an answer finishes while nobody is looking at that
+    /// conversation. Replaced in tests.
+    var deliverCompletion: (AIChatThread) async -> Void = { thread in
+        await AICompletionNotifications.deliver(
+            threadTitle: thread.title,
+            threadKey: AIChatStore.threadKey(thread)
+        )
+    }
+    /// Called when a conversation comes into view, to take its "answer ready"
+    /// notification away. Replaced in tests.
+    var clearCompletion: (AIChatThread) -> Void = { thread in
+        AICompletionNotifications.clear(threadKey: AIChatStore.threadKey(thread))
+    }
 
     private let modelContext: ModelContext
     private var tasks: [String: Task<Void, Never>] = [:]
+    private var lastViewedKey: String?
     private var lifecycleObservers: [NSObjectProtocol] = []
 
     /// One store per model context, so every screen of the app that shares a
@@ -171,6 +192,26 @@ final class AIChatStore: ObservableObject {
         return selectedThread
     }
 
+    /// Runs whenever what could be on screen changes: the moment a
+    /// conversation comes into view, its notification is no longer needed.
+    private func refreshViewing() {
+        guard let thread = viewedThread else {
+            lastViewedKey = nil
+            return
+        }
+        let key = Self.threadKey(thread)
+        guard key != lastViewedKey else { return }
+        lastViewedKey = key
+        clearCompletion(thread)
+    }
+
+    /// An answer is ready. Tell the student unless they are looking at it.
+    private func answerFinished(in thread: AIChatThread) {
+        guard !isViewing(thread) else { return }
+        let deliver = deliverCompletion
+        Task { await deliver(thread) }
+    }
+
     /// Whether `thread` is on screen in front of the student. A reply that
     /// finishes while this is false is worth a notification.
     func isViewing(_ thread: AIChatThread) -> Bool {
@@ -224,6 +265,16 @@ final class AIChatStore: ObservableObject {
 
     func select(_ thread: AIChatThread) {
         selectedThread = thread
+    }
+
+    /// Selects the conversation a notification was about. Returns false when
+    /// it no longer exists (it was deleted), leaving the selection unchanged.
+    @discardableResult
+    func selectThread(withKey key: String) -> Bool {
+        loadThreads()
+        guard let thread = threads.first(where: { Self.threadKey($0) == key }) else { return false }
+        selectedThread = thread
+        return true
     }
 
     /// Called when a screen showing the conversations appears: refreshes the
@@ -339,6 +390,8 @@ final class AIChatStore: ObservableObject {
                 }
                 if reply.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     reply.text = L("返答が空でした。もう一度試してください。")
+                } else {
+                    answerFinished(in: thread)
                 }
                 // Fire-and-forget: researches whether this question is worth
                 // reviewing tomorrow, independently of this task so it never
@@ -408,6 +461,7 @@ final class AIChatStore: ObservableObject {
                 reply.text = L("答案を読んでいます…")
                 let review = try await AI.provider.grade(submission, rubric: rubric)
                 reply.text = AIChatFormatting.markingReport(review)
+                answerFinished(in: thread)
             } catch is CancellationError {
                 reply.text = L("（中断しました）")
             } catch {

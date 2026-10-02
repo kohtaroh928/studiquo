@@ -43,11 +43,16 @@ final class AIChatStoreTests: XCTestCase {
         let store = AIChatStore(modelContext: context)
         store.announceThread = { [weak self] in self?.announced.append($0.title) }
         store.closeThreadTab = { [weak self] _ in self?.closedTabs += 1 }
+        store.deliverCompletion = { [weak self] thread in self?.delivered.append(thread.title) }
+        store.clearCompletion = { [weak self] thread in self?.cleared.append(thread.title) }
         return (store, context)
     }
 
     private var announced: [String] = []
     private var closedTabs = 0
+    /// Titles of conversations an "answer ready" notification was sent for / taken back.
+    private var delivered: [String] = []
+    private var cleared: [String] = []
 
     /// Polls the main actor until `condition` holds, so a test can wait for
     /// the store's reply task without exposing it.
@@ -398,6 +403,166 @@ final class AIChatStoreTests: XCTestCase {
 
         NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
         XCTAssertTrue(store.isAppActive)
+    }
+
+    // MARK: Answer-ready notifications
+
+    /// Gives the "answer ready" task a moment to run (it is spawned, not awaited).
+    private func letNotificationTasksRun() async {
+        try? await Task.sleep(for: .milliseconds(80))
+    }
+
+    func testAnAnswerFinishingWhileNobodyIsLookingIsAnnouncedOnce() async {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+        provider.chat = { _, _, _, _, onDelta in onDelta("答え") }
+        store.activeDraft = "質問です"
+        store.send()
+        await settle(store)
+        await letNotificationTasksRun()
+
+        XCTAssertEqual(delivered, ["質問です"])
+    }
+
+    func testNoNotificationWhenTheStudentIsLookingAtTheConversation() async {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+        store.surfaceDidAppear(UUID())
+        provider.chat = { _, _, _, _, onDelta in onDelta("答え") }
+        store.activeDraft = "質問"
+        store.send()
+        await settle(store)
+        await letNotificationTasksRun()
+
+        XCTAssertTrue(delivered.isEmpty, "見ている最中は通知しない")
+    }
+
+    func testAnAnswerFinishingInTheBackgroundIsAnnouncedEvenIfTheChatIsOnScreen() async {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+        store.surfaceDidAppear(UUID())
+        provider.chat = { _, _, _, _, onDelta in
+            try await Task.sleep(for: .milliseconds(150))
+            onDelta("答え")
+        }
+        store.activeDraft = "質問"
+        store.send()
+        store.isAppActive = false // locked / another app in front
+        await settle(store)
+        await letNotificationTasksRun()
+
+        XCTAssertEqual(delivered, ["質問"])
+    }
+
+    func testAnAnswerForAConversationThatIsNoLongerShownIsAnnounced() async {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+        store.surfaceDidAppear(UUID())
+        provider.chat = { _, _, _, _, onDelta in
+            try await Task.sleep(for: .milliseconds(150))
+            onDelta("答え")
+        }
+        store.activeDraft = "最初の質問"
+        store.send()
+        store.startNewThread() // the student moved on to a new talk meanwhile
+        await settle(store)
+        await letNotificationTasksRun()
+
+        XCTAssertEqual(delivered, ["最初の質問"])
+    }
+
+    func testCancelledFailedAndEmptyAnswersAreNotAnnounced() async {
+        struct Boom: LocalizedError { var errorDescription: String? { "失敗" } }
+        let (store, _) = makeStore()
+        store.isAppActive = true
+
+        provider.chat = { _, _, _, _, _ in throw Boom() }
+        store.activeDraft = "失敗する"; store.send(); await settle(store)
+
+        store.startNewThread()
+        provider.chat = { _, _, _, _, _ in }
+        store.activeDraft = "空の返答"; store.send(); await settle(store)
+
+        store.startNewThread()
+        provider.chat = { _, _, _, _, onDelta in
+            onDelta("途中")
+            try await Task.sleep(for: .seconds(30))
+        }
+        store.activeDraft = "中断する"; store.send()
+        store.cancelResponse()
+        await settle(store)
+        await letNotificationTasksRun()
+
+        XCTAssertTrue(delivered.isEmpty)
+    }
+
+    func testAFinishedMarkingIsAnnounced() async {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+        provider.review = ProofReviewResult(score: 9, maxScore: 10, verdict: "良い", criteria: [], issues: [])
+        store.submitProof(ProofSubmission(questionText: "問題", answerText: "解答"))
+        await settle(store)
+        await letNotificationTasksRun()
+
+        XCTAssertEqual(delivered, ["証明の添削"])
+    }
+
+    func testBringingAConversationIntoViewTakesItsNotificationAway() async {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+        let first = await startThread(store, "一つ目")
+        store.startNewThread()
+        let second = await startThread(store, "二つ目")
+        cleared = []
+
+        store.surfaceDidAppear(UUID())
+        XCTAssertEqual(cleared, ["二つ目"], "表示した会話の通知を消す")
+
+        store.select(first)
+        XCTAssertEqual(cleared, ["二つ目", "一つ目"], "表示する会話を切り替えたら、その会話の通知を消す")
+
+        store.select(first)
+        XCTAssertEqual(cleared.count, 2, "同じ会話を見続けている間は何度も消さない")
+        _ = second
+    }
+
+    func testReturningToTheAppWhileViewingClearsTheNotification() async {
+        let (store, _) = makeStore()
+        store.isAppActive = true
+        _ = await startThread(store, "質問")
+        store.surfaceDidAppear(UUID())
+        store.isAppActive = false
+        cleared = []
+
+        store.isAppActive = true
+
+        XCTAssertEqual(cleared, ["質問"], "別アプリから戻って見える状態になったら通知を消す")
+    }
+
+    func testSelectingAConversationByTheKeyInANotification() async {
+        let (store, _) = makeStore()
+        let first = await startThread(store, "一つ目")
+        let firstKey = AIChatStore.threadKey(first)
+        store.startNewThread()
+        _ = await startThread(store, "二つ目")
+
+        XCTAssertTrue(store.selectThread(withKey: firstKey))
+        XCTAssertTrue(store.selectedThread === first)
+
+        XCTAssertFalse(store.selectThread(withKey: "消えた会話"))
+        XCTAssertTrue(store.selectedThread === first, "存在しない会話ではそのまま")
+    }
+
+    func testNotificationIdentifierIsPerConversationAndCarriesTheKeyForTheTap() {
+        XCTAssertEqual(AICompletionNotifications.identifier(forThreadKey: "k1"), "ai-complete-k1")
+        XCTAssertNotEqual(
+            AICompletionNotifications.identifier(forThreadKey: "k1"),
+            AICompletionNotifications.identifier(forThreadKey: "k2"),
+            "会話ごとに別の通知(同じ会話は置き換わる)"
+        )
+        XCTAssertEqual(AICompletionNotifications.threadKey(from: ["threadKey": "k1"]), "k1")
+        XCTAssertNil(AICompletionNotifications.threadKey(from: ["route": "aiTaskComplete"]))
+        XCTAssertNil(AICompletionNotifications.threadKey(from: nil))
     }
 
     // MARK: Formatting
