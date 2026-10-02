@@ -192,3 +192,11 @@ UIテストでは、テスト用のAIに `sample:<id>` と送ると、そのサ�
 - 端末の通知(バナー)の本文はユーザー自身の質問文なので変更なし。
 - MCP 経由の `create_document`(外部ツールが作る文書)は、AIの出力ではなく外部の内容なので変換しない。
 - テスト: `AIReviewServiceTests` に、文書は読める形・復習データは原文のまま、を追加。
+
+## ステップ7(AIへの指示文)の結果
+
+- `mcp-server/src/ai.js` に共通の `MATH_RULES` を追加し、`CHAT_SYSTEM`・`RUBRIC_SYSTEM`・`GRADE_SYSTEM`・`REVIEW_SYSTEM` の4つの末尾につなげた。
+- アプリ内の直接Claude経路(`ClaudeChatService.systemPrompt`)にも同じ内容を入れた。
+- 指示の内容: 数式は LaTeX で文中は `$...$`、独立行は `$$...$$`/式中の日本語は `\text{}`/通貨に `$` を使わない/式をコードやバッククォートに入れない/`\boxed`・`\ce`・`\underbrace` などを避け複数行は `aligned`/簡単な数は式にしなくてよい。
+- テスト: サーバーは4つのエンドポイントすべての指示文に規則が入ることを確認(全437件通過)。アプリは `ClaudeChatPromptMathTests`。
+- **公開の順序**: 先にアプリを更新し、サーバー(`wrangler deploy`)は後。古いアプリに新しい書き方(`$…$`)が届くと、区切り記号つきの LaTeX がそのまま見えてしまうため。デプロイはユーザーが手作業で行う。

@@ -590,3 +590,46 @@ test("handleAI with no plan argument at all (every pre-Phase-B caller) defaults 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("every prompt shown to a student tells the model to delimit math with $ and $$", async () => {
+  const originalFetch = globalThis.fetch;
+  const seen = {};
+  let current;
+  globalThis.fetch = async (_url, options) => {
+    seen[current] = JSON.parse(options.body).systemInstruction.parts[0].text;
+    const event = { candidates: [{ content: { parts: [{ text: "{}" }] } }] };
+    return new Response(`data: ${JSON.stringify(event)}\n\n`, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  };
+
+  const bodies = {
+    chat: { messages: [{ role: "user", text: "解の公式は？" }] },
+    review: { question: "解の公式を教えて" },
+    rubric: { question: "√2 は無理数であることを示せ", modelAnswer: "背理法による。" },
+    grade: { question: "√2 は無理数であることを示せ", answerText: "背理法で示す。", criteria: [{ name: "仮定", maxPoints: 100, requirement: "仮定を置く" }] },
+  };
+  try {
+    for (const [name, body] of Object.entries(bodies)) {
+      current = name;
+      const ctx = executionContext();
+      const request = new Request(`https://example.test/api/ai/${name}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const response = await handleAI(new URL(request.url), request, environment(), "device", ctx);
+      await response.text();
+      await Promise.all(ctx.promises);
+      assert.ok(seen[name], `${name}: no upstream call was made`);
+      assert.match(seen[name], /\$\.\.\.\$/, `${name}: inline delimiter rule is missing`);
+      assert.match(seen[name], /\$\$\.\.\.\$\$/, `${name}: display delimiter rule is missing`);
+      assert.match(seen[name], /\\text\{/, `${name}: the \\text rule is missing`);
+      assert.match(seen[name], /「100円」/, `${name}: the currency rule is missing`);
+      assert.equal(seen[name].includes("\\\\"), false, `${name}: backslashes must not be doubled in the prompt`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
