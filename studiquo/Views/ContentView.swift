@@ -851,6 +851,8 @@ private struct AppSettingsView: View {
                     }
                     .pickerStyle(.inline)
                     .labelsHidden()
+                    // Push broadcasts are written in the language registered here.
+                    .onChange(of: appLanguage) { _, _ in AppNotificationPreferences.synchronizeRemoteDevice() }
                 } header: {
                     Text("言語")
                 } footer: {
@@ -1011,6 +1013,7 @@ private struct NotificationSettingsView: View {
                 NotificationPreferenceToggle(kind: .friendRequest, masterEnabled: masterEnabled, onChange: preferenceChanged)
                 NotificationPreferenceToggle(kind: .groupInvite, masterEnabled: masterEnabled, onChange: preferenceChanged)
                 NotificationPreferenceToggle(kind: .shareInvite, masterEnabled: masterEnabled, onChange: preferenceChanged)
+                NotificationPreferenceToggle(kind: .announcement, masterEnabled: masterEnabled, onChange: preferenceChanged)
             }
 
             Section("AI・セキュリティ") {
@@ -3142,6 +3145,10 @@ struct ContentView: View {
             }
         case .newDeviceLogin:
             showsAppSettings = true
+        case .announcement:
+            // The お知らせ list is reached from the その他 tab; this opens it
+            // once that entry point lands.
+            break
         case .aiTaskComplete:
             // Open the AI tab on the conversation whose answer is ready. If it
             // was deleted since, fall back to the most recent one.

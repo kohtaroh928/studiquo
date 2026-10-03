@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
 import { compareVersions } from "./app-errors.js";
 import { INBOX_SCRIPT } from "./admin-inbox-ui.js";
+import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.js";
 
 // Same shape as admin.test.js's fake: a real in-memory SQLite database built
 // from the real migrations, behind the slice of D1's API the Worker uses.
@@ -61,6 +62,7 @@ function environment({ appErrorLimit = 1000 } = {}) {
     RATE_LIMIT_APP_ERROR: fakeCloudflareLimiter(appErrorLimit),
     RATE_LIMIT_ISSUE_REPORT: fakeCloudflareLimiter(),
     SLACK_ISSUE_REPORT_WEBHOOK_URL: "https://hooks.slack.test/services/xyz",
+    ...ACCESS_ENV,
   };
 }
 
@@ -68,7 +70,8 @@ const noopCtx = { waitUntil() {} };
 const freshToken = suffix => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 
 function request(path, { method = "GET", token, body, contentType } = {}) {
-  const headers = {};
+  // /api/admin/* is verified against the Cloudflare Access login (src/access.js).
+  const headers = path.startsWith("/api/admin/") ? { ...ACCESS_HEADERS } : {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined || contentType) headers["content-type"] = contentType ?? "application/json";
   return new Request(`https://example.test${path}`, {
@@ -324,7 +327,7 @@ test("updating an error validates its input and needs a JSON content type", asyn
   assert.equal((await worker.fetch(request(path, { method: "POST", body: { note: 5 } }), env, noopCtx)).status, 400);
   assert.equal((await worker.fetch(request(`/api/admin/app-errors/${"0".repeat(64)}`, { method: "POST", body: { status: "resolved" } }), env, noopCtx)).status, 404);
   // A cross-site form post can't set this content type, so it can't write.
-  const form = new Request(`https://example.test${path}`, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ status: "resolved" }) });
+  const form = new Request(`https://example.test${path}`, { method: "POST", headers: { ...ACCESS_HEADERS, "content-type": "text/plain" }, body: JSON.stringify({ status: "resolved" }) });
   assert.equal((await worker.fetch(form, env, noopCtx)).status, 415);
   assert.equal((await listErrors(env))[0].status, "open");
 });
@@ -436,7 +439,7 @@ test("reports filed before the inbox existed can be imported once, without touch
 
 test("importing needs a JSON content type like every other write", async () => {
   const env = environment();
-  const response = await worker.fetch(new Request("https://example.test/api/admin/issue-reports/import-legacy", { method: "POST", headers: { "content-type": "text/plain" }, body: "x" }), env, noopCtx);
+  const response = await worker.fetch(new Request("https://example.test/api/admin/issue-reports/import-legacy", { method: "POST", headers: { ...ACCESS_HEADERS, "content-type": "text/plain" }, body: "x" }), env, noopCtx);
   assert.equal(response.status, 415);
 });
 

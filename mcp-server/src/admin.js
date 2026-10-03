@@ -1,12 +1,13 @@
 // Internal admin dashboard: ingests RevenueCat's subscription webhooks into
 // D1, receives usage pings the app doesn't send yet, and serves the
-// aggregate numbers the dashboard page reads. Every route here is reachable
-// with no bearer-token check of its own — see ADMIN_SETUP.md for why:
-// Cloudflare Access gates /admin and /api/admin/* at the edge (Google-login
-// restricted to the site owner), and the RevenueCat webhook is authenticated
-// by its own shared secret instead, the same "authenticated a different way
-// than the rest of the API" shape as issue-reports.js's unauthenticated
-// screenshot GET.
+// aggregate numbers the dashboard page reads. None of these routes use the
+// app's bearer token: the /admin page is gated by Cloudflare Access at the
+// edge (Google-login restricted to the site owner), and /api/admin/* is
+// verified against that same Access login in app.js (see access.js) — the
+// edge alone does not cover /api/admin/*. The RevenueCat webhook is the one
+// exception: it is authenticated by its own shared secret instead, the same
+// "authenticated a different way than the rest of the API" shape as
+// issue-reports.js's unauthenticated screenshot GET.
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { json, readJSONLimited } from "./http.js";
 import { bearerToken, sha256Hex } from "./auth.js";
@@ -319,6 +320,7 @@ const DASHBOARD_HTML = `<!doctype html>
   a.card { color: inherit; text-decoration: none; display: block; }
 ${INBOX_CSS}</style>
 <h1>studiquo 管理ダッシュボード</h1>
+<p><a href="/admin/announcements">お知らせ管理 →</a></p>
 <p id="error">読み込みに失敗しました。再読み込みしてください。</p>
 <div id="root"></div>
 ${INBOX_HTML}

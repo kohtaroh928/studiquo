@@ -10,8 +10,10 @@ import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
 import { handleAppErrors } from "./app-errors.js";
 import { handleAdminReports } from "./admin-reports.js";
+import { handleAnnouncements, handleAnnouncementsPage } from "./announcements.js";
 import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats } from "./admin.js";
 import { handleInvitePage } from "./invite.js";
+import { accessAllowed, isAccessGuardedPath } from "./access.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired } from "./token.js";
 import { realSession } from "./session.js";
@@ -290,6 +292,11 @@ export default {
     try {
       const url = new URL(request.url);
       if (url.pathname === "/health") return json({ ok: true, service: "studiquo-mcp" });
+      // /api/admin/* is not reliably behind Cloudflare Access at the edge, so
+      // verify the Access login here, once, for every admin route.
+      if (isAccessGuardedPath(url.pathname) && !(await accessAllowed(request, env))) {
+        return json({ error: "Forbidden." }, 403);
+      }
       const oauth = await handleMCPOAuth(url, request, env);
       if (oauth) return oauth;
       if (url.pathname === "/.well-known/apple-app-site-association") return associationFile();
@@ -305,6 +312,10 @@ export default {
       if (chat) return chat;
       const issueReports = await handleIssueReports(url, request, env);
       if (issueReports) return issueReports;
+      const announcementsPage = handleAnnouncementsPage(url);
+      if (announcementsPage) return announcementsPage;
+      const announcements = await handleAnnouncements(url, request, env);
+      if (announcements) return announcements;
       const adminPage = handleAdminPage(url);
       if (adminPage) return adminPage;
       const adminWebhook = await handleAdminWebhook(url, request, env);
