@@ -708,8 +708,14 @@ private enum LibraryDropUITestStore {
         let mode = arguments.contains("--column-mode") ? "column" : arguments.contains("--icon-mode") ? "icon" : "list"
         let compact = arguments.contains("--resource-types-fixture")
         UserDefaults.standard.set(mode, forKey: "homeViewMode")
-        // The setting persists across UI-test launches in the simulator;
-        // start each launch from the shipped default (on).
+        // Settings persist across UI-test launches in the simulator, so a test
+        // that flips one (language, a toggle) would otherwise leave every
+        // later test running with it flipped. Start each launch from the
+        // defaults the app itself ships with.
+        UserDefaults.standard.set("japanese", forKey: "appLanguage")
+        UserDefaults.standard.set(true, forKey: "studyTimeTrackingEnabled")
+        UserDefaults.standard.set(false, forKey: "leftHandedMode")
+        UserDefaults.standard.set(true, forKey: AIReviewService.isEnabledDefaultsKey)
         UserDefaults.standard.set(true, forKey: ErrorReportSettings.enabledKey)
         let folderPaths = compact ? ["Target"] : ["Parent", "Parent/Source", "Parent/Destination", "Parent/Empty", "Sibling", "Target"]
         UserDefaults.standard.set(folderPaths.joined(separator: "\n"), forKey: "libraryFolderNames")

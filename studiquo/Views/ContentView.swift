@@ -809,6 +809,29 @@ private enum AppLanguage: String, CaseIterable, Identifiable {
 /// The chosen language drives `\.locale` at the scene root (`StudiquoApp`),
 /// so switching it here updates every screen immediately — no restart.
 private struct AppSettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            AppSettingsForm()
+                .navigationTitle("設定")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完了") { dismiss() }
+                    }
+                }
+        }
+    }
+}
+
+/// The settings form itself, shared by the gear's sheet (`AppSettingsView`)
+/// and the その他 tab (`MoreHomeView`) so the two can never drift apart.
+/// `leading`/`trailing` let the tab add its own sections around the shared
+/// ones; account deletion always stays last.
+private struct AppSettingsForm<Leading: View, Trailing: View>: View {
+    private let leading: Leading
+    private let trailing: Trailing
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.system.rawValue
     @AppStorage("studyTimeTrackingEnabled") private var studyTimeTrackingEnabled = true
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
@@ -819,130 +842,300 @@ private struct AppSettingsView: View {
     @State private var showsTermsOfUse = false
     @State private var showsSubscriptionPlans = false
     @State private var showsAccountDeletion = false
-    @EnvironmentObject private var authentication: AuthenticationStore
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
 
+    init(@ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
+        self.leading = leading()
+        self.trailing = trailing()
+    }
+
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Button {
-                        showsSubscriptionPlans = true
-                    } label: {
-                        HStack {
-                            Label("プランとお支払い", systemImage: "creditcard")
-                            Spacer()
-                            Text(subscriptionStore.currentPlan.title)
-                                .foregroundStyle(.secondary)
-                        }
+        Form {
+            leading
+
+            Section {
+                Button {
+                    showsSubscriptionPlans = true
+                } label: {
+                    HStack {
+                        Label("プランとお支払い", systemImage: "creditcard")
+                        Spacer()
+                        Text(subscriptionStore.currentPlan.title)
+                            .foregroundStyle(.secondary)
                     }
-                } header: {
-                    Text("Studiquoプラン")
-                } footer: {
-                    Text("Plus・Proへの変更や購入履歴の復元ができます。")
                 }
+            } header: {
+                Text("Studiquoプラン")
+            } footer: {
+                Text("Plus・Proへの変更や購入履歴の復元ができます。")
+            }
 
-                Section {
-                    Picker("言語", selection: $appLanguage) {
-                        ForEach(AppLanguage.allCases) { language in
-                            Text(language.title).tag(language.rawValue)
-                        }
+            Section {
+                Picker("言語", selection: $appLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.title).tag(language.rawValue)
                     }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                    // Push broadcasts are written in the language registered here.
-                    .onChange(of: appLanguage) { _, _ in AppNotificationPreferences.synchronizeRemoteDevice() }
-                } header: {
-                    Text("言語")
-                } footer: {
-                    Text("選んだ言語はすぐに反映されます。")
                 }
+                .pickerStyle(.inline)
+                .labelsHidden()
+                // Push broadcasts are written in the language registered here.
+                .onChange(of: appLanguage) { _, _ in AppNotificationPreferences.synchronizeRemoteDevice() }
+            } header: {
+                Text("言語")
+            } footer: {
+                Text("選んだ言語はすぐに反映されます。")
+            }
 
-                Section {
-                    Toggle("勉強時間を記録する", isOn: $studyTimeTrackingEnabled)
-                } header: {
-                    Text("学習記録")
-                } footer: {
-                    Text("ノート・暗記帳・文書・スライドを開いている間の時間だけを記録します。オフにすると勉強時間と連続学習日数の記録を止めます。")
+            Section {
+                Toggle("勉強時間を記録する", isOn: $studyTimeTrackingEnabled)
+            } header: {
+                Text("学習記録")
+            } footer: {
+                Text("ノート・暗記帳・文書・スライドを開いている間の時間だけを記録します。オフにすると勉強時間と連続学習日数の記録を止めます。")
+            }
+
+            Section {
+                NavigationLink {
+                    NotificationSettingsView()
+                } label: {
+                    Label("通知", systemImage: "bell.badge")
                 }
+            } header: {
+                Text("通知")
+            } footer: {
+                Text("予定、チャット、招待、復習、AI処理などの通知を個別に設定できます。")
+            }
 
-                Section {
-                    NavigationLink {
-                        NotificationSettingsView()
-                    } label: {
-                        Label("通知", systemImage: "bell.badge")
+            Section {
+                Toggle("左利きモード", isOn: $isLeftHandedMode)
+            } header: {
+                Text("描画")
+            } footer: {
+                Text("描画バーの並びを左利き向けに反転します。")
+            }
+
+            Section {
+                Toggle("翌日復習を作成する", isOn: $aiTalkDayAfterReviewEnabled)
+            } header: {
+                Text("AIトーク")
+            } footer: {
+                Text("オンにすると、AIトークで質問するたびに復習する価値があるか判定し、翌日に読める解説と確認クイズを自動で作成して通知します。オフにするとこの自動判定・作成は行われません。")
+            }
+
+            Section {
+                Button("AI機能とデータ送信について") { showsAIDataDisclosure = true }
+                Button("プライバシーポリシーを見る") { showsPrivacyPolicy = true }
+                Button("利用規約を見る") { showsTermsOfUse = true }
+            } header: {
+                Text("プライバシー")
+            } footer: {
+                Text("AIトーク・添削・翌日復習を使うと、質問文やノートの内容、答案の写真がGoogleのGeminiに送信されます。詳しくはこちらをご確認ください。")
+            }
+
+            Section {
+                Toggle("エラー情報を自動送信", isOn: $autoErrorReportingEnabled)
+            } header: {
+                Text("診断")
+            } footer: {
+                Text("アプリが止まったときや不具合が起きたときに、エラーの種類・発生した箇所・アプリや端末のバージョンを開発者へ自動で送信します。ノートやチャットの内容は含まれません。")
+            }
+
+            trailing
+
+            Section {
+                Button(AccountDeletionUI.accountButtonTitle, role: .destructive) { showsAccountDeletion = true }
+            } header: {
+                Text("アカウント")
+            } footer: {
+                Text("すべての資料、フレンド、グループ、チャット履歴、ログイン情報が完全に削除されます。")
+            }
+        }
+        .sheet(isPresented: $showsAIDataDisclosure) {
+            AIDataDisclosureView(buttonTitle: "閉じる") { showsAIDataDisclosure = false }
+        }
+        .sheet(isPresented: $showsPrivacyPolicy) {
+            PrivacyPolicyView()
+        }
+        .sheet(isPresented: $showsTermsOfUse) {
+            TermsOfUseView()
+        }
+        .sheet(isPresented: $showsSubscriptionPlans) {
+            SubscriptionPlansView()
+        }
+        .sheet(isPresented: $showsAccountDeletion) {
+            DeleteAccountView()
+        }
+    }
+}
+
+extension AppSettingsForm where Leading == EmptyView, Trailing == EmptyView {
+    init() {
+        self.init(leading: { EmptyView() }, trailing: { EmptyView() })
+    }
+}
+
+/// The その他 tab. Everything the app lets the student configure, in one
+/// scrolling list: the shared settings (`AppSettingsForm`) plus the things
+/// that used to be scattered — profile/logout, calendar and MCP
+/// connections, backups and trash (previously the "+" menu's lower half),
+/// friend privacy, and support. It sits inside `ContentView`'s own
+/// navigation stack, so it brings none of its own.
+private struct MoreHomeView: View {
+    @ObservedObject var friendStore: FriendStore
+    @ObservedObject var announcementStore: AnnouncementStore
+    @Binding var showsAnnouncements: Bool
+    let onShowProfile: () -> Void
+    let onOpenCalendarConnection: () -> Void
+    let onOpenCloudSettings: () -> Void
+    let onExportMCPData: () -> Void
+    let onImportMCPChanges: () -> Void
+    let onRestoreBackup: () -> Void
+    let onRestoreAutomaticBackups: () -> Void
+    let onOpenTrash: () -> Void
+    let onReportIssue: () -> Void
+
+    @EnvironmentObject private var authentication: AuthenticationStore
+    @AppStorage("friendShareStudyTime") private var shareStudyTime = true
+    @AppStorage("profileName") private var profileName = ""
+    @State private var confirmsLogout = false
+
+    private var versionText: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = info?["CFBundleVersion"] as? String ?? "—"
+        return "\(version) (\(build))"
+    }
+
+    var body: some View {
+        AppSettingsForm(
+            leading: {
+                announcementSection
+                accountSection
+            },
+            trailing: {
+                integrationSection
+                dataSection
+                friendSection
+                supportSection
+            }
+        )
+        .navigationTitle(Text("home.more.title"))
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $showsAnnouncements) {
+            AnnouncementsView(store: announcementStore)
+        }
+        .confirmationDialog("ログアウトしますか？", isPresented: $confirmsLogout, titleVisibility: .visible) {
+            Button("ログアウト", role: .destructive) { authentication.logout() }
+            Button("キャンセル", role: .cancel) {}
+        }
+    }
+
+    private var announcementSection: some View {
+        Section {
+            Button { showsAnnouncements = true } label: {
+                HStack {
+                    Label("announcements.title", systemImage: "bell")
+                    Spacer()
+                    if announcementStore.unreadCount > 0 {
+                        Text(announcementStore.unreadCount > 99 ? "99+" : "\(announcementStore.unreadCount)")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(minWidth: 20, minHeight: 20)
+                            .padding(.horizontal, 2)
+                            .background(.red, in: Capsule())
                     }
-                } header: {
-                    Text("通知")
-                } footer: {
-                    Text("予定、チャット、招待、復習、AI処理などの通知を個別に設定できます。")
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                 }
+            }
+            .foregroundStyle(.primary)
+            .accessibilityIdentifier("more-announcements")
+        } footer: {
+            Text("announcements.footer")
+        }
+    }
 
-                Section {
-                    Toggle("左利きモード", isOn: $isLeftHandedMode)
-                } header: {
-                    Text("描画")
-                } footer: {
-                    Text("描画バーの並びを左利き向けに反転します。")
+    private var accountSection: some View {
+        Section {
+            Button(action: onShowProfile) {
+                HStack {
+                    Label(profileName.isEmpty ? L("プロフィール") : profileName, systemImage: "person.crop.circle")
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                 }
+            }
+            .accessibilityIdentifier("more-profile")
+            Button("ログアウト", role: .destructive) { confirmsLogout = true }
+                .accessibilityIdentifier("more-logout")
+        } header: {
+            Text("プロフィールとログイン")
+        } footer: {
+            Text("名前・写真・自己紹介の編集とパスキーの追加は、プロフィールから行えます。")
+        }
+    }
 
-                Section {
-                    Toggle("翌日復習を作成する", isOn: $aiTalkDayAfterReviewEnabled)
-                } header: {
-                    Text("AIトーク")
-                } footer: {
-                    Text("オンにすると、AIトークで質問するたびに復習する価値があるか判定し、翌日に読める解説と確認クイズを自動で作成して通知します。オフにするとこの自動判定・作成は行われません。")
-                }
+    private var integrationSection: some View {
+        Section {
+            Button(action: onOpenCalendarConnection) {
+                Label("カレンダー連携(Google・大学)", systemImage: "calendar.badge.plus")
+            }
+            Button(action: onOpenCloudSettings) {
+                Label("MCPクラウド連携(Claude・ChatGPT)", systemImage: "icloud")
+            }
+        } header: {
+            Text("連携")
+        } footer: {
+            Text("カレンダー連携はカレンダー画面の設定を開きます。")
+        }
+    }
 
-                Section {
-                    Button("AI機能とデータ送信について") { showsAIDataDisclosure = true }
-                    Button("プライバシーポリシーを見る") { showsPrivacyPolicy = true }
-                    Button("利用規約を見る") { showsTermsOfUse = true }
-                } header: {
-                    Text("プライバシー")
-                } footer: {
-                    Text("AIトーク・添削・翌日復習を使うと、質問文やノートの内容、答案の写真がGoogleのGeminiに送信されます。詳しくはこちらをご確認ください。")
-                }
+    private var dataSection: some View {
+        Section {
+            Button(action: onOpenTrash) {
+                Label("ゴミ箱", systemImage: "trash")
+            }
+            Button(action: onRestoreBackup) {
+                Label("バックアップを復元", systemImage: "externaldrive.badge.plus")
+            }
+            Button(action: onRestoreAutomaticBackups) {
+                Label("自動バックアップを復元", systemImage: "clock.arrow.circlepath")
+            }
+            Button(action: onExportMCPData) {
+                Label("MCP連携データを書き出す", systemImage: "brain.head.profile")
+            }
+            Button(action: onImportMCPChanges) {
+                Label("MCPの変更を読み込む", systemImage: "tray.and.arrow.down")
+            }
+        } header: {
+            Text("データ")
+        }
+    }
 
-                Section {
-                    Toggle("エラー情報を自動送信", isOn: $autoErrorReportingEnabled)
-                } header: {
-                    Text("診断")
-                } footer: {
-                    Text("アプリが止まったときや不具合が起きたときに、エラーの種類・発生した箇所・アプリや端末のバージョンを開発者へ自動で送信します。ノートやチャットの内容は含まれません。")
-                }
+    private var friendSection: some View {
+        Section {
+            NavigationLink {
+                FriendPrivacySettingsView(shareStudyTime: $shareStudyTime, store: friendStore)
+            } label: {
+                Label("フレンド設定", systemImage: "person.2")
+            }
+        } header: {
+            Text("フレンド")
+        } footer: {
+            Text("勉強時間の公開とブロック一覧を管理できます。")
+        }
+    }
 
-                Section {
-                    Button(AccountDeletionUI.accountButtonTitle, role: .destructive) { showsAccountDeletion = true }
-                } header: {
-                    Text("アカウント")
-                } footer: {
-                    Text("すべての資料、フレンド、グループ、チャット履歴、ログイン情報が完全に削除されます。")
-                }
+    private var supportSection: some View {
+        Section {
+            Button(action: onReportIssue) {
+                Label("問題を報告", systemImage: "megaphone")
             }
-            .navigationTitle("設定")
-            .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showsAIDataDisclosure) {
-                AIDataDisclosureView(buttonTitle: "閉じる") { showsAIDataDisclosure = false }
+            HStack {
+                Text("バージョン")
+                Spacer()
+                Text(versionText).foregroundStyle(.secondary)
             }
-            .sheet(isPresented: $showsPrivacyPolicy) {
-                PrivacyPolicyView()
-            }
-            .sheet(isPresented: $showsTermsOfUse) {
-                TermsOfUseView()
-            }
-            .sheet(isPresented: $showsSubscriptionPlans) {
-                SubscriptionPlansView()
-            }
-            .sheet(isPresented: $showsAccountDeletion) {
-                DeleteAccountView()
-            }
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完了") { dismiss() }
-                }
-            }
+        } header: {
+            Text("サポート")
         }
     }
 }
@@ -1739,6 +1932,8 @@ struct ContentView: View {
     @State private var selectedAIChatTabID: PersistentIdentifier?
     @StateObject private var editorSplitState = EditorSplitState()
     @StateObject private var friendStore = FriendStore()
+    @StateObject private var announcementStore = AnnouncementStore()
+    @State private var showsAnnouncements = false
     @State private var showsAutomaticBackups = false
     @State private var newNotebookName = ""
     @State private var isShowingNewNotebookAlert = false
@@ -1799,6 +1994,9 @@ struct ContentView: View {
     @State private var presentedAIReviewItem: AIReviewItem?
     @State private var showsAppSettings = false
     @State private var showsProfile = false
+    /// Raised by the その他 tab to make the calendar tab open its
+    /// connection sheet as soon as it appears.
+    @State private var calendarConnectionRequested = false
     @State private var pendingReportIssue: PendingIssueReport?
     @AppStorage("profileImage") private var profileImageData = Data()
     @State private var showsTabPicker = false
@@ -1818,6 +2016,7 @@ struct ContentView: View {
         case calendar = "カレンダー"
         case friends = "フレンド"
         case ai = "AI"
+        case more = "その他"
         var id: String { rawValue }
         var icon: String {
             switch self {
@@ -1825,6 +2024,7 @@ struct ContentView: View {
             case .calendar: "calendar"
             case .friends: "person.2"
             case .ai: "sparkles"
+            case .more: "ellipsis.circle"
             }
         }
         var identifier: String {
@@ -1833,9 +2033,12 @@ struct ContentView: View {
             case .calendar: "home-tab-calendar"
             case .friends: "home-tab-friends"
             case .ai: "home-tab-ai"
+            case .more: "home-tab-more"
             }
         }
-        var title: String { L(rawValue) }
+        /// Localization key. `.more` has its own key because the plain
+        /// "その他" string reads "Other" (calendar category), not "More".
+        var title: String { self == .more ? "home.more.title" : rawValue }
     }
 
     private var folderNames: [String] {
@@ -2154,7 +2357,7 @@ struct ContentView: View {
     /// Calendar, friends and the AI chat are shown full-width from the home
     /// dashboard — none inherits the notebook library sidebar.
     private var isAuxiliaryHomeFullScreen: Bool {
-        homeSection == .calendar || homeSection == .friends || homeSection == .ai
+        homeSection == .calendar || homeSection == .friends || homeSection == .ai || homeSection == .more
     }
 
     var body: some View {
@@ -2604,6 +2807,7 @@ struct ContentView: View {
             if scenePhase == .active {
                 Task { await UsageEventService.ping() }
                 Task { await ErrorReportService.flush() }
+                Task { await announcementStore.refresh() }
             }
             Task {
                 await FlashcardReviewNotifications.reschedule(decks: flashcardDecks)
@@ -2617,6 +2821,7 @@ struct ContentView: View {
                 Task { await pullMCPInbox() }
                 Task { await UsageEventService.ping() }
                 Task { await ErrorReportService.flush() }
+                Task { await announcementStore.refresh() }
             }
         }
         // Count study time only while an actual study surface is open — not
@@ -2628,7 +2833,7 @@ struct ContentView: View {
             // Calendar, friends and the AI chat are independent home
             // destinations. Clear every editor selection so the notebook
             // split view can never leak its sidebar into them.
-            if section == .calendar || section == .friends || section == .ai {
+            if section == .calendar || section == .friends || section == .ai || section == .more {
                 returnToHome()
             }
         }
@@ -2691,6 +2896,36 @@ struct ContentView: View {
         }
     }
 
+    /// The その他 tab: every setting in one place. Anything whose state lives
+    /// in this view (MCP cloud sheet, backup importers, the share sheet for
+    /// the MCP export, the report sheet, …) is reached through these
+    /// callbacks so the existing sheets/importers on `body` are reused as-is.
+    private var homeMore: some View {
+        MoreHomeView(
+            friendStore: friendStore,
+            announcementStore: announcementStore,
+            showsAnnouncements: $showsAnnouncements,
+            onShowProfile: { showsProfile = true },
+            onOpenCalendarConnection: {
+                calendarConnectionRequested = true
+                homeSection = .calendar
+            },
+            onOpenCloudSettings: { showsMCPCloudSettings = true },
+            onExportMCPData: { backupURL = exportMCPSnapshot().map(IdentifiableURL.init(url:)) },
+            onImportMCPChanges: { presentFileImporter() },
+            onRestoreBackup: { isImportingBackup = true },
+            onRestoreAutomaticBackups: { showsAutomaticBackups = true },
+            onOpenTrash: {
+                returnToHome()
+                libraryMode = .trash
+                homeSection = .notes
+            },
+            onReportIssue: {
+                pendingReportIssue = PendingIssueReport(screenshot: ScreenshotCapture.captureFrontWindow())
+            }
+        )
+    }
+
     private var homeDashboard: some View {
         VStack(spacing: 0) {
             if homeSection == .notes {
@@ -2698,10 +2933,13 @@ struct ContentView: View {
             } else if homeSection == .calendar {
                 CalendarHomeView(
                     showsNotifications: $showsNotifications,
+                    opensConnection: $calendarConnectionRequested,
                     notificationPanel: { AnyView(notificationPanel) }
                 )
             } else if homeSection == .ai {
                 homeAIChat
+            } else if homeSection == .more {
+                homeMore
             } else {
                 FriendsHomeView(
                     store: friendStore,
@@ -2718,7 +2956,11 @@ struct ContentView: View {
                     Button {
                         homeSection = section
                     } label: {
-                        Label(section.title, systemImage: section.icon)
+                        Label {
+                            Text(LocalizedStringKey(section.title))
+                        } icon: {
+                            Image(systemName: section.icon)
+                        }
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
@@ -2743,6 +2985,13 @@ struct ContentView: View {
                                    friendStore.unseenIncomingRequestCount + friendStore.totalUnreadCount > 0 {
                                     let count = friendStore.unseenIncomingRequestCount + friendStore.totalUnreadCount
                                     Text(count > 99 ? "99+" : "\(count)")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .frame(minWidth: 15, minHeight: 15)
+                                        .background(.red, in: Circle())
+                                        .offset(x: -4, y: 2)
+                                } else if section == .more, announcementStore.unreadCount > 0 {
+                                    Text(announcementStore.unreadCount > 99 ? "99+" : "\(announcementStore.unreadCount)")
                                         .font(.system(size: 9, weight: .bold))
                                         .foregroundStyle(.white)
                                         .frame(minWidth: 15, minHeight: 15)
@@ -3146,9 +3395,10 @@ struct ContentView: View {
         case .newDeviceLogin:
             showsAppSettings = true
         case .announcement:
-            // The お知らせ list is reached from the その他 tab; this opens it
-            // once that entry point lands.
-            break
+            // Land on the お知らせ list: it refreshes on open, so the notice
+            // that was just pushed is at the top, unread.
+            homeSection = .more
+            showsAnnouncements = true
         case .aiTaskComplete:
             // Open the AI tab on the conversation whose answer is ready. If it
             // was deleted since, fall back to the most recent one.

@@ -1008,6 +1008,10 @@ struct CalendarHomeView: View {
     /// needs somewhere to anchor it, so the drop-down appears under this
     /// screen's own bell rather than the one on the notes home.
     @Binding var showsNotifications: Bool
+    /// Set by the その他 tab's "カレンダー連携" row, which can't reach this
+    /// view's connection sheet directly (its sync state lives here). Read
+    /// and cleared once, as soon as this screen appears.
+    @Binding var opensConnection: Bool
     let notificationPanel: () -> AnyView
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \CalendarEvent.startDate) private var events: [CalendarEvent]
@@ -1114,6 +1118,10 @@ struct CalendarHomeView: View {
         }
         .onAppear {
             refreshEventKindsByDay()
+            if opensConnection {
+                opensConnection = false
+                showsUniversityConnection = true
+            }
         }
         .onChange(of: events.count) { _, _ in
             refreshEventKindsByDay()
