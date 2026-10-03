@@ -1,6 +1,39 @@
 {
   "sourceLanguage" : "ja",
   "strings" : {
+    "エラー情報を自動送信" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send error reports automatically"
+          }
+        }
+      }
+    },
+    "診断" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnostics"
+          }
+        }
+      }
+    },
+    "アプリが止まったときや不具合が起きたときに、エラーの種類・発生した箇所・アプリや端末のバージョンを開発者へ自動で送信します。ノートやチャットの内容は含まれません。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When the app stops or hits a problem, the type of error, where it happened, and the app and device versions are sent to the developer automatically. Notes and chats are never included."
+          }
+        }
+      }
+    },
     " ・ 逆向き" : {
       "extractionState" : "stale",
       "localizations" : {
