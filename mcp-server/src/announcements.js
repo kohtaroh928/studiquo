@@ -12,7 +12,7 @@
 // Adding a language: add one entry to SUPPORTED_LANGUAGES. Nothing else —
 // storage, the admin form and the app's fallback logic are all driven by
 // language codes, not by a fixed pair.
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { accessAllowed } from "./access.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { json, readJSONLimited, securityHeaders } from "./http.js";
 import { deviceStorageKey, loadDevices } from "./devices.js";
@@ -77,28 +77,6 @@ export function resolveTranslation(translations, requested) {
   candidates.push(...FALLBACK_LANGUAGES, ...codes);
   const lang = candidates.find(code => translations[code]);
   return lang ? { lang, ...translations[lang] } : null;
-}
-
-// Fails closed: without ACCESS_AUD / ACCESS_TEAM_DOMAIN the admin API refuses
-// everything. /api/admin/* is NOT reliably covered by the Cloudflare Access
-// application that guards /admin (stats is reachable without a login), so this
-// check — not the edge — is what stops a stranger from publishing to, or
-// pushing a notification to, every user. The page's own fetches carry the
-// signed-in session as the CF_Authorization cookie, so that is accepted too.
-async function accessAllowed(request, env) {
-  if (!env.ACCESS_AUD || !env.ACCESS_TEAM_DOMAIN) return false;
-  const cookie = (request.headers.get("cookie") ?? "")
-    .split(";").map(part => part.trim()).find(part => part.startsWith("CF_Authorization="));
-  const token = request.headers.get("cf-access-jwt-assertion") ?? cookie?.slice("CF_Authorization=".length);
-  if (!token) return false;
-  try {
-    const issuer = `https://${env.ACCESS_TEAM_DOMAIN}`;
-    const jwks = env.ACCESS_JWKS ?? createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
-    await jwtVerify(token, jwks, { issuer, audience: env.ACCESS_AUD });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function cleanString(value, max) {
