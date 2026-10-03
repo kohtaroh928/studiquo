@@ -633,3 +633,112 @@ test("every prompt shown to a student tells the model to delimit math with $ and
     globalThis.fetch = originalFetch;
   }
 });
+
+// --- Gemini "high demand" (503) handling -----------------------------------
+// Regression: chat used to ask `gemini-3.5-flash` and "fall back" to the very
+// same model, which `callGemini` skips — so one 503 "This model is currently
+// experiencing high demand" went straight to the student with no reply, and
+// as Google's English text at that.
+
+const HIGH_DEMAND = JSON.stringify({
+  error: { code: 503, message: "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.", status: "UNAVAILABLE" },
+});
+
+function overloadChatRequest() {
+  return new Request("https://example.test/api/ai/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messages: [{ role: "user", text: "こんにちは" }] }),
+  });
+}
+
+function overloadGeminiOK(text) {
+  const event = { candidates: [{ content: { parts: [{ text }] } }] };
+  return new Response(`data: ${JSON.stringify(event)}\n\n`, { status: 200, headers: { "content-type": "text/event-stream" } });
+}
+
+test("chat falls back to a different Gemini model when the preferred one is overloaded", async () => {
+  const originalFetch = globalThis.fetch;
+  const modelsAsked = [];
+  globalThis.fetch = async url => {
+    const model = /models\/([^:]+):/.exec(String(url))[1];
+    modelsAsked.push(model);
+    return model === "gemini-3.5-flash" ? new Response(HIGH_DEMAND, { status: 503 }) : overloadGeminiOK("フォールバックの返答です");
+  };
+  try {
+    const ctx = executionContext();
+    const request = overloadChatRequest();
+    const response = await handleAI(new URL(request.url), request, { ...environment(), AI_RETRY_BASE_MS: 0 }, "device", ctx);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /フォールバックの返答です/);
+    await Promise.all(ctx.promises);
+    assert.deepEqual(modelsAsked, ["gemini-3.5-flash", "gemini-3.5-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("chat retries a briefly overloaded model before giving up on it", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => (++calls < 3 ? new Response(HIGH_DEMAND, { status: 503 }) : overloadGeminiOK("3回目で成功"));
+  try {
+    const ctx = executionContext();
+    const request = overloadChatRequest();
+    const response = await handleAI(new URL(request.url), request, { ...environment(), AI_RETRY_BASE_MS: 0 }, "device", ctx);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /3回目で成功/);
+    await Promise.all(ctx.promises);
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("chat answers a friendly Japanese 503 — not Google's English text — when every model is overloaded", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(HIGH_DEMAND, { status: 503 });
+  try {
+    const request = overloadChatRequest();
+    const response = await handleAI(new URL(request.url), request, { ...environment(), AI_RETRY_BASE_MS: 0 }, "device", executionContext());
+    assert.equal(response.status, 503);
+    const body = await response.json();
+    assert.match(body.error, /混み合っています/);
+    assert.doesNotMatch(body.error, /high demand/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("an unknown fallback model does not mask the original overload error", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url =>
+    String(url).includes("flash-lite")
+      ? new Response(JSON.stringify({ error: { message: "model not found" } }), { status: 404 })
+      : new Response(HIGH_DEMAND, { status: 503 });
+  try {
+    const request = overloadChatRequest();
+    const response = await handleAI(new URL(request.url), request, { ...environment(), AI_RETRY_BASE_MS: 0 }, "device", executionContext());
+    assert.equal(response.status, 503);
+    assert.match((await response.json()).error, /混み合っています/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a bad request is surfaced immediately instead of being retried", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response(JSON.stringify({ error: { message: "invalid argument" } }), { status: 400 });
+  };
+  try {
+    const request = overloadChatRequest();
+    const response = await handleAI(new URL(request.url), request, { ...environment(), AI_RETRY_BASE_MS: 0 }, "device", executionContext());
+    assert.equal(response.status, 400);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
