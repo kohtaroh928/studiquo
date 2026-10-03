@@ -1,10 +1,10 @@
 // Operator announcements: written in the internal admin page, stored in D1,
 // and read by the app's お知らせ inbox. Two audiences, two gates:
 //
-//   /admin/announcements, /api/admin/announcements*  — behind Cloudflare
-//     Access like the rest of /admin (see admin.js). As defense in depth,
-//     when ACCESS_AUD + ACCESS_TEAM_DOMAIN are configured the Access JWT is
-//     verified here too, so a misconfigured Access rule can't open writes.
+//   /admin/announcements (the page)  — behind Cloudflare Access at the edge.
+//   /api/admin/announcements*        — verified HERE: the Access JWT (header or
+//     CF_Authorization cookie) must validate against ACCESS_AUD /
+//     ACCESS_TEAM_DOMAIN, and with those unset every request is refused.
 //   GET /api/announcements — public and read-only. It carries nothing
 //     personal, and a maintenance notice should be readable even when the
 //     person can't sign in. Rate-limited per IP.
@@ -79,9 +79,17 @@ export function resolveTranslation(translations, requested) {
   return lang ? { lang, ...translations[lang] } : null;
 }
 
+// Fails closed: without ACCESS_AUD / ACCESS_TEAM_DOMAIN the admin API refuses
+// everything. /api/admin/* is NOT reliably covered by the Cloudflare Access
+// application that guards /admin (stats is reachable without a login), so this
+// check — not the edge — is what stops a stranger from publishing to, or
+// pushing a notification to, every user. The page's own fetches carry the
+// signed-in session as the CF_Authorization cookie, so that is accepted too.
 async function accessAllowed(request, env) {
-  if (!env.ACCESS_AUD || !env.ACCESS_TEAM_DOMAIN) return true;
-  const token = request.headers.get("cf-access-jwt-assertion");
+  if (!env.ACCESS_AUD || !env.ACCESS_TEAM_DOMAIN) return false;
+  const cookie = (request.headers.get("cookie") ?? "")
+    .split(";").map(part => part.trim()).find(part => part.startsWith("CF_Authorization="));
+  const token = request.headers.get("cf-access-jwt-assertion") ?? cookie?.slice("CF_Authorization=".length);
   if (!token) return false;
   try {
     const issuer = `https://${env.ACCESS_TEAM_DOMAIN}`;
