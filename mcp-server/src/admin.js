@@ -325,6 +325,7 @@ const DASHBOARD_HTML = `<!doctype html>
   #error { color: #c33; display: none; }
 </style>
 <h1>studiquo 管理ダッシュボード</h1>
+<p><a href="/admin/announcements">お知らせ管理 →</a></p>
 <p id="error">読み込みに失敗しました。再読み込みしてください。</p>
 <div id="root"></div>
 <script>

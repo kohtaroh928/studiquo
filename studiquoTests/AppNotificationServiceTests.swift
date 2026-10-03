@@ -37,4 +37,13 @@ final class AppNotificationServiceTests: XCTestCase {
         XCTAssertEqual(Set(AppNotificationKind.allCases.map(\.defaultsKey)).count, AppNotificationKind.allCases.count)
         XCTAssertEqual(Set(AppNotificationKind.allCases.map(\.categoryIdentifier)).count, AppNotificationKind.allCases.count)
     }
+
+    /// The server filters a push by `device.preferences[category]`, and the
+    /// category in the APNs payload is `studiquo.<rawValue>` — so these two
+    /// names must match what mcp-server/src/announcements.js sends.
+    func testAnnouncementKindMatchesTheServersCategory() {
+        XCTAssertEqual(AppNotificationKind.announcement.rawValue, "announcement")
+        XCTAssertEqual(AppNotificationKind.announcement.categoryIdentifier, "studiquo.announcement")
+        XCTAssertNotNil(AppNotificationPreferences.serverPayload["announcement"])
+    }
 }

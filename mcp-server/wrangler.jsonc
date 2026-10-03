@@ -90,7 +90,11 @@
     { "name": "RATE_LIMIT_USAGE_EVENT", "namespace_id": "1021", "simple": { "limit": 20, "period": 60 } },
     // Keyed by the authenticated user's stable chat key. Registration is
     // idempotent and normally happens once per launch/login.
-    { "name": "RATE_LIMIT_CHAT_DEVICE_REGISTER", "namespace_id": "1022", "simple": { "limit": 5, "period": 60 } }
+    { "name": "RATE_LIMIT_CHAT_DEVICE_REGISTER", "namespace_id": "1022", "simple": { "limit": 5, "period": 60 } },
+    // Keyed by clientKey(request) — the public announcements list is
+    // unauthenticated (readable before sign-in). One fetch per app open is
+    // the expected shape, so this is generous headroom.
+    { "name": "RATE_LIMIT_ANNOUNCEMENTS", "namespace_id": "1023", "simple": { "limit": 30, "period": 60 } }
   ],
   "vars": {
     // Marking asks for structured output, and Gemini emits that only once the
