@@ -590,9 +590,19 @@ private struct StartupUITestRoot: View {
 private struct LibraryDropUITestRoot: View {
     /// Set when the test asks for a notification tap to be simulated.
     @State private var routeThreadKey: String?
+    @ObservedObject private var authentication = LibraryDropUITestStore.authentication
+    /// The real root applies the chosen language as `\.locale`; so must this one.
+    @AppStorage("appLanguage") private var appLanguage = "system"
+    /// Mirrors `AccountGateView` for the logout tests: signed in at launch,
+    /// and the login screen shows once the session ends.
+    private let gatesOnLogin = ProcessInfo.processInfo.arguments.contains("--ui-test-login-gate")
 
     init() {
         AIDataDisclosure.acknowledge()
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-login-gate") {
+            LibraryDropUITestStore.authentication.ignoresAuthFailures = true
+            LibraryDropUITestStore.authentication.finishOnboarding()
+        }
         // Lets UI tests drive the AIトーク (home tab and editor) without a network.
         if ProcessInfo.processInfo.arguments.contains("--ui-test-fake-ai") {
             AI.provider = UITestAIProvider()
@@ -623,10 +633,17 @@ private struct LibraryDropUITestRoot: View {
     }
 
     var body: some View {
-        ContentView()
+        Group {
+            if gatesOnLogin && authentication.state == .needsLogin {
+                LoginView()
+            } else {
+                ContentView()
+            }
+        }
             .modelContainer(LibraryDropUITestStore.container)
             .environmentObject(LibraryDropUITestStore.authentication)
             .environmentObject(LibraryDropUITestStore.subscriptionStore)
+            .environment(\.locale, appLanguage == "english" ? Locale(identifier: "en") : Locale(identifier: "ja"))
             .overlay(alignment: .topLeading) {
                 if ProcessInfo.processInfo.arguments.contains("--ui-test-fake-ai") {
                     VStack(spacing: 0) {
