@@ -28,6 +28,9 @@ final class AuthenticationStore: ObservableObject {
 
     @Published private(set) var state: State = .needsLogin
     @Published var errorMessage = ""
+    /// UI tests sign in without a real token, so every server call 401s;
+    /// they set this so only an explicit logout ends the session.
+    var ignoresAuthFailures = false
     @Published private(set) var isPasskeyBusy = false
     @Published private(set) var isAppleSignInBusy = false
     @Published private(set) var isGoogleSignInBusy = false
@@ -212,6 +215,7 @@ final class AuthenticationStore: ObservableObject {
     /// several independent polling loops firing this around the same moment
     /// is harmless.
     private func handleAuthFailure() {
+        guard !ignoresAuthFailures else { return }
         guard state == .authenticated || state == .onboarding else { return }
         let reallyExpired = MCPCloudCredentials.currentToken().map(MCPCloudCredentials.isExpired) ?? true
         errorMessage = reallyExpired
