@@ -11,6 +11,7 @@ function environment() {
   const inboxes = new Map();
   const usageEvents = new Set();
   const usersFirstSeen = new Set();
+  const appErrorUsers = new Set();
   return {
     STUDIQUO_DATA: {
       async get(key, type) {
@@ -38,6 +39,7 @@ function environment() {
               async run() {
                 if (sql.includes("usage_events")) usageEvents.delete(userKey);
                 if (sql.includes("users_first_seen")) usersFirstSeen.delete(userKey);
+                if (sql.includes("app_error_users")) appErrorUsers.delete(userKey);
                 return { success: true };
               },
             };
@@ -49,6 +51,7 @@ function environment() {
     _inboxes: inboxes,
     _usageEvents: usageEvents,
     _usersFirstSeen: usersFirstSeen,
+    _appErrorUsers: appErrorUsers,
   };
 }
 
@@ -385,6 +388,15 @@ test("47. users_first_seenが削除される", async () => {
   env._usersFirstSeen.add(usageHash);
   await deleteAccount(env, canonical);
   assert.equal(env._usersFirstSeen.has(usageHash), false);
+});
+
+test("47b. 自動エラーの「影響ユーザー」の記録が削除される", async () => {
+  const env = environment();
+  const canonical = "account-app-errors-47b";
+  const usageHash = hash(`usage-account:${canonical}`);
+  env._appErrorUsers.add(usageHash);
+  await deleteAccount(env, canonical);
+  assert.equal(env._appErrorUsers.has(usageHash), false);
 });
 
 test("48. 別アカウントのMCP・同期・利用状況データは残る", async () => {

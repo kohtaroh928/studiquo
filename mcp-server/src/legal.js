@@ -8,6 +8,8 @@ import { securityHeaders } from "./http.js";
 //
 const CONTACT_EMAIL = "yabukohtaroh@gmail.com";
 const PUBLISHED_DATE = "2026年9月25日";
+// The privacy policy changes on its own schedule (diagnostic data, 2026-10-03).
+const PRIVACY_PUBLISHED_DATE = "2026年10月3日";
 
 function homePageHTML() {
   return `<!DOCTYPE html>
@@ -144,7 +146,7 @@ function privacyPolicyHTML() {
 </head>
 <body>
 <h1>studiquo プライバシーポリシー</h1>
-<p class="updated">最終更新日: ${PUBLISHED_DATE}</p>
+<p class="updated">最終更新日: ${PRIVACY_PUBLISHED_DATE}</p>
 
 <p>本ポリシーは、学習アプリ「studiquo」(以下「本アプリ」)が、利用者の情報をどのように取り扱うかを説明するものです。</p>
 
@@ -157,6 +159,7 @@ function privacyPolicyHTML() {
   <li><strong>利用状況</strong>:学習時間の記録、各機能の利用回数。学習記録機能・利用制限の管理のために使用します。</li>
   <li><strong>Googleカレンダー情報</strong>:利用者がGoogleカレンダー連携を選択した場合、カレンダー名、予定のタイトル、開始・終了日時、説明を読み取り、学習予定と一緒に表示するために端末内へ保存します。Googleカレンダーへの書き込みは行いません。</li>
   <li><strong>AI機能利用時に送信する内容</strong>:AIトーク・添削・翌日復習などの機能を使うと、質問文、ノートの内容、答案の画像などが外部のAIサービスに送信されます。詳しくは次の項目をご覧ください。</li>
+  <li><strong>自動送信される診断情報</strong>:アプリのクラッシュ・フリーズや、起動・同期などの失敗が起きると、エラーの種類、発生した箇所を示す技術的な情報(プログラム上の関数名など)、アプリのバージョン、端末モデル、OSのバージョン、発生日時が、運営のサーバーへ自動的に送信されます。ノート・チャット・AIへの質問などの内容や、メールアドレス・氏名は含まれません。同じ問題が何人に起きたかを数えるため、アカウントを特定できない形に変換した識別子を使用します。アプリの改善と不具合の調査のために使用し、「設定」の「エラー情報を自動送信」からいつでも停止できます。</li>
   <li><strong>問題報告の内容</strong>:ホーム画面の「問題を報告」機能を使うと、送信した説明文、任意で添付したスクリーンショット、端末モデル・OS・アプリのバージョンなどの情報が送信されます。不具合の調査のために使用します。</li>
 </ul>
 
@@ -168,7 +171,7 @@ function privacyPolicyHTML() {
   <li><strong>Anthropic Claude</strong>:利用者が自分自身のAnthropic APIキーを設定した場合に限り、同様の内容がAnthropicにも送信されます。APIキーを設定しない限り、この連携は行われません。</li>
   <li><strong>Cloudflare</strong>:本アプリのサーバーインフラとして使用しており、上記のアカウント情報・学習コンテンツ・チャット内容の保管場所です。</li>
   <li><strong>Apple iCloud</strong>:一部のデータは、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。</li>
-  <li><strong>Slack</strong>:「問題を報告」で送信された内容を運営が確認するために使用します。</li>
+  <li><strong>Slack</strong>:「問題を報告」で送信された内容と、自動送信された診断情報の通知を運営が確認するために使用します。</li>
 </ul>
 
 <h2>広告・トラッキングについて</h2>

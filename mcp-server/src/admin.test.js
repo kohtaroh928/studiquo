@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
 import { PRODUCT_BILLING_MONTHS } from "./admin.js";
@@ -17,7 +17,7 @@ class FakeD1Statement {
   bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() {
     const info = this.db.prepare(this.sql).run(...this.params);
-    return { success: true, meta: { rows_written: info.changes, last_row_id: info.lastInsertRowid } };
+    return { success: true, meta: { changes: info.changes, rows_written: info.changes, last_row_id: info.lastInsertRowid } };
   }
   async all() {
     return { results: this.db.prepare(this.sql).all(...this.params), success: true, meta: {} };
@@ -29,7 +29,9 @@ class FakeD1Statement {
 
 function fakeD1() {
   const db = new DatabaseSync(":memory:");
-  db.exec(readFileSync(new URL("../migrations/0001_admin_dashboard.sql", import.meta.url), "utf8"));
+  for (const file of readdirSync(new URL("../migrations/", import.meta.url)).sort()) {
+    db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  }
   return { prepare(sql) { return new FakeD1Statement(db, sql); } };
 }
 
@@ -328,10 +330,17 @@ test("account count deduplicates linked identities but keeps unrelated ones sepa
   assert.equal(data.userCount, 3);
 });
 
-test("issue report count excludes screenshot KV entries", async () => {
+test("the issue report count is the reports still open, not everything ever filed", async () => {
   const env = environment();
-  await env.STUDIQUO_DATA.put("issue-report:report-1", JSON.stringify({ id: "report-1" }));
-  await env.STUDIQUO_DATA.put("issue-report-screenshot:report-1", JSON.stringify({ contentType: "image/png", data: "" }));
+  const insert = (id, status) => env.ADMIN_DB.prepare(
+    `INSERT INTO issue_reports (id, reporter_key, description, status, created_at, updated_at) VALUES (?, 'k', 'd', ?, 1, 1)`
+  ).bind(id, status).run();
+  await insert("report-open", "open");
+  await insert("report-working", "in_progress");
+  await insert("report-done", "resolved");
+  // Screenshots and legacy KV copies don't count on their own.
+  await env.STUDIQUO_DATA.put("issue-report:legacy", JSON.stringify({ id: "legacy" }));
+  await env.STUDIQUO_DATA.put("issue-report-screenshot:legacy", JSON.stringify({ contentType: "image/png", data: "" }));
 
   const data = await stats(env);
   assert.equal(data.issueReportCount, 1);

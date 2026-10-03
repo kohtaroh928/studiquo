@@ -83,3 +83,11 @@ test("a request to an unrelated path is not intercepted by the legal router", as
   const body = await response.json();
   assert.equal(body.ok, true);
 });
+
+test("the privacy policy discloses the automatic diagnostic reports and how to turn them off", async () => {
+  const response = await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx);
+  const body = await response.text();
+  assert.match(body, /自動送信される診断情報/);
+  assert.match(body, /ノート・チャット・AIへの質問などの内容や、メールアドレス・氏名は含まれません/);
+  assert.match(body, /エラー情報を自動送信/);
+});
