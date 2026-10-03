@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
+import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 import { compareVersions, resolveTranslation, SUPPORTED_LANGUAGES } from "./announcements.js";
 
 class FakeD1Statement {
@@ -13,6 +14,15 @@ class FakeD1Statement {
   async first() { return this.db.prepare(this.sql).get(...this.params) ?? null; }
 }
 
+// A real signed Access token, verified against a local key set.
+const ACCESS = { aud: "test-aud", team: "team.cloudflareaccess.com" };
+const accessKeys = await generateKeyPair("ES256", { extractable: true });
+const accessJWKS = createLocalJWKSet({ keys: [{ ...(await exportJWK(accessKeys.publicKey)), alg: "ES256", use: "sig" }] });
+const sign = (over = {}) => new SignJWT({}).setProtectedHeader({ alg: "ES256" })
+  .setIssuer(`https://${over.team ?? ACCESS.team}`).setAudience(over.aud ?? ACCESS.aud)
+  .setIssuedAt().setExpirationTime("1h").sign(accessKeys.privateKey);
+const validToken = await sign();
+
 function environment(extra = {}) {
   const db = new DatabaseSync(":memory:");
   for (const file of ["0001_admin_dashboard.sql", "0003_announcements.sql"]) {
@@ -21,12 +31,13 @@ function environment(extra = {}) {
   return {
     ADMIN_DB: { prepare: sql => new FakeD1Statement(db, sql) },
     RATE_LIMIT_ANNOUNCEMENTS: { async limit() { return { success: true }; } },
+    ACCESS_AUD: ACCESS.aud, ACCESS_TEAM_DOMAIN: ACCESS.team, ACCESS_JWKS: accessJWKS,
     ...extra,
   };
 }
 
 const ctx = { waitUntil() {} };
-const call = (env, path, { method = "GET", body, headers = {} } = {}) => worker.fetch(
+const call = (env, path, { method = "GET", body, headers = { "cf-access-jwt-assertion": validToken } } = {}) => worker.fetch(
   new Request(`https://example.test${path}`, {
     method,
     headers: body !== undefined ? { "content-type": "application/json", ...headers } : headers,
@@ -132,13 +143,22 @@ test("update and delete", async () => {
   assert.equal((await (await call(env, "/api/admin/announcements")).json()).announcements.length, 0);
 });
 
-test("admin API refuses requests without an Access token once Access is configured", async () => {
-  const env = environment({ ACCESS_AUD: "aud", ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com" });
-  assert.equal((await call(env, "/api/admin/announcements")).status, 403);
-  assert.equal((await call(env, "/api/admin/announcements", { method: "POST", body: base() })).status, 403);
+test("admin API: header or cookie token works; anything else — or no Access config — is refused", async () => {
+  const env = environment();
+  const noAuth = { headers: {} };
+  assert.equal((await call(env, "/api/admin/announcements", noAuth)).status, 403);
+  assert.equal((await call(env, "/api/admin/announcements", { method: "POST", body: base(), headers: {} })).status, 403);
   assert.equal((await call(env, "/api/admin/announcements", { headers: { "cf-access-jwt-assertion": "garbage" } })).status, 403);
+  assert.equal((await call(env, "/api/admin/announcements", { headers: { "cf-access-jwt-assertion": await sign({ aud: "other-app" }) } })).status, 403);
+  assert.equal((await call(env, "/api/admin/announcements", { headers: { "cf-access-jwt-assertion": await sign({ team: "evil.example" }) } })).status, 403);
+  assert.equal((await call(env, "/api/admin/announcements", { headers: { cookie: `a=b; CF_Authorization=${validToken}` } })).status, 200);
+  assert.equal((await call(env, "/api/admin/announcements")).status, 200);
+  // Fails closed when Access isn't configured at all.
+  const unconfigured = environment({ ACCESS_AUD: undefined });
+  assert.equal((await call(unconfigured, "/api/admin/announcements")).status, 403);
+  assert.equal((await call(unconfigured, "/api/admin/announcements/x/push", { method: "POST" })).status, 403);
   // The public list stays open.
-  assert.equal((await call(env, "/api/announcements")).status, 200);
+  assert.equal((await call(env, "/api/announcements", noAuth)).status, 200);
 });
 
 test("public list is rate limited", async () => {

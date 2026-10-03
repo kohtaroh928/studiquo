@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { generateKeyPair, exportPKCS8 } from "jose";
+import { generateKeyPair, exportPKCS8, exportJWK, createLocalJWKSet, SignJWT } from "jose";
 import { handleAnnouncements } from "./announcements.js";
 
 class FakeD1Statement {
@@ -12,6 +12,12 @@ class FakeD1Statement {
   async all() { return { results: this.db.prepare(this.sql).all(...this.params) }; }
   async first() { return this.db.prepare(this.sql).get(...this.params) ?? null; }
 }
+
+const ACCESS = { aud: "test-aud", team: "team.cloudflareaccess.com" };
+const accessKeys = await generateKeyPair("ES256", { extractable: true });
+const accessJWKS = createLocalJWKSet({ keys: [{ ...(await exportJWK(accessKeys.publicKey)), alg: "ES256", use: "sig" }] });
+const accessToken = await new SignJWT({}).setProtectedHeader({ alg: "ES256" })
+  .setIssuer(`https://${ACCESS.team}`).setAudience(ACCESS.aud).setIssuedAt().setExpirationTime("1h").sign(accessKeys.privateKey);
 
 async function fixture(extra = {}) {
   const db = new DatabaseSync(":memory:");
@@ -38,6 +44,7 @@ async function fixture(extra = {}) {
       },
     },
     ANNOUNCEMENT_PUSH_BATCH: "2",
+    ACCESS_AUD: ACCESS.aud, ACCESS_TEAM_DOMAIN: ACCESS.team, ACCESS_JWKS: accessJWKS,
     ...extra,
   };
   return { env, values };
@@ -60,7 +67,7 @@ function apns(calls, { failFor = new Set() } = {}) {
 
 async function call(env, path, { method = "POST", body, fetchImpl } = {}) {
   const request = new Request(`https://example.test${path}`, {
-    method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined,
+    method, headers: { "cf-access-jwt-assertion": accessToken, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined,
   });
   return handleAnnouncements(new URL(request.url), request, env, { fetchImpl });
 }
@@ -145,12 +152,30 @@ test("an overlapping batch request cannot claim the same batch", async () => {
   const { env, values } = await fixture();
   for (let i = 1; i <= 4; i++) seedUser(values, `u${i}`, [{ token: token(i), environment: "production" }]);
   const id = await create(env);
+
+  // Force both requests to read the announcement row before either claims a
+  // batch, so both hold the same (stale) batch counter.
+  const realPrepare = env.ADMIN_DB.prepare;
+  let arrived = 0;
+  let release;
+  const barrier = new Promise(resolve => { release = resolve; });
+  env.ADMIN_DB.prepare = sql => {
+    const statement = realPrepare(sql);
+    if (!sql.startsWith("SELECT * FROM announcements WHERE id")) return statement;
+    return { bind: (...params) => ({ first: async () => {
+      const row = await statement.bind(...params).first();
+      if (++arrived <= 2) { if (arrived === 2) release(); await barrier; }
+      return row;
+    } }) };
+  };
+
   const calls = [];
   const [a, b] = await Promise.all([
     call(env, `/api/admin/announcements/${id}/push`, { fetchImpl: apns(calls) }),
     call(env, `/api/admin/announcements/${id}/push`, { fetchImpl: apns(calls) }),
   ]);
   assert.deepEqual([a.status, b.status].sort(), [200, 409]);
+  assert.equal(calls.length, 2, "only one batch of two users was sent");
   assert.equal(new Set(calls.map(c => c.device)).size, calls.length, "no device was pushed twice");
 });
 
