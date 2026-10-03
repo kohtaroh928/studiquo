@@ -18,6 +18,9 @@ enum AppNotificationKind: String, CaseIterable, Codable, Identifiable {
     case aiTaskComplete
     case studyStreak
     case newDeviceLogin
+    /// Operator announcements (updates, maintenance, important notices) —
+    /// see mcp-server/src/announcements.js.
+    case announcement
 
     var id: String { rawValue }
 
@@ -32,6 +35,7 @@ enum AppNotificationKind: String, CaseIterable, Codable, Identifiable {
         case .aiTaskComplete: "AI回答・長時間処理の完了"
         case .studyStreak: "連続学習記録"
         case .newDeviceLogin: "新しい端末からのログイン"
+        case .announcement: L(String.LocalizationValue("announcements.pushToggle"))
         }
     }
 

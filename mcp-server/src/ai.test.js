@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { handleAI } from "./ai.js";
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1ZkAAAAASUVORK5CYII=";
@@ -738,6 +739,101 @@ test("a bad request is surfaced immediately instead of being retried", async () 
     const response = await handleAI(new URL(request.url), request, { ...environment(), AI_RETRY_BASE_MS: 0 }, "device", executionContext());
     assert.equal(response.status, 400);
     assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// Reads the vars the real Worker is deployed with, so these tests exercise
+// the production model configuration instead of the code's own defaults.
+// The original bug lived exactly there: marking's `GEMINI_GRADING_MODEL`
+// (wrangler.jsonc) and the code's fallback were the same model, so the
+// "fallback" never fired for it.
+function deployedVars() {
+  const raw = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "")
+    .replace(/,(\s*[}\]])/g, "$1");
+  return JSON.parse(raw).vars ?? {};
+}
+
+function modelOf(url) {
+  return /models\/([^:]+):/.exec(String(url))[1];
+}
+
+for (const [label, path, body] of [
+  ["chat", "/api/ai/chat", { messages: [{ role: "user", text: "こんにちは" }] }],
+  ["rubric (marking)", "/api/ai/rubric", { modelAnswer: "1+1=2 を示す。" }],
+  ["review", "/api/ai/review", { question: "微分とは何ですか", context: "" }],
+]) {
+  test(`${label}: with the deployed model config, an overloaded model is followed by a *different* one`, async () => {
+    const originalFetch = globalThis.fetch;
+    const modelsAsked = [];
+    globalThis.fetch = async url => {
+      modelsAsked.push(modelOf(url));
+      return new Response(HIGH_DEMAND, { status: 503 });
+    };
+    try {
+      const ctx = executionContext();
+      const request = new Request(`https://example.test${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const env = { ...environment(), ...deployedVars(), AI_RETRY_BASE_MS: 0 };
+      const response = await handleAI(new URL(request.url), request, env, "device", ctx);
+      await response.text();
+      await Promise.all(ctx.promises);
+      assert.ok(
+        new Set(modelsAsked).size >= 2,
+        `${label} only ever asked ${[...new Set(modelsAsked)].join(", ")} — its fallback is the same model as its first choice, so a busy model can never be worked around`,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+}
+
+test("marking recovers through the fallback model when the preferred one is overloaded", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    if (modelOf(url) === "gemini-3.5-flash") return new Response(HIGH_DEMAND, { status: 503 });
+    return overloadGeminiOK(JSON.stringify({ criteria: [], summary: "ok" }));
+  };
+  try {
+    const ctx = executionContext();
+    const request = new Request("https://example.test/api/ai/rubric", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ modelAnswer: "1+1=2 を示す。" }),
+    });
+    const env = { ...environment(), ...deployedVars(), AI_RETRY_BASE_MS: 0 };
+    const response = await handleAI(new URL(request.url), request, env, "device", ctx);
+    const text = await response.text();
+    await Promise.all(ctx.promises);
+    assert.match(text, /"result"/);
+    assert.doesNotMatch(text, /混み合っています|high demand/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("marking tells the student in Japanese — not Google's English text — when every model is overloaded", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(HIGH_DEMAND, { status: 503 });
+  try {
+    const ctx = executionContext();
+    const request = new Request("https://example.test/api/ai/rubric", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ modelAnswer: "1+1=2 を示す。" }),
+    });
+    const env = { ...environment(), ...deployedVars(), AI_RETRY_BASE_MS: 0 };
+    const response = await handleAI(new URL(request.url), request, env, "device", ctx);
+    const text = await response.text();
+    await Promise.all(ctx.promises);
+    assert.match(text, /混み合っています/);
+    assert.doesNotMatch(text, /high demand|\[503\]/);
   } finally {
     globalThis.fetch = originalFetch;
   }

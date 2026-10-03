@@ -8,7 +8,7 @@ const DEVICE_TOKEN_PATTERN = /^[a-f0-9]{32,400}$/i;
 const DEVICE_ENVIRONMENTS = new Set(["sandbox", "production"]);
 const NOTIFICATION_CATEGORIES = new Set([
   "calendarDeadline", "friendMessage", "friendRequest", "groupInvite", "shareInvite",
-  "flashcardReview", "aiTaskComplete", "studyStreak", "newDeviceLogin",
+  "flashcardReview", "aiTaskComplete", "studyStreak", "newDeviceLogin", "announcement",
 ]);
 
 export function deviceStorageKey(userKey) {
@@ -42,6 +42,11 @@ function parseDevice(body) {
   const deviceName = typeof body?.deviceName === "string"
     ? body.deviceName.trim().slice(0, 80)
     : null;
+  // BCP 47 code of the app's language, so a broadcast (e.g. an announcement)
+  // can be pushed in each device's own language.
+  const language = typeof body?.language === "string" && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/.test(body.language.trim())
+    ? body.language.trim()
+    : null;
   const preferences = {};
   if (body?.preferences && typeof body.preferences === "object" && !Array.isArray(body.preferences)) {
     for (const [category, enabled] of Object.entries(body.preferences)) {
@@ -53,6 +58,7 @@ function parseDevice(body) {
     environment,
     ...(installationID ? { installationID } : {}),
     ...(deviceName ? { deviceName } : {}),
+    ...(language ? { language } : {}),
     ...(Object.keys(preferences).length ? { preferences } : {}),
   };
 }
