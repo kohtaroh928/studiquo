@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
 import { PRODUCT_BILLING_MONTHS } from "./admin.js";
+import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.js";
 
 // Wraps a real in-memory SQLite database (seeded from the actual migration
 // file, so tests run against the real schema) in the shape D1 exposes to a
@@ -68,6 +69,7 @@ function environment() {
     RATE_LIMIT_ADMIN_WEBHOOK: fakeCloudflareLimiter(),
     RATE_LIMIT_USAGE_EVENT: fakeCloudflareLimiter(),
     REVENUECAT_WEBHOOK_SECRET: WEBHOOK_SECRET,
+    ...ACCESS_ENV,
     _kv: values,
   };
 }
@@ -79,7 +81,9 @@ function freshToken(suffix) {
 }
 
 function request(path, { method = "GET", token, body, authorization } = {}) {
-  const headers = {};
+  // The admin routes sit behind a verified Cloudflare Access login (src/access.js);
+  // RevenueCat's webhook is the one exception and authenticates by secret.
+  const headers = path.startsWith("/api/admin/") && path !== "/api/admin/revenuecat-webhook" ? { ...ACCESS_HEADERS } : {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (authorization !== undefined) headers.authorization = authorization;
   if (body !== undefined) headers["content-type"] = "application/json";
@@ -362,4 +366,25 @@ test("GET /admin serves the dashboard page", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /text\/html/);
   assert.match(await response.text(), /studiquo 管理ダッシュボード/);
+});
+
+test("every /api/admin/* route except RevenueCat's webhook needs a verified Access login", async () => {
+  const env = environment();
+  const bare = path => new Request(`https://example.test${path}`);
+  for (const path of ["/api/admin/stats", "/api/admin/announcements", "/api/admin/anything-else"]) {
+    assert.equal((await worker.fetch(bare(path), env, noopCtx)).status, 403, path);
+    const forged = new Request(`https://example.test${path}`, { headers: { "cf-access-jwt-assertion": "forged" } });
+    assert.equal((await worker.fetch(forged, env, noopCtx)).status, 403, `${path} with a forged token`);
+  }
+  // The signed-in browser sends the same token as a cookie.
+  const cookie = new Request("https://example.test/api/admin/stats", {
+    headers: { cookie: `CF_Authorization=${ACCESS_HEADERS["cf-access-jwt-assertion"]}` },
+  });
+  assert.equal((await worker.fetch(cookie, env, noopCtx)).status, 200);
+  // Not configured at all → refused, not open.
+  const unconfigured = { ...env, ACCESS_AUD: undefined };
+  assert.equal((await worker.fetch(request("/api/admin/stats"), unconfigured, noopCtx)).status, 403);
+  // The webhook is not behind Access: it answers with its own secret check.
+  const webhook = await worker.fetch(request("/api/admin/revenuecat-webhook", { method: "POST", authorization: "wrong", body: { event: {} } }), env, noopCtx);
+  assert.equal(webhook.status, 401);
 });
