@@ -813,6 +813,7 @@ private struct AppSettingsView: View {
     @AppStorage("studyTimeTrackingEnabled") private var studyTimeTrackingEnabled = true
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = true
+    @AppStorage(ErrorReportSettings.enabledKey) private var autoErrorReportingEnabled = true
     @State private var showsAIDataDisclosure = false
     @State private var showsPrivacyPolicy = false
     @State private var showsTermsOfUse = false
@@ -900,6 +901,14 @@ private struct AppSettingsView: View {
                     Text("プライバシー")
                 } footer: {
                     Text("AIトーク・添削・翌日復習を使うと、質問文やノートの内容、答案の写真がGoogleのGeminiに送信されます。詳しくはこちらをご確認ください。")
+                }
+
+                Section {
+                    Toggle("エラー情報を自動送信", isOn: $autoErrorReportingEnabled)
+                } header: {
+                    Text("診断")
+                } footer: {
+                    Text("アプリが止まったときや不具合が起きたときに、エラーの種類・発生した箇所・アプリや端末のバージョンを開発者へ自動で送信します。ノートやチャットの内容は含まれません。")
                 }
 
                 Section {
@@ -2589,7 +2598,10 @@ struct ContentView: View {
             StudyTimeTracker.shared.handle(scenePhase: scenePhase)
             StudyTimeTracker.shared.setStudying(isStudySurfaceOpen)
             friendStore.handle(scenePhase: scenePhase)
-            if scenePhase == .active { Task { await UsageEventService.ping() } }
+            if scenePhase == .active {
+                Task { await UsageEventService.ping() }
+                Task { await ErrorReportService.flush() }
+            }
             Task {
                 await FlashcardReviewNotifications.reschedule(decks: flashcardDecks)
                 await StudyStreakNotifications.reschedule(activities: studyActivities)
@@ -2601,6 +2613,7 @@ struct ContentView: View {
             if phase == .active {
                 Task { await pullMCPInbox() }
                 Task { await UsageEventService.ping() }
+                Task { await ErrorReportService.flush() }
             }
         }
         // Count study time only while an actual study surface is open — not

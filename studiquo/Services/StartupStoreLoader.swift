@@ -17,12 +17,15 @@ final class StartupStoreLoader<Value: Sendable>: ObservableObject {
     @Published private(set) var state: State = .idle
     private let timeout: TimeInterval
     private let openStore: @Sendable () throws -> Value
+    private let onFailure: (@Sendable (Error) -> Void)?
     private var deadline: DispatchWorkItem?
     private var attemptID: UUID?
 
-    init(timeout: TimeInterval = 10, openStore: @escaping @Sendable () throws -> Value) {
+    init(timeout: TimeInterval = 10, openStore: @escaping @Sendable () throws -> Value,
+         onFailure: (@Sendable (Error) -> Void)? = nil) {
         self.timeout = timeout
         self.openStore = openStore
+        self.onFailure = onFailure
     }
 
     func start() {
@@ -53,7 +56,9 @@ final class StartupStoreLoader<Value: Sendable>: ObservableObject {
                 self.attemptID = nil
                 switch result {
                 case .success(let value): self.state = .ready(value)
-                case .failure(let error): self.state = .failed(error.localizedDescription)
+                case .failure(let error):
+                    self.onFailure?(error)
+                    self.state = .failed(error.localizedDescription)
                 }
             }
         }

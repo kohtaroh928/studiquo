@@ -1,3 +1,4 @@
+import CloudKit
 import CoreData
 import OSLog
 import GoogleSignIn
@@ -170,9 +171,10 @@ private func makeStudiquoModelContainer() throws -> ModelContainer {
 @main
 struct StudiquoApp: App {
     @UIApplicationDelegateAdaptor(StudiquoAppDelegate.self) private var appDelegate
-    @StateObject private var startup = StartupStoreLoader {
-        try makeStudiquoModelContainer()
-    }
+    @StateObject private var startup = StartupStoreLoader(
+        openStore: { try makeStudiquoModelContainer() },
+        onFailure: { ErrorReportService.recordFailure(area: "起動時のデータ読み込み", error: $0) }
+    )
     @AppStorage("appLanguage") private var appLanguage = "system"
     @StateObject private var cloudSyncStatus = CloudKitSyncStatus()
     @StateObject private var subscriptionStore = SubscriptionStore()
@@ -184,6 +186,8 @@ struct StudiquoApp: App {
     /// simply live inside `body`'s `.task` alongside `startup.start()`.
     init() {
         SubscriptionStore.configureSDK()
+        CrashDiagnosticsSubscriber.shared.start()
+        CloudKitErrorReporting.start()
     }
 
     private var resolvedLocale: Locale {
@@ -704,6 +708,9 @@ private enum LibraryDropUITestStore {
         let mode = arguments.contains("--column-mode") ? "column" : arguments.contains("--icon-mode") ? "icon" : "list"
         let compact = arguments.contains("--resource-types-fixture")
         UserDefaults.standard.set(mode, forKey: "homeViewMode")
+        // The setting persists across UI-test launches in the simulator;
+        // start each launch from the shipped default (on).
+        UserDefaults.standard.set(true, forKey: ErrorReportSettings.enabledKey)
         let folderPaths = compact ? ["Target"] : ["Parent", "Parent/Source", "Parent/Destination", "Parent/Empty", "Sibling", "Target"]
         UserDefaults.standard.set(folderPaths.joined(separator: "\n"), forKey: "libraryFolderNames")
         UserDefaults.standard.set(true, forKey: "didMigrateFoldersToHierarchy")
@@ -854,6 +861,36 @@ private struct LaunchLoadingView: View {
 /// hint instead of silently waiting for notes to appear from other devices.
 /// Never blocks app launch; CloudKit sync runs in the background.
 @MainActor
+/// Reports iCloud sync failures that point at a real problem. Being offline,
+/// signed out of iCloud or rate-limited is ordinary and not worth a report.
+enum CloudKitErrorReporting {
+    /// CKError codes for conditions the person or the network causes:
+    /// networkUnavailable, networkFailure, serviceUnavailable,
+    /// requestRateLimited, notAuthenticated, zoneBusy.
+    nonisolated static let ignoredCKErrorCodes: Set<Int> = [3, 4, 6, 7, 9, 23]
+
+    nonisolated static func shouldReport(domain: String, code: Int) -> Bool {
+        !(domain == CKErrorDomain && ignoredCKErrorCodes.contains(code))
+    }
+
+    private static var observer: NSObjectProtocol?
+
+    static func start() {
+        guard observer == nil else { return }
+        observer = NotificationCenter.default.addObserver(
+            forName: NSPersistentCloudKitContainer.eventChangedNotification,
+            object: nil,
+            queue: .main
+        ) { note in
+            guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
+                as? NSPersistentCloudKitContainer.Event,
+                event.endDate != nil, let error = event.error as NSError?,
+                shouldReport(domain: error.domain, code: error.code) else { return }
+            ErrorReportService.recordFailure(area: "iCloud同期", error: error)
+        }
+    }
+}
+
 private final class CloudKitSyncStatus: ObservableObject {
     private static let hasCompletedFirstSyncKey = "hasCompletedFirstCloudKitSync"
     /// Safety net for accounts that never get a CloudKit event at all (no
