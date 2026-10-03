@@ -99,11 +99,54 @@ const DEFAULT_GRADING_MODEL = "gemini-3.7-flash";
  * the most contended — it answered every request with "experiencing high
  * demand" during testing. Falling back keeps a single tap on 採点する from
  * failing outright; the reply is merely from a slightly lesser model.
+ *
+ * Must differ from the preferred model to do anything: it used to be
+ * `gemini-3.5-flash`, the very model chat (and, via the `wrangler` var,
+ * marking) already asks for first, so `callGemini` saw "same model" and
+ * skipped the fallback entirely — every "high demand" answer reached the
+ * student, who got no reply at all. A lighter model is a separate capacity
+ * pool, so it is usually still available while the full one is saturated.
  */
-const FALLBACK_MODEL = "gemini-3.5-flash";
+const FALLBACK_MODEL = "gemini-3.5-flash-lite";
 
 /** Upstream statuses worth trying again rather than surfacing. */
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+
+/** How many times each model is asked before moving on to the next one. */
+const ATTEMPTS_PER_MODEL = 3;
+
+/**
+ * Wait before the Nth retry of the same model: `base`, then 2×`base`. A
+ * "high demand" spike usually clears within a couple of seconds, so a single
+ * 0.4s pause (what this used to be) rarely outlasts it. `AI_RETRY_BASE_MS`
+ * exists so tests don't have to actually sleep.
+ */
+function retryDelayMs(env, attempt) {
+  const base = env.AI_RETRY_BASE_MS === undefined ? 600 : Number(env.AI_RETRY_BASE_MS) || 0;
+  return base * 2 ** (attempt - 1);
+}
+
+/** Overload/congestion from any provider (Anthropic uses 529 for it). */
+function isUpstreamOverloaded(status) {
+  return RETRYABLE.has(status) || status === 529;
+}
+
+const AI_BUSY_MESSAGE = "AIが混み合っています。少し待ってから、もう一度送信してください。";
+
+/**
+ * The response for a failed upstream call. Congestion becomes one friendly
+ * Japanese message with a 503 — it used to pass Google's English "This model
+ * is currently experiencing high demand…" straight through, and a Google 429
+ * (their quota) was indistinguishable from this Worker's own daily-limit 429
+ * (ours, "今日のAI利用回数の上限…"). Anything else keeps the upstream text.
+ */
+async function upstreamFailureResponse(upstream) {
+  if (isUpstreamOverloaded(upstream.status)) {
+    await upstream.body?.cancel().catch(() => {});
+    return json({ error: AI_BUSY_MESSAGE }, 503);
+  }
+  return json({ error: await readError(upstream) }, upstream.status || 502);
+}
 
 /**
  * Soft daily caps per device, so one user cannot drain the shared quota —
@@ -190,15 +233,16 @@ async function callGemini(env, { kind, systemInstruction, contents, responseSche
   const fallback = env.GEMINI_FALLBACK_MODEL || FALLBACK_MODEL;
   const candidates = preferred === fallback ? [preferred] : [preferred, fallback];
 
+  // The most recent congestion response — what the caller gets if every
+  // model stays busy. Deliberately not replaced by a fallback model's
+  // non-congestion failure (e.g. 404 for an id this API doesn't know): that
+  // would hide the real, retryable cause behind a misleading one.
   let last = null;
-  for (const name of candidates) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      if (last) {
-        // Release the body of the response being discarded, and back off a
-        // little before asking again.
-        await last.body?.cancel().catch(() => {});
-        await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)));
-      }
+  for (const [index, name] of candidates.entries()) {
+    for (let attempt = 0; attempt < ATTEMPTS_PER_MODEL; attempt++) {
+      // Back off only before re-asking the *same* model; a different model
+      // is a separate pool, so it is tried straight away.
+      if (attempt > 0) await new Promise(resolve => setTimeout(resolve, retryDelayMs(env, attempt)));
       const response = await fetch(`${API_ROOT}/${name}:${method}`, {
         method: "POST",
         headers: {
@@ -209,11 +253,25 @@ async function callGemini(env, { kind, systemInstruction, contents, responseSche
         },
         body: payload,
       });
-      if (response.ok) return response;
-      last = response;
-      // A bad request or an unknown model will fail the same way every time;
-      // only congestion is worth waiting out.
-      if (!RETRYABLE.has(response.status)) return response;
+      if (response.ok) {
+        await last?.body?.cancel().catch(() => {});
+        return response;
+      }
+      if (RETRYABLE.has(response.status)) {
+        // Release the body of the response being discarded.
+        await last?.body?.cancel().catch(() => {});
+        last = response;
+        continue;
+      }
+      // A bad request will fail the same way on every model: surface it.
+      if (index === 0) {
+        await last?.body?.cancel().catch(() => {});
+        return response;
+      }
+      // The fallback itself was rejected (unknown model id, …) — give up on
+      // it and move on, keeping the original congestion error.
+      await response.body?.cancel().catch(() => {});
+      break;
     }
   }
   return last;
@@ -372,7 +430,7 @@ async function handleChat(request, env, key, ctx, plan) {
   }
 
   if (!upstream.ok || !upstream.body) {
-    return json({ error: await readError(upstream) }, upstream.status || 502);
+    return upstreamFailureResponse(upstream);
   }
 
   return streamNormalizedText(upstream, extractText, ctx, env, key, {
@@ -663,7 +721,11 @@ function streamJSON(env, { kind, systemInstruction, contents, responseSchema, fa
       });
 
       if (!upstream.ok) {
-        await emit({ error: `[${upstream.status}] ${await readError(upstream)}` });
+        await emit({
+          error: isUpstreamOverloaded(upstream.status)
+            ? AI_BUSY_MESSAGE
+            : `[${upstream.status}] ${await readError(upstream)}`,
+        });
       } else {
         let buffer = "";
         let assembled = "";
