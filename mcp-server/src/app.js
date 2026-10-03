@@ -8,6 +8,7 @@ import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys } from "./passkeys.js";
 import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
+import { handleAnnouncements, handleAnnouncementsPage } from "./announcements.js";
 import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats } from "./admin.js";
 import { handleInvitePage } from "./invite.js";
 import { isRevoked, revoke } from "./revocation.js";
@@ -303,6 +304,10 @@ export default {
       if (chat) return chat;
       const issueReports = await handleIssueReports(url, request, env);
       if (issueReports) return issueReports;
+      const announcementsPage = handleAnnouncementsPage(url);
+      if (announcementsPage) return announcementsPage;
+      const announcements = await handleAnnouncements(url, request, env);
+      if (announcements) return announcements;
       const adminPage = handleAdminPage(url);
       if (adminPage) return adminPage;
       const adminWebhook = await handleAdminWebhook(url, request, env);

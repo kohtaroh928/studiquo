@@ -13,6 +13,8 @@ enum PushDeviceService {
         var installationID: String? = nil
         var deviceName: String? = nil
         var preferences: [String: Bool]? = nil
+        /// BCP 47 code, so the server can push broadcasts in this device's language.
+        var language: String? = nil
     }
 
     private struct ServerResponse: Decodable { let status: String }
@@ -38,7 +40,8 @@ enum PushDeviceService {
                 environment: environment,
                 installationID: NotificationInstallationIdentity.id,
                 deviceName: NotificationInstallationIdentity.deviceName,
-                preferences: AppNotificationPreferences.serverPayload
+                preferences: AppNotificationPreferences.serverPayload,
+                language: AppLocale.current.identifier(.bcp47)
             ),
             authorizationToken: authorizationToken
         )

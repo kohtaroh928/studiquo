@@ -127,3 +127,21 @@ test("device registration validates tokens, environments, and rate limits", asyn
   assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken, environment: "preview" }), env, "user-a")).status, 400);
   assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken, environment: "sandbox" }), env, "user-a")).status, 429);
 });
+
+test("device registration keeps a valid language and the announcement preference", async () => {
+  const env = environment();
+  const url = new URL("https://example.test/api/chat/devices");
+  await handleDeviceRoutes(url, request("POST", {
+    deviceToken: firstToken, environment: "production", language: "zh-Hans", preferences: { announcement: false },
+  }), env, "user-a");
+  // A later registration without a language (older app) keeps the stored one;
+  // a malformed one is ignored rather than rejected.
+  await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken, environment: "production" }), env, "user-a");
+  await handleDeviceRoutes(url, request("POST", { deviceToken: secondToken, environment: "production", language: "not a code" }), env, "user-a");
+
+  const devices = await loadDevices(env, "user-a");
+  const first = devices.find(device => device.token === firstToken);
+  assert.equal(first.language, "zh-Hans");
+  assert.equal(first.preferences.announcement, false);
+  assert.equal(devices.find(device => device.token === secondToken).language, undefined);
+});
