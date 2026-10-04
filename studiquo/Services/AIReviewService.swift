@@ -107,6 +107,7 @@ enum AIReviewNotifications {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [identifier])
 
+        guard AppNotificationPreferences.isEnabled(.aiReview) else { return }
         await UniversityCalendar.requestNotificationPermission()
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
@@ -115,7 +116,9 @@ enum AIReviewNotifications {
         let content = UNMutableNotificationContent()
         content.title = L("復習の時間です")
         content.body = L("昨日の質問「\(item.questionText.prefix(40))」を復習できます")
-        content.sound = .default
+        AppNotificationPreferences.applyPresentation(to: content, kind: .aiReview)
+        // Which review to open when the notification is tapped.
+        content.userInfo = ["route": AppNotificationKind.aiReview.rawValue, "reviewID": item.id.uuidString]
 
         let trigger = UNCalendarNotificationTrigger(
             dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: item.reviewDate),

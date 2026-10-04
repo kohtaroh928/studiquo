@@ -951,6 +951,7 @@ private struct NotificationSettingsView: View {
     @Query(sort: \CalendarEvent.startDate) private var calendarEvents: [CalendarEvent]
     @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
     @Query(sort: \StudyActivity.startedAt, order: .reverse) private var studyActivities: [StudyActivity]
+    @Query(sort: \AIReviewItem.reviewDate, order: .reverse) private var aiReviewItems: [AIReviewItem]
     @AppStorage(AppNotificationPreferences.masterDefaultsKey) private var masterEnabled = true
     @AppStorage(MistakeReviewPreferences.enabledKey) private var mistakeReviewEnabled = true
     @AppStorage(MistakeReviewPreferences.hourKey) private var mistakeReviewHour = 9
@@ -977,13 +978,13 @@ private struct NotificationSettingsView: View {
                         masterChanged(enabled)
                     }
             } footer: {
-                Text("端末側で通知が許可されていない場合、個別設定がオンでもバナーは表示されません。")
+                Text("端末側で通知が許可されていない場合、個別設定がオンでもバナーは表示されません。各通知の「バナーで知らせる」をオフにすると、バナーと音は出さず、通知センターにだけ静かに届きます。")
             }
 
             Section("予定・学習") {
-                NotificationPreferenceToggle(kind: .calendarDeadline, masterEnabled: masterEnabled, onChange: preferenceChanged)
-                NotificationPreferenceToggle(kind: .flashcardReview, masterEnabled: masterEnabled, onChange: preferenceChanged)
-                NotificationPreferenceToggle(kind: .studyStreak, masterEnabled: masterEnabled, onChange: preferenceChanged)
+                NotificationPreferenceToggle(kind: .calendarDeadline, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
+                NotificationPreferenceToggle(kind: .flashcardReview, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
+                NotificationPreferenceToggle(kind: .studyStreak, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
             }
 
             Section {
@@ -1009,16 +1010,17 @@ private struct NotificationSettingsView: View {
             .onChange(of: mistakeReviewShowsQuestion) { _, _ in rescheduleFlashcardNotifications() }
 
             Section("コミュニケーション") {
-                NotificationPreferenceToggle(kind: .friendMessage, masterEnabled: masterEnabled, onChange: preferenceChanged)
-                NotificationPreferenceToggle(kind: .friendRequest, masterEnabled: masterEnabled, onChange: preferenceChanged)
-                NotificationPreferenceToggle(kind: .groupInvite, masterEnabled: masterEnabled, onChange: preferenceChanged)
-                NotificationPreferenceToggle(kind: .shareInvite, masterEnabled: masterEnabled, onChange: preferenceChanged)
-                NotificationPreferenceToggle(kind: .announcement, masterEnabled: masterEnabled, onChange: preferenceChanged)
+                NotificationPreferenceToggle(kind: .friendMessage, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
+                NotificationPreferenceToggle(kind: .friendRequest, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
+                NotificationPreferenceToggle(kind: .groupInvite, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
+                NotificationPreferenceToggle(kind: .shareInvite, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
+                NotificationPreferenceToggle(kind: .announcement, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
             }
 
             Section("AI・セキュリティ") {
-                NotificationPreferenceToggle(kind: .aiTaskComplete, masterEnabled: masterEnabled, onChange: preferenceChanged)
-                NotificationPreferenceToggle(kind: .newDeviceLogin, masterEnabled: masterEnabled, onChange: preferenceChanged)
+                NotificationPreferenceToggle(kind: .aiTaskComplete, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
+                NotificationPreferenceToggle(kind: .aiReview, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
+                NotificationPreferenceToggle(kind: .newDeviceLogin, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
             }
         }
         .navigationTitle("通知")
@@ -1075,6 +1077,15 @@ private struct NotificationSettingsView: View {
         }
     }
 
+    /// The banner choice is baked into a scheduled notification when it is
+    /// built, so a change rebuilds the ones already waiting; the server learns
+    /// the new choice from the device registration.
+    private func bannerChanged(_ kind: AppNotificationKind, _ bannerEnabled: Bool) {
+        AppNotificationPreferences.synchronizeRemoteDevice()
+        guard masterEnabled else { return }
+        Task { await rescheduleLocalNotification(for: kind) }
+    }
+
     private func rescheduleFlashcardNotifications() {
         Task { await rescheduleLocalNotification(for: .flashcardReview) }
     }
@@ -1084,6 +1095,7 @@ private struct NotificationSettingsView: View {
         await rescheduleLocalNotification(for: .calendarDeadline)
         await rescheduleLocalNotification(for: .flashcardReview)
         await rescheduleLocalNotification(for: .studyStreak)
+        await rescheduleLocalNotification(for: .aiReview)
     }
 
     @MainActor
@@ -1095,6 +1107,8 @@ private struct NotificationSettingsView: View {
             await FlashcardReviewNotifications.reschedule(decks: flashcardDecks)
         case .studyStreak:
             await StudyStreakNotifications.reschedule(activities: studyActivities)
+        case .aiReview:
+            for item in aiReviewItems { await AIReviewNotifications.schedule(for: item) }
         default:
             break
         }
@@ -1115,23 +1129,36 @@ private struct NotificationPreferenceToggle: View {
     let kind: AppNotificationKind
     let masterEnabled: Bool
     let onChange: (AppNotificationKind, Bool) -> Void
+    let onBannerChange: (AppNotificationKind, Bool) -> Void
     @AppStorage private var enabled: Bool
+    @AppStorage private var bannerEnabled: Bool
 
     init(
         kind: AppNotificationKind,
         masterEnabled: Bool,
-        onChange: @escaping (AppNotificationKind, Bool) -> Void
+        onChange: @escaping (AppNotificationKind, Bool) -> Void,
+        onBannerChange: @escaping (AppNotificationKind, Bool) -> Void
     ) {
         self.kind = kind
         self.masterEnabled = masterEnabled
         self.onChange = onChange
+        self.onBannerChange = onBannerChange
         _enabled = AppStorage(wrappedValue: true, kind.defaultsKey)
+        _bannerEnabled = AppStorage(wrappedValue: true, kind.bannerDefaultsKey)
     }
 
     var body: some View {
         Toggle(kind.title, isOn: $enabled)
             .disabled(!masterEnabled)
             .onChange(of: enabled) { _, value in onChange(kind, value) }
+            .accessibilityIdentifier("notification-\(kind.rawValue)")
+        // Off: no banner or sound, only a quiet entry in the notification centre.
+        if enabled && masterEnabled {
+            Toggle("notifications.banner.toggle", isOn: $bannerEnabled)
+                .padding(.leading, 20)
+                .onChange(of: bannerEnabled) { _, value in onBannerChange(kind, value) }
+                .accessibilityIdentifier("notification-banner-\(kind.rawValue)")
+        }
     }
 }
 
@@ -3149,6 +3176,11 @@ struct ContentView: View {
             // The お知らせ list is reached from the その他 tab; this opens it
             // once that entry point lands.
             break
+        case .aiReview:
+            // Open the review this notification was scheduled for.
+            if let raw = userInfo?["reviewID"] as? String, let id = UUID(uuidString: raw) {
+                presentedAIReviewItem = aiReviewItems.first { $0.id == id }
+            }
         case .aiTaskComplete:
             // Open the AI tab on the conversation whose answer is ready. If it
             // was deleted since, fall back to the most recent one.

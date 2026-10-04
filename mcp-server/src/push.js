@@ -67,24 +67,31 @@ export async function sendPush(env, userKey, notification, options = {}) {
     return jwtByCredential.get(cacheKey);
   };
 
-  const aps = {
-    alert: { title: String(notification.title ?? ""), body: String(notification.body ?? "") },
-    sound: "default",
-    ...(notification.category ? { category: `studiquo.${notification.category}` } : {}),
-    ...(notification.threadID ? { "thread-id": String(notification.threadID) } : {}),
-    ...(Number.isSafeInteger(notification.badge) ? { badge: notification.badge } : {}),
-  };
   const customData = notification.data && typeof notification.data === "object" && !Array.isArray(notification.data)
     ? { ...notification.data }
     : {};
   delete customData.aps;
-  const payload = JSON.stringify({ ...customData, aps });
-  if (new TextEncoder().encode(payload).byteLength > 4_096) {
+  // A device that turned the banner off for this category still gets the
+  // notification, but quietly: `passive` goes to the notification centre
+  // without lighting the screen, showing a banner or making a sound.
+  const buildPayload = quiet => JSON.stringify({
+    ...customData,
+    aps: {
+      alert: { title: String(notification.title ?? ""), body: String(notification.body ?? "") },
+      ...(quiet ? { "interruption-level": "passive" } : { sound: "default" }),
+      ...(notification.category ? { category: `studiquo.${notification.category}` } : {}),
+      ...(notification.threadID ? { "thread-id": String(notification.threadID) } : {}),
+      ...(Number.isSafeInteger(notification.badge) ? { badge: notification.badge } : {}),
+    },
+  });
+  const payloads = { loud: buildPayload(false), quiet: buildPayload(true) };
+  if (new TextEncoder().encode(payloads.loud).byteLength > 4_096) {
     console.error(JSON.stringify({ event: "apns_payload_too_large" }));
     return devices.map(device => ({ token: device.token, delivered: false }));
   }
 
   return Promise.all(devices.map(async device => {
+    const quiet = Boolean(notification.category) && device.banners?.[notification.category] === false;
     try {
       const jwt = await jwtFor(device.environment);
       if (!jwt) {
@@ -97,11 +104,13 @@ export async function sendPush(env, userKey, notification, options = {}) {
           authorization: `bearer ${jwt}`,
           "apns-topic": env.APNS_TOPIC,
           "apns-push-type": "alert",
-          "apns-priority": "10",
+          // A quiet notification has no need to wake the screen, so it may be
+          // delivered at the system's convenience.
+          "apns-priority": quiet ? "5" : "10",
           "apns-expiration": String(Math.floor(now / 1_000) + 3_600),
           "content-type": "application/json",
         },
-        body: payload,
+        body: quiet ? payloads.quiet : payloads.loud,
       });
       if (response.ok) return { token: device.token, delivered: true };
       const reason = await apnsErrorReason(response);

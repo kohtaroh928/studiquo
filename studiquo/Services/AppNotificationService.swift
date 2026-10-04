@@ -21,6 +21,9 @@ enum AppNotificationKind: String, CaseIterable, Codable, Identifiable {
     /// Operator announcements (updates, maintenance, important notices) —
     /// see mcp-server/src/announcements.js.
     case announcement
+    /// The next-day review of an AI answer (see `AIReviewNotifications`). It
+    /// used to carry no category at all, so no setting could turn it off.
+    case aiReview
 
     var id: String { rawValue }
 
@@ -36,27 +39,78 @@ enum AppNotificationKind: String, CaseIterable, Codable, Identifiable {
         case .studyStreak: "連続学習記録"
         case .newDeviceLogin: "新しい端末からのログイン"
         case .announcement: L(String.LocalizationValue("announcements.pushToggle"))
+        case .aiReview: L(String.LocalizationValue("notifications.aiReview.title"))
         }
     }
 
     var defaultsKey: String { "notification.\(rawValue).enabled" }
+    /// Whether this kind shows as a banner (with sound) or only lands quietly
+    /// in the notification centre. Only meaningful while the kind is enabled.
+    var bannerDefaultsKey: String { "notification.\(rawValue).banner" }
     var categoryIdentifier: String { "studiquo.\(rawValue)" }
 }
 
 enum AppNotificationPreferences {
     static let masterDefaultsKey = "notification.master.enabled"
 
-    static var masterEnabled: Bool {
-        (UserDefaults.standard.object(forKey: masterDefaultsKey) as? Bool) ?? true
+    static var masterEnabled: Bool { masterEnabled(in: .standard) }
+
+    static func masterEnabled(in defaults: UserDefaults) -> Bool {
+        (defaults.object(forKey: masterDefaultsKey) as? Bool) ?? true
     }
 
-    static func isEnabled(_ kind: AppNotificationKind) -> Bool {
-        guard masterEnabled else { return false }
-        return (UserDefaults.standard.object(forKey: kind.defaultsKey) as? Bool) ?? true
+    static func isEnabled(_ kind: AppNotificationKind, in defaults: UserDefaults = .standard) -> Bool {
+        guard masterEnabled(in: defaults) else { return false }
+        return (defaults.object(forKey: kind.defaultsKey) as? Bool) ?? true
+    }
+
+    /// True when the kind is on AND set to show as a banner. Banners are on by
+    /// default, so nothing changes for anyone who never opens the setting.
+    static func isBannerEnabled(_ kind: AppNotificationKind, in defaults: UserDefaults = .standard) -> Bool {
+        guard isEnabled(kind, in: defaults) else { return false }
+        return (defaults.object(forKey: kind.bannerDefaultsKey) as? Bool) ?? true
     }
 
     static var serverPayload: [String: Bool] {
         Dictionary(uniqueKeysWithValues: AppNotificationKind.allCases.map { ($0.rawValue, isEnabled($0)) })
+    }
+
+    /// Per-kind banner choice, sent to the server with the device so a push
+    /// can be made quiet (see mcp-server/src/push.js).
+    static var serverBannerPayload: [String: Bool] {
+        Dictionary(uniqueKeysWithValues: AppNotificationKind.allCases.map { ($0.rawValue, isBannerEnabled($0)) })
+    }
+
+    /// How a notification is shown while the app is in the foreground.
+    /// Kinds that are off show nothing; a quiet kind only lands in the list.
+    static func foregroundPresentation(
+        forCategory identifier: String,
+        in defaults: UserDefaults = .standard
+    ) -> UNNotificationPresentationOptions {
+        guard let kind = AppNotificationKind.allCases.first(where: { $0.categoryIdentifier == identifier }) else {
+            return [.banner, .list, .sound]
+        }
+        guard isEnabled(kind, in: defaults) else { return [] }
+        return isBannerEnabled(kind, in: defaults) ? [.banner, .list, .sound] : [.list]
+    }
+
+    /// Applies the kind's banner choice to a notification being built: a banner
+    /// notification makes a sound; a quiet one is `passive`, which iOS adds to
+    /// the notification centre without lighting the screen, showing a banner
+    /// or making a sound. Call after the content's other fields are set.
+    static func applyPresentation(
+        to content: UNMutableNotificationContent,
+        kind: AppNotificationKind,
+        in defaults: UserDefaults = .standard
+    ) {
+        content.categoryIdentifier = kind.categoryIdentifier
+        if isBannerEnabled(kind, in: defaults) {
+            content.sound = .default
+            content.interruptionLevel = .active
+        } else {
+            content.sound = nil
+            content.interruptionLevel = .passive
+        }
     }
 
     static func registerCategories() {
@@ -89,6 +143,8 @@ enum AppNotificationPreferences {
             prefixes = ["study-streak-"]
         case .aiTaskComplete:
             prefixes = ["ai-complete-"]
+        case .aiReview:
+            prefixes = ["ai-review-"]
         default:
             return
         }
@@ -318,8 +374,7 @@ enum FlashcardReviewNotifications {
             let content = UNMutableNotificationContent()
             content.title = item.title
             content.body = item.body
-            content.sound = .default
-            content.categoryIdentifier = AppNotificationKind.flashcardReview.categoryIdentifier
+            AppNotificationPreferences.applyPresentation(to: content, kind: .flashcardReview)
             var info: [String: Any] = ["route": AppNotificationKind.flashcardReview.rawValue]
             if item.isMistakeReview {
                 info["mistakeReview"] = true
@@ -388,8 +443,7 @@ enum StudyStreakNotifications {
         let content = UNMutableNotificationContent()
         content.title = L("連続学習を続けましょう")
         content.body = L("現在\(streak)日連続です。今日の学習を記録すると継続できます。")
-        content.sound = .default
-        content.categoryIdentifier = AppNotificationKind.studyStreak.categoryIdentifier
+        AppNotificationPreferences.applyPresentation(to: content, kind: .studyStreak)
         content.userInfo = ["route": AppNotificationKind.studyStreak.rawValue]
         let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
         try? await UNUserNotificationCenter.current().add(
@@ -431,8 +485,7 @@ enum AICompletionNotifications {
         let content = UNMutableNotificationContent()
         content.title = L("AIの回答が完成しました")
         content.body = threadTitle
-        content.sound = .default
-        content.categoryIdentifier = AppNotificationKind.aiTaskComplete.categoryIdentifier
+        AppNotificationPreferences.applyPresentation(to: content, kind: .aiTaskComplete)
         content.threadIdentifier = identifier(forThreadKey: threadKey)
         content.userInfo = [
             "route": AppNotificationKind.aiTaskComplete.rawValue,
