@@ -27,7 +27,7 @@ struct AccountGateView: View {
     }
 }
 
-private struct LoginView: View {
+struct LoginView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
     @State private var email = ""
     @State private var password = ""
