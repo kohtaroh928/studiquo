@@ -56,27 +56,46 @@ final class SettingsFormSharedTests: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
     }
 
-    /// Brings a row into view. Rows are built lazily and the previous lookup
-    /// may have scrolled past this one, so look down first, then back up.
+    /// Brings a row into view. Rows are built lazily — a row exists only while
+    /// it is on screen — so the list must be scrolled in steps smaller than
+    /// what is visible. `app.swipeUp()` is not: its distance follows the whole
+    /// window, about 700pt however small the gear sheet is, so it steps clean
+    /// over the rows in between, and whether the search succeeds depends on
+    /// where the list happens to come to rest. Swiping the list itself moves
+    /// it by a fraction of its own height.
     private func reveal(_ row: XCUIElement) {
-        for _ in 0..<8 where !row.exists || !row.isHittable { app.swipeUp() }
-        for _ in 0..<16 where !row.exists || !row.isHittable { app.swipeDown() }
-        clearNavigationBar(row)
+        guard !isReachable(row) else { return }
+        for _ in 0..<14 {
+            scroll(up: true)
+            if isReachable(row) { return }
+        }
+        for _ in 0..<28 {
+            scroll(up: false)
+            if isReachable(row) { return }
+        }
     }
 
-    /// A row can be reported hittable while it is scrolled up under the
-    /// translucent navigation bar; a tap there lands on the bar and never
-    /// reaches the row. Drag the list down slowly (no coasting) until the
-    /// row sits clearly below the bar.
-    private func clearNavigationBar(_ row: XCUIElement) {
-        for _ in 0..<6 {
-            let barBottom = app.navigationBars.allElementsBoundByIndex.map { $0.frame.maxY }.max() ?? 0
-            guard row.exists, row.frame.minY < barBottom + 4 else { return }
-            let origin = app.coordinate(withNormalizedOffset: .zero)
-            let start = origin.withOffset(CGVector(dx: row.frame.midX, dy: barBottom + 120))
-            let end = origin.withOffset(CGVector(dx: row.frame.midX, dy: barBottom + 260))
-            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.5)
-        }
+    /// The list being scrolled: the smallest one on screen (the gear sheet's
+    /// list is smaller than the home list behind it).
+    private func scrollableList() -> XCUIElement? {
+        let lists = (app.collectionViews.allElementsBoundByIndex + app.tables.allElementsBoundByIndex)
+            .filter { $0.exists && $0.frame.height > 200 }
+        return lists.min { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+    }
+
+    /// Swipes the list; if it cannot be found for a moment (the form is
+    /// rebuilding), falls back to the whole window rather than doing nothing.
+    private func scroll(up: Bool) {
+        let target: XCUIElement = scrollableList() ?? app
+        if up { target.swipeUp(velocity: .slow) } else { target.swipeDown(velocity: .slow) }
+    }
+
+    /// On screen, hittable, and not under the translucent navigation bar — a
+    /// row there is reported hittable, but a tap lands on the bar and never
+    /// reaches the row.
+    private func isReachable(_ row: XCUIElement) -> Bool {
+        let barBottom = app.navigationBars.allElementsBoundByIndex.map { $0.frame.maxY }.max() ?? 0
+        return row.exists && row.isHittable && row.frame.minY >= barBottom + 4
     }
 
     /// Settings rows are built lazily, so a lower one has to be scrolled to.
