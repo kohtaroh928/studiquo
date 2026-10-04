@@ -985,6 +985,7 @@ private struct NotificationSettingsView: View {
                 NotificationPreferenceToggle(kind: .calendarDeadline, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
                 NotificationPreferenceToggle(kind: .flashcardReview, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
                 NotificationPreferenceToggle(kind: .studyStreak, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
+                NotificationPreferenceToggle(kind: .studyReminder, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
             }
 
             Section {
@@ -1105,7 +1106,7 @@ private struct NotificationSettingsView: View {
             for event in calendarEvents { await EventReminderNotifications.schedule(for: event) }
         case .flashcardReview:
             await FlashcardReviewNotifications.reschedule(decks: flashcardDecks)
-        case .studyStreak:
+        case .studyStreak, .studyReminder:
             await StudyStreakNotifications.reschedule(activities: studyActivities)
         case .aiReview:
             for item in aiReviewItems { await AIReviewNotifications.schedule(for: item) }
@@ -2644,6 +2645,9 @@ struct ContentView: View {
                 Task { await pullMCPInbox() }
                 Task { await UsageEventService.ping() }
                 Task { await ErrorReportService.flush() }
+                // A day may have passed while the app stayed in memory: plan
+                // the study notifications for the days ahead again.
+                Task { await StudyStreakNotifications.reschedule(activities: studyActivities) }
             }
         }
         // Count study time only while an actual study surface is open — not
@@ -3161,6 +3165,8 @@ struct ContentView: View {
         switch kind {
         case .calendarDeadline, .studyStreak:
             homeSection = .calendar
+        case .studyReminder:
+            homeSection = .notes
         case .friendMessage, .friendRequest, .groupInvite, .shareInvite:
             homeSection = .friends
         case .flashcardReview:

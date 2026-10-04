@@ -24,6 +24,9 @@ enum AppNotificationKind: String, CaseIterable, Codable, Identifiable {
     /// The next-day review of an AI answer (see `AIReviewNotifications`). It
     /// used to carry no category at all, so no setting could turn it off.
     case aiReview
+    /// A daily "start today's study" nudge, sent when nothing has been studied
+    /// yet and there is no streak to protect (see `StudyReminderPlanner`).
+    case studyReminder
 
     var id: String { rawValue }
 
@@ -40,6 +43,7 @@ enum AppNotificationKind: String, CaseIterable, Codable, Identifiable {
         case .newDeviceLogin: "新しい端末からのログイン"
         case .announcement: L(String.LocalizationValue("announcements.pushToggle"))
         case .aiReview: L(String.LocalizationValue("notifications.aiReview.title"))
+        case .studyReminder: L(String.LocalizationValue("notifications.studyReminder.title"))
         }
     }
 
@@ -141,6 +145,8 @@ enum AppNotificationPreferences {
             prefixes = ["flashcard-review-", "flashcard-snooze-"]
         case .studyStreak:
             prefixes = ["study-streak-"]
+        case .studyReminder:
+            prefixes = ["study-reminder-"]
         case .aiTaskComplete:
             prefixes = ["ai-complete-"]
         case .aiReview:
@@ -413,47 +419,135 @@ enum FlashcardReviewNotifications {
     }
 }
 
-enum StudyStreakNotifications {
-    private static let identifierPrefix = "study-streak-"
+/// One study notification the planner wants scheduled.
+struct PlannedStudyReminder: Equatable {
+    enum Kind: Equatable {
+        /// Yesterday was studied and today is not yet: protect the streak.
+        case streak(days: Int)
+        /// No streak to protect: invite the student to start today.
+        case start
+    }
 
+    /// The start of the day the notification is for.
+    var day: Date
+    var fireDate: Date
+    var kind: Kind
+}
+
+/// Decides which study notifications to schedule for the next few days.
+///
+/// A notification can only be scheduled while the app runs, so scheduling just
+/// today's would never fire on a day the app is not opened — exactly the day
+/// it is for. The next `horizonDays` days are therefore planned at once, as if
+/// nothing more will be studied; the plan is rebuilt whenever the app opens or
+/// a study session is recorded, which cancels what no longer applies.
+///
+/// A day gets at most one notification: the streak reminder (20:00) when the
+/// day before was studied, otherwise the start reminder (18:00).
+enum StudyReminderPlanner {
+    static let horizonDays = 3
+    static let streakHour = 20
+    static let startHour = 18
+
+    static func plan(
+        studiedDays studiedDates: [Date],
+        now: Date,
+        calendar: Calendar,
+        streakEnabled: Bool,
+        startEnabled: Bool,
+        horizonDays: Int = StudyReminderPlanner.horizonDays
+    ) -> [PlannedStudyReminder] {
+        let today = calendar.startOfDay(for: now)
+        let studied = Set(studiedDates.map { calendar.startOfDay(for: $0) }.filter { $0 <= today })
+        var planned: [PlannedStudyReminder] = []
+        for offset in 0..<max(horizonDays, 0) {
+            guard let day = calendar.date(byAdding: .day, value: offset, to: today),
+                  !studied.contains(day) else { continue }
+
+            var streak = 0
+            var cursor = calendar.date(byAdding: .day, value: -1, to: day)
+            while let date = cursor, studied.contains(date) {
+                streak += 1
+                cursor = calendar.date(byAdding: .day, value: -1, to: date)
+            }
+
+            let kind: PlannedStudyReminder.Kind = streak > 0 ? .streak(days: streak) : .start
+            switch kind {
+            case .streak: guard streakEnabled else { continue }
+            case .start: guard startEnabled else { continue }
+            }
+            let hour: Int
+            switch kind {
+            case .streak: hour = streakHour
+            case .start: hour = startHour
+            }
+            guard let fireDate = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day),
+                  fireDate > now else { continue }
+            planned.append(PlannedStudyReminder(day: day, fireDate: fireDate, kind: kind))
+        }
+        return planned
+    }
+}
+
+enum StudyStreakNotifications {
+    private static let streakPrefix = "study-streak-"
+    private static let startPrefix = "study-reminder-"
+
+    /// Rebuilds the study notifications for the next few days (see
+    /// `StudyReminderPlanner`). Safe to call often: it cancels what is waiting
+    /// and schedules the current plan.
     @MainActor
     static func reschedule(activities: [StudyActivity], now: Date = .now, calendar: Calendar = .current) async {
         cancelAll()
-        guard AppNotificationPreferences.isEnabled(.studyStreak),
-              (UserDefaults.standard.object(forKey: "studyTimeTrackingEnabled") as? Bool) ?? true else { return }
-        let today = calendar.startOfDay(for: now)
-        let studiedDays = Set(activities.map { calendar.startOfDay(for: $0.startedAt) })
-        guard !studiedDays.contains(today),
-              let yesterday = calendar.date(byAdding: .day, value: -1, to: today),
-              studiedDays.contains(yesterday) else { return }
-
-        var streak = 0
-        var cursor = yesterday
-        while studiedDays.contains(cursor) {
-            streak += 1
-            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = previous
-        }
-        guard streak > 0,
-              let fireDate = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: today),
-              fireDate > now else { return }
+        let tracking = (UserDefaults.standard.object(forKey: "studyTimeTrackingEnabled") as? Bool) ?? true
+        let streakEnabled = AppNotificationPreferences.isEnabled(.studyStreak)
+        let startEnabled = AppNotificationPreferences.isEnabled(.studyReminder)
+        // Without time tracking nothing is ever recorded as studied, so a
+        // reminder would repeat every day whatever the student does.
+        guard tracking, streakEnabled || startEnabled else { return }
 
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
-        let content = UNMutableNotificationContent()
-        content.title = L("連続学習を続けましょう")
-        content.body = L("現在\(streak)日連続です。今日の学習を記録すると継続できます。")
-        AppNotificationPreferences.applyPresentation(to: content, kind: .studyStreak)
-        content.userInfo = ["route": AppNotificationKind.studyStreak.rawValue]
-        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
-        try? await UNUserNotificationCenter.current().add(
-            UNNotificationRequest(identifier: identifierPrefix + String(Int(today.timeIntervalSince1970)), content: content, trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false))
+
+        let plan = StudyReminderPlanner.plan(
+            studiedDays: activities.map(\.startedAt),
+            now: now,
+            calendar: calendar,
+            streakEnabled: streakEnabled,
+            startEnabled: startEnabled
         )
+        for item in plan {
+            let content = UNMutableNotificationContent()
+            let kind: AppNotificationKind
+            let prefix: String
+            switch item.kind {
+            case .streak(let days):
+                kind = .studyStreak
+                prefix = streakPrefix
+                content.title = L("連続学習を続けましょう")
+                content.body = L("現在\(days)日連続です。今日の学習を記録すると継続できます。")
+            case .start:
+                kind = .studyReminder
+                prefix = startPrefix
+                content.title = L("今日の学習を始めませんか？")
+                content.body = L("まずは15分。ノートや暗記カードを開いて、短く始めてみましょう。")
+            }
+            AppNotificationPreferences.applyPresentation(to: content, kind: kind)
+            content.userInfo = ["route": kind.rawValue]
+            let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: item.fireDate)
+            try? await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(
+                    identifier: prefix + String(Int(item.day.timeIntervalSince1970)),
+                    content: content,
+                    trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+                )
+            )
+        }
     }
 
     static func cancelAll() {
         UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
-            let ids = requests.map(\.identifier).filter { $0.hasPrefix(identifierPrefix) }
+            let ids = requests.map(\.identifier).filter { $0.hasPrefix(streakPrefix) || $0.hasPrefix(startPrefix) }
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
         }
     }

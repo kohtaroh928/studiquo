@@ -126,3 +126,77 @@ final class NotificationBannerPreferenceTests: XCTestCase {
         XCTAssertEqual(AppNotificationKind.aiReview.bannerDefaultsKey, "notification.aiReview.banner")
     }
 }
+
+// MARK: - Study reminders
+
+/// `StudyReminderPlanner` decides what is scheduled for the next days. The
+/// point of planning ahead: a reminder scheduled only for today never fires on
+/// a day the app is not opened, which is the day it is for.
+final class StudyReminderPlannerTests: XCTestCase {
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    private func date(_ day: Int, _ hour: Int = 0) -> Date {
+        calendar.date(from: DateComponents(year: 2026, month: 10, day: day, hour: hour))!
+    }
+
+    private func plan(studied: [Date], now: Date, streak: Bool = true, start: Bool = true, horizon: Int = 3) -> [PlannedStudyReminder] {
+        StudyReminderPlanner.plan(studiedDays: studied, now: now, calendar: calendar, streakEnabled: streak, startEnabled: start, horizonDays: horizon)
+    }
+
+    func testAStreakIsRemindedAtEightAndAnUnstartedDayAtSix() {
+        // Studied on the 3rd and 4th; it is the morning of the 5th.
+        let result = plan(studied: [date(3, 10), date(4, 10)], now: date(5, 9))
+        XCTAssertEqual(result.first, PlannedStudyReminder(day: date(5), fireDate: date(5, 20), kind: .streak(days: 2)))
+    }
+
+    func testDaysAheadAreScheduledSoTheyFireEvenIfTheAppIsNeverOpened() {
+        // Studied yesterday only. Today protects the streak; once a day passes
+        // unopened the streak is gone, so the following days are start reminders.
+        let result = plan(studied: [date(4, 10)], now: date(5, 9))
+        XCTAssertEqual(result.map(\.kind), [.streak(days: 1), .start, .start])
+        XCTAssertEqual(result.map(\.fireDate), [date(5, 20), date(6, 18), date(7, 18)])
+    }
+
+    func testADayAlreadyStudiedGetsNothingAndTomorrowCountsToday() {
+        let result = plan(studied: [date(4, 10), date(5, 8)], now: date(5, 9))
+        XCTAssertEqual(result.first?.day, date(6), "今日学習済みなら、今日の分は予約しません。")
+        XCTAssertEqual(result.first?.kind, .streak(days: 2), "明日の連続日数には今日が含まれます。")
+    }
+
+    func testATimeThatHasAlreadyPassedIsSkipped() {
+        let result = plan(studied: [date(4, 10)], now: date(5, 21))
+        XCTAssertEqual(result.map(\.day), [date(6), date(7)], "20時を過ぎたら今日の分は予約しません。")
+    }
+
+    func testOnlyOneNotificationPerDay() {
+        let result = plan(studied: [date(4, 10)], now: date(5, 9), horizon: 5)
+        XCTAssertEqual(Set(result.map(\.day)).count, result.count)
+    }
+
+    func testEachKindCanBeTurnedOffSeparately() {
+        let studied = [date(4, 10)]
+        XCTAssertEqual(plan(studied: studied, now: date(5, 9), streak: false).map(\.kind), [.start, .start], "連続学習をオフにすると、連続の日は何も出ません。")
+        XCTAssertEqual(plan(studied: studied, now: date(5, 9), start: false).map(\.kind), [.streak(days: 1)], "開始リマインドをオフにすると、連続がない日は何も出ません。")
+        XCTAssertTrue(plan(studied: studied, now: date(5, 9), streak: false, start: false).isEmpty)
+    }
+
+    func testNothingStudiedAtAllStartsWithTheStartReminder() {
+        let result = plan(studied: [], now: date(5, 9))
+        XCTAssertEqual(result.map(\.kind), [.start, .start, .start])
+        XCTAssertEqual(result.first?.fireDate, date(5, 18))
+    }
+
+    func testTheHorizonBoundsHowManyDaysAreScheduled() {
+        XCTAssertEqual(plan(studied: [], now: date(5, 9), horizon: 2).count, 2)
+        XCTAssertTrue(plan(studied: [], now: date(5, 9), horizon: 0).isEmpty)
+    }
+
+    func testAKindHasItsOwnPreferenceAndCategory() {
+        XCTAssertEqual(AppNotificationKind.studyReminder.categoryIdentifier, "studiquo.studyReminder")
+        XCTAssertEqual(AppNotificationKind.studyReminder.defaultsKey, "notification.studyReminder.enabled")
+    }
+}
