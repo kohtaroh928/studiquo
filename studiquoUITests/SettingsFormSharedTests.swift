@@ -61,6 +61,22 @@ final class SettingsFormSharedTests: XCTestCase {
     private func reveal(_ row: XCUIElement) {
         for _ in 0..<8 where !row.exists || !row.isHittable { app.swipeUp() }
         for _ in 0..<16 where !row.exists || !row.isHittable { app.swipeDown() }
+        clearNavigationBar(row)
+    }
+
+    /// A row can be reported hittable while it is scrolled up under the
+    /// translucent navigation bar; a tap there lands on the bar and never
+    /// reaches the row. Drag the list down slowly (no coasting) until the
+    /// row sits clearly below the bar.
+    private func clearNavigationBar(_ row: XCUIElement) {
+        for _ in 0..<6 {
+            let barBottom = app.navigationBars.allElementsBoundByIndex.map { $0.frame.maxY }.max() ?? 0
+            guard row.exists, row.frame.minY < barBottom + 4 else { return }
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: row.frame.midX, dy: barBottom + 120))
+            let end = origin.withOffset(CGVector(dx: row.frame.midX, dy: barBottom + 260))
+            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.5)
+        }
     }
 
     /// Settings rows are built lazily, so a lower one has to be scrolled to.
