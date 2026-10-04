@@ -145,3 +145,17 @@ test("device registration keeps a valid language and the announcement preference
   assert.equal(first.preferences.announcement, false);
   assert.equal(devices.find(device => device.token === secondToken).language, undefined);
 });
+
+test("device registration keeps the per-category banner choice and ignores anything else", async () => {
+  const env = environment();
+  const url = new URL("https://example.test/api/chat/devices");
+  await handleDeviceRoutes(url, request("POST", {
+    deviceToken: firstToken, environment: "production",
+    banners: { friendMessage: false, groupInvite: true, unknownCategory: false, shareInvite: "no" },
+  }), env, "user-a");
+  // A later registration without the field (an older app) keeps the stored choice.
+  await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken, environment: "production" }), env, "user-a");
+
+  const [device] = await loadDevices(env, "user-a");
+  assert.deepEqual(device.banners, { friendMessage: false, groupInvite: true });
+});

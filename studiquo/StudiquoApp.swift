@@ -113,15 +113,13 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        let identifier = notification.request.content.categoryIdentifier
-        if let kind = AppNotificationKind.allCases.first(where: { $0.categoryIdentifier == identifier }),
-           !AppNotificationPreferences.isEnabled(kind) {
-            return []
-        }
-        // Show a real system banner while Studiquo is foregrounded too. The
-        // destination view still remains the source of truth and refreshes
-        // from the server when the banner is tapped.
-        return [.banner, .list, .sound]
+        // Banner or quiet-in-the-list or nothing, per the kind's settings.
+        // A banner shows while Studiquo is foregrounded too; the destination
+        // view remains the source of truth and refreshes from the server when
+        // the banner is tapped.
+        AppNotificationPreferences.foregroundPresentation(
+            forCategory: notification.request.content.categoryIdentifier
+        )
     }
 
     func userNotificationCenter(

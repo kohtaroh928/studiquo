@@ -13,6 +13,8 @@ enum PushDeviceService {
         var installationID: String? = nil
         var deviceName: String? = nil
         var preferences: [String: Bool]? = nil
+        /// Per-kind banner choice; a kind set to `false` is pushed quietly.
+        var banners: [String: Bool]? = nil
         /// BCP 47 code, so the server can push broadcasts in this device's language.
         var language: String? = nil
     }
@@ -41,6 +43,7 @@ enum PushDeviceService {
                 installationID: NotificationInstallationIdentity.id,
                 deviceName: NotificationInstallationIdentity.deviceName,
                 preferences: AppNotificationPreferences.serverPayload,
+                banners: AppNotificationPreferences.serverBannerPayload,
                 language: AppLocale.current.identifier(.bcp47)
             ),
             authorizationToken: authorizationToken
