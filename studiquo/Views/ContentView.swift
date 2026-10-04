@@ -868,11 +868,7 @@ private struct AppSettingsView: View {
                 }
 
                 Section {
-                    NavigationLink {
-                        NotificationSettingsView()
-                    } label: {
-                        Label("通知", systemImage: "bell.badge")
-                    }
+                    NotificationSettingsLink()
                 } header: {
                     Text("通知")
                 } footer: {
@@ -944,6 +940,21 @@ private struct AppSettingsView: View {
                 }
             }
         }
+    }
+}
+
+/// The settings sheet's row that opens 通知. Its own view, with the identifier
+/// UI tests use: the sheet's `Form` body is already so large that one more
+/// modifier on a row inside it made the compiler's type-checking run for
+/// many minutes.
+private struct NotificationSettingsLink: View {
+    var body: some View {
+        NavigationLink {
+            NotificationSettingsView()
+        } label: {
+            Label("通知", systemImage: "bell.badge")
+        }
+        .accessibilityIdentifier("settings-notifications")
     }
 }
 
