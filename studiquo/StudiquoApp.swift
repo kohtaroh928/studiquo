@@ -709,6 +709,13 @@ private enum LibraryDropUITestStore {
         // The setting persists across UI-test launches in the simulator;
         // start each launch from the shipped default (on).
         UserDefaults.standard.set(true, forKey: ErrorReportSettings.enabledKey)
+        // Notification settings persist across UI-test launches too: start from
+        // "everything on, every banner on", the shipped defaults.
+        UserDefaults.standard.removeObject(forKey: AppNotificationPreferences.masterDefaultsKey)
+        for kind in AppNotificationKind.allCases {
+            UserDefaults.standard.removeObject(forKey: kind.defaultsKey)
+            UserDefaults.standard.removeObject(forKey: kind.bannerDefaultsKey)
+        }
         let folderPaths = compact ? ["Target"] : ["Parent", "Parent/Source", "Parent/Destination", "Parent/Empty", "Sibling", "Target"]
         UserDefaults.standard.set(folderPaths.joined(separator: "\n"), forKey: "libraryFolderNames")
         UserDefaults.standard.set(true, forKey: "didMigrateFoldersToHierarchy")
