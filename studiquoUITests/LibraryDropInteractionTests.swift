@@ -266,7 +266,7 @@ final class LibraryDropInteractionTests: XCTestCase {
         XCTAssertTrue(source.exists)
         let outside = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.9))
         source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 1, thenDragTo: outside, withVelocity: .slow, thenHoldForDuration: 0.5)
+            .press(forDuration: Self.dragLiftHold, thenDragTo: outside, withVelocity: .slow, thenHoldForDuration: 0.5)
         XCTAssertTrue(source.exists)
     }
 
@@ -337,7 +337,7 @@ final class LibraryDropInteractionTests: XCTestCase {
 
         let outside = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.8))
         source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 1, thenDragTo: outside, withVelocity: .slow, thenHoldForDuration: 0.5)
+            .press(forDuration: Self.dragLiftHold, thenDragTo: outside, withVelocity: .slow, thenHoldForDuration: 0.5)
         XCTAssertTrue(source.exists)
         source.tap()
         XCTAssertTrue(app.descendants(matching: .any)["library-open-notebook-Drag me"].waitForExistence(timeout: 5))
@@ -371,12 +371,35 @@ final class LibraryDropInteractionTests: XCTestCase {
         }
     }
 
-    func testDocumentAndSlideTabsDropIntoSplitPane() {
+    /// Side by side. Needs a landscape window: skipped, not failed, where the simulator will
+    /// not rotate (the portrait test below covers the same behaviour in every environment).
+    func testDocumentAndSlideTabsDropIntoSplitPane() throws {
         let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
         XCUIDevice.shared.orientation = .landscapeLeft
         app.launchArguments = ["--library-drop-ui-test", "--resource-types-fixture"]
         app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 15))
+        let deadline = Date().addingTimeInterval(8)
+        while window.frame.width <= window.frame.height, Date() < deadline {
+            XCUIDevice.shared.orientation = .landscapeLeft
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        try XCTSkipUnless(window.frame.width > window.frame.height,
+                          "This simulator would not rotate to landscape (window \(window.frame)).")
+        exerciseDocumentAndSlideTabDrops(in: app, openSplit: openHorizontalSplit)
+    }
 
+    /// The same drops into a top/bottom split, which needs no rotation.
+    func testDocumentAndSlideTabsDropIntoVerticalSplitPane() {
+        let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
+        XCUIDevice.shared.orientation = .portrait
+        app.launchArguments = ["--library-drop-ui-test", "--resource-types-fixture"]
+        app.launch()
+        exerciseDocumentAndSlideTabDrops(in: app, openSplit: openVerticalSplit)
+    }
+
+    private func exerciseDocumentAndSlideTabDrops(in app: XCUIApplication, openSplit: (XCUIApplication) -> Void) {
         openLibraryEntry(titled: "Document", in: app)
         XCTAssertTrue(app.descendants(matching: .any)["tab-document-Document"].waitForExistence(timeout: 5))
         app.buttons["ホームへ戻る"].tap()
@@ -386,18 +409,20 @@ final class LibraryDropInteractionTests: XCTestCase {
         app.buttons["ホームへ戻る"].tap()
 
         openNotebookRow(titled: "Drag me", in: app)
-        openHorizontalSplit(in: app)
+        openSplit(app)
+        // A tab and a pane each show up as several accessibility elements (the view and
+        // the views it contains share one identifier): the first is the whole thing.
 
-        let documentTab = app.descendants(matching: .any)["tab-document-Document"]
-        let secondaryPane = app.descendants(matching: .any)["split-pane-secondary"]
+        let documentTab = app.descendants(matching: .any)["tab-document-Document"].firstMatch
+        let secondaryPane = app.descendants(matching: .any)["split-pane-secondary"].firstMatch
         XCTAssertTrue(documentTab.waitForExistence(timeout: 5))
         XCTAssertTrue(secondaryPane.waitForExistence(timeout: 5))
         drag(documentTab, to: secondaryPane)
 
-        let documentPane = app.descendants(matching: .any)["split-pane-secondary-document-Document"]
+        let documentPane = app.descendants(matching: .any)["split-pane-secondary-document-Document"].firstMatch
         XCTAssertTrue(documentPane.waitForExistence(timeout: 5), "Dropping a document tab did not switch the secondary pane")
 
-        let slideTab = app.descendants(matching: .any)["tab-slide-Y"]
+        let slideTab = app.descendants(matching: .any)["tab-slide-Y"].firstMatch
         XCTAssertTrue(slideTab.waitForExistence(timeout: 5))
         drag(slideTab, to: documentPane)
 
@@ -458,21 +483,46 @@ final class LibraryDropInteractionTests: XCTestCase {
     }
 
     private func openHorizontalSplit(in app: XCUIApplication) {
+        openSplit("左右に2分割", in: app)
+    }
+
+    private func openVerticalSplit(in app: XCUIApplication) {
+        openSplit("上下に2分割", in: app)
+    }
+
+    private func openSplit(_ option: String, in app: XCUIApplication) {
         let splitButton = app.buttons["画面分割"]
         XCTAssertTrue(splitButton.waitForExistence(timeout: 5), "Split control did not appear")
         splitButton.tap()
-        let horizontal = app.buttons["左右に2分割"]
-        XCTAssertTrue(horizontal.waitForExistence(timeout: 5), "Horizontal split option did not appear")
-        horizontal.tap()
-        let source = app.buttons["Drag me"]
-        XCTAssertTrue(source.waitForExistence(timeout: 5), "Split source picker did not appear")
+        let choice = app.buttons[option]
+        XCTAssertTrue(choice.waitForExistence(timeout: 5), "Split option \(option) did not appear")
+        choice.tap()
+        // The picker marks the note that is already open as "表示中", so its row is the button
+        // labelled "Drag me、表示中", not "Drag me" — an exact "Drag me" match finds the note's
+        // own tab instead, which the picker covers and which cannot be pressed.
+        let rows = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Drag me'"))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), "Split source picker did not appear")
+        Thread.sleep(forTimeInterval: 0.5)
+        guard let source = rows.allElementsBoundByIndex.last(where: { $0.isHittable }) else {
+            return XCTFail("No pressable \"Drag me\" row in the split source picker")
+        }
         source.tap()
     }
+
+    /// How long to hold a row still before dragging it.
+    ///
+    /// Not longer than this: a library row has a context menu as well as a drag, and a
+    /// finger held still for about a second opens the MENU instead of lifting the row.
+    /// Measured on iOS 26.5: in the column view 0.3–0.6 s lifts the row, 1.0 s opens the
+    /// menu and the drag never starts (the list view tolerates 1.0 s, so a 1 s hold made
+    /// the column tests fail, and fail only sometimes, right at the threshold). Tests of
+    /// the long-press menu itself keep their own 1 s hold on purpose.
+    private static let dragLiftHold: TimeInterval = 0.5
 
     private func drag(_ source: XCUIElement, to target: XCUIElement) {
         let start = source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: 1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 1)
+        start.press(forDuration: Self.dragLiftHold, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 1)
     }
 
     private func exerciseDrop(mode: String) {
@@ -488,7 +538,7 @@ final class LibraryDropInteractionTests: XCTestCase {
         XCTAssertTrue(folder.isHittable)
         let sourcePoint = source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let folderPoint = folder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        sourcePoint.press(forDuration: 1, thenDragTo: folderPoint, withVelocity: .slow, thenHoldForDuration: 1)
+        sourcePoint.press(forDuration: Self.dragLiftHold, thenDragTo: folderPoint, withVelocity: .slow, thenHoldForDuration: 1)
         XCTAssertFalse(source.waitForExistence(timeout: 2), "The source remained outside the folder in \(mode) mode")
         folder.tap()
         XCTAssertTrue(source.waitForExistence(timeout: 5), "The source did not appear inside the folder in \(mode) mode")
