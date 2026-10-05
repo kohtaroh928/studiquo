@@ -13,6 +13,7 @@ final class TabDropOntoSplitPaneTests: XCTestCase {
     private var app: XCUIApplication!
 
     override func tearDown() {
+        app?.terminate()
         XCUIDevice.shared.orientation = .portrait
     }
 
@@ -225,5 +226,53 @@ final class TabDropOntoSplitPaneTests: XCTestCase {
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10), "the web page view is missing")
         drag(.document, to: webPageCoordinate())
         assertSwitchedToDroppedDocument("Dropping a document tab on the Web page did not switch the pane")
+    }
+
+    // MARK: The real tab bar
+
+    /// The other tests drag a stand-in chip. This one drags a real tab from the app's own
+    /// tab bar (in portrait, so the top/bottom split): it proves the tab bar's drag source,
+    /// not just the receiving panes, still delivers.
+    func testARealDocumentTabDroppedOnASplitPaneSwitchesIt() throws {
+        try launch(["--library-drop-ui-test", "--resource-types-fixture"])
+
+        let documentRow = app.descendants(matching: .any)["library-entry-Document"]
+        XCTAssertTrue(documentRow.waitForExistence(timeout: 20), "Document row missing")
+        documentRow.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["tab-document-Document"].firstMatch.waitForExistence(timeout: 10), "the document tab did not appear")
+        app.buttons["ホームへ戻る"].tap()
+
+        let notebookRow = app.descendants(matching: .any)["library-entry-Drag me"]
+        XCTAssertTrue(notebookRow.waitForExistence(timeout: 15), "Drag me row missing")
+        notebookRow.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["library-open-notebook-Drag me"].waitForExistence(timeout: 10))
+
+        let split = app.buttons["画面分割"]
+        XCTAssertTrue(split.waitForExistence(timeout: 10), "split menu missing")
+        split.tap()
+        let vertical = app.buttons["上下に2分割"]
+        XCTAssertTrue(vertical.waitForExistence(timeout: 5), "top/bottom split option missing")
+        vertical.tap()
+        // The picker lists the notes as rows of text. "Drag me" is also the name of the
+        // note's own tab, which the picker covers: tap the row that can be pressed.
+        let rows = app.staticTexts.matching(NSPredicate(format: "label == 'Drag me'"))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), "split source picker did not appear")
+        Thread.sleep(forTimeInterval: 0.5)
+        guard let source = rows.allElementsBoundByIndex.last(where: { $0.isHittable }) else {
+            return XCTFail("no pressable \"Drag me\" row in the split source picker")
+        }
+        source.tap()
+
+        let tab = app.descendants(matching: .any)["tab-document-Document"].firstMatch
+        let secondary = app.descendants(matching: .any)["split-pane-secondary"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 10))
+        XCTAssertTrue(secondary.waitForExistence(timeout: 10))
+        tab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 1, thenDragTo: secondary.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)), withVelocity: .slow, thenHoldForDuration: 1)
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["split-pane-secondary-document-Document"].waitForExistence(timeout: 8),
+            "Dropping a real document tab on the split pane did not switch it"
+        )
     }
 }

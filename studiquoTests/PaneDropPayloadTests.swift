@@ -12,7 +12,7 @@ final class PaneDropPayloadTests: XCTestCase {
 
     func testEveryKindOfTabInTheTabBarIsRecognised() {
         // Payload shapes produced by the tab bar's `.draggable(...)`.
-        for value in ["notebook:abc", "deck:abc", "document:abc", "slide:abc", "web:Google|https://x", "ai:abc", "friend:abc", "group:abc"] {
+        for value in ["notebook:abc", "deck:abc", "flashcards:abc", "document:abc", "slide:abc", "web:Google|https://x", "ai:abc", "friend:abc", "group:abc"] {
             XCTAssertTrue(PaneDropPayload.isTab(value), value)
         }
     }
@@ -77,6 +77,10 @@ final class TabDropShieldHitTestTests: XCTestCase {
         return shield
     }
 
+    /// The shield takes part only while a tab is being dragged; most tests want that.
+    override func setUp() { TabDragState.shared.begin() }
+    override func tearDown() { TabDragState.shared.end() }
+
     func testTouchesPassThroughToThePage() {
         let shield = makeShield()
         XCTAssertNil(shield.hitTest(CGPoint(x: 100, y: 100), with: StubEvent(type: .touches)))
@@ -102,8 +106,51 @@ final class TabDropShieldHitTestTests: XCTestCase {
         XCTAssertTrue(shield.hitTest(CGPoint(x: 100, y: 100), with: StubEvent(type: undocumented)) === shield)
     }
 
+    /// Text selected on the page, or a handwriting selection dragged into a field on the
+    /// page, must keep going to the web view: when no tab is being dragged the shield
+    /// claims nothing, whatever the event looks like.
+    func testWhenNoTabIsBeingDraggedTheShieldClaimsNothing() throws {
+        TabDragState.shared.end()
+        let shield = makeShield()
+        XCTAssertNil(shield.hitTest(CGPoint(x: 100, y: 100), with: nil))
+        let undocumented = try XCTUnwrap(UIEvent.EventType(rawValue: 9))
+        XCTAssertNil(shield.hitTest(CGPoint(x: 100, y: 100), with: StubEvent(type: undocumented)))
+    }
+
     func testPointsOutsideTheShieldAreNotClaimed() {
         let shield = makeShield()
         XCTAssertNil(shield.hitTest(CGPoint(x: 500, y: 500), with: nil))
+    }
+}
+
+final class TabDragStateTests: XCTestCase {
+    func testIsActiveFromTheStartOfADragUntilItEnds() {
+        let state = TabDragState()
+        XCTAssertFalse(state.isActive)
+        state.begin()
+        XCTAssertTrue(state.isActive)
+        state.end()
+        XCTAssertFalse(state.isActive)
+    }
+
+    /// A cancelled drag never reports its end; the flag must not stay on for ever.
+    func testALapsedDragStopsCounting() {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let state = TabDragState(lifetime: 20, now: { clock })
+        state.begin()
+        clock = clock.addingTimeInterval(19)
+        XCTAssertTrue(state.isActive)
+        clock = clock.addingTimeInterval(2)
+        XCTAssertFalse(state.isActive)
+    }
+
+    func testANewDragRestartsTheClock() {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let state = TabDragState(lifetime: 20, now: { clock })
+        state.begin()
+        clock = clock.addingTimeInterval(15)
+        state.begin()
+        clock = clock.addingTimeInterval(15)
+        XCTAssertTrue(state.isActive)
     }
 }
