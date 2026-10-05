@@ -62,6 +62,26 @@ test("GET /terms discloses the auto-renewal cancellation window and how to cance
   assert.match(body, /プライバシーポリシー/);
 });
 
+// The iCloud sync switch is off by default for new installs, and the app never
+// deletes what is already in the student's iCloud. Both are promises the
+// policy has to keep stating, and the terms must not mention a sync capacity
+// limit that no longer exists.
+test("GET /privacy describes the optional iCloud sync and that iCloud data outlives account deletion", async () => {
+  const response = await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx);
+  const body = await response.text();
+  assert.match(body, /iCloudで同期する/);
+  assert.match(body, /初期状態でオフ/);
+  assert.match(body, /アカウントの削除では削除されません/);
+  assert.doesNotMatch(body, /一部のデータは、CloudKit/);
+});
+
+test("GET /terms no longer mentions a cloud sync capacity limit", async () => {
+  const response = await worker.fetch(new Request("https://example.test/terms"), {}, noopCtx);
+  const body = await response.text();
+  assert.doesNotMatch(body, /クラウド同期容量/);
+  assert.match(body, /AIクレジットの上限/);
+});
+
 // The CSP that keeps these static, un-templated legal pages from running
 // injected scripts (see privacyPolicyHTML's own doc comment) must cover
 // /terms too — it is easy to add a new route under handleLegal and forget
