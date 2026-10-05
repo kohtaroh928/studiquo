@@ -12,7 +12,7 @@ import Foundation
 /// converting them (PDF page rendering is far above an extension's memory
 /// limit) is the app's job.
 struct SharedInbox {
-    static let appGroupIdentifier = "group.com.yabuko.studiquo"
+    static let appGroupIdentifier = "group.com.yabuko.studiquo.share"
 
     struct Item: Identifiable, Hashable {
         let url: URL
