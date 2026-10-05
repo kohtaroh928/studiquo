@@ -4,6 +4,7 @@
   "main": "src/worker.js",
   "compatibility_date": "2026-08-27",
   "compatibility_flags": ["nodejs_compat"],
+  "triggers": { "crons": ["0 * * * *"] },
   "kv_namespaces": [
     {
       "binding": "STUDIQUO_DATA",
@@ -102,6 +103,10 @@
     { "name": "RATE_LIMIT_ANNOUNCEMENTS", "namespace_id": "1023", "simple": { "limit": 30, "period": 60 } }
   ],
   "vars": {
+    // Enable only after migration 0005 and staging verification.
+    "PRIVACY_RETENTION_ENABLED": "false",
+    // Approve the provider's audience/contract before enabling AI requests.
+    "AI_PROVIDER_APPROVED": "false",
     // Marking asks for structured output, and Gemini emits that only once the
     // whole document is ready — nothing streams in the meantime. On the
     // stronger model a two-image request stayed silent past two minutes, and

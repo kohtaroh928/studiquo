@@ -1,12 +1,12 @@
 import Foundation
 import UIKit
 
-/// The "エラー情報を自動送信" setting. On unless the person turned it off.
+/// Automatic diagnostics require an explicit opt-in, including on upgrades.
 enum ErrorReportSettings {
-    static let enabledKey = "autoErrorReportingEnabled"
+    static let enabledKey = "autoErrorReportingOptInV2"
 
     static var isEnabled: Bool {
-        UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true
+        UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? false
     }
 }
 
@@ -241,6 +241,7 @@ enum ErrorReportService {
         guard let data = try? JSONEncoder().encode(body) else { return .rejected }
         request.httpBody = data
 
+        guard ErrorReportSettings.isEnabled else { return .rejected }
         guard let (_, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse else { return .retryLater }
         switch http.statusCode {

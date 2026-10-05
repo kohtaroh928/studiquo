@@ -355,7 +355,7 @@ struct AIChatPane: View {
     /// anyway; this just avoids a round trip to find that out).
     private var modelPickerButton: some View {
         Menu {
-            ForEach(AIModelCatalog.all) { model in
+            ForEach(AIModelCatalog.offered) { model in
                 let isAvailable = AIModelCatalog.isAvailable(model.id, for: subscriptionStore.currentPlan)
                 Button {
                     guard isAvailable else { return }
@@ -1172,4 +1172,3 @@ struct AIChatBubble: View {
         }
     }
 }
-

@@ -114,9 +114,15 @@ final class WorkerAIProvider: AIProvider {
         case transport(String)
         case imageEncodingFailed
         case imageNotReceived
+        case consentRequired
+        case providerUnavailable
 
         var errorDescription: String? {
             switch self {
+            case .consentRequired:
+                return L("AIへの送信は許可されていません。設定 → プライバシーで送信内容を確認して許可してください。")
+            case .providerUnavailable:
+                return L("このAI送信先は現在利用できません。")
             case .notConfigured:
                 return L("AIサーバーのURLが設定されていません。設定のMCPクラウド連携を確認してください。")
             case .http(let status, let message):
@@ -142,12 +148,14 @@ final class WorkerAIProvider: AIProvider {
         return .http(status: status, message: message)
     }
 
-    private func request(path: String, body: [String: Any]) throws -> URLRequest {
+    func request(path: String, body: [String: Any]) throws -> URLRequest {
+        guard AIDataDisclosure.hasBeenAcknowledged else { throw ProviderError.consentRequired }
         guard let baseURL else { throw ProviderError.notConfigured }
         var request = URLRequest(url: baseURL.appending(path: path))
         request.httpMethod = "POST"
         request.timeoutInterval = 300
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(AIDataDisclosure.currentVersion, forHTTPHeaderField: "X-Studiquo-AI-Consent")
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
@@ -201,6 +209,7 @@ final class WorkerAIProvider: AIProvider {
             // The Worker normalises Gemini's event envelope down to
             // `data: {"text": "..."}`, so there is only one shape to parse.
             for try await line in stream.lines {
+                guard AIDataDisclosure.hasBeenAcknowledged else { throw ProviderError.consentRequired }
                 guard line.hasPrefix("data:") else { continue }
                 let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                 guard !payload.isEmpty,
@@ -281,6 +290,7 @@ final class WorkerAIProvider: AIProvider {
             }
 
             for try await line in stream.lines {
+                guard AIDataDisclosure.hasBeenAcknowledged else { throw ProviderError.consentRequired }
                 guard line.hasPrefix("data:") else { continue }
                 let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                 guard !payload.isEmpty, let data = payload.data(using: .utf8) else { continue }
