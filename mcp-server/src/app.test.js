@@ -4,6 +4,7 @@ import test from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import worker from "./app.js";
 import { realSession } from "./session.js";
+import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.js";
 
 // Regression coverage for "logging out doesn't revoke the cloud sync token":
 // once a token is revoked, it must be rejected everywhere it used to work,
@@ -196,8 +197,8 @@ test("DELETE /api/account removes every linked login identity and invalidates al
     method: "DELETE", token: googleToken, body: { confirmation: "DELETE" },
   }), env, noopCtx);
 
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { deleted: true });
+  assert.equal(response.status, 202);
+  assert.deepEqual(await response.json(), { deleted: true, externalDeletionPending: true });
   for (const key of [
     `session:${appleHash}`, `session:${googleHash}`,
     "identity-canonical:apple-delete-sub", "identity-canonical:google:delete-sub",
@@ -1071,15 +1072,17 @@ test("POST /api/issue-reports stores the report and posts it to Slack when a web
 
     assert.equal(slackCall.url, "https://hooks.slack.test/services/xyz");
     const text = JSON.stringify(slackCall.body);
-    assert.match(text, /カレンダーが真っ白になる/);
+    assert.doesNotMatch(text, /カレンダーが真っ白になる/);
+    assert.match(text, new RegExp(parsed.id));
     assert.match(text, /1\.4\.0/);
   } finally {
     restore();
   }
 });
 
-test("POST /api/issue-reports with a screenshot serves it back unauthenticated so Slack's preview fetch can reach it", async () => {
+test("report screenshots require verified Access and are not sent to Slack", async () => {
   const env = environment();
+  Object.assign(env, ACCESS_ENV);
   env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.slack.test/services/xyz";
   const token = freshToken("q");
   const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
@@ -1108,9 +1111,12 @@ test("POST /api/issue-reports with a screenshot serves it back unauthenticated s
     restore();
   }
   assert.equal(response.status, 200);
-  assert.ok(sentImageURL, "expected the Slack message to include an image block");
+  assert.equal(sentImageURL, null);
+  const { id } = await response.json();
+  const imageURL = `https://example.test/api/issue-reports/${id}/screenshot`;
+  assert.equal((await worker.fetch(new Request(imageURL), env, noopCtx)).status, 401);
 
-  const screenshotResponse = await worker.fetch(new Request(sentImageURL), env, noopCtx);
+  const screenshotResponse = await worker.fetch(new Request(imageURL, { headers: ACCESS_HEADERS }), env, noopCtx);
   assert.equal(screenshotResponse.status, 200);
   assert.equal(screenshotResponse.headers.get("content-type"), "image/png");
   const returnedBytes = Buffer.from(await screenshotResponse.arrayBuffer());
@@ -1160,6 +1166,7 @@ test("a report submitted without a screenshot is flagged hasScreenshot:false, wi
 
 test("a downloaded issue-report screenshot is cached only privately and only briefly", async () => {
   const env = environment();
+  Object.assign(env, ACCESS_ENV);
   env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.slack.test/services/xyz";
   const token = freshToken("w9");
 
@@ -1170,7 +1177,7 @@ test("a downloaded issue-report screenshot is cached only privately and only bri
     return new Response("ok", { status: 200 });
   });
   try {
-    await worker.fetch(
+    const submitted = await worker.fetch(
       request("/api/issue-reports", {
         method: "POST",
         token,
@@ -1179,19 +1186,22 @@ test("a downloaded issue-report screenshot is cached only privately and only bri
       env,
       noopCtx
     );
+    const { id } = await submitted.json();
+    sentImageURL = `https://example.test/api/issue-reports/${id}/screenshot`;
   } finally {
     restore();
   }
 
-  const screenshotResponse = await worker.fetch(new Request(sentImageURL), env, noopCtx);
+  const screenshotResponse = await worker.fetch(new Request(sentImageURL, { headers: ACCESS_HEADERS }), env, noopCtx);
   assert.equal(screenshotResponse.headers.get("cache-control"), "private, max-age=300");
 });
 
 test("GET /api/issue-reports/:id/screenshot for an id that was never submitted returns 404", async () => {
   const env = environment();
+  Object.assign(env, ACCESS_ENV);
 
   const response = await worker.fetch(
-    new Request("https://example.test/api/issue-reports/00000000-0000-0000-0000-000000000000/screenshot"),
+    new Request("https://example.test/api/issue-reports/00000000-0000-0000-0000-000000000000/screenshot", { headers: ACCESS_HEADERS }),
     env,
     noopCtx
   );
@@ -1200,6 +1210,7 @@ test("GET /api/issue-reports/:id/screenshot for an id that was never submitted r
 
 test("GET /api/issue-reports/:id/screenshot for a report that has no screenshot returns 404", async () => {
   const env = environment();
+  Object.assign(env, ACCESS_ENV);
   const token = freshToken("w10");
 
   const submitted = await worker.fetch(
@@ -1210,7 +1221,7 @@ test("GET /api/issue-reports/:id/screenshot for a report that has no screenshot 
   const { id } = await submitted.json();
 
   const response = await worker.fetch(
-    new Request(`https://example.test/api/issue-reports/${id}/screenshot`),
+    new Request(`https://example.test/api/issue-reports/${id}/screenshot`, { headers: ACCESS_HEADERS }),
     env,
     noopCtx
   );

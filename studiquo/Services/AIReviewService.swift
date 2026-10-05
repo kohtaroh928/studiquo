@@ -16,14 +16,11 @@ enum AIReviewService {
     static let reviewFolderName = "AI復習"
 
     /// Backs the "AIトークの翌日復習を作成する" toggle in `AppSettingsView`.
-    /// Defaults to on (the feature already shipped enabled) — this only
-    /// gives the student a documented way to turn it off, since until now
-    /// every AIトーク reply silently triggered a second AI call and saved a
-    /// document with no way to disable that short of disabling AI entirely.
-    static let isEnabledDefaultsKey = "aiTalkDayAfterReviewEnabled"
+    /// A new key avoids treating a legacy implicit-on preference as consent.
+    static let isEnabledDefaultsKey = "aiTalkDayAfterReviewOptInV2"
 
     static var isEnabled: Bool {
-        (UserDefaults.standard.object(forKey: isEnabledDefaultsKey) as? Bool) ?? true
+        (UserDefaults.standard.object(forKey: isEnabledDefaultsKey) as? Bool) ?? false
     }
 
     /// Swappable seam, same shape as `AI.provider`: the real notification
@@ -40,11 +37,12 @@ enum AIReviewService {
         askedAt: Date,
         modelContext: ModelContext
     ) async {
-        guard isEnabled else { return }
+        guard isEnabled, AIDataDisclosure.hasBeenAcknowledged else { return }
         let question = questionText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, AI.provider.isConfigured else { return }
 
         guard let result = try? await AI.provider.researchReview(question: question, context: ""),
+              isEnabled, AIDataDisclosure.hasBeenAcknowledged,
               result.isStudyRelevant,
               !result.explanationMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }

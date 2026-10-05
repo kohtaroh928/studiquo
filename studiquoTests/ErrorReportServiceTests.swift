@@ -185,7 +185,7 @@ final class ErrorReportServiceTests: XCTestCase {
         super.setUp()
         URLProtocol.registerClass(RecordingErrorReportProtocol.self)
         RecordingErrorReportProtocol.reset()
-        UserDefaults.standard.removeObject(forKey: enabledKey)
+        UserDefaults.standard.set(true, forKey: enabledKey)
         ErrorReportService.queue.clear()
         UserDefaults.standard.removeObject(forKey: "pendingErrorReports.daily")
     }
@@ -202,10 +202,11 @@ final class ErrorReportServiceTests: XCTestCase {
         ErrorReportService.record(kind: "crash", signature: signature, title: "title", detail: "detail")
     }
 
-    func testReportingIsOnUnlessTheSettingIsTurnedOff() {
-        XCTAssertTrue(ErrorReportSettings.isEnabled, "初期状態では自動送信がオンである必要があります。")
-        UserDefaults.standard.set(false, forKey: enabledKey)
+    func testReportingRequiresExplicitOptIn() {
+        UserDefaults.standard.removeObject(forKey: enabledKey)
         XCTAssertFalse(ErrorReportSettings.isEnabled)
+        UserDefaults.standard.set(true, forKey: enabledKey)
+        XCTAssertTrue(ErrorReportSettings.isEnabled)
     }
 
     func testNothingIsQueuedWhenTheSettingIsOff() {

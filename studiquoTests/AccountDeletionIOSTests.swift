@@ -235,6 +235,54 @@ final class AccountDeletionIOSTests: XCTestCase {
         XCTAssertEqual(url.path, "/account/subscriptions")
     }
 
+    func testLocalDeletionRetryDoesNotRequireRevokedServerSession() async {
+        enum Failure: Error { case disk }
+        var serverCalls = 0
+        let store = makeStore { serverCalls += 1 }
+        let first = await AccountDeletionWorkflow.run(authentication: store, eraseLocalData: { throw Failure.disk }, clearPreferences: {})
+        XCTAssertEqual(first, .localFailure(AccountDeletionUI.localEraseFailureMessage))
+        XCTAssertTrue(store.hasPendingLocalDeletion)
+        let retry = await AccountDeletionWorkflow.run(authentication: store, eraseLocalData: {}, clearPreferences: {})
+        XCTAssertEqual(retry, .success)
+        XCTAssertEqual(serverCalls, 1)
+        XCTAssertFalse(store.hasPendingLocalDeletion)
+    }
+
+    func testFileCleanupPreservesStoreAndExternalOriginal() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent("privacy-test-\(UUID().uuidString)")
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let sandbox = root.appendingPathComponent("sandbox")
+        let files = ["Documents/import.pdf", "Library/Caches/image.png", "tmp/export.pdf", "Library/Application Support/studiquo/AutoBackups/note.json", "Library/Application Support/default.store"]
+        for path in files {
+            let file = sandbox.appendingPathComponent(path)
+            try manager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("test".utf8).write(to: file)
+        }
+        let original = root.appendingPathComponent("external.pdf")
+        try Data("original".utf8).write(to: original)
+        try AccountFileEraser.eraseOwnedFiles(in: sandbox)
+        for path in files.dropLast() { XCTAssertFalse(manager.fileExists(atPath: sandbox.appendingPathComponent(path).path)) }
+        XCTAssertTrue(manager.fileExists(atPath: sandbox.appendingPathComponent(files.last!).path))
+        XCTAssertTrue(manager.fileExists(atPath: original.path))
+    }
+
+    func testFileCleanupRejectsDirectorySymlinkOutsideSandbox() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent("privacy-symlink-\(UUID().uuidString)")
+        let sandbox = root.appendingPathComponent("sandbox")
+        let outside = root.appendingPathComponent("outside")
+        try manager.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        try manager.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let original = outside.appendingPathComponent("original.pdf")
+        try Data("original".utf8).write(to: original)
+        try manager.createSymbolicLink(at: sandbox.appendingPathComponent("Documents"), withDestinationURL: outside)
+        XCTAssertThrowsError(try AccountFileEraser.eraseOwnedFiles(in: sandbox))
+        XCTAssertTrue(manager.fileExists(atPath: original.path))
+    }
+
     private func seedEveryModel(in context: ModelContext) {
         let notebook = Notebook(title: "note")
         let page = NotePage(order: 0)

@@ -99,18 +99,16 @@ struct SubscriptionPlansView: View {
     /// listed here can never drift from the ones the chat model picker (and
     /// the Worker's own plan gate) actually offer.
     private var standardFeatures: [String] {
-        let models = AIModelCatalog.all.filter { $0.requiredPlan == .standard }.map(\.displayName)
+        let models = AIModelCatalog.offered.filter { $0.requiredPlan == .standard }.map(\.displayName)
         return ["月30 AIクレジット", models.joined(separator: "・"), "資料作成・共同編集は無制限"]
     }
 
     private var plusFeatures: [String] {
-        let models = AIModelCatalog.all.filter { $0.requiredPlan == .plus }.map(\.displayName)
-        return ["月750 AIクレジット", models.joined(separator: "・")]
+        return ["月750 AIクレジット", "GoogleのAIモデル"]
     }
 
     private var proFeatures: [String] {
-        let models = AIModelCatalog.all.filter { $0.requiredPlan == .pro }.map(\.displayName)
-        return ["月2,000 AIクレジット", "Plusの全モデル＋" + models.joined(separator: "・")]
+        return ["月2,000 AIクレジット", "GoogleのAIモデル"]
     }
 
     private func planCard(plan: StudiquoPlan, subtitle: String, features: [String]) -> some View {

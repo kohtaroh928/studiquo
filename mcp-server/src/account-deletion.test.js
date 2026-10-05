@@ -36,6 +36,7 @@ function environment() {
         return {
           bind(userKey) {
             return {
+              async all() { return { results: [] }; },
               async run() {
                 if (sql.includes("usage_events")) usageEvents.delete(userKey);
                 if (sql.includes("users_first_seen")) usersFirstSeen.delete(userKey);
@@ -453,7 +454,7 @@ test("49. KV削除が途中で失敗しても再実行できる", async () => {
   assert.notEqual(await env.STUDIQUO_DATA.get("snapshot:failure-token-49"), null);
   await deleteAccount(env, canonical);
   assert.equal(await env.STUDIQUO_DATA.get("snapshot:failure-token-49"), null);
-  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted" });
+  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted", identityKeys: [canonical] });
 });
 
 test("50. Durable Objectの削除処理が途中で失敗しても再実行できる", async () => {
@@ -505,7 +506,7 @@ test("52. 同じ削除要求を2回送っても安全", async () => {
   assert.deepEqual(await deleteAccount(env, canonical), { deleted: true });
   assert.deepEqual(await deleteAccount(env, canonical), { deleted: true });
   assert.equal(await env.STUDIQUO_DATA.get(`account:${canonical}`), null);
-  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted" });
+  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted", identityKeys: [canonical] });
 });
 
 test("53. 同時に2回削除してもデータが復活しない", async () => {
@@ -563,7 +564,7 @@ test("55. 削除途中のアカウントでログイン・書き込みできな�
   const d1Gate = new Promise(resolve => { releaseD1 = resolve; });
   let reachedD1;
   const reachedD1Promise = new Promise(resolve => { reachedD1 = resolve; });
-  env.ADMIN_DB.prepare = () => ({ bind: () => ({ async run() { reachedD1(); await d1Gate; return { success: true }; } }) });
+  env.ADMIN_DB.prepare = () => ({ bind: () => ({ async all() { return { results: [] }; }, async run() { reachedD1(); await d1Gate; return { success: true }; } }) });
   const deletion = deleteAccount(env, canonical);
   await reachedD1Promise;
 

@@ -69,14 +69,15 @@ async function countDistinctUsers(env) {
   return groups.size;
 }
 
-async function upsertSubscriber(env, appUserId, status, productId, expiresAt) {
+async function upsertSubscriber(env, appUserId, status, productId, expiresAt, identityHashes) {
   await env.ADMIN_DB.prepare(
     `INSERT INTO subscribers (app_user_id, status, product_id, expires_at, updated_at)
-     VALUES (?, ?, ?, ?, ?)
+     SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS
+       (SELECT 1 FROM privacy_deleted_customers WHERE customer_hash IN (SELECT value FROM json_each(?)))
      ON CONFLICT(app_user_id) DO UPDATE SET
        status = excluded.status, product_id = excluded.product_id,
        expires_at = excluded.expires_at, updated_at = excluded.updated_at`
-  ).bind(appUserId, status, productId, expiresAt, Date.now()).run();
+  ).bind(appUserId, status, productId, expiresAt, Date.now(), JSON.stringify(identityHashes)).run();
 }
 
 export async function handleAdminWebhook(url, request, env) {
@@ -97,24 +98,32 @@ export async function handleAdminWebhook(url, request, env) {
   }
 
   const occurredAt = Number(event.event_timestamp_ms) || Date.now();
+  const identities = new Set([event.app_user_id, event.original_app_user_id, ...(Array.isArray(event.aliases) ? event.aliases : []), ...(Array.isArray(event.transferred_from) ? event.transferred_from : []), ...(Array.isArray(event.transferred_to) ? event.transferred_to : [])].filter(value => typeof value === "string"));
+  const identityHashes = await Promise.all([...identities].map(sha256Hex));
+  for (const identity of identities) {
+    const deleted = await env.ADMIN_DB.prepare("SELECT customer_hash FROM privacy_deleted_customers WHERE customer_hash = ?")
+      .bind(await sha256Hex(identity)).first();
+    if (deleted) return json({ received: true, ignored: true });
+  }
   const price = typeof event.price_in_purchased_currency === "number" ? event.price_in_purchased_currency : null;
 
   await env.ADMIN_DB.prepare(
     `INSERT OR IGNORE INTO revenuecat_events
        (event_id, app_user_id, event_type, period_type, product_id, price_in_purchased_currency, currency, environment, occurred_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS
+       (SELECT 1 FROM privacy_deleted_customers WHERE customer_hash IN (SELECT value FROM json_each(?)))`
   ).bind(
     event.id, event.app_user_id, event.type, event.period_type ?? null, event.product_id ?? null,
-    price, event.currency ?? null, event.environment ?? "PRODUCTION", occurredAt
+    price, event.currency ?? null, event.environment ?? "PRODUCTION", occurredAt, JSON.stringify(identityHashes)
   ).run();
 
   const expiresAt = Number(event.expiration_at_ms) || null;
   if (ACTIVATING_EVENT_TYPES.has(event.type)) {
-    await upsertSubscriber(env, event.app_user_id, "active", event.product_id ?? null, expiresAt);
+    await upsertSubscriber(env, event.app_user_id, "active", event.product_id ?? null, expiresAt, identityHashes);
   } else if (event.type === "BILLING_ISSUE") {
-    await upsertSubscriber(env, event.app_user_id, "billing_issue", event.product_id ?? null, expiresAt);
+    await upsertSubscriber(env, event.app_user_id, "billing_issue", event.product_id ?? null, expiresAt, identityHashes);
   } else if (DEACTIVATING_EVENT_TYPES.has(event.type)) {
-    await upsertSubscriber(env, event.app_user_id, "expired", event.product_id ?? null, expiresAt);
+    await upsertSubscriber(env, event.app_user_id, "expired", event.product_id ?? null, expiresAt, identityHashes);
   }
   // TRANSFER, TEST, SUBSCRIPTION_PAUSED and anything else are recorded in
   // the log above but don't change subscribers — a transferred entitlement

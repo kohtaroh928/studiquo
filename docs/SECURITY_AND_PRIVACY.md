@@ -3,7 +3,7 @@
 最終更新: 2026-10-05  
 状態: 現行実装を基準にした内部設計・運用基準
 
-読み方: 「現行」「現在」と記載した箇所はコードから確認した挙動である。必須要件・チェックリストは今後の変更で守る基準であり、すべてが実装済みであることを意味しない。独立レビューは実行環境の容量制限により未完了である。
+読み方: 「現行」「現在」は開発ブランチの実装を指し、本番へ反映済みとは限らない。独立レビューを実施し、指摘に基づく修正を進めている。公開手順と未完了項目は`PRIVACY_RELEASE_CHECKLIST.md`を参照する。
 
 ## 1. 目的と適用範囲
 
@@ -63,7 +63,7 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 | データ | 主な保存先 | 外部送信 | 現在の削除・保持 |
 | --- | --- | --- | --- |
 | ノート、カード、文書、スライド、予定、学習履歴、AI会話 | SwiftData、CloudKit | 選択したAI機能、MCP同期、共有機能で必要部分を送信 | SwiftDataの削除対象。CloudKit構成では同期削除を意図する |
-| 自動ノートバックアップ | Application Supportの`studiquo/AutoBackups` | 通常は送信しない | ノートごとに最大5件。現行のアカウント削除処理では一括削除されない |
+| 自動ノートバックアップ | Application Supportの`studiquo/AutoBackups` | 通常は送信しない | ノートごとに最大5件。アカウント削除時に一括消去 |
 | 保護ノートの暗号文 | SwiftData / CloudKit | 通常は送信しない | ノートとともに削除。AES-GCM鍵はiCloud Keychain同期 |
 | Workerセッション | 端末Keychain、KVにはtoken hashとsession | Worker API | 90日。ログアウト時に端末から削除し、サーバー失効をbest effortで要求 |
 | Apple、Google、メール、Passkeyのidentity | 端末Keychain、KV | 各認証提供者 | アカウント削除処理の対象 |
@@ -73,12 +73,12 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 | MCPスナップショット | KV | 接続を許可したMCP client | アカウント削除対象。再同期まで古い内容が残り得る |
 | MCP grant、access token、refresh token | KV | MCP client | access tokenは1時間、refresh tokenは90日。grantは取消しまたはアカウント削除まで |
 | MCPからの作成要求 | `MCP_INBOX` | iPadへ取り込み | アカウント削除時にpurge。取り込み後は端末データとして管理 |
-| AIへの質問、ノート文脈、画像 | 原則として要求中だけWorkerを通過 | 選択モデルに応じGemini、Anthropic、OpenAI | Workerでの恒久保存を前提にしない。provider側の保持条件は契約・設定の確認が必要 |
-| 課金・購読状態 | RevenueCat、D1 | RevenueCat | `subscribers`と`revenuecat_events`の保持・削除期間は未定義 |
+| AIへの質問、選択資料、画像 | 原則として要求中だけWorkerを通過 | 初期提供先はGoogleのみ | バージョン付き同意必須。提供条件の確認までサーバー既定停止。provider側保持は契約確認が必要 |
+| 課金・購読状態 | RevenueCat、D1 | RevenueCat | 購読者情報は退会時削除。購入イベント90日。外部顧客削除は永続ジョブで再試行 |
 | 利用量 | D1、`RATE_COUNTER` | 運営集計 | アカウント削除時にD1の利用イベント・初回利用記録を削除。短期counterは期間終了で失効 |
 | APNs device tokenと通知設定 | 端末Keychain、KV | Apple APNs | ログアウト、端末登録解除、所有者変更、アカウント削除で削除 |
-| 自動エラー診断 | 端末UserDefaults queue、D1 | Worker、初回・再発時はSlackへ概要 | 送信設定は既定ON。OFF時は未送信queueを削除。D1集約行の保持期間は未定義 |
-| 手動の問題報告 | D1、KV | Slack | KVの本文・画像は90日。D1 metadataと本文には自動削除がない |
+| 自動エラー診断 | 端末UserDefaults queue、D1 | Worker、Slackへ通知のみ | 既定OFF。個人関連90日、匿名集約180日。OFF時queue削除 |
+| 手動の問題報告 | D1、KV | SlackへID・端末情報・管理リンクのみ | 本文・画像90日。閲覧はAccess認証必須。退会時に本人分を削除 |
 
 上表の「未定義」は許容済みの恒久方針ではなく、公開前に責任者、期間、削除jobを決める必要がある項目を示す。
 
@@ -165,12 +165,12 @@ Keychain itemのserviceとaccountを固定し、tokenやkeyをUserDefaultsへ複
 
 AI機能では、操作に応じて次の情報が端末外へ出る。
 
-- AIトークの質問、会話履歴、開いているノートのOCR文脈
+- AIトークの質問、会話履歴、明示的に選択した資料の文脈
 - 問題文、答案文、切り抜き画像または写真
 - 翌日復習の元になった質問と文脈
 - 選択した添付資料の内容
 
-Worker経由では、選択モデルに応じてGemini、Anthropic、OpenAIへ転送される。任意のdirect Anthropic経路では、利用者のAPI keyと内容が端末からAnthropicへ直接送信される。
+初期提供先はGoogleのみとする。旧モデル定義は内部に残るが、アプリの選択肢と公開API境界で制限し、direct Anthropic経路は拒否する。開いているノートは自動添付しない。
 
 ### 10.2 必須要件
 
@@ -182,7 +182,7 @@ Worker経由では、選択モデルに応じてGemini、Anthropic、OpenAIへ�
 - AI要求本文、画像、API keyをアプリログ、Workerログ、エラーreportへ記録しない。
 - provider、model、送信項目を増やす変更では、アプリ内開示、プライバシーポリシー、App Store申告を同時に更新する。
 
-現在のアプリ内開示は主にGeminiと利用者自身のkeyによるAnthropicを説明している一方、Workerはプランとmodel選択によりAnthropicとOpenAIも利用できる。公開前に説明を現行model catalogと一致させる。
+同意は`google-v2`として端末に保存し、APIヘッダーにも付与する。旧booleanの確認済み状態は同意とみなさない。取消し時に翌日復習も停止する。`AI_PROVIDER_APPROVED`は既定falseで、対象年齢・訓練利用・保持条件の承認がない限り送信を拒否する。
 
 ## 11. MCP連携
 
@@ -213,7 +213,7 @@ Worker経由では、選択モデルに応じてGemini、Anthropic、OpenAIへ�
 
 ### 12.2 自動エラー診断
 
-- 既定ONであることを設定画面で明示し、利用者がOFFにできるようにする。
+- 既定OFF。利用者が明示的にONにしたときだけ収集・送信する。旧設定は新しい許可へ移行しない。
 - OFFの場合は新規収集を止め、端末上の未送信queueを削除する。
 - 送信内容はkind、安定したsignature、短いtitle、限定した技術detail、発生数、時刻、アプリ・OS・端末modelに限定する。
 - 既知のNSErrorはdomainとcodeだけを使い、messageを送らない。
@@ -225,8 +225,8 @@ Worker経由では、選択モデルに応じてGemini、Anthropic、OpenAIへ�
 - 説明文は必須、スクリーンショットは既定OFFの明示的opt-inとする。
 - 送信前に画像をpreviewし、ノートやチャットが映り得ることを表示する。
 - JPEG/PNGだけを許可し、decode後3 MB以下、本文2,000文字以下に制限する。
-- screenshotはSlack previewのため、推測困難なreport IDを知る者だけが取得できる認証なしcapability URLで提供される。URLをログや公開channelへ貼らない。
-- KVのreportとscreenshotは90日で失効する。D1の一覧用reportは現在自動削除されないため、別途保持policyが必要である。
+- screenshotの取得はWorkerでCloudflare Access JWTを検証する。Slackには本文・画像を送らない。
+- KVは90日TTL、D1は定期ジョブで削除し、管理一覧は期限超過を非表示にする。過去のSlack投稿は自動回収できず、運営による整理が必要。
 
 ## 13. Push通知
 
@@ -272,10 +272,12 @@ Workerは削除状態を`deleting`として先に記録し、途中失敗後も�
 - 友達・グループ参照、chat profile、code、avatar、device token
 - D1の利用イベント、初回利用日、エラーとaccountの関連
 - iOSの全SwiftData model、UserDefaultsのaccount関連設定、認証Keychain item
+- D1の問題報告・購読者情報・購入イベント、KVの報告画像
+- Documents、Caches、一時ファイル、自動バックアップ、共有Inbox内のアプリ管理コピー（外部の原本は削除しない）
 
 他利用者側の会話を壊さないため、過去メッセージは「削除済みユーザー」として匿名化され得る。App Storeの購読はApple側で別途解約が必要である。
 
-削除完了を表示する前にサーバー削除を完了させる。サーバー削除後に端末削除が失敗した場合は、その事実と再試行方法を利用者へ示す。
+サーバーが永続削除ジョブを受理したら202を返す。サーバー内／外部削除には待ち時間があり、完了前に成功したと断定しない。端末削除失敗は永続マーカーを残し、次回起動で再試行画面を出す。外部顧客削除待ちのidentityは再ログインを拒否する。
 
 ## 16. 外部サービス変更時の確認
 
