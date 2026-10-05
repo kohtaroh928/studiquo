@@ -226,7 +226,7 @@ iOSのProduct ID、Entitlement ID、Workerのプラン対応は複数箇所で�
 - ノート本文、認証情報、AIキーをログへ出さない。診断情報は必要最小限にする。
 - アカウント削除は端末データ、KV、Durable Objects、D1上の関連情報、外部連携を横断するHighリスク処理として扱う。
 
-詳細なセキュリティ運用は、将来の`docs/SECURITY_AND_PRIVACY.md`を正本とする。
+詳細なセキュリティ・プライバシー運用は、`docs/SECURITY_AND_PRIVACY.md`を正本とする。
 
 ## 8. ビルド、設定、デプロイ
 
@@ -285,6 +285,7 @@ iOSのProduct ID、Entitlement ID、Workerのプラン対応は複数箇所で�
 - `README.md`: セットアップと機能概要
 - `AGENTS.md`: AIエージェントの常時ルールと開発手順モード
 - `docs/DEVELOPMENT_WORKFLOW.md`: fullモードで使う詳細開発手順
+- `docs/SECURITY_AND_PRIVACY.md`: データ分類、セキュリティ境界、保持・削除、既知課題
 - `docs/cloudkit-verification.md`: CloudKit設定と確認事項
 - `docs/ai-math-rendering.md`: AI数式表示の設計と公開順序
 - `mcp-server/README.md`: WorkerとMCPの利用・運用概要
