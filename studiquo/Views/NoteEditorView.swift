@@ -1216,7 +1216,7 @@ struct NoteEditorView: View {
             } else if let material = primaryTemporaryChatMaterial {
                 temporaryChatMaterialView(material, pane: .primary)
             } else if primaryShowsWeb {
-                WebSearchPane(browser: webBrowser)
+                WebSearchPane(browser: webBrowser, onTabDrop: { handlePaneDrop($0, target: .primary) })
             } else if primaryShowsAIChat {
                 AIChatPanel(
                     store: aiChat,
@@ -1248,7 +1248,8 @@ struct NoteEditorView: View {
                     resolveAppAttachment: resolvedAppMessageAttachment,
                     onBack: collapseSplit,
                     pendingSnippet: pendingSnippet(for: .group(roomID: primaryGroup.roomID)),
-                    onConsumePendingSnippet: { consumePendingChatSnippet($0, target: .group(roomID: primaryGroup.roomID)) }
+                    onConsumePendingSnippet: { consumePendingChatSnippet($0, target: .group(roomID: primaryGroup.roomID)) },
+                    onPaneDrop: { handlePaneDrop($0, target: .primary) }
                 )
                 .id("note-group-\(primaryGroup.roomID)")
             } else if let primaryFlashcardDeck {
@@ -1303,7 +1304,11 @@ struct NoteEditorView: View {
                     return handlePaneDrop(value, target: .secondary)
                 }
         } else if secondaryShowsWeb {
-            WebSearchPane(browser: webBrowser)
+            WebSearchPane(browser: webBrowser, onTabDrop: { handlePaneDrop($0, target: .secondary) })
+                .dropDestination(for: String.self) { items, _ in
+                    guard let value = items.first else { return false }
+                    return handlePaneDrop(value, target: .secondary)
+                }
         } else if secondaryShowsAIChat {
             AIChatPanel(
                 store: aiChat,
@@ -1335,7 +1340,8 @@ struct NoteEditorView: View {
                 resolveAppAttachment: resolvedAppMessageAttachment,
                 onBack: collapseSplit,
                 pendingSnippet: pendingSnippet(for: .group(roomID: secondaryGroup.roomID)),
-                onConsumePendingSnippet: { consumePendingChatSnippet($0, target: .group(roomID: secondaryGroup.roomID)) }
+                onConsumePendingSnippet: { consumePendingChatSnippet($0, target: .group(roomID: secondaryGroup.roomID)) },
+                onPaneDrop: { handlePaneDrop($0, target: .secondary) }
             )
             .id("note-group-\(secondaryGroup.roomID)")
         } else if let secondaryFlashcardDeck {
@@ -4841,6 +4847,8 @@ private final class WebBrowserModel: NSObject, ObservableObject, WKNavigationDel
 
 private struct WebSearchPane: View {
     @ObservedObject var browser: WebBrowserModel
+    /// A tab dropped on the page: asks the editor to show that material here instead.
+    var onTabDrop: ((String) -> Bool)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -4881,6 +4889,10 @@ private struct WebSearchPane: View {
             }
 
             WebViewContainer(webView: browser.webView)
+                .overlay {
+                    // The web view takes drops for itself; see `TabDropShield`.
+                    if let onTabDrop { TabDropShield(onTab: onTabDrop) }
+                }
         }
         .background(Color(uiColor: .systemBackground))
     }
