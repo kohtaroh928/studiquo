@@ -92,6 +92,33 @@ final class SharedInboxTests: XCTestCase {
         XCTAssertTrue(inbox.pendingItems().isEmpty)
     }
 
+    func testBatchAPIKeepsAllFilesOfOneShareTogether() throws {
+        let batch = try XCTUnwrap(inbox.makeBatch())
+        let a = try XCTUnwrap(inbox.add(try makeSource("a.pdf"), to: batch))
+        let b = try XCTUnwrap(inbox.add(try makeSource("a.pdf", in: "other"), to: batch))
+
+        XCTAssertEqual(a.url.deletingLastPathComponent(), batch.folder)
+        XCTAssertEqual(b.displayName, "a 2.pdf")
+        XCTAssertEqual(inbox.pendingItems().count, 2)
+    }
+
+    func testAddingAFolderToABatchFailsAndEmptyBatchIsDiscarded() throws {
+        let batch = try XCTUnwrap(inbox.makeBatch())
+        let folder = sandbox.appendingPathComponent("dir", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        XCTAssertNil(inbox.add(folder, to: batch))
+        inbox.discardIfEmpty(batch)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: batch.folder.path))
+    }
+
+    func testDiscardIfEmptyKeepsABatchThatHoldsFiles() throws {
+        let batch = try XCTUnwrap(inbox.makeBatch())
+        _ = inbox.add(try makeSource("keep.pdf"), to: batch)
+        inbox.discardIfEmpty(batch)
+        XCTAssertEqual(inbox.pendingItems().map(\.displayName), ["keep.pdf"])
+    }
+
     func testMissingInboxFolderMeansNothingPending() {
         XCTAssertTrue(inbox.pendingItems().isEmpty)
     }

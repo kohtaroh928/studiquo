@@ -46,6 +46,15 @@ struct SharedInbox {
         self.fileManager = fileManager
     }
 
+    /// Only the App Group container — what the share extension must use. A
+    /// fallback folder inside the extension's own sandbox would be invisible
+    /// to the app, so a missing group has to be an error there, not a silent
+    /// success.
+    static func sharedGroup(fileManager: FileManager = .default) -> SharedInbox? {
+        guard let group = fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else { return nil }
+        return SharedInbox(root: group.appendingPathComponent("Inbox", isDirectory: true), fileManager: fileManager)
+    }
+
     /// The App Group container when this build carries the entitlement, so the
     /// share extension and the app see the same folder. Without it (before the
     /// extension ships, or in a build lacking the capability) it falls back to
@@ -60,36 +69,62 @@ struct SharedInbox {
         return SharedInbox(root: support.appendingPathComponent("SharedInbox", isDirectory: true), fileManager: fileManager)
     }
 
+    /// One share's worth of files. The share extension fills a batch as each
+    /// attachment finishes loading, then the app imports it as a unit.
+    struct Batch {
+        let folder: URL
+    }
+
+    func makeBatch() -> Batch? {
+        let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        } catch {
+            return nil
+        }
+        return Batch(folder: folder)
+    }
+
+    /// Copies one file into `batch`; nil if it is a folder or cannot be read.
+    func add(_ source: URL, to batch: Batch) -> Item? {
+        let didAccess = source.startAccessingSecurityScopedResource()
+        defer { if didAccess { source.stopAccessingSecurityScopedResource() } }
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: source.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return nil
+        }
+        let destination = uniqueDestination(for: source.lastPathComponent, in: batch.folder)
+        do {
+            try fileManager.copyItem(at: source, to: destination)
+            return Item(url: destination)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Drops a batch that ended up with nothing in it.
+    func discardIfEmpty(_ batch: Batch) {
+        let remaining = (try? fileManager.contentsOfDirectory(atPath: batch.folder.path)) ?? []
+        if remaining.filter({ !$0.hasPrefix(".") }).isEmpty {
+            try? fileManager.removeItem(at: batch.folder)
+        }
+    }
+
     /// Copies `sources` into a fresh batch folder. A source that cannot be
     /// copied is reported in `failed` rather than aborting the rest — one bad
     /// file out of 28 should not lose the other 27.
     @discardableResult
     func enqueue(copying sources: [URL]) -> EnqueueResult {
-        let batch = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        guard let batch = makeBatch() else { return EnqueueResult(items: [], failed: sources) }
         var result = EnqueueResult(items: [], failed: [])
-        do {
-            try fileManager.createDirectory(at: batch, withIntermediateDirectories: true)
-        } catch {
-            result.failed = sources
-            return result
-        }
         for source in sources {
-            let didAccess = source.startAccessingSecurityScopedResource()
-            defer { if didAccess { source.stopAccessingSecurityScopedResource() } }
-            var isDirectory: ObjCBool = false
-            guard fileManager.fileExists(atPath: source.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
-                result.failed.append(source)
-                continue
-            }
-            let destination = uniqueDestination(for: source.lastPathComponent, in: batch)
-            do {
-                try fileManager.copyItem(at: source, to: destination)
-                result.items.append(Item(url: destination))
-            } catch {
+            if let item = add(source, to: batch) {
+                result.items.append(item)
+            } else {
                 result.failed.append(source)
             }
         }
-        if result.items.isEmpty { try? fileManager.removeItem(at: batch) }
+        discardIfEmpty(batch)
         return result
     }
 
