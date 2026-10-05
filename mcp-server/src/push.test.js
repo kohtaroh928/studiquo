@@ -204,3 +204,39 @@ test("removing an invalid device also removes its owner mapping", async () => {
   });
   assert.equal(values.has(`chat:device-owner:${sandboxToken}`), false);
 });
+
+test("a device that turned the banner off gets a quiet (passive, soundless) notification", async () => {
+  const { env, values } = await fixture();
+  seedDevices(values, [
+    { token: sandboxToken, environment: "sandbox", updatedAt: 1, banners: { friendMessage: false } },
+    { token: productionToken, environment: "production", updatedAt: 1 },
+  ]);
+  const sent = [];
+  await sendPush(env, "user-a", notification, {
+    fetchImpl: async (url, init) => {
+      sent.push({ token: url.split("/").pop(), headers: init.headers, aps: JSON.parse(init.body).aps });
+      return new Response(null, { status: 200 });
+    },
+  });
+  const quiet = sent.find(item => item.token === sandboxToken);
+  const loud = sent.find(item => item.token === productionToken);
+  assert.equal(quiet.aps["interruption-level"], "passive");
+  assert.equal(quiet.aps.sound, undefined, "静かな通知に音を付けてはいけません。");
+  assert.equal(quiet.headers["apns-priority"], "5");
+  assert.equal(quiet.aps.alert.title, "New message", "本文は同じで、見せ方だけが静かになります。");
+  assert.equal(quiet.aps.category, "studiquo.friendMessage");
+  assert.equal(loud.aps.sound, "default");
+  assert.equal(loud.aps["interruption-level"], undefined);
+  assert.equal(loud.headers["apns-priority"], "10");
+});
+
+test("turning the banner off for one category does not quiet the others", async () => {
+  const { env, values } = await fixture();
+  seedDevices(values, [{ token: sandboxToken, environment: "sandbox", updatedAt: 1, banners: { groupInvite: false } }]);
+  let aps;
+  await sendPush(env, "user-a", notification, {
+    fetchImpl: async (url, init) => { aps = JSON.parse(init.body).aps; return new Response(null, { status: 200 }); },
+  });
+  assert.equal(aps.sound, "default");
+  assert.equal(aps["interruption-level"], undefined);
+});

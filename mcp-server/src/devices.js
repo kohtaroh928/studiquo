@@ -47,12 +47,10 @@ function parseDevice(body) {
   const language = typeof body?.language === "string" && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/.test(body.language.trim())
     ? body.language.trim()
     : null;
-  const preferences = {};
-  if (body?.preferences && typeof body.preferences === "object" && !Array.isArray(body.preferences)) {
-    for (const [category, enabled] of Object.entries(body.preferences)) {
-      if (NOTIFICATION_CATEGORIES.has(category) && typeof enabled === "boolean") preferences[category] = enabled;
-    }
-  }
+  const preferences = booleanMap(body?.preferences);
+  // Per-category banner choice: `false` means "deliver, but quietly" — no
+  // banner and no sound, only an entry in the notification centre.
+  const banners = booleanMap(body?.banners);
   return {
     token,
     environment,
@@ -60,7 +58,19 @@ function parseDevice(body) {
     ...(deviceName ? { deviceName } : {}),
     ...(language ? { language } : {}),
     ...(Object.keys(preferences).length ? { preferences } : {}),
+    ...(Object.keys(banners).length ? { banners } : {}),
   };
+}
+
+// Keeps only known categories with boolean values.
+function booleanMap(value) {
+  const result = {};
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const [category, flag] of Object.entries(value)) {
+      if (NOTIFICATION_CATEGORIES.has(category) && typeof flag === "boolean") result[category] = flag;
+    }
+  }
+  return result;
 }
 
 export async function handleDeviceRoutes(url, request, env, userKey, ctx) {
@@ -86,6 +96,7 @@ export async function handleDeviceRoutes(url, request, env, userKey, ctx) {
       ...previousDevice,
       ...device,
       preferences: device.preferences ?? previousDevice?.preferences,
+      banners: device.banners ?? previousDevice?.banners,
       updatedAt: now,
     };
     const devices = [
