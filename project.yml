@@ -34,6 +34,10 @@ targets:
           - iCloud.com.yabuko.studiquo
         com.apple.developer.icloud-services:
           - CloudKit
+        # Shared with the studiquoShare extension: the inbox where shared
+        # files wait for the student to choose a destination folder.
+        com.apple.security.application-groups:
+          - group.com.yabuko.studiquo.share
     # Sign in with Apple's SystemCapabilities entry can't be expressed here:
     # xcodegen 2.46.0 mis-serializes a 2-level-nested `attributes` dict into a
     # single string, corrupting project.pbxproj. It must be re-added by hand
@@ -46,6 +50,8 @@ targets:
     # PBXProject.attributes.TargetAttributes.<target>.SystemCapabilities, and
     # add it by hand there if it's missing or corrupted.
     dependencies:
+      - target: studiquoShare
+        embed: true
       - package: GoogleSignIn
         product: GoogleSignIn
       - package: GoogleSignIn
@@ -99,6 +105,22 @@ targets:
         # Exported type for page snippets (drag/copy between notes). Kept here
         # because xcodegen regenerates studiquo/Info.plist from this block and
         # drops any key that only exists in the plist file.
+        # Lets studiquo appear as an "Open in…" target for course material in
+        # the Files app. Rank Alternate: we never claim to be the default
+        # viewer for PDFs. The files are copied in, not opened in place — they
+        # go through the same destination picker as a share-extension batch.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Course material
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.adobe.pdf
+              - org.openxmlformats.wordprocessingml.document
+              - org.openxmlformats.presentationml.presentation
+              - public.image
+              - public.plain-text
+              - public.comma-separated-values-text
+              - public.tab-separated-values-text
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.studiquo.page-snippet
             UTTypeDescription: Studiquo Page Snippet
@@ -113,6 +135,53 @@ targets:
           - CFBundleURLName: com.yabuko.studiquo.google-signin
             CFBundleURLSchemes:
               - com.googleusercontent.apps.812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd
+  # Share extension: puts studiquo in the share sheet's app row (Files app,
+  # Photos…). Compiles only SharedInbox from the app's sources — it copies
+  # files into the App Group inbox and opens the app; nothing heavier fits in
+  # an extension's memory budget.
+  studiquoShare:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: studiquoShare
+      - path: studiquo/Services/SharedInbox.swift
+    entitlements:
+      path: studiquoShare/studiquoShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.yabuko.studiquo.share
+    info:
+      path: studiquoShare/Info.plist
+      properties:
+        CFBundleDisplayName: studiquo
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule: >-
+              SUBQUERY (extensionItems, $extensionItem,
+              SUBQUERY ($extensionItem.attachments, $attachment,
+              ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.pdf"
+              OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.openxmlformats.wordprocessingml.document"
+              OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.openxmlformats.presentationml.presentation"
+              OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.image"
+              OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text"
+              OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.comma-separated-values-text"
+              OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.tab-separated-values-text"
+              ).@count >= 1).@count >= 1
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "2"
+        SWIFT_VERSION: "5.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquo.share
+        PRODUCT_NAME: studiquoShare
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 972G4VGUA6
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
   studiquoTests:
     type: bundle.unit-test
     platform: iOS
