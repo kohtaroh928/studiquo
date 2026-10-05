@@ -117,20 +117,53 @@ struct ShareDestinationPickerView: View {
     }
 }
 
-/// Wires the picker sheet, the running-import progress card, the "choose
-/// later" banner and the skipped-files notice onto `ContentView` in one
-/// modifier, keeping that view's already-long body chain from growing.
+/// What a shared import did, shown once it finishes if anything needs
+/// the student's attention.
+struct SharedImportSummary: Equatable {
+    var imported: Int
+    /// Formats the library cannot import; these were dropped.
+    var unsupported: [String]
+    /// Files that could not be imported this time (e.g. over the cloud sync
+    /// limit). They are kept and can be retried.
+    var held: [String]
+
+    var needsAttention: Bool { !unsupported.isEmpty || !held.isEmpty }
+
+    var message: String {
+        var lines = [L("\(imported)件を取り込みました。")]
+        if !held.isEmpty {
+            lines.append(L("\(held.count)件は取り込めませんでした(クラウド同期の容量上限など)。あとから「再試行」できます。"))
+            lines.append(Self.names(held))
+        }
+        if !unsupported.isEmpty {
+            lines.append(L("対応していない形式のため、取り込みませんでした。"))
+            lines.append(Self.names(unsupported))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func names(_ list: [String]) -> String {
+        let shown = list.prefix(5).joined(separator: "\n")
+        return list.count > 5 ? shown + "\n" + L("ほか\(list.count - 5)件") : shown
+    }
+}
+
+/// Wires the picker sheet, the running-import progress card, the held-files
+/// banner and the result notice onto `ContentView` in one modifier, keeping
+/// that view's already-long body chain from growing.
 struct SharedImportHost: ViewModifier {
     @ObservedObject var coordinator: SharedImportCoordinator
-    @Binding var skippedNames: [String]
+    @Binding var summary: SharedImportSummary?
     let onCreateFolder: (_ parent: Folder?, _ name: String) -> Folder?
     let onImport: (_ destination: Folder?) -> Void
+
+    @State private var confirmingDiscard = false
 
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $coordinator.isPickingDestination) {
                 ShareDestinationPickerView(
-                    itemCount: coordinator.pending.count,
+                    itemCount: coordinator.pickerItems.count,
                     onCreateFolder: onCreateFolder,
                     onConfirm: onImport,
                     onCancel: coordinator.dismissPicker
@@ -139,14 +172,24 @@ struct SharedImportHost: ViewModifier {
             }
             .overlay(alignment: .top) { statusCard }
             .animation(.easeInOut, value: coordinator.progress)
-            .animation(.easeInOut, value: coordinator.pending.count)
-            .alert("取り込めなかったファイル", isPresented: Binding(
-                get: { !skippedNames.isEmpty },
-                set: { if !$0 { skippedNames = [] } }
+            .animation(.easeInOut, value: coordinator.heldItems.count)
+            .alert("取り込み結果", isPresented: Binding(
+                get: { summary?.needsAttention == true },
+                set: { if !$0 { summary = nil } }
             )) {
-                Button("OK", role: .cancel) { skippedNames = [] }
+                Button("OK", role: .cancel) { summary = nil }
             } message: {
-                Text("対応していない形式のため、取り込みませんでした。\n" + skippedNames.joined(separator: "\n"))
+                Text(summary?.message ?? "")
+            }
+            .confirmationDialog(
+                "取り込めなかったファイルを破棄しますか?",
+                isPresented: $confirmingDiscard,
+                titleVisibility: .visible
+            ) {
+                Button("\(coordinator.heldItems.count)件を破棄", role: .destructive) { coordinator.discardHeld() }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("元のファイルは、ファイルアプリや写真に残ります。")
             }
     }
 
@@ -167,18 +210,23 @@ struct SharedImportHost: ViewModifier {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
             .padding(.top, 8)
             .transition(.move(edge: .top).combined(with: .opacity))
-        } else if !coordinator.pending.isEmpty && !coordinator.isPickingDestination {
-            Button(action: coordinator.presentPicker) {
-                Label("保存先を選んでいないファイルが\(coordinator.pending.count)件あります", systemImage: "tray.and.arrow.down")
+        } else if !coordinator.heldItems.isEmpty && !coordinator.isPickingDestination {
+            HStack(spacing: 12) {
+                Label("取り込めなかったファイルが\(coordinator.heldItems.count)件あります", systemImage: "tray.and.arrow.down")
                     .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.regularMaterial, in: Capsule())
+                Button("再試行", action: coordinator.presentHeldPicker)
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("shared-import-retry")
+                Button("破棄", role: .destructive) { confirmingDiscard = true }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("shared-import-discard")
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
             .padding(.top, 8)
             .transition(.move(edge: .top).combined(with: .opacity))
-            .accessibilityIdentifier("shared-import-pending-banner")
+            .accessibilityIdentifier("shared-import-held-banner")
         }
     }
 }

@@ -1722,8 +1722,8 @@ struct ContentView: View {
     /// Legacy folder path that `assignToCurrentFolder` uses instead of the
     /// open library folder while a shared batch is being imported.
     @State private var importDestinationPath: String?
-    /// Names of shared files whose format the library cannot import.
-    @State private var sharedImportSkipped: [String] = []
+    /// The outcome of the last shared import, shown when it needs attention.
+    @State private var sharedImportSummary: SharedImportSummary?
     /// The finished password-free copy, handed to a share sheet.
     @State private var pdfUnlockedResult: IdentifiableURL?
     /// Set after a locked PDF is opened during import, to offer removing its
@@ -2275,7 +2275,7 @@ struct ContentView: View {
         .modifier(PptxImportAlerts(importFailed: $pptxImportFailed, importReport: $pptxImportReport))
         .modifier(SharedImportHost(
             coordinator: sharedImport,
-            skippedNames: $sharedImportSkipped,
+            summary: $sharedImportSummary,
             onCreateFolder: createFolderForSharedImport,
             onImport: runSharedImport
         ))
@@ -5324,16 +5324,20 @@ struct ContentView: View {
         return folder
     }
 
-    /// Imports everything waiting in the shared inbox into `folder` (nil =
-    /// the library root), one file at a time.
+    /// Imports the files the picker was showing into `folder` (nil = the
+    /// library root), one at a time.
     ///
-    /// Sequential on purpose: each PDF is rendered page by page, and a locked
-    /// PDF stops to ask for its password (`pdfPendingImport` holds one at a
-    /// time), so the loop waits for that prompt before moving on. A file is
-    /// removed from the inbox only after its turn; if the storage limit is hit
-    /// the rest stay there for later.
+    /// Only the picker's own files are imported — never leftovers from an
+    /// earlier failed import, which are held separately. Sequential on
+    /// purpose: each PDF is rendered page by page, and a locked PDF stops to
+    /// ask for its password (`pdfPendingImport` holds one at a time), so the
+    /// loop waits for that prompt before moving on.
+    ///
+    /// A file that cannot be imported (e.g. over the cloud sync limit) is
+    /// skipped, not fatal: later, smaller files may still fit. Skipped files
+    /// stay in the inbox as a held batch and are listed when the import ends.
     private func runSharedImport(into folder: Folder?) {
-        let items = sharedImport.pending
+        let items = sharedImport.pickerItems
         guard !items.isEmpty, !sharedImport.isImporting else { return }
         let destination = folder?.legacyPath ?? ""
         let isBatch = items.count > 1
@@ -5341,31 +5345,43 @@ struct ContentView: View {
         let selectedBefore = selectedNotebook
 
         importDestinationPath = destination
-        sharedImportSkipped = []
+        sharedImportSummary = nil
         homeSection = .notes
         sharedImport.begin(total: items.count)
 
         Task { @MainActor in
-            var skipped: [String] = []
+            var unsupported: [String] = []
+            var held: [SharedInbox.Item] = []
             for (index, item) in items.enumerated() {
                 sharedImport.advance(completed: index, currentName: item.displayName)
                 pdfPrepareError = nil
-                if SharedInbox.isImportable(item.url) {
-                    importFile(from: item.url)
-                    while pdfPendingImport != nil {
-                        try? await Task.sleep(for: .milliseconds(200))
-                    }
-                    if pdfPrepareError != nil { break }
-                } else {
-                    skipped.append(item.displayName)
+                guard SharedInbox.isImportable(item.url) else {
+                    unsupported.append(item.displayName)
+                    sharedImport.finish(item)
+                    continue
                 }
-                sharedImport.finish(item)
+                importFile(from: item.url)
+                while pdfPendingImport != nil {
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+                if pdfPrepareError != nil {
+                    // Clear it at once: the end-of-import notice reports every
+                    // skipped file together instead of one alert per file.
+                    pdfPrepareError = nil
+                    held.append(item)
+                } else {
+                    sharedImport.finish(item)
+                }
                 await Task.yield()
             }
             try? modelContext.save()
             importDestinationPath = nil
-            sharedImport.end()
-            sharedImportSkipped = skipped
+            sharedImport.end(attempted: held)
+            sharedImportSummary = SharedImportSummary(
+                imported: items.count - unsupported.count - held.count,
+                unsupported: unsupported,
+                held: held.map(\.displayName)
+            )
             if isBatch {
                 // 28 files should not leave 28 notebooks open as tabs.
                 openNotebooks = tabsBefore
