@@ -122,6 +122,52 @@ final class SharedInboxTests: XCTestCase {
     func testMissingInboxFolderMeansNothingPending() {
         XCTAssertTrue(inbox.pendingItems().isEmpty)
     }
+
+    // MARK: Held batches
+
+    func testHeldBatchIsFlaggedAndFreshBatchIsNot() throws {
+        inbox.enqueue(copying: [try makeSource("a.pdf")])
+        inbox.enqueue(copying: [try makeSource("b.pdf", in: "other")])
+        let batches = inbox.pendingBatches()
+        XCTAssertEqual(batches.count, 2)
+        XCTAssertTrue(batches.allSatisfy { !$0.isHeld })
+
+        inbox.hold(batches[0])
+        let after = inbox.pendingBatches()
+        XCTAssertEqual(after.filter(\.isHeld).count, 1)
+        XCTAssertEqual(after.filter(\.isHeld).first?.items.map(\.displayName).count, 1)
+    }
+
+    func testHoldMarkerIsNotListedAsAFileAndSurvivesRemovalOfLastFile() throws {
+        let item = inbox.enqueue(copying: [try makeSource("a.pdf")]).items[0]
+        inbox.hold(inbox.pendingBatches()[0])
+        XCTAssertEqual(inbox.pendingItems().map(\.displayName), ["a.pdf"])
+
+        inbox.remove(item)
+        XCTAssertTrue(inbox.pendingBatches().isEmpty, "removing the last file takes the whole batch folder, marker included")
+    }
+
+    func testReleaseMakesAHeldBatchFreshAgain() throws {
+        inbox.enqueue(copying: [try makeSource("a.pdf")])
+        let batch = inbox.pendingBatches()[0]
+        inbox.hold(batch)
+        inbox.release(inbox.pendingBatches()[0])
+        XCTAssertFalse(inbox.pendingBatches()[0].isHeld)
+    }
+
+    func testDiscardHeldOlderThanOnlyRemovesOldHeldBatches() throws {
+        inbox.enqueue(copying: [try makeSource("old.pdf")])
+        inbox.enqueue(copying: [try makeSource("recent.pdf", in: "r")])
+        inbox.enqueue(copying: [try makeSource("fresh.pdf", in: "f")])
+        let batches = inbox.pendingBatches()
+        let now = Date()
+        inbox.hold(batches[0], at: now.addingTimeInterval(-10 * 86_400))
+        inbox.hold(batches[1], at: now.addingTimeInterval(-1 * 86_400))
+
+        inbox.discardHeld(olderThan: now.addingTimeInterval(-7 * 86_400))
+
+        XCTAssertEqual(Set(inbox.pendingItems().map(\.displayName)), ["recent.pdf", "fresh.pdf"])
+    }
 }
 
 @MainActor
@@ -140,8 +186,11 @@ final class SharedImportCoordinatorTests: XCTestCase {
         try? FileManager.default.removeItem(at: sandbox)
     }
 
-    private func drop(_ name: String) throws {
-        let url = sandbox.appendingPathComponent(name)
+    /// One "share": a new batch holding a file of this name.
+    private func share(_ name: String) throws {
+        let folder = sandbox.appendingPathComponent("src-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent(name)
         try Data("x".utf8).write(to: url)
         inbox.enqueue(copying: [url])
     }
@@ -151,60 +200,121 @@ final class SharedImportCoordinatorTests: XCTestCase {
         coordinator.refresh()
         XCTAssertFalse(coordinator.isPickingDestination)
 
-        try drop("a.pdf")
+        try share("a.pdf")
         coordinator.refresh()
         XCTAssertTrue(coordinator.isPickingDestination)
-        XCTAssertEqual(coordinator.pending.count, 1)
+        XCTAssertEqual(coordinator.pickerItems.map(\.displayName), ["a.pdf"])
     }
 
-    func testCancelledFilesAreKeptButDoNotRePresentTheirPicker() throws {
+    func testCancelHoldsTheFilesAndAnewShareDoesNotPickThemUp() throws {
         let coordinator = SharedImportCoordinator(inbox: inbox)
-        try drop("a.pdf")
+        try share("old.pdf")
         coordinator.refresh()
         coordinator.dismissPicker()
         XCTAssertFalse(coordinator.isPickingDestination)
+        XCTAssertEqual(coordinator.heldItems.map(\.displayName), ["old.pdf"], "cancelling must not delete the student's files")
 
-        coordinator.refresh() // e.g. the app returning to the foreground
+        coordinator.refresh() // returning to the foreground
         XCTAssertFalse(coordinator.isPickingDestination)
-        XCTAssertEqual(coordinator.pending.count, 1, "cancelling must not delete the student's files")
 
-        try drop("b.pdf")
+        try share("new.pdf")
         coordinator.refresh()
-        XCTAssertTrue(coordinator.isPickingDestination, "a new arrival asks again")
+        XCTAssertTrue(coordinator.isPickingDestination)
+        XCTAssertEqual(coordinator.pickerItems.map(\.displayName), ["new.pdf"],
+                       "a new share must import only itself, never earlier leftovers")
+        XCTAssertEqual(coordinator.heldItems.map(\.displayName), ["old.pdf"])
     }
 
-    func testPresentPickerReopensDismissedFiles() throws {
+    func testFilesLeftByAFailedImportAreHeldNotMixedIntoTheNextShare() throws {
         let coordinator = SharedImportCoordinator(inbox: inbox)
-        try drop("a.pdf")
+        try share("big.pdf")
+        try share("small.pdf")
+        coordinator.refresh()
+        let attempted = coordinator.pickerItems
+        coordinator.begin(total: attempted.count)
+        // small.pdf imports, big.pdf does not fit
+        coordinator.finish(attempted.first { $0.displayName == "small.pdf" }!)
+        coordinator.end(attempted: attempted.filter { $0.displayName == "big.pdf" })
+
+        XCTAssertEqual(coordinator.heldItems.map(\.displayName), ["big.pdf"])
+        XCTAssertTrue(coordinator.freshBatches.isEmpty)
+
+        try share("one-more.pdf")
+        coordinator.refresh()
+        XCTAssertEqual(coordinator.pickerItems.map(\.displayName), ["one-more.pdf"])
+    }
+
+    func testRetryOffersOnlyTheHeldFiles() throws {
+        let coordinator = SharedImportCoordinator(inbox: inbox)
+        try share("held.pdf")
+        coordinator.refresh()
+        coordinator.dismissPicker()
+        try share("fresh.pdf")
+        coordinator.refresh()
+        coordinator.dismissPicker()
+        XCTAssertEqual(Set(coordinator.heldItems.map(\.displayName)), ["held.pdf", "fresh.pdf"])
+
+        coordinator.presentHeldPicker()
+        XCTAssertTrue(coordinator.isPickingDestination)
+        XCTAssertEqual(coordinator.pickerSource, .held)
+        XCTAssertEqual(Set(coordinator.pickerItems.map(\.displayName)), ["held.pdf", "fresh.pdf"])
+    }
+
+    func testCancellingTheRetryPickerKeepsFilesHeld() throws {
+        let coordinator = SharedImportCoordinator(inbox: inbox)
+        try share("a.pdf")
+        coordinator.refresh()
+        coordinator.dismissPicker()
+        coordinator.presentHeldPicker()
+        coordinator.dismissPicker()
+
+        XCTAssertFalse(coordinator.isPickingDestination)
+        XCTAssertEqual(coordinator.heldItems.map(\.displayName), ["a.pdf"])
+    }
+
+    func testDiscardHeldDeletesFromDisk() throws {
+        let coordinator = SharedImportCoordinator(inbox: inbox)
+        try share("a.pdf")
         coordinator.refresh()
         coordinator.dismissPicker()
 
-        coordinator.presentPicker()
-        XCTAssertTrue(coordinator.isPickingDestination)
+        coordinator.discardHeld()
+        XCTAssertTrue(coordinator.heldItems.isEmpty)
+        XCTAssertTrue(inbox.pendingItems().isEmpty)
     }
 
-    func testFinishRemovesTheFileFromDiskAndPending() throws {
+    func testHeldFilesExpireAfterAWeek() throws {
         let coordinator = SharedImportCoordinator(inbox: inbox)
-        try drop("a.pdf")
+        try share("a.pdf")
         coordinator.refresh()
-        let item = try XCTUnwrap(coordinator.pending.first)
+        coordinator.dismissPicker()
+
+        coordinator.refresh(now: Date().addingTimeInterval(6 * 86_400))
+        XCTAssertEqual(coordinator.heldItems.count, 1)
+        coordinator.refresh(now: Date().addingTimeInterval(8 * 86_400))
+        XCTAssertTrue(coordinator.heldItems.isEmpty)
+        XCTAssertTrue(inbox.pendingItems().isEmpty)
+    }
+
+    func testFinishRemovesTheFileFromDisk() throws {
+        let coordinator = SharedImportCoordinator(inbox: inbox)
+        try share("a.pdf")
+        coordinator.refresh()
+        let item = try XCTUnwrap(coordinator.pickerItems.first)
 
         coordinator.finish(item)
-        XCTAssertTrue(coordinator.pending.isEmpty)
         XCTAssertTrue(inbox.pendingItems().isEmpty)
     }
 
     func testRefreshIsIgnoredWhileImporting() throws {
         let coordinator = SharedImportCoordinator(inbox: inbox)
-        try drop("a.pdf")
+        try share("a.pdf")
         coordinator.refresh()
         coordinator.begin(total: 1)
         XCTAssertFalse(coordinator.isPickingDestination)
 
-        try drop("b.pdf")
+        try share("b.pdf")
         coordinator.refresh()
         XCTAssertFalse(coordinator.isPickingDestination, "must not stack a picker over a running import")
-        coordinator.end()
-        XCTAssertEqual(coordinator.pending.count, 2)
     }
 }

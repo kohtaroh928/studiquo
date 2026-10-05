@@ -1,12 +1,16 @@
 import Foundation
 
-/// Tracks what is waiting in the `SharedInbox` and whether the destination
-/// picker should be on screen for it.
+/// Tracks what is waiting in the `SharedInbox` and which of it the destination
+/// picker should offer.
 ///
-/// Cancelling the picker keeps the files (nothing is lost) but must not
-/// re-present it on every return to the foreground, so cancelled items are
-/// remembered and only *new* arrivals pop the picker again. The leftover count
-/// stays visible through `pending` for a "choose later" banner.
+/// Files are grouped by share (a "batch") and fall into two kinds:
+/// - **fresh** — arrived and not yet answered. The picker imports exactly these.
+/// - **held** — the student cancelled the picker, or an import could not finish
+///   them. They stay on disk but are never mixed into a new share; the student
+///   retries or discards them from their own banner.
+///
+/// Mixing them was the original bug: one new PDF used to drag every leftover
+/// from earlier failures into its import.
 @MainActor
 final class SharedImportCoordinator: ObservableObject {
     struct Progress: Equatable {
@@ -15,26 +19,43 @@ final class SharedImportCoordinator: ObservableObject {
         var currentName: String
     }
 
-    @Published private(set) var pending: [SharedInbox.Item] = []
+    /// What the picker is currently importing.
+    enum PickerSource: Equatable {
+        case fresh
+        case held
+    }
+
+    /// How long a held batch is kept before it is cleaned up.
+    static let heldRetention: TimeInterval = 7 * 24 * 60 * 60
+
+    @Published private(set) var freshBatches: [SharedInbox.PendingBatch] = []
+    @Published private(set) var heldBatches: [SharedInbox.PendingBatch] = []
     @Published var isPickingDestination = false
+    @Published private(set) var pickerSource: PickerSource = .fresh
     @Published private(set) var progress: Progress?
 
     private let inbox: SharedInbox?
-    private var dismissed: Set<URL> = []
 
     var isImporting: Bool { progress != nil }
+
+    /// The files the picker would import right now.
+    var pickerItems: [SharedInbox.Item] {
+        (pickerSource == .fresh ? freshBatches : heldBatches).flatMap(\.items)
+    }
+
+    var heldItems: [SharedInbox.Item] { heldBatches.flatMap(\.items) }
 
     init(inbox: SharedInbox? = SharedInbox.standard()) {
         self.inbox = inbox
     }
 
-    /// Re-reads the inbox. Presents the picker only when something has arrived
-    /// that the student has not already dismissed.
-    func refresh() {
+    /// Re-reads the inbox. Presents the picker when something new has arrived.
+    func refresh(now: Date = Date()) {
         guard !isImporting else { return }
-        pending = inbox?.pendingItems() ?? []
-        dismissed.formIntersection(pending.map(\.url))
-        if pending.contains(where: { !dismissed.contains($0.url) }) {
+        inbox?.discardHeld(olderThan: now.addingTimeInterval(-Self.heldRetention))
+        reload()
+        if !freshBatches.isEmpty && !isPickingDestination {
+            pickerSource = .fresh
             isPickingDestination = true
         }
     }
@@ -46,17 +67,27 @@ final class SharedImportCoordinator: ObservableObject {
         refresh()
     }
 
-    /// Cancelled: keep the files, stop auto-presenting them.
+    /// Cancelled: keep the files, but set them aside so they are not offered
+    /// again with the next share.
     func dismissPicker() {
-        dismissed.formUnion(pending.map(\.url))
+        if pickerSource == .fresh {
+            freshBatches.forEach { inbox?.hold($0) }
+        }
         isPickingDestination = false
+        reload()
     }
 
-    /// The student chose "choose later" from the banner.
-    func presentPicker() {
-        guard !pending.isEmpty else { return }
-        dismissed.subtract(pending.map(\.url))
+    /// The student chose "retry" on the held-files banner.
+    func presentHeldPicker() {
+        guard !heldBatches.isEmpty else { return }
+        pickerSource = .held
         isPickingDestination = true
+    }
+
+    /// The student chose to throw the held files away.
+    func discardHeld() {
+        heldBatches.forEach { inbox?.discard($0) }
+        reload()
     }
 
     func begin(total: Int) {
@@ -74,11 +105,23 @@ final class SharedImportCoordinator: ObservableObject {
     /// Done with `item`, imported or not — drops it from the inbox.
     func finish(_ item: SharedInbox.Item) {
         inbox?.remove(item)
-        pending.removeAll { $0 == item }
     }
 
-    func end() {
+    /// Ends an import. Whatever of `attempted` is still on disk could not be
+    /// imported, so its batch is held for a later retry instead of staying
+    /// "new".
+    func end(attempted: [SharedInbox.Item]) {
         progress = nil
-        pending = inbox?.pendingItems() ?? []
+        let folders = Set(attempted.map { $0.url.deletingLastPathComponent() })
+        for batch in inbox?.pendingBatches() ?? [] where folders.contains(batch.folder) {
+            inbox?.hold(batch)
+        }
+        reload()
+    }
+
+    private func reload() {
+        let batches = inbox?.pendingBatches() ?? []
+        freshBatches = batches.filter { !$0.isHeld }
+        heldBatches = batches.filter(\.isHeld)
     }
 }

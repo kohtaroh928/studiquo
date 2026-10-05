@@ -128,27 +128,78 @@ struct SharedInbox {
         return result
     }
 
-    /// Everything still waiting, oldest share first, each batch in name order.
-    func pendingItems() -> [Item] {
+    /// One share (or "Open in…") worth of waiting files.
+    struct PendingBatch: Identifiable, Equatable {
+        let folder: URL
+        let items: [Item]
+        /// A batch the student cancelled, or that could not be imported
+        /// completely. Held batches are never offered together with a new
+        /// share — they have their own retry / discard entry point.
+        let isHeld: Bool
+        /// When it was held; nil for a fresh batch.
+        let heldAt: Date?
+        var id: URL { folder }
+    }
+
+    private static let heldMarkerName = ".held"
+
+    /// Every batch still waiting, oldest share first, files in name order.
+    func pendingBatches() -> [PendingBatch] {
         let keys: [URLResourceKey] = [.contentModificationDateKey, .isDirectoryKey]
-        guard let batches = try? fileManager.contentsOfDirectory(
+        guard let folders = try? fileManager.contentsOfDirectory(
             at: root, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]
         ) else { return [] }
-        let orderedBatches = batches
+        let ordered = folders
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
             .sorted { lhs, rhs in
                 let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 return l == r ? lhs.lastPathComponent < rhs.lastPathComponent : l < r
             }
-        return orderedBatches.flatMap { batch -> [Item] in
+        return ordered.compactMap { folder in
             let files = (try? fileManager.contentsOfDirectory(
-                at: batch, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]
+                at: folder, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]
             )) ?? []
-            return files
+            let items = files
                 .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true }
                 .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
                 .map(Item.init)
+            guard !items.isEmpty else { return nil }
+            let marker = folder.appendingPathComponent(Self.heldMarkerName)
+            let heldAt = (try? marker.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+            let isHeld = fileManager.fileExists(atPath: marker.path)
+            return PendingBatch(folder: folder, items: items, isHeld: isHeld, heldAt: isHeld ? (heldAt ?? .distantPast) : nil)
+        }
+    }
+
+    /// Everything still waiting, fresh and held, oldest share first.
+    func pendingItems() -> [Item] {
+        pendingBatches().flatMap(\.items)
+    }
+
+    /// Sets a batch aside: it stops counting as a new share, but its files stay
+    /// so the student can retry or discard them later.
+    func hold(_ batch: PendingBatch, at date: Date = Date()) {
+        let marker = batch.folder.appendingPathComponent(Self.heldMarkerName)
+        guard fileManager.fileExists(atPath: batch.folder.path) else { return }
+        fileManager.createFile(atPath: marker.path, contents: Data())
+        try? fileManager.setAttributes([.modificationDate: date], ofItemAtPath: marker.path)
+    }
+
+    /// Makes a held batch fresh again (the student chose to retry it).
+    func release(_ batch: PendingBatch) {
+        try? fileManager.removeItem(at: batch.folder.appendingPathComponent(Self.heldMarkerName))
+    }
+
+    func discard(_ batch: PendingBatch) {
+        try? fileManager.removeItem(at: batch.folder)
+    }
+
+    /// Held batches older than `cutoff` are deleted. The originals still live
+    /// in the Files app (or Photos), so this only frees the inbox copy.
+    func discardHeld(olderThan cutoff: Date) {
+        for batch in pendingBatches() {
+            if let heldAt = batch.heldAt, heldAt < cutoff { discard(batch) }
         }
     }
 
