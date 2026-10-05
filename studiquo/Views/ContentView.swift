@@ -2008,6 +2008,12 @@ struct ContentView: View {
     /// drives the "+" badge (`entryDropBadge`) shown while dragging one
     /// resource over another, mirroring `folderDropTarget`/`folderDropBadge`.
     @State private var entryDropTarget: PersistentIdentifier?
+    /// Multi-select mode of the home screen (folders and items alike).
+    @State private var homeSelection = HomeSelection()
+    @State private var showsSelectionMoveSheet = false
+    @State private var showsSelectionTrashConfirmation = false
+    @State private var showsSelectionPermanentDeleteConfirmation = false
+    @State private var selectionResultMessage: String?
     @State private var folderToRename: Folder?
     @State private var folderRenameText = ""
     @State private var studyNotebook: Notebook?
@@ -4132,6 +4138,7 @@ struct ContentView: View {
                 }
             }
         }
+        .modifier(selectable(folderPath: folder, layout: .row, leadingInset: 0))
     }
 
     private func folderDropBadge(_ folder: String) -> some View {
@@ -4389,7 +4396,11 @@ struct ContentView: View {
                 homeList
             }
         }
-        .navigationTitle(selectedFolder.map(folderDisplayName) ?? (isHomeScreen ? L("ホーム") : libraryMode.title))
+        .navigationTitle(
+            homeSelection.isActive
+                ? L("\(homeSelection.count)件選択中")
+                : (selectedFolder.map(folderDisplayName) ?? (isHomeScreen ? L("ホーム") : libraryMode.title))
+        )
         .searchable(text: $searchText, prompt: "ノートを検索")
         .scrollContentBackground(.hidden)
         .background(
@@ -4414,29 +4425,73 @@ struct ContentView: View {
                         Label("ホームへ戻る", systemImage: "house.fill")
                     }
                 }
-                if libraryMode == .documents {
-                    ForEach(HomeViewMode.allCases) { mode in
-                        Button {
-                            viewMode = mode
-                        } label: {
-                            Image(systemName: mode.systemImage)
-                        }
-                        .tint(viewMode == mode ? Color.accentColor : Color.secondary)
-                        .accessibilityIdentifier("library-view-\(mode.rawValue)")
+                if homeSelection.isActive {
+                    Button("全てを選択") {
+                        homeSelection.select(visibleSelectionTokens)
                     }
-                }
-                Menu {
-                    Picker("並べ替え", selection: $sortOption) {
-                        ForEach(NotebookSortOption.allCases) { option in
-                            Text(option.title).tag(option)
+                    .accessibilityIdentifier("library-selection-select-all")
+                    Button("選択を解除") {
+                        homeSelection.clear()
+                    }
+                    .disabled(homeSelection.isEmpty)
+                    .accessibilityIdentifier("library-selection-deselect-all")
+                } else {
+                    if libraryMode == .documents {
+                        ForEach(HomeViewMode.allCases) { mode in
+                            Button {
+                                viewMode = mode
+                            } label: {
+                                Image(systemName: mode.systemImage)
+                            }
+                            .tint(viewMode == mode ? Color.accentColor : Color.secondary)
+                            .accessibilityIdentifier("library-view-\(mode.rawValue)")
                         }
                     }
-                } label: {
-                    Label("並べ替え", systemImage: "arrow.up.arrow.down")
+                    Menu {
+                        Picker("並べ替え", selection: $sortOption) {
+                            ForEach(NotebookSortOption.allCases) { option in
+                                Text(option.title).tag(option)
+                            }
+                        }
+                    } label: {
+                        Label("並べ替え", systemImage: "arrow.up.arrow.down")
+                    }
                 }
             }
+            homeSelectionToolbar
             homeToolbarActions
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if homeSelection.isActive {
+                HomeSelectionActionBar(
+                    isTrash: libraryMode == .trash,
+                    count: libraryMode == .trash
+                        ? resolveSelection().entries.filter(\.isTrashed).count
+                        : homeSelection.count,
+                    onPrimary: {
+                        if libraryMode == .trash {
+                            restoreSelection()
+                        } else {
+                            showsSelectionMoveSheet = true
+                        }
+                    },
+                    onDelete: {
+                        if libraryMode == .trash {
+                            showsSelectionPermanentDeleteConfirmation = true
+                        } else {
+                            showsSelectionTrashConfirmation = true
+                        }
+                    }
+                )
+            }
+        }
+        .modifier(homeSelectionPresentations)
+        .onChange(of: libraryMode) { _, _ in
+            // Opening a favorite folder switches the mode while a folder is
+            // set; only a switch back to a top-level list (sidebar) ends it.
+            if selectedFolder == nil { homeSelection.end() }
+        }
+        .onChange(of: selectionDataFingerprint) { _, _ in pruneSelection() }
         .confirmationDialog("ゴミ箱を空にしますか？", isPresented: $showsEmptyTrashConfirmation, titleVisibility: .visible) {
             Button("完全に削除", role: .destructive) { emptyTrash() }
             Button("キャンセル", role: .cancel) {}
@@ -4511,7 +4566,7 @@ struct ContentView: View {
     /// the original fix wasn't the problem.
     @ToolbarContentBuilder
     private var homeToolbarActions: some ToolbarContent {
-        if isHomeScreen {
+        if isHomeScreen && !homeSelection.isActive {
             ToolbarItem(placement: .navigationBarTrailing) {
                 LibraryViewSection { AnyView(notificationBell) }
             }
@@ -4519,15 +4574,47 @@ struct ContentView: View {
                 LibraryViewSection { AnyView(reportIssueToolbarButton) }
             }
         }
-        ToolbarItem(placement: .navigationBarTrailing) {
-            LibraryViewSection { AnyView(primaryLibraryToolbarAction) }
+        if !homeSelection.isActive {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                LibraryViewSection { AnyView(selectionModeToolbarButton) }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                LibraryViewSection { AnyView(primaryLibraryToolbarAction) }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                LibraryViewSection { AnyView(settingsToolbarButton) }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                LibraryViewSection { AnyView(profileToolbarButton) }
+            }
         }
-        ToolbarItem(placement: .navigationBarTrailing) {
-            LibraryViewSection { AnyView(settingsToolbarButton) }
+    }
+
+    /// While selecting, the navigation title shows how many are selected and
+    /// the trailing "完了" button leaves selection mode.
+    @ToolbarContentBuilder
+    private var homeSelectionToolbar: some ToolbarContent {
+        if homeSelection.isActive {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("完了") { homeSelection.end() }
+                    .fontWeight(.semibold)
+                    .accessibilityIdentifier("library-selection-done")
+            }
         }
-        ToolbarItem(placement: .navigationBarTrailing) {
-            LibraryViewSection { AnyView(profileToolbarButton) }
+    }
+
+    private var selectionModeToolbarButton: some View {
+        Button("選択") {
+            // Unsaved models carry temporary ids that change on save, which
+            // would silently drop them from the selection.
+            try? modelContext.save()
+            homeSelection.begin()
         }
+            .disabled(
+                allNotebooks.isEmpty && flashcardDecks.isEmpty
+                    && textDocuments.isEmpty && slideDecks.isEmpty && folderNames.isEmpty
+            )
+            .accessibilityIdentifier("library-selection-begin")
     }
 
     @ViewBuilder
@@ -4719,6 +4806,7 @@ struct ContentView: View {
                             }
                         }
                     }
+                    .modifier(selectable(folderPath: folder, layout: .tile))
                 }
                 ForEach(entries) { entry in
                     HomeEntryTile(entry: entry) {
@@ -4745,6 +4833,7 @@ struct ContentView: View {
                             entryActions(entry)
                         }
                     }
+                    .modifier(selectable(entry: entry, layout: .tile))
                 }
             }
             .padding()
@@ -4835,6 +4924,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                .modifier(selectable(folderPath: path, layout: .row, open: { selectedFolder = path }))
             }
             ForEach(entries(inLegacyPath: parentPath)) { entry in
                 Button { open(entry) } label: {
@@ -4863,6 +4953,7 @@ struct ContentView: View {
                         entryActions(entry)
                     }
                 }
+                .modifier(selectable(entry: entry, layout: .row))
             }
             Rectangle()
                 .fill(Color.clear)
@@ -5020,6 +5111,7 @@ struct ContentView: View {
                 action: { items, _ in handleEntryDrop(items, onto: .flashcardDeck(deck)) },
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.flashcardDeck(deck).id) }
             )
+            .modifier(selectable(entry: .flashcardDeck(deck), layout: .row))
         }
     }
 
@@ -5081,6 +5173,7 @@ struct ContentView: View {
                 action: { items, _ in handleEntryDrop(items, onto: .textDocument(document)) },
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.textDocument(document).id) }
             )
+            .modifier(selectable(entry: .textDocument(document), layout: .row))
         }
     }
 
@@ -5126,6 +5219,7 @@ struct ContentView: View {
                 action: { items, _ in handleEntryDrop(items, onto: .slideDeck(deck)) },
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.slideDeck(deck).id) }
             )
+            .modifier(selectable(entry: .slideDeck(deck), layout: .row))
         }
     }
 
@@ -5138,22 +5232,22 @@ struct ContentView: View {
         let slides = slideDecks.filter { $0.isTrashed }
         ForEach(decks) { deck in
             trashedRow(title: deck.title, subtitle: "\(deck.sortedCards.count)枚の暗記カード",
-                       icon: "rectangle.on.rectangle.angled", tint: .indigo,
+                       icon: "rectangle.on.rectangle.angled", tint: .indigo, entry: .flashcardDeck(deck),
                        restore: { restoreDeck(deck) }, delete: { permanentlyDeleteDeck(deck) })
         }
         ForEach(documents) { document in
             trashedRow(title: document.title, subtitle: "\(document.wordCount)語の文書",
-                       icon: "doc.text", tint: .teal,
+                       icon: "doc.text", tint: .teal, entry: .textDocument(document),
                        restore: { restoreDocument(document) }, delete: { permanentlyDeleteDocument(document) })
         }
         ForEach(slides) { deck in
             trashedRow(title: deck.title, subtitle: "\(deck.sortedSlides.count)枚のスライド",
-                       icon: "rectangle.on.rectangle", tint: .orange,
+                       icon: "rectangle.on.rectangle", tint: .orange, entry: .slideDeck(deck),
                        restore: { restoreSlideDeck(deck) }, delete: { permanentlyDeleteSlideDeck(deck) })
         }
     }
 
-    private func trashedRow(title: String, subtitle: String, icon: String, tint: Color,
+    private func trashedRow(title: String, subtitle: String, icon: String, tint: Color, entry: HomeEntry,
                             restore: @escaping () -> Void, delete: @escaping () -> Void) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon).font(.title2).foregroundStyle(tint)
@@ -5171,6 +5265,7 @@ struct ContentView: View {
         .swipeActions {
             Button("完全に削除", role: .destructive, action: delete)
         }
+        .modifier(selectable(entry: entry, layout: .row))
     }
 
     private func restoreDeck(_ deck: FlashcardDeck) { deck.isTrashed = false; deck.trashedAt = nil }
@@ -5226,6 +5321,10 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    .modifier(selectable(folderPath: folder, layout: .row, open: {
+                        selectedFolder = folder
+                        libraryMode = .documents
+                    }))
                 }
             }
         }
@@ -5248,6 +5347,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    .modifier(selectable(entry: .flashcardDeck(deck), layout: .row))
                 }
             }
         }
@@ -6607,6 +6707,7 @@ struct ContentView: View {
                 action: { items, _ in handleEntryDrop(items, onto: .notebook(notebook)) },
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.notebook(notebook).id) }
             )
+            .modifier(selectable(entry: .notebook(notebook), layout: .row))
         }
     }
 }
@@ -7033,4 +7134,362 @@ private struct LibraryViewSection: View {
     let content: () -> AnyView
 
     var body: some View { content() }
+}
+
+// MARK: - Home multi-select
+
+/// Selecting, moving, deleting and restoring several folders/items at once.
+/// Kept in one place (rather than spread over the very large `ContentView`
+/// body) and written against the same helpers the drag-and-drop, trash and
+/// folder code already use, so a bulk action behaves exactly like doing the
+/// same thing to each item by hand.
+extension ContentView {
+    private struct SelectionTargets {
+        var entries: [HomeEntry] = []
+        var folders: [Folder] = []
+    }
+
+    // MARK: Row decoration
+
+    private func inactiveSelectable(_ layout: HomeSelectableModifier.Layout) -> HomeSelectableModifier {
+        HomeSelectableModifier(isSelecting: false, isSelected: false, layout: layout, label: "", toggle: {})
+    }
+
+    private func selectable(entry: HomeEntry, layout: HomeSelectableModifier.Layout) -> HomeSelectableModifier {
+        guard homeSelection.isActive else { return inactiveSelectable(layout) }
+        let token = dragPayload(for: entry)
+        return HomeSelectableModifier(
+            isSelecting: true,
+            isSelected: homeSelection.contains(token),
+            layout: layout,
+            label: entry.title,
+            toggle: { homeSelection.toggle(token) }
+        )
+    }
+
+    private func selectable(
+        folderPath: String,
+        layout: HomeSelectableModifier.Layout,
+        leadingInset: CGFloat = 12,
+        open: (() -> Void)? = nil
+    ) -> HomeSelectableModifier {
+        guard homeSelection.isActive, let token = folderDragPayload(for: folderPath) else {
+            return inactiveSelectable(layout)
+        }
+        return HomeSelectableModifier(
+            isSelecting: true,
+            isSelected: homeSelection.contains(token),
+            layout: layout,
+            label: folderDisplayName(folderPath),
+            toggle: { homeSelection.toggle(token) },
+            open: open ?? { selectedFolder = folderPath },
+            leadingInset: leadingInset
+        )
+    }
+
+    // MARK: What is on screen / what is selected
+
+    /// Every folder and item currently listed, for "全てを選択". Mirrors what
+    /// the icon grid, list and column browser (and the non-"すべて" lists)
+    /// actually render.
+    fileprivate var visibleSelectionTokens: [String] {
+        var tokens: [String] = []
+        func addFolders(_ paths: [String]) {
+            for path in paths {
+                if let token = folderDragPayload(for: path) { tokens.append(token) }
+            }
+        }
+        func addEntries(_ entries: [HomeEntry]) {
+            tokens.append(contentsOf: entries.map(dragPayload(for:)))
+        }
+
+        if libraryMode == .documents && viewMode == .column {
+            let chain = folderChain(endingAt: selectedFolder)
+            for level in 0...chain.count {
+                let parent: String? = level == 0 ? nil : chain[level - 1]
+                addFolders(subfolderPaths(of: parent))
+                addEntries(entries(inLegacyPath: parent))
+            }
+        } else if libraryMode == .documents {
+            addFolders(visibleFolderPaths)
+            let notebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
+            addEntries(
+                notebooks.map(HomeEntry.notebook)
+                    + displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
+                    + displayedTextDocuments.map(HomeEntry.textDocument)
+                    + displayedSlideDecks.map(HomeEntry.slideDeck)
+            )
+        } else if libraryMode == .studyCards && selectedFolder == nil {
+            addEntries(displayedFlashcardDecks.map(HomeEntry.flashcardDeck))
+        } else if libraryMode == .textDocuments && selectedFolder == nil {
+            addEntries(displayedTextDocuments.map(HomeEntry.textDocument))
+        } else if libraryMode == .slides && selectedFolder == nil {
+            addEntries(displayedSlideDecks.map(HomeEntry.slideDeck))
+        } else if libraryMode == .favorites && selectedFolder == nil {
+            addFolders(sortedFolderNames.filter { favoriteFolderPaths.contains($0) })
+            addEntries(
+                visibleNotebooks.map(HomeEntry.notebook)
+                    + flashcardDecks.filter(\.isFavorite).map(HomeEntry.flashcardDeck)
+            )
+        } else {
+            var entries = visibleNotebooks.map(HomeEntry.notebook)
+            if libraryMode == .trash && selectedFolder == nil {
+                entries += flashcardDecks.filter(\.isTrashed).map(HomeEntry.flashcardDeck)
+                entries += textDocuments.filter(\.isTrashed).map(HomeEntry.textDocument)
+                entries += slideDecks.filter(\.isTrashed).map(HomeEntry.slideDeck)
+            }
+            addEntries(entries)
+        }
+        return tokens
+    }
+
+    /// Changes whenever something is added or removed, so a selected item
+    /// that disappears (deleted on another device) leaves the selection.
+    fileprivate var selectionDataFingerprint: [Int] {
+        guard homeSelection.isActive else { return [] }
+        return [allNotebooks.count, flashcardDecks.count, textDocuments.count, slideDecks.count, allFolders.count]
+    }
+
+    fileprivate func pruneSelection() {
+        guard homeSelection.isActive, !homeSelection.isEmpty else { return }
+        var valid = Set<String>()
+        for notebook in allNotebooks { valid.insert(dragPayload(for: .notebook(notebook))) }
+        for deck in flashcardDecks { valid.insert(dragPayload(for: .flashcardDeck(deck))) }
+        for document in textDocuments { valid.insert(dragPayload(for: .textDocument(document))) }
+        for deck in slideDecks { valid.insert(dragPayload(for: .slideDeck(deck))) }
+        for folder in allFolders { valid.insert("folder:\(folderID(folder))") }
+        homeSelection.prune(keeping: valid)
+    }
+
+    private func resolveSelection() -> SelectionTargets {
+        var targets = SelectionTargets()
+        let tokens = homeSelection.tokens
+        guard !tokens.isEmpty else { return targets }
+        for notebook in allNotebooks where tokens.contains(dragPayload(for: .notebook(notebook))) {
+            targets.entries.append(.notebook(notebook))
+        }
+        for deck in flashcardDecks where tokens.contains(dragPayload(for: .flashcardDeck(deck))) {
+            targets.entries.append(.flashcardDeck(deck))
+        }
+        for document in textDocuments where tokens.contains(dragPayload(for: .textDocument(document))) {
+            targets.entries.append(.textDocument(document))
+        }
+        for deck in slideDecks where tokens.contains(dragPayload(for: .slideDeck(deck))) {
+            targets.entries.append(.slideDeck(deck))
+        }
+        for folder in allFolders where tokens.contains("folder:\(folderID(folder))") {
+            targets.folders.append(folder)
+        }
+        return targets
+    }
+
+    /// The part of a selection that actually has to be acted on: selected
+    /// folders not nested in another selected folder, and selected items not
+    /// already inside one of those folders (they travel with it).
+    private func actionableSelection() -> (folders: [Folder], entries: [HomeEntry]) {
+        let targets = resolveSelection()
+        let rootPaths = HomeSelectionRules.topLevelFolderPaths(targets.folders.map(\.legacyPath))
+        let folders = targets.folders.filter { rootPaths.contains($0.legacyPath) }
+        let entries = targets.entries.filter {
+            !HomeSelectionRules.isCovered($0.underlying.folderName, byFolderRoots: rootPaths)
+        }
+        return (folders, entries)
+    }
+
+    // MARK: Moving
+
+    fileprivate func moveSelection(to destination: String?) {
+        let action = actionableSelection()
+        let movingPaths = action.folders.map(\.legacyPath)
+        guard !HomeSelectionRules.isMoveDestinationBlocked(destination, movingFolderPaths: movingPaths) else {
+            showsSelectionMoveSheet = false
+            return
+        }
+        var moved = 0
+        for folder in action.folders where handleFolderDrop(["folder:\(folderID(folder))"], into: destination) {
+            moved += 1
+        }
+        for entry in action.entries where !entry.isTrashed {
+            if handleFolderDrop([dragPayload(for: entry)], into: destination) { moved += 1 }
+        }
+        let attempted = action.folders.count + action.entries.filter { !$0.isTrashed }.count
+        showsSelectionMoveSheet = false
+        homeSelection.end()
+        if moved == 0 {
+            selectionResultMessage = L("移動できる項目がありませんでした。すでにその場所にあるか、同じ名前のフォルダがある可能性があります。")
+        } else if moved < attempted {
+            selectionResultMessage = L("\(attempted)件中\(moved)件を移動しました。残りは移動できませんでした。")
+        }
+    }
+
+    /// "新規フォルダ" inside the destination picker: creates the folder under
+    /// `parentPath` without leaving the screen the student is on.
+    fileprivate func createFolderFromMovePicker(parentPath: String?, name: String) {
+        let typed = name
+            .replacingOccurrences(of: "/", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalName = typed.isEmpty ? uniqueNumberedFolderName(parentPath: parentPath ?? "") : typed
+        let path = parentPath.map { "\($0)/\(finalName)" } ?? finalName
+        guard !folderNames.contains(path), folderObject(forLegacyPath: path) == nil else { return }
+        registerFolderPathMetadata(path)
+        modelContext.insert(Folder(name: finalName, parent: parentPath.flatMap(folderObject(forLegacyPath:))))
+    }
+
+    // MARK: Deleting and restoring
+
+    fileprivate func trashSelection() {
+        let action = actionableSelection()
+        for entry in action.entries where !entry.isTrashed {
+            trash(entry)
+        }
+        for folder in action.folders {
+            removeFolderMovingContentsToTrash(folder)
+        }
+        homeSelection.end()
+        try? modelContext.save()
+    }
+
+    /// Folders have no trash of their own: deleting one sends everything
+    /// inside it (at any depth) to the trash and removes the folder. Items
+    /// are detached first, so restoring one later puts it on the top level.
+    private func removeFolderMovingContentsToTrash(_ folder: Folder) {
+        let path = folder.legacyPath
+        for item in allHomeItems
+        where HomeSelectionRules.isInside(item.folderName, orEqualTo: path) || item.folder === folder {
+            if !item.isTrashed, let entry = homeEntry(for: item) {
+                trash(entry)
+            }
+            item.folder = nil
+            item.folderName = ""
+        }
+
+        folderNamesStorage = folderNames
+            .filter { !HomeSelectionRules.isInside($0, orEqualTo: path) }
+            .sorted()
+            .joined(separator: "\n")
+        let remainingDates = folderCreatedAt.filter { !HomeSelectionRules.isInside($0.key, orEqualTo: path) }
+        if let data = try? JSONEncoder().encode(remainingDates), let text = String(data: data, encoding: .utf8) {
+            folderCreatedAtStorage = text
+        }
+        favoriteFolderPathsStorage = favoriteFolderPaths
+            .filter { !HomeSelectionRules.isInside($0, orEqualTo: path) }
+            .sorted()
+            .joined(separator: "\n")
+        expandedSidebarFolders = expandedSidebarFolders.filter { !HomeSelectionRules.isInside($0, orEqualTo: path) }
+        if let selectedFolder, HomeSelectionRules.isInside(selectedFolder, orEqualTo: path) {
+            self.selectedFolder = parentFolder(of: path)
+        }
+        modelContext.delete(folder)
+    }
+
+    private func homeEntry(for item: any HomeItem) -> HomeEntry? {
+        switch item {
+        case let notebook as Notebook: .notebook(notebook)
+        case let deck as FlashcardDeck: .flashcardDeck(deck)
+        case let document as TextDocument: .textDocument(document)
+        case let deck as SlideDeck: .slideDeck(deck)
+        default: nil
+        }
+    }
+
+    fileprivate func restoreSelection() {
+        for entry in resolveSelection().entries where entry.isTrashed {
+            restoreEntryWithoutOpening(entry)
+        }
+        homeSelection.end()
+        try? modelContext.save()
+    }
+
+    /// Unlike the one-item `restore(_:)`, which jumps into the restored note,
+    /// a bulk restore leaves the student where they are. An item whose folder
+    /// no longer exists (deleted with its contents) comes back on the top level.
+    private func restoreEntryWithoutOpening(_ entry: HomeEntry) {
+        switch entry {
+        case .notebook(let notebook):
+            notebook.isTrashed = false
+            notebook.trashedAt = nil
+        case .flashcardDeck(let deck): restoreDeck(deck)
+        case .textDocument(let document): restoreDocument(document)
+        case .slideDeck(let deck): restoreSlideDeck(deck)
+        }
+        let item = entry.underlying
+        let path = item.folderName
+        guard !path.isEmpty else { return }
+        if let folder = folderObject(forLegacyPath: path) {
+            if item.folder !== folder { item.folder = folder }
+        } else if !folderNames.contains(path) {
+            item.folder = nil
+            item.folderName = ""
+        }
+    }
+
+    fileprivate func permanentlyDeleteSelection() {
+        for entry in resolveSelection().entries where entry.isTrashed {
+            permanentlyDeleteEntry(entry)
+        }
+        homeSelection.end()
+        try? modelContext.save()
+    }
+
+    // MARK: Presentations
+
+    private var selectionTrashConfirmation: HomeSelectionConfirmation {
+        guard showsSelectionTrashConfirmation else {
+            return HomeSelectionConfirmation(title: "", message: "", confirmTitle: "")
+        }
+        let action = actionableSelection()
+        let total = action.entries.count + action.folders.count
+        guard !action.folders.isEmpty else {
+            return HomeSelectionConfirmation(
+                title: L("\(total)件をゴミ箱に移動しますか？"),
+                message: L("ゴミ箱から元に戻せます。"),
+                confirmTitle: L("ゴミ箱に移動")
+            )
+        }
+        let rootPaths = action.folders.map(\.legacyPath)
+        let containedCount = allHomeItems.filter {
+            !$0.isTrashed && HomeSelectionRules.isCovered($0.folderName, byFolderRoots: rootPaths)
+        }.count
+        return HomeSelectionConfirmation(
+            title: L("\(total)件を削除しますか？"),
+            message: L("フォルダ\(action.folders.count)個を削除し、中の資料\(containedCount)件をゴミ箱へ移動します。フォルダの構成は元に戻せません。ゴミ箱から復元した資料はホームに戻ります。"),
+            confirmTitle: L("削除")
+        )
+    }
+
+    private var selectionPermanentDeleteConfirmation: HomeSelectionConfirmation {
+        guard showsSelectionPermanentDeleteConfirmation else {
+            return HomeSelectionConfirmation(title: "", message: "", confirmTitle: "")
+        }
+        let count = resolveSelection().entries.filter(\.isTrashed).count
+        return HomeSelectionConfirmation(
+            title: L("\(count)件を完全に削除しますか？"),
+            message: L("この操作は取り消せません。"),
+            confirmTitle: L("完全に削除")
+        )
+    }
+
+    fileprivate var homeSelectionPresentations: HomeSelectionPresentations<HomeMoveDestinationView> {
+        HomeSelectionPresentations(
+            showsMoveSheet: $showsSelectionMoveSheet,
+            showsTrashConfirmation: $showsSelectionTrashConfirmation,
+            showsPermanentDeleteConfirmation: $showsSelectionPermanentDeleteConfirmation,
+            resultMessage: $selectionResultMessage,
+            trashConfirmation: selectionTrashConfirmation,
+            permanentDeleteConfirmation: selectionPermanentDeleteConfirmation,
+            onTrash: { trashSelection() },
+            onPermanentDelete: { permanentlyDeleteSelection() },
+            moveSheet: {
+                HomeMoveDestinationView(
+                    selectedCount: homeSelection.count,
+                    currentPath: selectedFolder,
+                    movingFolderPaths: actionableSelection().folders.map(\.legacyPath),
+                    folderPaths: sortedFolderNames,
+                    onMove: { destination in moveSelection(to: destination) },
+                    onCreateFolder: { parent, name in createFolderFromMovePicker(parentPath: parent, name: name) },
+                    onCancel: { showsSelectionMoveSheet = false }
+                )
+            }
+        )
+    }
 }
