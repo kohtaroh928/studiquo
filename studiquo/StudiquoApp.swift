@@ -275,7 +275,6 @@ struct StudiquoApp: App {
                     }
                 }
                 .animation(.easeInOut, value: cloudSyncStatus.isShowingFirstSyncBanner)
-                .animation(.easeInOut, value: ICloudSyncMonitor.shared.isQuotaExceeded)
                 // Complete Google sign-in after the system browser redirects here.
                 .onOpenURL { url in
                     _ = GIDSignIn.sharedInstance.handle(url)

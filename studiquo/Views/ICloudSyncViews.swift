@@ -37,6 +37,12 @@ struct ICloudQuotaBanner: View {
     @State private var didStop = false
 
     var body: some View {
+        Group { banner }
+            .animation(.easeInOut, value: monitor.isQuotaExceeded && !monitor.isBannerDismissed)
+    }
+
+    @ViewBuilder
+    private var banner: some View {
         if monitor.isQuotaExceeded && !monitor.isBannerDismissed && ICloudSyncPreference.isEnabledAtLaunch {
             VStack(alignment: .leading, spacing: 10) {
                 Label("iCloudの空き容量がありません", systemImage: "exclamationmark.icloud")

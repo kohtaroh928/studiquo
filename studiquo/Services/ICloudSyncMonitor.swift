@@ -36,9 +36,11 @@ final class ICloudSyncMonitor: ObservableObject {
     /// The banner was closed for the current "full" episode.
     @Published private(set) var isBannerDismissed = false
 
+    private let center: NotificationCenter
     private var observer: NSObjectProtocol?
 
     init(center: NotificationCenter = .default) {
+        self.center = center
         observer = center.addObserver(
             forName: NSPersistentCloudKitContainer.eventChangedNotification,
             object: nil,
@@ -53,7 +55,7 @@ final class ICloudSyncMonitor: ObservableObject {
     }
 
     deinit {
-        if let observer { NotificationCenter.default.removeObserver(observer) }
+        if let observer { center.removeObserver(observer) }
     }
 
     /// A finished sync event. A successful upload means there is room again.
