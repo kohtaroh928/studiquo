@@ -66,4 +66,96 @@ final class PDFImportServiceTests: XCTestCase {
         let pages = PDFImportService.extractPages(from: missing)
         XCTAssertTrue(pages.isEmpty)
     }
+
+    // MARK: Image size and format
+
+    private enum PageLook { case flatText, smoothGradient }
+
+    /// A one-page PDF with the given size and look: a page of plain text (what a
+    /// lecture handout is) or a smooth multi-colour gradient (what a photo or
+    /// shaded slide background compresses like).
+    private func makeStyledPDF(name: String, width: CGFloat, height: CGFloat, look: PageLook) -> URL {
+        let url = workDir.appendingPathComponent(name)
+        var mediaBox = CGRect(x: 0, y: 0, width: width, height: height)
+        guard let context = CGContext(url as CFURL, mediaBox: &mediaBox, nil) else {
+            XCTFail("Failed to create PDF context for \(name)")
+            return url
+        }
+        context.beginPage(mediaBox: &mediaBox)
+        switch look {
+        case .flatText:
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(mediaBox)
+            UIGraphicsPushContext(context)
+            let text = String(repeating: "Lecture notes: the quick brown fox jumps over the lazy dog. ", count: 40)
+            (text as NSString).draw(in: mediaBox.insetBy(dx: 36, dy: 36), withAttributes: [.font: UIFont.systemFont(ofSize: 11)])
+            UIGraphicsPopContext()
+        case .smoothGradient:
+            let colors = [
+                CGColor(red: 0.05, green: 0.2, blue: 0.6, alpha: 1),
+                CGColor(red: 0.9, green: 0.4, blue: 0.1, alpha: 1),
+                CGColor(red: 0.2, green: 0.7, blue: 0.4, alpha: 1),
+            ]
+            let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0, 0.5, 1])!
+            context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: width, y: height), options: [])
+            context.drawRadialGradient(gradient, startCenter: CGPoint(x: width / 2, y: height / 2), startRadius: 0,
+                                       endCenter: CGPoint(x: width / 2, y: height / 2), endRadius: min(width, height) / 2, options: [])
+        }
+        context.endPage()
+        context.closePDF()
+        return url
+    }
+
+    private func pixelSize(of data: Data) -> CGSize {
+        // `UIImage(data:)` reports scale 1, so `size` is the pixel size.
+        UIImage(data: data)?.size ?? .zero
+    }
+
+    private func isPNG(_ data: Data) -> Bool { data.starts(with: [0x89, 0x50, 0x4E, 0x47]) }
+    private func isJPEG(_ data: Data) -> Bool { data.starts(with: [0xFF, 0xD8, 0xFF]) }
+
+    /// The bug: the renderer's own screen-scale multiplied the requested scale,
+    /// so a 2× import produced 4× the pixels on an iPad (2448×3168 for a
+    /// US-letter page) and filled iCloud and the device with oversized images.
+    func testExtractPages_rendersAtTwoPixelsPerPointNotFour() throws {
+        let url = makeStyledPDF(name: "letter.pdf", width: 612, height: 792, look: .flatText)
+        let page = try XCTUnwrap(PDFImportService.extractPages(from: url).first)
+        XCTAssertEqual(pixelSize(of: page.imageData), CGSize(width: 1224, height: 1584))
+        XCTAssertEqual(page.width, 612)
+        XCTAssertEqual(page.height, 792, "page size in points is what the editor lays the page out with")
+    }
+
+    func testExtractPages_keepsPlainTextPagesAsCrispPNG() throws {
+        let url = makeStyledPDF(name: "text.pdf", width: 612, height: 792, look: .flatText)
+        let page = try XCTUnwrap(PDFImportService.extractPages(from: url).first)
+        XCTAssertTrue(isPNG(page.imageData), "text edges must not be smudged by JPEG")
+    }
+
+    func testExtractPages_usesJPEGForPhotoLikePages() throws {
+        let url = makeStyledPDF(name: "gradient.pdf", width: 960, height: 540, look: .smoothGradient)
+        let page = try XCTUnwrap(PDFImportService.extractPages(from: url).first)
+        XCTAssertTrue(isJPEG(page.imageData))
+        XCTAssertEqual(pixelSize(of: page.imageData), CGSize(width: 1920, height: 1080))
+        XCTAssertNotNil(UIImage(data: page.imageData), "stored background must decode like any other")
+    }
+
+    func testExtractPages_photoLikePageIsFarSmallerThanItsPNG() throws {
+        let url = makeStyledPDF(name: "gradient.pdf", width: 960, height: 540, look: .smoothGradient)
+        let page = try XCTUnwrap(PDFImportService.extractPages(from: url).first)
+        let png = try XCTUnwrap(UIImage(data: page.imageData)?.pngData())
+        XCTAssertLessThan(Double(page.imageData.count), Double(png.count) * 0.25)
+    }
+
+    func testExtractPages_capsTheLongestSideOfAHugePage() throws {
+        let url = makeStyledPDF(name: "poster.pdf", width: 5000, height: 3000, look: .flatText)
+        let page = try XCTUnwrap(PDFImportService.extractPages(from: url).first)
+        let size = pixelSize(of: page.imageData)
+        XCTAssertLessThanOrEqual(max(size.width, size.height), PDFImportService.maxPixelEdge)
+        XCTAssertEqual(page.width, 5000, "the page's size in points is unchanged by the pixel cap")
+    }
+
+    func testEffectiveScale() {
+        XCTAssertEqual(PDFImportService.effectiveScale(for: CGSize(width: 612, height: 792), requested: 2), 2)
+        XCTAssertEqual(PDFImportService.effectiveScale(for: CGSize(width: 4096, height: 100), requested: 2), 1, accuracy: 0.0001)
+    }
 }
