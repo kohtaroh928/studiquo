@@ -110,7 +110,7 @@ final class AIChatStoreTests: XCTestCase {
         XCTAssertEqual(store.threads.count, 1)
     }
 
-    func testHistorySentToTheProviderExcludesTheEmptyReplyAndContextIsJoined() async {
+    func testOnlyExplicitlySelectedContextIsSentAndOpenNoteIsExcluded() async {
         let (store, _) = makeStore()
         var seenTurns: [AITurn] = []
         var seenContext = ""
@@ -131,7 +131,8 @@ final class AIChatStoreTests: XCTestCase {
         XCTAssertEqual(seenTurns.first?.role, .user)
         XCTAssertTrue(seenTurns.first?.text.hasPrefix("質問") ?? false)
         XCTAssertTrue(seenTurns.first?.text.contains("- ファイル: 資料") ?? false)
-        XCTAssertEqual(seenContext, "ページの文章\n\n追加の文脈\n\n【資料】\n添付の中身")
+        XCTAssertEqual(seenContext, "追加の文脈\n\n【資料】\n添付の中身")
+        XCTAssertFalse(seenContext.contains("ページの文章"))
     }
 
     func testBlankDraftSendsNothing() {

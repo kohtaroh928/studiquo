@@ -48,14 +48,14 @@ final class AIModelCatalogTests: XCTestCase {
         XCTAssertEqual(Set(AIModelCatalog.all.map(\.id)), Set(AIModelID.allCases))
     }
 
-    func testAIModelSelectionPersistsAcrossReadsViaUserDefaults() {
+    func testInitialReleaseDoesNotSendToPreviouslySelectedOtherProviders() {
         let original = AIModelSelection.current
         defer { AIModelSelection.current = original }
 
         AIModelSelection.current = .claudeSonnet
-        XCTAssertEqual(AIModelSelection.current, .claudeSonnet)
+        XCTAssertEqual(AIModelSelection.current, .geminiFlashLite)
 
         AIModelSelection.current = .claudeOpus
-        XCTAssertEqual(AIModelSelection.current, .claudeOpus)
+        XCTAssertEqual(AIModelSelection.current, .geminiFlashLite)
     }
 }

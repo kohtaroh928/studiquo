@@ -57,7 +57,7 @@ async function notify(env, origin, outcome, row, error) {
   const headline = outcome === "new" ? `🆕 新しい${label}` : `🔁 ${label}が再発`;
   await postSlackBlocks(env, [
     { type: "header", text: { type: "plain_text", text: headline, emoji: true } },
-    { type: "section", text: { type: "mrkdwn", text: row.title } },
+    { type: "section", text: { type: "mrkdwn", text: "詳細は管理画面で確認してください。" } },
     { type: "context", elements: [{ type: "mrkdwn", text: describeContext(error) || "端末情報なし" }] },
     { type: "context", elements: [{ type: "mrkdwn", text: `<${origin}/admin#errors|ダッシュボードで開く>` }] },
   ]);
@@ -115,8 +115,9 @@ async function recordOccurrence(env, fingerprint, error, userKey, now) {
 }
 
 async function recordAffectedUser(env, fingerprint, userKey) {
-  await env.ADMIN_DB.prepare(`INSERT OR IGNORE INTO app_error_users (fingerprint, user_key) VALUES (?, ?)`)
-    .bind(fingerprint, userKey).run();
+  await env.ADMIN_DB.prepare(`INSERT INTO app_error_users (fingerprint, user_key, last_seen_at) VALUES (?, ?, ?)
+    ON CONFLICT(fingerprint, user_key) DO UPDATE SET last_seen_at = excluded.last_seen_at`)
+    .bind(fingerprint, userKey, Date.now()).run();
 }
 
 function normalize(raw, defaults, now) {

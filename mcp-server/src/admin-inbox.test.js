@@ -179,7 +179,8 @@ test("Slack hears about a new problem once, not on every repeat", async () => {
   assert.equal(posts.length, 1);
   const text = JSON.stringify(posts[0].body);
   assert.match(text, /新しいクラッシュ/);
-  assert.match(text, /EXC_BAD_ACCESS/);
+  assert.doesNotMatch(text, /EXC_BAD_ACCESS/);
+  assert.match(text, /詳細は管理画面/);
   assert.match(text, /v1\.0 \(10\)/);
   assert.match(text, /\/admin#errors/);
 });
@@ -415,7 +416,8 @@ test("a report that fails to mirror into D1 is still accepted", async () => {
 
 test("reports filed before the inbox existed can be imported once, without touching handled ones", async () => {
   const env = environment();
-  const legacy = id => JSON.stringify({ id, reporterKey: "k", description: `legacy ${id}`, appVersion: "0.9", osVersion: "26", deviceModel: "iPad", language: "ja", hasScreenshot: id === "00000000-0000-0000-0000-000000000002", createdAt: 1_700_000_000_000 });
+  const recent = Date.now() - 86_400_000;
+  const legacy = id => JSON.stringify({ id, reporterKey: "k", description: `legacy ${id}`, appVersion: "0.9", osVersion: "26", deviceModel: "iPad", language: "ja", hasScreenshot: id === "00000000-0000-0000-0000-000000000002", createdAt: recent });
   await env.STUDIQUO_DATA.put("issue-report:00000000-0000-0000-0000-000000000001", legacy("00000000-0000-0000-0000-000000000001"));
   await env.STUDIQUO_DATA.put("issue-report:00000000-0000-0000-0000-000000000002", legacy("00000000-0000-0000-0000-000000000002"));
   await env.STUDIQUO_DATA.put("issue-report-screenshot:00000000-0000-0000-0000-000000000002", JSON.stringify({ contentType: "image/png", data: "" }));
@@ -425,7 +427,7 @@ test("reports filed before the inbox existed can be imported once, without touch
   assert.deepEqual(await first.json(), { imported: 2, skipped: 1 });
   const reports = await listReports(env);
   assert.equal(reports.length, 2);
-  assert.equal(reports[0].createdAt, 1_700_000_000_000);
+  assert.equal(reports[0].createdAt, recent);
   assert.equal(reports.find(r => r.id.endsWith("2")).hasScreenshot, true);
 
   const handled = reports[0];

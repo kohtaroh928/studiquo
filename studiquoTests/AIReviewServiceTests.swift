@@ -19,17 +19,23 @@ import UIKit
 @MainActor
 final class AIReviewServiceTests: XCTestCase {
     private var storeURLs: [URL] = []
+    private var consentSuiteName = ""
 
     override func setUp() {
         super.setUp()
         AIReviewService.scheduleNotification = { _ in }
-        UserDefaults.standard.removeObject(forKey: AIReviewService.isEnabledDefaultsKey)
+        consentSuiteName = "AIReviewConsent-\(UUID().uuidString)"
+        AIDataDisclosure.defaults = UserDefaults(suiteName: consentSuiteName)!
+        AIDataDisclosure.acknowledge()
+        UserDefaults.standard.set(true, forKey: AIReviewService.isEnabledDefaultsKey)
     }
 
     override func tearDown() {
         AI.provider = WorkerAIProvider()
         AIReviewService.scheduleNotification = { await AIReviewNotifications.schedule(for: $0) }
         UserDefaults.standard.removeObject(forKey: AIReviewService.isEnabledDefaultsKey)
+        AIDataDisclosure.defaults.removePersistentDomain(forName: consentSuiteName)
+        AIDataDisclosure.defaults = .standard
         for url in storeURLs { try? FileManager.default.removeItem(at: url) }
         storeURLs = []
         super.tearDown()
@@ -75,12 +81,21 @@ final class AIReviewServiceTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<TextDocument>()), 0)
     }
 
-    /// The setting has never been touched (fresh install / no UserDefaults
-    /// entry yet) — the feature already shipped enabled, so a missing key
-    /// must default to `true`, not `false`.
-    func testAnUntouchedSettingDefaultsToEnabled() {
+    /// Fresh installs and upgrades require a new explicit opt-in.
+    func testAnUntouchedSettingDefaultsToDisabled() {
         UserDefaults.standard.removeObject(forKey: AIReviewService.isEnabledDefaultsKey)
-        XCTAssertTrue(AIReviewService.isEnabled)
+        XCTAssertFalse(AIReviewService.isEnabled)
+    }
+
+    func testEnabledReviewWithoutAIConsentDoesNotCallProvider() async throws {
+        AIDataDisclosure.revoke()
+        UserDefaults.standard.set(true, forKey: AIReviewService.isEnabledDefaultsKey)
+        let fake = FakeAIProvider()
+        AI.provider = fake
+        let context = makeContext()
+        await AIReviewService.considerForReview(questionText: "質問", threadTitle: "学習", askedAt: .now, modelContext: context)
+        XCTAssertEqual(fake.researchCallCount, 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<AIReviewItem>()), 0)
     }
 
     func testExplicitlyEnabledSettingStillRunsNormally() async throws {

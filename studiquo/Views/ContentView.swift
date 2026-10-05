@@ -835,8 +835,8 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.system.rawValue
     @AppStorage("studyTimeTrackingEnabled") private var studyTimeTrackingEnabled = true
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
-    @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = true
-    @AppStorage(ErrorReportSettings.enabledKey) private var autoErrorReportingEnabled = true
+    @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = false
+    @AppStorage(ErrorReportSettings.enabledKey) private var autoErrorReportingEnabled = false
     @State private var showsAIDataDisclosure = false
     @State private var showsPrivacyPolicy = false
     @State private var showsTermsOfUse = false
@@ -927,7 +927,7 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
             } header: {
                 Text("プライバシー")
             } footer: {
-                Text("AIトーク・添削・翌日復習を使うと、質問文やノートの内容、答案の写真がGoogleのGeminiに送信されます。詳しくはこちらをご確認ください。")
+                Text("許可後にAIを使うと、質問・会話履歴と、送信対象として選択した資料・答案画像がGoogleへ送信されます。許可はいつでも取り消せます。")
             }
 
             Section {
@@ -949,7 +949,13 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
             }
         }
         .sheet(isPresented: $showsAIDataDisclosure) {
-            AIDataDisclosureView(buttonTitle: "閉じる") { showsAIDataDisclosure = false }
+            AIDataDisclosureView(onAcknowledge: {
+                AIDataDisclosure.acknowledge()
+                showsAIDataDisclosure = false
+            }, onDecline: {
+                AIDataDisclosure.revoke()
+                showsAIDataDisclosure = false
+            })
         }
         .sheet(isPresented: $showsPrivacyPolicy) {
             PrivacyPolicyView()
@@ -1424,7 +1430,10 @@ private struct DeleteAccountView: View {
         guard confirmation == AccountDeletionUI.requiredConfirmation else { return }
         let result = await AccountDeletionWorkflow.run(
             authentication: authentication,
-            eraseLocalData: { try AccountDataEraser.eraseAll(from: modelContext) }
+            eraseLocalData: {
+                try AccountDataEraser.eraseAll(from: modelContext)
+                try AccountFileEraser.erase()
+            }
         )
         switch result {
         case .success:
@@ -1605,6 +1614,10 @@ private struct AppNotificationRoutingModifier: ViewModifier {
 /// features, Anthropic).
 enum AIDataDisclosure {
     static let acknowledgedDefaultsKey = "hasAcknowledgedAIDataDisclosure"
+    static let consentVersionDefaultsKey = "aiDataConsentVersion"
+    static let decisionVersionDefaultsKey = "aiDataDecisionVersion"
+    static let currentVersion = "google-v2"
+    static let allowsDirectProviders = false
 
     /// Swappable so tests can point this at an isolated suite instead of
     /// the real, shared `UserDefaults.standard` — otherwise a manual run of
@@ -1616,11 +1629,22 @@ enum AIDataDisclosure {
     /// install updating to the version that first added this screen, since
     /// nobody has acknowledged anything yet either way.
     static var hasBeenAcknowledged: Bool {
-        defaults.bool(forKey: acknowledgedDefaultsKey)
+        defaults.string(forKey: consentVersionDefaultsKey) == currentVersion
+    }
+
+    static var hasMadeDecision: Bool {
+        defaults.string(forKey: decisionVersionDefaultsKey) == currentVersion
     }
 
     static func acknowledge() {
-        defaults.set(true, forKey: acknowledgedDefaultsKey)
+        defaults.set(currentVersion, forKey: consentVersionDefaultsKey)
+        defaults.set(currentVersion, forKey: decisionVersionDefaultsKey)
+    }
+
+    static func revoke() {
+        defaults.removeObject(forKey: consentVersionDefaultsKey)
+        defaults.set(currentVersion, forKey: decisionVersionDefaultsKey)
+        defaults.set(false, forKey: AIReviewService.isEnabledDefaultsKey)
     }
 }
 
@@ -1630,17 +1654,20 @@ enum AIDataDisclosure {
 /// is one: adding modifiers directly to that already-huge body expression
 /// pushes Swift's type checker past what it can solve in reasonable time.
 private struct AIDataDisclosureGate: ViewModifier {
-    @State private var isAcknowledged = AIDataDisclosure.hasBeenAcknowledged
+    @State private var hasMadeDecision = AIDataDisclosure.hasMadeDecision
 
     func body(content: Content) -> some View {
         content.fullScreenCover(isPresented: Binding(
-            get: { !isAcknowledged },
+            get: { !hasMadeDecision },
             set: { _ in }
         )) {
-            AIDataDisclosureView {
+            AIDataDisclosureView(onAcknowledge: {
                 AIDataDisclosure.acknowledge()
-                isAcknowledged = true
-            }
+                hasMadeDecision = true
+            }, onDecline: {
+                AIDataDisclosure.revoke()
+                hasMadeDecision = true
+            })
         }
     }
 }
@@ -1648,8 +1675,8 @@ private struct AIDataDisclosureGate: ViewModifier {
 /// The first-launch (and update-time, for an existing install that never
 /// saw this) explanation of what AI features send off-device, and to whom.
 private struct AIDataDisclosureView: View {
-    var buttonTitle: String = "理解しました"
     let onAcknowledge: () -> Void
+    let onDecline: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -1663,22 +1690,22 @@ private struct AIDataDisclosureView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 14) {
-                        disclosureRow(icon: "text.bubble", title: "AIトークでのやり取り", detail: "送った質問文と、開いているノートの文字起こし内容")
+                        disclosureRow(icon: "text.bubble", title: "AIトークでのやり取り", detail: "質問文と会話履歴、送信対象として選択した資料の文字・添付画像。開いているだけのノートは送信しません。")
                         disclosureRow(icon: "camera.viewfinder", title: "添削(採点)機能", detail: "問題文や答案として切り抜いた画像・写真")
                         disclosureRow(icon: "calendar.badge.clock", title: "翌日復習機能", detail: "AIトークで送った質問文(内容によっては翌日に復習教材を自動作成します)")
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Label("任意の連携機能", systemImage: "key")
+                        Label("送信先と利用の選択", systemImage: "hand.raised")
                             .font(.headline)
-                        Text("ご自身のAnthropic APIキーを設定した場合のみ、同様の内容がAnthropic(Claude)にも送信されます。キーを設定しない限りこの連携は行われません。")
+                        Text("現在の送信先はGoogleのみです。許可しなくてもノートなどの基本機能は使えます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     .padding(14)
                     .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
 
-                    Text("この設定は、いつでも設定 → プライバシーから確認できます。AIトークの翌日復習は設定からオフにできます。")
+                    Text("設定 → プライバシーから許可の変更・取り消しができます。翌日復習は初期状態ではオフです。取り消しても送信済みの情報は回収できません。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1687,11 +1714,15 @@ private struct AIDataDisclosureView: View {
             .navigationTitle("はじめに")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
-                Button(buttonTitle, action: onAcknowledge)
-                    .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(.bar)
+                VStack(spacing: 10) {
+                    Button("GoogleへのAI送信を許可する", action: onAcknowledge)
+                        .buttonStyle(.borderedProminent)
+                    Button("許可しない・許可を取り消す", action: onDecline)
+                        .buttonStyle(.bordered)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(.bar)
             }
         }
         .interactiveDismissDisabled()
@@ -1839,7 +1870,8 @@ struct PrivacyPolicyView: View {
                         bullet("友達・チャット機能に関する情報", "友達コード、友達関係、チャットメッセージ、送信した添付ファイル。友達同士のコミュニケーション機能を提供するために保存します。")
                         bullet("利用状況", "学習時間の記録、各機能の利用回数。学習記録機能・利用制限の管理のために使用します。")
                         bullet("Googleカレンダー情報", "Googleカレンダー連携を選択した場合、カレンダー名、予定のタイトル、開始・終了日時、説明を読み取り、学習予定と一緒に表示するために端末内へ保存します。Googleカレンダーへの書き込みは行いません。")
-                        bullet("AI機能利用時に送信する内容", "AIトーク・添削・翌日復習などの機能を使うと、質問文、ノートの内容、答案の画像などが外部のAIサービスに送信されます。詳しくは次の項目をご覧ください。")
+                        bullet("AI機能利用時に送信する内容", "送信を許可した場合のみ、質問・会話履歴と明示的に選択した資料・画像を外部AIへ送ります。開いているノートを自動では送信しません。翌日復習は初期状態でオフです。")
+                        bullet("任意の診断情報", "初期状態では送信しません。設定で許可した場合のみ、エラーの種類・技術情報・アプリとOSのバージョン・端末モデル・時刻を送信します。ノートやチャットの本文は含めません。アカウントとの関連に使うハッシュ識別子は匿名データではありません。いつでも停止できます。")
                         bullet("問題報告の内容", "ホーム画面の「問題を報告」機能を使うと、送信した説明文、任意で添付したスクリーンショット、端末モデル・OS・アプリのバージョンなどの情報が送信されます。不具合の調査のために使用します。")
                     }
 
@@ -1847,10 +1879,16 @@ struct PrivacyPolicyView: View {
                         bullet("Sign in with Apple / Google Sign-In", "アカウント作成・ログインのために使用します。")
                         bullet("Google Calendar API", "許可を得たうえで、選択されているカレンダーの予定を読み取り専用で同期します。取得した情報を広告、行動追跡、第三者への販売には使用しません。")
                         bullet("Google Gemini", "AIトーク・添削・翌日復習機能で、既定の生成AIとして使用します。これらの機能を使うたびに、上記の内容がGoogleに送信されます。")
-                        bullet("Anthropic Claude", "利用者が自分自身のAnthropic APIキーを設定した場合に限り、同様の内容がAnthropicにも送信されます。APIキーを設定しない限り、この連携は行われません。")
+                        bullet("AI送信の許可", "初回送信前に内容と送信先を確認し、許可した場合のみ利用できます。現在の送信先はGoogleのみです。資料は送信対象として選択したものだけが送信されます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。許可は設定から取り消せます。")
                         bullet("Cloudflare", "本アプリのサーバーインフラとして使用しており、アカウント情報・学習コンテンツ・チャット内容の保管場所です。")
                         bullet("Apple iCloud", "「iCloudで同期する」をオンにした端末では、ノート・暗記帳・文書・スライド・フォルダ・カレンダーの予定(連携して取得した予定を含む)・AIトークの履歴・学習記録など、アプリ内に保存されるデータが、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。この設定は端末ごとの任意の設定で、新しくインストールした場合は初期状態でオフです(以前のバージョンから引き続き利用している場合は、これまでどおりオンです)。同期されたデータは利用者ご自身のiCloudに保存され、iCloudの保存容量を使用します。")
-                        bullet("Slack", "「問題を報告」で送信された内容を運営が確認するために使用します。")
+                        bullet("Slack", "問題報告・診断の通知に使用します。問題報告の本文・画像は送らず、報告ID・端末情報と管理画面へのリンクだけを送ります。本文・画像の閲覧には管理者ログインが必要です。")
+                        bullet("RevenueCat", "App Storeの購読状態を確認するために使用します。アカウント削除時に顧客情報の削除を要求します。購読自体はApp Storeで別途解約してください。")
+                    }
+
+                    policySection(title: "保存期間") {
+                        Text("学習資料は利用者が削除するか退会するまで保存します。問題報告と添付画像、個別の診断情報、個人に関連する購入イベントは原則90日で削除します。個人を識別できないエラー集計は最終発生から180日保存します。退会時には本人の問題報告・購読者情報・診断情報との関連を削除します。外部サービスでの削除は再試行を含めて処理するため、完了まで待ち時間が生じる場合があります。必要な会計記録は適用される保存義務に従って別途扱います。")
+                            .font(.subheadline)
                     }
 
                     policySection(title: "広告・トラッキングについて") {

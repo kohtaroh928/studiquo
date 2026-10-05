@@ -332,6 +332,7 @@ enum ProofGradingService {
         apiKey: String?,
         session: URLSession
     ) async throws -> Data {
+        guard AIDataDisclosure.allowsDirectProviders else { throw WorkerAIProvider.ProviderError.providerUnavailable }
         guard let key = apiKey else { throw GradingError.missingKey }
 
         var request = URLRequest(url: endpoint)

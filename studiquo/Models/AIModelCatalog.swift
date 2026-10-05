@@ -59,6 +59,10 @@ enum AIModelCatalog {
     /// chat thread that never had a model explicitly chosen) falls back to.
     static let defaultModel = AIModelID.geminiFlashLite
 
+    /// Initial release offers one processor. Metadata for other models is kept
+    /// for compatibility; enabling them requires a new disclosure and approval.
+    static var offered: [AIModelInfo] { all.filter { $0.id == defaultModel } }
+
     static func info(for id: AIModelID) -> AIModelInfo? {
         all.first { $0.id == id }
     }
@@ -92,8 +96,7 @@ enum AIModelSelection {
 
     static var current: AIModelID {
         get {
-            UserDefaults.standard.string(forKey: defaultsKey)
-                .flatMap(AIModelID.init(rawValue:)) ?? AIModelCatalog.defaultModel
+            AIModelCatalog.defaultModel
         }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey)
