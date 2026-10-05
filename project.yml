@@ -99,6 +99,22 @@ targets:
         # Exported type for page snippets (drag/copy between notes). Kept here
         # because xcodegen regenerates studiquo/Info.plist from this block and
         # drops any key that only exists in the plist file.
+        # Lets studiquo appear as an "Open in…" target for course material in
+        # the Files app. Rank Alternate: we never claim to be the default
+        # viewer for PDFs. The files are copied in, not opened in place — they
+        # go through the same destination picker as a share-extension batch.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Course material
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.adobe.pdf
+              - org.openxmlformats.wordprocessingml.document
+              - org.openxmlformats.presentationml.presentation
+              - public.image
+              - public.plain-text
+              - public.comma-separated-values-text
+              - public.tab-separated-values-text
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.studiquo.page-snippet
             UTTypeDescription: Studiquo Page Snippet

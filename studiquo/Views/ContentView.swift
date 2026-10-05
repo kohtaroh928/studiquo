@@ -1716,6 +1716,14 @@ struct ContentView: View {
     /// Set when `stableCopy` couldn't preserve a picked PDF long enough to
     /// prompt for its password — a dead end distinct from a wrong password.
     @State private var pdfPrepareError: String?
+    /// Files that arrived from the Files app's share sheet or "Open in…",
+    /// waiting for the student to choose a destination folder.
+    @StateObject private var sharedImport = SharedImportCoordinator()
+    /// Legacy folder path that `assignToCurrentFolder` uses instead of the
+    /// open library folder while a shared batch is being imported.
+    @State private var importDestinationPath: String?
+    /// Names of shared files whose format the library cannot import.
+    @State private var sharedImportSkipped: [String] = []
     /// The finished password-free copy, handed to a share sheet.
     @State private var pdfUnlockedResult: IdentifiableURL?
     /// Set after a locked PDF is opened during import, to offer removing its
@@ -2265,6 +2273,12 @@ struct ContentView: View {
             Text((docxImportReport ?? "") + "\nこれらは今のところ非対応のため、文書には含まれていません。")
         }
         .modifier(PptxImportAlerts(importFailed: $pptxImportFailed, importReport: $pptxImportReport))
+        .modifier(SharedImportHost(
+            coordinator: sharedImport,
+            skippedNames: $sharedImportSkipped,
+            onCreateFolder: createFolderForSharedImport,
+            onImport: runSharedImport
+        ))
         .fileImporter(isPresented: $isImportingBackup, allowedContentTypes: [.json], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
                 for url in urls {
@@ -2602,6 +2616,7 @@ struct ContentView: View {
             StudyTimeTracker.shared.setStudying(isStudySurfaceOpen)
             friendStore.handle(scenePhase: scenePhase)
             if scenePhase == .active {
+                sharedImport.refresh()
                 Task { await UsageEventService.ping() }
                 Task { await ErrorReportService.flush() }
             }
@@ -2614,6 +2629,7 @@ struct ContentView: View {
             StudyTimeTracker.shared.handle(scenePhase: phase)
             friendStore.handle(scenePhase: phase)
             if phase == .active {
+                sharedImport.refresh()
                 Task { await pullMCPInbox() }
                 Task { await UsageEventService.ping() }
                 Task { await ErrorReportService.flush() }
@@ -2633,6 +2649,16 @@ struct ContentView: View {
             }
         }
         .onOpenURL { url in
+            // A file from "Open in…" or the share extension's `studiquo://import`
+            // goes to the destination picker; everything else is a friend link.
+            if url.isFileURL {
+                sharedImport.receive(fileURLs: [url])
+                return
+            }
+            if url.scheme == "studiquo", url.host == "import" {
+                sharedImport.refresh()
+                return
+            }
             friendStore.add(url: url)
             returnToHome()
             homeSection = .friends
@@ -4947,7 +4973,7 @@ struct ContentView: View {
     }
 
     private func assignToCurrentFolder<T: HomeItem>(_ item: T) {
-        assign(item, toLegacyPath: selectedFolder ?? "")
+        assign(item, toLegacyPath: importDestinationPath ?? selectedFolder ?? "")
     }
 
     /// Use the same path as list and icon mode. A stale or missing SwiftData
@@ -5284,6 +5310,70 @@ struct ContentView: View {
         pdfPendingNotebookUnlock = nil
         pdfPasswordEntry = ""
         pdfPasswordError = nil
+    }
+
+    /// Creates a folder from the share destination picker. Goes through the
+    /// same bookkeeping as every other folder (`registerFolderPathMetadata`)
+    /// so it shows up in the library and the "フォルダへ移動" menu at once.
+    private func createFolderForSharedImport(parent: Folder?, name: String) -> Folder? {
+        let parentPath = parent?.legacyPath ?? ""
+        let folder = Folder(name: uniqueFolderName(base: name, parentPath: parentPath), parent: parent)
+        modelContext.insert(folder)
+        registerFolderPathMetadata(folder.legacyPath)
+        try? modelContext.save()
+        return folder
+    }
+
+    /// Imports everything waiting in the shared inbox into `folder` (nil =
+    /// the library root), one file at a time.
+    ///
+    /// Sequential on purpose: each PDF is rendered page by page, and a locked
+    /// PDF stops to ask for its password (`pdfPendingImport` holds one at a
+    /// time), so the loop waits for that prompt before moving on. A file is
+    /// removed from the inbox only after its turn; if the storage limit is hit
+    /// the rest stay there for later.
+    private func runSharedImport(into folder: Folder?) {
+        let items = sharedImport.pending
+        guard !items.isEmpty, !sharedImport.isImporting else { return }
+        let destination = folder?.legacyPath ?? ""
+        let isBatch = items.count > 1
+        let tabsBefore = openNotebooks
+        let selectedBefore = selectedNotebook
+
+        importDestinationPath = destination
+        sharedImportSkipped = []
+        homeSection = .notes
+        sharedImport.begin(total: items.count)
+
+        Task { @MainActor in
+            var skipped: [String] = []
+            for (index, item) in items.enumerated() {
+                sharedImport.advance(completed: index, currentName: item.displayName)
+                pdfPrepareError = nil
+                if SharedInbox.isImportable(item.url) {
+                    importFile(from: item.url)
+                    while pdfPendingImport != nil {
+                        try? await Task.sleep(for: .milliseconds(200))
+                    }
+                    if pdfPrepareError != nil { break }
+                } else {
+                    skipped.append(item.displayName)
+                }
+                sharedImport.finish(item)
+                await Task.yield()
+            }
+            try? modelContext.save()
+            importDestinationPath = nil
+            sharedImport.end()
+            sharedImportSkipped = skipped
+            if isBatch {
+                // 28 files should not leave 28 notebooks open as tabs.
+                openNotebooks = tabsBefore
+                selectedNotebook = selectedBefore
+                selectedFolder = destination.isEmpty ? nil : destination
+                libraryMode = .documents
+            }
+        }
     }
 
     private func importFile(from url: URL) {
