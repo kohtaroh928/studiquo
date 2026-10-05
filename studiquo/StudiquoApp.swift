@@ -147,6 +147,14 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
 /// A deadline cannot cancel ModelContainer.init; opening another container
 /// on the same store while migration is still running can contend for its lock.
 private func makeStudiquoModelContainer() throws -> ModelContainer {
+    guard ICloudSyncPreference.isEnabledAtLaunch else {
+        // Sync is off on this device: open the library locally and never
+        // touch CloudKit. Failing here is an error, not a reason to fall back
+        // to an empty library.
+        startupLogger.info("iCloud sync is off; opening the local store")
+        let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .none)
+        return try ModelContainer(for: studiquoSchema, configurations: configuration)
+    }
     startupLogger.info("Opening persistent store with CloudKit")
     do {
         let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .automatic)
@@ -185,6 +193,10 @@ struct StudiquoApp: App {
     /// `init()` above makes its first `Purchases.shared` call, so it can't
     /// simply live inside `body`'s `.task` alongside `startup.start()`.
     init() {
+        // Before anything can create the store file — see `ICloudSyncPreference`.
+        ICloudSyncPreference.resolveAtLaunch()
+        // Listen from the start: a "full" report can arrive right after launch.
+        _ = ICloudSyncMonitor.shared
         SubscriptionStore.configureSDK()
         CrashDiagnosticsSubscriber.shared.start()
         CloudKitErrorReporting.start()
@@ -253,13 +265,17 @@ struct StudiquoApp: App {
                 .tint(Color(red: 0.16, green: 0.33, blue: 0.63))
                 .environment(\.locale, resolvedLocale)
                 .overlay(alignment: .top) {
-                    if cloudSyncStatus.isShowingFirstSyncBanner {
-                        FirstCloudSyncBanner()
-                            .padding(.top, 8)
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                    VStack(spacing: 8) {
+                        if cloudSyncStatus.isShowingFirstSyncBanner {
+                            FirstCloudSyncBanner()
+                                .padding(.top, 8)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                        ICloudQuotaBanner(monitor: .shared)
                     }
                 }
                 .animation(.easeInOut, value: cloudSyncStatus.isShowingFirstSyncBanner)
+                .animation(.easeInOut, value: ICloudSyncMonitor.shared.isQuotaExceeded)
                 // Complete Google sign-in after the system browser redirects here.
                 .onOpenURL { url in
                     _ = GIDSignIn.sharedInstance.handle(url)
@@ -867,7 +883,9 @@ enum CloudKitErrorReporting {
     /// CKError codes for conditions the person or the network causes:
     /// networkUnavailable, networkFailure, serviceUnavailable,
     /// requestRateLimited, notAuthenticated, zoneBusy.
-    nonisolated static let ignoredCKErrorCodes: Set<Int> = [3, 4, 6, 7, 9, 23]
+    /// 25 is quotaExceeded: the student's iCloud is full, which
+    /// `ICloudSyncMonitor` reports to them directly.
+    nonisolated static let ignoredCKErrorCodes: Set<Int> = [3, 4, 6, 7, 9, 23, 25]
 
     nonisolated static func shouldReport(domain: String, code: Int) -> Bool {
         !(domain == CKErrorDomain && ignoredCKErrorCodes.contains(code))
@@ -885,7 +903,8 @@ enum CloudKitErrorReporting {
             guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
                 as? NSPersistentCloudKitContainer.Event,
                 event.endDate != nil, let error = event.error as NSError?,
-                shouldReport(domain: error.domain, code: error.code) else { return }
+                shouldReport(domain: error.domain, code: error.code),
+                !ICloudSyncError.isQuotaExceeded(error) else { return }
             ErrorReportService.recordFailure(area: "iCloud同期", error: error)
         }
     }
@@ -904,7 +923,9 @@ private final class CloudKitSyncStatus: ObservableObject {
     private var timeoutTask: Task<Void, Never>?
 
     init() {
-        guard !UserDefaults.standard.bool(forKey: Self.hasCompletedFirstSyncKey) else { return }
+        // No first-sync hint when this device is not syncing at all.
+        guard ICloudSyncPreference.isEnabledAtLaunch,
+              !UserDefaults.standard.bool(forKey: Self.hasCompletedFirstSyncKey) else { return }
         isShowingFirstSyncBanner = true
 
         observer = NotificationCenter.default.addObserver(
