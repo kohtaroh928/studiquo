@@ -16,6 +16,16 @@ struct ScribbleAnalysis: Equatable {
     let axisReversals: Int
     let selfIntersections: Int
     let absoluteTurning: CGFloat
+    /// Back-and-forth passes whose swing is a sizeable share of the stroke's
+    /// extent on that axis. Small loops and wiggles (cursive letters) do not
+    /// count; the tight sweeps of a scratch-out do.
+    let amplitudeReversals: Int
+    /// Straight-line start→end distance over path length. Writing marches
+    /// along the line; a scratch-out mostly stays where it is.
+    let netAdvanceRatio: CGFloat
+    /// Path length per unit of ground it covers. A scratch-out retraces the
+    /// same ground over and over; handwriting rarely does.
+    let revisitDensity: CGFloat
     let qualifies: Bool
 }
 
@@ -39,6 +49,9 @@ enum ScribbleClassifier {
                 axisReversals: 0,
                 selfIntersections: 0,
                 absoluteTurning: 0,
+                amplitudeReversals: 0,
+                netAdvanceRatio: 0,
+                revisitDensity: 0,
                 qualifies: false
             )
         }
@@ -68,6 +81,16 @@ enum ScribbleClassifier {
         )
         let intersections = selfIntersectionCount(sampled, limit: 4)
 
+        let amplitudeReversals = max(
+            swingReversalCount(sampled.map(\.x), minimumSwing: max(spacing * 2, bounds.width * 0.25)),
+            swingReversalCount(sampled.map(\.y), minimumSwing: max(spacing * 2, bounds.height * 0.25))
+        )
+        let netAdvanceRatio: CGFloat = {
+            guard let first = points.first, let last = points.last, pathLength > 0 else { return 0 }
+            return hypot(last.x - first.x, last.y - first.y) / pathLength
+        }()
+        let revisitDensity = revisitDensity(sampled, cellSize: 6)
+
         // Three independent shapes count as deliberate scratch-out:
         // back-and-forth hatching, a tangled crossing, or repeated loops.
         // A single circle/ellipse is intentionally excluded; it turns only
@@ -86,6 +109,9 @@ enum ScribbleClassifier {
             axisReversals: axisReversals,
             selfIntersections: intersections,
             absoluteTurning: absoluteTurning,
+            amplitudeReversals: amplitudeReversals,
+            netAdvanceRatio: netAdvanceRatio,
+            revisitDensity: revisitDensity,
             qualifies: qualifies
         )
     }
@@ -138,6 +164,46 @@ enum ScribbleClassifier {
 
         if let last = points.last, result.last != last { result.append(last) }
         return result
+    }
+
+    /// Counts direction reversals of a zig-zag filter: a reversal only counts
+    /// once the value has swung back by at least `minimumSwing`, so jitter and
+    /// small loops are ignored.
+    private static func swingReversalCount(_ values: [CGFloat], minimumSwing: CGFloat) -> Int {
+        guard let first = values.first else { return 0 }
+        var direction = 0
+        var extreme = first
+        var reversals = 0
+        for value in values.dropFirst() {
+            switch direction {
+            case 0:
+                if abs(value - extreme) >= minimumSwing {
+                    direction = value > extreme ? 1 : -1
+                    extreme = value
+                }
+            case 1:
+                if value > extreme { extreme = value }
+                else if extreme - value >= minimumSwing { direction = -1; extreme = value; reversals += 1 }
+            default:
+                if value < extreme { extreme = value }
+                else if value - extreme >= minimumSwing { direction = 1; extreme = value; reversals += 1 }
+            }
+        }
+        return reversals
+    }
+
+    private static func revisitDensity(_ sampled: [CGPoint], cellSize: CGFloat) -> CGFloat {
+        guard sampled.count > 1 else { return 0 }
+        struct Cell: Hashable { let x: Int; let y: Int }
+        var cells = Set<Cell>()
+        var length: CGFloat = 0
+        var previous = sampled[0]
+        for point in sampled {
+            length += hypot(point.x - previous.x, point.y - previous.y)
+            previous = point
+            cells.insert(Cell(x: Int((point.x / cellSize).rounded(.down)), y: Int((point.y / cellSize).rounded(.down))))
+        }
+        return length / (CGFloat(cells.count) * cellSize)
     }
 
     private static func reversalCount(_ values: [CGFloat], minimumMagnitude: CGFloat) -> Int {
