@@ -105,12 +105,12 @@ struct SubscriptionPlansView: View {
 
     private var plusFeatures: [String] {
         let models = AIModelCatalog.all.filter { $0.requiredPlan == .plus }.map(\.displayName)
-        return ["月750 AIクレジット", models.joined(separator: "・"), "5GBの個人用クラウド同期"]
+        return ["月750 AIクレジット", models.joined(separator: "・")]
     }
 
     private var proFeatures: [String] {
         let models = AIModelCatalog.all.filter { $0.requiredPlan == .pro }.map(\.displayName)
-        return ["月2,000 AIクレジット", "Plusの全モデル＋" + models.joined(separator: "・"), "50GBの個人用クラウド同期"]
+        return ["月2,000 AIクレジット", "Plusの全モデル＋" + models.joined(separator: "・")]
     }
 
     private func planCard(plan: StudiquoPlan, subtitle: String, features: [String]) -> some View {

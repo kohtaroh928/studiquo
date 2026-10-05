@@ -519,12 +519,20 @@ enum AccountDeletionUI {
 }
 
 enum AccountLocalPreferences {
+    /// Clears everything the account owned, except settings that belong to the
+    /// device rather than the account: the language, and whether this device
+    /// syncs with iCloud. The sync choice must survive: with it gone, the next
+    /// launch finds the library on disk and turns sync *on*, which would pull
+    /// whatever old data is still in iCloud back into an account the student
+    /// just deleted.
     static func clear(defaults: UserDefaults = .standard) {
         let preservedLanguage = defaults.string(forKey: "appLanguage")
+        let preservedICloudSync = defaults.object(forKey: ICloudSyncPreference.defaultsKey) as? Bool
         for key in defaults.dictionaryRepresentation().keys {
             defaults.removeObject(forKey: key)
         }
         if let preservedLanguage { defaults.set(preservedLanguage, forKey: "appLanguage") }
+        if let preservedICloudSync { defaults.set(preservedICloudSync, forKey: ICloudSyncPreference.defaultsKey) }
     }
 }
 
