@@ -247,4 +247,41 @@ final class PDFImportServiceTests: XCTestCase {
         let pages = await work.value
         XCTAssertTrue(pages.isEmpty)
     }
+
+    // MARK: Size budget (problem 2: PDFs used up the sync/storage allowance)
+
+    func testTheDefaultScaleIsTwoPixelsPerPoint() {
+        XCTAssertEqual(PDFImportService.defaultScale, 2)
+    }
+
+    /// Before the fix a 10-slide deck of shaded slides came to hundreds of MB.
+    func testAMultiPageDeckOfShadedSlidesStaysSmall() throws {
+        let url = workDir.appendingPathComponent("deck.pdf")
+        var mediaBox = CGRect(x: 0, y: 0, width: 960, height: 540)
+        let context = try XCTUnwrap(CGContext(url as CFURL, mediaBox: &mediaBox, nil))
+        let gradient = try XCTUnwrap(CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: [CGColor(red: 0.1, green: 0.3, blue: 0.7, alpha: 1), CGColor(red: 0.9, green: 0.5, blue: 0.2, alpha: 1)] as CFArray,
+            locations: [0, 1]
+        ))
+        for _ in 0..<10 {
+            context.beginPage(mediaBox: &mediaBox)
+            context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 960, y: 540), options: [])
+            context.endPage()
+        }
+        context.closePDF()
+
+        let pages = PDFImportService.extractPages(from: url)
+        let total = pages.reduce(0) { $0 + $1.imageData.count }
+        XCTAssertEqual(pages.count, 10)
+        XCTAssertLessThan(total, 3_000_000, "10 shaded slides should be a few MB at most, not hundreds")
+    }
+
+    func testNoPageIsEverMoreThanFourMillionPixelsWide() throws {
+        // The cap that stops a poster-sized PDF becoming a bitmap of tens of megapixels.
+        let url = makeStyledPDF(name: "banner.pdf", width: 20000, height: 400, look: .flatText)
+        let page = try XCTUnwrap(PDFImportService.extractPages(from: url).first)
+        let size = pixelSize(of: page.imageData)
+        XCTAssertLessThanOrEqual(size.width * size.height, 4096 * 4096)
+    }
 }

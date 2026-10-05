@@ -64,6 +64,7 @@ struct ShareDestinationPickerView: View {
                                     .foregroundStyle(.tertiary)
                             }
                         }
+                        .accessibilityIdentifier("share-destination-folder-\(folder.name)")
                     }
                 }
             }
@@ -228,7 +229,6 @@ struct SharedImportHost: ViewModifier {
             .background(.regularMaterial, in: Capsule())
             .padding(.top, 8)
             .transition(.move(edge: .top).combined(with: .opacity))
-            .accessibilityIdentifier("shared-import-held-banner")
         }
     }
 }
