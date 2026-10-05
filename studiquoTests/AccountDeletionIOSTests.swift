@@ -141,6 +141,18 @@ final class AccountDeletionIOSTests: XCTestCase {
         XCTAssertFalse(defaults.dictionaryRepresentation().keys.contains("studyTimeTrackingEnabled"))
     }
 
+    func test63aICloudSyncChoiceIsADeviceSettingAndSurvivesAccountDeletion() {
+        // Cleared, it would read as "no choice yet" and a library that is still
+        // on disk would switch sync back on at the next launch.
+        defaults.set(false, forKey: ICloudSyncPreference.defaultsKey)
+        defaults.set("Yamada", forKey: "profileName")
+        AccountLocalPreferences.clear(defaults: defaults)
+        XCTAssertEqual(defaults.object(forKey: ICloudSyncPreference.defaultsKey) as? Bool, false)
+        XCTAssertNil(defaults.object(forKey: "profileName"))
+        XCTAssertFalse(ICloudSyncPreference.resolve(defaults: defaults, existingStoreFound: true),
+                       "a device that had sync off must not turn it on after deleting the account")
+    }
+
     func test64SessionIdentityAndCloudTokenAreRemovedFromKeychain() {
         KeychainCredentialFixtures.seedAllAccountCredentials(service: keychainService, email: "deleted@example.com")
         MCPCloudCredentials.save("1234567890.abcdefghijklmnopqrstuvwxyz123456")
