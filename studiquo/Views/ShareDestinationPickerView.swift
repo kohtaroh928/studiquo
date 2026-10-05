@@ -199,8 +199,10 @@ struct SharedImportHost: ViewModifier {
             VStack(alignment: .leading, spacing: 8) {
                 Text("取り込み中 \(min(progress.completed + 1, progress.total))/\(progress.total)")
                     .font(.headline)
-                ProgressView(value: Double(progress.completed), total: Double(max(progress.total, 1)))
-                Text(progress.currentName)
+                ProgressView(value: progress.fraction)
+                Text(progress.pageTotal > 1
+                     ? "\(progress.currentName)(\(progress.pageDone)/\(progress.pageTotal)ページ)"
+                     : progress.currentName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
