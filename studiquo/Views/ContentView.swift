@@ -886,6 +886,8 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
                 Text("選んだ言語はすぐに反映されます。")
             }
 
+            ICloudSyncSettingsSection()
+
             Section {
                 Toggle("勉強時間を記録する", isOn: $studyTimeTrackingEnabled)
             } header: {
@@ -1753,7 +1755,7 @@ struct TermsOfUseView: View {
                     policySection(title: "5. サブスクリプションと支払い") {
                         bullet("自動更新", "Plus・Proプランは、App Storeを通じた自動更新のサブスクリプションです。購入はApple IDに設定した決済手段で行われます。")
                         bullet("更新と解約", "現在の購読期間が終了する24時間前までに解約しない限り、同一期間で自動的に更新されます。解約はApp Storeの設定からいつでも行えます。本アプリ内からApp Storeの契約を直接解約することはできません。")
-                        bullet("プラン内容の変更", "プラン別のAIクレジット上限・利用可能なAIモデル・クラウド同期容量の上限は、本アプリ内の表示および運営の判断により変更される場合があります。")
+                        bullet("プラン内容の変更", "プラン別のAIクレジット上限・利用可能なAIモデルは、本アプリ内の表示および運営の判断により変更される場合があります。")
                     }
 
                     policySection(title: "6. 禁止事項") {
@@ -1847,7 +1849,7 @@ struct PrivacyPolicyView: View {
                         bullet("Google Gemini", "AIトーク・添削・翌日復習機能で、既定の生成AIとして使用します。これらの機能を使うたびに、上記の内容がGoogleに送信されます。")
                         bullet("Anthropic Claude", "利用者が自分自身のAnthropic APIキーを設定した場合に限り、同様の内容がAnthropicにも送信されます。APIキーを設定しない限り、この連携は行われません。")
                         bullet("Cloudflare", "本アプリのサーバーインフラとして使用しており、アカウント情報・学習コンテンツ・チャット内容の保管場所です。")
-                        bullet("Apple iCloud", "一部のデータは、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。")
+                        bullet("Apple iCloud", "「iCloudで同期する」をオンにした端末では、ノート・暗記帳・文書・スライド・フォルダ・カレンダーの予定(連携して取得した予定を含む)・AIトークの履歴・学習記録など、アプリ内に保存されるデータが、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。この設定は端末ごとの任意の設定で、新しくインストールした場合は初期状態でオフです(以前のバージョンから引き続き利用している場合は、これまでどおりオンです)。同期されたデータは利用者ご自身のiCloudに保存され、iCloudの保存容量を使用します。")
                         bullet("Slack", "「問題を報告」で送信された内容を運営が確認するために使用します。")
                     }
 
@@ -1862,7 +1864,7 @@ struct PrivacyPolicyView: View {
                     }
 
                     policySection(title: "データの削除について") {
-                        Text("設定からアカウントを削除できます。削除すると、端末およびクラウド上の学習資料、プロフィール、フレンド・グループ情報、ログイン情報など、アカウントに関連するデータが削除されます。他の利用者との会話を維持するため、その利用者側に残る過去のメッセージは「削除済みユーザー」の発言として匿名化される場合があります。App Storeのサブスクリプションはアカウント削除だけでは解約されないため、App Storeで別途管理してください。")
+                        Text("設定からアカウントを削除できます。削除すると、端末およびクラウド上の学習資料、プロフィール、フレンド・グループ情報、ログイン情報など、アカウントに関連するデータが削除されます。他の利用者との会話を維持するため、その利用者側に残る過去のメッセージは「削除済みユーザー」の発言として匿名化される場合があります。iCloud同期をオンにしている端末では、端末のデータの削除がiCloudにも反映されます。同期をオフにしている場合や、過去にオンにしていた場合にiCloudに残っているデータは、アカウントの削除では削除されません。iPadの「設定」アプリのiCloud設定から、ご自身で削除してください。App Storeのサブスクリプションはアカウント削除だけでは解約されないため、App Storeで別途管理してください。")
                             .font(.subheadline)
                     }
 
@@ -5480,19 +5482,6 @@ struct ContentView: View {
         let lockedPDFData = password != nil ? try? Data(contentsOf: url) : nil
 
         let extractedPages = PDFImportService.extractPages(from: url, password: password)
-        // Checked once for the whole import, before any page is written —
-        // a multi-page PDF can be tens of megabytes; failing partway through
-        // would leave a notebook with only some of its pages. Mirrors
-        // ProfileAndFriendsView.uploadIfPossible's "check the size before
-        // doing the work" shape.
-        let importedBytes = extractedPages.reduce(0) { $0 + $1.imageData.count } + (lockedPDFData?.count ?? 0)
-        guard !StorageUsageCache.shared.wouldExceedLimit(
-            addingBytes: importedBytes, plan: subscriptionStore.currentPlan, in: modelContext
-        ) else {
-            pdfPrepareError = L("クラウド同期の容量上限に達しました。Proプランへのアップグレードをご検討ください。")
-            return nil
-        }
-
         let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
         notebook.lockedPDFData = lockedPDFData
         assignToCurrentFolder(notebook)
@@ -5506,7 +5495,6 @@ struct ContentView: View {
         guard !notebook.sortedPages.isEmpty else { return nil }
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
-        StorageUsageCache.shared.adjust(by: importedBytes)
         openNotebookTab(notebook)
         selectedNotebook = notebook
         libraryMode = .documents
@@ -5568,7 +5556,6 @@ struct ContentView: View {
                     to: PDFPasswordService.savedCopyDestinationURL(for: sourceURL)
                 )
                 notebook.lockedPDFData = nil
-                StorageUsageCache.shared.adjust(by: -data.count)
                 pdfPendingNotebookUnlock = nil
                 pdfPasswordEntry = ""
                 pdfUnlockedResult = IdentifiableURL(url: output)
@@ -6664,9 +6651,6 @@ private struct PDFPasswordRemovalOfferModifier: ViewModifier {
                         // copy — the student now has a password-free PDF, and
                         // the library's own "PDFのパスワードを削除" long-press
                         // item should stop offering to do this again.
-                        if let lockedBytes = offer.notebook.lockedPDFData {
-                            StorageUsageCache.shared.adjust(by: -lockedBytes.count)
-                        }
                         offer.notebook.lockedPDFData = nil
                         pdfUnlockedResult = IdentifiableURL(url: output)
                     } catch {
