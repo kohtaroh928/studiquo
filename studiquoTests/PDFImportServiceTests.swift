@@ -158,4 +158,93 @@ final class PDFImportServiceTests: XCTestCase {
         XCTAssertEqual(PDFImportService.effectiveScale(for: CGSize(width: 612, height: 792), requested: 2), 2)
         XCTAssertEqual(PDFImportService.effectiveScale(for: CGSize(width: 4096, height: 100), requested: 2), 1, accuracy: 0.0001)
     }
+
+    // MARK: Background rendering
+
+    /// Collects progress reports from the rendering thread.
+    private final class ProgressLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var entries: [(done: Int, total: Int)] = []
+        func record(_ done: Int, _ total: Int) { lock.lock(); entries.append((done, total)); lock.unlock() }
+        var all: [(done: Int, total: Int)] { lock.lock(); defer { lock.unlock() }; return entries }
+    }
+
+    private func makeLongPDF(name: String, pages: Int) -> URL {
+        let url = workDir.appendingPathComponent(name)
+        var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)
+        guard let context = CGContext(url as CFURL, mediaBox: &mediaBox, nil) else {
+            XCTFail("Failed to create PDF context for \(name)")
+            return url
+        }
+        for index in 0..<pages {
+            context.beginPage(mediaBox: &mediaBox)
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(mediaBox)
+            UIGraphicsPushContext(context)
+            let text = String(repeating: "Page \(index + 1): the quick brown fox jumps over the lazy dog. ", count: 40)
+            (text as NSString).draw(in: mediaBox.insetBy(dx: 36, dy: 36), withAttributes: [.font: UIFont.systemFont(ofSize: 11)])
+            UIGraphicsPopContext()
+            context.endPage()
+        }
+        context.closePDF()
+        return url
+    }
+
+    func testExtractPagesAsync_returnsTheSamePagesAsTheSyncVersion() async throws {
+        let url = makeLongPDF(name: "same.pdf", pages: 5)
+        let sync = PDFImportService.extractPages(from: url)
+        let async = await PDFImportService.extractPagesAsync(from: url)
+        XCTAssertEqual(async.count, sync.count)
+        XCTAssertEqual(async.map(\.text), sync.map(\.text))
+        XCTAssertEqual(async.map(\.imageData.count), sync.map(\.imageData.count))
+    }
+
+    func testExtractPagesAsync_reportsEveryPageInOrder() async throws {
+        let url = makeLongPDF(name: "progress.pdf", pages: 6)
+        let log = ProgressLog()
+        _ = await PDFImportService.extractPagesAsync(from: url) { done, total in log.record(done, total) }
+        XCTAssertEqual(log.all.map(\.done), [1, 2, 3, 4, 5, 6])
+        XCTAssertTrue(log.all.allSatisfy { $0.total == 6 })
+    }
+
+    /// The reported problem: importing several long PDFs froze the screen for
+    /// seconds because every page was rendered on the main thread, so taps,
+    /// scrolling and the progress bar all stalled. While the async version
+    /// renders, the main thread must keep getting turns.
+    @MainActor
+    func testExtractPagesAsync_keepsTheMainThreadResponsive() async throws {
+        let url = makeLongPDF(name: "long.pdf", pages: 150)
+
+        // Baseline: how long the same work blocks the thread when run directly.
+        let baselineStart = Date()
+        _ = PDFImportService.extractPages(from: url)
+        let blockedFor = Date().timeIntervalSince(baselineStart)
+        try XCTSkipIf(blockedFor < 0.6, "machine too fast for the comparison to mean anything (\(blockedFor)s)")
+
+        var finished = false
+        let work = Task { @MainActor in
+            _ = await PDFImportService.extractPagesAsync(from: url)
+            finished = true
+        }
+        var longestGap: TimeInterval = 0
+        var last = Date()
+        while !finished {
+            try await Task.sleep(for: .milliseconds(10))
+            let now = Date()
+            longestGap = max(longestGap, now.timeIntervalSince(last))
+            last = now
+        }
+        await work.value
+        XCTAssertLessThan(longestGap, blockedFor / 3,
+                          "main thread was stalled for \(longestGap)s while the same work blocks it for \(blockedFor)s when run directly")
+        XCTAssertLessThan(longestGap, 0.4)
+    }
+
+    func testExtractPagesAsync_cancelledWorkReturnsNothingRatherThanAHalfRenderedPDF() async throws {
+        let url = makeLongPDF(name: "cancel.pdf", pages: 40)
+        let work = Task { await PDFImportService.extractPagesAsync(from: url) }
+        work.cancel()
+        let pages = await work.value
+        XCTAssertTrue(pages.isEmpty)
+    }
 }

@@ -317,4 +317,25 @@ final class SharedImportCoordinatorTests: XCTestCase {
         coordinator.refresh()
         XCTAssertFalse(coordinator.isPickingDestination, "must not stack a picker over a running import")
     }
+
+    func testProgressFractionCountsPagesOfTheCurrentFile() throws {
+        let coordinator = SharedImportCoordinator(inbox: inbox)
+        coordinator.begin(total: 4)
+        coordinator.advance(completed: 1, currentName: "b.pdf")
+        XCTAssertEqual(try XCTUnwrap(coordinator.progress).fraction, 0.25, accuracy: 0.0001)
+
+        coordinator.advancePage(done: 5, of: 10)
+        XCTAssertEqual(try XCTUnwrap(coordinator.progress).fraction, 0.375, accuracy: 0.0001, "half of file 2 of 4")
+
+        coordinator.advance(completed: 2, currentName: "c.pdf")
+        let next = try XCTUnwrap(coordinator.progress)
+        XCTAssertEqual(next.pageDone, 0, "a new file starts its page count again")
+        XCTAssertEqual(next.fraction, 0.5, accuracy: 0.0001)
+    }
+
+    func testPageProgressOutsideAnImportIsIgnored() {
+        let coordinator = SharedImportCoordinator(inbox: inbox)
+        coordinator.advancePage(done: 3, of: 9)
+        XCTAssertNil(coordinator.progress)
+    }
 }
