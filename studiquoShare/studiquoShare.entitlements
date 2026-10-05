@@ -4,7 +4,7 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.yabuko.studiquo</string>
+		<string>group.com.yabuko.studiquo.share</string>
 	</array>
 </dict>
 </plist>

@@ -37,7 +37,7 @@ targets:
         # Shared with the studiquoShare extension: the inbox where shared
         # files wait for the student to choose a destination folder.
         com.apple.security.application-groups:
-          - group.com.yabuko.studiquo
+          - group.com.yabuko.studiquo.share
     # Sign in with Apple's SystemCapabilities entry can't be expressed here:
     # xcodegen 2.46.0 mis-serializes a 2-level-nested `attributes` dict into a
     # single string, corrupting project.pbxproj. It must be re-added by hand
@@ -150,7 +150,7 @@ targets:
       path: studiquoShare/studiquoShare.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.yabuko.studiquo
+          - group.com.yabuko.studiquo.share
     info:
       path: studiquoShare/Info.plist
       properties:
