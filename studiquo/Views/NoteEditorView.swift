@@ -300,10 +300,6 @@ struct NoteEditorView: View {
     @State private var photoStudyPreviousSplitRatio: CGFloat?
     @State private var photoStudyPreviousActivePane: ActivePane?
     @State private var selectedPhotoStudyAssetID: String?
-    /// Set when a new image/page would push this account's approximate
-    /// cloud-sync footprint over its plan's limit — see
-    /// `exceedsStorageLimit(addingBytes:)`.
-    @State private var storageLimitMessage: String?
     @State private var isRecognizingHandwriting = false
     @State private var recognitionProgress = ""
     @State private var isFocusMode = false
@@ -552,14 +548,6 @@ struct NoteEditorView: View {
                 Task { await applyBackgroundImage(from: data) }
             }
             .ignoresSafeArea()
-        }
-        .alert("Studiquo", isPresented: Binding(
-            get: { storageLimitMessage != nil },
-            set: { if !$0 { storageLimitMessage = nil } }
-        )) {
-            Button("OK") { storageLimitMessage = nil }
-        } message: {
-            Text(storageLimitMessage ?? "")
         }
         .onChange(of: notebook.sortedPages.count) { _, count in
             primaryPageIndex = clamped(primaryPageIndex, pageCount: count)
@@ -3507,38 +3495,19 @@ struct NoteEditorView: View {
         notebook.updatedAt = .now
     }
 
-    /// Whether writing `addingBytes` more externally-stored content would
-    /// push this account's approximate cloud-sync footprint past its plan's
-    /// limit (see `StorageUsageEstimator`). Sets `storageLimitMessage` and
-    /// returns `true` when it would, so callers can bail out before the
-    /// write — mirrors `ProfileAndFriendsView.uploadIfPossible`'s
-    /// check-then-bail shape for its own (unrelated) attachment-size limit.
-    @MainActor
-    private func exceedsStorageLimit(addingBytes: Int) -> Bool {
-        guard StorageUsageCache.shared.wouldExceedLimit(
-            addingBytes: addingBytes, plan: subscriptionStore.currentPlan, in: modelContext
-        ) else { return false }
-        storageLimitMessage = L("クラウド同期の容量上限に達しました。Proプランへのアップグレードをご検討ください。")
-        return true
-    }
-
     @MainActor
     private func addImageElement(from data: Data) async {
         guard let page = currentPrimaryPage else { return }
         // Photo-library assets can be tens of megapixels. Persist a bounded
         // representation so every later render, sync, backup and duplicate
-        // does not carry the original camera-sized payload — and so the
-        // storage-limit check below (and the cache adjustment after) count
-        // what is actually persisted, not the raw camera-sized input.
+        // does not carry the original camera-sized payload.
         let storedData = await NoteImagePipeline.optimizedStorageDataAsync(from: data) ?? data
-        guard !exceedsStorageLimit(addingBytes: storedData.count) else { return }
         let element = PageElement(kind: .image, imageData: storedData, width: 0.42, height: 0.28)
         element.layerIndex = nextLayerIndex(on: page)
         element.page = page
         page.addElement(element)
         recordElementAddition(element, on: page)
         notebook.updatedAt = .now
-        StorageUsageCache.shared.adjust(by: storedData.count)
     }
 
     @MainActor
@@ -3546,13 +3515,11 @@ struct NoteEditorView: View {
         guard let image = UIImage(data: data),
               let page = currentPrimaryPage else { return }
         let encoded = image.jpegData(compressionQuality: 0.92)
-        guard !exceedsStorageLimit(addingBytes: encoded?.count ?? 0) else { return }
         page.backgroundImageData = encoded
         page.pageWidth = max(100, image.size.width)
         page.pageHeight = max(100, image.size.height)
         page.notebook?.refreshLibraryMetadata()
         notebook.updatedAt = .now
-        StorageUsageCache.shared.adjust(by: encoded?.count ?? 0)
     }
 
     /// Arms the shape tool for rectangle/ellipse/line: the shape itself

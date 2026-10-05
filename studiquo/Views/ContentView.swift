@@ -859,6 +859,8 @@ private struct AppSettingsView: View {
                     Text("選んだ言語はすぐに反映されます。")
                 }
 
+                ICloudSyncSettingsSection()
+
                 Section {
                     Toggle("勉強時間を記録する", isOn: $studyTimeTrackingEnabled)
                 } header: {
@@ -5181,19 +5183,6 @@ struct ContentView: View {
         let lockedPDFData = password != nil ? try? Data(contentsOf: url) : nil
 
         let extractedPages = PDFImportService.extractPages(from: url, password: password)
-        // Checked once for the whole import, before any page is written —
-        // a multi-page PDF can be tens of megabytes; failing partway through
-        // would leave a notebook with only some of its pages. Mirrors
-        // ProfileAndFriendsView.uploadIfPossible's "check the size before
-        // doing the work" shape.
-        let importedBytes = extractedPages.reduce(0) { $0 + $1.imageData.count } + (lockedPDFData?.count ?? 0)
-        guard !StorageUsageCache.shared.wouldExceedLimit(
-            addingBytes: importedBytes, plan: subscriptionStore.currentPlan, in: modelContext
-        ) else {
-            pdfPrepareError = L("クラウド同期の容量上限に達しました。Proプランへのアップグレードをご検討ください。")
-            return nil
-        }
-
         let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
         notebook.lockedPDFData = lockedPDFData
         assignToCurrentFolder(notebook)
@@ -5207,7 +5196,6 @@ struct ContentView: View {
         guard !notebook.sortedPages.isEmpty else { return nil }
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
-        StorageUsageCache.shared.adjust(by: importedBytes)
         openNotebookTab(notebook)
         selectedNotebook = notebook
         libraryMode = .documents
@@ -5269,7 +5257,6 @@ struct ContentView: View {
                     to: PDFPasswordService.savedCopyDestinationURL(for: sourceURL)
                 )
                 notebook.lockedPDFData = nil
-                StorageUsageCache.shared.adjust(by: -data.count)
                 pdfPendingNotebookUnlock = nil
                 pdfPasswordEntry = ""
                 pdfUnlockedResult = IdentifiableURL(url: output)
@@ -6365,9 +6352,6 @@ private struct PDFPasswordRemovalOfferModifier: ViewModifier {
                         // copy — the student now has a password-free PDF, and
                         // the library's own "PDFのパスワードを削除" long-press
                         // item should stop offering to do this again.
-                        if let lockedBytes = offer.notebook.lockedPDFData {
-                            StorageUsageCache.shared.adjust(by: -lockedBytes.count)
-                        }
                         offer.notebook.lockedPDFData = nil
                         pdfUnlockedResult = IdentifiableURL(url: output)
                     } catch {
