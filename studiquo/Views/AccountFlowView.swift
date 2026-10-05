@@ -1,6 +1,7 @@
 import AuthenticationServices
 import GoogleSignInSwift
 import SwiftUI
+import SwiftData
 
 enum AccountFlowLogic {
     static func canSubmitCredentials(email: String, password: String, isBusy: Bool) -> Bool {
@@ -20,9 +21,25 @@ enum AccountFlowLogic {
 
 struct AccountGateView: View {
     @StateObject private var authentication = AuthenticationStore()
+    @Environment(\.modelContext) private var modelContext
+    @AppStorage(AccountDeletionWorkflow.pendingLocalDeletionKey) private var cleanupPending = false
+    @State private var cleanupError = ""
 
     var body: some View {
         Group {
+            if cleanupPending {
+                VStack(spacing: 20) {
+                    Text("この端末のデータを削除しています")
+                    Text("サーバーが削除依頼を受け付けました。外部サービスの削除は順次処理されます。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if !cleanupError.isEmpty {
+                        Text(cleanupError).foregroundStyle(.red)
+                        Button("もう一度削除する") { Task { await finishLocalCleanup() } }
+                    } else {
+                        ProgressView()
+                    }
+                }.padding()
+            } else {
             switch authentication.state {
             case .needsLogin:
                 LoginView()
@@ -33,12 +50,30 @@ struct AccountGateView: View {
             case .authenticated:
                 ContentView()
             }
+            }
         }
         .environmentObject(authentication)
         .animation(.easeInOut(duration: 0.2), value: authentication.state)
         .task(id: authentication.state) {
-            guard authentication.state == .authenticated else { return }
+            guard !cleanupPending, authentication.state == .authenticated else { return }
             await PushNotificationRegistration.refreshIfAuthorized()
+        }
+        .task(id: cleanupPending) {
+            if cleanupPending { await finishLocalCleanup() }
+        }
+    }
+
+    @MainActor
+    private func finishLocalCleanup() async {
+        cleanupError = ""
+        do {
+            try AccountDataEraser.eraseAll(from: modelContext)
+            try AccountFileEraser.erase()
+            AccountLocalPreferences.clear()
+            authentication.finishAccountDeletion()
+            authentication.clearLocalDeletionPending()
+        } catch {
+            cleanupError = "端末のデータを削除できませんでした。もう一度お試しください。"
         }
     }
 }

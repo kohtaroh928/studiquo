@@ -8,6 +8,7 @@
 // write requires a JSON content type: a cross-site HTML form can't send one
 // without a CORS preflight, which this API never answers.
 import { json, readJSONLimited } from "./http.js";
+import { PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.js";
 
 const STATUSES = new Set(["open", "in_progress", "resolved"]);
 const MAX_NOTE_LENGTH = 2_000;
@@ -87,12 +88,13 @@ async function importLegacyReports(env) {
       const report = await env.STUDIQUO_DATA.get(name, "json");
       if (!report?.id || typeof report.description !== "string") { skipped += 1; continue; }
       const createdAt = Number(report.createdAt) || Date.now();
+      if (createdAt <= Date.now() - PERSONAL_RETENTION_MS) { skipped += 1; continue; }
       const result = await env.ADMIN_DB.prepare(
         `INSERT OR IGNORE INTO issue_reports
-           (id, reporter_key, description, app_version, os_version, device_model, language, has_screenshot, status, admin_note, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', '', ?, ?)`
+           (id, reporter_key, account_key, description, app_version, os_version, device_model, language, has_screenshot, status, admin_note, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', '', ?, ?)`
       ).bind(
-        report.id, String(report.reporterKey ?? ""), report.description, String(report.appVersion ?? ""),
+        report.id, String(report.reporterKey ?? ""), report.accountKey ?? null, report.description, String(report.appVersion ?? ""),
         String(report.osVersion ?? ""), String(report.deviceModel ?? ""), String(report.language ?? ""),
         report.hasScreenshot ? 1 : 0, createdAt, createdAt
       ).run();
@@ -109,9 +111,10 @@ export async function handleAdminReports(url, request, env) {
 
   if (url.pathname === "/api/admin/issue-reports" && request.method === "GET") {
     const status = statusFilter(url);
+    const cutoff = Date.now() - PERSONAL_RETENTION_MS;
     const rows = await env.ADMIN_DB.prepare(
-      `SELECT * FROM issue_reports ${status ? "WHERE status = ?" : ""} ORDER BY created_at DESC LIMIT ${LIST_LIMIT}`
-    ).bind(...(status ? [status] : [])).all();
+      `SELECT * FROM issue_reports WHERE created_at > ? ${status ? "AND status = ?" : ""} ORDER BY created_at DESC LIMIT ${LIST_LIMIT}`
+    ).bind(cutoff, ...(status ? [status] : [])).all();
     return json({ reports: (rows.results ?? []).map(row => issueReportJSON(row, url.origin)) });
   }
 
@@ -134,11 +137,12 @@ export async function handleAdminReports(url, request, env) {
 
   if (url.pathname === "/api/admin/app-errors" && request.method === "GET") {
     const status = statusFilter(url);
+    const cutoff = Date.now() - ERROR_RETENTION_MS;
     const order = url.searchParams.get("sort") === "count" ? "occurrences DESC, last_seen_at DESC" : "last_seen_at DESC";
     const rows = await env.ADMIN_DB.prepare(
-      `SELECT e.*, (SELECT COUNT(*) FROM app_error_users u WHERE u.fingerprint = e.fingerprint) AS affected_users
-       FROM app_errors e ${status ? "WHERE e.status = ?" : ""} ORDER BY ${order} LIMIT ${LIST_LIMIT}`
-    ).bind(...(status ? [status] : [])).all();
+      `SELECT e.*, (SELECT COUNT(*) FROM app_error_users u WHERE u.fingerprint = e.fingerprint AND u.last_seen_at > ?) AS affected_users
+       FROM app_errors e WHERE e.last_seen_at > ? ${status ? "AND e.status = ?" : ""} ORDER BY ${order} LIMIT ${LIST_LIMIT}`
+    ).bind(Date.now() - PERSONAL_RETENTION_MS, cutoff, ...(status ? [status] : [])).all();
     return json({ errors: (rows.results ?? []).map(appErrorJSON) });
   }
 

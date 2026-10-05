@@ -7,11 +7,9 @@
 // The optional screenshot is opt-in on the client (off by default, previewed
 // to the reporter before anything is sent — see ReportIssueSheet in the app)
 // since it can capture a friend's chat message or private note content.
-// Once sent, it's served back from GET .../screenshot at an unguessable,
-// unauthenticated URL purely so Slack's own link-preview fetch — which
-// carries no bearer token — can render it inline. The random report id is
-// the only thing standing between a viewer and the image, the same trust
-// model as any other unlisted share link.
+// Text and screenshots remain in the Access-protected dashboard. Slack
+// receives only metadata and a dashboard link, never private report content.
+import { accessAllowed } from "./access.js";
 import { isRevoked } from "./revocation.js";
 import { isExpired } from "./token.js";
 import { checkRateLimit } from "./rate-limit.js";
@@ -37,7 +35,7 @@ function truncate(value, max) {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 
-async function postToSlack(env, report, screenshotURL, dashboardURL) {
+async function postToSlack(env, report, dashboardURL) {
   if (!env.SLACK_ISSUE_REPORT_WEBHOOK_URL) return;
   const context = [
     report.appVersion && `v${report.appVersion}`,
@@ -47,12 +45,10 @@ async function postToSlack(env, report, screenshotURL, dashboardURL) {
   ].filter(Boolean).join(" ・ ");
   const blocks = [
     { type: "header", text: { type: "plain_text", text: "📣 studiquo エラー報告", emoji: true } },
-    { type: "section", text: { type: "mrkdwn", text: report.description } },
+    { type: "section", text: { type: "mrkdwn", text: `報告ID: ${report.id}` } },
     { type: "context", elements: [{ type: "mrkdwn", text: context || "端末情報なし" }] },
   ];
-  if (screenshotURL) {
-    blocks.push({ type: "image", image_url: screenshotURL, alt_text: "報告時のスクリーンショット" });
-  }
+  // Private report text/images stay in the access-controlled dashboard.
   if (dashboardURL) {
     blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: `<${dashboardURL}|ダッシュボードで開く>` }] });
   }
@@ -67,10 +63,10 @@ async function recordInDashboard(env, report) {
   try {
     await env.ADMIN_DB.prepare(
       `INSERT OR IGNORE INTO issue_reports
-         (id, reporter_key, description, app_version, os_version, device_model, language, has_screenshot, status, admin_note, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', '', ?, ?)`
+         (id, reporter_key, account_key, description, app_version, os_version, device_model, language, has_screenshot, status, admin_note, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', '', ?, ?)`
     ).bind(
-      report.id, report.reporterKey, report.description, report.appVersion, report.osVersion,
+      report.id, report.reporterKey, report.accountKey, report.description, report.appVersion, report.osVersion,
       report.deviceModel, report.language, report.hasScreenshot ? 1 : 0, report.createdAt, report.createdAt
     ).run();
   } catch (error) {
@@ -81,10 +77,11 @@ async function recordInDashboard(env, report) {
 export async function handleIssueReports(url, request, env) {
   if (!url.pathname.startsWith("/api/issue-reports")) return null;
 
-  // Unauthenticated on purpose — see the file header. Only reachable by
-  // guessing (or being handed) a specific report's random id.
   const screenshotMatch = /^\/api\/issue-reports\/([0-9a-f-]{36})\/screenshot$/.exec(url.pathname);
   if (screenshotMatch && request.method === "GET") {
+    if (!await accessAllowed(request, env)) return json({ error: "Unauthorized." }, 401);
+    const report = await env.STUDIQUO_DATA.get(`issue-report:${screenshotMatch[1]}`, "json");
+    if (!report || report.createdAt + REPORT_TTL_SECONDS * 1000 <= Date.now()) return json({ error: "Not found" }, 404);
     const screenshot = await env.STUDIQUO_DATA.get(`issue-report-screenshot:${screenshotMatch[1]}`, "json");
     if (!screenshot) return json({ error: "Not found" }, 404);
     const bytes = Uint8Array.from(atob(screenshot.data), c => c.charCodeAt(0));
@@ -133,6 +130,7 @@ export async function handleIssueReports(url, request, env) {
   const report = {
     id,
     reporterKey: key,
+    accountKey: await sha256Hex(`usage-account:${session.sub}`),
     description,
     appVersion: truncate(body.appVersion, 40),
     osVersion: truncate(body.osVersion, 40),
@@ -149,8 +147,7 @@ export async function handleIssueReports(url, request, env) {
 
   await recordInDashboard(env, report);
 
-  const screenshotURL = screenshot ? `${url.origin}/api/issue-reports/${id}/screenshot` : null;
-  await postToSlack(env, report, screenshotURL, `${url.origin}/admin#reports`);
+  await postToSlack(env, report, `${url.origin}/admin#reports`);
 
   return json({ reported: true, id });
 }

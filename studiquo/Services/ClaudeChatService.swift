@@ -133,6 +133,8 @@ enum ClaudeChatService {
         images: [UIImage] = [],
         onDelta: @escaping (String) -> Void
     ) async throws {
+        // Direct-key integrations are unavailable in the single-processor release.
+        guard AIDataDisclosure.allowsDirectProviders else { throw WorkerAIProvider.ProviderError.providerUnavailable }
         guard let key = apiKey else { throw ServiceError.missingKey }
 
         var request = URLRequest(url: endpoint)

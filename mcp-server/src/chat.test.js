@@ -3342,14 +3342,14 @@ test("POST /api/chat/rooms/:id/messages/:id/report allows up to 5 per minute, th
 
 test("21: a deleted account disappears from the other user's friend list", async () => {
   const fixture = await deletionFriendFixture();
-  assert.equal((await deleteAccount(fixture.env, fixture.aliceToken)).status, 200);
+  assert.equal((await deleteAccount(fixture.env, fixture.aliceToken)).status, 202);
   assert.deepEqual(await friends(fixture.env, fixture.bobToken), []);
 });
 
 test("22: the remaining user can still read the historical direct chat", async () => {
   const fixture = await deletionFriendFixture();
   await sendMessage(fixture.env, fixture.aliceToken, fixture.roomID, "残してよい履歴");
-  assert.equal((await deleteAccount(fixture.env, fixture.aliceToken)).status, 200);
+  assert.equal((await deleteAccount(fixture.env, fixture.aliceToken)).status, 202);
   const response = await readMessages(fixture.env, fixture.bobToken, fixture.roomID);
   assert.equal(response.status, 200);
   assert.equal((await response.json())[0].text, "残してよい履歴");
@@ -3510,7 +3510,7 @@ test("36: group deletion removes only attachments uploaded by the deleted member
 test("37: deleting the final member leaves an empty group without failing", async () => {
   const fixture = await deletionGroupFixture({ solo: true });
   const response = await deleteAccount(fixture.env, fixture.aliceToken);
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 202);
   const room = fixture.env.CHAT_ROOM._rooms.get(fixture.groupRoomID);
   assert.equal(room.participants.size, 0);
   assert.equal(room.readPositions.size, 0);
@@ -3529,7 +3529,7 @@ test("39: concurrent deletion and group-invite acceptance cannot resurrect membe
     deleteAccount(fixture.env, fixture.bobToken),
     acceptGroupInvite(fixture.env, fixture.bobToken, fixture.groupRoomID),
   ]);
-  assert.equal(deletion.status, 200);
+  assert.equal(deletion.status, 202);
   assert.equal(fixture.env._kv.has(`chat:user:${fixture.bobKey}`), false);
   assert.equal(fixture.env.CHAT_ROOM._rooms.get(fixture.groupRoomID).participants.has(fixture.bobKey), false);
 });
@@ -3543,7 +3543,7 @@ test("40: once concurrent deletion removes group membership, the deleting accoun
   }
   const send = await sendMessage(fixture.env, fixture.aliceToken, fixture.groupRoomID, "削除中の書き込み");
   assert.equal(send.status, 403);
-  assert.equal((await deletion).status, 200);
+  assert.equal((await deletion).status, 202);
   const messages = await (await readMessages(fixture.env, fixture.bobToken, fixture.groupRoomID)).json();
   assert.equal(messages.some(message => message.text === "削除中の書き込み"), false);
 });

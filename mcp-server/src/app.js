@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import * as z from "zod/v4";
 import { handleAI } from "./ai.js";
+import { aiPrivacyRejection } from "./ai-privacy.js";
 import { getPlan } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
@@ -23,7 +24,7 @@ import { verifyGoogleIdentityToken } from "./google-auth.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
 import { upsertLocalAccount, verifyLocalAccount } from "./local-auth.js";
-import { deleteAccount } from "./account-deletion.js";
+import { startAccountDeletion } from "./account-deletion.js";
 import { mintSession, hasRealSession } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
@@ -371,7 +372,8 @@ export default {
         if (!session) return json({ error: "Sign in again." }, 401);
         const body = await readJSONLimited(request, 1_000);
         if (body?.confirmation !== "DELETE") return json({ error: "Confirmation is required." }, 400);
-        return json(await deleteAccount(env, session.sub));
+        const result = await startAccountDeletion(env, session.sub);
+        return json(result, result.cleanupPending || result.externalDeletionPending ? 202 : 200);
       }
       if (url.pathname === "/api/mcp/pair" && request.method === "GET") {
         return json(await pairingInfo(env, url.searchParams.get("code") ?? "") ?? { error: "Code expired or invalid." });
@@ -433,6 +435,8 @@ export default {
       // a D1 read (entitlements.js's getPlan) that every other route here
       // has no use for.
       if (url.pathname.startsWith("/api/ai/")) {
+        const privacyFailure = await aiPrivacyRejection(request, env);
+        if (privacyFailure) return privacyFailure;
         const plan = session ? await getPlan(env, session.sub) : "standard";
         const ai = await handleAI(url, request, env, key, ctx, session, plan);
         if (ai) return ai;

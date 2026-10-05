@@ -161,6 +161,7 @@ final class AuthenticationStore: ObservableObject {
     }
 
     func logout() {
+        AIDataDisclosure.revoke()
         delete(account: sessionAccount)
         state = .needsLogin
         // Best-effort and non-blocking: remove this device while the bearer
@@ -189,6 +190,18 @@ final class AuthenticationStore: ObservableObject {
             errorMessage = error.localizedDescription
             return false
         }
+    }
+
+    var hasPendingLocalDeletion: Bool {
+        defaults.bool(forKey: AccountDeletionWorkflow.pendingLocalDeletionKey)
+    }
+
+    func markLocalDeletionPending() {
+        defaults.set(true, forKey: AccountDeletionWorkflow.pendingLocalDeletionKey)
+    }
+
+    func clearLocalDeletionPending() {
+        defaults.removeObject(forKey: AccountDeletionWorkflow.pendingLocalDeletionKey)
     }
 
     func finishAccountDeletion() {
@@ -538,6 +551,7 @@ enum AccountLocalPreferences {
 
 @MainActor
 enum AccountDeletionWorkflow {
+    static let pendingLocalDeletionKey = "accountDeletion.localCleanupPending"
     enum Result: Equatable {
         case success
         case serverFailure
@@ -549,11 +563,17 @@ enum AccountDeletionWorkflow {
         eraseLocalData: () throws -> Void,
         clearPreferences: () -> Void = { AccountLocalPreferences.clear() }
     ) async -> Result {
-        guard await authentication.requestAccountDeletion() else { return .serverFailure }
+        // Once the server has accepted erasure its sessions may already be
+        // revoked. Retry local cleanup without requiring that bearer again.
+        if !authentication.hasPendingLocalDeletion {
+            guard await authentication.requestAccountDeletion() else { return .serverFailure }
+            authentication.markLocalDeletionPending()
+        }
         do {
             try eraseLocalData()
             clearPreferences()
             authentication.finishAccountDeletion()
+            authentication.clearLocalDeletionPending()
             return .success
         } catch {
             return .localFailure(AccountDeletionUI.localEraseFailureMessage)

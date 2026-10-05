@@ -366,7 +366,9 @@ final class AIChatStore: ObservableObject {
             .filter { $0 !== reply }
             .map { AITurn(role: $0.role == .user ? .user : .assistant, text: $0.text) }
             .filter { !$0.text.isEmpty }
-        let context = [noteContext, contextOverride, attachmentContext]
+        // Only material explicitly attached or selected for this message leaves
+        // the device. Merely opening a note does not authorize uploading it.
+        let context = [contextOverride, attachmentContext]
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
