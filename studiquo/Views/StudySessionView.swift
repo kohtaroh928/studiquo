@@ -1,5 +1,38 @@
 import SwiftUI
 
+enum StudySessionLogic {
+    static func cards(in notebook: Notebook, weakOnly: Bool) -> [NotePage] {
+        notebook.sortedPages.filter {
+            !$0.flashcardQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (!weakOnly || $0.flashcardMastery < 2)
+        }
+    }
+
+    static func score(
+        _ card: NotePage,
+        mastery: Int,
+        in notebook: Notebook,
+        weakOnly: Bool,
+        currentIndex: Int,
+        at date: Date = .now
+    ) -> Int {
+        card.flashcardMastery = mastery
+        card.flashcardReviewCount += 1
+        card.flashcardLastReviewedAt = date
+        notebook.updatedAt = date
+
+        let remainingCards = cards(in: notebook, weakOnly: weakOnly)
+        guard !remainingCards.isEmpty else { return 0 }
+        if let retainedIndex = remainingCards.firstIndex(where: { $0 === card }) {
+            return (retainedIndex + 1) % remainingCards.count
+        }
+        // In weak-only mode an "覚えた" card disappears immediately. The
+        // card that followed it has shifted into the same index, so keeping
+        // that index avoids skipping a card.
+        return min(currentIndex, remainingCards.count - 1)
+    }
+}
+
 struct StudySessionView: View {
     @Bindable var notebook: Notebook
     @Environment(\.dismiss) private var dismiss
@@ -11,10 +44,7 @@ struct StudySessionView: View {
     @State private var timer: Timer?
 
     private var cards: [NotePage] {
-        notebook.sortedPages.filter {
-            !$0.flashcardQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && (!reviewWeakOnly || $0.flashcardMastery < 2)
-        }
+        StudySessionLogic.cards(in: notebook, weakOnly: reviewWeakOnly)
     }
 
     private var currentCard: NotePage? {
@@ -120,12 +150,14 @@ struct StudySessionView: View {
 
     private func score(_ mastery: Int) {
         guard let card = currentCard else { return }
-        card.flashcardMastery = mastery
-        card.flashcardReviewCount += 1
-        card.flashcardLastReviewedAt = .now
-        notebook.updatedAt = .now
+        selectedPageIndex = StudySessionLogic.score(
+            card,
+            mastery: mastery,
+            in: notebook,
+            weakOnly: reviewWeakOnly,
+            currentIndex: selectedPageIndex
+        )
         showsAnswer = false
-        selectedPageIndex = cards.isEmpty ? 0 : (selectedPageIndex + 1) % cards.count
     }
 
     private var timerControl: some View {

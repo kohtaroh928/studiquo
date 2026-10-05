@@ -2,6 +2,22 @@ import AuthenticationServices
 import GoogleSignInSwift
 import SwiftUI
 
+enum AccountFlowLogic {
+    static func canSubmitCredentials(email: String, password: String, isBusy: Bool) -> Bool {
+        !email.isEmpty && !password.isEmpty && !isBusy
+    }
+
+    static func verificationCode(from input: String) -> String {
+        String(input.filter(\.isNumber).prefix(6))
+    }
+
+    static func nextOnboardingStep(current: Int, occupation: String) -> Int? {
+        if current == 0 { return occupation == "大学生" ? 1 : 2 }
+        if current == 1 { return 2 }
+        return nil
+    }
+}
+
 struct AccountGateView: View {
     @StateObject private var authentication = AuthenticationStore()
 
@@ -57,7 +73,9 @@ private struct LoginView: View {
                     }
                     Button("ログイン") { Task { _ = await authentication.login(email: email, password: password) } }
                         .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
-                        .disabled(email.isEmpty || password.isEmpty || authentication.isLoginBusy)
+                        .disabled(!AccountFlowLogic.canSubmitCredentials(
+                            email: email, password: password, isBusy: authentication.isLoginBusy
+                        ))
                     Button {
                         Task { await authentication.loginWithPasskey() }
                     } label: {
@@ -125,7 +143,9 @@ private struct CreateAccountView: View {
                     Task { _ = await authentication.beginAccountCreation(email: email, password: password) }
                 }
                 .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
-                .disabled(email.isEmpty || password.isEmpty || authentication.isEmailVerifyBusy)
+                .disabled(!AccountFlowLogic.canSubmitCredentials(
+                    email: email, password: password, isBusy: authentication.isEmailVerifyBusy
+                ))
             }
             .frame(maxWidth: 480)
             Spacer()
@@ -161,7 +181,7 @@ private struct EmailVerificationView: View {
                     .accountFieldStyle()
                     .frame(maxWidth: 240)
                     .onChange(of: code) { _, newValue in
-                        code = String(newValue.filter(\.isNumber).prefix(6))
+                        code = AccountFlowLogic.verificationCode(from: newValue)
                     }
                 if !authentication.errorMessage.isEmpty {
                     Text(authentication.errorMessage).font(.footnote).foregroundStyle(.red)
@@ -252,8 +272,10 @@ private struct OnboardingView: View {
     }
 
     private func advance() {
-        if step == 0 { step = occupation == "大学生" ? 1 : 2 }
-        else if step == 1 { step = 2 }
-        else { authentication.finishOnboarding() }
+        if let next = AccountFlowLogic.nextOnboardingStep(current: step, occupation: occupation) {
+            step = next
+        } else {
+            authentication.finishOnboarding()
+        }
     }
 }

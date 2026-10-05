@@ -1,4 +1,45 @@
 import SwiftUI
+import SwiftData
+
+struct NotebookLockState {
+    enum Requirement: Equatable {
+        case faceID
+        case pdfPassword
+        case none
+    }
+
+    private(set) var isFaceIDUnlocked = false
+    private(set) var isPDFPasswordVerified = false
+    private(set) var faceIDMessage = "認証してノートを開いてください"
+
+    func requirement(isLocked: Bool, hasLockedPDF: Bool) -> Requirement {
+        if isLocked && !isFaceIDUnlocked { return .faceID }
+        if hasLockedPDF && !isPDFPasswordVerified { return .pdfPassword }
+        return .none
+    }
+
+    mutating func recordFaceID(success: Bool, decrypted: Bool) -> Bool {
+        isFaceIDUnlocked = success && decrypted
+        if !success {
+            faceIDMessage = "認証できませんでした。もう一度お試しください"
+        } else if !decrypted {
+            faceIDMessage = "ノートの内容を復号できませんでした"
+        } else {
+            faceIDMessage = "認証してノートを開いてください"
+        }
+        return isFaceIDUnlocked
+    }
+
+    mutating func recordPDFPasswordVerified() {
+        isPDFPasswordVerified = true
+    }
+
+    mutating func notebookDidChange() {
+        isFaceIDUnlocked = false
+        isPDFPasswordVerified = false
+        faceIDMessage = "認証してノートを開いてください"
+    }
+}
 
 extension Notification.Name {
     /// Carries a `PDFPasswordVerifiedEvent` — posted whenever typing a
@@ -67,16 +108,17 @@ struct NotebookLockGate<Content: View>: View {
     @Bindable var notebook: Notebook
     @ViewBuilder var content: () -> Content
 
-    @State private var isFaceIDUnlocked = false
-    @State private var isPDFPasswordVerified = false
+    @State private var lockState = NotebookLockState()
     @State private var pdfPasswordEntry = ""
     @State private var pdfPasswordError: String?
     @State private var isShowingPDFPasswordPrompt = false
-    @State private var faceIDMessage = "認証してノートを開いてください"
 
-    private var needsFaceID: Bool { notebook.isLocked && !isFaceIDUnlocked }
-    private var needsPDFPassword: Bool { notebook.hasLockedPDFToUnlock && !isPDFPasswordVerified }
-    private var isGated: Bool { needsFaceID || needsPDFPassword }
+    private var requirement: NotebookLockState.Requirement {
+        lockState.requirement(isLocked: notebook.isLocked, hasLockedPDF: notebook.hasLockedPDFToUnlock)
+    }
+    private var needsFaceID: Bool { requirement == .faceID }
+    private var needsPDFPassword: Bool { requirement == .pdfPassword }
+    private var isGated: Bool { requirement != .none }
 
     var body: some View {
         Group {
@@ -88,8 +130,7 @@ struct NotebookLockGate<Content: View>: View {
         }
         .onAppear { requestUnlockIfNeeded() }
         .onChange(of: notebook.persistentModelID) { _, _ in
-            isFaceIDUnlocked = false
-            isPDFPasswordVerified = false
+            lockState.notebookDidChange()
             requestUnlockIfNeeded()
         }
         .alert("PDFのパスワード", isPresented: $isShowingPDFPasswordPrompt) {
@@ -105,7 +146,7 @@ struct NotebookLockGate<Content: View>: View {
         ContentUnavailableView {
             Label(needsFaceID ? "ロックされたノート" : "パスワードが必要です", systemImage: "lock.fill")
         } description: {
-            Text(needsFaceID ? faceIDMessage : "このノートの元のPDFを開くパスワードを入力してください。")
+            Text(needsFaceID ? lockState.faceIDMessage : "このノートの元のPDFを開くパスワードを入力してください。")
         } actions: {
             Button(needsFaceID ? "ロックを解除" : "パスワードを入力") {
                 requestUnlockIfNeeded()
@@ -132,12 +173,7 @@ struct NotebookLockGate<Content: View>: View {
             // decrypting before there's anything for `content()` to show.
             let success = await DeviceAuthentication.authenticate(reason: "「\(notebook.title)」を開きます")
             let decrypted = success && NotebookEncryptionService.unlock(notebook)
-            isFaceIDUnlocked = decrypted
-            if !success {
-                faceIDMessage = "認証できませんでした。もう一度お試しください"
-            } else if !decrypted {
-                faceIDMessage = "ノートの内容を復号できませんでした"
-            } else {
+            if lockState.recordFaceID(success: success, decrypted: decrypted) {
                 // Face ID cleared — chain straight into the PDF-password
                 // prompt if this notebook also needs that, rather than
                 // leaving the student looking at an unlocked-but-still-
@@ -149,7 +185,7 @@ struct NotebookLockGate<Content: View>: View {
 
     private func verifyPDFPassword() {
         guard let data = notebook.lockedPDFData else {
-            isPDFPasswordVerified = true
+            lockState.recordPDFPasswordVerified()
             return
         }
         let tempFolder = FileManager.default.temporaryDirectory
@@ -159,7 +195,7 @@ struct NotebookLockGate<Content: View>: View {
             let sourceURL = tempFolder.appendingPathComponent("\(notebook.title).pdf")
             try data.write(to: sourceURL)
             _ = try PDFPasswordService.unlock(sourceURL, password: pdfPasswordEntry)
-            isPDFPasswordVerified = true
+            lockState.recordPDFPasswordVerified()
             NotificationCenter.default.post(
                 name: .studiquoPDFPasswordVerified,
                 object: PDFPasswordVerifiedEvent(notebook: notebook, sourceURL: sourceURL, password: pdfPasswordEntry)

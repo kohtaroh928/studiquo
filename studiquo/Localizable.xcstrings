@@ -1,193 +1,6 @@
 {
   "sourceLanguage" : "ja",
   "strings" : {
-    "announcements.pushToggle" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Announcements (updates, maintenance, etc.)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "運営からのお知らせ(アップデート・メンテナンスなど)"
-          }
-        }
-      }
-    },
-    "announcements.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Announcements"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "お知らせ"
-          }
-        }
-      }
-    },
-    "announcements.footer" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notices from the Studiquo team, such as updates and maintenance."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "運営からのお知らせ(アップデートやメンテナンスなど)が届きます。"
-          }
-        }
-      }
-    },
-    "announcements.empty" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No announcements yet."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "お知らせはまだありません。"
-          }
-        }
-      }
-    },
-    "announcements.loadFailed" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn't load announcements. Check your connection."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "お知らせを取得できませんでした。通信状況を確認してください。"
-          }
-        }
-      }
-    },
-    "announcements.markAllRead" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mark All Read"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すべて既読"
-          }
-        }
-      }
-    },
-    "announcements.openLink" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Learn More"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "詳しく見る"
-          }
-        }
-      }
-    },
-    "announcements.kind.update" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Update"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アップデート"
-          }
-        }
-      }
-    },
-    "announcements.kind.maintenance" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Maintenance"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "メンテナンス"
-          }
-        }
-      }
-    },
-    "announcements.kind.important" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Important"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重要"
-          }
-        }
-      }
-    },
-    "announcements.kind.news" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "News"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "お知らせ"
-          }
-        }
-      }
-    },
     " ・ 逆向き" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -201,6 +14,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : " ・ 逆向き"
+          }
+        }
+      }
+    },
+    "（中断しました）" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(Stopped)"
           }
         }
       }
@@ -221,6 +45,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "「%@」を開きます"
+          }
+        }
+      }
+    },
+    "『%@』の%lld問を復習しましょう。Q. %@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time to review the %2$lld missed card(s) in “%1$@”. Q. %3$@"
           }
         }
       }
@@ -817,6 +652,17 @@
     "2周ごとにここへ広告が表示されます。\n広告ネットワークを接続すると実際の広告に差し替わります。" : {
 
     },
+    "2日に1回" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every other day"
+          }
+        }
+      }
+    },
     "3列" : {
 
     },
@@ -850,6 +696,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "5分前"
+          }
+        }
+      }
+    },
+    "5問以上たまったとき" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When 5 or more pile up"
           }
         }
       }
@@ -939,6 +796,28 @@
         }
       }
     },
+    "AIサーバーのURLが設定されていません。ホーム画面の設定からMCPクラウド連携を確認してください。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The AI server URL isn't set. Check MCP cloud integration in Settings on the Home screen."
+          }
+        }
+      }
+    },
+    "AIサーバー未設定" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI server not set"
+          }
+        }
+      }
+    },
     "AIトーク" : {
       "comment" : "A section header for the \"AIトーク\" settings.",
       "isCommentAutoGenerated" : true
@@ -949,6 +828,17 @@
     "AIトーク・添削・翌日復習を使うと、質問文やノートの内容、答案の写真がGoogleのGeminiに送信されます。詳しくはこちらをご確認ください。" : {
 
     },
+    "AIの回答が完成しました" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your AI answer is ready"
+          }
+        }
+      }
+    },
     "AI採点" : {
       "comment" : "A label displayed in the top-left corner of the proof marking box.",
       "isCommentAutoGenerated" : true,
@@ -957,6 +847,193 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AI Marking"
+          }
+        }
+      }
+    },
+    "announcements.empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No announcements yet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お知らせはまだありません。"
+          }
+        }
+      }
+    },
+    "announcements.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notices from the Studiquo team, such as updates and maintenance."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "運営からのお知らせ(アップデートやメンテナンスなど)が届きます。"
+          }
+        }
+      }
+    },
+    "announcements.kind.important" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Important"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重要"
+          }
+        }
+      }
+    },
+    "announcements.kind.maintenance" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maintenance"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メンテナンス"
+          }
+        }
+      }
+    },
+    "announcements.kind.news" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "News"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お知らせ"
+          }
+        }
+      }
+    },
+    "announcements.kind.update" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アップデート"
+          }
+        }
+      }
+    },
+    "announcements.loadFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't load announcements. Check your connection."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お知らせを取得できませんでした。通信状況を確認してください。"
+          }
+        }
+      }
+    },
+    "announcements.markAllRead" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark All Read"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべて既読"
+          }
+        }
+      }
+    },
+    "announcements.openLink" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Learn More"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳しく見る"
+          }
+        }
+      }
+    },
+    "announcements.pushToggle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Announcements (updates, maintenance, etc.)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "運営からのお知らせ(アップデート・メンテナンスなど)"
+          }
+        }
+      }
+    },
+    "announcements.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Announcements"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お知らせ"
           }
         }
       }
@@ -1025,6 +1102,23 @@
     },
     "Google連携が使えない場合だけ、非公開iCal URLを貼り付けて同期できます。" : {
 
+    },
+    "home.more.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他"
+          }
+        }
+      }
     },
     "M" : {
       "comment" : "A button that can be tapped to clear the memory.",
@@ -1206,6 +1300,50 @@
       "comment" : "A description of the consequences of deleting an account.",
       "isCommentAutoGenerated" : true
     },
+    "あとで" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Later"
+          }
+        }
+      }
+    },
+    "アプリが止まったときや不具合が起きたときに、エラーの種類・発生した箇所・アプリや端末のバージョンを開発者へ自動で送信します。ノートやチャットの内容は含まれません。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When the app stops or hits a problem, the type of error, where it happened, and the app and device versions are sent to the developer automatically. Notes and chats are never included."
+          }
+        }
+      }
+    },
+    "アプリ内の資料を追加" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add from App"
+          }
+        }
+      }
+    },
+    "いいえ" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No"
+          }
+        }
+      }
+    },
     "エラー" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1219,6 +1357,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "エラー"
+          }
+        }
+      }
+    },
+    "エラー情報を自動送信" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send error reports automatically"
           }
         }
       }
@@ -1388,6 +1537,17 @@
         }
       }
     },
+    "カメラで撮影" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take Photo"
+          }
+        }
+      }
+    },
     "カレンダー" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1471,6 +1631,10 @@
           }
         }
       }
+    },
+    "カレンダー連携はカレンダー画面の設定を開きます。" : {
+      "comment" : "A description of the calendar connection button.",
+      "isCommentAutoGenerated" : true
     },
     "キャンセル" : {
       "extractionState" : "stale",
@@ -1616,6 +1780,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "このカードを保存して次へ"
+          }
+        }
+      }
+    },
+    "このトークを削除しますか？" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this chat?"
           }
         }
       }
@@ -1807,6 +1982,17 @@
       "comment" : "A footer explaining that the privacy policy can be",
       "isCommentAutoGenerated" : true
     },
+    "コピー" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy"
+          }
+        }
+      }
+    },
     "ゴミ箱" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1932,6 +2118,10 @@
           }
         }
       }
+    },
+    "サポート" : {
+      "comment" : "The section title for support-related content.",
+      "isCommentAutoGenerated" : true
     },
     "さらに引っ張ってページを追加" : {
       "extractionState" : "stale",
@@ -2180,6 +2370,10 @@
     },
     "チャットを開く" : {
       "comment" : "A text that appears in the chat preview when there are no messages.",
+      "isCommentAutoGenerated" : true
+    },
+    "データ" : {
+      "comment" : "The name of the section that lists data-related actions.",
       "isCommentAutoGenerated" : true
     },
     "データの読み込みに時間がかかっています" : {
@@ -2570,6 +2764,21 @@
         }
       }
     },
+    "バージョン" : {
+      "comment" : "The Japanese word for \"version\".",
+      "isCommentAutoGenerated" : true
+    },
+    "はい" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yes"
+          }
+        }
+      }
+    },
     "パスキーはiCloudキーチェーンに安全に保存され、次回からFace IDまたはTouch IDでログインできます。" : {
       "comment" : "A footer note in the \"プロフィール\" view, explaining that the passkey is stored in the user's iCloud keychain and can be used for future Face ID or Touch ID logins.",
       "isCommentAutoGenerated" : true
@@ -2646,6 +2855,17 @@
         }
       }
     },
+    "ファイル" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File"
+          }
+        }
+      }
+    },
     "ファイルから読み込む" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2663,6 +2883,28 @@
         }
       }
     },
+    "ファイルやフォルダーを追加" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Files or Folders"
+          }
+        }
+      }
+    },
+    "ファイルを追加" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Files"
+          }
+        }
+      }
+    },
     "フォルダ" : {
       "localizations" : {
         "en" : {
@@ -2675,6 +2917,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "フォルダ"
+          }
+        }
+      }
+    },
+    "フォルダー" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folder"
+          }
+        }
+      }
+    },
+    "フォルダーを追加" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Folder"
           }
         }
       }
@@ -2926,6 +3190,10 @@
     "プロフィール" : {
 
     },
+    "プロフィールとログイン" : {
+      "comment" : "The section title for the profile and login section in the More tab.",
+      "isCommentAutoGenerated" : true
+    },
     "ページ" : {
       "localizations" : {
         "en" : {
@@ -3023,6 +3291,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ページダーク表示"
+          }
+        }
+      }
+    },
+    "ページに貼り付け" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste onto Page"
           }
         }
       }
@@ -3265,6 +3544,17 @@
         }
       }
     },
+    "ホーム画面で資料を作成すると、ここからAIトークに追加できます。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create materials on the Home screen and you can add them to the chat from here."
+          }
+        }
+      }
+    },
     "ホーム画面のゴミ箱から復元できます。" : {
       "localizations" : {
         "en" : {
@@ -3308,6 +3598,17 @@
     "メッセージの送信を取り消しました" : {
       "comment" : "A message that indicates a message has been canceled.",
       "isCommentAutoGenerated" : true
+    },
+    "メッセージを入力" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type a message"
+          }
+        }
+      }
     },
     "メモ" : {
       "extractionState" : "stale",
@@ -3966,6 +4267,17 @@
         }
       }
     },
+    "今すぐ復習" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review Now"
+          }
+        }
+      }
+    },
     "今日" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4034,6 +4346,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "今日の学習を始めませんか？"
+          }
+        }
+      }
+    },
+    "今日の復習対象が%lld枚あります" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld cards are due for review today"
           }
         }
       }
@@ -4767,6 +5090,17 @@
         }
       }
     },
+    "削除すると、このトーク履歴は元に戻せません。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once deleted, this chat history can't be restored."
+          }
+        }
+      }
+    },
     "削除するページを選択" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4800,6 +5134,10 @@
           }
         }
       }
+    },
+    "勉強時間の公開とブロック一覧を管理できます。" : {
+      "comment" : "A description of the friend privacy settings.",
+      "isCommentAutoGenerated" : true
     },
     "勉強時間の記録" : {
       "comment" : "The title of the view.",
@@ -5107,6 +5445,10 @@
         }
       }
     },
+    "名前・写真・自己紹介の編集とパスキーの追加は、プロフィールから行えます。" : {
+      "comment" : "A description of the profile section of the app.",
+      "isCommentAutoGenerated" : true
+    },
     "名前を変更" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5220,6 +5562,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "問題と答えの両方を入力すると、次のカードを作れます。"
+          }
+        }
+      }
+    },
+    "問題文を入力、またはページを切り抜いてドラッグ" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type the question, or drag in a crop of the page"
           }
         }
       }
@@ -5637,6 +5990,28 @@
         }
       }
     },
+    "履歴を閉じる" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide History"
+          }
+        }
+      }
+    },
+    "履歴を開く" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show History"
+          }
+        }
+      }
+    },
     "山口大学" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5871,6 +6246,17 @@
         }
       }
     },
+    "役割" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Role"
+          }
+        }
+      }
+    },
     "復元" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6055,6 +6441,39 @@
         }
       }
     },
+    "採点する" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark"
+          }
+        }
+      }
+    },
+    "採点をやめる" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel Marking"
+          }
+        }
+      }
+    },
+    "採点基準を作っています…" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing the marking criteria…"
+          }
+        }
+      }
+    },
     "接続トークン" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6154,6 +6573,17 @@
         }
       }
     },
+    "撮影画像" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo"
+          }
+        }
+      }
+    },
     "操作の手順や、いつから起きているかを書いていただけると助かります。" : {
       "comment" : "A description of the text field below the title.",
       "isCommentAutoGenerated" : true
@@ -6208,9 +6638,42 @@
         }
       }
     },
+    "文字起こし" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictation"
+          }
+        }
+      }
+    },
+    "文書" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Document"
+          }
+        }
+      }
+    },
     "文書はありません" : {
       "comment" : "A description of the empty state of the document list.",
       "isCommentAutoGenerated" : true
+    },
+    "新しいトーク" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Chat"
+          }
+        }
+      }
     },
     "新しいトークンを生成" : {
       "extractionState" : "stale",
@@ -6650,6 +7113,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暗記カードがありません"
+          }
+        }
+      }
+    },
+    "暗記カードの復習" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flashcard Review"
           }
         }
       }
@@ -7249,6 +7723,17 @@
         }
       }
     },
+    "毎日" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every day"
+          }
+        }
+      }
+    },
     "法令または公序良俗に違反する行為、他の利用者への嫌がらせ・誹謗中傷、本アプリまたは関連サーバーへの不正アクセス、他者の権利を侵害する行為、本アプリを不正または詐欺的な目的で利用する行為を禁止します。" : {
 
     },
@@ -7367,6 +7852,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "淡い青"
+          }
+        }
+      }
+    },
+    "添付を削除" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Attachment"
           }
         }
       }
@@ -7501,6 +7997,17 @@
         }
       }
     },
+    "生成を止める" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Generating"
+          }
+        }
+      }
+    },
     "用紙" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7514,6 +8021,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用紙"
+          }
+        }
+      }
+    },
+    "画像として送る" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send as Image"
+          }
+        }
+      }
+    },
+    "画像を外す" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Image"
           }
         }
       }
@@ -7969,6 +8498,17 @@
         }
       }
     },
+    "答案を読んでいます…" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading your answer…"
+          }
+        }
+      }
+    },
     "紫" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8076,6 +8616,17 @@
     },
     "自分のみ参加中です" : {
 
+    },
+    "自分の証明を入力、またはページを切り抜いてドラッグ" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type your proof, or drag in a crop of the page"
+          }
+        }
+      }
     },
     "自動バックアップ" : {
       "extractionState" : "stale",
@@ -8370,6 +8921,17 @@
         }
       }
     },
+    "解答" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Answer"
+          }
+        }
+      }
+    },
     "解除" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8427,6 +8989,17 @@
     "設定でStudiquoに写真へのアクセスを許可してください。" : {
       "comment" : "A description of the error that occurs when the user",
       "isCommentAutoGenerated" : true
+    },
+    "診断" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnostics"
+          }
+        }
+      }
     },
     "認証してノートを開いてください" : {
       "extractionState" : "stale",
@@ -8549,8 +9122,30 @@
     "資料の参照には先に同期が必要です。Claude・ChatGPTにはMCP URLを登録し、表示された接続コードを下で承認してください。接続トークンは他人へ共有しないでください。" : {
 
     },
+    "資料を検索" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Materials"
+          }
+        }
+      }
+    },
     "資料を準備しています…" : {
 
+    },
+    "資料を追加" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Material"
+          }
+        }
+      }
     },
     "資料を選ぶ" : {
       "extractionState" : "stale",
@@ -8611,6 +9206,17 @@
         }
       }
     },
+    "返答が空でした。もう一度試してください。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The reply was empty. Please try again."
+          }
+        }
+      }
+    },
     "追加" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8659,6 +9265,17 @@
       "comment" : "The message displayed when the user tries to leave a group.",
       "isCommentAutoGenerated" : true
     },
+    "送信" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send"
+          }
+        }
+      }
+    },
     "送信中…" : {
       "comment" : "A label displayed when a message is being sent.",
       "isCommentAutoGenerated" : true
@@ -8703,6 +9320,17 @@
         }
       }
     },
+    "通知する時刻" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminder Time"
+          }
+        }
+      }
+    },
     "通知タイミング" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8720,6 +9348,17 @@
         }
       }
     },
+    "通知に問題文を表示" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Question in Notification"
+          }
+        }
+      }
+    },
     "通知の詳細" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8733,6 +9372,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "通知の詳細"
+          }
+        }
+      }
+    },
+    "通知の頻度" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminder Frequency"
           }
         }
       }
@@ -8756,6 +9406,21 @@
           }
         }
       }
+    },
+    "通話" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Call"
+          }
+        }
+      }
+    },
+    "連携" : {
+      "comment" : "The section header for the integration section in the MoreHomeView.",
+      "isCommentAutoGenerated" : true
     },
     "連携を解除" : {
       "extractionState" : "stale",
@@ -9060,6 +9725,17 @@
         }
       }
     },
+    "開いているページの内容も踏まえて答えます。わからないところを聞いてみてください。" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I take the open page into account. Ask about anything you're unsure of."
+          }
+        }
+      }
+    },
     "開始" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9128,6 +9804,17 @@
         }
       }
     },
+    "間違えた問題が%lld問あります" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You have %lld missed cards to review"
+          }
+        }
+      }
+    },
     "間違えた問題の復習" : {
       "comment" : "A section header for the notification settings related to reviewing incorrect flashcards.",
       "isCommentAutoGenerated" : true,
@@ -9136,6 +9823,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Review Missed Cards"
+          }
+        }
+      }
+    },
+    "間違えた問題の復習通知" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Missed Card Review Reminders"
+          }
+        }
+      }
+    },
+    "間違えた問題を復習(%lld問)" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review Missed Cards (%lld)"
           }
         }
       }
@@ -9505,576 +10214,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "龍谷大学"
-          }
-        }
-      }
-    },
-    "間違えた問題の復習通知" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Missed Card Review Reminders"
-          }
-        }
-      }
-    },
-    "通知する時刻" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reminder Time"
-          }
-        }
-      }
-    },
-    "通知の頻度" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reminder Frequency"
-          }
-        }
-      }
-    },
-    "通知に問題文を表示" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show Question in Notification"
-          }
-        }
-      }
-    },
-    "毎日" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Every day"
-          }
-        }
-      }
-    },
-    "2日に1回" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Every other day"
-          }
-        }
-      }
-    },
-    "5問以上たまったとき" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "When 5 or more pile up"
-          }
-        }
-      }
-    },
-    "今すぐ復習" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Review Now"
-          }
-        }
-      }
-    },
-    "あとで" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Later"
-          }
-        }
-      }
-    },
-    "間違えた問題を復習(%lld問)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Review Missed Cards (%lld)"
-          }
-        }
-      }
-    },
-    "『%@』の%lld問を復習しましょう。Q. %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Time to review the %2$lld missed card(s) in “%1$@”. Q. %3$@"
-          }
-        }
-      }
-    },
-    "間違えた問題が%lld問あります" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You have %lld missed cards to review"
-          }
-        }
-      }
-    },
-    "今日の復習対象が%lld枚あります" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld cards are due for review today"
-          }
-        }
-      }
-    },
-    "暗記カードの復習" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Flashcard Review"
-          }
-        }
-      }
-    },
-    "AIの回答が完成しました" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your AI answer is ready"
-          }
-        }
-      }
-    },
-    "開いているページの内容も踏まえて答えます。わからないところを聞いてみてください。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "I take the open page into account. Ask about anything you're unsure of."
-          }
-        }
-      }
-    },
-    "AIサーバーのURLが設定されていません。ホーム画面の設定からMCPクラウド連携を確認してください。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The AI server URL isn't set. Check MCP cloud integration in Settings on the Home screen."
-          }
-        }
-      }
-    },
-    "AIサーバー未設定" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI server not set"
-          }
-        }
-      }
-    },
-    "新しいトーク" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New Chat"
-          }
-        }
-      }
-    },
-    "履歴を閉じる" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hide History"
-          }
-        }
-      }
-    },
-    "履歴を開く" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show History"
-          }
-        }
-      }
-    },
-    "メッセージを入力" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Type a message"
-          }
-        }
-      }
-    },
-    "ファイルやフォルダーを追加" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Files or Folders"
-          }
-        }
-      }
-    },
-    "アプリ内の資料を追加" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add from App"
-          }
-        }
-      }
-    },
-    "ファイルを追加" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Files"
-          }
-        }
-      }
-    },
-    "フォルダーを追加" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Folder"
-          }
-        }
-      }
-    },
-    "カメラで撮影" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Take Photo"
-          }
-        }
-      }
-    },
-    "文字起こし" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dictation"
-          }
-        }
-      }
-    },
-    "通話" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Call"
-          }
-        }
-      }
-    },
-    "生成を止める" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stop Generating"
-          }
-        }
-      }
-    },
-    "送信" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Send"
-          }
-        }
-      }
-    },
-    "コピー" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copy"
-          }
-        }
-      }
-    },
-    "ページに貼り付け" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Paste onto Page"
-          }
-        }
-      }
-    },
-    "このトークを削除しますか？" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete this chat?"
-          }
-        }
-      }
-    },
-    "削除すると、このトーク履歴は元に戻せません。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Once deleted, this chat history can't be restored."
-          }
-        }
-      }
-    },
-    "いいえ" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No"
-          }
-        }
-      }
-    },
-    "はい" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Yes"
-          }
-        }
-      }
-    },
-    "添付を削除" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove Attachment"
-          }
-        }
-      }
-    },
-    "役割" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Role"
-          }
-        }
-      }
-    },
-    "画像として送る" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Send as Image"
-          }
-        }
-      }
-    },
-    "解答" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Answer"
-          }
-        }
-      }
-    },
-    "採点する" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mark"
-          }
-        }
-      }
-    },
-    "採点をやめる" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancel Marking"
-          }
-        }
-      }
-    },
-    "画像を外す" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove Image"
-          }
-        }
-      }
-    },
-    "問題文を入力、またはページを切り抜いてドラッグ" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Type the question, or drag in a crop of the page"
-          }
-        }
-      }
-    },
-    "自分の証明を入力、またはページを切り抜いてドラッグ" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Type your proof, or drag in a crop of the page"
-          }
-        }
-      }
-    },
-    "返答が空でした。もう一度試してください。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The reply was empty. Please try again."
-          }
-        }
-      }
-    },
-    "（中断しました）" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(Stopped)"
-          }
-        }
-      }
-    },
-    "採点基準を作っています…" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preparing the marking criteria…"
-          }
-        }
-      }
-    },
-    "答案を読んでいます…" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reading your answer…"
-          }
-        }
-      }
-    },
-    "ホーム画面で資料を作成すると、ここからAIトークに追加できます。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Create materials on the Home screen and you can add them to the chat from here."
-          }
-        }
-      }
-    },
-    "資料を追加" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add Material"
-          }
-        }
-      }
-    },
-    "資料を検索" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Search Materials"
-          }
-        }
-      }
-    },
-    "ファイル" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "File"
-          }
-        }
-      }
-    },
-    "フォルダー" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Folder"
-          }
-        }
-      }
-    },
-    "撮影画像" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Photo"
-          }
-        }
-      }
-    },
-    "文書" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Document"
           }
         }
       }

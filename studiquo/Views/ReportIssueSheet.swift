@@ -1,6 +1,58 @@
 import SwiftUI
 import UIKit
 
+struct IssueReportFormState {
+    enum Phase: Equatable {
+        case idle
+        case submitting
+        case submitted
+        case failed(String)
+    }
+
+    struct Submission {
+        let description: String
+        let screenshot: (data: Data, contentType: String)?
+    }
+
+    var description = ""
+    var attachScreenshot = false
+    private(set) var phase: Phase = .idle
+
+    var trimmedDescription: String { description.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var canSubmit: Bool { !trimmedDescription.isEmpty && phase != .submitting }
+    var isSubmitting: Bool { phase == .submitting }
+    var didSubmit: Bool { phase == .submitted }
+    var errorMessage: String? {
+        guard case .failed(let message) = phase else { return nil }
+        return message
+    }
+
+    mutating func begin(capturedScreenshot: UIImage?) -> Submission? {
+        guard canSubmit else { return nil }
+        let screenshot: (Data, String)?
+        if attachScreenshot, let capturedScreenshot,
+           let jpeg = capturedScreenshot.jpegData(compressionQuality: 0.6) {
+            screenshot = (jpeg, "image/jpeg")
+        } else {
+            screenshot = nil
+        }
+        phase = .submitting
+        return Submission(description: trimmedDescription, screenshot: screenshot)
+    }
+
+    mutating func completeSuccessfully() { phase = .submitted }
+
+    mutating func fail(rateLimited: Bool) {
+        phase = .failed(rateLimited
+            ? "送信が多すぎます。少し時間をおいてからもう一度お試しください。"
+            : "送信できませんでした。しばらくしてからもう一度お試しください。")
+    }
+
+    mutating func dismissSuccess() {
+        if phase == .submitted { phase = .idle }
+    }
+}
+
 /// Renders whatever's currently on screen into an image — used to capture
 /// the reporter's bug at the moment they tap the megaphone button, before
 /// ReportIssueSheet itself covers the screen.
@@ -59,21 +111,13 @@ struct ReportIssueButton: View {
 struct ReportIssueSheet: View {
     let capturedScreenshot: UIImage?
     @Environment(\.dismiss) private var dismiss
-    @State private var description = ""
-    @State private var attachScreenshot = false
-    @State private var isSubmitting = false
-    @State private var errorMessage: String?
-    @State private var didSubmit = false
-
-    private var trimmedDescription: String {
-        description.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    @State private var state = IssueReportFormState()
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextEditor(text: $description)
+                    TextEditor(text: $state.description)
                         .frame(minHeight: 120)
                 } header: {
                     Text("何が起きましたか？")
@@ -83,8 +127,8 @@ struct ReportIssueSheet: View {
 
                 if let capturedScreenshot {
                     Section {
-                        Toggle("今の画面を報告に添付する", isOn: $attachScreenshot)
-                        if attachScreenshot {
+                        Toggle("今の画面を報告に添付する", isOn: $state.attachScreenshot)
+                        if state.attachScreenshot {
                             Image(uiImage: capturedScreenshot)
                                 .resizable()
                                 .scaledToFit()
@@ -97,7 +141,7 @@ struct ReportIssueSheet: View {
                     }
                 }
 
-                if let errorMessage {
+                if let errorMessage = state.errorMessage {
                     Section {
                         Text(errorMessage).foregroundStyle(.red)
                     }
@@ -108,55 +152,48 @@ struct ReportIssueSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("キャンセル") { dismiss() }
-                        .disabled(isSubmitting)
+                        .disabled(state.isSubmitting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if isSubmitting {
+                    if state.isSubmitting {
                         ProgressView()
                     } else {
                         Button("送信") { submit() }
-                            .disabled(trimmedDescription.isEmpty)
+                            .disabled(!state.canSubmit)
                     }
                 }
             }
-            .alert("送信しました", isPresented: $didSubmit) {
+            .alert("送信しました", isPresented: Binding(
+                get: { state.didSubmit },
+                set: { if !$0 { state.dismissSuccess() } }
+            )) {
                 Button("閉じる") { dismiss() }
             } message: {
                 Text("報告ありがとうございます。運営が確認します。")
             }
         }
-        .interactiveDismissDisabled(isSubmitting)
+        .interactiveDismissDisabled(state.isSubmitting)
     }
 
     private func submit() {
-        let text = trimmedDescription
-        guard !text.isEmpty else { return }
-        isSubmitting = true
-        errorMessage = nil
-
-        let screenshotPayload: (data: Data, contentType: String)?
-        if attachScreenshot, let capturedScreenshot, let jpeg = capturedScreenshot.jpegData(compressionQuality: 0.6) {
-            screenshotPayload = (jpeg, "image/jpeg")
-        } else {
-            screenshotPayload = nil
-        }
+        guard let submission = state.begin(capturedScreenshot: capturedScreenshot) else { return }
 
         Task {
             do {
-                _ = try await IssueReportService.submit(description: text, screenshot: screenshotPayload)
+                _ = try await IssueReportService.submit(
+                    description: submission.description,
+                    screenshot: submission.screenshot
+                )
                 await MainActor.run {
-                    isSubmitting = false
-                    didSubmit = true
+                    state.completeSuccessfully()
                 }
             } catch is IssueReportService.RateLimitedError {
                 await MainActor.run {
-                    isSubmitting = false
-                    errorMessage = "送信が多すぎます。少し時間をおいてからもう一度お試しください。"
+                    state.fail(rateLimited: true)
                 }
             } catch {
                 await MainActor.run {
-                    isSubmitting = false
-                    errorMessage = "送信できませんでした。しばらくしてからもう一度お試しください。"
+                    state.fail(rateLimited: false)
                 }
             }
         }

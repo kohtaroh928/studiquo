@@ -4,6 +4,96 @@ import UIKit
 import PhotosUI
 import UniformTypeIdentifiers
 
+@MainActor
+enum SlideDeckEditingLogic {
+    static func addSlide(to deck: SlideDeck, layout: SlideLayout, at date: Date = .now) -> Slide {
+        let slide = Slide(order: deck.sortedSlides.count, layout: layout)
+        slide.deck = deck
+        deck.addSlide(slide)
+        deck.renumberSlides()
+        deck.updatedAt = date
+        return slide
+    }
+
+    static func duplicate(_ slide: Slide, in deck: SlideDeck, at date: Date = .now) -> Slide {
+        // Snapshot the existing later slides before linking the copy to the
+        // deck. SwiftData may update the inverse relationship immediately;
+        // otherwise the new copy can accidentally shift itself as a
+        // "later" slide and land after the intended position.
+        let laterSlides = deck.sortedSlides.filter { $0.order > slide.order }
+        let copy = Slide(order: slide.order + 1, layout: slide.legacyLayout)
+        copy.titleText = slide.titleText
+        copy.bodyText = slide.bodyText
+        copy.secondaryText = slide.secondaryText
+        copy.notes = slide.notes
+        copy.imageData = slide.imageData
+        for later in laterSlides { later.order += 1 }
+        copy.deck = deck
+        deck.addSlide(copy)
+        deck.renumberSlides()
+        deck.updatedAt = date
+        return copy
+    }
+
+    static func delete(_ slide: Slide, from deck: SlideDeck, at date: Date = .now) -> Slide? {
+        let removedOrder = slide.order
+        deck.slides?.removeAll { $0 === slide }
+        slide.deck = nil
+        deck.renumberSlides()
+        deck.updatedAt = date
+        let remaining = deck.sortedSlides
+        return remaining.indices.contains(removedOrder) ? remaining[removedOrder] : remaining.last
+    }
+
+    @discardableResult
+    static func move(_ slide: Slide, by offset: Int, in deck: SlideDeck, at date: Date = .now) -> Bool {
+        let ordered = deck.sortedSlides
+        guard let index = ordered.firstIndex(where: { $0 === slide }) else { return false }
+        let target = index + offset
+        guard ordered.indices.contains(target) else { return false }
+        var rearranged = ordered
+        rearranged.swapAt(index, target)
+        for (position, item) in rearranged.enumerated() { item.order = position }
+        deck.updatedAt = date
+        return true
+    }
+}
+
+enum SlidePresentationLogic {
+    enum Surface: Equatable { case audience, presenter }
+    enum Action: Equatable {
+        case reveal(step: Int)
+        case move(to: Int)
+        case finish
+        case none
+    }
+
+    static func initialIndex(startAt: Int, slideCount: Int) -> Int {
+        min(max(startAt, 0), max(0, slideCount - 1))
+    }
+
+    static func surface(externalDisplayConnected: Bool) -> Surface {
+        externalDisplayConnected ? .presenter : .audience
+    }
+
+    static func action(
+        step: Int,
+        index: Int,
+        revealStepIndex: Int,
+        animationStepCount: Int,
+        slideCount: Int
+    ) -> Action {
+        if step > 0, revealStepIndex < animationStepCount - 1 {
+            return .reveal(step: revealStepIndex + 1)
+        }
+        let next = index + step
+        guard (0..<slideCount).contains(next) else {
+            return next >= slideCount ? .finish : .none
+        }
+        return .move(to: next)
+    }
+}
+
 /// The slide editor: a thumbnail rail, a live slide canvas, an inspector for
 /// layout/theme/notes, a full-screen presentation mode, and PDF export.
 ///
@@ -813,11 +903,7 @@ struct SlideDeckView: View {
     // MARK: Slide operations
 
     private func addSlide(layout: SlideLayout) {
-        let slide = Slide(order: deck.sortedSlides.count, layout: layout)
-        slide.deck = deck
-        deck.addSlide(slide)
-        deck.renumberSlides()
-        deck.updatedAt = .now
+        let slide = SlideDeckEditingLogic.addSlide(to: deck, layout: layout)
         modelContext.insert(slide)
         // `migrateIfNeeded` is safe (and cheap) to call again here — its
         // per-slide `slide.layout == nil` check means it only ever touches
@@ -831,17 +917,7 @@ struct SlideDeckView: View {
     }
 
     private func duplicate(_ slide: Slide) {
-        let copy = Slide(order: slide.order + 1, layout: slide.legacyLayout)
-        copy.titleText = slide.titleText
-        copy.bodyText = slide.bodyText
-        copy.secondaryText = slide.secondaryText
-        copy.notes = slide.notes
-        copy.imageData = slide.imageData
-        copy.deck = deck
-        for later in deck.sortedSlides where later.order > slide.order { later.order += 1 }
-        deck.addSlide(copy)
-        deck.renumberSlides()
-        deck.updatedAt = .now
+        let copy = SlideDeckEditingLogic.duplicate(slide, in: deck)
         modelContext.insert(copy)
         SlideBlockMigration.migrateIfNeeded(deck) // see addSlide's comment
         try? modelContext.save()
@@ -889,28 +965,14 @@ struct SlideDeckView: View {
     }
 
     private func delete(_ slide: Slide) {
-        let removedOrder = slide.order
-        deck.slides?.removeAll { $0.persistentModelID == slide.persistentModelID }
-        slide.deck = nil
+        let nextSelection = SlideDeckEditingLogic.delete(slide, from: deck)
         modelContext.delete(slide)
-        deck.renumberSlides()
-        deck.updatedAt = .now
         try? modelContext.save()
-        let remaining = deck.sortedSlides
-        selectedSlideID = remaining.indices.contains(removedOrder)
-            ? remaining[removedOrder].persistentModelID
-            : remaining.last?.persistentModelID
+        selectedSlideID = nextSelection?.persistentModelID
     }
 
     private func move(_ slide: Slide, by offset: Int) {
-        let ordered = deck.sortedSlides
-        guard let index = ordered.firstIndex(where: { $0.persistentModelID == slide.persistentModelID }) else { return }
-        let target = index + offset
-        guard ordered.indices.contains(target) else { return }
-        var rearranged = ordered
-        rearranged.swapAt(index, target)
-        for (position, item) in rearranged.enumerated() { item.order = position }
-        deck.updatedAt = .now
+        guard SlideDeckEditingLogic.move(slide, by: offset, in: deck) else { return }
         try? modelContext.save()
     }
 
@@ -1246,14 +1308,14 @@ private struct SlidePresentationView: View {
 
     var body: some View {
         Group {
-            if externalDisplay.isConnected {
+            if SlidePresentationLogic.surface(externalDisplayConnected: externalDisplay.isConnected) == .presenter {
                 presenterLayout
             } else {
                 audienceLayout
             }
         }
         .onAppear {
-            index = min(max(startAt, 0), max(0, slides.count - 1))
+            index = SlidePresentationLogic.initialIndex(startAt: startAt, slideCount: slides.count)
             if slides.indices.contains(index) { resetReveal(for: slides[index]) }
             startedAt = .now
             updateExternalDisplay()
@@ -1426,22 +1488,26 @@ private struct SlidePresentationView: View {
     /// down first — real PowerPoint's own "previous" is more nuanced than
     /// that, but this covers the common case at far less complexity.
     private func advance(_ step: Int) {
-        if step > 0, slides.indices.contains(index) {
-            let steps = slides[index].animationSteps
-            if revealStepIndex < steps.count - 1 {
-                revealStepIndex += 1
-                revealedElementIDs.formUnion(steps[revealStepIndex].map(\.stableID))
-                return
-            }
+        let animationSteps = slides.indices.contains(index) ? slides[index].animationSteps : []
+        switch SlidePresentationLogic.action(
+            step: step,
+            index: index,
+            revealStepIndex: revealStepIndex,
+            animationStepCount: animationSteps.count,
+            slideCount: slides.count
+        ) {
+        case .reveal(let nextStep):
+            revealStepIndex = nextStep
+            revealedElementIDs.formUnion(animationSteps[nextStep].map(\.stableID))
+        case .move(let next):
+            lastSlideStep = step
+            withAnimation(.easeInOut(duration: 0.35)) { index = next }
+            resetReveal(for: slides[next])
+        case .finish:
+            dismiss()
+        case .none:
+            break
         }
-        let next = index + step
-        guard slides.indices.contains(next) else {
-            if next >= slides.count { dismiss() }
-            return
-        }
-        lastSlideStep = step
-        withAnimation(.easeInOut(duration: 0.35)) { index = next }
-        resetReveal(for: slides[next])
     }
 
     private func resetReveal(for slide: Slide) {

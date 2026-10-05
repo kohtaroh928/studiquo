@@ -3,28 +3,54 @@ import Vision
 
 enum HandwritingRecognitionService {
     static func recognize(drawingData: Data?, pageSize: CGSize) async -> String {
+        await recognize(drawingData: drawingData, pageSize: pageSize, recognizer: recognizeText)
+    }
+
+    static func recognize(
+        drawingData: Data?,
+        pageSize: CGSize,
+        recognizer: @escaping (CGImage) async -> String
+    ) async -> String {
         guard let drawingData,
               let drawing = InkDrawing.load(from: drawingData),
               !drawing.strokes.isEmpty else { return "" }
 
         let bounds = CGRect(origin: .zero, size: pageSize)
-        return await recognize(drawing: drawing, bounds: bounds)
+        return await recognize(drawing: drawing, bounds: bounds, recognizer: recognizer)
     }
 
     /// Recognises only the strokes selected by the lasso. Cropping before
     /// rasterising keeps both Vision's input and the work it performs small,
     /// regardless of how many pages the notebook contains.
     static func recognize(drawing: InkDrawing) async -> String {
+        await recognize(drawing: drawing, recognizer: recognizeText)
+    }
+
+    static func recognize(
+        drawing: InkDrawing,
+        recognizer: @escaping (CGImage) async -> String
+    ) async -> String {
         guard let first = drawing.strokes.first else { return "" }
         let inkBounds = drawing.strokes.dropFirst().reduce(first.bounds) { $0.union($1.bounds) }
         let padding = max(12, min(32, max(inkBounds.width, inkBounds.height) * 0.06))
-        return await recognize(drawing: drawing, bounds: inkBounds.insetBy(dx: -padding, dy: -padding))
+        return await recognize(
+            drawing: drawing,
+            bounds: inkBounds.insetBy(dx: -padding, dy: -padding),
+            recognizer: recognizer
+        )
     }
 
-    private static func recognize(drawing: InkDrawing, bounds: CGRect) async -> String {
+    private static func recognize(
+        drawing: InkDrawing,
+        bounds: CGRect,
+        recognizer: @escaping (CGImage) async -> String
+    ) async -> String {
         let image = drawing.image(from: bounds, scale: 2)
         guard let cgImage = image.cgImage else { return "" }
+        return await recognizer(cgImage)
+    }
 
+    private static func recognizeText(in cgImage: CGImage) async -> String {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let request = VNRecognizeTextRequest { request, _ in

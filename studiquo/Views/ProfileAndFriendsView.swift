@@ -2958,7 +2958,7 @@ private struct GroupProfileView: View {
     }
 }
 
-private struct FriendPrivacySettingsView: View {
+struct FriendPrivacySettingsView: View {
     @Binding var shareStudyTime: Bool
     @ObservedObject var store: FriendStore
 
