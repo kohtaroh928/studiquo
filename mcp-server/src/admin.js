@@ -14,6 +14,7 @@ import { bearerToken, sha256Hex } from "./auth.js";
 import { isExpired } from "./token.js";
 import { isRevoked } from "./revocation.js";
 import { realSession } from "./session.js";
+import { INBOX_CSS, INBOX_HTML, INBOX_SCRIPT } from "./admin-inbox-ui.js";
 
 // CANCELLATION isn't here on purpose: it only means "won't auto-renew", not
 // "access ended" — the subscriber stays active until the EXPIRATION event
@@ -41,19 +42,6 @@ async function countKVPrefix(env, prefix) {
   do {
     const page = await env.STUDIQUO_DATA.list({ prefix, cursor });
     count += page.keys.length;
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
-  return count;
-}
-
-async function countIssueReports(env) {
-  let count = 0;
-  let cursor;
-  do {
-    const page = await env.STUDIQUO_DATA.list({ prefix: "issue-report:", cursor });
-    // Every screenshot lives under "issue-report-screenshot:<id>", which
-    // also starts with "issue-report" — exclude those, they're not reports.
-    count += page.keys.filter(k => !k.name.startsWith("issue-report-screenshot:")).length;
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
   return count;
@@ -206,7 +194,8 @@ export async function handleAdminStats(url, request, env) {
 
   const [
     userCount,
-    issueReportCount,
+    issueReportRow,
+    appErrorRow,
     mcpConnectionCount,
     activeRow,
     billingIssueRow,
@@ -223,7 +212,8 @@ export async function handleAdminStats(url, request, env) {
     d30Retention,
   ] = await Promise.all([
     countDistinctUsers(env),
-    countIssueReports(env),
+    env.ADMIN_DB.prepare(`SELECT COUNT(*) AS count FROM issue_reports WHERE status = 'open'`).first(),
+    env.ADMIN_DB.prepare(`SELECT COUNT(*) AS count FROM app_errors WHERE status = 'open'`).first(),
     countKVPrefix(env, "mcp:grant:"),
     env.ADMIN_DB.prepare(`SELECT COUNT(*) AS count FROM subscribers WHERE status = 'active'`).first(),
     env.ADMIN_DB.prepare(`SELECT COUNT(*) AS count FROM subscribers WHERE status = 'billing_issue'`).first(),
@@ -280,7 +270,10 @@ export async function handleAdminStats(url, request, env) {
 
   return json({
     userCount,
-    issueReportCount,
+    // Only what is still waiting for someone: reports and errors marked
+    // 対応中/対応済み no longer count.
+    issueReportCount: issueReportRow?.count ?? 0,
+    appErrorCount: appErrorRow?.count ?? 0,
     mcpConnectionCount,
     activeSubscribers: activeRow?.count ?? 0,
     billingIssueCount: billingIssueRow?.count ?? 0,
@@ -324,14 +317,18 @@ const DASHBOARD_HTML = `<!doctype html>
   .card .label { color: #888; font-size: 0.85rem; }
   #chart { width: 100%; height: 180px; }
   #error { color: #c33; display: none; }
-</style>
+  a.card { color: inherit; text-decoration: none; display: block; }
+${INBOX_CSS}</style>
 <h1>studiquo 管理ダッシュボード</h1>
 <p><a href="/admin/announcements">お知らせ管理 →</a></p>
 <p id="error">読み込みに失敗しました。再読み込みしてください。</p>
 <div id="root"></div>
+${INBOX_HTML}
 <script>
-function card(label, value) {
-  return '<div class="card"><div class="value">' + value + '</div><div class="label">' + label + '</div></div>';
+function card(label, value, href, id) {
+  var tag = href ? 'a href="' + href + '"' : 'div';
+  var close = href ? 'a' : 'div';
+  return '<' + tag + ' class="card"><div class="value"' + (id ? ' id="' + id + '"' : '') + '>' + value + '</div><div class="label">' + label + '</div></' + close + '>';
 }
 function yen(n) { return '¥' + Math.round(n ?? 0).toLocaleString('ja-JP'); }
 function pct(n) { return n == null ? '—' : (n * 100).toFixed(1) + '%'; }
@@ -359,7 +356,8 @@ fetch('/api/admin/stats').then(r => {
     '<div class="grid">' +
       card('ユーザー数', stats.userCount) +
       card('アクティブサブスク', stats.activeSubscribers) +
-      card('未対応エラー報告', stats.issueReportCount) +
+      card('未対応のユーザー報告', stats.issueReportCount, '#reports', 'count-reports') +
+      card('未対応の自動エラー', stats.appErrorCount, '#errors', 'count-errors') +
       card('MCP連携数', stats.mcpConnectionCount) +
     '</div>' +
     '<h2>売上(RevenueCat)</h2>' +
@@ -384,6 +382,7 @@ fetch('/api/admin/stats').then(r => {
   document.getElementById('error').style.display = 'block';
 });
 </script>
+<script>${INBOX_SCRIPT}</script>
 </html>`;
 
 export function handleAdminPage(url) {
