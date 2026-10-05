@@ -689,8 +689,7 @@ enum UniversityCalendar {
             content.body = item.isAllDay
                 ? item.title
                 : L("\(item.title)・\(item.endDate.formatted(date: .omitted, time: .shortened))まで")
-            content.sound = .default
-            content.categoryIdentifier = AppNotificationKind.calendarDeadline.categoryIdentifier
+            AppNotificationPreferences.applyPresentation(to: content, kind: .calendarDeadline)
             content.userInfo = ["route": AppNotificationKind.calendarDeadline.rawValue]
 
             let trigger = UNCalendarNotificationTrigger(
@@ -1959,8 +1958,7 @@ enum EventReminderNotifications {
         let content = UNMutableNotificationContent()
         content.title = event.title
         content.body = calendarEventReminderBody(for: event)
-        content.sound = .default
-        content.categoryIdentifier = AppNotificationKind.calendarDeadline.categoryIdentifier
+        AppNotificationPreferences.applyPresentation(to: content, kind: .calendarDeadline)
         content.userInfo = ["route": AppNotificationKind.calendarDeadline.rawValue]
 
         let trigger = UNCalendarNotificationTrigger(
