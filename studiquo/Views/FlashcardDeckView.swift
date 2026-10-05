@@ -1,6 +1,51 @@
 import SwiftUI
 import SwiftData
 
+enum FlashcardStudyLogic {
+    static func orderedCards(
+        in deck: FlashcardDeck,
+        shuffle: ([Flashcard]) -> [Flashcard] = { $0.shuffled() }
+    ) -> [Flashcard] {
+        deck.orderMode == .random ? shuffle(deck.sortedCards) : deck.sortedCards
+    }
+
+    static func recordGrade(
+        correct: Bool,
+        card: Flashcard,
+        deck: FlashcardDeck,
+        at date: Date = .now,
+        nextReviewDate: (Date, Int, Bool) -> Date? = { date, mastery, correct in
+            FlashcardReviewNotifications.nextReviewDate(after: date, mastery: mastery, correct: correct)
+        }
+    ) {
+        card.reviewCount += 1
+        card.lastReviewedAt = date
+        deck.totalAnswered += 1
+        if correct {
+            card.mastery += 1
+            deck.totalCorrect += 1
+        } else {
+            card.mastery = max(0, card.mastery - 1)
+        }
+        MistakeReviewPolicy.record(correct: correct, on: card, at: date)
+        card.nextReviewAt = nextReviewDate(date, card.mastery, correct)
+        deck.updatedAt = date
+        deck.lastStudiedAt = date
+    }
+
+    static func advance(after index: Int, cardCount: Int, deck: FlashcardDeck) -> Int? {
+        guard index + 1 < cardCount else {
+            deck.studySessionCount += 1
+            return nil
+        }
+        return index + 1
+    }
+
+    static func retryCards(from incorrectCards: [Flashcard]) -> [Flashcard] {
+        incorrectCards
+    }
+}
+
 /// The full-screen counterpart to `ProtectedNotebookView`: shown in
 /// `ContentView`'s detail pane, below the same tab bar notebooks use, when a
 /// deck is selected from Home. Unlike a notebook's editor it has no ink
@@ -367,7 +412,7 @@ struct FlashcardStudyContent: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                         Button("間違いのみ", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90") {
-                            startStudy(with: incorrectCards)
+                            startStudy(with: FlashcardStudyLogic.retryCards(from: incorrectCards))
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.orange)
@@ -381,7 +426,7 @@ struct FlashcardStudyContent: View {
     }
 
     private func startStudy() {
-        let ordered = deck.orderMode == .random ? deck.sortedCards.shuffled() : deck.sortedCards
+        let ordered = FlashcardStudyLogic.orderedCards(in: deck)
         startStudy(with: ordered)
     }
 
@@ -400,31 +445,17 @@ struct FlashcardStudyContent: View {
         guard cards.indices.contains(index) else { return }
         let card = cards[index]
         let reviewedAt = Date.now
-        card.reviewCount += 1
-        card.lastReviewedAt = reviewedAt
-        deck.totalAnswered += 1
         if correct {
             correctCount += 1
-            card.mastery += 1
-            deck.totalCorrect += 1
         } else {
             incorrectCards.append(card)
-            card.mastery = max(0, card.mastery - 1)
         }
-        MistakeReviewPolicy.record(correct: correct, on: card, at: reviewedAt)
-        card.nextReviewAt = FlashcardReviewNotifications.nextReviewDate(
-            after: reviewedAt,
-            mastery: card.mastery,
-            correct: correct
-        )
-        deck.updatedAt = .now
-        deck.lastStudiedAt = .now
+        FlashcardStudyLogic.recordGrade(correct: correct, card: card, deck: deck, at: reviewedAt)
         Task { await FlashcardReviewNotifications.reschedule(decks: allDecks) }
-        if index + 1 < cards.count {
-            index += 1
+        if let nextIndex = FlashcardStudyLogic.advance(after: index, cardCount: cards.count, deck: deck) {
+            index = nextIndex
             showsAnswer = false
         } else {
-            deck.studySessionCount += 1
             phase = .results
             // Every second completed pass earns an interstitial. Counted here
             // rather than on entering the deck so a pass that is abandoned

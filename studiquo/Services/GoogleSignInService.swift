@@ -41,12 +41,26 @@ final class GoogleSignInService {
     /// from the random half this device supplies — same contract as
     /// AppleSignInService.exchange(identityToken:randomValue:).
     private func exchange(idToken: String, randomValue: String) async throws -> String {
+        try await exchange(
+            idToken: idToken,
+            randomValue: randomValue,
+            endpoint: endpoint,
+            session: .shared
+        )
+    }
+
+    func exchange(
+        idToken: String,
+        randomValue: String,
+        endpoint: URL,
+        session: URLSession
+    ) async throws -> String {
         var request = URLRequest(url: endpoint.appending(path: "api/auth/google"))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(ExchangeRequest(idToken: idToken, randomValue: randomValue))
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw GoogleSignInServiceError.serverRejected
         }

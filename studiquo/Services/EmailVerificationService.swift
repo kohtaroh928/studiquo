@@ -11,12 +11,16 @@ enum EmailVerificationService {
     private static var endpoint: URL { MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)! }
 
     static func sendCode(email: String) async throws {
+        try await sendCode(email: email, endpoint: endpoint, session: .shared)
+    }
+
+    static func sendCode(email: String, endpoint: URL, session: URLSession) async throws {
         var request = URLRequest(url: endpoint.appending(path: "api/auth/email/send-code"))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(SendCodeRequest(email: email))
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw EmailVerificationError.sendFailed
         }
@@ -28,12 +32,30 @@ enum EmailVerificationService {
     /// (network error, malformed response). Returns the freshly minted
     /// studiquo cloud token on success.
     static func confirmCode(email: String, code: String, password: String, randomValue: String) async throws -> String {
+        try await confirmCode(
+            email: email,
+            code: code,
+            password: password,
+            randomValue: randomValue,
+            endpoint: endpoint,
+            session: .shared
+        )
+    }
+
+    static func confirmCode(
+        email: String,
+        code: String,
+        password: String,
+        randomValue: String,
+        endpoint: URL,
+        session: URLSession
+    ) async throws -> String {
         var request = URLRequest(url: endpoint.appending(path: "api/auth/email/confirm-code"))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(ConfirmCodeRequest(email: email, code: code, password: password, randomValue: randomValue))
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw EmailVerificationError.confirmFailed }
         if 200..<300 ~= http.statusCode {
             guard let payload = try? JSONDecoder().decode(ConfirmSuccessResponse.self, from: data) else {

@@ -53,12 +53,26 @@ final class AppleSignInService: NSObject, ASAuthorizationControllerDelegate, ASA
     /// MCPCloudCredentials.makeToken() produces, just minted server-side here
     /// from the random half this device supplies.
     private func exchange(identityToken: String, randomValue: String) async throws -> String {
+        try await exchange(
+            identityToken: identityToken,
+            randomValue: randomValue,
+            endpoint: endpoint,
+            session: .shared
+        )
+    }
+
+    func exchange(
+        identityToken: String,
+        randomValue: String,
+        endpoint: URL,
+        session: URLSession
+    ) async throws -> String {
         var request = URLRequest(url: endpoint.appending(path: "api/auth/apple"))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(ExchangeRequest(identityToken: identityToken, randomValue: randomValue))
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw AppleSignInError.serverRejected
         }

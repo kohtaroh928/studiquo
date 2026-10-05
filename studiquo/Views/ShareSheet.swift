@@ -6,10 +6,14 @@ struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        Self.makeController(items: items)
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+
+    static func makeController(items: [Any]) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
 }
 
 struct DocumentPreview: UIViewControllerRepresentable {
@@ -20,14 +24,22 @@ struct DocumentPreview: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> QLPreviewController {
-        let controller = QLPreviewController()
-        controller.dataSource = context.coordinator
-        return controller
+        Self.makeController(coordinator: context.coordinator)
     }
 
     func updateUIViewController(_ uiViewController: QLPreviewController, context: Context) {
-        context.coordinator.url = url
-        uiViewController.reloadData()
+        Self.update(uiViewController, coordinator: context.coordinator, url: url)
+    }
+
+    static func makeController(coordinator: Coordinator) -> QLPreviewController {
+        let controller = QLPreviewController()
+        controller.dataSource = coordinator
+        return controller
+    }
+
+    static func update(_ controller: QLPreviewController, coordinator: Coordinator, url: URL) {
+        coordinator.url = url
+        controller.reloadData()
     }
 
     final class Coordinator: NSObject, QLPreviewControllerDataSource {

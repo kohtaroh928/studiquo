@@ -37,19 +37,6 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>UTExportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeDescription</key>
-			<string>Studiquo Page Snippet</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.studiquo.page-snippet</string>
-		</dict>
-	</array>
 	<key>GIDClientID</key>
 	<string>812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd.apps.googleusercontent.com</string>
 	<key>GIDServerClientID</key>
@@ -71,5 +58,18 @@
 		<key>UIColorName</key>
 		<string>LaunchBackground</string>
 	</dict>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Studiquo Page Snippet</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.studiquo.page-snippet</string>
+		</dict>
+	</array>
 </dict>
 </plist>

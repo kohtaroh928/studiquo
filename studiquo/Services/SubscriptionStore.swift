@@ -91,8 +91,10 @@ final class SubscriptionStore: ObservableObject {
         Purchases.configure(withAPIKey: RevenueCatConfiguration.publicAPIKey)
     }
 
-    init() {
-        Task { await refresh() }
+    init(automaticallyRefresh: Bool = true) {
+        if automaticallyRefresh {
+            Task { await refresh() }
+        }
     }
 
     func refresh() async {
@@ -110,12 +112,21 @@ final class SubscriptionStore: ObservableObject {
     }
 
     func purchase(_ package: Package) async {
+        await performPurchase {
+            let result = try await Purchases.shared.purchase(package: package)
+            return (result.userCancelled, result.customerInfo)
+        }
+    }
+
+    func performPurchase(
+        operation: () async throws -> (userCancelled: Bool, customerInfo: CustomerInfo)
+    ) async {
         guard !isPurchasing else { return }
         isPurchasing = true
         defer { isPurchasing = false }
 
         do {
-            let result = try await Purchases.shared.purchase(package: package)
+            let result = try await operation()
             guard !result.userCancelled else { return }
             apply(result.customerInfo)
             message = "\(currentPlan.title)プランが利用できるようになりました。"
@@ -125,11 +136,17 @@ final class SubscriptionStore: ObservableObject {
     }
 
     func restorePurchases() async {
+        await restorePurchases {
+            try await Purchases.shared.restorePurchases()
+        }
+    }
+
+    func restorePurchases(operation: () async throws -> CustomerInfo) async {
         isLoading = true
         defer { isLoading = false }
 
         do {
-            let info = try await Purchases.shared.restorePurchases()
+            let info = try await operation()
             apply(info)
             message = currentPlan == .standard
                 ? "復元できる有効なサブスクリプションはありませんでした。"
@@ -152,18 +169,36 @@ final class SubscriptionStore: ObservableObject {
     private func apply(_ info: CustomerInfo) {
         let active = Set(info.entitlements.active.keys)
         activeEntitlementIDs = active
-        currentPlan = active.contains(SubscriptionEntitlementID.pro) ? .pro
+        currentPlan = Self.plan(forActiveEntitlementIDs: active)
+    }
+
+    static func plan(forActiveEntitlementIDs active: Set<String>) -> StudiquoPlan {
+        active.contains(SubscriptionEntitlementID.pro) ? .pro
             : active.contains(SubscriptionEntitlementID.plus) ? .plus
             : .standard
     }
 
     private static func packageSort(_ lhs: Package, _ rhs: Package) -> Bool {
-        let lhsPlan = SubscriptionProductID.plan(for: lhs.storeProduct.productIdentifier) ?? .standard
-        let rhsPlan = SubscriptionProductID.plan(for: rhs.storeProduct.productIdentifier) ?? .standard
+        productComesBefore(
+            lhsID: lhs.storeProduct.productIdentifier,
+            lhsPrice: lhs.storeProduct.price,
+            rhsID: rhs.storeProduct.productIdentifier,
+            rhsPrice: rhs.storeProduct.price
+        )
+    }
+
+    static func productComesBefore(
+        lhsID: String,
+        lhsPrice: Decimal,
+        rhsID: String,
+        rhsPrice: Decimal
+    ) -> Bool {
+        let lhsPlan = SubscriptionProductID.plan(for: lhsID) ?? .standard
+        let rhsPlan = SubscriptionProductID.plan(for: rhsID) ?? .standard
         if lhsPlan != rhsPlan { return lhsPlan < rhsPlan }
 
-        let lhsYearly = lhs.storeProduct.productIdentifier.hasSuffix(".yearly")
-        let rhsYearly = rhs.storeProduct.productIdentifier.hasSuffix(".yearly")
-        return lhsYearly == rhsYearly ? lhs.storeProduct.price < rhs.storeProduct.price : !lhsYearly
+        let lhsYearly = lhsID.hasSuffix(".yearly")
+        let rhsYearly = rhsID.hasSuffix(".yearly")
+        return lhsYearly == rhsYearly ? lhsPrice < rhsPrice : !lhsYearly
     }
 }

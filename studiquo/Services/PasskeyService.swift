@@ -111,13 +111,31 @@ final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAutho
     private func post<Response: Decodable, Body: Encodable>(
         path: String, body: Body, bearer: String?
     ) async throws -> Response {
+        try await PasskeyHTTPClient.post(
+            endpoint: endpoint,
+            path: path,
+            body: body,
+            bearer: bearer,
+            session: .shared
+        )
+    }
+}
+
+enum PasskeyHTTPClient {
+    static func post<Response: Decodable, Body: Encodable>(
+        endpoint: URL,
+        path: String,
+        body: Body,
+        bearer: String?,
+        session: URLSession
+    ) async throws -> Response {
         var request = URLRequest(url: endpoint.appending(path: path))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         request.httpBody = try JSONEncoder().encode(body)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw PasskeyError.serverRejected
         }

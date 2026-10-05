@@ -140,7 +140,12 @@ enum ProofGradingService {
 
     // MARK: Stage 1 — rubric
 
-    static func buildRubric(question: String, modelAnswer: String) async throws -> ProofRubric {
+    static func buildRubric(
+        question: String,
+        modelAnswer: String,
+        apiKey: String? = ClaudeChatService.apiKey,
+        session: URLSession = .shared
+    ) async throws -> ProofRubric {
         let trimmedAnswer = modelAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedAnswer.isEmpty else { throw GradingError.missingModelAnswer }
 
@@ -189,7 +194,9 @@ enum ProofGradingService {
         let data = try await send(
             system: system,
             content: [["type": "text", "text": user]],
-            schema: schema
+            schema: schema,
+            apiKey: apiKey,
+            session: session
         )
         guard let rubric = try? JSONDecoder().decode(ProofRubric.self, from: data) else {
             throw GradingError.malformedResponse
@@ -202,7 +209,9 @@ enum ProofGradingService {
     static func grade(
         answerImage: UIImage,
         question: String,
-        rubric: ProofRubric
+        rubric: ProofRubric,
+        apiKey: String? = ClaudeChatService.apiKey,
+        session: URLSession = .shared
     ) async throws -> ProofReviewResult {
         guard let png = answerImage.pngData() else { throw GradingError.malformedResponse }
 
@@ -301,7 +310,9 @@ enum ProofGradingService {
                 ],
                 ["type": "text", "text": user],
             ],
-            schema: schema
+            schema: schema,
+            apiKey: apiKey,
+            session: session
         )
         guard let result = try? JSONDecoder().decode(ProofReviewResult.self, from: data) else {
             throw GradingError.malformedResponse
@@ -317,9 +328,11 @@ enum ProofGradingService {
     private static func send(
         system: String,
         content: [[String: Any]],
-        schema: [String: Any]
+        schema: [String: Any],
+        apiKey: String?,
+        session: URLSession
     ) async throws -> Data {
-        guard let key = ClaudeChatService.apiKey else { throw GradingError.missingKey }
+        guard let key = apiKey else { throw GradingError.missingKey }
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -342,7 +355,7 @@ enum ProofGradingService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw GradingError.transport(L("応答を読み取れませんでした。"))
             }

@@ -9,14 +9,30 @@ enum LocalAuthService {
     private static var endpoint: URL { MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)! }
 
     static func login(email: String, password: String) async throws -> String {
+        try await login(
+            email: email,
+            password: password,
+            randomValue: MCPCloudCredentials.makeRandomValue(),
+            endpoint: endpoint,
+            session: .shared
+        )
+    }
+
+    static func login(
+        email: String,
+        password: String,
+        randomValue: String,
+        endpoint: URL,
+        session: URLSession
+    ) async throws -> String {
         var request = URLRequest(url: endpoint.appending(path: "api/auth/local/login"))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(LoginRequest(
-            email: email, password: password, randomValue: MCPCloudCredentials.makeRandomValue()
+            email: email, password: password, randomValue: randomValue
         ))
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw LocalAuthError.rejected
         }

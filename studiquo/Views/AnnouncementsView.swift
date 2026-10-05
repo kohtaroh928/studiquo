@@ -1,5 +1,15 @@
 import SwiftUI
 
+enum AnnouncementScreenLogic {
+    static func emptyMessageKey(loadFailed: Bool) -> String {
+        loadFailed ? "announcements.loadFailed" : "announcements.empty"
+    }
+
+    static func showsMarkAllRead(unreadCount: Int) -> Bool {
+        unreadCount > 0
+    }
+}
+
 /// The その他 tab's お知らせ screen: the operators' notices, newest first.
 /// Opening one marks it read; the unread count drives the badges on the row
 /// and on the tab.
@@ -10,7 +20,7 @@ struct AnnouncementsView: View {
         List {
             if store.announcements.isEmpty {
                 Section {
-                    Text(store.loadFailed ? "announcements.loadFailed" : "announcements.empty")
+                    Text(AnnouncementScreenLogic.emptyMessageKey(loadFailed: store.loadFailed))
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("announcements-empty")
                 }
@@ -32,7 +42,7 @@ struct AnnouncementsView: View {
         .navigationTitle(Text("announcements.title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if store.unreadCount > 0 {
+            if AnnouncementScreenLogic.showsMarkAllRead(unreadCount: store.unreadCount) {
                 ToolbarItem(placement: .primaryAction) {
                     Button("announcements.markAllRead") { store.markAllRead() }
                 }

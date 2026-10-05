@@ -8,8 +8,27 @@ enum DeviceAuthentication {
     /// since every caller treats the two identically: don't proceed.
     static func authenticate(reason: String) async -> Bool {
         let context = LAContext()
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else { return false }
-        return (try? await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
+        return await authenticate(
+            reason: reason,
+            canEvaluate: {
+                var error: NSError?
+                return context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error)
+            },
+            evaluate: { localizedReason in
+                try await context.evaluatePolicy(
+                    .deviceOwnerAuthentication,
+                    localizedReason: localizedReason
+                )
+            }
+        )
+    }
+
+    static func authenticate(
+        reason: String,
+        canEvaluate: () -> Bool,
+        evaluate: (String) async throws -> Bool
+    ) async -> Bool {
+        guard canEvaluate() else { return false }
+        return (try? await evaluate(reason)) ?? false
     }
 }
