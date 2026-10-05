@@ -5369,39 +5369,23 @@ struct ContentView: View {
         importDestinationPath = destination
         sharedImportSummary = nil
         homeSection = .notes
+        // Synchronously, so a second tap on the button finds an import running.
         sharedImport.begin(total: items.count)
 
         Task { @MainActor in
-            var unsupported: [String] = []
-            var held: [SharedInbox.Item] = []
-            for (index, item) in items.enumerated() {
-                sharedImport.advance(completed: index, currentName: item.displayName)
+            let summary = await SharedImportRunner.run(items: items, coordinator: sharedImport) { item in
                 pdfPrepareError = nil
-                guard SharedInbox.isImportable(item.url) else {
-                    unsupported.append(item.displayName)
-                    sharedImport.finish(item)
-                    continue
-                }
                 await importFile(from: item.url)
                 await waitForPDFPromptsToSettle()
-                if pdfPrepareError != nil {
-                    // Clear it at once: the end-of-import notice reports every
-                    // skipped file together instead of one alert per file.
-                    pdfPrepareError = nil
-                    held.append(item)
-                } else {
-                    sharedImport.finish(item)
-                }
-                await Task.yield()
+                guard pdfPrepareError != nil else { return .imported }
+                // Clear it at once: the end-of-import notice reports every
+                // skipped file together instead of one alert per file.
+                pdfPrepareError = nil
+                return .failed
             }
             try? modelContext.save()
             importDestinationPath = nil
-            sharedImport.end(attempted: held)
-            sharedImportSummary = SharedImportSummary(
-                imported: items.count - unsupported.count - held.count,
-                unsupported: unsupported,
-                held: held.map(\.displayName)
-            )
+            sharedImportSummary = summary
             if isBatch {
                 // 28 files should not leave 28 notebooks open as tabs.
                 openNotebooks = tabsBefore
