@@ -154,6 +154,8 @@ export async function deleteAccount(env, canonicalSub) {
   if (env.ADMIN_DB) {
     await env.ADMIN_DB.prepare("DELETE FROM usage_events WHERE user_key = ?").bind(usageHash).run();
     await env.ADMIN_DB.prepare("DELETE FROM users_first_seen WHERE user_key = ?").bind(usageHash).run();
+    // Which problems this account hit (the dashboard's "affected people").
+    await env.ADMIN_DB.prepare("DELETE FROM app_error_users WHERE user_key = ?").bind(usageHash).run();
   }
 
   const devices = await env.STUDIQUO_DATA.get(`chat:devices:${chatKey}`, "json") ?? [];

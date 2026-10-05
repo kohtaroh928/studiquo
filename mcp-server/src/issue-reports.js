@@ -18,6 +18,7 @@ import { checkRateLimit } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readJSONLimited } from "./http.js";
 import { realSession } from "./session.js";
+import { postSlackBlocks } from "./slack.js";
 
 const MAX_DESCRIPTION_LENGTH = 2_000;
 // A JPEG/PNG screenshot base64-encoded is ~33% larger than its raw bytes;
@@ -36,9 +37,8 @@ function truncate(value, max) {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 
-async function postToSlack(env, report, screenshotURL) {
-  const webhookURL = env.SLACK_ISSUE_REPORT_WEBHOOK_URL;
-  if (!webhookURL) return;
+async function postToSlack(env, report, screenshotURL, dashboardURL) {
+  if (!env.SLACK_ISSUE_REPORT_WEBHOOK_URL) return;
   const context = [
     report.appVersion && `v${report.appVersion}`,
     report.osVersion && `iOS ${report.osVersion}`,
@@ -53,16 +53,28 @@ async function postToSlack(env, report, screenshotURL) {
   if (screenshotURL) {
     blocks.push({ type: "image", image_url: screenshotURL, alt_text: "報告時のスクリーンショット" });
   }
+  if (dashboardURL) {
+    blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: `<${dashboardURL}|ダッシュボードで開く>` }] });
+  }
+  await postSlackBlocks(env, blocks);
+}
+
+// Mirrors the report into D1 so the admin dashboard can list it and track
+// whether it's been handled. The KV copy above stays the durable record, so
+// a D1 hiccup is logged rather than failing the person's report.
+async function recordInDashboard(env, report) {
+  if (!env.ADMIN_DB) return;
   try {
-    await fetch(webhookURL, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ blocks }),
-    });
+    await env.ADMIN_DB.prepare(
+      `INSERT OR IGNORE INTO issue_reports
+         (id, reporter_key, description, app_version, os_version, device_model, language, has_screenshot, status, admin_note, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', '', ?, ?)`
+    ).bind(
+      report.id, report.reporterKey, report.description, report.appVersion, report.osVersion,
+      report.deviceModel, report.language, report.hasScreenshot ? 1 : 0, report.createdAt, report.createdAt
+    ).run();
   } catch (error) {
-    // Slack being unreachable must never fail the report itself — it's
-    // already durably stored in KV by the time this runs.
-    console.error(JSON.stringify({ message: "issue report slack notify failed", error: error instanceof Error ? error.message : String(error) }));
+    console.error(JSON.stringify({ message: "issue report dashboard insert failed", error: error instanceof Error ? error.message : String(error) }));
   }
 }
 
@@ -135,8 +147,10 @@ export async function handleIssueReports(url, request, env) {
     await env.STUDIQUO_DATA.put(`issue-report-screenshot:${id}`, JSON.stringify(screenshot), { expirationTtl: REPORT_TTL_SECONDS });
   }
 
+  await recordInDashboard(env, report);
+
   const screenshotURL = screenshot ? `${url.origin}/api/issue-reports/${id}/screenshot` : null;
-  await postToSlack(env, report, screenshotURL);
+  await postToSlack(env, report, screenshotURL, `${url.origin}/admin#reports`);
 
   return json({ reported: true, id });
 }

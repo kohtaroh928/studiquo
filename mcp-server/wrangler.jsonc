@@ -91,6 +91,11 @@
     // Keyed by the authenticated user's stable chat key. Registration is
     // idempotent and normally happens once per launch/login.
     { "name": "RATE_LIMIT_CHAT_DEVICE_REGISTER", "namespace_id": "1022", "simple": { "limit": 5, "period": 60 } },
+    // Keyed by the token's hash. The app batches its automatic error reports
+    // (crashes, hangs, known failures) into a handful of requests per launch,
+    // and caps itself per day, so this is headroom against a misbehaving or
+    // hostile client rather than a limit normal use gets near.
+    { "name": "RATE_LIMIT_APP_ERROR", "namespace_id": "1024", "simple": { "limit": 10, "period": 60 } },
     // Keyed by clientKey(request) — the public announcements list is
     // unauthenticated (readable before sign-in). One fetch per app open is
     // the expected shape, so this is generous headroom.

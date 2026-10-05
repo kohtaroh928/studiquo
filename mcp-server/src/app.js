@@ -8,6 +8,8 @@ import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys } from "./passkeys.js";
 import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
+import { handleAppErrors } from "./app-errors.js";
+import { handleAdminReports } from "./admin-reports.js";
 import { handleAnnouncements, handleAnnouncementsPage } from "./announcements.js";
 import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats } from "./admin.js";
 import { handleInvitePage } from "./invite.js";
@@ -320,6 +322,10 @@ export default {
       if (adminWebhook) return adminWebhook;
       const adminStats = await handleAdminStats(url, request, env);
       if (adminStats) return adminStats;
+      const adminReports = await handleAdminReports(url, request, env);
+      if (adminReports) return adminReports;
+      const appErrors = await handleAppErrors(url, request, env);
+      if (appErrors) return appErrors;
       const usageEvent = await handleUsageEvent(url, request, env);
       if (usageEvent) return usageEvent;
 
