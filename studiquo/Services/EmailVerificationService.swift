@@ -20,8 +20,12 @@ enum EmailVerificationService {
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(SendCodeRequest(email: email))
-        let (_, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+            // 429: this address (or network) has had too many codes sent for now.
+            if let http = response as? HTTPURLResponse, http.statusCode == 429 {
+                throw EmailVerificationError.tooManySends(retryAfter: LocalAuthService.retryAfterSeconds(http, body: data))
+            }
             throw EmailVerificationError.sendFailed
         }
     }
@@ -65,6 +69,11 @@ enum EmailVerificationService {
             }
             return payload.token
         }
+        // 429: too many checks for this address for now. The code was not looked
+        // at, so it is neither right nor wrong, and is still good once the wait is over.
+        if http.statusCode == 429 {
+            throw EmailVerificationError.tooManyConfirmations(retryAfter: LocalAuthService.retryAfterSeconds(http, body: data))
+        }
         if http.statusCode == 401, let payload = try? JSONDecoder().decode(ConfirmErrorResponse.self, from: data) {
             throw EmailVerificationError.wrongCode(attemptsRemaining: payload.attemptsRemaining ?? 0)
         }
@@ -77,18 +86,26 @@ enum EmailVerificationService {
     }
 }
 
-enum EmailVerificationError: LocalizedError {
+enum EmailVerificationError: LocalizedError, Equatable {
     case sendFailed
     case confirmFailed
     case wrongCode(attemptsRemaining: Int)
     case passwordBreached
+    /// Too many codes have been sent for this address (or from this network).
+    case tooManySends(retryAfter: TimeInterval?)
+    /// Too many codes have been tried for this address.
+    case tooManyConfirmations(retryAfter: TimeInterval?)
 
     var errorDescription: String? {
         switch self {
         case .sendFailed: "確認コードを送信できませんでした。"
         case .confirmFailed: "確認コードを確認できませんでした。"
+        case .tooManySends(let retryAfter):
+            "確認コードの送信が続いたため、いまは受け付けられません。" + LocalAuthError.waitSentence(retryAfter)
+        case .tooManyConfirmations(let retryAfter):
+            "確認の試行が続いたため、いまは受け付けられません。" + LocalAuthError.waitSentence(retryAfter)
         case .passwordBreached:
-            "このパスワードは過去の情報漏えいで見つかっています。キャンセルして、別のパスワードで登録し直してください。"
+            "このパスワードは過去の情報漏えいで見つかっています。別のパスワードを入力してください。"
         case .wrongCode(let attemptsRemaining):
             attemptsRemaining > 0
                 ? "コードが正しくありません。残り\(attemptsRemaining)回試せます。"

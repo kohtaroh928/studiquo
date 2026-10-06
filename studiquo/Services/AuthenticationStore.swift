@@ -28,6 +28,11 @@ final class AuthenticationStore: ObservableObject {
 
     @Published private(set) var state: State = .needsLogin
     @Published var errorMessage = ""
+    /// Set when the server refused the sign-up/reset password as one found in a
+    /// known data breach. The emailed code was NOT used up, so the verification
+    /// screen asks for a different password and retries with the same code
+    /// (`changePendingPassword(_:code:)`) instead of starting over.
+    @Published private(set) var needsNewPassword = false
     /// UI tests sign in without a real token, so every server call 401s;
     /// they set this so only an explicit logout ends the session.
     var ignoresAuthFailures = false
@@ -118,6 +123,7 @@ final class AuthenticationStore: ObservableObject {
         do {
             try await EmailVerificationService.sendCode(email: normalized)
             pendingSignUp = (normalized, password)
+            needsNewPassword = false
             errorMessage = ""
             state = .verifyingEmail
             return true
@@ -305,15 +311,41 @@ final class AuthenticationStore: ObservableObject {
             MCPCloudCredentials.save(token)
             persistOAuthIdentity(provider: "email", subject: pending.email, email: pending.email)
             pendingSignUp = nil
+            needsNewPassword = false
             createSession()
             syncRevenueCatIdentity(provider: "email", subject: pending.email)
             errorMessage = ""
             state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
         } catch {
+            // Only meaningful for the sign-up still in progress.
+            if case EmailVerificationError.passwordBreached = error, pendingSignUp?.email == pending.email {
+                needsNewPassword = true
+            }
             errorMessage = error.localizedDescription
             return false
         }
+    }
+
+    /// Replaces the sign-up/reset password the server refused (a known
+    /// breached one) and confirms again with the same `code`, which the server
+    /// left unspent. Returns true once signed in.
+    func changePendingPassword(_ newPassword: String, code: String) async -> Bool {
+        guard needsNewPassword, let pending = pendingSignUp else { return false }
+        guard newPassword.count >= 8, newPassword.count <= 1_024 else {
+            errorMessage = "パスワードは8文字以上にしてください。"
+            return false
+        }
+        guard newPassword != pending.password else {
+            errorMessage = "同じパスワードです。別のパスワードを入力してください。"
+            return false
+        }
+        pendingSignUp = (pending.email, newPassword)
+        // The new password is not a refused one, so any failure from here on
+        // (a mistyped code, no connection) is an ordinary one: back to the plain
+        // confirm button. A second breached answer turns this on again.
+        needsNewPassword = false
+        return await confirmEmailVerification(code: code)
     }
 
     /// Abandons the sign-up/reset in progress and returns to the login screen
@@ -324,6 +356,7 @@ final class AuthenticationStore: ObservableObject {
     func cancelAccountCreation() {
         guard state == .verifyingEmail else { return }
         pendingSignUp = nil
+        needsNewPassword = false
         errorMessage = ""
         state = .needsLogin
     }
