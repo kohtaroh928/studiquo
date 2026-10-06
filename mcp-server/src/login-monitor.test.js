@@ -234,3 +234,17 @@ test("the network name in the mail is a single short printable line", () => capt
   assert.ok(!/[\r]/.test(line));
   assert.equal(sent[0].body.text.split("\n").filter(row => row.startsWith("ネットワーク")).length, 1);
 }));
+
+test("hashing-saturation refusals alert Slack once per hour, separately from failures", () => captureOutbound(async (sent) => {
+  const env = fakeEnv();
+  const request = withCf({ country: "JP", asn: 2516 });
+  for (let i = 0; i < MONITOR.busyAlert; i++) await recordLoginOutcome(env, request, "busy");
+  assert.equal(sent.length, 0);
+  for (let i = 0; i < 20; i++) await recordLoginOutcome(env, request, "busy");
+  assert.equal(sent.length, 1);
+  assert.match(JSON.stringify(sent[0].body), /ハッシュ処理の混雑/);
+
+  // They never count towards the failure alert.
+  for (let i = 0; i < MONITOR.failureAlert; i++) await recordLoginOutcome(env, request, "busy");
+  assert.equal(sent.length, 1);
+}));

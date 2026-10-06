@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Hex } from "./auth.js";
 import { accountGenerationMethods } from "./test-account-generations.js";
-import { engine, hashers, upsertLocalAccount, verifyLocalAccount } from "./local-auth.js";
+import { Argon2BusyError, argon2QueueState, engine, hashers, upsertLocalAccount, verifyLocalAccount } from "./local-auth.js";
 
 function environment({ argon2Write = true } = {}) {
   const values = new Map();
@@ -375,5 +375,168 @@ test("flag off -> on -> off: every record written along the way keeps signing in
   for (const [email, password] of [["a", "password-for-a-1"], ["b", "password-for-b-1"], ["c", "password-for-c-1"]]) {
     assert.equal(await verifyLocalAccount(env, `${email}@example.com`, password), true, email);
     assert.equal(await verifyLocalAccount(env, `${email}@example.com`, "wrong-password"), false, email);
+  }
+});
+
+// MARK: - the Argon2id queue limit
+
+// Holds every Argon2id run until `release()`, so a test can fill the queue.
+function holdArgon2() {
+  const original = engine.argon2idAsync;
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  let started = 0;
+  engine.argon2idAsync = async (...args) => {
+    started += 1;
+    await gate;
+    return original(...args);
+  };
+  return {
+    started: () => started,
+    release() { open(); },
+    restore() { engine.argon2idAsync = original; },
+  };
+}
+
+const tick = (ms = 20) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Waits until the queue really is full (2 running, 32 waiting). Each queued
+// sign-in does a PBKDF2 run first, so this takes a moment; a probe sent before
+// then would just join the queue and wait for the test to release it.
+async function untilQueueFull() {
+  for (let i = 0; i < 400; i++) {
+    const { active, waiting } = argon2QueueState();
+    if (active === 2 && waiting === 32) return;
+    await tick(10);
+  }
+  throw new Error(`the queue never filled: ${JSON.stringify(argon2QueueState())}`);
+}
+
+// 2 running + 32 waiting: the most the queue takes before turning sign-ins away.
+const FILL = 34;
+
+test("when the Argon2id queue is full a sign-in is turned away at once, with nothing checked", async () => {
+  const env = environment();
+  await upsertLocalAccount(env, "person@example.com", "correct-horse-battery");
+  const hold = holdArgon2();
+  try {
+    const running = Array.from({ length: FILL }, () => verifyLocalAccount(env, "nobody@example.com", "x").catch(error => error));
+    await untilQueueFull();
+    assert.equal(hold.started(), 2, "only two run at a time");
+
+    // Every further attempt is refused immediately, whatever the address.
+    for (const email of ["person@example.com", "nobody@example.com", "not-an-email"]) {
+      await assert.rejects(() => verifyLocalAccount(env, email, "correct-horse-battery"), Argon2BusyError, email);
+    }
+
+    hold.release();
+    const results = await Promise.all(running);
+    assert.ok(results.every(result => result === false), "everyone already in the queue is still served");
+  } finally {
+    hold.release();
+    hold.restore();
+  }
+});
+
+test("the queue recovers fully after a rejection: later sign-ins work and nothing leaked", async () => {
+  const env = environment();
+  await upsertLocalAccount(env, "person@example.com", "correct-horse-battery");
+  const hold = holdArgon2();
+  try {
+    const running = Array.from({ length: FILL }, () => verifyLocalAccount(env, "nobody@example.com", "x").catch(error => error));
+    await untilQueueFull();
+    for (let i = 0; i < 10; i++) await assert.rejects(() => verifyLocalAccount(env, "person@example.com", "x"), Argon2BusyError);
+    hold.release();
+    await Promise.all(running);
+  } finally {
+    hold.release();
+    hold.restore();
+  }
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "correct-horse-battery"), true);
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "wrong-password"), false);
+  // And the full capacity is back: another fill is accepted without a rejection.
+  const again = holdArgon2();
+  try {
+    const batch = Array.from({ length: FILL }, () => verifyLocalAccount(env, "nobody@example.com", "x").catch(error => error));
+    await untilQueueFull();
+    again.release();
+    assert.ok((await Promise.all(batch)).every(result => result === false));
+  } finally {
+    again.release();
+    again.restore();
+  }
+});
+
+test("setting a password always queues, even when sign-ins are being turned away", async () => {
+  const env = environment();
+  const hold = holdArgon2();
+  try {
+    const running = Array.from({ length: FILL }, () => verifyLocalAccount(env, "nobody@example.com", "x").catch(error => error));
+    await untilQueueFull();
+    await assert.rejects(() => verifyLocalAccount(env, "nobody@example.com", "x"), Argon2BusyError);
+
+    // Sign-up / reset happens after its one-time code is spent: it must wait, not fail.
+    const signUp = upsertLocalAccount(env, "new@example.com", "brand-new-password");
+    await tick(20);
+    hold.release();
+    await signUp;
+    await Promise.all(running);
+  } finally {
+    hold.release();
+    hold.restore();
+  }
+  assert.equal(await verifyLocalAccount(env, "new@example.com", "brand-new-password"), true);
+});
+
+test("a legacy sign-in whose optional upgrade finds the queue full still succeeds, skips it quietly and stays legacy", async () => {
+  const env = environment();
+  await seedLegacyAccount(env, "person@example.com", "correct-horse-battery");
+  const before = JSON.stringify(await storedRecord(env, "person@example.com"));
+  const originalError = console.error;
+  const logs = [];
+  console.error = line => logs.push(String(line));
+  const original = hashers.argon2id;
+  let calls = 0;
+  // The first Argon2id run is the sign-in's own throwaway; the second is the upgrade's.
+  hashers.argon2id = (...args) => {
+    calls += 1;
+    if (calls === 2) return Promise.reject(new Argon2BusyError());
+    return original(...args);
+  };
+  try {
+    assert.equal(await verifyLocalAccount(env, "person@example.com", "correct-horse-battery"), true);
+  } finally {
+    hashers.argon2id = original;
+    console.error = originalError;
+  }
+  assert.equal(calls, 2);
+  assert.equal(logs.filter(line => line.includes("upgrade failed")).length, 0, "a busy queue is not an error to log");
+  assert.equal(JSON.stringify(await storedRecord(env, "person@example.com")), before, "left as it was, to be upgraded next time");
+  // And the next sign-in, with room in the queue, does upgrade it.
+  assert.equal(await verifyLocalAccount(env, "person@example.com", "correct-horse-battery"), true);
+  assert.equal((await storedRecord(env, "person@example.com")).algo, "argon2id");
+});
+
+test("an Argon2BusyError is never confused with a damaged record", async () => {
+  const env = environment();
+  await upsertLocalAccount(env, "person@example.com", "correct-horse-battery");
+  const hold = holdArgon2();
+  let counted = 0;
+  const originalPbkdf2 = hashers.pbkdf2;
+  try {
+    const running = Array.from({ length: FILL }, () => verifyLocalAccount(env, "nobody@example.com", "x").catch(error => error));
+    await untilQueueFull();
+    counted = 0;
+    hashers.pbkdf2 = (...args) => { counted += 1; return originalPbkdf2(...args); };
+    for (const email of ["person@example.com", "nobody@example.com", "not-an-email"]) {
+      await assert.rejects(() => verifyLocalAccount(env, email, "x"), Argon2BusyError, email);
+    }
+    assert.equal(counted, 0, "a refused sign-in runs no hashing at all, so a flood of them costs no CPU and every address is refused equally fast");
+    hold.release();
+    await Promise.all(running);
+  } finally {
+    hashers.pbkdf2 = originalPbkdf2;
+    hold.release();
+    hold.restore();
   }
 });

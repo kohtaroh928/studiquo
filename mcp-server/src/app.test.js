@@ -6,6 +6,7 @@ import worker from "./app.js";
 import { realSession } from "./session.js";
 import { reserveAttempt, refundAttempt, trustPair } from "./login-throttle.js";
 import { touchSeenContext } from "./login-monitor.js";
+import { argon2QueueState, engine } from "./local-auth.js";
 import { accountGenerationMethods } from "./test-account-generations.js";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.js";
 
@@ -1465,6 +1466,117 @@ test("local login: failures and throttled tries are logged as outcomes, and a br
     globalThis.fetch = originalFetch;
     console.log = originalLog;
     console.error = originalError;
+  }
+});
+
+// MARK: - local login: the Argon2id queue is full
+
+test("local login: with the hashing queue full the attempt gets a 503 and Retry-After, and is not counted against anyone", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  const original = engine.argon2idAsync;
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  engine.argon2idAsync = async (...args) => { await gate; return original(...args); };
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    // 34 sign-ins for made-up addresses (each from its own IP) fill the queue: 2 running, 32 waiting.
+    const fillers = Array.from({ length: 34 }, (_, i) => loginAttempt(env, { email: `filler${i}@example.com`, ip: `10.2.0.${i + 1}` }));
+    for (let i = 0; i < 600; i++) {
+      const { active, waiting } = argon2QueueState();
+      if (active === 2 && waiting === 32) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(argon2QueueState(), { active: 2, waiting: 32 });
+
+    // Three attempts at a real account from one client are turned away.
+    for (let i = 0; i < 3; i++) {
+      const refused = await loginAttempt(env, { ip: "203.0.113.77", password: "correct-horse-battery" });
+      assert.equal(refused.status, 503);
+      assert.equal(refused.headers.get("retry-after"), "2");
+      assert.match((await refused.json()).error, /busy/i);
+    }
+
+    open();
+    for (const response of await Promise.all(fillers)) assert.equal(response.status, 401, "everyone already queued is still served");
+  } finally {
+    open();
+    engine.argon2idAsync = original;
+    console.log = originalLog;
+  }
+
+  // Not one of those three counted: all six free attempts are still there
+  // (5 free, then the 6th starts the wait), so the 7th is the first refusal.
+  for (let i = 0; i < 6; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.77" })).status, 401, `attempt ${i + 1}`);
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.77" })).status, 429);
+});
+
+test("local login: if handing the refused attempt back fails, the answer is still a 503", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  const original = engine.argon2idAsync;
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  engine.argon2idAsync = async (...args) => { await gate; return original(...args); };
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    const fillers = Array.from({ length: 34 }, (_, i) => loginAttempt(env, { email: `filler${i}@example.com`, ip: `10.4.0.${i + 1}` }));
+    for (let i = 0; i < 600; i++) {
+      const { active, waiting } = argon2QueueState();
+      if (active === 2 && waiting === 32) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    // The attempt is reserved first and then refused for the full queue; make
+    // the call that hands the reservation back fail.
+    const realGetByName = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
+    env.RATE_COUNTER.getByName = name => {
+      const stub = realGetByName(name);
+      return { ...stub, loginRefund: async () => { throw new Error("DO down"); } };
+    };
+    const refused = await loginAttempt(env, { ip: "203.0.113.80", password: "correct-horse-battery" });
+    assert.equal(refused.status, 503);
+    open();
+    await Promise.all(fillers);
+  } finally {
+    open();
+    engine.argon2idAsync = original;
+    console.log = originalLog;
+    console.error = originalError;
+  }
+});
+
+test("local login: a 503 for a busy queue is not offered as a way to learn whether an address exists", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  const original = engine.argon2idAsync;
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  engine.argon2idAsync = async (...args) => { await gate; return original(...args); };
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const fillers = Array.from({ length: 34 }, (_, i) => loginAttempt(env, { email: `filler${i}@example.com`, ip: `10.3.0.${i + 1}` }));
+    for (let i = 0; i < 600; i++) {
+      const { active, waiting } = argon2QueueState();
+      if (active === 2 && waiting === 32) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    const known = await loginAttempt(env, { ip: "203.0.113.78", email: "person@example.com" });
+    const unknown = await loginAttempt(env, { ip: "203.0.113.79", email: "nobody-at-all@example.com" });
+    assert.equal(known.status, 503);
+    assert.equal(unknown.status, 503);
+    assert.deepEqual(await known.json(), await unknown.json());
+    open();
+    await Promise.all(fillers);
+  } finally {
+    open();
+    engine.argon2idAsync = original;
+    console.log = originalLog;
   }
 });
 

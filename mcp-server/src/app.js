@@ -23,11 +23,11 @@ import { verifyAppleIdentityToken } from "./apple-auth.js";
 import { verifyGoogleIdentityToken } from "./google-auth.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
-import { upsertLocalAccount, verifyLocalAccount } from "./local-auth.js";
+import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError } from "./local-auth.js";
 import { startAccountDeletion } from "./account-deletion.js";
 import { mintSession, hasRealSession } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
-import { beginLoginAttempt, finishLoginAttempt } from "./login-throttle.js";
+import { beginLoginAttempt, finishLoginAttempt, abandonLoginAttempt } from "./login-throttle.js";
 import { isBreachedPassword } from "./pwned-passwords.js";
 import { recordLoginOutcome, noteSignInContext } from "./login-monitor.js";
 import { bearerToken, sha256Hex } from "./auth.js";
@@ -778,7 +778,27 @@ async function handleLocalLogin(request, env, ctx) {
     );
   }
 
-  if (!(await verifyLocalAccount(env, email, password))) {
+  let verified;
+  try {
+    verified = await verifyLocalAccount(env, email, password);
+  } catch (error) {
+    if (!(error instanceof Argon2BusyError)) throw error;
+    // The hashing queue is full: nothing was checked, so none of this counts
+    // against the person (or the account), and they are asked to try again.
+    // Best effort: failing to hand the attempt back must not turn a polite
+    // "try again" into an error.
+    try {
+      await abandonLoginAttempt(attempt);
+    } catch (refundError) {
+      console.error(JSON.stringify({ message: "could not hand back a refused sign-in attempt", error: refundError instanceof Error ? refundError.message : String(refundError) }));
+    }
+    inBackground(ctx, recordLoginOutcome(env, request, "busy"));
+    return Response.json(
+      { error: "The server is busy. Please try again in a moment." },
+      { status: 503, headers: securityHeaders({ "retry-after": "2" }) }
+    );
+  }
+  if (!verified) {
     await finishLoginAttempt(attempt, false);
     inBackground(ctx, recordLoginOutcome(env, request, "failure"));
     return json({ error: "メールアドレスまたはパスワードが違います。" }, 401);
