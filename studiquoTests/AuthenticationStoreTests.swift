@@ -39,6 +39,89 @@ final class AuthenticationStoreTests: XCTestCase {
         AuthenticationStore(service: storeService, defaults: testDefaults)
     }
 
+    // MARK: - 429 / 503
+
+    private func successBody() -> [String: Any] { ["token": "1234567890.\(String(repeating: "a", count: 40))"] }
+
+    func testTooManyAttemptsExplainsTheWaitAndIsNotAWrongPassword() async {
+        StubAuthNetworkProtocol.respondInOrder(forPathSuffix: "api/auth/local/login", [
+            (429, ["error": "Too many attempts. Please try again later.", "retryAfterSeconds": 15], ["Retry-After": "15"]),
+        ])
+        let store = makeStore()
+
+        let result = await store.login(email: "student@example.com", password: "correct-horse-battery")
+
+        XCTAssertFalse(result)
+        XCTAssertTrue(store.errorMessage.contains("あと約15秒お待ちください。"), store.errorMessage)
+        XCTAssertFalse(store.errorMessage.contains("違います"))
+        XCTAssertEqual(StubAuthNetworkProtocol.requestCount(forPathSuffix: "api/auth/local/login"), 1, "a wait is not retried on its own")
+        XCTAssertNil(MCPCloudCredentials.currentToken())
+        XCTAssertEqual(store.state, .needsLogin)
+    }
+
+    func testABusyServerIsRetriedOnItsOwnAndTheLoginSucceeds() async {
+        StubAuthNetworkProtocol.respondInOrder(forPathSuffix: "api/auth/local/login", [
+            (503, ["error": "The server is busy. Please try again in a moment."], ["Retry-After": "2"]),
+            (503, ["error": "The server is busy. Please try again in a moment."], ["Retry-After": "2"]),
+            (200, successBody(), [:]),
+        ])
+        let store = makeStore()
+        var pauses: [TimeInterval] = []
+        store.pauseBeforeRetry = { pauses.append($0) }
+
+        let result = await store.login(email: "student@example.com", password: "correct-horse-battery")
+
+        XCTAssertTrue(result)
+        XCTAssertEqual(store.errorMessage, "")
+        XCTAssertEqual(pauses, [2, 2], "paused for the time the server asked, twice")
+        XCTAssertEqual(StubAuthNetworkProtocol.requestCount(forPathSuffix: "api/auth/local/login"), 3)
+        XCTAssertEqual(store.state, .onboarding)
+    }
+
+    func testABusyServerThatStaysBusyEndsInAnHonestMessageAfterTwoRetries() async {
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 503, body: ["error": "The server is busy. Please try again in a moment."])
+        let store = makeStore()
+        var pauses: [TimeInterval] = []
+        store.pauseBeforeRetry = { pauses.append($0) }
+
+        let result = await store.login(email: "student@example.com", password: "correct-horse-battery")
+
+        XCTAssertFalse(result)
+        XCTAssertEqual(store.errorMessage, "サーバーが混み合っています。少し待ってから、もう一度お試しください。")
+        XCTAssertEqual(StubAuthNetworkProtocol.requestCount(forPathSuffix: "api/auth/local/login"), 1 + AuthenticationStore.busyRetryLimit)
+        XCTAssertEqual(pauses.count, AuthenticationStore.busyRetryLimit)
+        XCTAssertEqual(store.state, .needsLogin)
+    }
+
+    func testTheRetryPauseIsKeptWithinASaneRange() async {
+        StubAuthNetworkProtocol.respondInOrder(forPathSuffix: "api/auth/local/login", [
+            (503, ["error": "busy"], ["Retry-After": "600"]),
+            (503, ["error": "busy"], ["Retry-After": "0.1"]),
+            (200, successBody(), [:]),
+        ])
+        let store = makeStore()
+        var pauses: [TimeInterval] = []
+        store.pauseBeforeRetry = { pauses.append($0) }
+
+        _ = await store.login(email: "student@example.com", password: "correct-horse-battery")
+
+        XCTAssertEqual(pauses, [5, 1], "never longer than 5 s, never a busy loop")
+    }
+
+    func testAWrongPasswordIsStillAWrongPasswordAndIsNotRetried() async {
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 401, body: ["error": "メールアドレスまたはパスワードが違います。"])
+        let store = makeStore()
+        var pauses = 0
+        store.pauseBeforeRetry = { _ in pauses += 1 }
+
+        _ = await store.login(email: "student@example.com", password: "wrong-password")
+
+        XCTAssertEqual(store.errorMessage, "メールアドレスまたはパスワードが違います。")
+        XCTAssertEqual(pauses, 0)
+        XCTAssertEqual(StubAuthNetworkProtocol.requestCount(forPathSuffix: "api/auth/local/login"), 1)
+    }
+
+
     // MARK: - login()
 
     func testLoginWithCorrectPasswordSucceedsAndSavesACloudToken() async {
@@ -189,6 +272,9 @@ private final class StubAuthNetworkProtocol: URLProtocol {
     private static let lock = NSLock()
     private static var stubs: [String: (status: Int, body: [String: Any], gate: DispatchSemaphore?)] = [:]
     private static var forbidden: Set<String> = []
+    // Answers handed out one per request, in order, before `stubs` is consulted.
+    private static var sequences: [String: [(status: Int, body: [String: Any], headers: [String: String])]] = [:]
+    private static var requestCounts: [String: Int] = [:]
 
     final class Gate {
         fileprivate let semaphore: DispatchSemaphore
@@ -197,7 +283,16 @@ private final class StubAuthNetworkProtocol: URLProtocol {
     }
 
     static func reset() {
-        lock.lock(); stubs = [:]; forbidden = []; lock.unlock()
+        lock.lock(); stubs = [:]; forbidden = []; sequences = [:]; requestCounts = [:]; lock.unlock()
+    }
+
+    static func respondInOrder(forPathSuffix suffix: String, _ responses: [(status: Int, body: [String: Any], headers: [String: String])]) {
+        lock.lock(); sequences[suffix] = responses; lock.unlock()
+    }
+
+    static func requestCount(forPathSuffix suffix: String) -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return requestCounts[suffix] ?? 0
     }
 
     @discardableResult
@@ -221,8 +316,21 @@ private final class StubAuthNetworkProtocol: URLProtocol {
         let path = request.url?.path ?? ""
         Self.lock.lock()
         let forbidden = Self.forbidden.first { path.hasSuffix($0) }
+        var queued: (status: Int, body: [String: Any], headers: [String: String])?
+        if let key = Self.sequences.keys.first(where: { path.hasSuffix($0) }), var list = Self.sequences[key], !list.isEmpty {
+            queued = list.removeFirst()
+            Self.sequences[key] = list
+        }
+        if let key = Self.sequences.keys.first(where: { path.hasSuffix($0) }) ?? Self.stubs.keys.first(where: { path.hasSuffix($0) }) {
+            Self.requestCounts[key, default: 0] += 1
+        }
         let match = Self.stubs.first { path.hasSuffix($0.key) }?.value
         Self.lock.unlock()
+
+        if let queued {
+            respond(status: queued.status, body: queued.body, headers: queued.headers)
+            return
+        }
 
         if forbidden != nil {
             client?.urlProtocol(self, didFailWithError: URLError(.unknown))
@@ -242,9 +350,10 @@ private final class StubAuthNetworkProtocol: URLProtocol {
         }
     }
 
-    private func respond(status: Int, body: [String: Any]) {
+    private func respond(status: Int, body: [String: Any], headers: [String: String] = [:]) {
         let data = try! JSONSerialization.data(withJSONObject: body)
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        let fields = ["Content-Type": "application/json"].merging(headers) { _, new in new }
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: fields)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)

@@ -91,6 +91,63 @@ final class LocalAuthServiceTests: XCTestCase {
         } catch { XCTFail("想定外のエラー: \(error)") }
     }
 
+    private func login429or503(status: Int, headers: [String: String]?, body: String) async -> LocalAuthError? {
+        URLProtocolStub.handler = { request in
+            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers))
+            return (response, Data(body.utf8))
+        }
+        do {
+            _ = try await LocalAuthService.login(
+                email: "a@example.com", password: "pass", randomValue: "r",
+                endpoint: endpoint, session: session()
+            )
+            XCTFail("成功扱いにしてはいけません")
+            return nil
+        } catch let error as LocalAuthError {
+            return error
+        } catch {
+            XCTFail("想定外のエラー: \(error)")
+            return nil
+        }
+    }
+
+    func testTooManyAttemptsCarriesTheRetryAfterHeader() async {
+        let error = await login429or503(status: 429, headers: ["Retry-After": "15"], body: #"{"error":"Too many attempts. Please try again later.","retryAfterSeconds":15}"#)
+        XCTAssertEqual(error, .tooManyAttempts(retryAfter: 15))
+    }
+
+    func testTooManyAttemptsFallsBackToTheBodyAndThenToNothing() async {
+        let fromBody = await login429or503(status: 429, headers: nil, body: #"{"retryAfterSeconds":90}"#)
+        XCTAssertEqual(fromBody, .tooManyAttempts(retryAfter: 90))
+        // The per-network limiter in front of the app sends neither.
+        let nothing = await login429or503(status: 429, headers: nil, body: #"{"error":"Too many attempts. Please try again later."}"#)
+        XCTAssertEqual(nothing, .tooManyAttempts(retryAfter: nil))
+        let garbage = await login429or503(status: 429, headers: ["Retry-After": "soon"], body: "<html>")
+        XCTAssertEqual(garbage, .tooManyAttempts(retryAfter: nil))
+    }
+
+    func testAServerBusyAnswerIsNotAWrongPassword() async {
+        let error = await login429or503(status: 503, headers: ["Retry-After": "2"], body: #"{"error":"The server is busy. Please try again in a moment."}"#)
+        XCTAssertEqual(error, .serverBusy(retryAfter: 2))
+    }
+
+    func testTheWaitIsExplainedInSecondsThenMinutes() {
+        XCTAssertEqual(LocalAuthError.waitSentence(15), "あと約15秒お待ちください。")
+        XCTAssertEqual(LocalAuthError.waitSentence(14.2), "あと約15秒お待ちください。")
+        XCTAssertEqual(LocalAuthError.waitSentence(59), "あと約59秒お待ちください。")
+        XCTAssertEqual(LocalAuthError.waitSentence(60), "あと約1分お待ちください。")
+        XCTAssertEqual(LocalAuthError.waitSentence(900), "あと約15分お待ちください。")
+        XCTAssertEqual(LocalAuthError.waitSentence(61), "あと約2分お待ちください。")
+        XCTAssertEqual(LocalAuthError.waitSentence(nil), "しばらく待ってから、もう一度お試しください。")
+        XCTAssertEqual(LocalAuthError.waitSentence(0), "しばらく待ってから、もう一度お試しください。")
+    }
+
+    func testNeitherMessageSaysThePasswordIsWrong() {
+        for error in [LocalAuthError.tooManyAttempts(retryAfter: 30), .tooManyAttempts(retryAfter: nil), .serverBusy(retryAfter: 2)] {
+            XCTAssertFalse((error.errorDescription ?? "").contains("違います"), "\(error)")
+        }
+    }
+
     func testMalformedSuccessfulResponseIsRejected() async {
         URLProtocolStub.handler = { request in
             let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil))
