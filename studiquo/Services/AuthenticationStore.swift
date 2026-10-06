@@ -141,7 +141,7 @@ final class AuthenticationStore: ObservableObject {
         isLoginBusy = true
         defer { isLoginBusy = false }
         do {
-            let token = try await LocalAuthService.login(email: normalized, password: password)
+            let token = try await loginRetryingWhileServerBusy(email: normalized, password: password)
             MCPCloudCredentials.save(token)
             persistOAuthIdentity(provider: "email", subject: normalized, email: normalized)
             createSession()
@@ -149,9 +149,42 @@ final class AuthenticationStore: ObservableObject {
             errorMessage = ""
             state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
+        } catch let error as LocalAuthError {
+            // A wait or a busy server says nothing about the password, so it
+            // must not read as "wrong password".
+            switch error {
+            case .tooManyAttempts, .serverBusy: errorMessage = error.localizedDescription
+            case .rejected: errorMessage = "メールアドレスまたはパスワードが違います。"
+            }
+            return false
         } catch {
             errorMessage = "メールアドレスまたはパスワードが違います。"
             return false
+        }
+    }
+
+    /// How many times a "server busy" answer is retried on its own, and how
+    /// long (at most) to pause first. A busy answer means the password was not
+    /// even checked or counted, so trying again is safe and the person
+    /// usually never sees it.
+    static let busyRetryLimit = 2
+    static let busyRetryDelayRange: ClosedRange<TimeInterval> = 1...5
+
+    /// How to pause between those retries; replaceable so tests need not wait.
+    var pauseBeforeRetry: (TimeInterval) async -> Void = { seconds in
+        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    }
+
+    private func loginRetryingWhileServerBusy(email: String, password: String) async throws -> String {
+        var retries = 0
+        while true {
+            do {
+                return try await LocalAuthService.login(email: email, password: password)
+            } catch LocalAuthError.serverBusy(let retryAfter) where retries < Self.busyRetryLimit {
+                retries += 1
+                let delay = min(max(retryAfter ?? 2, Self.busyRetryDelayRange.lowerBound), Self.busyRetryDelayRange.upperBound)
+                await pauseBeforeRetry(delay)
+            }
         }
     }
 
