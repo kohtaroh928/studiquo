@@ -29,6 +29,7 @@ import { mintSession, hasRealSession } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { beginLoginAttempt, finishLoginAttempt } from "./login-throttle.js";
 import { isBreachedPassword } from "./pwned-passwords.js";
+import { recordLoginOutcome, noteSignInContext } from "./login-monitor.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readTextLimited, readJSONLimited, securityHeaders } from "./http.js";
 
@@ -350,10 +351,10 @@ export default {
         return handleSendEmailVerification(request, env);
       }
       if (url.pathname === "/api/auth/email/confirm-code" && request.method === "POST") {
-        return handleConfirmEmailVerification(request, env);
+        return handleConfirmEmailVerification(request, env, ctx);
       }
       if (url.pathname === "/api/auth/local/login" && request.method === "POST") {
-        return handleLocalLogin(request, env);
+        return handleLocalLogin(request, env, ctx);
       }
 
       const token = bearerToken(request);
@@ -618,6 +619,13 @@ async function withinEmailCodeBudget(env, action, email, limit) {
   return env.RATE_COUNTER.getByName(`email-code-${action}:${emailHash}`).bump(limit, EMAIL_CODE_WINDOW_SECONDS);
 }
 
+// Monitoring must never delay or fail a sign-in: run it after the response
+// where the runtime allows, and in any case swallow its errors.
+function inBackground(ctx, work) {
+  if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
+  return work;
+}
+
 // POST /api/auth/email/send-code: emails a 6-digit verification code to the
 // address a local email/password account was just created (or is being
 // re-verified) with. Doesn't authenticate anything itself — it only proves
@@ -664,7 +672,7 @@ async function handleSendEmailVerification(request, env) {
 // either way — and mints a real session, same as Apple/Google do on their
 // own exchange. `password` and `randomValue` are required for this reason:
 // this is the only place a local account's password is ever set.
-async function handleConfirmEmailVerification(request, env) {
+async function handleConfirmEmailVerification(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_EMAIL_VERIFY_CONFIRM, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -720,6 +728,9 @@ async function handleConfirmEmailVerification(request, env) {
   });
   const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
+  // The owner just proved they hold this mailbox from here, so this is the
+  // baseline context: remember it without sending a notice.
+  inBackground(ctx, noteSignInContext(env, request, normalizedEmail, { notify: false }));
   return json({ verified: true, token });
 }
 
@@ -730,7 +741,7 @@ async function handleConfirmEmailVerification(request, env) {
 // exchange endpoint, plus an escalating wait (never a hard lock) keyed by
 // account, IP+account and ASN so a distributed credential-stuffing run
 // can't just rotate IPs.
-async function handleLocalLogin(request, env) {
+async function handleLocalLogin(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_LOCAL_LOGIN, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -760,6 +771,7 @@ async function handleLocalLogin(request, env) {
   // can't get through mid-wait either.
   const attempt = await beginLoginAttempt(env, request, email);
   if (attempt.waitSeconds > 0) {
+    inBackground(ctx, recordLoginOutcome(env, request, "throttled"));
     return Response.json(
       { error: "Too many attempts. Please try again later.", retryAfterSeconds: attempt.waitSeconds },
       { status: 429, headers: securityHeaders({ "retry-after": String(attempt.waitSeconds) }) }
@@ -768,6 +780,7 @@ async function handleLocalLogin(request, env) {
 
   if (!(await verifyLocalAccount(env, email, password))) {
     await finishLoginAttempt(attempt, false);
+    inBackground(ctx, recordLoginOutcome(env, request, "failure"));
     return json({ error: "メールアドレスまたはパスワードが違います。" }, 401);
   }
   await finishLoginAttempt(attempt, true);
@@ -778,5 +791,11 @@ async function handleLocalLogin(request, env) {
   });
   const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
+  // A sign-in from a country+network this account hasn't used lately emails
+  // the owner (login-monitor.js); the outcome also feeds the spike alerts.
+  inBackground(ctx, (async () => {
+    const { newContext, firstSeen } = await noteSignInContext(env, request, normalizedEmail, { notify: true });
+    await recordLoginOutcome(env, request, "success", { newContext, firstSeen });
+  })());
   return json({ token });
 }
