@@ -38,11 +38,22 @@ const MAX_CONCURRENT_ARGON2 = 2;
 // rather than left to pile up unbounded, and the caller answers 503 and asks
 // to retry. Operations that must not fail halfway never use this limit.
 const MAX_QUEUED_ARGON2 = 32;
+// Extra room, past that, for sign-ins by a client already known to the account
+// (a `priority` request: an IP that has signed in to it successfully before).
+// An attacker saturating the queue with new IP+account pairs fills the 32, but
+// the person coming back on their usual network still gets through; refused
+// then are only the unfamiliar. A pair becomes known only by knowing the
+// password, so it can't be claimed.
+const PRIORITY_EXTRA_QUEUED_ARGON2 = 16;
 let activeArgon2 = 0;
 const argon2Waiters = [];
 
-function argon2QueueFull() {
-  return activeArgon2 >= MAX_CONCURRENT_ARGON2 && argon2Waiters.length >= MAX_QUEUED_ARGON2;
+function queueLimit(priority) {
+  return MAX_QUEUED_ARGON2 + (priority ? PRIORITY_EXTRA_QUEUED_ARGON2 : 0);
+}
+
+function argon2QueueFull({ priority = false } = {}) {
+  return activeArgon2 >= MAX_CONCURRENT_ARGON2 && argon2Waiters.length >= queueLimit(priority);
 }
 
 /** For tests: how many Argon2id runs are going and how many are waiting. */
@@ -62,9 +73,9 @@ export class Argon2BusyError extends Error {
 // operations that run after a one-time code was already spent (setting a
 // password at sign-up or reset): turning those away would cost the person
 // their code for something the queue limit exists only to protect.
-async function withArgon2Slot(work, { patient = false } = {}) {
+async function withArgon2Slot(work, { patient = false, priority = false } = {}) {
   if (activeArgon2 >= MAX_CONCURRENT_ARGON2) {
-    if (!patient && argon2Waiters.length >= MAX_QUEUED_ARGON2) throw new Argon2BusyError();
+    if (!patient && argon2Waiters.length >= queueLimit(priority)) throw new Argon2BusyError();
     // The slot is handed over by whoever finishes (active stays counted).
     await new Promise(resolve => argon2Waiters.push(resolve));
   } else {
@@ -89,8 +100,8 @@ async function pbkdf2(password, salt, iterations) {
 // can watch how many run at once.
 export const engine = { argon2idAsync };
 
-function argon2id(password, salt, { m, t, p }, { patient = false } = {}) {
-  return withArgon2Slot(() => engine.argon2idAsync(password, salt, { m, t, p, dkLen: ARGON2.dkLen }), { patient });
+function argon2id(password, salt, { m, t, p }, { patient = false, priority = false } = {}) {
+  return withArgon2Slot(() => engine.argon2idAsync(password, salt, { m, t, p, dkLen: ARGON2.dkLen }), { patient, priority });
 }
 
 // The two primitives, reachable through one object so tests can observe how
@@ -197,14 +208,14 @@ function dummyPbkdf2(password) {
   return hashers.pbkdf2(password, DUMMY_SALT, PBKDF2_ITERATIONS);
 }
 
-function dummyArgon2(password) {
-  return hashers.argon2id(password, DUMMY_SALT, ARGON2);
+function dummyArgon2(password, options) {
+  return hashers.argon2id(password, DUMMY_SALT, ARGON2, options);
 }
 
-async function rejectAfterDummyWork(password) {
+async function rejectAfterDummyWork(password, options) {
   const text = typeof password === "string" ? password : "";
   await dummyPbkdf2(text);
-  await dummyArgon2(text);
+  await dummyArgon2(text, options);
   return false;
 }
 
@@ -251,38 +262,40 @@ function legacyIterationsOf(record) {
  * would all answer at different speeds. When the Argon2id queue is full it
  * throws Argon2BusyError before doing anything at all (the one exception to
  * "never throws"); callers answer 503 and the attempt must not be counted.
+ * `priority` (the client is already known to this account) is let in up to
+ * PRIORITY_EXTRA_QUEUED_ARGON2 further.
  * TEMPORARY: once no legacy PBKDF2
  * records remain, drop the PBKDF2 half (and the legacy branch below).
  */
-export async function verifyLocalAccount(env, email, password) {
+export async function verifyLocalAccount(env, email, password, { priority = false } = {}) {
   // Checked before any hashing or lookup, so a full queue costs a refused
   // sign-in nothing (not even a PBKDF2 run: that isn't queued, and spending it
   // on requests that will be turned away anyway would defeat the limit), and
   // the refusal arrives equally fast whatever the address. The slot-level
   // check in withArgon2Slot stays, for the race between this and the run.
-  if (argon2QueueFull()) throw new Argon2BusyError();
+  if (argon2QueueFull({ priority })) throw new Argon2BusyError();
   const normalized = normalizeEmail(email);
-  if (!normalized || typeof password !== "string") return rejectAfterDummyWork(password);
+  if (!normalized || typeof password !== "string") return rejectAfterDummyWork(password, { priority });
   const key = `${ACCOUNT_PREFIX}${normalized}`;
   const record = await env.STUDIQUO_DATA.get(key, "json");
-  if (!record) return rejectAfterDummyWork(password);
+  if (!record) return rejectAfterDummyWork(password, { priority });
 
   try {
     if (record.algo === "argon2id") {
       const params = argon2ParamsOf(record);
-      if (!params) return rejectAfterDummyWork(password);
+      if (!params) return rejectAfterDummyWork(password, { priority });
       const stored = fromBase64(record.passwordHash);
-      const candidate = await hashers.argon2id(password, fromBase64(record.salt), params);
+      const candidate = await hashers.argon2id(password, fromBase64(record.salt), params, { priority });
       await dummyPbkdf2(password);
       return constantTimeEqual(candidate, stored);
     }
 
     // Legacy: PBKDF2-SHA256.
     const iterations = legacyIterationsOf(record);
-    if (!iterations) return rejectAfterDummyWork(password);
+    if (!iterations) return rejectAfterDummyWork(password, { priority });
     const stored = fromBase64(record.passwordHash);
     const candidate = await hashers.pbkdf2(password, fromBase64(record.salt), iterations);
-    await dummyArgon2(password);
+    await dummyArgon2(password, { priority });
     if (!constantTimeEqual(candidate, stored)) return false;
     await upgradeLegacyRecord(env, key, record, normalized, password);
     return true;
@@ -290,6 +303,6 @@ export async function verifyLocalAccount(env, email, password) {
     // A full queue is not a damaged record: pass it on untouched rather than
     // running more hashing in its place.
     if (error instanceof Argon2BusyError) throw error;
-    return rejectAfterDummyWork(password);
+    return rejectAfterDummyWork(password, { priority });
   }
 }

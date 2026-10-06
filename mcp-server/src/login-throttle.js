@@ -121,21 +121,23 @@ async function loginKeys(env, request, email) {
  * Call before checking the password. Counts this attempt as a failure up
  * front (atomically with the wait check, in each key's Durable Object), so
  * parallel requests can't all slip past a wait that hasn't been recorded
- * yet. Returns `{ waitSeconds }`; when it's > 0 the caller must refuse
- * without checking the password, and nothing is left counted. Otherwise
- * pass the result to finishLoginAttempt() with the outcome.
+ * yet. Returns `{ waitSeconds, trusted }`; when waitSeconds is > 0 the
+ * caller must refuse without checking the password, and nothing is left
+ * counted. `trusted` says this IP has signed in to this account before, which
+ * earns a place in the reserved part of the hashing queue. Otherwise pass the
+ * result to finishLoginAttempt() with the outcome.
  */
 export async function beginLoginAttempt(env, request, email) {
   const { pair, shared } = await loginKeys(env, request, email);
   const own = await pair.stub.loginReserve(pair.policy);
-  if (own.waitSeconds > 0) return { waitSeconds: own.waitSeconds, pair, held: [] };
+  if (own.waitSeconds > 0) return { waitSeconds: own.waitSeconds, trusted: own.trusted, pair, held: [] };
   // A known IP+account pair is never held up by the shared account / ASN
   // waits, but its failures still count toward them: otherwise a botnet that
   // had trusted many IPs (say with an old, leaked password) could guess a
   // changed one without ever moving the account's counter.
   if (own.trusted) {
     await Promise.all(shared.map(key => key.stub.loginReserve(key.policy, { enforce: false })));
-    return { waitSeconds: 0, pair, held: shared };
+    return { waitSeconds: 0, trusted: own.trusted, pair, held: shared };
   }
 
   const results = await Promise.all(shared.map(key => key.stub.loginReserve(key.policy)));
@@ -145,9 +147,9 @@ export async function beginLoginAttempt(env, request, email) {
   if (waitSeconds > 0) {
     // Refused: hand back every failure just counted, including the pair's.
     await Promise.all([pair, ...held].map(key => key.stub.loginRefund(key.policy)));
-    return { waitSeconds, pair, held: [] };
+    return { waitSeconds, trusted: own.trusted, pair, held: [] };
   }
-  return { waitSeconds: 0, pair, held };
+  return { waitSeconds: 0, trusted: own.trusted, pair, held };
 }
 
 /** Call after the password check. Failures stay counted; a success hands the shared counters their failure back and trusts this IP+account pair. */

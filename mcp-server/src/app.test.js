@@ -1550,6 +1550,134 @@ test("local login: if handing the refused attempt back fails, the answer is stil
   }
 });
 
+test("local login: with the hashing queue full, a known client still gets in while an unfamiliar one is turned away", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  // Signing in once from this IP makes the (IP, account) pair known.
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.90", password: "correct-horse-battery" })).status, 200);
+
+  const original = engine.argon2idAsync;
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  engine.argon2idAsync = async (...args) => { await gate; return original(...args); };
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const fillers = Array.from({ length: 34 }, (_, i) => loginAttempt(env, { email: `filler${i}@example.com`, ip: `10.5.0.${i + 1}` }));
+    for (let i = 0; i < 600; i++) {
+      const { active, waiting } = argon2QueueState();
+      if (active === 2 && waiting === 32) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(argon2QueueState(), { active: 2, waiting: 32 });
+
+    // A different IP, with the right password: turned away, as before.
+    const stranger = await loginAttempt(env, { ip: "203.0.113.91", password: "correct-horse-battery" });
+    assert.equal(stranger.status, 503);
+
+    // The known IP is let into the reserved place, not turned away.
+    let settled = false;
+    const known = loginAttempt(env, { ip: "203.0.113.90", password: "correct-horse-battery" }).then(response => { settled = true; return response; });
+    for (let i = 0; i < 600 && argon2QueueState().waiting < 33; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(argon2QueueState().waiting, 33, "queued in the reserved part, behind the others");
+    assert.equal(settled, false);
+
+    open();
+    assert.equal((await known).status, 200);
+    for (const response of await Promise.all(fillers)) assert.equal(response.status, 401);
+  } finally {
+    open();
+    engine.argon2idAsync = original;
+    console.log = originalLog;
+  }
+});
+
+// Fills the hashing queue (2 running, 32 waiting) with sign-ins for made-up
+// addresses, runs `during` with it full, then lets everything finish.
+async function withFullHashingQueue(env, ipPrefix, during) {
+  const original = engine.argon2idAsync;
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  engine.argon2idAsync = async (...args) => { await gate; return original(...args); };
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const fillers = Array.from({ length: 34 }, (_, i) => loginAttempt(env, { email: `filler${i}@example.com`, ip: `${ipPrefix}.${i + 1}` }));
+    for (let i = 0; i < 600; i++) {
+      const { active, waiting } = argon2QueueState();
+      if (active === 2 && waiting === 32) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(argon2QueueState(), { active: 2, waiting: 32 });
+    await during(open);
+    open();
+    await Promise.all(fillers);
+  } finally {
+    open();
+    engine.argon2idAsync = original;
+    console.log = originalLog;
+  }
+}
+
+test("local login: a known client's wrong password in a full queue is still a counted failure, and earns no new trust", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.92", password: "correct-horse-battery" })).status, 200);
+
+  await withFullHashingQueue(env, "10.6.0", async (open) => {
+    const wrong = loginAttempt(env, { ip: "203.0.113.92", password: "wrong-password" });
+    for (let i = 0; i < 600 && argon2QueueState().waiting < 33; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    open();
+    assert.equal((await wrong).status, 401);
+  });
+
+  // That wrong guess counted: five more are the 6th failure on this pair, so
+  // the next one is the first refusal. (The success above cleared the streak.)
+  for (let i = 0; i < 5; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.92" })).status, 401, `attempt ${i + 1}`);
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.92" })).status, 429);
+});
+
+test("local login: when even the reserved places are taken, a known client is turned away and the attempt is handed back", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.93", password: "correct-horse-battery" })).status, 200);
+  // 16 more known clients: each its own IP, each signed in once beforehand.
+  for (let i = 0; i < 16; i++) {
+    assert.equal((await loginAttempt(env, { ip: `203.0.114.${i + 1}`, password: "correct-horse-battery" })).status, 200);
+  }
+
+  await withFullHashingQueue(env, "10.7.0", async (open) => {
+    // They come back together and take the whole reserve.
+    const reserve = Array.from({ length: 16 }, (_, i) => loginAttempt(env, { ip: `203.0.114.${i + 1}`, password: "correct-horse-battery" }));
+    for (let i = 0; i < 600 && argon2QueueState().waiting < 48; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(argon2QueueState().waiting, 48);
+
+    for (let i = 0; i < 3; i++) {
+      assert.equal((await loginAttempt(env, { ip: "203.0.113.93", password: "correct-horse-battery" })).status, 503);
+    }
+    open();
+    for (const response of await Promise.all(reserve)) assert.equal(response.status, 200);
+  });
+
+  // The three refusals were handed back: all five free attempts are intact.
+  for (let i = 0; i < 6; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.93" })).status, 401, `attempt ${i + 1}`);
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.93" })).status, 429);
+});
+
+test("local login: without a client address nobody is treated as a known client", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  // No cf-connecting-ip: every request shares the "unknown" client. Sign in once
+  // (which would make that "client" known)...
+  assert.equal((await loginAttempt(env, { password: "correct-horse-battery" })).status, 200);
+
+  await withFullHashingQueue(env, "10.8.0", async () => {
+    // ...yet a full queue still turns it away.
+    const refused = await loginAttempt(env, { password: "correct-horse-battery" });
+    assert.equal(refused.status, 503);
+  });
+});
+
 test("local login: a 503 for a busy queue is not offered as a way to learn whether an address exists", async () => {
   const env = throttleEnvironment();
   await createLocalAccount(env, "person@example.com", "correct-horse-battery");

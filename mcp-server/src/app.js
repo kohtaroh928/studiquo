@@ -780,7 +780,12 @@ async function handleLocalLogin(request, env, ctx) {
 
   let verified;
   try {
-    verified = await verifyLocalAccount(env, email, password);
+    // A client already known to this account may use the reserved part of the
+    // hashing queue, so a flood of unfamiliar sign-ins can't shut out the
+    // people who are simply coming back from their usual network.
+    // (Without the Cloudflare-set client address every request shares one
+    // "unknown" client, which must never be treated as a known one.)
+    verified = await verifyLocalAccount(env, email, password, { priority: attempt.trusted && clientKey(request) !== "unknown" });
   } catch (error) {
     if (!(error instanceof Argon2BusyError)) throw error;
     // The hashing queue is full: nothing was checked, so none of this counts
