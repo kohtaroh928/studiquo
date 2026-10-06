@@ -75,45 +75,6 @@ final class EmailVerificationServiceTests: XCTestCase {
         } catch { XCTFail("想定外のエラー: \(error)") }
     }
 
-    func testSendCodeSendsTheCaptchaTokenOnlyWhenGiven() async throws {
-        var bodies: [[String: String]] = []
-        URLProtocolStub.handler = { request in
-            bodies.append(try XCTUnwrap(JSONSerialization.jsonObject(with: Self.bodyData(from: request)) as? [String: String]))
-            return (try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)), Data())
-        }
-        try await EmailVerificationService.sendCode(email: "a@example.com", endpoint: endpoint, session: session())
-        try await EmailVerificationService.sendCode(email: "a@example.com", endpoint: endpoint, session: session(), captchaToken: "solved-token")
-        XCTAssertNil(bodies[0]["captchaToken"])
-        XCTAssertEqual(bodies[1]["captchaToken"], "solved-token")
-    }
-
-    func testSendCodeCaptchaRefusalCarriesTheSiteKey() async {
-        URLProtocolStub.handler = { request in
-            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 403, httpVersion: nil, headerFields: nil))
-            return (response, Data(#"{"error":"x","code":"captcha_required","siteKey":"0x4AAAA"}"#.utf8))
-        }
-        do {
-            try await EmailVerificationService.sendCode(email: "a@example.com", endpoint: endpoint, session: session())
-            XCTFail("CAPTCHA要求は成功扱いにしてはいけません")
-        } catch let error as EmailVerificationError {
-            guard case .captchaRequired(let siteKey) = error else { return XCTFail("想定外のエラー: \(error)") }
-            XCTAssertEqual(siteKey, "0x4AAAA")
-        } catch { XCTFail("想定外のエラー: \(error)") }
-    }
-
-    func testSendCodeCaptchaOutageIsReportedAsSuch() async {
-        URLProtocolStub.handler = { request in
-            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil))
-            return (response, Data(#"{"error":"x","code":"captcha_unavailable","siteKey":"k"}"#.utf8))
-        }
-        do {
-            try await EmailVerificationService.sendCode(email: "a@example.com", endpoint: endpoint, session: session())
-            XCTFail("成功扱いにしてはいけません")
-        } catch let error as EmailVerificationError {
-            guard case .captchaUnavailable = error else { return XCTFail("想定外のエラー: \(error)") }
-        } catch { XCTFail("想定外のエラー: \(error)") }
-    }
-
     func testConfirmCodeSendsAllFieldsAndReturnsToken() async throws {
         URLProtocolStub.handler = { request in
             XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/auth/email/confirm-code")

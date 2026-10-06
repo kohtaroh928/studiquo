@@ -10,26 +10,18 @@ import Foundation
 enum EmailVerificationService {
     private static var endpoint: URL { MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)! }
 
-    /// `captchaToken` is a solved Turnstile token, sent only after the server
-    /// has asked for one (`EmailVerificationError.captchaRequired`).
-    static func sendCode(email: String, captchaToken: String? = nil) async throws {
-        try await sendCode(email: email, endpoint: endpoint, session: .shared, captchaToken: captchaToken)
+    static func sendCode(email: String) async throws {
+        try await sendCode(email: email, endpoint: endpoint, session: .shared)
     }
 
-    static func sendCode(email: String, endpoint: URL, session: URLSession, captchaToken: String? = nil) async throws {
+    static func sendCode(email: String, endpoint: URL, session: URLSession) async throws {
         var request = URLRequest(url: endpoint.appending(path: "api/auth/email/send-code"))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(SendCodeRequest(email: email, captchaToken: captchaToken))
-        let (data, response) = try await session.data(for: request)
+        request.httpBody = try JSONEncoder().encode(SendCodeRequest(email: email))
+        let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
-            if let http = response as? HTTPURLResponse, let captcha = CaptchaServerResponse.parse(status: http.statusCode, data: data) {
-                switch captcha {
-                case .required(let siteKey): throw EmailVerificationError.captchaRequired(siteKey: siteKey)
-                case .unavailable: throw EmailVerificationError.captchaUnavailable
-                }
-            }
             throw EmailVerificationError.sendFailed
         }
     }
@@ -90,16 +82,11 @@ enum EmailVerificationError: LocalizedError {
     case confirmFailed
     case wrongCode(attemptsRemaining: Int)
     case passwordBreached
-    /// The server wants a solved CAPTCHA before it will send a code.
-    case captchaRequired(siteKey: String)
-    case captchaUnavailable
 
     var errorDescription: String? {
         switch self {
         case .sendFailed: "確認コードを送信できませんでした。"
         case .confirmFailed: "確認コードを確認できませんでした。"
-        case .captchaRequired: "確認が必要です。"
-        case .captchaUnavailable: "確認サービスに接続できません。しばらくしてからもう一度お試しください。"
         case .passwordBreached:
             "このパスワードは過去の情報漏えいで見つかっています。キャンセルして、別のパスワードで登録し直してください。"
         case .wrongCode(let attemptsRemaining):
@@ -110,7 +97,7 @@ enum EmailVerificationError: LocalizedError {
     }
 }
 
-private struct SendCodeRequest: Encodable { let email: String; let captchaToken: String? }
+private struct SendCodeRequest: Encodable { let email: String }
 private struct ConfirmCodeRequest: Encodable { let email: String; let code: String; let password: String; let randomValue: String }
 private struct ConfirmSuccessResponse: Decodable { let verified: Bool; let token: String }
 private struct ConfirmErrorResponse: Decodable { let error: String; let attemptsRemaining: Int?; let code: String? }
