@@ -540,3 +540,40 @@ test("an Argon2BusyError is never confused with a damaged record", async () => {
     hold.restore();
   }
 });
+
+test("a known client gets a reserved place in the queue even when it is full for everyone else, up to a limit", async () => {
+  const env = environment();
+  await upsertLocalAccount(env, "person@example.com", "correct-horse-battery");
+  const hold = holdArgon2();
+  try {
+    const running = Array.from({ length: FILL }, () => verifyLocalAccount(env, "nobody@example.com", "x").catch(error => error));
+    await untilQueueFull();
+
+    // The unfamiliar are turned away...
+    await assert.rejects(() => verifyLocalAccount(env, "person@example.com", "correct-horse-battery"), Argon2BusyError);
+    // ...the known are let in, 16 more of them.
+    const known = Array.from({ length: 16 }, () => verifyLocalAccount(env, "person@example.com", "correct-horse-battery", { priority: true }).catch(error => error));
+    for (let i = 0; i < 400 && argon2QueueState().waiting < 48; i++) await tick(10);
+    assert.equal(argon2QueueState().waiting, 48);
+    // Past the reserve, the 17th known client is turned away too, as is anyone else.
+    await assert.rejects(() => verifyLocalAccount(env, "person@example.com", "correct-horse-battery", { priority: true }), Argon2BusyError);
+    await assert.rejects(() => verifyLocalAccount(env, "person@example.com", "correct-horse-battery"), Argon2BusyError);
+
+    hold.release();
+    assert.ok((await Promise.all(running)).every(result => result === false));
+    assert.ok((await Promise.all(known)).every(result => result === true), "everyone let in is served, with the right answer");
+  } finally {
+    hold.release();
+    hold.restore();
+  }
+});
+
+test("priority changes nothing about what a sign-in does, only whether a full queue turns it away", async () => {
+  const env = environment();
+  await upsertLocalAccount(env, "person@example.com", "correct-horse-battery");
+  for (const options of [{}, { priority: true }]) {
+    assert.equal(await verifyLocalAccount(env, "person@example.com", "correct-horse-battery", options), true);
+    assert.equal(await verifyLocalAccount(env, "person@example.com", "wrong-password", options), false);
+    assert.equal(await verifyLocalAccount(env, "nobody@example.com", "wrong-password", options), false);
+  }
+});
