@@ -82,6 +82,8 @@ function environment({ strictSessions = false } = {}) {
     RATE_LIMIT_LOCAL_LOGIN: fakeCloudflareLimiter(),
     RATE_LIMIT_ISSUE_REPORT: fakeCloudflareLimiter(),
     RATE_COUNTER: fakeRateCounterBinding(),
+    // Never reach the real HIBP from tests: by default nothing is breached.
+    PWNED_PASSWORDS_FETCH: async () => new Response("", { status: 200 }),
     RESEND_API_KEY: "test-key",
   };
 }
@@ -839,6 +841,62 @@ test("email-code budgets: send and confirm are counted separately, per address, 
     assert.notEqual((await confirm("other@example.com", "000000")).status, 429);
   } finally {
     stub.restore();
+  }
+});
+
+test("POST /api/auth/email/confirm-code: a breached password is refused and the emailed code stays usable", async () => {
+  const env = environment();
+  // SHA-1("breached-password-1") is looked up by prefix; answer as if its suffix were in the corpus.
+  const hibpCalls = [];
+  env.PWNED_PASSWORDS_FETCH = async (url) => {
+    hibpCalls.push(url);
+    const digest = createHash("sha1").update("breached-password-1").digest("hex").toUpperCase();
+    return new Response(url.endsWith(digest.slice(0, 5)) ? `${digest.slice(5)}:42\r\n` : "", { status: 200 });
+  };
+  const stub = stubResendCapturingCode();
+  await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }), env, noopCtx);
+  stub.restore();
+  const confirm = (password) => worker.fetch(
+    request("/api/auth/email/confirm-code", {
+      method: "POST",
+      body: { email: "person@example.com", code: stub.code(), password, randomValue: "r".repeat(40) },
+    }),
+    env,
+    noopCtx
+  );
+
+  const refused = await confirm("breached-password-1");
+  assert.equal(refused.status, 400);
+  const refusedBody = await refused.json();
+  assert.equal(refusedBody.code, "password_breached");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:person@example.com"), null);
+  assert.ok(hibpCalls.every(url => /\/range\/[0-9A-F]{5}$/.test(url)));
+
+  // The code wasn't spent or counted: a different password with the same code works.
+  const accepted = await confirm("a-different-long-password");
+  assert.equal(accepted.status, 200);
+});
+
+test("POST /api/auth/email/confirm-code: if HIBP is unreachable the password is accepted", async () => {
+  const env = environment();
+  env.PWNED_PASSWORDS_FETCH = async () => { throw new Error("network down"); };
+  const originalError = console.error;
+  console.error = () => {};
+  const stub = stubResendCapturingCode();
+  try {
+    await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }), env, noopCtx);
+    stub.restore();
+    const response = await worker.fetch(
+      request("/api/auth/email/confirm-code", {
+        method: "POST",
+        body: { email: "person@example.com", code: stub.code(), password: "correct-horse-battery", randomValue: "r".repeat(40) },
+      }),
+      env,
+      noopCtx
+    );
+    assert.equal(response.status, 200);
+  } finally {
+    console.error = originalError;
   }
 });
 
