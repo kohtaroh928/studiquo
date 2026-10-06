@@ -5,6 +5,7 @@ import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import worker from "./app.js";
 import { realSession } from "./session.js";
 import { reserveAttempt, refundAttempt, trustPair } from "./login-throttle.js";
+import { touchSeenContext } from "./login-monitor.js";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.js";
 
 // Regression coverage for "logging out doesn't revoke the cloud sync token":
@@ -28,6 +29,7 @@ function fakeCloudflareLimiter(limit = 5) {
 function fakeRateCounterBinding() {
   const counts = new Map();
   const logins = new Map();
+  const seen = new Map();
   return {
     getByName(name) {
       return {
@@ -46,6 +48,11 @@ function fakeRateCounterBinding() {
           return { waitSeconds: result.waitSeconds, trusted: result.trusted };
         },
         async loginRefund(policy) { if (logins.has(name)) logins.set(name, refundAttempt(logins.get(name), policy)); },
+        async seenContext(key, { maxEntries, ttlSeconds }) {
+          const result = touchSeenContext(seen.get(name), key, Date.now(), maxEntries, ttlSeconds);
+          seen.set(name, result.state);
+          return { isNew: result.isNew, wasEmpty: result.wasEmpty };
+        },
         async loginTrust() { logins.set(name, trustPair(logins.get(name), Date.now())); },
       };
     },
@@ -1346,6 +1353,115 @@ test("local login: an over-long email is refused without creating throttle state
   const env = throttleEnvironment();
   const response = await loginAttempt(env, { email: `${"a".repeat(300)}@example.com`, ip: "203.0.113.6" });
   assert.equal(response.status, 401);
+});
+
+// MARK: - local login: metrics and new-context notice
+
+// A ctx that remembers what was handed to waitUntil, so a test can wait for
+// the background monitoring to finish before asserting on it.
+function collectingCtx() {
+  const pending = [];
+  return { waitUntil(promise) { pending.push(promise); }, flush: () => Promise.all(pending) };
+}
+
+function geoRequest(path, { cf, ip, body }) {
+  const req = request(path, { method: "POST", ip, body });
+  return Object.defineProperty(req, "cf", { value: cf });
+}
+
+test("local login: a sign-in from a new country+network emails the owner; the baseline and repeats don't", async () => {
+  const env = throttleEnvironment();
+  const home = { country: "JP", asn: 2516, region: "Tokyo", asOrganization: "KDDI" };
+  const abroad = { country: "RO", asn: 9050, region: "Bucharest", asOrganization: "Some Hosting" };
+
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const mails = [];
+  const logs = [];
+  globalThis.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.text?.includes("確認コード")) mails.push({ kind: "code", body });
+    else if (body.subject?.includes("新しい環境")) mails.push({ kind: "notice", body });
+    const match = /確認コード: (\d{6})/.exec(body.text ?? "");
+    globalThis.__code = match ? match[1] : globalThis.__code;
+    return new Response("{}", { status: 200 });
+  };
+  console.log = line => logs.push(String(line));
+  try {
+    // Sign-up from home: baseline, no notice.
+    let ctx = collectingCtx();
+    await worker.fetch(geoRequest("/api/auth/email/send-code", { cf: home, ip: "203.0.113.70", body: { email: "person@example.com" } }), env, ctx);
+    await worker.fetch(geoRequest("/api/auth/email/confirm-code", {
+      cf: home, ip: "203.0.113.70",
+      body: { email: "person@example.com", code: globalThis.__code, password: "correct-horse-battery", randomValue: "r".repeat(40) },
+    }), env, ctx);
+    await ctx.flush();
+
+    const login = async (cf, ip) => {
+      const c = collectingCtx();
+      const response = await worker.fetch(geoRequest("/api/auth/local/login", {
+        cf, ip, body: { email: "person@example.com", password: "correct-horse-battery", randomValue: "l".repeat(40) },
+      }), env, c);
+      await c.flush();
+      return response.status;
+    };
+
+    assert.equal(await login(home, "203.0.113.71"), 200);
+    assert.equal(mails.filter(mail => mail.kind === "notice").length, 0);
+
+    assert.equal(await login(abroad, "198.51.100.80"), 200);
+    const notices = mails.filter(mail => mail.kind === "notice");
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].body.to, "person@example.com");
+    assert.ok(!notices[0].body.text.includes("198.51.100.80"));
+
+    assert.equal(await login(abroad, "198.51.100.81"), 200);
+    assert.equal(mails.filter(mail => mail.kind === "notice").length, 1);
+
+    const outcomes = logs.map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(event => event?.event === "local_login");
+    assert.deepEqual(outcomes.map(event => [event.outcome, event.newContext]), [["success", false], ["success", true], ["success", false]]);
+    assert.ok(!logs.join("").includes("person@example.com"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    delete globalThis.__code;
+  }
+});
+
+test("local login: failures and throttled tries are logged as outcomes, and a broken mail provider never breaks sign-in", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  const cf = { country: "US", asn: 7922 };
+
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const originalError = console.error;
+  const logs = [];
+  globalThis.fetch = async () => new Response("no", { status: 500 });
+  console.log = line => logs.push(String(line));
+  console.error = () => {};
+  try {
+    const attempt = async (password, ip) => {
+      const c = collectingCtx();
+      const response = await worker.fetch(geoRequest("/api/auth/local/login", {
+        cf, ip, body: { email: "person@example.com", password, randomValue: "l".repeat(40) },
+      }), env, c);
+      await c.flush();
+      return response.status;
+    };
+    for (let i = 0; i < 6; i++) assert.equal(await attempt("wrong-password", "203.0.113.90"), 401);
+    assert.equal(await attempt("wrong-password", "203.0.113.90"), 429);
+    // A different IP, right password: the mail call fails (500) but sign-in succeeds.
+    assert.equal(await attempt("correct-horse-battery", "203.0.113.91"), 200);
+
+    const outcomes = logs.map(line => { try { return JSON.parse(line); } catch { return null; } })
+      .filter(event => event?.event === "local_login").map(event => event.outcome);
+    assert.deepEqual(outcomes, ["failure", "failure", "failure", "failure", "failure", "failure", "throttled", "success"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    console.error = originalError;
+  }
 });
 
 // MARK: - requireRealSession: a client-fabricated token must not work

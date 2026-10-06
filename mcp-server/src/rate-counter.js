@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { reserveAttempt, refundAttempt, trustPair, trustExpiryMs } from "./login-throttle.js";
+import { touchSeenContext } from "./login-monitor.js";
 
 // One instance per counted key (an AI usage bucket, a document-collab
 // action, …) — see ai.js's withinQuota and document-collab.js's
@@ -68,6 +69,16 @@ export class RateCounter extends DurableObject {
     // Outlives both the failure window and any trust, then reclaims storage.
     const until = Math.max(Math.max(state.blockedUntil ?? 0, now) + policy.windowSeconds * 1000, trustExpiryMs(state) + 3_600_000);
     await this.ctx.storage.setAlarm(until);
+  }
+
+  // Which country+network an account has signed in from (login-monitor.js).
+  // Used under its own name, so it shares nothing with bump()/login state.
+  async seenContext(key, { maxEntries, ttlSeconds }) {
+    const now = Date.now();
+    const result = touchSeenContext(await this.ctx.storage.get("seen"), key, now, maxEntries, ttlSeconds);
+    await this.ctx.storage.put("seen", result.state);
+    await this.ctx.storage.setAlarm(now + ttlSeconds * 1000);
+    return { isNew: result.isNew, wasEmpty: result.wasEmpty };
   }
 
   async alarm() {
