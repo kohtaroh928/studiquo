@@ -28,8 +28,10 @@ enum EmailVerificationService {
 
     /// Throws `.wrongCode(attemptsRemaining:)` for an incorrect or expired
     /// code — the server still returns how many attempts are left before a
-    /// fresh code is required — and `.confirmFailed` for anything else
-    /// (network error, malformed response). Returns the freshly minted
+    /// fresh code is required — `.passwordBreached` when the server refuses
+    /// the password for appearing in a known data breach (the emailed code is
+    /// left unspent), and `.confirmFailed` for anything else (network error,
+    /// malformed response). Returns the freshly minted
     /// studiquo cloud token on success.
     static func confirmCode(email: String, code: String, password: String, randomValue: String) async throws -> String {
         try await confirmCode(
@@ -66,6 +68,11 @@ enum EmailVerificationService {
         if http.statusCode == 401, let payload = try? JSONDecoder().decode(ConfirmErrorResponse.self, from: data) {
             throw EmailVerificationError.wrongCode(attemptsRemaining: payload.attemptsRemaining ?? 0)
         }
+        if http.statusCode == 400,
+           let payload = try? JSONDecoder().decode(ConfirmErrorResponse.self, from: data),
+           payload.code == "password_breached" {
+            throw EmailVerificationError.passwordBreached
+        }
         throw EmailVerificationError.confirmFailed
     }
 }
@@ -74,11 +81,14 @@ enum EmailVerificationError: LocalizedError {
     case sendFailed
     case confirmFailed
     case wrongCode(attemptsRemaining: Int)
+    case passwordBreached
 
     var errorDescription: String? {
         switch self {
         case .sendFailed: "確認コードを送信できませんでした。"
         case .confirmFailed: "確認コードを確認できませんでした。"
+        case .passwordBreached:
+            "このパスワードは過去の情報漏えいで見つかっています。キャンセルして、別のパスワードで登録し直してください。"
         case .wrongCode(let attemptsRemaining):
             attemptsRemaining > 0
                 ? "コードが正しくありません。残り\(attemptsRemaining)回試せます。"
@@ -90,4 +100,4 @@ enum EmailVerificationError: LocalizedError {
 private struct SendCodeRequest: Encodable { let email: String }
 private struct ConfirmCodeRequest: Encodable { let email: String; let code: String; let password: String; let randomValue: String }
 private struct ConfirmSuccessResponse: Decodable { let verified: Bool; let token: String }
-private struct ConfirmErrorResponse: Decodable { let error: String; let attemptsRemaining: Int? }
+private struct ConfirmErrorResponse: Decodable { let error: String; let attemptsRemaining: Int?; let code: String? }

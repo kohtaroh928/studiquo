@@ -126,6 +126,39 @@ final class EmailVerificationServiceTests: XCTestCase {
         } catch { XCTFail("想定外のエラー: \(error)") }
     }
 
+    func testBreachedPasswordBecomesPasswordBreached() async {
+        URLProtocolStub.handler = { request in
+            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: nil))
+            return (response, Data(#"{"error":"このパスワードは...","code":"password_breached"}"#.utf8))
+        }
+        do {
+            _ = try await EmailVerificationService.confirmCode(
+                email: "a@example.com", code: "123456", password: "password", randomValue: "r",
+                endpoint: endpoint, session: session()
+            )
+            XCTFail("漏洩パスワードは成功扱いにしてはいけません")
+        } catch let error as EmailVerificationError {
+            guard case .passwordBreached = error else { return XCTFail("想定外のエラー: \(error)") }
+            XCTAssertTrue(error.localizedDescription.contains("情報漏えい"))
+        } catch { XCTFail("想定外のエラー: \(error)") }
+    }
+
+    func testOtherBadRequestStaysConfirmFailed() async {
+        URLProtocolStub.handler = { request in
+            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: nil))
+            return (response, Data(#"{"error":"password is required."}"#.utf8))
+        }
+        do {
+            _ = try await EmailVerificationService.confirmCode(
+                email: "a@example.com", code: "123456", password: "pass", randomValue: "r",
+                endpoint: endpoint, session: session()
+            )
+            XCTFail("400応答は成功扱いにしてはいけません")
+        } catch let error as EmailVerificationError {
+            guard case .confirmFailed = error else { return XCTFail("想定外のエラー: \(error)") }
+        } catch { XCTFail("想定外のエラー: \(error)") }
+    }
+
     func testMalformedSuccessResponseBecomesConfirmFailed() async {
         URLProtocolStub.handler = { request in
             let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil))
