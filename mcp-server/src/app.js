@@ -28,6 +28,7 @@ import { startAccountDeletion } from "./account-deletion.js";
 import { mintSession, hasRealSession } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { beginLoginAttempt, finishLoginAttempt } from "./login-throttle.js";
+import { isBreachedPassword } from "./pwned-passwords.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readTextLimited, readJSONLimited, securityHeaders } from "./http.js";
 
@@ -684,6 +685,16 @@ async function handleConfirmEmailVerification(request, env) {
   }
   if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
     return json({ error: "randomValue is required." }, 400);
+  }
+
+  // Checked before the code is: a refused password costs the caller no code
+  // attempt and leaves the emailed code valid, so they can just pick another.
+  // Only the password's SHA-1 prefix goes to HIBP (pwned-passwords.js).
+  if (await isBreachedPassword(password, typeof env.PWNED_PASSWORDS_FETCH === "function" ? env.PWNED_PASSWORDS_FETCH : fetch)) {
+    return json({
+      error: "このパスワードは過去の情報漏えいで見つかっています。別のパスワードを設定してください。",
+      code: "password_breached",
+    }, 400);
   }
 
   // Counts every attempt, correct or not, and runs before the code is
