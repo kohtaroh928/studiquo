@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { reserveAttempt, refundAttempt, trustPair, trustExpiryMs } from "./login-throttle.js";
 
 // One instance per counted key (an AI usage bucket, a document-collab
 // action, …) — see ai.js's withinQuota and document-collab.js's
@@ -37,6 +38,36 @@ export class RateCounter extends DurableObject {
     // counted action) persisting forever.
     await this.ctx.storage.setAlarm(state.windowEndsAt + windowSeconds * 1000);
     return true;
+  }
+
+  // Failed-login backoff (login-throttle.js owns the policy and the state
+  // transitions; this object serialises access to them, which is what makes
+  // "check the wait, then count the attempt" one atomic step). A name is
+  // used either for bump() or for these, never both, so they share the alarm.
+  async loginReserve(policy, { enforce = true } = {}) {
+    const now = Date.now();
+    const result = reserveAttempt(await this.ctx.storage.get("login"), now, policy, { enforce });
+    if (result.waitSeconds === 0) await this.saveLogin(result.state, now, policy);
+    return { waitSeconds: result.waitSeconds, trusted: result.trusted };
+  }
+
+  async loginRefund(policy) {
+    const stored = await this.ctx.storage.get("login");
+    if (stored) await this.saveLogin(refundAttempt(stored, policy), Date.now(), policy);
+  }
+
+  async loginTrust() {
+    const now = Date.now();
+    const next = trustPair(await this.ctx.storage.get("login"), now);
+    await this.ctx.storage.put("login", next);
+    await this.ctx.storage.setAlarm(trustExpiryMs(next) + 3_600_000);
+  }
+
+  async saveLogin(state, now, policy) {
+    await this.ctx.storage.put("login", state);
+    // Outlives both the failure window and any trust, then reclaims storage.
+    const until = Math.max(Math.max(state.blockedUntil ?? 0, now) + policy.windowSeconds * 1000, trustExpiryMs(state) + 3_600_000);
+    await this.ctx.storage.setAlarm(until);
   }
 
   async alarm() {

@@ -64,18 +64,43 @@ export async function upsertLocalAccount(env, email, password) {
   }));
 }
 
+// Fixed, public, never matches a real account: its only job is to make the
+// "no such account" path cost the same PBKDF2 run as a real check does.
+const DUMMY_SALT = new Uint8Array(24).fill(0x5a);
+const DUMMY_HASH = new Uint8Array(32);
+
+/**
+ * Burns one PBKDF2 run at the current cost against a throwaway salt, then
+ * reports a mismatch. Without it an unknown email returns in a few
+ * milliseconds while a real one takes ~100 ms, so response time alone would
+ * reveal which addresses have an account.
+ */
+async function rejectAfterDummyHash(password) {
+  const candidate = await pbkdf2Hash(typeof password === "string" ? password : "", DUMMY_SALT, PBKDF2_ITERATIONS);
+  constantTimeEqual(candidate, DUMMY_HASH);
+  return false;
+}
+
 /**
  * Verifies `password` against the stored hash for `email`. Returns `false`
  * (never throws) for an unknown email, a malformed record, or a wrong
  * password — callers can't distinguish "no such account" from "wrong
  * password" from this alone, deliberately, same as every other login check
- * in this codebase.
+ * in this codebase. Every false path does the same PBKDF2 work (see
+ * rejectAfterDummyHash), so it holds for response time too.
  */
 export async function verifyLocalAccount(env, email, password) {
   const normalized = normalizeEmail(email);
-  if (!normalized || typeof password !== "string") return false;
+  if (!normalized || typeof password !== "string") return rejectAfterDummyHash(password);
   const record = await env.STUDIQUO_DATA.get(`${ACCOUNT_PREFIX}${normalized}`, "json");
-  if (!record) return false;
-  const candidate = await pbkdf2Hash(password, fromBase64(record.salt), record.iterations);
-  return constantTimeEqual(candidate, fromBase64(record.passwordHash));
+  if (!record) return rejectAfterDummyHash(password);
+  let candidate;
+  let stored;
+  try {
+    stored = fromBase64(record.passwordHash);
+    candidate = await pbkdf2Hash(password, fromBase64(record.salt), record.iterations);
+  } catch {
+    return rejectAfterDummyHash(password);
+  }
+  return constantTimeEqual(candidate, stored);
 }

@@ -4,6 +4,7 @@ import test from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import worker from "./app.js";
 import { realSession } from "./session.js";
+import { reserveAttempt, refundAttempt, trustPair } from "./login-throttle.js";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.js";
 
 // Regression coverage for "logging out doesn't revoke the cloud sync token":
@@ -19,6 +20,34 @@ function fakeCloudflareLimiter(limit = 5) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
+    },
+  };
+}
+
+// Mirrors RateCounter.bump's contract: true while under `limit`, false once spent.
+function fakeRateCounterBinding() {
+  const counts = new Map();
+  const logins = new Map();
+  return {
+    getByName(name) {
+      return {
+        async bump(limit) {
+          const used = (counts.get(name) ?? 0) + 1;
+          if (used > limit) return false;
+          counts.set(name, used);
+          return true;
+        },
+        // Same pure transitions the real RateCounter applies; these methods
+        // contain no await between read and write, so like the real object
+        // each call is atomic with respect to the others.
+        async loginReserve(policy, options) {
+          const result = reserveAttempt(logins.get(name), Date.now(), policy, options);
+          if (result.waitSeconds === 0) logins.set(name, result.state);
+          return { waitSeconds: result.waitSeconds, trusted: result.trusted };
+        },
+        async loginRefund(policy) { if (logins.has(name)) logins.set(name, refundAttempt(logins.get(name), policy)); },
+        async loginTrust() { logins.set(name, trustPair(logins.get(name), Date.now())); },
+      };
     },
   };
 }
@@ -52,6 +81,7 @@ function environment({ strictSessions = false } = {}) {
     RATE_LIMIT_EMAIL_VERIFY_CONFIRM: fakeCloudflareLimiter(),
     RATE_LIMIT_LOCAL_LOGIN: fakeCloudflareLimiter(),
     RATE_LIMIT_ISSUE_REPORT: fakeCloudflareLimiter(),
+    RATE_COUNTER: fakeRateCounterBinding(),
     RESEND_API_KEY: "test-key",
   };
 }
@@ -713,6 +743,105 @@ test("POST /api/auth/email/send-code: allows up to the limit, then 429s", async 
   }
 });
 
+test("POST /api/auth/email/send-code: per-email limit holds across different IPs", async () => {
+  const env = environment();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("{}", { status: 200 });
+  const attempt = (ip, email = "person@example.com") => worker.fetch(
+    request("/api/auth/email/send-code", { method: "POST", ip, body: { email } }),
+    env,
+    noopCtx
+  );
+
+  try {
+    for (let i = 0; i < 5; i++) {
+      assert.equal((await attempt(`203.0.113.${i + 1}`)).status, 200);
+    }
+    // A sixth, from an IP that has sent nothing yet, is still refused.
+    assert.equal((await attempt("198.51.100.77")).status, 429);
+    // Case and whitespace don't make it a different address.
+    assert.equal((await attempt("198.51.100.78", "  Person@Example.com ")).status, 429);
+    // Another mailbox is unaffected.
+    assert.equal((await attempt("198.51.100.79", "other@example.com")).status, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("POST /api/auth/email/confirm-code: per-email attempts persist across resends and refuse even the right code", async () => {
+  const env = environment();
+  const stub = stubResendCapturingCode();
+  const send = () => worker.fetch(
+    request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }),
+    env,
+    noopCtx
+  );
+  const confirm = (ip, code) => worker.fetch(
+    request("/api/auth/email/confirm-code", {
+      method: "POST",
+      ip,
+      body: { email: "person@example.com", code, password: "correct-horse-battery", randomValue: "r".repeat(40) },
+    }),
+    env,
+    noopCtx
+  );
+
+  try {
+    // 10 wrong guesses spread over several IPs and two resends: each resend
+    // resets the code's own attempt count, but not the per-email budget.
+    await send();
+    for (let i = 0; i < 4; i++) assert.equal((await confirm(`203.0.113.${i + 1}`, "000000")).status, 401);
+    await send();
+    for (let i = 0; i < 4; i++) assert.equal((await confirm(`203.0.113.${i + 10}`, "000000")).status, 401);
+    await send();
+    for (let i = 0; i < 2; i++) assert.equal((await confirm(`203.0.113.${i + 20}`, "000000")).status, 401);
+
+    // Budget spent: the genuine code is refused too, from a fresh IP.
+    const response = await confirm("198.51.100.5", stub.code());
+    assert.equal(response.status, 429);
+    assert.equal(await env.STUDIQUO_DATA.get("email-accounts:person@example.com", "json"), null);
+  } finally {
+    stub.restore();
+  }
+});
+
+test("email-code budgets: send and confirm are counted separately, per address, and confirm normalizes the address", async () => {
+  const env = environment();
+  const stub = stubResendCapturingCode();
+  // Each call comes from its own IP so only the per-email budget is in play.
+  let ipCounter = 0;
+  const nextIp = () => `203.0.113.${++ipCounter}`;
+  const send = (email) => worker.fetch(
+    request("/api/auth/email/send-code", { method: "POST", ip: nextIp(), body: { email } }),
+    env,
+    noopCtx
+  );
+  const confirm = (email, code) => worker.fetch(
+    request("/api/auth/email/confirm-code", {
+      method: "POST",
+      ip: nextIp(),
+      body: { email, code, password: "correct-horse-battery", randomValue: "r".repeat(40) },
+    }),
+    env,
+    noopCtx
+  );
+
+  try {
+    // Exhaust person@'s send budget; its confirm budget and other@'s are untouched.
+    for (let i = 0; i < 5; i++) assert.equal((await send("person@example.com")).status, 200);
+    assert.equal((await send("person@example.com")).status, 429);
+    assert.equal((await send("person+alias@example.com")).status, 200);
+    assert.notEqual((await confirm("person@example.com", "000000")).status, 429);
+
+    // Exhaust person@'s confirm budget through a differently cased spelling.
+    for (let i = 0; i < 9; i++) await confirm("  PERSON@Example.com ", "000000");
+    assert.equal((await confirm("person@example.com", "000000")).status, 429);
+    assert.notEqual((await confirm("other@example.com", "000000")).status, 429);
+  } finally {
+    stub.restore();
+  }
+});
+
 test("local and Google sign-ins with the same verified email authenticate as one canonical account", async () => {
   const env = environment();
   const stub = stubResendCapturingCode();
@@ -1001,6 +1130,164 @@ test("POST /api/auth/local/login: allows up to the limit, then 429s", async () =
     assert.equal((await attempt()).status, 401);
   }
   assert.equal((await attempt()).status, 429);
+});
+
+// MARK: - local login: distributed credential stuffing
+
+// The per-IP Cloudflare limiter (5/min in these fakes) would answer before
+// the throttle under test ever runs; lift it so only the throttle is in play.
+function throttleEnvironment() {
+  const env = environment();
+  env.RATE_LIMIT_LOCAL_LOGIN = fakeCloudflareLimiter(10_000);
+  return env;
+}
+
+function loginAttempt(env, { email = "person@example.com", password = "wrong-password", ip, asn } = {}) {
+  const req = request("/api/auth/local/login", {
+    method: "POST",
+    ip,
+    body: { email, password, randomValue: "l".repeat(40) },
+  });
+  if (asn !== undefined) Object.defineProperty(req, "cf", { value: { asn } });
+  return worker.fetch(req, env, noopCtx);
+}
+
+test("local login: one client failing repeatedly against one account gets an escalating wait, even with the right password", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  // 5 failures are free; the 6th starts the wait.
+  for (let i = 0; i < 6; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.1" })).status, 401);
+
+  const blocked = await loginAttempt(env, { ip: "203.0.113.1", password: "correct-horse-battery" });
+  assert.equal(blocked.status, 429);
+  assert.ok(Number(blocked.headers.get("retry-after")) > 0);
+  assert.equal((await blocked.json()).error, "Too many attempts. Please try again later.");
+});
+
+test("local login: rotating IPs doesn't escape the per-account wait, and it ends in a wait rather than a lock", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  // 11 failures (10 are free), each from a different IP: no single IP+account streak trips.
+  for (let i = 0; i < 11; i++) assert.equal((await loginAttempt(env, { ip: `198.51.100.${i + 1}` })).status, 401);
+
+  // The next try, from yet another IP and with the correct password, is held.
+  const held = await loginAttempt(env, { ip: "198.51.100.200", password: "correct-horse-battery" });
+  assert.equal(held.status, 429);
+  const retryAfter = Number(held.headers.get("retry-after"));
+  assert.ok(retryAfter > 0 && retryAfter <= 900);
+
+  // Another account is untouched.
+  await createLocalAccount(env, "other@example.com", "another-long-password");
+  const other = await loginAttempt(env, { email: "other@example.com", ip: "198.51.100.201", password: "another-long-password" });
+  assert.equal(other.status, 200);
+});
+
+test("local login: an address with no account is throttled exactly like a real one", async () => {
+  const env = throttleEnvironment();
+  for (let i = 0; i < 6; i++) assert.equal((await loginAttempt(env, { email: "nobody@example.com", ip: "203.0.113.2" })).status, 401);
+  assert.equal((await loginAttempt(env, { email: "nobody@example.com", ip: "203.0.113.2" })).status, 429);
+});
+
+test("local login: a success clears this client's streak and does not count as a failure", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  for (let i = 0; i < 4; i++) await loginAttempt(env, { ip: "203.0.113.3" });
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.3", password: "correct-horse-battery" })).status, 200);
+  // Streak was cleared, so four more failures are still within the allowance.
+  for (let i = 0; i < 4; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.3" })).status, 401);
+});
+
+test("local login: many failures from one ASN slow that ASN, but not a different one", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  // 101 failures (100 are free) against throwaway addresses, each from its own IP, so only the ASN key accumulates.
+  for (let i = 0; i < 101; i++) {
+    const response = await loginAttempt(env, { email: `n${i}@example.com`, ip: `10.1.${Math.floor(i / 200)}.${i % 200 + 1}`, asn: 64500 });
+    assert.equal(response.status, 401);
+  }
+  const held = await loginAttempt(env, { ip: "10.9.9.9", asn: 64500, password: "correct-horse-battery" });
+  assert.equal(held.status, 429);
+
+  const elsewhere = await loginAttempt(env, { ip: "10.9.9.10", asn: 64501, password: "correct-horse-battery" });
+  assert.equal(elsewhere.status, 200);
+});
+
+test("local login: parallel guesses can't all slip past a wait that hasn't been recorded yet", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  // 40 simultaneous wrong guesses, each from its own IP, against one account.
+  const responses = await Promise.all(
+    Array.from({ length: 40 }, (_, i) => loginAttempt(env, { ip: `198.51.100.${i + 1}` }))
+  );
+  const verified = responses.filter(response => response.status === 401).length;
+  // Account key: 10 free attempts, plus the one that starts the wait.
+  assert.equal(verified, 11);
+  assert.equal(responses.filter(response => response.status === 429).length, 29);
+});
+
+test("local login: a blocked try is not itself counted as a failure", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  for (let i = 0; i < 6; i++) await loginAttempt(env, { ip: "203.0.113.4" });
+
+  const first = await loginAttempt(env, { ip: "203.0.113.4" });
+  const second = await loginAttempt(env, { ip: "203.0.113.4" });
+  assert.equal(first.status, 429);
+  assert.equal(second.status, 429);
+  // Hammering while blocked must not push the wait further out.
+  assert.ok(Number(second.headers.get("retry-after")) <= Number(first.headers.get("retry-after")));
+});
+
+test("local login: addresses differing only in case or whitespace share one throttle", async () => {
+  const env = throttleEnvironment();
+  for (let i = 0; i < 6; i++) {
+    const email = i % 2 ? "  PERSON@Example.com " : "person@example.com";
+    assert.equal((await loginAttempt(env, { email, ip: "203.0.113.5" })).status, 401);
+  }
+  assert.equal((await loginAttempt(env, { email: "Person@example.COM", ip: "203.0.113.5" })).status, 429);
+});
+
+test("local login: an IP that already signed in keeps working while strangers hammer the account", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  // The owner signs in from home once.
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.50", password: "correct-horse-battery" })).status, 200);
+
+  // A botnet drives the account into its wait.
+  for (let i = 0; i < 11; i++) await loginAttempt(env, { ip: `198.51.100.${i + 1}` });
+  assert.equal((await loginAttempt(env, { ip: "198.51.100.99", password: "correct-horse-battery" })).status, 429);
+
+  // The owner, from the IP they've used before, still gets in...
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.50", password: "correct-horse-battery" })).status, 200);
+  // ...but a trusted IP isn't a free pass to guess: its own streak still escalates.
+  for (let i = 0; i < 6; i++) await loginAttempt(env, { ip: "203.0.113.50" });
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.50", password: "correct-horse-battery" })).status, 429);
+});
+
+test("local login: failures from a trusted IP still count toward the shared account limit", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.60", password: "correct-horse-battery" })).status, 200);
+
+  // 3 wrong guesses from the trusted IP are never refused...
+  for (let i = 0; i < 3; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.60" })).status, 401);
+  // ...but they used up part of the account's 10 free attempts: 7 more from
+  // strangers still pass, and the one after that (the 11th failure overall)
+  // starts the wait, so the following attempt is held.
+  for (let i = 0; i < 8; i++) assert.equal((await loginAttempt(env, { ip: `198.51.100.${i + 1}` })).status, 401);
+  assert.equal((await loginAttempt(env, { ip: "198.51.100.90" })).status, 429);
+});
+
+test("local login: an over-long email is refused without creating throttle state", async () => {
+  const env = throttleEnvironment();
+  const response = await loginAttempt(env, { email: `${"a".repeat(300)}@example.com`, ip: "203.0.113.6" });
+  assert.equal(response.status, 401);
 });
 
 // MARK: - requireRealSession: a client-fabricated token must not work
