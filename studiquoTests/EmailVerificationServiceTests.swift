@@ -64,12 +64,14 @@ final class EmailVerificationServiceTests: XCTestCase {
     }
 
     func testSendCodeRejectsServerFailure() async {
+        // 429 has its own error now (see testSendingTooManyCodesIsItsOwnError);
+        // an ordinary server failure is still just "could not send".
         URLProtocolStub.handler = { request in
-            (try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)), Data())
+            (try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)), Data())
         }
         do {
             try await EmailVerificationService.sendCode(email: "a@example.com", endpoint: endpoint, session: session())
-            XCTFail("429応答は成功扱いにしてはいけません")
+            XCTFail("500応答は成功扱いにしてはいけません")
         } catch let error as EmailVerificationError {
             guard case .sendFailed = error else { return XCTFail("想定外のエラー: \(error)") }
         } catch { XCTFail("想定外のエラー: \(error)") }
@@ -156,6 +158,69 @@ final class EmailVerificationServiceTests: XCTestCase {
             XCTFail("400応答は成功扱いにしてはいけません")
         } catch let error as EmailVerificationError {
             guard case .confirmFailed = error else { return XCTFail("想定外のエラー: \(error)") }
+        } catch { XCTFail("想定外のエラー: \(error)") }
+    }
+
+    private func status429(_ headers: [String: String]?, body: String, send: Bool) async -> EmailVerificationError? {
+        URLProtocolStub.handler = { request in
+            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: headers))
+            return (response, Data(body.utf8))
+        }
+        do {
+            if send {
+                try await EmailVerificationService.sendCode(email: "a@example.com", endpoint: endpoint, session: session())
+            } else {
+                _ = try await EmailVerificationService.confirmCode(
+                    email: "a@example.com", code: "123456", password: "pass", randomValue: "r",
+                    endpoint: endpoint, session: session()
+                )
+            }
+            XCTFail("429は成功扱いにしてはいけません")
+            return nil
+        } catch let error as EmailVerificationError {
+            return error
+        } catch {
+            XCTFail("想定外のエラー: \(error)")
+            return nil
+        }
+    }
+
+    func testSendingTooManyCodesIsItsOwnError() async {
+        let plain = await status429(nil, body: #"{"error":"Too many attempts. Please try again later."}"#, send: true)
+        XCTAssertEqual(plain, .tooManySends(retryAfter: nil))
+        let timed = await status429(["Retry-After": "90"], body: "{}", send: true)
+        XCTAssertEqual(timed, .tooManySends(retryAfter: 90))
+    }
+
+    func testTryingTooManyCodesIsItsOwnErrorAndNotAWrongCode() async {
+        let plain = await status429(nil, body: #"{"error":"Too many attempts. Please try again later."}"#, send: false)
+        XCTAssertEqual(plain, .tooManyConfirmations(retryAfter: nil))
+        let timed = await status429(["Retry-After": "30"], body: "{}", send: false)
+        XCTAssertEqual(timed, .tooManyConfirmations(retryAfter: 30))
+    }
+
+    func testTheTooManyMessagesAreDistinctHonestAndNeverBlameTheCode() {
+        let sends = EmailVerificationError.tooManySends(retryAfter: nil).errorDescription ?? ""
+        let tries = EmailVerificationError.tooManyConfirmations(retryAfter: nil).errorDescription ?? ""
+        XCTAssertNotEqual(sends, tries)
+        XCTAssertTrue(sends.contains("しばらく待ってから"))
+        XCTAssertTrue(tries.contains("しばらく待ってから"))
+        XCTAssertFalse(tries.contains("正しくありません"), "the code was never looked at")
+        XCTAssertEqual(
+            EmailVerificationError.tooManySends(retryAfter: 120).errorDescription,
+            "確認コードの送信が続いたため、いまは受け付けられません。あと約2分お待ちください。"
+        )
+    }
+
+    func testOtherFailuresKeepTheirMessages() async {
+        URLProtocolStub.handler = { request in
+            (try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 502, httpVersion: nil, headerFields: nil)), Data())
+        }
+        do {
+            try await EmailVerificationService.sendCode(email: "a@example.com", endpoint: endpoint, session: session())
+            XCTFail("成功扱いにしてはいけません")
+        } catch let error as EmailVerificationError {
+            XCTAssertEqual(error, .sendFailed)
         } catch { XCTFail("想定外のエラー: \(error)") }
     }
 
