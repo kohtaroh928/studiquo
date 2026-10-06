@@ -39,6 +39,90 @@ final class AuthenticationStoreTests: XCTestCase {
         AuthenticationStore(service: storeService, defaults: testDefaults)
     }
 
+    // MARK: - CAPTCHA
+
+    func testLoginTheServerWantsACaptchaForRaisesAChallengeInsteadOfAnError() async {
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 403, body: ["error": "x", "code": "captcha_required", "siteKey": "0x4AAAA"])
+        let store = makeStore()
+
+        let result = await store.login(email: "Student@Example.com", password: "correct-horse-battery")
+
+        XCTAssertFalse(result)
+        XCTAssertEqual(store.captchaChallenge?.siteKey, "0x4AAAA")
+        XCTAssertEqual(store.captchaChallenge?.action, "login")
+        XCTAssertEqual(store.captchaChallenge?.continuation, .login(email: "student@example.com", password: "correct-horse-battery"))
+        XCTAssertEqual(store.errorMessage, "", "asking for a CAPTCHA isn't a wrong password")
+        XCTAssertNil(MCPCloudCredentials.currentToken())
+        XCTAssertEqual(store.state, .needsLogin)
+    }
+
+    func testSolvingTheChallengeRetriesTheLoginAndSignsIn() async {
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 403, body: ["error": "x", "code": "captcha_required", "siteKey": "0x4AAAA"])
+        let store = makeStore()
+        _ = await store.login(email: "student@example.com", password: "correct-horse-battery")
+        XCTAssertNotNil(store.captchaChallenge)
+
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 200, body: ["token": "1234567890.\(String(repeating: "a", count: 40))"])
+        await store.solveCaptcha("solved-token")
+
+        XCTAssertNil(store.captchaChallenge)
+        XCTAssertEqual(store.state, .onboarding)
+        XCTAssertEqual(MCPCloudCredentials.currentToken(), "1234567890.\(String(repeating: "a", count: 40))")
+    }
+
+    func testCancellingTheChallengeDropsItAndSignsNothingIn() async {
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 403, body: ["error": "x", "code": "captcha_required", "siteKey": "0x4AAAA"])
+        let store = makeStore()
+        _ = await store.login(email: "student@example.com", password: "correct-horse-battery")
+
+        store.cancelCaptcha()
+
+        XCTAssertNil(store.captchaChallenge)
+        XCTAssertEqual(store.state, .needsLogin)
+        XCTAssertNil(MCPCloudCredentials.currentToken())
+    }
+
+    func testAWrongPasswordAfterTheCaptchaIsStillAWrongPassword() async {
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 403, body: ["error": "x", "code": "captcha_required", "siteKey": "0x4AAAA"])
+        let store = makeStore()
+        _ = await store.login(email: "student@example.com", password: "wrong-password")
+
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 401, body: ["error": "メールアドレスまたはパスワードが違います。"])
+        await store.solveCaptcha("solved-token")
+
+        XCTAssertNil(store.captchaChallenge)
+        XCTAssertEqual(store.errorMessage, "メールアドレスまたはパスワードが違います。")
+    }
+
+    func testACaptchaServiceOutageIsExplainedNotBlamedOnThePassword() async {
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 503, body: ["error": "x", "code": "captcha_unavailable", "siteKey": "k"])
+        let store = makeStore()
+
+        _ = await store.login(email: "student@example.com", password: "correct-horse-battery")
+
+        XCTAssertNil(store.captchaChallenge)
+        XCTAssertEqual(store.errorMessage, "確認サービスに接続できません。しばらくしてからもう一度お試しください。")
+    }
+
+    func testSendingACodeTheServerWantsACaptchaForRaisesASendCodeChallenge() async {
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/email/send-code", status: 403, body: ["error": "x", "code": "captcha_required", "siteKey": "0x4AAAA"])
+        let store = makeStore()
+
+        let result = await store.beginAccountCreation(email: "new@example.com", password: "correct-horse-battery")
+
+        XCTAssertFalse(result)
+        XCTAssertEqual(store.captchaChallenge?.action, "send-code")
+        XCTAssertEqual(store.captchaChallenge?.continuation, .beginAccountCreation(email: "new@example.com", password: "correct-horse-battery"))
+        XCTAssertEqual(store.state, .needsLogin, "no code was sent, so there is nothing to verify yet")
+
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/email/send-code", status: 200, body: ["sent": true])
+        await store.solveCaptcha("solved-token")
+
+        XCTAssertNil(store.captchaChallenge)
+        XCTAssertEqual(store.state, .verifyingEmail)
+        XCTAssertEqual(store.pendingSignUpEmail, "new@example.com")
+    }
+
     // MARK: - login()
 
     func testLoginWithCorrectPasswordSucceedsAndSavesACloudToken() async {

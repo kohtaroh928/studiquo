@@ -91,6 +91,58 @@ final class LocalAuthServiceTests: XCTestCase {
         } catch { XCTFail("想定外のエラー: \(error)") }
     }
 
+    func testCaptchaTokenIsSentOnlyWhenGiven() async throws {
+        var bodies: [[String: String]] = []
+        URLProtocolStub.handler = { request in
+            bodies.append(try XCTUnwrap(JSONSerialization.jsonObject(with: Self.bodyData(from: request)) as? [String: String]))
+            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil))
+            return (response, Data(#"{"token":"session-token"}"#.utf8))
+        }
+        _ = try await LocalAuthService.login(email: "a@example.com", password: "pass", randomValue: "r", endpoint: endpoint, session: session())
+        _ = try await LocalAuthService.login(email: "a@example.com", password: "pass", randomValue: "r", endpoint: endpoint, session: session(), captchaToken: "solved-token")
+        XCTAssertNil(bodies[0]["captchaToken"])
+        XCTAssertEqual(bodies[1]["captchaToken"], "solved-token")
+    }
+
+    func testCaptchaRefusalCarriesTheSiteKey() async {
+        URLProtocolStub.handler = { request in
+            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 403, httpVersion: nil, headerFields: nil))
+            return (response, Data(#"{"error":"x","code":"captcha_required","siteKey":"0x4AAAA"}"#.utf8))
+        }
+        do {
+            _ = try await LocalAuthService.login(email: "a@example.com", password: "pass", randomValue: "r", endpoint: endpoint, session: session())
+            XCTFail("CAPTCHA要求は成功扱いにしてはいけません")
+        } catch let error as LocalAuthError {
+            guard case .captchaRequired(let siteKey) = error else { return XCTFail("想定外のエラー: \(error)") }
+            XCTAssertEqual(siteKey, "0x4AAAA")
+        } catch { XCTFail("想定外のエラー: \(error)") }
+    }
+
+    func testCaptchaServiceOutageIsDistinctFromAWrongPassword() async {
+        URLProtocolStub.handler = { request in
+            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil))
+            return (response, Data(#"{"error":"x","code":"captcha_unavailable","siteKey":"k"}"#.utf8))
+        }
+        do {
+            _ = try await LocalAuthService.login(email: "a@example.com", password: "pass", randomValue: "r", endpoint: endpoint, session: session())
+            XCTFail("成功扱いにしてはいけません")
+        } catch let error as LocalAuthError {
+            guard case .captchaUnavailable = error else { return XCTFail("想定外のエラー: \(error)") }
+        } catch { XCTFail("想定外のエラー: \(error)") }
+    }
+
+    func testAPlain403IsStillJustRejected() async {
+        URLProtocolStub.handler = { request in
+            (try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 403, httpVersion: nil, headerFields: nil)), Data(#"{"error":"nope"}"#.utf8))
+        }
+        do {
+            _ = try await LocalAuthService.login(email: "a@example.com", password: "pass", randomValue: "r", endpoint: endpoint, session: session())
+            XCTFail("成功扱いにしてはいけません")
+        } catch let error as LocalAuthError {
+            guard case .rejected = error else { return XCTFail("想定外のエラー: \(error)") }
+        } catch { XCTFail("想定外のエラー: \(error)") }
+    }
+
     func testMalformedSuccessfulResponseIsRejected() async {
         URLProtocolStub.handler = { request in
             let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil))
