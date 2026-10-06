@@ -77,3 +77,46 @@ test("email matching is case- and whitespace-insensitive", async () => {
 
   assert.equal(await verifyLocalAccount(env, "person@example.com", "correct-horse-battery"), true);
 });
+
+// Counts real PBKDF2 derivations so the tests can assert on work done rather
+// than on wall-clock time, which would be flaky.
+async function countingDerivations(run) {
+  const original = crypto.subtle.deriveBits.bind(crypto.subtle);
+  let count = 0;
+  crypto.subtle.deriveBits = (...args) => { count += 1; return original(...args); };
+  try {
+    await run();
+  } finally {
+    crypto.subtle.deriveBits = original;
+  }
+  return count;
+}
+
+test("an unknown email costs the same PBKDF2 work as a wrong password on a real account", async () => {
+  const env = environment();
+  await upsertLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  const wrongPassword = await countingDerivations(() => verifyLocalAccount(env, "person@example.com", "wrong-password"));
+  const unknownEmail = await countingDerivations(() => verifyLocalAccount(env, "nobody@example.com", "wrong-password"));
+  assert.equal(wrongPassword, 1);
+  assert.equal(unknownEmail, wrongPassword);
+});
+
+test("a malformed address or a damaged record also does the dummy hash and still returns false", async () => {
+  const env = environment();
+  assert.equal(await countingDerivations(async () => {
+    assert.equal(await verifyLocalAccount(env, "not-an-email", "wrong-password"), false);
+  }), 1);
+
+  await env.STUDIQUO_DATA.put("account:local:broken@example.com", JSON.stringify({ email: "broken@example.com", salt: "!!!", passwordHash: "!!!", iterations: 100000 }));
+  assert.equal(await countingDerivations(async () => {
+    assert.equal(await verifyLocalAccount(env, "broken@example.com", "wrong-password"), false);
+  }), 1);
+});
+
+test("the dummy path never accepts anything, whatever the password", async () => {
+  const env = environment();
+  for (const password of ["", "x", "a".repeat(1_024), "\u0000"]) {
+    assert.equal(await verifyLocalAccount(env, "nobody@example.com", password), false);
+  }
+});
