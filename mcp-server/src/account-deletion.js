@@ -1,6 +1,10 @@
 import { sha256Hex } from "./auth.js";
 import { queueRevenueCatDeletion } from "./privacy-retention.js";
 
+// How long the retired password generation outlives the deletion. KV can serve
+// a stale record for about a minute; a week is a wide margin on top of that.
+const ACCOUNT_GENERATION_RETIREMENT_SECONDS = 7 * 86_400;
+
 // Once accepted, cleanup survives session revocation and request timeouts.
 export async function startAccountDeletion(env, canonicalSub) {
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
@@ -123,17 +127,23 @@ export async function deleteAccount(env, canonicalSub) {
   else if (canonicalSub.startsWith("email:")) accountKeys.push(`account:local:${canonicalSub.slice(6)}`);
   else accountKeys.push(`account:${canonicalSub}`);
 
-  // A legacy-password upgrade (local-auth.js) that began before this deletion
-  // — or whose login read a stale copy of the record afterwards — would
-  // otherwise write account:local:* back once it is gone. Moving the account's
-  // generation on first makes that write refuse. Bumped, never reset: a
-  // lower number would let an old record's generation match again.
+  // Per-account state kept in RATE_COUNTER objects is named by a hash of the
+  // email: where it was signed in from, recent failures, the notice allowance,
+  // code-attempt counters, and the password generation.
+  //
+  // The generation is retired FIRST, before anything is deleted. A legacy-password
+  // upgrade (local-auth.js) that began before this deletion — or whose login read
+  // a stale copy of the record afterwards — would otherwise write account:local:*
+  // back once it is gone; moving the count on makes that write refuse. It isn't
+  // dropped outright for that reason: its own alarm clears it after
+  // ACCOUNT_GENERATION_RETIREMENT_SECONDS.
+  const privacyEmails = new Set([
+    ...emails,
+    ...accountKeys.filter(key => key.startsWith("account:local:")).map(key => key.slice("account:local:".length)),
+  ].map(email => String(email).trim().toLowerCase()).filter(Boolean));
   if (env.RATE_COUNTER) {
-    const localEmails = new Set(accountKeys
-      .filter(key => key.startsWith("account:local:"))
-      .map(key => key.slice("account:local:".length).trim().toLowerCase()));
-    for (const email of localEmails) {
-      await env.RATE_COUNTER.getByName(`account-gen:${await sha256Hex(email)}`).nextAccountGeneration();
+    for (const email of privacyEmails) {
+      await env.RATE_COUNTER.getByName(`account-gen:${await sha256Hex(email)}`).retireAccountGeneration(ACCOUNT_GENERATION_RETIREMENT_SECONDS);
     }
   }
 
@@ -230,7 +240,7 @@ export async function deleteAccount(env, canonicalSub) {
 
   const deletionKeys = [
     ...checkpointKeys, ...ownedSessionKeys, ...accountKeys, ...ownedCredentialKeys, ...ownedPasskeyUserKeys, ...mcpKeys,
-    ...emails.flatMap(email => [`email-account-owner:${email}`, `email-accounts:${email}`]),
+    ...emails.flatMap(email => [`email-account-owner:${email}`, `email-accounts:${email}`, `email-verify:${email}`]),
     ...[...identityKeys].map(key => `identity-canonical:${key}`),
     ...ownedTokenHashes.flatMap(hash => [`snapshot:${hash}`, `actions:${hash}`]),
     `snapshot:${mcpHash}`, `chat:user:${chatKey}`, `chat:devices:${chatKey}`,
@@ -239,6 +249,22 @@ export async function deleteAccount(env, canonicalSub) {
   if (chatUser) deletionKeys.push(`chat:code:${chatUser.code}`, `chat:linktoken:${chatUser.linkToken}`, `chat:avatar:${chatUser.code}`);
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ ...checkpoint, deletionKeys: [...new Set(deletionKeys)] }));
   await deleteKeys(env, deletionKeys);
+
+  // The rest of the per-account RATE_COUNTER state goes only after the account
+  // itself is gone, so a Durable Object hiccup here can't hold the real
+  // deletion up: it just leaves the job un-"deleted", and the retry (the job
+  // record is still there) repeats these idempotent calls. Not reachable: the
+  // per-IP failure counters, keyed by a hash of IP+email so the IPs can't be
+  // listed; they expire on their own within about two weeks.
+  if (env.RATE_COUNTER) {
+    for (const email of privacyEmails) {
+      const emailHash = await sha256Hex(email);
+      for (const name of ["login-seen", "login-fail-account", "login-notice", "email-code-send", "email-code-confirm"]) {
+        await env.RATE_COUNTER.getByName(`${name}:${emailHash}`).purgeAll();
+      }
+    }
+  }
+
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "deleted", identityKeys: [...identityKeys] }));
   await env.STUDIQUO_DATA.delete(jobKey);
   return { deleted: true };
