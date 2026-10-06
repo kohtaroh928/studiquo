@@ -53,13 +53,6 @@ struct AccountGateView: View {
             }
         }
         .environmentObject(authentication)
-        .sheet(item: $authentication.captchaChallenge, onDismiss: nil) { challenge in
-            CaptchaSheet(
-                challenge: challenge,
-                onToken: { token in Task { await authentication.solveCaptcha(token) } },
-                onCancel: { authentication.cancelCaptcha() }
-            )
-        }
         .animation(.easeInOut(duration: 0.2), value: authentication.state)
         .task(id: authentication.state) {
             guard !cleanupPending, authentication.state == .authenticated else { return }
