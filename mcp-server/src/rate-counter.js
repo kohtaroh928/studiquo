@@ -81,6 +81,29 @@ export class RateCounter extends DurableObject {
     return { isNew: result.isNew, wasEmpty: result.wasEmpty };
   }
 
+  // Per-account password generation (local-auth.js). Deliberately has no
+  // alarm: forgetting the count would let a stale record's old generation
+  // match again.
+  async nextAccountGeneration() {
+    const next = ((await this.ctx.storage.get("gen")) ?? 0) + 1;
+    await this.ctx.storage.put("gen", next);
+    return next;
+  }
+
+  // Writes `json` to `key` only if no password was set since `expectedGen`.
+  // The check and the write are one step here, so a concurrent password set
+  // can't slip in between them.
+  // The KV write is outside this object's storage, so without the block a
+  // nextAccountGeneration() (and the password write that follows it) could
+  // run while this put is still in flight and then be overtaken by it.
+  async upgradeAccountIfCurrent(key, json, expectedGen) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (((await this.ctx.storage.get("gen")) ?? 0) !== expectedGen) return false;
+      await this.env.STUDIQUO_DATA.put(key, json);
+      return true;
+    });
+  }
+
   async alarm() {
     await this.ctx.storage.deleteAll();
   }

@@ -6,6 +6,7 @@ import worker from "./app.js";
 import { realSession } from "./session.js";
 import { reserveAttempt, refundAttempt, trustPair } from "./login-throttle.js";
 import { touchSeenContext } from "./login-monitor.js";
+import { accountGenerationMethods } from "./test-account-generations.js";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.js";
 
 // Regression coverage for "logging out doesn't revoke the cloud sync token":
@@ -26,8 +27,9 @@ function fakeCloudflareLimiter(limit = 5) {
 }
 
 // Mirrors RateCounter.bump's contract: true while under `limit`, false once spent.
-function fakeRateCounterBinding() {
+function fakeRateCounterBinding(getData) {
   const counts = new Map();
+  const generations = new Map();
   const logins = new Map();
   const seen = new Map();
   return {
@@ -48,6 +50,7 @@ function fakeRateCounterBinding() {
           return { waitSeconds: result.waitSeconds, trusted: result.trusted };
         },
         async loginRefund(policy) { if (logins.has(name)) logins.set(name, refundAttempt(logins.get(name), policy)); },
+        ...accountGenerationMethods(name, generations, getData),
         async seenContext(key, { maxEntries, ttlSeconds }) {
           const result = touchSeenContext(seen.get(name), key, Date.now(), maxEntries, ttlSeconds);
           seen.set(name, result.state);
@@ -61,7 +64,7 @@ function fakeRateCounterBinding() {
 
 function environment({ strictSessions = false } = {}) {
   const values = new Map();
-  return {
+  const env = {
     STUDIQUO_DATA: {
       async get(key, type) {
         let value = values.get(key) ?? null;
@@ -88,11 +91,12 @@ function environment({ strictSessions = false } = {}) {
     RATE_LIMIT_EMAIL_VERIFY_CONFIRM: fakeCloudflareLimiter(),
     RATE_LIMIT_LOCAL_LOGIN: fakeCloudflareLimiter(),
     RATE_LIMIT_ISSUE_REPORT: fakeCloudflareLimiter(),
-    RATE_COUNTER: fakeRateCounterBinding(),
+    RATE_COUNTER: fakeRateCounterBinding(() => env.STUDIQUO_DATA),
     // Never reach the real HIBP from tests: by default nothing is breached.
     PWNED_PASSWORDS_FETCH: async () => new Response("", { status: 200 }),
     RESEND_API_KEY: "test-key",
   };
+  return env;
 }
 
 const noopCtx = { waitUntil() {} };

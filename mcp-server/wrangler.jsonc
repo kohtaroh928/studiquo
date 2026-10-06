@@ -113,7 +113,14 @@
     // Cloudflare cut the idle outbound connection with a 524 before any
     // result existed. The faster model finishes inside the budget.
     "GEMINI_GRADING_MODEL": "gemini-3.5-flash",
-    "APNS_TOPIC": "com.yabuko.studiquo"
+    "APNS_TOPIC": "com.yabuko.studiquo",
+    // Two-step rollout of the PBKDF2 -> Argon2id password-hash move (see
+    // src/local-auth.js). Argon2id records are always readable; this only
+    // controls whether new/reset passwords and sign-in upgrades WRITE them.
+    // Keep "false" for the first deploy, then set "true" in a second deploy
+    // once the first is stable. Never roll back to code from before Argon2id
+    // support once it has been "true": those accounts would be locked out.
+    "ARGON2_WRITE": "false"
   },
   "observability": {
     "enabled": true,
