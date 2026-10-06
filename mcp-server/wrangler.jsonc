@@ -120,7 +120,19 @@
     // Keep "false" for the first deploy, then set "true" in a second deploy
     // once the first is stable. Never roll back to code from before Argon2id
     // support once it has been "true": those accounts would be locked out.
-    "ARGON2_WRITE": "false"
+    "ARGON2_WRITE": "false",
+    // Cloudflare Turnstile (CAPTCHA, see src/turnstile.js). The site key is
+    // public; the secret is NOT here — set it with
+    // `wrangler secret put TURNSTILE_SECRET`. CAPTCHA stays off until both are
+    // set, so this can ship before the widget is created in the dashboard.
+    // The widget's allowed hostnames must include this Worker's hostname.
+    // ORDER MATTERS: the moment both are set, sending a code always needs a
+    // CAPTCHA and sign-in needs one after repeated failures. Builds without
+    // the in-app CAPTCHA sheet cannot solve it and would be locked out of
+    // sign-up, so turn this on only once a build with it has shipped.
+    // These vars overwrite the dashboard on every deploy: when enabling, put
+    // the real (public) site key here, or the next deploy turns CAPTCHA off.
+    "TURNSTILE_SITE_KEY": ""
   },
   "observability": {
     "enabled": true,

@@ -28,12 +28,17 @@
 //     address can't therefore keep its owner waiting on their usual network.
 import { sha256Hex } from "./auth.js";
 
+// `captchaAfter`: once a key has this many failures in its window, a further
+// attempt must come with a solved CAPTCHA (turnstile.js) before it is even
+// counted or the password checked. It never replaces the wait below it — a
+// solved CAPTCHA does not skip a wait, since solving services make CAPTCHAs
+// cheap to buy — it only raises the cost of every attempt before the wait.
 export const THROTTLE_POLICIES = {
   // Shared carrier/NAT ASNs hold many honest users, so this key tolerates a
   // lot before it slows anyone and never waits long.
   asn: { freeFailures: 100, baseSeconds: 10, maxSeconds: 300, windowSeconds: 3_600 },
-  account: { freeFailures: 10, baseSeconds: 30, maxSeconds: 900, windowSeconds: 3_600 },
-  ipAccount: { freeFailures: 5, baseSeconds: 15, maxSeconds: 900, windowSeconds: 3_600 },
+  account: { freeFailures: 10, baseSeconds: 30, maxSeconds: 900, windowSeconds: 3_600, captchaAfter: 5 },
+  ipAccount: { freeFailures: 5, baseSeconds: 15, maxSeconds: 900, windowSeconds: 3_600, captchaAfter: 3 },
 };
 
 function streakAlive(state, now, policy) {
@@ -77,14 +82,19 @@ export function remainingSeconds(state, now) {
  * attempt as a failure up front and let it proceed. `trusted` reports whether
  * this key's IP+account pair has signed in successfully before.
  */
-export function reserveAttempt(state, now, policy, { enforce = true } = {}) {
+export function reserveAttempt(state, now, policy, { enforce = true, captchaVerified = false } = {}) {
   const trusted = Boolean(state) && now < (state.trustedUntil ?? 0);
   const current = streakAlive(state, now, policy) ? state : { ...(state ?? {}), failures: 0, blockedUntil: 0 };
   const waitSeconds = remainingSeconds(current, now);
   // `enforce: false` still counts the failure but never refuses (a trusted
   // pair against the shared account / ASN keys).
-  if (enforce && waitSeconds > 0) return { state: current, waitSeconds, trusted };
-  return { state: recordFailure(current, now, policy), waitSeconds: 0, trusted };
+  if (enforce && waitSeconds > 0) return { state: current, waitSeconds, trusted, captchaRequired: false };
+  // Past the CAPTCHA line and no solved one yet: refuse without counting, so
+  // the same attempt can be made again once it comes with a token.
+  if (enforce && policy.captchaAfter && !captchaVerified && current.failures >= policy.captchaAfter) {
+    return { state: current, waitSeconds: 0, trusted, captchaRequired: true };
+  }
+  return { state: recordFailure(current, now, policy), waitSeconds: 0, trusted, captchaRequired: false };
 }
 
 /** Takes back the failure reserveAttempt counted, once the password turned out correct. */
@@ -121,33 +131,39 @@ async function loginKeys(env, request, email) {
  * Call before checking the password. Counts this attempt as a failure up
  * front (atomically with the wait check, in each key's Durable Object), so
  * parallel requests can't all slip past a wait that hasn't been recorded
- * yet. Returns `{ waitSeconds }`; when it's > 0 the caller must refuse
- * without checking the password, and nothing is left counted. Otherwise
- * pass the result to finishLoginAttempt() with the outcome.
+ * yet. Returns `{ waitSeconds, captchaRequired }`:
+ *   - `waitSeconds > 0`: the caller must refuse without checking the password.
+ *   - `captchaRequired`: a key is past its CAPTCHA line. Nothing is left
+ *     counted; verify a CAPTCHA token and call again with
+ *     `captchaVerified: true`.
+ * Otherwise pass the result to finishLoginAttempt() with the outcome.
+ * A wait always wins over a CAPTCHA: solving one never shortens a wait.
  */
-export async function beginLoginAttempt(env, request, email) {
+export async function beginLoginAttempt(env, request, email, { captchaVerified = false } = {}) {
   const { pair, shared } = await loginKeys(env, request, email);
-  const own = await pair.stub.loginReserve(pair.policy);
-  if (own.waitSeconds > 0) return { waitSeconds: own.waitSeconds, pair, held: [] };
+  const own = await pair.stub.loginReserve(pair.policy, { captchaVerified });
+  if (own.waitSeconds > 0) return { waitSeconds: own.waitSeconds, captchaRequired: false, pair, held: [] };
+  if (own.captchaRequired) return { waitSeconds: 0, captchaRequired: true, pair, held: [] };
   // A known IP+account pair is never held up by the shared account / ASN
   // waits, but its failures still count toward them: otherwise a botnet that
   // had trusted many IPs (say with an old, leaked password) could guess a
   // changed one without ever moving the account's counter.
   if (own.trusted) {
     await Promise.all(shared.map(key => key.stub.loginReserve(key.policy, { enforce: false })));
-    return { waitSeconds: 0, pair, held: shared };
+    return { waitSeconds: 0, captchaRequired: false, pair, held: shared };
   }
 
-  const results = await Promise.all(shared.map(key => key.stub.loginReserve(key.policy)));
+  const results = await Promise.all(shared.map(key => key.stub.loginReserve(key.policy, { captchaVerified })));
   const waitSeconds = Math.max(0, ...results.map(result => result.waitSeconds));
-  // Keys that did count this attempt (their own wait was 0).
-  const held = shared.filter((_, index) => results[index].waitSeconds === 0);
-  if (waitSeconds > 0) {
+  const captchaRequired = waitSeconds === 0 && results.some(result => result.captchaRequired);
+  // Keys that did count this attempt (neither waiting nor asking for a CAPTCHA).
+  const held = shared.filter((_, index) => results[index].waitSeconds === 0 && !results[index].captchaRequired);
+  if (waitSeconds > 0 || captchaRequired) {
     // Refused: hand back every failure just counted, including the pair's.
     await Promise.all([pair, ...held].map(key => key.stub.loginRefund(key.policy)));
-    return { waitSeconds, pair, held: [] };
+    return { waitSeconds, captchaRequired, pair, held: [] };
   }
-  return { waitSeconds: 0, pair, held };
+  return { waitSeconds: 0, captchaRequired: false, pair, held };
 }
 
 /** Call after the password check. Failures stay counted; a success hands the shared counters their failure back and trusts this IP+account pair. */
