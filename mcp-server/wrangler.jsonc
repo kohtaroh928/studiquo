@@ -126,5 +126,93 @@
     "enabled": true,
     "logs": { "head_sampling_rate": 1 },
     "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+  },
+  // ---------------------------------------------------------------------------
+  // Staging: a SEPARATE Worker with its own KV, D1, Durable Objects and rate
+  // limits, for checking changes before production (see docs/STAGING_SETUP.md).
+  // `env` blocks do not inherit bindings, so everything is repeated here, and
+  // nothing in it may point at a production resource. Deploy and run it only
+  // with `--env staging`.
+  //
+  // Both ids below are PLACEHOLDERS on purpose: replace them with the ids that
+  // `wrangler kv namespace create` and `wrangler d1 create` print. Until then a
+  // staging deploy fails instead of touching anything. Before the first deploy,
+  // run `wrangler deploy --env staging --dry-run` and check that no production
+  // id (the KV namespace and D1 database above) appears in the bindings list.
+  // ---------------------------------------------------------------------------
+  "env": {
+    "staging": {
+      "name": "studiquo-mcp-staging",
+      // No hourly retention job on staging.
+      "triggers": { "crons": [] },
+      "kv_namespaces": [
+        {
+          "binding": "STUDIQUO_DATA",
+          "id": "caa75c4df85d4a24a7b19f19ea2f439b",
+          "preview_id": "caa75c4df85d4a24a7b19f19ea2f439b"
+        }
+      ],
+      "d1_databases": [
+        {
+          "binding": "ADMIN_DB",
+          "database_name": "studiquo-admin-staging",
+          "database_id": "697ba80f-9a11-4b0b-b204-687737c8c245"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "CHAT_ROOM", "class_name": "ChatRoom" },
+          { "name": "USER_REGISTRY", "class_name": "UserRegistry" },
+          { "name": "DOCUMENT_ROOM", "class_name": "DocumentRoom" },
+          { "name": "RATE_COUNTER", "class_name": "RateCounter" },
+          { "name": "MCP_INBOX", "class_name": "MCPInbox" }
+        ]
+      },
+      "migrations": [
+        { "tag": "v1-chat", "new_sqlite_classes": ["ChatRoom"] },
+        { "tag": "v2-user-registry", "new_sqlite_classes": ["UserRegistry"] },
+        { "tag": "v3-document-room", "new_sqlite_classes": ["DocumentRoom"] },
+        { "tag": "v4-rate-counter", "new_sqlite_classes": ["RateCounter"] },
+        { "tag": "v5-mcp-inbox", "new_sqlite_classes": ["MCPInbox"] }
+      ],
+      // Same limits as production, but namespace ids 20NN instead of 10NN so
+      // the two Workers never share a counter.
+      "ratelimits": [
+        { "name": "RATE_LIMIT_APPLE_AUTH", "namespace_id": "2001", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_GOOGLE_AUTH", "namespace_id": "2007", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_EMAIL_VERIFY_SEND", "namespace_id": "2008", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_EMAIL_VERIFY_CONFIRM", "namespace_id": "2009", "simple": { "limit": 10, "period": 60 } },
+        { "name": "RATE_LIMIT_LOCAL_LOGIN", "namespace_id": "2011", "simple": { "limit": 10, "period": 60 } },
+        { "name": "RATE_LIMIT_PASSKEY_LOGIN_OPTIONS", "namespace_id": "2002", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_PASSKEY_LOGIN_VERIFY", "namespace_id": "2003", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_PASSKEY_REGISTER_OPTIONS", "namespace_id": "2004", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_PASSKEY_REGISTER_VERIFY", "namespace_id": "2005", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_CHAT_FRIEND_ADD", "namespace_id": "2006", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_CHAT_MESSAGE", "namespace_id": "2010", "simple": { "limit": 30, "period": 60 } },
+        { "name": "RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD", "namespace_id": "2012", "simple": { "limit": 10, "period": 60 } },
+        { "name": "RATE_LIMIT_CHAT_REPORT", "namespace_id": "2013", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_ISSUE_REPORT", "namespace_id": "2014", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_CHAT_GROUP_ACTION", "namespace_id": "2015", "simple": { "limit": 10, "period": 60 } },
+        { "name": "RATE_LIMIT_MCP_REGISTER", "namespace_id": "2016", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_MCP_AUTHORIZE", "namespace_id": "2017", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_MCP_TOKEN", "namespace_id": "2018", "simple": { "limit": 20, "period": 60 } },
+        { "name": "RATE_LIMIT_MCP_PAIR", "namespace_id": "2019", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_ADMIN_WEBHOOK", "namespace_id": "2020", "simple": { "limit": 60, "period": 60 } },
+        { "name": "RATE_LIMIT_USAGE_EVENT", "namespace_id": "2021", "simple": { "limit": 20, "period": 60 } },
+        { "name": "RATE_LIMIT_CHAT_DEVICE_REGISTER", "namespace_id": "2022", "simple": { "limit": 5, "period": 60 } },
+        { "name": "RATE_LIMIT_APP_ERROR", "namespace_id": "2024", "simple": { "limit": 10, "period": 60 } },
+        { "name": "RATE_LIMIT_ANNOUNCEMENTS", "namespace_id": "2023", "simple": { "limit": 30, "period": 60 } }
+      ],
+      "vars": {
+        "PRIVACY_RETENTION_ENABLED": "false",
+        "AI_PROVIDER_APPROVED": "false",
+        "GEMINI_GRADING_MODEL": "gemini-3.5-flash",
+        "APNS_TOPIC": "com.yabuko.studiquo",
+        "ARGON2_WRITE": "false",
+        // Mail from staging says so, and uses Resend's shared test sender.
+        "RESEND_FROM_EMAIL": "Studiquo Staging <onboarding@resend.dev>"
+      },
+      "observability": { "enabled": true, "logs": { "head_sampling_rate": 1 } }
+    }
   }
 }
