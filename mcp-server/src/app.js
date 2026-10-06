@@ -30,7 +30,6 @@ import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { beginLoginAttempt, finishLoginAttempt } from "./login-throttle.js";
 import { isBreachedPassword } from "./pwned-passwords.js";
 import { recordLoginOutcome, noteSignInContext } from "./login-monitor.js";
-import { captchaEnabled, verifyCaptcha, captchaRefusal } from "./turnstile.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readTextLimited, readJSONLimited, securityHeaders } from "./http.js";
 
@@ -620,19 +619,6 @@ async function withinEmailCodeBudget(env, action, email, limit) {
   return env.RATE_COUNTER.getByName(`email-code-${action}:${emailHash}`).bump(limit, EMAIL_CODE_WINDOW_SECONDS);
 }
 
-// A Turnstile token is up to ~2 KB, so the bodies that carry one need more
-// room than the 2 KB the rest of these auth endpoints allow.
-const CAPTCHA_BODY_LIMIT = 4_096;
-
-// Checks `token` for `action`, or says why not. Only meaningful once
-// Turnstile is configured (turnstile.js); callers skip it otherwise.
-async function captchaVerdict(env, request, token, action) {
-  const verdict = await verifyCaptcha(env, token, { action, ip: clientKey(request) });
-  if (verdict.ok) return null;
-  const { status, body } = captchaRefusal(env, verdict.code);
-  return Response.json(body, { status, headers: securityHeaders() });
-}
-
 // Monitoring must never delay or fail a sign-in: run it after the response
 // where the runtime allows, and in any case swallow its errors.
 function inBackground(ctx, work) {
@@ -649,7 +635,7 @@ async function handleSendEmailVerification(request, env) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_EMAIL_VERIFY_SEND, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
-  const body = await readTextLimited(request, CAPTCHA_BODY_LIMIT);
+  const body = await readTextLimited(request, 2_000);
   if (body == null) return json({ error: "Request body is too large." }, 413);
   let parsed;
   try {
@@ -658,15 +644,8 @@ async function handleSendEmailVerification(request, env) {
     return json({ error: "Invalid JSON." }, 400);
   }
 
-  const { email, captchaToken } = parsed ?? {};
+  const { email } = parsed ?? {};
   if (typeof email !== "string" || !email) return json({ error: "email is required." }, 400);
-
-  // Checked before the per-email budget is touched, so a caller without a
-  // solved CAPTCHA can't use up a victim's address's allowance for the hour.
-  if (captchaEnabled(env)) {
-    const refused = await captchaVerdict(env, request, captchaToken, "send-code");
-    if (refused) return refused;
-  }
 
   if (!(await withinEmailCodeBudget(env, "send", email, EMAIL_SEND_LIMIT_PER_WINDOW))) {
     return json({ error: "Too many attempts. Please try again later." }, 429);
@@ -766,7 +745,7 @@ async function handleLocalLogin(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_LOCAL_LOGIN, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
-  const body = await readTextLimited(request, CAPTCHA_BODY_LIMIT);
+  const body = await readTextLimited(request, 2_000);
   if (body == null) return json({ error: "Request body is too large." }, 413);
   let parsed;
   try {
@@ -775,7 +754,7 @@ async function handleLocalLogin(request, env, ctx) {
     return json({ error: "Invalid JSON." }, 400);
   }
 
-  const { email, password, randomValue, captchaToken } = parsed ?? {};
+  const { email, password, randomValue } = parsed ?? {};
   if (typeof email !== "string" || !email) return json({ error: "email is required." }, 400);
   if (typeof password !== "string" || !password) return json({ error: "password is required." }, 400);
   if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
@@ -790,19 +769,7 @@ async function handleLocalLogin(request, env, ctx) {
   // wait check, so a burst of parallel requests can't all get a guess in.
   // While a wait runs the password isn't checked at all, so a correct guess
   // can't get through mid-wait either.
-  const captchaOn = captchaEnabled(env);
-  let attempt = await beginLoginAttempt(env, request, email, { captchaVerified: !captchaOn });
-  if (attempt.captchaRequired) {
-    // Enough failures on this account or from this client: a solved CAPTCHA
-    // comes first. Nothing has been counted or checked yet. A CAPTCHA never
-    // skips a wait, so the wait check below still runs after it.
-    const refused = await captchaVerdict(env, request, captchaToken, "login");
-    if (refused) {
-      inBackground(ctx, recordLoginOutcome(env, request, "captcha"));
-      return refused;
-    }
-    attempt = await beginLoginAttempt(env, request, email, { captchaVerified: true });
-  }
+  const attempt = await beginLoginAttempt(env, request, email);
   if (attempt.waitSeconds > 0) {
     inBackground(ctx, recordLoginOutcome(env, request, "throttled"));
     return Response.json(

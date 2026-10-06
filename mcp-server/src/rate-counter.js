@@ -45,12 +45,11 @@ export class RateCounter extends DurableObject {
   // transitions; this object serialises access to them, which is what makes
   // "check the wait, then count the attempt" one atomic step). A name is
   // used either for bump() or for these, never both, so they share the alarm.
-  async loginReserve(policy, { enforce = true, captchaVerified = false } = {}) {
+  async loginReserve(policy, { enforce = true } = {}) {
     const now = Date.now();
-    const result = reserveAttempt(await this.ctx.storage.get("login"), now, policy, { enforce, captchaVerified });
-    // Only an attempt that goes ahead is counted; a refused one changes nothing.
-    if (result.waitSeconds === 0 && !result.captchaRequired) await this.saveLogin(result.state, now, policy);
-    return { waitSeconds: result.waitSeconds, trusted: result.trusted, captchaRequired: result.captchaRequired };
+    const result = reserveAttempt(await this.ctx.storage.get("login"), now, policy, { enforce });
+    if (result.waitSeconds === 0) await this.saveLogin(result.state, now, policy);
+    return { waitSeconds: result.waitSeconds, trusted: result.trusted };
   }
 
   async loginRefund(policy) {
