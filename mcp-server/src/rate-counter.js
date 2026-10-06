@@ -87,7 +87,30 @@ export class RateCounter extends DurableObject {
   async nextAccountGeneration() {
     const next = ((await this.ctx.storage.get("gen")) ?? 0) + 1;
     await this.ctx.storage.put("gen", next);
+    // A password being set again (re-registration after a deletion) takes the
+    // count back out of retirement: see retireAccountGeneration.
+    await this.ctx.storage.deleteAlarm();
     return next;
+  }
+
+  // Account deletion. The count can't be dropped at once: a login already in
+  // flight (or one that read a stale copy of the record) could still try to
+  // write the deleted account back, and it is the moved-on count that makes
+  // that refuse. Nothing but a counter is kept, and only for as long as KV can
+  // serve a stale read (about a minute) plus a wide margin; then the alarm
+  // clears it. Setting a password again before then cancels the alarm.
+  async retireAccountGeneration(ttlSeconds) {
+    const next = ((await this.ctx.storage.get("gen")) ?? 0) + 1;
+    await this.ctx.storage.put("gen", next);
+    await this.ctx.storage.setAlarm(Date.now() + ttlSeconds * 1000);
+    return next;
+  }
+
+  // Account deletion, for every other per-account object (seen contexts,
+  // failure counters, notice allowance, code-attempt counters): forget it all.
+  async purgeAll() {
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
   }
 
   // Writes `json` to `key` only if no password was set since `expectedGen`.
