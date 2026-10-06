@@ -5,6 +5,7 @@ import { deleteAccount } from "./account-deletion.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 import worker from "./app.js";
 import { mintSession } from "./session.js";
+import { accountGenerationMethods } from "./test-account-generations.js";
 
 function environment() {
   const values = new Map();
@@ -601,4 +602,29 @@ test("56. タイムアウト後に再試行すると残りを削除できる", a
   await deleteAccount(env, canonical);
   assert.equal(await env.STUDIQUO_DATA.get("snapshot:timeout-token-56"), null);
   assert.equal((await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json")).status, "deleted");
+});
+
+test("退会後に、進行中のパスワードハッシュのアップグレードがローカルアカウントを復活させない", async () => {
+  const env = environment();
+  const generations = new Map();
+  env.RATE_COUNTER = { getByName: name => accountGenerationMethods(name, generations, () => env.STUDIQUO_DATA) };
+  await seedLinked(env, "email:local@example.com", "local@example.com", [{ provider: "email", sub: "local@example.com" }]);
+  await env.STUDIQUO_DATA.put("account:local:local@example.com", JSON.stringify({ gen: 3 }));
+  const stub = env.RATE_COUNTER.getByName(`account-gen:${createHash("sha256").update("local@example.com").digest("hex")}`);
+  for (let i = 0; i < 3; i++) await stub.nextAccountGeneration();
+
+  await deleteAccount(env, "email:local@example.com");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:local@example.com"), null);
+
+  // The login that started before the deletion now tries to land its upgrade.
+  assert.equal(await stub.upgradeAccountIfCurrent("account:local:local@example.com", "{\"algo\":\"argon2id\"}", 3), false);
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:local@example.com"), null);
+});
+
+test("退会は、RATE_COUNTERが無い環境でもローカルアカウントを削除できる", async () => {
+  const env = environment();
+  await seedLinked(env, "email:local@example.com", "local@example.com", [{ provider: "email", sub: "local@example.com" }]);
+  await env.STUDIQUO_DATA.put("account:local:local@example.com", "{}");
+  await deleteAccount(env, "email:local@example.com");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:local@example.com"), null);
 });

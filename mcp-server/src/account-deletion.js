@@ -123,6 +123,20 @@ export async function deleteAccount(env, canonicalSub) {
   else if (canonicalSub.startsWith("email:")) accountKeys.push(`account:local:${canonicalSub.slice(6)}`);
   else accountKeys.push(`account:${canonicalSub}`);
 
+  // A legacy-password upgrade (local-auth.js) that began before this deletion
+  // — or whose login read a stale copy of the record afterwards — would
+  // otherwise write account:local:* back once it is gone. Moving the account's
+  // generation on first makes that write refuse. Bumped, never reset: a
+  // lower number would let an old record's generation match again.
+  if (env.RATE_COUNTER) {
+    const localEmails = new Set(accountKeys
+      .filter(key => key.startsWith("account:local:"))
+      .map(key => key.slice("account:local:".length).trim().toLowerCase()));
+    for (const email of localEmails) {
+      await env.RATE_COUNTER.getByName(`account-gen:${await sha256Hex(email)}`).nextAccountGeneration();
+    }
+  }
+
   const passkeyCredentialKeys = await entries(env, "passkeys:credential:");
   const ownedCredentialKeys = [];
   for (const key of passkeyCredentialKeys) {
