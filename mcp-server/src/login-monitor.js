@@ -23,6 +23,10 @@ export const MONITOR = {
   // used to set off, and thereby mask, the failure alert.
   failureAlert: 100,
   throttledAlert: 300,
+  // Sign-ins turned away because password hashing was saturated (503). A few
+  // are normal in a burst; many mean an attack on capacity, or that the
+  // limit is too small for the real traffic.
+  busyAlert: 50,
   // Successful sign-ins, per window, from a context an account with history
   // hadn't used. An account's very first recorded sign-in doesn't count — at
   // rollout that is every existing user.
@@ -112,6 +116,12 @@ export async function recordLoginOutcome(env, request, outcome, { newContext = f
         env, "login-metric:throttled", MONITOR.throttledAlert,
         "ログインの待機が多発しています",
         `この1時間で、待機中として断られたログインが${MONITOR.throttledAlert}件を超えました。特定のアカウントやネットワークが執拗に試されている可能性があります。`
+      );
+    } else if (outcome === "busy") {
+      await countAndAlert(
+        env, "login-metric:busy", MONITOR.busyAlert,
+        "ログインがハッシュ処理の混雑で断られています",
+        `この1時間で、パスワードのハッシュ処理の混雑によって断られたログインが${MONITOR.busyAlert}件を超えました。容量を狙った攻撃か、同時実行の上限が実際の利用に対して小さい可能性があります。Workers Logsで event=local_login outcome=busy を確認してください。`
       );
     } else if (outcome === "success" && newContext) {
       await countAndAlert(

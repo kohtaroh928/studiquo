@@ -33,11 +33,38 @@ const PBKDF2_ITERATIONS = 100_000;
 // everything: a burst of simultaneous logins must queue rather than all
 // allocate at once. Waiting costs wall-clock time, not CPU time.
 const MAX_CONCURRENT_ARGON2 = 2;
+// How many may wait behind those two. At ~75 ms a run, 32 waiting is about
+// 1.2 s of queue; past that a sign-in is turned away at once (Argon2BusyError)
+// rather than left to pile up unbounded, and the caller answers 503 and asks
+// to retry. Operations that must not fail halfway never use this limit.
+const MAX_QUEUED_ARGON2 = 32;
 let activeArgon2 = 0;
 const argon2Waiters = [];
 
-async function withArgon2Slot(work) {
+function argon2QueueFull() {
+  return activeArgon2 >= MAX_CONCURRENT_ARGON2 && argon2Waiters.length >= MAX_QUEUED_ARGON2;
+}
+
+/** For tests: how many Argon2id runs are going and how many are waiting. */
+export function argon2QueueState() {
+  return { active: activeArgon2, waiting: argon2Waiters.length };
+}
+
+/** The Argon2id queue is full: nothing was checked or changed, try again shortly. */
+export class Argon2BusyError extends Error {
+  constructor() {
+    super("password hashing is busy");
+    this.name = "Argon2BusyError";
+  }
+}
+
+// `patient` work always queues, however long the queue is. That is for the
+// operations that run after a one-time code was already spent (setting a
+// password at sign-up or reset): turning those away would cost the person
+// their code for something the queue limit exists only to protect.
+async function withArgon2Slot(work, { patient = false } = {}) {
   if (activeArgon2 >= MAX_CONCURRENT_ARGON2) {
+    if (!patient && argon2Waiters.length >= MAX_QUEUED_ARGON2) throw new Argon2BusyError();
     // The slot is handed over by whoever finishes (active stays counted).
     await new Promise(resolve => argon2Waiters.push(resolve));
   } else {
@@ -62,8 +89,8 @@ async function pbkdf2(password, salt, iterations) {
 // can watch how many run at once.
 export const engine = { argon2idAsync };
 
-function argon2id(password, salt, { m, t, p }) {
-  return withArgon2Slot(() => engine.argon2idAsync(password, salt, { m, t, p, dkLen: ARGON2.dkLen }));
+function argon2id(password, salt, { m, t, p }, { patient = false } = {}) {
+  return withArgon2Slot(() => engine.argon2idAsync(password, salt, { m, t, p, dkLen: ARGON2.dkLen }), { patient });
 }
 
 // The two primitives, reachable through one object so tests can observe how
@@ -95,9 +122,9 @@ function argon2Writes(env) {
   return env.ARGON2_WRITE === "true";
 }
 
-async function newArgon2Record(normalized, password, gen) {
+async function newArgon2Record(normalized, password, gen, options) {
   const salt = crypto.getRandomValues(new Uint8Array(24));
-  const passwordHash = await hashers.argon2id(password, salt, ARGON2);
+  const passwordHash = await hashers.argon2id(password, salt, ARGON2, options);
   return {
     email: normalized,
     algo: "argon2id",
@@ -156,7 +183,7 @@ export async function upsertLocalAccount(env, email, password) {
   // from the previous record is already refused by the time this one lands.
   const gen = await generationStub(env, await sha256Hex(normalized)).nextAccountGeneration();
   const record = argon2Writes(env)
-    ? await newArgon2Record(normalized, password, gen)
+    ? await newArgon2Record(normalized, password, gen, { patient: true })
     : await newLegacyRecord(normalized, password, gen);
   await env.STUDIQUO_DATA.put(`${ACCOUNT_PREFIX}${normalized}`, JSON.stringify(record));
 }
@@ -194,9 +221,12 @@ async function upgradeLegacyRecord(env, key, original, normalized, password) {
   if (!argon2Writes(env)) return;
   try {
     const expectedGen = Number.isInteger(original.gen) ? original.gen : 0;
+    // Optional work: when the queue is full it is skipped, and the next
+    // sign-in upgrades the record instead.
     const upgraded = await newArgon2Record(normalized, password, expectedGen);
     await generationStub(env, await sha256Hex(normalized)).upgradeAccountIfCurrent(key, JSON.stringify(upgraded), expectedGen);
   } catch (error) {
+    if (error instanceof Argon2BusyError) return;
     console.error(JSON.stringify({ message: "password hash upgrade failed", error: error instanceof Error ? error.message : String(error) }));
   }
 }
@@ -218,10 +248,19 @@ function legacyIterationsOf(record) {
  * one Argon2id run. The one matching the record's own algorithm is real, the
  * other is a throwaway, and an unknown email runs two throwaways. Without
  * that, an account on Argon2id, one still on PBKDF2 and a made-up address
- * would all answer at different speeds. TEMPORARY: once no legacy PBKDF2
+ * would all answer at different speeds. When the Argon2id queue is full it
+ * throws Argon2BusyError before doing anything at all (the one exception to
+ * "never throws"); callers answer 503 and the attempt must not be counted.
+ * TEMPORARY: once no legacy PBKDF2
  * records remain, drop the PBKDF2 half (and the legacy branch below).
  */
 export async function verifyLocalAccount(env, email, password) {
+  // Checked before any hashing or lookup, so a full queue costs a refused
+  // sign-in nothing (not even a PBKDF2 run: that isn't queued, and spending it
+  // on requests that will be turned away anyway would defeat the limit), and
+  // the refusal arrives equally fast whatever the address. The slot-level
+  // check in withArgon2Slot stays, for the race between this and the run.
+  if (argon2QueueFull()) throw new Argon2BusyError();
   const normalized = normalizeEmail(email);
   if (!normalized || typeof password !== "string") return rejectAfterDummyWork(password);
   const key = `${ACCOUNT_PREFIX}${normalized}`;
@@ -247,7 +286,10 @@ export async function verifyLocalAccount(env, email, password) {
     if (!constantTimeEqual(candidate, stored)) return false;
     await upgradeLegacyRecord(env, key, record, normalized, password);
     return true;
-  } catch {
+  } catch (error) {
+    // A full queue is not a damaged record: pass it on untouched rather than
+    // running more hashing in its place.
+    if (error instanceof Argon2BusyError) throw error;
     return rejectAfterDummyWork(password);
   }
 }

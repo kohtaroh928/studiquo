@@ -158,3 +158,12 @@ export async function finishLoginAttempt(attempt, succeeded) {
     ...attempt.held.map(key => key.stub.loginRefund(key.policy)),
   ]);
 }
+
+/**
+ * The attempt never got as far as a password check (the server was too busy to
+ * hash): hand back every failure begin counted for it, so being turned away
+ * can't cost anyone a free attempt or push them towards a wait.
+ */
+export async function abandonLoginAttempt(attempt) {
+  await Promise.all([attempt.pair, ...attempt.held].map(key => key.stub.loginRefund(key.policy)));
+}
