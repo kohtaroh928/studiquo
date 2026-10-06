@@ -28,6 +28,10 @@ final class AuthenticationStore: ObservableObject {
 
     @Published private(set) var state: State = .needsLogin
     @Published var errorMessage = ""
+    /// Set when the server wants a CAPTCHA solved before it will take the last
+    /// attempt (login, or sending a verification code). The gate view shows the
+    /// widget; `solveCaptcha(_:)` retries with the token, `cancelCaptcha()` drops it.
+    @Published var captchaChallenge: CaptchaChallenge?
     /// UI tests sign in without a real token, so every server call 401s;
     /// they set this so only an explicit logout ends the session.
     var ignoresAuthFailures = false
@@ -103,7 +107,7 @@ final class AuthenticationStore: ObservableObject {
     /// sends a verification code, holding both in memory as `pendingSignUp`.
     /// Nothing is persisted until `confirmEmailVerification(code:)` proves
     /// the address is real.
-    func beginAccountCreation(email: String, password: String) async -> Bool {
+    func beginAccountCreation(email: String, password: String, captchaToken: String? = nil) async -> Bool {
         let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard normalized.count <= 254, normalized.contains("@"), normalized.contains(".") else {
             errorMessage = "正しいメールアドレスを入力してください。"
@@ -116,12 +120,13 @@ final class AuthenticationStore: ObservableObject {
         isEmailVerifyBusy = true
         defer { isEmailVerifyBusy = false }
         do {
-            try await EmailVerificationService.sendCode(email: normalized)
+            try await EmailVerificationService.sendCode(email: normalized, captchaToken: captchaToken)
             pendingSignUp = (normalized, password)
             errorMessage = ""
             state = .verifyingEmail
             return true
         } catch {
+            if presentCaptcha(for: error, continuation: .beginAccountCreation(email: normalized, password: password)) { return false }
             errorMessage = error.localizedDescription
             return false
         }
@@ -132,7 +137,7 @@ final class AuthenticationStore: ObservableObject {
     /// stored locally). A real, server-issued token is what makes `restore()`
     /// recognize this device on the next cold launch, same as every other
     /// sign-in method.
-    func login(email: String, password: String) async -> Bool {
+    func login(email: String, password: String, captchaToken: String? = nil) async -> Bool {
         let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty, !password.isEmpty else {
             errorMessage = "メールアドレスとパスワードを入力してください。"
@@ -141,7 +146,7 @@ final class AuthenticationStore: ObservableObject {
         isLoginBusy = true
         defer { isLoginBusy = false }
         do {
-            let token = try await LocalAuthService.login(email: normalized, password: password)
+            let token = try await LocalAuthService.login(email: normalized, password: password, captchaToken: captchaToken)
             MCPCloudCredentials.save(token)
             persistOAuthIdentity(provider: "email", subject: normalized, email: normalized)
             createSession()
@@ -150,9 +155,46 @@ final class AuthenticationStore: ObservableObject {
             state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
         } catch {
+            if presentCaptcha(for: error, continuation: .login(email: normalized, password: password)) { return false }
+            if case LocalAuthError.captchaUnavailable = error {
+                errorMessage = error.localizedDescription
+                return false
+            }
             errorMessage = "メールアドレスまたはパスワードが違います。"
             return false
         }
+    }
+
+    /// If `error` is the server asking for a CAPTCHA, raises the challenge
+    /// that will retry `continuation` once it is solved and returns true.
+    private func presentCaptcha(for error: Error, continuation: CaptchaChallenge.Continuation) -> Bool {
+        let siteKey: String
+        switch error {
+        case LocalAuthError.captchaRequired(let key): siteKey = key
+        case EmailVerificationError.captchaRequired(let key): siteKey = key
+        default: return false
+        }
+        errorMessage = ""
+        captchaChallenge = CaptchaChallenge(siteKey: siteKey, continuation: continuation)
+        return true
+    }
+
+    /// Retries what the CAPTCHA was holding up, now with its solved token.
+    func solveCaptcha(_ token: String) async {
+        guard let challenge = captchaChallenge else { return }
+        captchaChallenge = nil
+        switch challenge.continuation {
+        case .login(let email, let password):
+            _ = await login(email: email, password: password, captchaToken: token)
+        case .beginAccountCreation(let email, let password):
+            _ = await beginAccountCreation(email: email, password: password, captchaToken: token)
+        case .resendCode:
+            _ = await requestEmailVerification(captchaToken: token)
+        }
+    }
+
+    func cancelCaptcha() {
+        captchaChallenge = nil
     }
 
     func finishOnboarding() {
@@ -239,15 +281,16 @@ final class AuthenticationStore: ObservableObject {
 
     /// Re-sends the verification code for the sign-up (or reset) in progress
     /// — used by the confirmation screen's "コードを再送信".
-    func requestEmailVerification() async -> Bool {
+    func requestEmailVerification(captchaToken: String? = nil) async -> Bool {
         guard let pending = pendingSignUp else { return false }
         isEmailVerifyBusy = true
         defer { isEmailVerifyBusy = false }
         do {
-            try await EmailVerificationService.sendCode(email: pending.email)
+            try await EmailVerificationService.sendCode(email: pending.email, captchaToken: captchaToken)
             errorMessage = ""
             return true
         } catch {
+            if presentCaptcha(for: error, continuation: .resendCode) { return false }
             errorMessage = error.localizedDescription
             return false
         }
