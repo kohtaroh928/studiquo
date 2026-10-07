@@ -271,7 +271,7 @@ function fakeUserRegistryBinding(studiquoData) {
   const queues = new Map();
   const chatIdentityKeys = new Map();
 
-  async function ensureUserAtomic(key, name) {
+  async function ensureUserAtomic(key, name, studyStats = null, bio = undefined) {
     const storageKey = `chat:user:${key}`;
     let user = await studiquoData.get(storageKey, "json");
     if (user) {
@@ -279,6 +279,15 @@ function fakeUserRegistryBinding(studiquoData) {
       const cleaned = name == null ? "" : String(name).trim().slice(0, 80);
       if (cleaned && cleaned !== user.name) {
         user.name = cleaned;
+        changed = true;
+      }
+      if (studyStats) {
+        user.todayStudySeconds = studyStats.seconds;
+        user.studyDate = studyStats.date;
+        changed = true;
+      }
+      if (bio !== undefined && bio !== user.bio) {
+        user.bio = bio;
         changed = true;
       }
       if (!user.linkToken) {
@@ -294,6 +303,11 @@ function fakeUserRegistryBinding(studiquoData) {
     let linkToken;
     do { linkToken = generateRegistryTestCode(); } while (await studiquoData.get(`chat:linktoken:${linkToken}`));
     user = { key, name: String(name ?? "").trim().slice(0, 80) || "Studiquoユーザー", code: friendCode, linkToken, friends: [] };
+    if (bio !== undefined) user.bio = bio;
+    if (studyStats) {
+      user.todayStudySeconds = studyStats.seconds;
+      user.studyDate = studyStats.date;
+    }
     await Promise.all([
       studiquoData.put(storageKey, JSON.stringify(user)),
       studiquoData.put(`chat:code:${friendCode}`, key),
@@ -493,8 +507,8 @@ function fakeUserRegistryBinding(studiquoData) {
             return chatKey;
           });
         },
-        ensureUser(k, name) {
-          return enqueue(key, () => ensureUserAtomic(k, name));
+        ensureUser(k, name, studyStats, bio) {
+          return enqueue(key, () => ensureUserAtomic(k, name, studyStats, bio));
         },
         addIncomingRequest(k, requesterCode, requesterName) {
           return enqueue(key, () => addIncomingRequestAtomic(k, requesterCode, requesterName));
@@ -2141,6 +2155,39 @@ test("friends() reports a friend's current name, not the one snapshotted when th
 // Regression coverage for "a friend's profile photo never showed up
 // anywhere but a generic placeholder icon, no matter what was set in the
 // profile screen": nothing about it ever reached the server before this.
+test("bio is visible to friends, preserved by old clients, and can be cleared", async () => {
+  const env = environment();
+  const aliceToken = freshToken("b0");
+  const bobToken = freshToken("b1");
+  const update = bio => worker.fetch(request("/api/chat/me", { method: "POST", token: aliceToken, body: { name: "Alice", bio } }), env, noopCtx);
+  const first = await update("Hello\nWelcome");
+  assert.equal(first.status, 200);
+  const alice = await first.json();
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  await acceptRequest(env, bobToken, alice.code);
+  assert.equal((await friends(env, bobToken))[0].bio, "Hello\nWelcome");
+  await registerUser(env, aliceToken, "Alice renamed");
+  assert.equal((await friends(env, bobToken))[0].bio, "Hello\nWelcome");
+  assert.equal((await update("Updated")).status, 200);
+  assert.equal((await friends(env, bobToken))[0].bio, "Updated");
+  assert.equal((await update("")).status, 200);
+  assert.equal((await friends(env, bobToken))[0].bio, "");
+});
+
+test("bio rejects invalid types and overlong text before saving", async () => {
+  const env = environment();
+  const token = freshToken("b2");
+  for (const bio of [null, 3, {}, [], "x".repeat(501)]) {
+    const response = await worker.fetch(request("/api/chat/me", { method: "POST", token, body: { bio } }), env, noopCtx);
+    assert.equal(response.status, 400);
+  }
+  const valid = await worker.fetch(request("/api/chat/me", { method: "POST", token, body: { bio: "🙂".repeat(500) } }), env, noopCtx);
+  assert.equal(valid.status, 200);
+  const unauthorized = await worker.fetch(request("/api/chat/me", { method: "POST", body: { bio: "text" } }), env, noopCtx);
+  assert.equal(unauthorized.status, 401);
+});
+
 test("a friend can download an uploaded avatar, and sees it reflected in friends()", async () => {
   const env = environment();
   const aliceToken = freshToken("z0");

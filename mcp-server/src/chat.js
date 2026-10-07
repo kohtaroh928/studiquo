@@ -243,7 +243,10 @@ export async function handleChat(url, request, env, ctx) {
 
   if (url.pathname === "/api/chat/me" && request.method === "POST") {
     const body = await readBody(request);
-    const user = await ensureUser(env, key, body?.name, parseStudyStats(body));
+    if (body?.bio !== undefined && (typeof body.bio !== "string" || [...body.bio].length > 500)) {
+      return json({ error: "Bio must be a string of at most 500 characters." }, 400);
+    }
+    const user = await env.USER_REGISTRY.getByName(key).ensureUser(key, body?.name, parseStudyStats(body), body?.bio);
     return json({ code: user.code, name: user.name, linkToken: user.linkToken, avatarUpdatedAt: user.avatarUpdatedAt ?? null });
   }
 
@@ -297,6 +300,7 @@ export async function handleChat(url, request, env, ctx) {
         todayStudySeconds: friendRecord?.todayStudySeconds ?? 0,
         studyDate: friendRecord?.studyDate ?? null,
         avatarUpdatedAt: friendRecord?.avatarUpdatedAt ?? null,
+        bio: friendRecord?.bio ?? null,
       };
     }));
     return json(withLiveDetails);

@@ -28,7 +28,7 @@ export class UserRegistry extends DurableObject {
     });
   }
 
-  async ensureUser(key, name) {
+  async ensureUser(key, name, studyStats = null, bio = undefined) {
     const storageKey = `chat:user:${key}`;
     let user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
     if (user) {
@@ -36,6 +36,15 @@ export class UserRegistry extends DurableObject {
       const cleaned = name == null ? "" : String(name).trim().slice(0, 80);
       if (cleaned && cleaned !== user.name) {
         user.name = cleaned;
+        changed = true;
+      }
+      if (studyStats) {
+        user.todayStudySeconds = studyStats.seconds;
+        user.studyDate = studyStats.date;
+        changed = true;
+      }
+      if (bio !== undefined && bio !== user.bio) {
+        user.bio = bio;
         changed = true;
       }
       // Backfills a link token for a user created before invite links
@@ -63,6 +72,11 @@ export class UserRegistry extends DurableObject {
     let linkToken;
     do { linkToken = generateCode(); } while (await this.env.STUDIQUO_DATA.get(`chat:linktoken:${linkToken}`));
     user = { key, name: String(name ?? "").trim().slice(0, 80) || "Studiquoユーザー", code: friendCode, linkToken, friends: [] };
+    if (bio !== undefined) user.bio = bio;
+    if (studyStats) {
+      user.todayStudySeconds = studyStats.seconds;
+      user.studyDate = studyStats.date;
+    }
     await Promise.all([
       this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user)),
       this.env.STUDIQUO_DATA.put(`chat:code:${friendCode}`, key),
