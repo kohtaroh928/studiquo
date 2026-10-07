@@ -33,8 +33,10 @@ const PBKDF2_ITERATIONS = 100_000;
 // everything: a burst of simultaneous logins must queue rather than all
 // allocate at once. Waiting costs wall-clock time, not CPU time.
 const MAX_CONCURRENT_ARGON2 = 2;
-// How many may wait behind those two. At ~75 ms a run, 32 waiting is about
-// 1.2 s of queue; past that a sign-in is turned away at once (Argon2BusyError)
+// How many may wait behind those two. Measured on a deployed Worker, a whole
+// sign-in costs ~240-400 ms of CPU (about 80 ms on a local workerd), so 32
+// waiting is on the order of 4-6 s of queue; past that a sign-in is turned
+// away at once (Argon2BusyError)
 // rather than left to pile up unbounded, and the caller answers 503 and asks
 // to retry. Operations that must not fail halfway never use this limit.
 const MAX_QUEUED_ARGON2 = 32;
