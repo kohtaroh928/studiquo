@@ -773,3 +773,22 @@ private func darkPixelCount(in elementFrame: CGRect, of image: UIImage, appFrame
         return count + ((red < 100 && green < 100 && blue < 100) ? 1 : 0)
     }
 }
+
+final class FriendRequestsInteractionTests: XCTestCase {
+    func testRequestsAndGroupInvitesShareOneButtonAndOneList() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--friend-requests-ui-test"]
+        app.launch()
+
+        let button = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "申請・招待")).firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["フレンド申請"].exists)
+        XCTAssertFalse(app.buttons["グループ招待"].exists)
+        XCTAssertTrue(button.label.contains("2"), "badge should total requests and invites: \(button.label)")
+
+        button.tap()
+        XCTAssertTrue(app.staticTexts["申請フレンド"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["招待グループ"].exists)
+    }
+}

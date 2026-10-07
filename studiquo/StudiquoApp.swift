@@ -218,6 +218,8 @@ struct StudiquoApp: App {
                     LibraryDropUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test") {
                     FriendChatUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test") {
+                    FriendRequestsUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test") ||
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test") ||
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test") ||
@@ -242,6 +244,7 @@ struct StudiquoApp: App {
                 guard !ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--startup-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test"),
@@ -323,6 +326,31 @@ private struct FriendChatUITestRoot: View {
                 )]
             }
         }
+    }
+}
+
+/// Hosts the real friends screen with one pending friend request and one
+/// pending group invite, so UI tests can cover the combined 申請・招待 list.
+private struct FriendRequestsUITestRoot: View {
+    @StateObject private var store = FriendStore(
+        defaults: UserDefaults(suiteName: "FriendRequestsUITest-\(UUID().uuidString)")!,
+        autoRefresh: false
+    )
+
+    var body: some View {
+        FriendsHomeView(store: store, myStudySeconds: 0)
+            .onAppear {
+                store.incomingRequests = [
+                    IncomingFriendRequest(code: "REQ001", name: "申請フレンド", requestedAt: Date())
+                ]
+                store.incomingGroupInvites = [
+                    FriendChatService.GroupInvite(
+                        roomID: "room-1", name: "招待グループ",
+                        inviterCode: "INV001", inviterName: "招待者",
+                        invitedAt: Date().timeIntervalSince1970 * 1_000
+                    )
+                ]
+            }
     }
 }
 
