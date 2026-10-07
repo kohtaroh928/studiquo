@@ -1,4 +1,20 @@
 import XCTest
+
+final class FriendProfileInteractionTests: XCTestCase {
+    func testMessageAvatarOpensProfileAndCloseReturnsToChat() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--friend-chat-ui-test"]
+        app.launch()
+        let icon = app.buttons["friend-chat-profile"].firstMatch
+        XCTAssertTrue(icon.waitForExistence(timeout: 15))
+        icon.tap()
+        XCTAssertTrue(app.staticTexts["フレンドコード"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["自己紹介はまだありません"].exists)
+        app.buttons["閉じる"].tap()
+        XCTAssertTrue(app.textFields["friend-chat-draft"].waitForExistence(timeout: 5))
+    }
+}
 import UIKit
 
 final class LibraryDropInteractionTests: XCTestCase {
