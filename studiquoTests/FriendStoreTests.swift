@@ -31,6 +31,80 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertFalse(url.absoluteString.contains("%3F"))
     }
 
+    func testBioIsSharedUpdatedClearedAndPreservedAcrossRelaunch() async throws {
+        defaults.set("About me", forKey: "profileBio")
+        let client = MockFriendChatClient(friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a", bio: "About Alice")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await store.refresh()
+        let reports = await client.reportedBiosSnapshot()
+        XCTAssertEqual(reports.last!, "About me")
+        let friend = try XCTUnwrap(store.friends.first(where: { $0.code == "ALICE1" }))
+        XCTAssertEqual(FriendProfile(friend: friend, blockedByMeRoomIDs: []).bio, "About Alice")
+        let relaunched = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        XCTAssertEqual(relaunched.friends.first(where: { $0.code == "ALICE1" })?.bio, "About Alice")
+        await client.setFriends([.init(code: "ALICE1", name: "Alice", roomID: "room-a", bio: "")])
+        defaults.set("", forKey: "profileBio")
+        await store.refresh()
+        XCTAssertEqual(store.friends.first(where: { $0.code == "ALICE1" })?.bio, "")
+        let clearedReports = await client.reportedBiosSnapshot()
+        XCTAssertEqual(clearedReports.last!, "")
+    }
+
+    func testOldServerFriendResponseWithoutBioStillDecodes() throws {
+        let data = Data(#"{"code":"ALICE1","name":"Alice","roomID":"room-a"}"#.utf8)
+        XCTAssertNil(try JSONDecoder().decode(FriendChatService.Friend.self, from: data).bio)
+    }
+
+    func testSharedBioKeepsWholeEmojiAndMatchesServerScalarLimit() {
+        let emoji = "👍🏽"
+        XCTAssertEqual(FriendProfile.sharedBio(String(repeating: emoji, count: 251)), String(repeating: emoji, count: 250))
+        XCTAssertEqual(FriendProfile.sharedBio(String(repeating: "x", count: 501)).count, 500)
+    }
+
+    func testAvatarDownloadCannotRestoreFriendRemovedWhileDownloading() async throws {
+        let client = MockFriendChatClient(friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a", avatarUpdatedAt: 1000)])
+        await client.setAvatar(Data("photo".utf8), forCode: "ALICE1")
+        await client.holdAvatars()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        let refreshing = Task { await store.refreshFriends() }
+        for _ in 0..<1000 {
+            if await client.avatarDownloadStarted() { break }
+            await Task.yield()
+        }
+        let started = await client.avatarDownloadStarted()
+        XCTAssertTrue(started)
+        let friend = try XCTUnwrap(store.friends.first(where: { $0.code == "ALICE1" }))
+        let removed = await store.removeFriend(friend)
+        XCTAssertTrue(removed)
+        await client.releaseAvatars()
+        await refreshing.value
+        XCTAssertFalse(store.friends.contains(where: { $0.code == "ALICE1" }))
+        XCTAssertTrue(store.archivedFriends.contains(where: { $0.code == "ALICE1" }))
+    }
+
+    func testOlderAvatarRefreshCannotClearANewerPhoto() async {
+        let client = MockFriendChatClient(friends: [
+            .init(code: "ALICE1", name: "Alice", roomID: "room-a", avatarUpdatedAt: 1000),
+            .init(code: "BOB123", name: "Bob", roomID: "room-b")
+        ])
+        await client.setAvatar(Data("Alice".utf8), forCode: "ALICE1")
+        await client.setAvatar(Data("Bob new".utf8), forCode: "BOB123")
+        await client.holdAvatars(code: "ALICE1")
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [FriendRecord(id: UUID(), name: "Bob", code: "BOB123", todayStudySeconds: 0, roomID: "room-b", avatarData: Data("Bob old".utf8), avatarUpdatedAt: 500)]
+        let olderRefresh = Task { await store.refreshFriends() }
+        for _ in 0..<1000 {
+            if await client.avatarDownloadStarted() { break }
+            await Task.yield()
+        }
+        await client.setFriends([.init(code: "BOB123", name: "Bob", roomID: "room-b", avatarUpdatedAt: 2000)])
+        await store.refreshFriends()
+        await client.releaseAvatars()
+        await olderRefresh.value
+        XCTAssertEqual(store.friends.first(where: { $0.code == "BOB123" })?.avatarData, Data("Bob new".utf8))
+        XCTAssertEqual(store.friends.first(where: { $0.code == "BOB123" })?.avatarUpdatedAt, 2000)
+    }
+
     // Regression coverage for "sharing the QR/invitation link before
     // registration finishes shares the placeholder text instead of a real
     // code": the add-friend screen must know not to show it yet.
@@ -3739,10 +3813,14 @@ private actor MockFriendChatClient: FriendChatClient {
         self.roomMessages = roomMessages
     }
 
-    func register(name: String, todayStudySeconds: Int?, studyDate: String?) async throws -> FriendChatService.Identity {
+    func register(name: String, todayStudySeconds: Int?, studyDate: String?, bio: String?) async throws -> FriendChatService.Identity {
         reportedStudyStats.append((todayStudySeconds, studyDate))
+        reportedBios.append(bio)
         return identity
     }
+
+    private var reportedBios: [String?] = []
+    func reportedBiosSnapshot() -> [String?] { reportedBios }
 
     func reportedStudyStatsSnapshot() -> [(seconds: Int?, date: String?)] {
         reportedStudyStats
@@ -3818,7 +3896,27 @@ private actor MockFriendChatClient: FriendChatClient {
     func downloadAvatar(code: String) async throws -> Data {
         if let errorToThrow { throw errorToThrow }
         guard let data = avatarsByCode[code] else { throw URLError(.fileDoesNotExist) }
+        hasStartedAvatarDownload = true
+        if !avatarGateOpen && (heldAvatarCode == nil || heldAvatarCode == code) {
+            await withCheckedContinuation { avatarWaiters.append($0) }
+        }
         return data
+    }
+
+    private var avatarGateOpen = true
+    private var heldAvatarCode: String?
+    private var hasStartedAvatarDownload = false
+    private var avatarWaiters: [CheckedContinuation<Void, Never>] = []
+    func holdAvatars(code: String? = nil) {
+        avatarGateOpen = false
+        heldAvatarCode = code
+    }
+    func avatarDownloadStarted() -> Bool { hasStartedAvatarDownload }
+    func releaseAvatars() {
+        avatarGateOpen = true
+        let waiters = avatarWaiters
+        avatarWaiters = []
+        for waiter in waiters { waiter.resume() }
     }
 
     func add(code: String) async throws -> FriendChatService.AddFriendResult {
