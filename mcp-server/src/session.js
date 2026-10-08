@@ -83,7 +83,7 @@ export async function mintSession(env, identityKey, randomValue) {
   // Read first: an ordinary sign-in has no job, and must not pay for a write.
   if (await env.STUDIQUO_DATA.get(providerJobKey)) await env.STUDIQUO_DATA.delete(providerJobKey);
   const key = await sha256Hex(token);
-  await env.STUDIQUO_DATA.put(`${SESSION_PREFIX}${key}`, JSON.stringify({ sub: identityKey, issuedAt }), {
+  await env.STUDIQUO_DATA.put(`${SESSION_PREFIX}${key}`, JSON.stringify({ sub: identityKey, issuedAt, issuedAtMs: Date.now() }), {
     expirationTtl: VALIDITY_SECONDS,
   });
   return token;
@@ -111,6 +111,50 @@ export async function realSession(env, token) {
   const resolved = canonical && canonical !== session.sub
     ? { ...session, originalSub: session.sub, sub: canonical }
     : session;
-  const deletionState = await env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(resolved.sub)}`, "json");
-  return deletionState?.status === "deleting" ? null : resolved;
+  // Independent reads, so the cut-off adds no waiting on top of the state.
+  const [deletionState, cutoff] = await Promise.all([
+    env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(resolved.sub)}`, "json"),
+    sessionCutoff(env, resolved.sub),
+  ]);
+  if (deletionState?.status === "deleting") return null;
+  // A password was set (reset) after this session was issued: it belongs to
+  // whoever had the old password.
+  if (sessionIsBeforeCutoff(resolved, cutoff)) return null;
+  return resolved;
+}
+
+const CUTOFF_PREFIX = "session-valid-from:";
+
+async function sessionCutoff(env, identityKey) {
+  const value = Number(await env.STUDIQUO_DATA.get(`${CUTOFF_PREFIX}${await sha256Hex(identityKey)}`));
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/**
+ * Whether a session was issued before the account's cut-off. Sessions record
+ * their issue time to the millisecond, so one minted right after the cut-off —
+ * the person who has just set the new password — is kept even within the same
+ * second. An older record that only has whole seconds is judged as a whole
+ * second, and one with no issue time at all can't be shown to be newer.
+ */
+export function sessionIsBeforeCutoff(session, cutoff) {
+  if (!cutoff) return false;
+  if (Number.isFinite(session.issuedAtMs)) return session.issuedAtMs < cutoff;
+  if (Number.isFinite(session.issuedAt)) return (session.issuedAt + 1) * 1000 <= cutoff;
+  return true;
+}
+
+/**
+ * Signs out every session issued so far for this account (call when its
+ * password is set or reset, before minting the new session). The cut-off is a
+ * key of its own — not a field on the deletion-state record, which other
+ * writers replace as a whole — and expires once no session old enough to be
+ * affected can still exist. KV may serve the old value for up to about a
+ * minute, so a revoked session can live that long. An account that is being
+ * deleted, or is already deleted, has no live sessions to protect.
+ */
+export async function revokeSessionsIssuedBefore(env, identityKey, now = Date.now()) {
+  const state = await env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(identityKey)}`, "json");
+  if (state?.status === "deleting" || state?.status === "deleted") return;
+  await env.STUDIQUO_DATA.put(`${CUTOFF_PREFIX}${await sha256Hex(identityKey)}`, String(now), { expirationTtl: VALIDITY_SECONDS + 86_400 });
 }
