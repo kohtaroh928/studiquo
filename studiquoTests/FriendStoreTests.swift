@@ -205,6 +205,96 @@ final class FriendStoreTests: XCTestCase {
     // removed friend's history stay viewable, rather than just staying
     // preserved-but-unreachable in `messages`.
 
+    func testRemovingFriendHidesThemBeforeTheServerConfirms() async throws {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let client = MockFriendChatClient(friends: [.init(code: friend.code, name: friend.name, roomID: "room-a")])
+        await client.holdRemoveFriend()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+
+        let removing = Task { await store.removeFriend(friend) }
+        for _ in 0..<1000 {
+            if store.friends.isEmpty { break }
+            await Task.yield()
+        }
+
+        XCTAssertTrue(store.friends.isEmpty, "the row must disappear without waiting for the network")
+        XCTAssertEqual(store.archivedFriends.map(\.code), [friend.code])
+        await client.releaseRemoveFriend()
+        let removed = await removing.value
+        XCTAssertTrue(removed)
+        XCTAssertTrue(store.friends.isEmpty)
+    }
+
+    func testFailedRemovalRestoresTheFriendAndTheirUnreadCount() async {
+        struct Boom: Error {}
+        let other = FriendRecord(id: UUID(), name: "Bob", code: "BOB123", todayStudySeconds: 0, roomID: "room-b", isDemo: false)
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let client = MockFriendChatClient(friends: [
+            .init(code: other.code, name: other.name, roomID: "room-b"),
+            .init(code: friend.code, name: friend.name, roomID: "room-a"),
+        ])
+        await client.failRemoveFriend(with: Boom())
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [other, friend]
+        store.unreadCounts[friend.id] = 3
+
+        let removed = await store.removeFriend(friend)
+
+        XCTAssertFalse(removed)
+        XCTAssertEqual(store.friends.map(\.code), ["BOB123", "ALICE1"])
+        XCTAssertEqual(store.unreadCounts[friend.id], 3)
+        XCTAssertTrue(store.archivedFriends.isEmpty)
+        XCTAssertFalse(store.errorMessage.isEmpty)
+        await store.refreshFriends()
+        XCTAssertTrue(store.friends.contains(where: { $0.code == "ALICE1" }), "a failed removal must not leave a tombstone hiding the friend")
+    }
+
+    func testStaleSnapshotAfterAnAbsentPollCannotResurrectARemovedFriend() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let client = MockFriendChatClient(friends: [.init(code: friend.code, name: friend.name, roomID: "room-a")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        _ = await store.removeFriend(friend)
+
+        await store.refreshFriends() // server no longer lists them
+        await client.setFriends([.init(code: friend.code, name: friend.name, roomID: "room-a")]) // stale edge copy
+        await store.refreshFriends()
+
+        XCTAssertTrue(store.friends.isEmpty)
+        XCTAssertEqual(store.archivedFriends.map(\.code), [friend.code])
+    }
+
+    func testRemovalTombstoneExpiresOnceServerStaysConsistentPastTheGracePeriod() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let client = MockFriendChatClient(friends: [.init(code: friend.code, name: friend.name, roomID: "room-a")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.removalTombstoneGrace = 0
+        store.friends = [friend]
+        _ = await store.removeFriend(friend)
+
+        await store.refreshFriends() // absent + grace elapsed: tombstone dropped
+        await client.setFriends([.init(code: friend.code, name: friend.name, roomID: "room-a")]) // genuinely re-added
+        await store.refreshFriends()
+
+        XCTAssertEqual(store.friends.map(\.code), [friend.code])
+    }
+
+    func testReAddingARemovedFriendWithinTheGracePeriodIsNotHidden() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let client = MockFriendChatClient(friends: [.init(code: friend.code, name: friend.name, roomID: "room-a")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        _ = await store.removeFriend(friend)
+
+        await client.setFriends([.init(code: "ALICE1", name: "Alice", roomID: "room-a2")])
+        let sent = await store.addAndWait(code: "ALICE1")
+        XCTAssertTrue(sent)
+
+        XCTAssertEqual(store.friends.map(\.code), ["ALICE1"])
+        XCTAssertTrue(store.archivedFriends.isEmpty)
+    }
+
     func testRemovingFriendPopulatesArchivedFriendsWithItsInfo() async {
         let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
         let contact = FriendChatService.BlockedContact(code: friend.code, name: friend.name, roomID: "room-a")
@@ -3860,7 +3950,23 @@ private actor MockFriendChatClient: FriendChatClient {
 
     func setBlockedContacts(_ value: [FriendChatService.BlockedContact]) { blocked = value }
 
+    private var removeFriendError: Error?
+    private var removeGateOpen = true
+    private var removeWaiters: [CheckedContinuation<Void, Never>] = []
+    func failRemoveFriend(with error: Error?) { removeFriendError = error }
+    func holdRemoveFriend() { removeGateOpen = false }
+    func releaseRemoveFriend() {
+        removeGateOpen = true
+        let waiters = removeWaiters
+        removeWaiters = []
+        for waiter in waiters { waiter.resume() }
+    }
+
     func removeFriend(code: String) async throws -> FriendChatService.RemoveFriendResult {
+        if !removeGateOpen {
+            await withCheckedContinuation { removeWaiters.append($0) }
+        }
+        if let removeFriendError { throw removeFriendError }
         remoteFriends.removeAll { $0.code == code }
         return .init(status: "removed")
     }

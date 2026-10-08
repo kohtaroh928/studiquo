@@ -435,6 +435,19 @@ final class FriendStore: ObservableObject {
     private var locallyRemovedCodes: Set<String> = [] {
         didSet { persist(locallyRemovedCodes, key: locallyRemovedCodesKey) }
     }
+    private let locallyRemovedTimesKey = "studiquoLocallyRemovedFriendTimes"
+    /// When each tombstone in `locallyRemovedCodes` was written. The friends
+    /// list is served from an eventually consistent KV read, so one poll
+    /// without the removed friend does not prove the next poll will not bring
+    /// them back; a tombstone is only dropped once it is older than
+    /// `removalTombstoneGrace` AND the server has stopped listing the friend.
+    /// A tombstone without a time (written by an older build) counts as expired.
+    private var locallyRemovedTimes: [String: Date] = [:] {
+        didSet { persist(locallyRemovedTimes, key: locallyRemovedTimesKey) }
+    }
+    /// Comfortably longer than the KV edge cache (~60s) that can serve a
+    /// pre-removal friends list.
+    var removalTombstoneGrace: TimeInterval = 300 // internal so tests can shorten it
     /// Bumped whenever `friends` is authoritatively changed by a definitive
     /// local action — right now, only a successfully redeemed invite link
     /// (see `confirmPendingLinkAdd()`) — rather than by a server poll.
@@ -486,6 +499,9 @@ final class FriendStore: ObservableObject {
         }
         if let data = defaults.data(forKey: locallyRemovedCodesKey) {
             locallyRemovedCodes = (try? JSONDecoder().decode(Set<String>.self, from: data)) ?? []
+        }
+        if let data = defaults.data(forKey: locallyRemovedTimesKey) {
+            locallyRemovedTimes = (try? JSONDecoder().decode([String: Date].self, from: data)) ?? [:]
         }
         if let data = defaults.data(forKey: groupsKey) {
             groups = (try? JSONDecoder().decode([FriendChatService.Group].self, from: data)) ?? []
@@ -902,13 +918,29 @@ final class FriendStore: ObservableObject {
 
     private func applyRemoteFriends(_ remote: [FriendChatService.Friend]) {
         let serverCodes = Set(remote.map(\.code))
-        locallyRemovedCodes.formIntersection(serverCodes)
+        let now = Date()
+        for code in locallyRemovedCodes where !serverCodes.contains(code) {
+            let removedAt = locallyRemovedTimes[code] ?? .distantPast
+            if now.timeIntervalSince(removedAt) >= removalTombstoneGrace {
+                clearRemovalTombstone(code)
+            }
+        }
         let visibleRemote = remote.filter { !locallyRemovedCodes.contains($0.code) }
         let visibleCodes = Set(visibleRemote.map(\.code))
         let removed = friends.filter { $0.isDemo != true && !visibleCodes.contains($0.code) }
         for friend in removed { archiveFriend(friend) }
         friends = Self.mergedFriends(existing: friends + archivedFriends, remote: visibleRemote)
         archivedFriends.removeAll { visibleCodes.contains($0.code) }
+    }
+
+    private func markLocallyRemoved(_ code: String) {
+        locallyRemovedCodes.insert(code)
+        locallyRemovedTimes[code] = Date()
+    }
+
+    private func clearRemovalTombstone(_ code: String) {
+        locallyRemovedCodes.remove(code)
+        locallyRemovedTimes.removeValue(forKey: code)
     }
 
     private func archiveFriend(_ friend: FriendRecord) {
@@ -945,16 +977,42 @@ final class FriendStore: ObservableObject {
               !pendingRemovalCodes.contains(contact.code) else { return false }
         pendingRemovalCodes.insert(contact.code)
         defer { pendingRemovalCodes.remove(contact.code) }
+        // Hide the friend immediately instead of after the server round trip,
+        // and invalidate any friends poll already in flight so its
+        // pre-removal snapshot cannot bring them back. Rolled back below if
+        // the server does not confirm.
+        let previousIndex = friends.firstIndex(where: { $0.code == contact.code })
+        let previousFriend = previousIndex.map { friends[$0] }
+        let previousUnread = previousFriend.flatMap { unreadCounts[$0.id] }
+        let previousArchived = archivedFriends.first(where: { $0.code == contact.code })
+        let previousActiveID = activeFriendID
+        let hadTombstone = locallyRemovedCodes.contains(contact.code)
+        let previousRemovedAt = locallyRemovedTimes[contact.code]
+        friendsGeneration += 1
+        markLocallyRemoved(contact.code)
+        if let previousFriend { archiveFriend(previousFriend) }
         do {
             _ = try await client.removeFriend(code: contact.code)
             friendsGeneration += 1
-            locallyRemovedCodes.insert(contact.code)
-            if let friend = friends.first(where: { $0.code == contact.code }) {
-                archiveFriend(friend)
-            }
+            markLocallyRemoved(contact.code)
             await refreshBlockedContacts()
             return true
         } catch {
+            friendsGeneration += 1
+            if !hadTombstone {
+                clearRemovalTombstone(contact.code)
+            } else if let previousRemovedAt {
+                locallyRemovedTimes[contact.code] = previousRemovedAt
+            } else {
+                locallyRemovedTimes.removeValue(forKey: contact.code)
+            }
+            archivedFriends.removeAll { $0.code == contact.code }
+            if let previousArchived { archivedFriends.append(previousArchived) }
+            if let previousFriend, !friends.contains(where: { $0.code == contact.code }) {
+                friends.insert(previousFriend, at: min(previousIndex ?? friends.count, friends.count))
+                if let previousUnread { unreadCounts[previousFriend.id] = previousUnread }
+                if previousActiveID == previousFriend.id { activeFriendID = previousActiveID }
+            }
             errorMessage = "フレンドを削除できませんでした。もう一度お試しください。"
             return false
         }
@@ -986,12 +1044,12 @@ final class FriendStore: ObservableObject {
                 // A new friendship reopened this retained room. Allow the
                 // archived contact back even if an earlier friends-list
                 // response was still showing the just-deleted relationship.
-                locallyRemovedCodes.remove(archived.code)
+                clearRemovalTombstone(archived.code)
                 await refreshFriends()
             }
             guard let friend = friends.first(where: { $0.roomID == state.roomID }) else { continue }
             if state.closed == true {
-                locallyRemovedCodes.insert(friend.code)
+                markLocallyRemoved(friend.code)
                 archiveFriend(friend)
                 continue
             }
@@ -1358,6 +1416,9 @@ final class FriendStore: ObservableObject {
               !friends.contains(where: { $0.code == code }) else { return false }
         do {
             _ = try await client.add(code: code)
+            // Deliberately re-adding someone removed earlier: lift the
+            // removal tombstone so the renewed friendship is not hidden.
+            clearRemovalTombstone(code)
             errorMessage = ""
             // Just the outgoing list (the new pending request) and friends
             // (in case the server reports already_friends) need updating —
@@ -1385,6 +1446,8 @@ final class FriendStore: ObservableObject {
             defer { pendingRequestActions.remove(request.code) }
             do {
                 let friend = try await client.accept(code: request.code)
+                clearRemovalTombstone(friend.code)
+                archivedFriends.removeAll { $0.code == friend.code }
                 // A refresh() landing in between the request and this
                 // response can result in this friend already being present
                 // — don't add a second, duplicate entry.
@@ -1539,6 +1602,8 @@ final class FriendStore: ObservableObject {
         Task {
             do {
                 let result = try await client.addViaLink(token: token)
+                clearRemovalTombstone(result.code)
+                archivedFriends.removeAll { $0.code == result.code }
                 if !friends.contains(where: { $0.code == result.code }) {
                     friends.append(FriendRecord(id: UUID(), name: result.name, code: result.code, todayStudySeconds: 0, roomID: result.roomID, isDemo: false, sharesStudyTime: false))
                 }
