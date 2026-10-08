@@ -345,7 +345,6 @@ struct PhotoStudyLibraryView: View {
                                 onSelect(asset.id)
                             } label: {
                                 PhotoStudyThumbnailView(asset: asset)
-                                    .aspectRatio(1, contentMode: .fit)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(accessibilityLabel(for: asset))
@@ -364,6 +363,27 @@ struct PhotoStudyLibraryView: View {
     }
 }
 
+/// Square thumbnail cell. The base color fixes the square; the photo only
+/// overlays it, so photo aspect ratios can never change the cell size.
+struct PhotoStudySquareCell: View {
+    let image: UIImage?
+
+    var body: some View {
+        Color(uiColor: .secondarySystemBackground)
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    ProgressView()
+                }
+            }
+            .clipped()
+    }
+}
+
 private struct PhotoStudyThumbnailView: View {
     let asset: PhotoStudyAsset
 
@@ -372,17 +392,7 @@ private struct PhotoStudyThumbnailView: View {
     @State private var requestID: PHImageRequestID?
 
     var body: some View {
-        ZStack {
-            Color(uiColor: .secondarySystemBackground)
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                ProgressView()
-            }
-        }
-        .clipped()
+        PhotoStudySquareCell(image: image)
         .onAppear(perform: load)
         .onDisappear {
             PhotoStudyImageManager.shared.cancel(requestID)
