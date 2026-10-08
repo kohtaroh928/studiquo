@@ -92,6 +92,11 @@ export async function listConnections(env, sub) {
   })));
 }
 
+/** Disconnects every connected app (grant) of the account, e.g. when its password is reset. */
+export async function revokeAllConnections(env, sub) {
+  for (const connection of await listConnections(env, sub)) await revokeConnection(env, sub, connection.id);
+}
+
 export async function revokeConnection(env, sub, id) {
   if (!/^[a-f0-9]{64}$/.test(id)) return false;
   await env.STUDIQUO_DATA.delete(`mcp:grant:${await sha256Hex(sub)}:${id}`);

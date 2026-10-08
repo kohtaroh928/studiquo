@@ -497,3 +497,34 @@ test("H3: without an ADMIN_DB binding the new account still starts", async () =>
   assert.ok(await mintSession(env, identity, RANDOM + "back"));
   assert.equal(JSON.parse(env._values.get(await stateKey(identity))).status, "active");
 });
+
+test("M2: while an account is being deleted, signing in through one of its other identities is held back too", async () => {
+  const env = environment();
+  const canonical = "apple:alias-hold", alias = "google:alias-hold-2";
+  env._values.set(`identity-canonical:${alias}`, canonical);
+  env._values.set(`identity-canonical:${canonical}`, canonical);
+  await signInWithData(env, canonical, "life");
+  const original = env.ADMIN_DB.prepare;
+  env.ADMIN_DB.prepare = () => ({ bind() { return { async run() { throw new Error("temporary storage outage"); } }; } });
+  assert.deepEqual(await startAccountDeletion(env, canonical), { deleted: false, cleanupPending: true });
+  env.ADMIN_DB.prepare = original;
+
+  assert.deepEqual(JSON.parse(env._values.get(await stateKey(alias))), { status: "deleting", of: canonical });
+  assert.equal(await mintSession(env, alias, RANDOM + "too-early"), null, "the alias cannot slip through mid-deletion");
+
+  await processPendingDeletions(env);
+  assert.equal(JSON.parse(env._values.get(await stateKey(alias))).status, "deleted");
+  assert.ok(await mintSession(env, alias, RANDOM + "after"), "and can once the deletion has finished");
+});
+
+test("M2: an in-progress marker for a different account is left alone", async () => {
+  const env = environment();
+  const canonical = "apple:owner-m2", alias = "google:shared-id";
+  env._values.set(`identity-canonical:${alias}`, canonical);
+  env._values.set(`identity-canonical:${canonical}`, canonical);
+  await signInWithData(env, canonical, "life");
+  const theirs = JSON.stringify({ status: "deleting", of: "apple:somebody-else" });
+  env._values.set(await stateKey(alias), theirs);
+  await startAccountDeletion(env, canonical);
+  assert.equal(env._values.get(await stateKey(alias)), theirs);
+});
