@@ -22,6 +22,26 @@ private struct AIChatPaneWidthKey: PreferenceKey {
 /// specific to it: the editor adds the text of the page being read and the
 /// pane-switching and paste-onto-page behaviour; the home screen adds none of
 /// that and none of those menu items appear.
+/// Recognises a dragged tab's id that a text field swallowed as plain text.
+enum DroppedTabText {
+    static let prefixes = ["notebook:", "deck:", "web:", "ai:", "friend:", "group:", "document:", "slide:"]
+
+    /// The tab id inserted by the change from `old` to `new`, or nil when the
+    /// change is ordinary typing, a deletion, or text that is not a tab id.
+    static func tabID(old: String, new: String) -> String? {
+        guard new.count > old.count else { return nil }
+        let oldChars = Array(old), newChars = Array(new)
+        var prefix = 0
+        while prefix < oldChars.count, oldChars[prefix] == newChars[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < oldChars.count - prefix,
+              oldChars[oldChars.count - 1 - suffix] == newChars[newChars.count - 1 - suffix] { suffix += 1 }
+        let inserted = String(newChars[prefix..<(newChars.count - suffix)])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return prefixes.contains(where: inserted.hasPrefix) ? inserted : nil
+    }
+}
+
 struct AIChatPanel: View {
     @ObservedObject var store: AIChatStore
     /// Text of whatever the student is looking at, sent with each message.
@@ -617,6 +637,15 @@ struct AIChatPane: View {
                     }
                 }
             }
+            // A dragged tab dropped anywhere but the composer (which
+            // attaches it instead) replaces this pane with that material.
+            // It sits on its own node, apart from the PageSnippet drop on
+            // the outer ZStack, so the two drop types cannot shadow each other.
+            .contentShape(Rectangle())
+            .dropDestination(for: String.self) { items, _ in
+                guard let value = items.first else { return false }
+                return onPaneDrop?(value) ?? false
+            }
 
             if let pendingDeleteThread {
                 deleteConfirmationCard(for: pendingDeleteThread)
@@ -628,6 +657,9 @@ struct AIChatPane: View {
                 Color.clear.preference(key: AIChatPaneWidthKey.self, value: proxy.size.width.rounded())
             }
         )
+        .onChange(of: draft) { oldValue, newValue in
+            absorbDroppedTabText(old: oldValue, new: newValue)
+        }
         .onPreferenceChange(AIChatPaneWidthKey.self) { width in
             if width > 0, width != measuredWidth { measuredWidth = width }
         }
@@ -639,10 +671,6 @@ struct AIChatPane: View {
             return !snippets.isEmpty
         } isTargeted: { targeted in
             withAnimation(.easeOut(duration: 0.15)) { isDropTargeted = targeted }
-        }
-        .dropDestination(for: String.self) { items, _ in
-            guard let value = items.first else { return false }
-            return onPaneDrop?(value) ?? false
         }
         .overlay {
             if isDropTargeted {
@@ -688,6 +716,19 @@ struct AIChatPane: View {
                 }
             )
         }
+    }
+
+    /// The text field takes a dragged tab's id as plain text before the
+    /// composer's drop handler runs. When what was just inserted is such an
+    /// id, take it back out of the draft and attach the material instead.
+    private func absorbDroppedTabText(old: String, new: String) {
+        guard let onAttachDroppedTab,
+              let tabID = DroppedTabText.tabID(old: old, new: new),
+              let attachment = onAttachDroppedTab(tabID) else { return }
+        draft = old
+        attachments.append(attachment)
+        isComposerDropTargeted = false
+        isDropTargeted = false
     }
 
     private func isPaneSwitchDrop(_ value: String) -> Bool {
