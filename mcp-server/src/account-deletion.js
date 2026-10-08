@@ -38,13 +38,59 @@ function linkedIdentityKey(identity) {
   return identity.sub;
 }
 
+/**
+ * Marks the account's other identities with the same deletion state the
+ * canonical one carries, so a sign-in through ANY of them is held back while
+ * the deletion is under way ("deleting", `of` names the account) and finds
+ * the "deleted" marker afterwards. mintSession reads the state at the
+ * identity it is signing in, not at the canonical one, so without these an
+ * alias slipped through the in-progress check.
+ *
+ * A state that belongs to somebody else is left alone: an alias that has
+ * already begun a new account ("active"), or one being deleted for a
+ * different account.
+ */
+async function markAliases(env, canonicalSub, identityKeys, state) {
+  for (const identity of identityKeys) {
+    if (identity === canonicalSub) continue;
+    const aliasStateKey = `account-deletion:${await sha256Hex(identity)}`;
+    const existing = await env.STUDIQUO_DATA.get(aliasStateKey, "json");
+    if (existing?.status === "active") continue;
+    if (existing?.status === "deleting" && existing.of !== canonicalSub) continue;
+    await env.STUDIQUO_DATA.put(aliasStateKey, JSON.stringify(state));
+  }
+}
+
 export async function deleteAccount(env, canonicalSub) {
   const deletionStateKey = `account-deletion:${await sha256Hex(canonicalSub)}`;
-  const previousState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
+  let previousState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
   if (previousState?.status === "deleted") {
     await env.STUDIQUO_DATA.delete(jobKey);
     return { deleted: true };
+  }
+  if (previousState?.status === "active") {
+    // The person signed in again after the earlier deletion finished (see
+    // mintSession), so there is a new account. A request made since then
+    // wrote its job after that moment; a job from before it (or one that has
+    // already been cleared) is a leftover of the earlier deletion — a retry
+    // that read it just before the person came back — and running it would
+    // erase the new account. A marker without a usable time can't tell the
+    // two apart, and then the person's own request wins.
+    const startedAt = previousState.reregisteredAt;
+    const isRequestedSince = job => Number.isFinite(startedAt) ? job?.requestedAt >= startedAt : true;
+    let job = await env.STUDIQUO_DATA.get(jobKey, "json");
+    if (!isRequestedSince(job)) {
+      // Read once more before clearing: the person may have asked to delete
+      // the new account in the meantime, and that job must not be removed.
+      job = await env.STUDIQUO_DATA.get(jobKey, "json");
+      if (!isRequestedSince(job)) {
+        if (job) await env.STUDIQUO_DATA.delete(jobKey);
+        return { deleted: true };
+      }
+    }
+    // The earlier account's checkpoint does not describe this one.
+    previousState = null;
   }
   await env.STUDIQUO_DATA.put(jobKey, JSON.stringify({ canonicalSub, requestedAt: Date.now() }));
   const checkpointKeys = new Set(previousState?.deletionKeys ?? []);
@@ -110,6 +156,7 @@ export async function deleteAccount(env, canonicalSub) {
   // this account even though those session rows are already gone.
   checkpoint = { status: "deleting", deletionKeys: [...checkpointKeys], emails, identityKeys: [...identityKeys], tokenHashes: [...new Set(ownedTokenHashes)] };
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(checkpoint));
+  await markAliases(env, canonicalSub, identityKeys, { status: "deleting", of: canonicalSub });
   await deleteKeys(env, ownedSessionKeys);
 
   const accountKeys = [];
@@ -238,8 +285,9 @@ export async function deleteAccount(env, canonicalSub) {
 
   const devices = await env.STUDIQUO_DATA.get(`chat:devices:${chatKey}`, "json") ?? [];
 
+  const cutoffKeys = await Promise.all([...identityKeys].map(async identity => `session-valid-from:${await sha256Hex(identity)}`));
   const deletionKeys = [
-    ...checkpointKeys, ...ownedSessionKeys, ...accountKeys, ...ownedCredentialKeys, ...ownedPasskeyUserKeys, ...mcpKeys,
+    ...checkpointKeys, ...ownedSessionKeys, ...accountKeys, ...ownedCredentialKeys, ...ownedPasskeyUserKeys, ...mcpKeys, ...cutoffKeys,
     ...emails.flatMap(email => [`email-account-owner:${email}`, `email-accounts:${email}`, `email-verify:${email}`]),
     ...[...identityKeys].map(key => `identity-canonical:${key}`),
     ...ownedTokenHashes.flatMap(hash => [`snapshot:${hash}`, `actions:${hash}`]),
@@ -265,7 +313,13 @@ export async function deleteAccount(env, canonicalSub) {
     }
   }
 
-  await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "deleted", identityKeys: [...identityKeys] }));
+  const finishedState = JSON.stringify({ status: "deleted", identityKeys: [...identityKeys] });
+  // The other identities get the same marker, so whichever sign-in method the
+  // person comes back with finds it. They go first and the canonical marker
+  // last: if this is cut short, the canonical state is still "deleting", the
+  // job is still queued, and the retry writes them all again.
+  await markAliases(env, canonicalSub, identityKeys, JSON.parse(finishedState));
+  await env.STUDIQUO_DATA.put(deletionStateKey, finishedState);
   await env.STUDIQUO_DATA.delete(jobKey);
   return { deleted: true };
 }
