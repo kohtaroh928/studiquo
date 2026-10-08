@@ -288,7 +288,22 @@ export async function deleteAccount(env, canonicalSub) {
     }
   }
 
-  await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "deleted", identityKeys: [...identityKeys] }));
+  const finishedState = JSON.stringify({ status: "deleted", identityKeys: [...identityKeys] });
+  // Every other identity of the account gets the same marker, so whichever
+  // sign-in method the person comes back with finds it (mintSession reads the
+  // marker at the identity it is signing in, not at the canonical one).
+  // They go first and the canonical marker last: if this is cut short, the
+  // canonical state is still "deleting", the job is still queued, and the
+  // retry writes them all again. A state that is already in progress or live
+  // (a sign-in that has begun a new account) is left as it is.
+  for (const identity of identityKeys) {
+    if (identity === canonicalSub) continue;
+    const aliasStateKey = `account-deletion:${await sha256Hex(identity)}`;
+    const existing = await env.STUDIQUO_DATA.get(aliasStateKey, "json");
+    if (existing?.status === "deleting" || existing?.status === "active") continue;
+    await env.STUDIQUO_DATA.put(aliasStateKey, finishedState);
+  }
+  await env.STUDIQUO_DATA.put(deletionStateKey, finishedState);
   await env.STUDIQUO_DATA.delete(jobKey);
   return { deleted: true };
 }

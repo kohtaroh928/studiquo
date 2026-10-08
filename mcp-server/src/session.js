@@ -10,6 +10,27 @@ const SESSION_PREFIX = "session:";
 const IDENTITY_CANONICAL_PREFIX = "identity-canonical:";
 
 /**
+ * The person is back after deleting their account, so the provider-side
+ * "deleted customer" records written at deletion (they make RevenueCat events
+ * for those customer ids be ignored, so a late renewal can't recreate what was
+ * erased) must go: left in place, a re-registered customer would stay on the
+ * free plan however many times they subscribed. All of the old account's
+ * identities are cleared, since the provider lists them as aliases of the one
+ * customer. Returns false when that could not be done.
+ */
+async function clearDeletedCustomerRecords(env, hashes) {
+  if (!env.ADMIN_DB || hashes.length === 0) return true;
+  try {
+    await env.ADMIN_DB.prepare("DELETE FROM privacy_deleted_customers WHERE customer_hash IN (SELECT value FROM json_each(?))")
+      .bind(JSON.stringify(hashes)).run();
+    return true;
+  } catch {
+    console.error(JSON.stringify({ message: "could not clear a returning customer's deletion record" }));
+    return false;
+  }
+}
+
+/**
  * Mints a "<issued-at epoch>.<randomValue>" token for `identityKey`, records
  * it as a real, server-issued session (so requireRealSession can recognize
  * it later), and returns the token — or `null` if the resulting token falls
@@ -36,8 +57,20 @@ export async function mintSession(env, identityKey, randomValue) {
   // old job before this moment still runs deleteAccount afterwards, and that
   // timestamp is how deleteAccount knows to leave the new account alone.
   if (deletionState?.status === "deleted") {
+    const hashes = await Promise.all([...new Set([identityKey, ...(deletionState.identityKeys ?? [])])].map(sha256Hex));
+    const cleared = await clearDeletedCustomerRecords(env, hashes);
     await env.STUDIQUO_DATA.delete(`privacy-account-delete:${await sha256Hex(identityKey)}`);
-    await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "active", reregisteredAt: Date.now() }));
+    // The new account starts now whether or not the provider records could be
+    // cleared: a state that stayed "deleted" would make the person's next
+    // deletion of this account return early and erase nothing. What could not
+    // be cleared is remembered and retried at the next sign-in.
+    await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({
+      status: "active", reregisteredAt: Date.now(), ...(cleared ? {} : { pendingCustomerClear: hashes }),
+    }));
+  } else if (deletionState?.status === "active" && Array.isArray(deletionState.pendingCustomerClear)) {
+    if (await clearDeletedCustomerRecords(env, deletionState.pendingCustomerClear)) {
+      await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "active", reregisteredAt: deletionState.reregisteredAt }));
+    }
   }
   // A queued provider (RevenueCat) DELETE for THIS identity is dropped for the
   // same reason: the customer id is the same again, so running it later would
