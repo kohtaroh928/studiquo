@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { sha256Hex } from "./auth.js";
 import { deleteAccount, startAccountDeletion } from "./account-deletion.js";
 import { processPendingDeletions, runPrivacyRetention, runScheduledPrivacyWork } from "./privacy-retention.js";
+import { handleAdminWebhook } from "./admin.js";
 import { mintSession, realSession } from "./session.js";
 
 // A real (in-memory SQLite) ADMIN_DB with every migration applied, so the
@@ -21,6 +22,8 @@ function environment(extra = {}) {
     async first() { return db.prepare(sql).get(...params) ?? null; },
   });
   return {
+    REVENUECAT_WEBHOOK_SECRET: "test-secret",
+    RATE_LIMIT_ADMIN_WEBHOOK: { async limit() { return { success: true }; } },
     ADMIN_DB: { prepare: statement },
     STUDIQUO_DATA: {
       async get(key, type) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
@@ -346,4 +349,151 @@ test("N4: queued provider deletions without a secret are reported, and only then
   } finally {
     console.warn = realWarn;
   }
+});
+
+// --- H3: a customer who deletes the account and comes back can subscribe again ---
+
+async function webhook(env, event) {
+  const url = new URL("https://test.example/api/admin/revenuecat-webhook");
+  const request = new Request(url, { method: "POST", headers: { authorization: "test-secret", "content-type": "application/json" }, body: JSON.stringify({ event: { event_timestamp_ms: Date.now(), ...event } }) });
+  return (await handleAdminWebhook(url, request, env)).json();
+}
+const subscriberRows = (env, appUserId) => env._db.prepare("SELECT status FROM subscribers WHERE app_user_id = ?").all(appUserId).map(row => row.status);
+
+test("H3: after coming back, a purchase by the same customer is recorded again", async () => {
+  const env = environment();
+  const identity = "email:customer@example.com";
+  await signInWithData(env, identity, "first-life");
+  await startAccountDeletion(env, identity);
+  assert.deepEqual(await webhook(env, { id: "late-renewal", app_user_id: identity, type: "RENEWAL" }), { received: true, ignored: true }, "while gone, events stay ignored");
+  assert.equal(subscriberRows(env, identity).length, 0);
+
+  await mintSession(env, identity, RANDOM + "back");
+  assert.deepEqual(await webhook(env, { id: "new-purchase", app_user_id: identity, type: "INITIAL_PURCHASE", product_id: "plus" }), { received: true });
+  assert.deepEqual(subscriberRows(env, identity), ["active"]);
+});
+
+test("H3: coming back with any one sign-in method clears the whole account's records, aliases included", async () => {
+  const env = environment();
+  const canonical = "apple:owner", alias = "google:owner-alias";
+  env._values.set(`identity-canonical:${alias}`, canonical);
+  env._values.set(`identity-canonical:${canonical}`, canonical);
+  await signInWithData(env, canonical, "first-life");
+  await startAccountDeletion(env, canonical);
+  const aliasMarker = JSON.parse(env._values.get(await stateKey(alias)));
+  assert.equal(aliasMarker.status, "deleted", "the alias carries the same marker, so any identity can find it");
+  assert.deepEqual(await webhook(env, { id: "e1", app_user_id: alias, type: "RENEWAL" }), { received: true, ignored: true });
+
+  // The person returns through the Google sign-in only.
+  assert.ok(await mintSession(env, alias, RANDOM + "via-alias"));
+  assert.deepEqual(await webhook(env, { id: "e2", app_user_id: alias, type: "INITIAL_PURCHASE" }), { received: true });
+  // The provider lists the old ids as aliases of one customer, so the other id must not block the event.
+  assert.deepEqual(await webhook(env, { id: "e3", app_user_id: alias, aliases: [canonical], type: "RENEWAL" }), { received: true });
+  assert.equal(JSON.parse(env._values.get(await stateKey(alias))).status, "active");
+});
+
+test("H3: someone who has not come back stays erased", async () => {
+  const env = environment();
+  await signInWithData(env, "apple:gone", "gone");
+  await signInWithData(env, "apple:returns", "returns");
+  await startAccountDeletion(env, "apple:gone");
+  await startAccountDeletion(env, "apple:returns");
+  await mintSession(env, "apple:returns", RANDOM + "back");
+  assert.deepEqual(await webhook(env, { id: "g", app_user_id: "apple:gone", type: "RENEWAL" }), { received: true, ignored: true });
+  assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM privacy_deleted_customers").get().n, 1);
+});
+
+test("H3: if the record cannot be cleared, sign-in still works and the next sign-in retries", async () => {
+  const env = environment();
+  const identity = "apple:flaky";
+  await signInWithData(env, identity, "first-life");
+  await startAccountDeletion(env, identity);
+  const realPrepare = env.ADMIN_DB.prepare;
+  env.ADMIN_DB.prepare = sql => sql.includes("DELETE FROM privacy_deleted_customers") ? { bind() { return { async run() { throw new Error("temporary storage outage"); } }; } } : realPrepare(sql);
+  const errors = [];
+  const realError = console.error;
+  console.error = message => errors.push(message);
+  try {
+    assert.ok(await mintSession(env, identity, RANDOM + "outage"), "signing in is not held up by the clean-up");
+  } finally {
+    console.error = realError;
+  }
+  assert.equal(errors.length, 1);
+  assert.doesNotMatch(errors[0], /apple:flaky/);
+  const pending = JSON.parse(env._values.get(await stateKey(identity)));
+  assert.equal(pending.status, "active", "the new account still starts, so its own deletion works");
+  assert.equal(pending.pendingCustomerClear.length, 1, "what could not be cleared is remembered");
+  assert.deepEqual(await webhook(env, { id: "still-ignored", app_user_id: identity, type: "RENEWAL" }), { received: true, ignored: true });
+
+  env.ADMIN_DB.prepare = realPrepare;
+  assert.ok(await mintSession(env, identity, RANDOM + "healthy"));
+  const settled = JSON.parse(env._values.get(await stateKey(identity)));
+  assert.equal(settled.status, "active");
+  assert.equal(settled.pendingCustomerClear, undefined, "the retry succeeded");
+  assert.equal(settled.reregisteredAt, pending.reregisteredAt, "the new account's start time is kept");
+  assert.deepEqual(await webhook(env, { id: "now-accepted", app_user_id: identity, type: "INITIAL_PURCHASE" }), { received: true });
+});
+
+test("H3 M-1: while the provider records cannot be cleared, the person can still delete their new account", async () => {
+  const env = environment();
+  const identity = "apple:outage-then-delete";
+  await signInWithData(env, identity, "first-life");
+  await startAccountDeletion(env, identity);
+  const realPrepare = env.ADMIN_DB.prepare;
+  env.ADMIN_DB.prepare = sql => sql.includes("DELETE FROM privacy_deleted_customers") ? { bind() { return { async run() { throw new Error("temporary storage outage"); } }; } } : realPrepare(sql);
+  const realError = console.error; console.error = () => {};
+  let token;
+  try { token = await signInWithData(env, identity, "second-life"); } finally { console.error = realError; }
+  env.ADMIN_DB.prepare = realPrepare;
+
+  assert.deepEqual(await startAccountDeletion(env, identity), { deleted: true, externalDeletionPending: true });
+  assert.equal(env._values.has("account:apple:outage-then-delete"), false, "the new account is really erased");
+  assert.equal(await realSession(env, token), null);
+});
+
+test("H3 M-2: alias markers are written before the canonical one, so a cut-short deletion is retried in full", async () => {
+  const env = environment();
+  const canonical = "apple:cut-short", alias = "google:cut-short-alias";
+  env._values.set(`identity-canonical:${alias}`, canonical);
+  env._values.set(`identity-canonical:${canonical}`, canonical);
+  await signInWithData(env, canonical, "life");
+  const aliasStateKey = await stateKey(alias);
+  const realPut = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (key, value, options) => { if (key === aliasStateKey) throw new Error("temporary storage outage"); return realPut(key, value, options); };
+  assert.deepEqual(await startAccountDeletion(env, canonical), { deleted: false, cleanupPending: true });
+  env.STUDIQUO_DATA.put = realPut;
+  assert.equal(JSON.parse(env._values.get(await stateKey(canonical))).status, "deleting", "not finished, so it will be retried");
+  assert.ok(env._values.has(`privacy-account-delete:${await sha256Hex(canonical)}`));
+
+  await processPendingDeletions(env);
+  assert.equal(JSON.parse(env._values.get(await stateKey(canonical))).status, "deleted");
+  assert.equal(JSON.parse(env._values.get(aliasStateKey)).status, "deleted", "the retry wrote the alias marker too");
+  assert.deepEqual(await webhook(env, { id: "x", app_user_id: alias, type: "RENEWAL" }), { received: true, ignored: true });
+  assert.ok(await mintSession(env, alias, RANDOM + "via-alias"));
+  assert.deepEqual(await webhook(env, { id: "y", app_user_id: alias, type: "INITIAL_PURCHASE" }), { received: true });
+});
+
+test("H3 L-1: an alias that already has a live or in-progress state is not overwritten by the marker", async () => {
+  const env = environment();
+  const canonical = "apple:owner-l1", active = "google:already-back", deleting = "google:mid-deletion";
+  for (const alias of [active, deleting]) env._values.set(`identity-canonical:${alias}`, canonical);
+  env._values.set(`identity-canonical:${canonical}`, canonical);
+  await signInWithData(env, canonical, "life");
+  const activeState = JSON.stringify({ status: "active", reregisteredAt: 5 });
+  const deletingState = JSON.stringify({ status: "deleting", deletionKeys: [] });
+  env._values.set(await stateKey(active), activeState);
+  env._values.set(await stateKey(deleting), deletingState);
+  await startAccountDeletion(env, canonical);
+  assert.equal(env._values.get(await stateKey(active)), activeState);
+  assert.equal(env._values.get(await stateKey(deleting)), deletingState);
+});
+
+test("H3: without an ADMIN_DB binding the new account still starts", async () => {
+  const env = environment();
+  const identity = "apple:no-db-return";
+  await signInWithData(env, identity, "first-life");
+  await startAccountDeletion(env, identity);
+  delete env.ADMIN_DB;
+  assert.ok(await mintSession(env, identity, RANDOM + "back"));
+  assert.equal(JSON.parse(env._values.get(await stateKey(identity))).status, "active");
 });
