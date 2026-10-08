@@ -147,4 +147,44 @@ final class StoreMigrationTests: XCTestCase {
         guard case .ready(let container) = loader.state else { return XCTFail("Not ready") }
         XCTAssertEqual(try ModelContext(container).fetchCount(FetchDescriptor<Notebook>()), 300)
     }
+
+    /// A store file that cannot be read must end in a visible failure (with a
+    /// retry), never in a launch screen that waits forever.
+    func testUnreadableStoreFileEndsInFailedNotInAnEndlessSpinner() async throws {
+        try Data("これはSQLiteのファイルではありません".utf8).write(to: storeURL)
+        let url = storeURL
+        let failed = expectation(description: "Unreadable store is reported")
+        let loader = StartupStoreLoader<ModelContainer>(timeout: 10) {
+            let configuration = ModelConfiguration(schema: studiquoSchema, url: url, cloudKitDatabase: .none)
+            return try ModelContainer(for: studiquoSchema, configurations: configuration)
+        }
+        let subscription = loader.$state.sink { state in
+            if case .failed(let message) = state {
+                XCTAssertFalse(message.isEmpty)
+                failed.fulfill()
+            }
+            if case .ready = state { XCTFail("An unreadable file must not look like a healthy store") }
+        }
+        defer { subscription.cancel() }
+
+        loader.start()
+        await fulfillment(of: [failed], timeout: 15)
+        // The person's file is left alone for the retry; it is never replaced
+        // by an empty library.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storeURL.path))
+    }
+
+    /// A much larger library than any test above. The budget is the launch
+    /// screen's own slow-launch deadline (10 s): upgrading must not need more.
+    func testUpgradeOfALargeLibraryFinishesBeforeTheSlowLaunchDeadline() throws {
+        try writeLegacyStore(notebooks: 3000, folders: 200, messages: 1500)
+
+        let started = Date()
+        let container = try openCurrentSchema()
+        let elapsed = Date().timeIntervalSince(started)
+
+        XCTAssertLessThan(elapsed, 10, "upgrading took \(elapsed)s, long enough to trip the slow-launch notice")
+        XCTAssertEqual(try ModelContext(container).fetchCount(FetchDescriptor<Notebook>()), 3000)
+        XCTAssertEqual(try ModelContext(container).fetchCount(FetchDescriptor<AIChatMessage>()), 1500)
+    }
 }
