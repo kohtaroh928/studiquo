@@ -231,6 +231,8 @@ struct StudiquoApp: App {
                     NoteAIChatUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") {
                     TabPickerCreateUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--split-source-picker-ui-test") {
+                    SplitSourcePickerUITestRoot()
                 } else {
                     normalRoot
                 }
@@ -244,6 +246,7 @@ struct StudiquoApp: App {
                 guard !ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--startup-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--split-source-picker-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test"),
@@ -847,6 +850,89 @@ private enum LibraryDropUITestStore {
         container.mainContext.insert(staleRelationship)
         try! container.mainContext.save()
         return container
+    }()
+}
+
+/// Hosts the split-screen source picker on its own, over a disposable library:
+/// a note at the top level, a PDF in 科目, and a flashcard deck in 科目/数学.
+/// `--split-source-picker-narrow` squeezes it to 600pt so three columns no
+/// longer fit and must scroll. `--split-source-picker-sheet` presents it as a
+/// sheet that closes on a pick or on キャンセル, as in the note editor.
+private struct SplitSourcePickerUITestRoot: View {
+    @State private var selected = "なし"
+    @State private var isOpen = true
+
+    private var asSheet: Bool {
+        ProcessInfo.processInfo.arguments.contains("--split-source-picker-sheet")
+    }
+
+    private func picker(_ library: SplitSourcePickerUITestStore.Library) -> some View {
+        SplitSourcePicker(
+            notebooks: library.notebooks,
+            flashcardDecks: library.decks,
+            primaryNotebook: library.notebooks[0],
+            onSelectNotebook: { selected = $0.title; isOpen = false },
+            onSelectDeck: { selected = $0.title; isOpen = false }
+        )
+    }
+
+    var body: some View {
+        let library = SplitSourcePickerUITestStore.library
+        let narrow = ProcessInfo.processInfo.arguments.contains("--split-source-picker-narrow")
+        VStack(spacing: 0) {
+            Text(selected).accessibilityIdentifier("split-source-selected")
+            Text(isOpen ? "open" : "closed").accessibilityIdentifier("split-source-sheet-state")
+            if asSheet {
+                Spacer()
+            } else {
+                picker(library)
+                    .frame(width: narrow ? 600 : nil)
+            }
+        }
+        .sheet(isPresented: Binding(get: { asSheet && isOpen }, set: { isOpen = $0 })) {
+            picker(library)
+        }
+        .modelContainer(library.container)
+        // Once, on first appearance: every test launch starts as the list.
+        .task { UserDefaults.standard.removeObject(forKey: "splitSourcePickerLayout") }
+    }
+}
+
+@MainActor
+private enum SplitSourcePickerUITestStore {
+    typealias Library = (container: ModelContainer, notebooks: [Notebook], decks: [FlashcardDeck])
+
+    static let library: Library = {
+        let configuration = ModelConfiguration(schema: studiquoSchema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        let container = try! ModelContainer(for: studiquoSchema, configurations: configuration)
+        let context = container.mainContext
+        let subject = Folder(name: "科目")
+        let math = Folder(name: "数学", parent: subject)
+        context.insert(subject)
+        context.insert(math)
+
+        let note = Notebook(title: "分割ノート")
+        let notePage = NotePage(order: 0)
+        notePage.notebook = note
+        note.addPage(notePage)
+
+        let pdf = Notebook(title: "分割PDF")
+        let pdfPage = NotePage(order: 0, backgroundImageData: Data([0]))
+        pdfPage.notebook = pdf
+        pdf.addPage(pdfPage)
+        pdf.refreshLibraryMetadata()
+        pdf.folderName = subject.legacyPath
+        pdf.folder = subject
+
+        let deck = FlashcardDeck(title: "分割暗記")
+        deck.folderName = math.legacyPath
+        deck.folder = math
+
+        context.insert(note)
+        context.insert(pdf)
+        context.insert(deck)
+        try! context.save()
+        return (container, [note, pdf], [deck])
     }()
 }
 
