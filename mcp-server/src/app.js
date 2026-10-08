@@ -18,14 +18,14 @@ import { accessAllowed, isAccessGuardedPath } from "./access.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired } from "./token.js";
 import { realSession } from "./session.js";
-import { handleMCPOAuth, externalSession, pairingInfo, approvePairing, listConnections, revokeConnection } from "./mcp-oauth.js";
+import { handleMCPOAuth, externalSession, pairingInfo, approvePairing, listConnections, revokeConnection, revokeAllConnections } from "./mcp-oauth.js";
 import { verifyAppleIdentityToken } from "./apple-auth.js";
 import { verifyGoogleIdentityToken } from "./google-auth.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
 import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError } from "./local-auth.js";
 import { startAccountDeletion } from "./account-deletion.js";
-import { mintSession, hasRealSession } from "./session.js";
+import { mintSession, hasRealSession, revokeSessionsIssuedBefore } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { beginLoginAttempt, finishLoginAttempt, abandonLoginAttempt } from "./login-throttle.js";
 import { isBreachedPassword } from "./pwned-passwords.js";
@@ -716,8 +716,12 @@ async function handleConfirmEmailVerification(request, env, ctx) {
   if (!result.verified) return json({ error: "Incorrect or expired code.", attemptsRemaining: result.attemptsRemaining }, 401);
 
   let normalizedEmail;
+  let replacedPassword;
   try {
     normalizedEmail = email.trim().toLowerCase();
+    // A password that already existed is being replaced: a reset. Adding the
+    // first one to an account that signs in another way is not.
+    replacedPassword = (await env.STUDIQUO_DATA.get(`account:local:${normalizedEmail}`)) !== null;
     await upsertLocalAccount(env, normalizedEmail, password);
   } catch {
     return json({ error: "Could not save the account." }, 400);
@@ -726,7 +730,15 @@ async function handleConfirmEmailVerification(request, env, ctx) {
   const link = await linkVerifiedEmail(env, {
     provider: "email", sub: normalizedEmail, email: normalizedEmail, emailVerified: true,
   });
-  const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, randomValue);
+  const accountKey = link.canonicalIdentityKey ?? `email:${normalizedEmail}`;
+  if (replacedPassword) {
+    // A reset signs out whoever held the old password — the new session below
+    // is minted after the cut-off — and so disconnects the apps (MCP) they
+    // may have connected, which hold their own tokens.
+    await revokeSessionsIssuedBefore(env, accountKey);
+    await revokeAllConnections(env, accountKey);
+  }
+  const token = await mintSession(env, accountKey, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
   // The owner just proved they hold this mailbox from here, so this is the
   // baseline context: remember it without sending a notice.

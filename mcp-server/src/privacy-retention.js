@@ -34,10 +34,10 @@ export async function retryRevenueCatDeletion(env, key, job, fetcher = fetch) {
   return true;
 }
 
-async function processJobs(env, prefix, callback) {
+async function processJobs(env, prefix, callback, limit = 10) {
   const cursorKey = `privacy-cursor:${prefix}`;
   const cursor = await env.STUDIQUO_DATA.get(cursorKey) || undefined;
-  const page = await env.STUDIQUO_DATA.list({ prefix, limit: 10, cursor });
+  const page = await env.STUDIQUO_DATA.list({ prefix, limit, cursor });
   for (const key of page.keys) {
     const job = await env.STUDIQUO_DATA.get(key.name, "json");
     if (!job) continue;
@@ -48,13 +48,47 @@ async function processJobs(env, prefix, callback) {
   else await env.STUDIQUO_DATA.put(cursorKey, page.cursor);
 }
 
+/**
+ * Carries through deletions a person has already asked for: an account whose
+ * cleanup was cut short, and the provider (RevenueCat) DELETEs still queued.
+ * Unlike the automatic expiry below, this is not behind
+ * PRIVACY_RETENTION_ENABLED — an accepted deletion must finish (and an account
+ * stuck mid-deletion must become usable again) whatever that flag says.
+ * `limit` bounds how many jobs of each kind one run takes on: finishing an
+ * account walks a lot of KV, so a run that is not the full retention job keeps
+ * it small.
+ */
+export async function processPendingDeletions(env, fetcher = fetch, { limit = 10 } = {}) {
+  // Import lazily to avoid a module cycle with deleteAccount's shared helpers.
+  const { deleteAccount } = await import("./account-deletion.js");
+  await processJobs(env, "privacy-account-delete:", async (_key, job) => deleteAccount(env, job.canonicalSub), limit);
+  // Without the provider secret every attempt fails, so skip the pass: it
+  // would only spend subrequests and keep cycling the same jobs. Say so when
+  // jobs are waiting, so queued erasures don't pile up unnoticed.
+  if (env.REVENUECAT_SECRET_API_KEY) {
+    await processJobs(env, "privacy-rc-delete:", (key, job) => retryRevenueCatDeletion(env, key, job, fetcher), limit);
+  } else {
+    const waiting = await env.STUDIQUO_DATA.list({ prefix: "privacy-rc-delete:", limit: 1 });
+    if (waiting.keys?.length) console.warn(JSON.stringify({ message: "provider deletions are queued but REVENUECAT_SECRET_API_KEY is not configured" }));
+  }
+}
+
+/**
+ * What the hourly schedule runs. With the flag on, the full retention job
+ * (which includes the pending deletions). With it off, only the pending
+ * deletions, a few at a time: the automatic expiry stays off, but a deletion
+ * somebody asked for is never left unfinished.
+ */
+export async function runScheduledPrivacyWork(env, scheduledTime, fetcher = fetch) {
+  if (env.PRIVACY_RETENTION_ENABLED === "true") return runPrivacyRetention(env, scheduledTime, fetcher);
+  await processPendingDeletions(env, fetcher, { limit: 2 });
+  return { enabled: false };
+}
+
 export async function runPrivacyRetention(env, now = Date.now(), fetcher = fetch) {
   if (env.PRIVACY_RETENTION_ENABLED !== "true") return { enabled: false };
   if (!env.ADMIN_DB) throw new Error("Privacy retention requires ADMIN_DB");
-  // Import lazily to avoid a module cycle with deleteAccount's shared helpers.
-  const { deleteAccount } = await import("./account-deletion.js");
-  await processJobs(env, "privacy-account-delete:", async (_key, job) => deleteAccount(env, job.canonicalSub));
-  await processJobs(env, "privacy-rc-delete:", (key, job) => retryRevenueCatDeletion(env, key, job, fetcher));
+  await processPendingDeletions(env, fetcher);
 
   const personalCutoff = now - PERSONAL_RETENTION_MS;
   const reports = await env.ADMIN_DB.prepare(

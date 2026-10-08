@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import test from "node:test";
+import test, { mock } from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import worker from "./app.js";
-import { realSession } from "./session.js";
+import { realSession, mintSession } from "./session.js";
+import { externalSession } from "./mcp-oauth.js";
 import { reserveAttempt, refundAttempt, trustPair } from "./login-throttle.js";
 import { touchSeenContext } from "./login-monitor.js";
 import { argon2QueueState, engine } from "./local-auth.js";
@@ -421,7 +422,8 @@ test("POST /api/auth/apple: first sign-in creates the account and a matching ses
   assert.ok(account.createdAt);
 
   const session = await env.STUDIQUO_DATA.get(`session:${sha256Hex(token)}`, "json");
-  assert.deepEqual(session, { sub: "000123.apple-sub.4567", issuedAt });
+  assert.equal(typeof session.issuedAtMs, "number");
+  assert.deepEqual(session, { sub: "000123.apple-sub.4567", issuedAt, issuedAtMs: session.issuedAtMs });
 });
 
 test("POST /api/auth/apple: a later sign-in does not overwrite the account's stored email", async () => {
@@ -545,7 +547,8 @@ test("POST /api/auth/google: first sign-in creates the account and a matching se
   assert.ok(account.createdAt);
 
   const session = await env.STUDIQUO_DATA.get(`session:${sha256Hex(token)}`, "json");
-  assert.deepEqual(session, { sub: "google:108234567890123456789", issuedAt });
+  assert.equal(typeof session.issuedAtMs, "number");
+  assert.deepEqual(session, { sub: "google:108234567890123456789", issuedAt, issuedAtMs: session.issuedAtMs });
 });
 
 test("POST /api/auth/google: an invalid idToken is rejected with 401", async () => {
@@ -2164,4 +2167,78 @@ test("a token /api/auth/apple actually minted works even with strictSessions on"
 
   const actions = await worker.fetch(request("/api/actions", { token }), env, noopCtx);
   assert.equal(actions.status, 200);
+});
+
+test("POST /api/auth/email/confirm-code: resetting the password signs out the sessions issued before it", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  const confirm = async (randomValue, password) => {
+    const stub = stubResendCapturingCode();
+    const send = await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "reset@example.com" } }), env, noopCtx);
+    stub.restore();
+    assert.equal(send.status, 200);
+    const response = await worker.fetch(
+      request("/api/auth/email/confirm-code", { method: "POST", body: { email: "reset@example.com", code: stub.code(), password, randomValue } }),
+      env,
+      noopCtx
+    );
+    assert.equal(response.status, 200);
+    return (await response.json()).token;
+  };
+
+  const stolen = await confirm("s".repeat(40), "correct-horse-battery");
+  assert.ok(await realSession(env, stolen));
+
+  mock.timers.tick(5_000);
+  const afterReset = await confirm("n".repeat(40), "another-passphrase-1");
+  assert.equal(await realSession(env, stolen), null, "the session from before the reset no longer works");
+  assert.ok(await realSession(env, afterReset), "the session minted by the reset does");
+});
+
+test("POST /api/auth/email/confirm-code: adding a first password does not sign out the account's other sessions", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  // An account that signs in another way already has a live session...
+  const existing = await mintSession(env, "email:google-user@example.com", "g".repeat(40));
+  assert.ok(await realSession(env, existing));
+  mock.timers.tick(5_000);
+  // ...and then sets its first password through the e-mail code.
+  const stub = stubResendCapturingCode();
+  await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "google-user@example.com" } }), env, noopCtx);
+  stub.restore();
+  const response = await worker.fetch(
+    request("/api/auth/email/confirm-code", { method: "POST", body: { email: "google-user@example.com", code: stub.code(), password: "correct-horse-battery", randomValue: "p".repeat(40) } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 200);
+  assert.ok(await realSession(env, existing), "only a reset, not the first password, signs the other sessions out");
+});
+
+test("POST /api/auth/email/confirm-code: a reset also disconnects the account's connected apps", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  const confirm = async (randomValue, password) => {
+    const stub = stubResendCapturingCode();
+    await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "mcp-reset@example.com" } }), env, noopCtx);
+    stub.restore();
+    const response = await worker.fetch(
+      request("/api/auth/email/confirm-code", { method: "POST", body: { email: "mcp-reset@example.com", code: stub.code(), password, randomValue } }),
+      env,
+      noopCtx
+    );
+    assert.equal(response.status, 200);
+  };
+  await confirm("s".repeat(40), "correct-horse-battery");
+  const sub = "email:mcp-reset@example.com";
+  await env.STUDIQUO_DATA.put(`mcp:grant:${sha256Hex(sub)}:${sha256Hex("client")}`, JSON.stringify({ createdAt: Date.now() }));
+  await env.STUDIQUO_DATA.put(`mcp:access:${sha256Hex("mcp_" + "t".repeat(40))}`, JSON.stringify({ sub, clientId: "client", scope: "studiquo.read" }));
+  assert.ok(await externalSession(env, request("/mcp", { token: "mcp_" + "t".repeat(40) })));
+
+  mock.timers.tick(5_000);
+  await confirm("n".repeat(40), "another-passphrase-1");
+  assert.equal(await externalSession(env, request("/mcp", { token: "mcp_" + "t".repeat(40) })), null);
 });
