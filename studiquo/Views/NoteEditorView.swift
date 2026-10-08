@@ -149,6 +149,7 @@ private enum TemporaryChatMaterial: Identifiable {
     case flashcardDeck(FlashcardDeck)
     case document(TextDocument)
     case slideDeck(SlideDeck)
+    case externalFile(ExternalFileSession)
 
     var id: String {
         switch self {
@@ -158,6 +159,9 @@ private enum TemporaryChatMaterial: Identifiable {
         case .flashcardDeck(let deck): return "deck-\(deck.persistentModelID)"
         case .document(let document): return "document-\(document.persistentModelID)"
         case .slideDeck(let deck): return "slide-\(deck.persistentModelID)"
+        // Not the file's path: the id is the pane's identity, and the path of a
+        // file opened in place is the user's data about their own storage.
+        case .externalFile(let session): return "external-file-\(session.id)"
         }
     }
 
@@ -169,6 +173,15 @@ private enum TemporaryChatMaterial: Identifiable {
         case .flashcardDeck(let deck): return deck.title
         case .document(let document): return document.title
         case .slideDeck(let deck): return deck.title
+        case .externalFile: return String(localized: "ファイル")
+        }
+    }
+
+    /// The symbol shown for this material while its pane is being resized.
+    var placeholderSymbol: String {
+        switch self {
+        case .externalFile: return "folder"
+        default: return "doc.viewfinder"
         }
     }
 
@@ -180,6 +193,7 @@ private enum TemporaryChatMaterial: Identifiable {
         case .flashcardDeck: return "deck"
         case .document: return "document"
         case .slideDeck: return "slide"
+        case .externalFile: return "external-file"
         }
     }
 }
@@ -577,6 +591,10 @@ struct NoteEditorView: View {
             aiChat.loadThreads()
         }
         .onChange(of: splitMode) { _, mode in splitState.isSplit = mode != .single }
+        // A file opened in place is closed when the secondary pane is switched
+        // to another kind of content; only a switch *to* something counts, so
+        // clearing these while opening the file pane does not close it.
+        .onChange(of: secondaryShowsOtherContent) { _, isOther in if isOther { discardExternalFile(in: .secondary) } }
         .onChange(of: showsChatPicker) { _, isPresented in
             guard !isPresented, let abandonedSnippet = snippetAwaitingChatPicker else { return }
             // Closing the destination picker without making a selection also
@@ -1189,7 +1207,7 @@ struct NoteEditorView: View {
     private func splitDragPlaceholderLabel(for pane: ActivePane) -> (title: String, icon: String) {
         if photoStudyPane == pane { return ("写真資料", "photo.stack") }
         if pane == .primary {
-            if let material = primaryTemporaryChatMaterial { return (material.title, "doc.viewfinder") }
+            if let material = primaryTemporaryChatMaterial { return (material.title, material.placeholderSymbol) }
             if primaryShowsWeb { return ("Web", "globe") }
             if primaryShowsAIChat { return ("AIトーク", "sparkles") }
             if let friend = primaryFriendChat { return (friend.name, "person.crop.circle") }
@@ -1198,7 +1216,7 @@ struct NoteEditorView: View {
             return (displayedPrimaryNotebook.title, displayedPrimaryNotebook.containsPDF ? "doc.richtext" : "note.text")
         }
 
-        if let material = secondaryTemporaryChatMaterial { return (material.title, "doc.viewfinder") }
+        if let material = secondaryTemporaryChatMaterial { return (material.title, material.placeholderSymbol) }
         if secondaryShowsWeb { return ("Web", "globe") }
         if secondaryShowsAIChat { return ("AIトーク", "sparkles") }
         if let friend = secondaryFriendChat { return (friend.name, "person.crop.circle") }
@@ -1479,6 +1497,8 @@ struct NoteEditorView: View {
                 TextDocumentView(document: document)
             case .slideDeck(let deck):
                 SlideDeckView(deck: deck)
+            case .externalFile(let session):
+                ExternalFilePaneView(session: session)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1882,6 +1902,10 @@ struct NoteEditorView: View {
                     Button("Google検索と2分割", systemImage: "globe") {
                         openWebSplit(title: "Google検索", homeURL: "https://www.google.com")
                     }
+                    Button("ファイルアプリと2分割", systemImage: "folder") {
+                        openExternalFileSplit()
+                    }
+                    .accessibilityIdentifier("note-split-external-file-button")
                 } label: { toolStripLabel("画面分割", icon: splitMode.icon, isActive: splitMode != .single) }
 
                 if splitMode != .single {
@@ -2012,6 +2036,23 @@ struct NoteEditorView: View {
             name: Notification.Name("StudiquoOpenWebTab"),
             object: WebTabInfo(id: homeURL, title: title, homeURL: homeURL)
         )
+    }
+
+    /// Splits the screen and shows the Files browser in the secondary pane, for
+    /// opening a PDF or other material from where it is stored.
+    private func openExternalFileSplit() {
+        dismissPhotoStudy(restorePreviousLayout: false)
+        secondaryNotebook = nil
+        secondaryFlashcardDeck = nil
+        secondaryShowsWeb = false
+        secondaryShowsAIChat = false
+        secondaryChatTarget = nil
+        if splitMode == .single {
+            splitMode = isPortraitLayout ? .vertical : .horizontal
+            splitRatio = 0.5
+        }
+        setTemporaryChatMaterial(.externalFile(ExternalFileSession()), in: .secondary)
+        activePane = .primary
     }
 
     private func presentChatPicker() {
@@ -2440,6 +2481,7 @@ struct NoteEditorView: View {
     }
 
     private func setTemporaryChatMaterial(_ material: TemporaryChatMaterial, in pane: ActivePane) {
+        releaseExternalFile(in: pane)
         if pane == .primary {
             primaryTemporaryChatMaterial = material
             primaryTemporaryChatMaterialPageIndex = 0
@@ -2450,7 +2492,33 @@ struct NoteEditorView: View {
         activePane = pane
     }
 
+    /// Stops reading an externally stored file the pane was showing. Dropping
+    /// the material alone would also do it, but only when the last reference
+    /// happens to go away.
+    private func releaseExternalFile(in pane: ActivePane) {
+        let material = pane == .primary ? primaryTemporaryChatMaterial : secondaryTemporaryChatMaterial
+        if case .externalFile(let session) = material { session.close() }
+    }
+
+    /// Whether the secondary pane has been switched to Web, AI, a chat, a note
+    /// or a deck. A file opened in place clears all of these while it opens, so
+    /// this turning true means the pane was switched away from it.
+    private var secondaryShowsOtherContent: Bool {
+        secondaryShowsWeb || secondaryShowsAIChat || secondaryChatTarget != nil
+            || secondaryNotebook != nil || secondaryFlashcardDeck != nil
+    }
+
+    /// Closes the pane's material only if it is an externally stored file.
+    /// Used where a pane is left or replaced by something other than a
+    /// material, so the file is neither held open nor shown as an empty pane.
+    private func discardExternalFile(in pane: ActivePane) {
+        let material = pane == .primary ? primaryTemporaryChatMaterial : secondaryTemporaryChatMaterial
+        guard case .externalFile = material else { return }
+        closeTemporaryChatMaterial(in: pane)
+    }
+
     private func closeTemporaryChatMaterial(in pane: ActivePane) {
+        releaseExternalFile(in: pane)
         if pane == .primary {
             primaryTemporaryChatMaterial = nil
         } else {
@@ -3047,6 +3115,10 @@ struct NoteEditorView: View {
     /// showing, so the closed split leaves nothing half-alive behind it.
     private func collapseSplit() {
         dismissPhotoStudy(restorePreviousLayout: false)
+        // A closed split shows no pane, so a file opened in place must not stay
+        // open behind it.
+        discardExternalFile(in: .primary)
+        discardExternalFile(in: .secondary)
         splitMode = .single
         splitRatio = 0.5
         primaryShowsAIChat = false
