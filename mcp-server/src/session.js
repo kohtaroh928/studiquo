@@ -22,13 +22,32 @@ export async function mintSession(env, identityKey, randomValue) {
   const issuedAt = Math.floor(Date.now() / 1000);
   const token = `${issuedAt}.${randomValue}`;
   if (token.length < 32 || token.length > 256) return null;
-  const deletionState = await env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(identityKey)}`, "json");
+  const deletionStateKey = `account-deletion:${await sha256Hex(identityKey)}`;
+  const deletionState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
   if (deletionState?.status === "deleting") return null;
-  // A queued provider DELETE must never erase a newly re-registered customer.
-  // Check all known aliases, not only the sign-in method used this time.
-  for (const identity of new Set([identityKey, ...(deletionState?.identityKeys ?? [])])) {
-    if (await env.STUDIQUO_DATA.get(`privacy-rc-delete:${await sha256Hex(identity)}`)) return null;
+  // The deletion finished and this identity has now signed in again, so it is
+  // a new account. Forget the "deleted" marker (it only exists so a stale
+  // retry can't run twice): left in place, a later deletion of this new
+  // account would return early and erase nothing.
+  //
+  // Whatever that deletion still had queued belongs to the previous account
+  // and must go with the marker. The marker is what stops a leftover cleanup
+  // job from doing its full run again; once it is gone that job would erase
+  // the account that was just created.
+  if (deletionState?.status === "deleted") {
+    await env.STUDIQUO_DATA.delete(`privacy-account-delete:${await sha256Hex(identityKey)}`);
+    await env.STUDIQUO_DATA.delete(deletionStateKey);
   }
+  // A queued provider (RevenueCat) DELETE for THIS identity is dropped for the
+  // same reason: the customer id is the same again, so running it later would
+  // erase the newly re-registered customer's records, and refusing to sign in
+  // until it runs locks the person out for as long as it cannot run (no secret
+  // configured, provider outage). Other aliases of the old account stay
+  // queued: they were not signed in to, so they are not that customer again,
+  // and a queued job no longer blocks any sign-in.
+  const providerJobKey = `privacy-rc-delete:${await sha256Hex(identityKey)}`;
+  // Read first: an ordinary sign-in has no job, and must not pay for a write.
+  if (await env.STUDIQUO_DATA.get(providerJobKey)) await env.STUDIQUO_DATA.delete(providerJobKey);
   const key = await sha256Hex(token);
   await env.STUDIQUO_DATA.put(`${SESSION_PREFIX}${key}`, JSON.stringify({ sub: identityKey, issuedAt }), {
     expirationTtl: VALIDITY_SECONDS,
