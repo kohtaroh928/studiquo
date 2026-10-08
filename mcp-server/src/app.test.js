@@ -2303,3 +2303,51 @@ test("POST /api/auth/email/confirm-code: a reset also disconnects an app approve
   assert.equal(await env.STUDIQUO_DATA.get(grant), null, "the alias grant is gone");
   assert.equal(await externalSession(env, request("/mcp", { token: "mcp_" + "q".repeat(40) })), null);
 });
+
+test("POST /api/auth/email/confirm-code: a sign-in made with the old password while the new one is being stored does not survive the reset", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "window@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  mock.timers.tick(5_000);
+
+  // Storing the new password is slow. In that gap the old password still
+  // works, so a holder of it signs in: a session issued after the first cut-off.
+  let attacker = null;
+  const realPut = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (key, value, options) => {
+    if (key === "account:local:window@example.com" && !attacker) {
+      mock.timers.tick(200);
+      attacker = await mintSession(env, "email:window@example.com", "a".repeat(40));
+      mock.timers.tick(200); // the slow hash is still running
+    }
+    return realPut(key, value, options);
+  };
+  const reset = await resetPasswordWith(env, "window@example.com", "another-passphrase-1", "n".repeat(40));
+  env.STUDIQUO_DATA.put = realPut;
+
+  assert.equal(reset.status, 200);
+  assert.ok(attacker, "the scenario must have produced the in-window session");
+  assert.equal(await realSession(env, attacker), null, "that session belongs to whoever knew the old password");
+  assert.ok(await realSession(env, (await reset.json()).token), "the owner's new session stays valid");
+});
+
+test("POST /api/auth/email/confirm-code: a failure to store the new password is retryable, not a client error", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "busy@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  const stored = await env.STUDIQUO_DATA.get("account:local:busy@example.com");
+  mock.timers.tick(5_000);
+
+  const realPut = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (key, value, options) => {
+    if (key === "account:local:busy@example.com") throw new Error("KV unavailable");
+    return realPut(key, value, options);
+  };
+  const failed = await resetPasswordWith(env, "busy@example.com", "another-passphrase-1", "n".repeat(40));
+  env.STUDIQUO_DATA.put = realPut;
+
+  assert.equal(failed.status, 503);
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:busy@example.com"), stored, "the old password is untouched");
+});
