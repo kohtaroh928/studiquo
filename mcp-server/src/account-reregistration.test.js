@@ -99,7 +99,7 @@ test("H2: a queued RevenueCat deletion no longer locks the person out of signing
   assert.ok(await realSession(env, token), "and the new session is usable");
 });
 
-test("H2: coming back through one sign-in method drops only that identity's queued job, and never blocks", async () => {
+test("H2: coming back through one sign-in method drops every queued job of the account, and never blocks", async () => {
   const env = environment();
   const apple = "apple:alias-one", google = "google:alias-two";
   env._values.set(`identity-canonical:${google}`, apple);
@@ -113,10 +113,30 @@ test("H2: coming back through one sign-in method drops only that identity's queu
   const token = await mintSession(env, apple, RANDOM + "back");
   assert.ok(token);
   assert.equal(env._values.has(await jobKey(apple)), false, "the identity that signed in again is that customer again");
-  assert.equal(env._values.has(await jobKey(google)), true, "an alias that was not signed in to keeps its queued erasure");
-  // The alias job is still there but must not stop the alias itself from signing in later.
+  // The provider merges the ids of one customer: a queued DELETE for the alias
+  // would erase the re-registered customer's purchases.
+  assert.equal(env._values.has(await jobKey(google)), false, "an alias of the same account must not erase the new customer later");
   assert.ok(await mintSession(env, google, RANDOM + "alias"));
-  assert.equal(env._values.has(await jobKey(google)), false);
+});
+
+test("an alias job left over after the person came back cannot run against the new account", async () => {
+  const env = environment({ REVENUECAT_SECRET_API_KEY: "rc-secret" });
+  const apple = "apple:owner-x", google = "google:owner-x-alias";
+  env._values.set(`identity-canonical:${google}`, apple);
+  env._values.set(`identity-canonical:${apple}`, apple);
+  await signInWithData(env, apple, "life");
+  await startAccountDeletion(env, apple);
+  await mintSession(env, google, RANDOM + "back-via-alias");
+
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (...args) => { calls.push(args[0]); return new Response("{}", { status: 200 }); };
+  try {
+    await processPendingDeletions(env);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(calls.length, 0, "no provider DELETE may be sent for an account that has come back");
 });
 
 test("N1: a leftover cleanup job cannot erase an account created after the deletion", async () => {

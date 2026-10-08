@@ -2242,3 +2242,64 @@ test("POST /api/auth/email/confirm-code: a reset also disconnects the account's 
   await confirm("n".repeat(40), "another-passphrase-1");
   assert.equal(await externalSession(env, request("/mcp", { token: "mcp_" + "t".repeat(40) })), null);
 });
+
+async function resetPasswordWith(env, email, password, randomValue) {
+  const stub = stubResendCapturingCode();
+  const send = await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email } }), env, noopCtx);
+  stub.restore();
+  assert.equal(send.status, 200);
+  return worker.fetch(
+    request("/api/auth/email/confirm-code", { method: "POST", body: { email, code: stub.code(), password, randomValue } }),
+    env,
+    noopCtx
+  );
+}
+
+test("POST /api/auth/email/confirm-code: a reset whose sign-out cannot be completed changes nothing", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  const first = await resetPasswordWith(env, "failclosed@example.com", "correct-horse-battery", "s".repeat(40));
+  assert.equal(first.status, 200);
+  const stored = await env.STUDIQUO_DATA.get("account:local:failclosed@example.com");
+  mock.timers.tick(5_000);
+
+  // The sign-out (the cut-off write) fails part-way through the reset.
+  const realPut = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (key, value, options) => {
+    if (key.startsWith("session-valid-from:")) throw new Error("KV unavailable");
+    return realPut(key, value, options);
+  };
+  const failed = await resetPasswordWith(env, "failclosed@example.com", "another-passphrase-1", "n".repeat(40));
+  env.STUDIQUO_DATA.put = realPut;
+
+  assert.equal(failed.status, 503, "the person is told to try again");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:failclosed@example.com"), stored,
+    "the new password must not be stored while the old sessions stay alive");
+  const retried = await resetPasswordWith(env, "failclosed@example.com", "another-passphrase-1", "m".repeat(40));
+  assert.equal(retried.status, 200, "a retry with a fresh code completes the reset");
+});
+
+test("POST /api/auth/email/confirm-code: a reset also disconnects an app approved under a linked identity", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "linked-mcp@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  // Google was linked to the same verified address; the app was approved while
+  // the session still belonged to the Google identity.
+  await env.STUDIQUO_DATA.put("email-accounts:linked-mcp@example.com", JSON.stringify([
+    { provider: "email", sub: "linked-mcp@example.com" },
+    { provider: "google", sub: "g-linked-mcp" },
+  ]));
+  const aliasSub = "google:g-linked-mcp";
+  const grant = `mcp:grant:${await sha256Hex(aliasSub)}:${await sha256Hex("client")}`;
+  await env.STUDIQUO_DATA.put(grant, JSON.stringify({ createdAt: Date.now() }));
+  await env.STUDIQUO_DATA.put(`mcp:access:${await sha256Hex("mcp_" + "q".repeat(40))}`, JSON.stringify({ sub: aliasSub, clientId: "client", scope: "studiquo.read" }));
+  assert.ok(await externalSession(env, request("/mcp", { token: "mcp_" + "q".repeat(40) })));
+
+  mock.timers.tick(5_000);
+  assert.equal((await resetPasswordWith(env, "linked-mcp@example.com", "another-passphrase-1", "n".repeat(40))).status, 200);
+
+  assert.equal(await env.STUDIQUO_DATA.get(grant), null, "the alias grant is gone");
+  assert.equal(await externalSession(env, request("/mcp", { token: "mcp_" + "q".repeat(40) })), null);
+});

@@ -163,3 +163,36 @@ test("H-1: disconnecting all of an account's apps stops their access tokens, and
   const grants = [...env._values.keys()].filter(key => key.startsWith(victimPrefix));
   assert.equal(grants.length, 0, "with no grant, a refresh token has nothing to exchange against either");
 });
+
+test("H-1: an app approved under a linked identity is disconnected too when every identity is passed", async () => {
+  const env = environment();
+  await connectApp(env, "google:alias-owner", "client-a", "mcp_alias_token_" + "x".repeat(40));
+  await connectApp(env, "email:alias-owner@example.com", "client-b", "mcp_canonical_token_" + "x".repeat(40));
+  await connectApp(env, "email:bystander2@example.com", "client-a", "mcp_bystander2_token_" + "x".repeat(40));
+
+  await revokeAllConnections(env, ["email:alias-owner@example.com", "google:alias-owner"]);
+
+  assert.equal(await externalSession(env, mcpRequest("mcp_alias_token_" + "x".repeat(40))), null, "an app approved before linking must not survive a reset");
+  assert.equal(await externalSession(env, mcpRequest("mcp_canonical_token_" + "x".repeat(40))), null);
+  assert.ok(await externalSession(env, mcpRequest("mcp_bystander2_token_" + "x".repeat(40))));
+});
+
+test("H-1: disconnecting reads every page of grants, not just the first", async () => {
+  const env = environment();
+  const sub = "email:many-apps@example.com";
+  for (let index = 0; index < 5; index += 1) await connectApp(env, sub, `client-${index}`, `mcp_many_${index}_` + "x".repeat(40));
+  const realList = env.STUDIQUO_DATA.list;
+  env.STUDIQUO_DATA.list = async ({ prefix, cursor }) => {
+    const all = (await realList({ prefix })).keys;
+    const start = cursor ? Number(cursor) : 0;
+    const keys = all.slice(start, start + 2);
+    const next = start + 2;
+    return next < all.length ? { keys, list_complete: false, cursor: String(next) } : { keys, list_complete: true };
+  };
+
+  await revokeAllConnections(env, sub);
+
+  for (let index = 0; index < 5; index += 1) {
+    assert.equal(await externalSession(env, mcpRequest(`mcp_many_${index}_` + "x".repeat(40))), null, `app ${index} stays connected`);
+  }
+});
