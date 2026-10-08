@@ -47,18 +47,6 @@ function parseLinkToken(body) {
   return FRIEND_CODE_PATTERN.test(token) ? token : null;
 }
 
-// Same alphabet/shape as UserRegistry's own generateCode (user-registry.js)
-// — kept as a separate copy rather than imported, since user-registry.js
-// pulls in `cloudflare:workers` for its DurableObject base class, which
-// only resolves inside the Workers runtime and would break this file's own
-// plain-Node test suite (chat.test.js) if imported here.
-const LINK_TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-function generateLinkToken() {
-  const bytes = new Uint8Array(7);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, value => LINK_TOKEN_ALPHABET[value % 32]).join("");
-}
-
 // `Number("1e400")` and friends parse to Infinity, which SQLite's bind
 // rejects with an exception — this turns that into a clean fallback instead
 // of a 500 from chat-room.js's query.
@@ -88,34 +76,18 @@ async function ensureUser(env, key, name = null, studyStats = null) {
   const storageKey = `chat:user:${key}`;
   const user = await env.STUDIQUO_DATA.get(storageKey, "json");
   if (user) {
-    let changed = false;
     const cleaned = name == null ? "" : String(name).trim().slice(0, 80);
-    if (cleaned && cleaned !== user.name) {
-      user.name = cleaned;
-      changed = true;
-    }
-    if (studyStats) {
-      user.todayStudySeconds = studyStats.seconds;
-      user.studyDate = studyStats.date;
-      changed = true;
-    }
-    // Backfills a link token for a user created before invite links
-    // existed — see UserRegistry.ensureUser's brand-new-user branch for
-    // why this has to be a second, separate value from `code`.
-    if (!user.linkToken) {
-      do { user.linkToken = generateLinkToken(); } while (await env.STUDIQUO_DATA.get(`chat:linktoken:${user.linkToken}`));
-      await env.STUDIQUO_DATA.put(`chat:linktoken:${user.linkToken}`, key);
-      changed = true;
-    }
-    if (changed) {
-      await env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
-    }
-    return user;
+    const needsWrite = (cleaned && cleaned !== user.name) || studyStats || !user.linkToken;
+    // Read-only fast path. Any write (rename, study stats, link-token
+    // backfill) goes through the per-key UserRegistry instead of
+    // overwriting the whole record from here, which could resurrect a
+    // friend a concurrent removeFriend had just dropped.
+    if (!needsWrite) return user;
   }
   // A brand-new user is registered through UserRegistry (a per-key Durable
   // Object) so two concurrent requests for the same not-yet-registered key
   // can't each mint and persist a different friend code for it.
-  return env.USER_REGISTRY.getByName(key).ensureUser(key, name);
+  return env.USER_REGISTRY.getByName(key).ensureUser(key, name, studyStats);
 }
 
 async function roomID(first, second) {
@@ -277,8 +249,7 @@ export async function handleChat(url, request, env, ctx) {
     const user = await ensureUser(env, key);
     const updatedAt = Date.now();
     await env.STUDIQUO_DATA.put(`chat:avatar:${user.code}`, JSON.stringify({ contentType, data, updatedAt }));
-    user.avatarUpdatedAt = updatedAt;
-    await env.STUDIQUO_DATA.put(`chat:user:${key}`, JSON.stringify(user));
+    await env.USER_REGISTRY.getByName(key).setAvatarUpdatedAt(key, updatedAt);
     return json({ avatarUpdatedAt: updatedAt });
   }
 
@@ -477,9 +448,8 @@ export async function handleChat(url, request, env, ctx) {
       const existing = (user.friends ?? []).find(item => item.code === other.code);
       return json({ status: "already_friends", code: other.code, name: other.name, roomID: existing?.roomID ?? room });
     }
-    other.friends = [...(other.friends ?? []).filter(item => item.code !== user.code), { code: user.code, name: user.name, roomID: room }];
     await Promise.all([
-      env.STUDIQUO_DATA.put(`chat:user:${otherKey}`, JSON.stringify(other)),
+      env.USER_REGISTRY.getByName(otherKey).confirmFriendship(otherKey, { code: user.code, name: user.name, roomID: room }),
       env.CHAT_ROOM.getByName(room).initialize(room, [key, otherKey]),
     ]);
     return json({ status: "added", code: other.code, name: other.name, roomID: room });
@@ -508,10 +478,8 @@ export async function handleChat(url, request, env, ctx) {
     const result = await env.USER_REGISTRY.getByName(key).resolveIncomingRequest(key, "accept", other.code, other.name, room);
     if (result.status === "not_found") return json({ error: "Request not found." }, 404);
     if (result.status === "friends_full") return json({ error: "Friend list is full." }, 400);
-    other.friends = [...(other.friends ?? []).filter(item => item.code !== result.friend.code), { ...result.friend, roomID: room }];
-    other.outgoingRequests = (other.outgoingRequests ?? []).filter(item => item.code !== result.friend.code);
     await Promise.all([
-      env.STUDIQUO_DATA.put(`chat:user:${otherKey}`, JSON.stringify(other)),
+      env.USER_REGISTRY.getByName(otherKey).confirmFriendship(otherKey, { ...result.friend, roomID: room }, { clearOutgoing: true }),
       env.CHAT_ROOM.getByName(room).initialize(room, [key, otherKey]),
     ]);
     return json({ code: other.code, name: other.name, roomID: room });

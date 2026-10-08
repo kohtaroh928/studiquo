@@ -343,6 +343,27 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "removed" };
   }
 
+  async function confirmFriendshipAtomic(key, friend, { clearOutgoing = false } = {}) {
+    const storageKey = `chat:user:${key}`;
+    const user = await studiquoData.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    user.friends = [...(user.friends ?? []).filter(item => item.code !== friend.code), friend];
+    if (clearOutgoing) {
+      user.outgoingRequests = (user.outgoingRequests ?? []).filter(item => item.code !== friend.code);
+    }
+    await studiquoData.put(storageKey, JSON.stringify(user));
+    return { status: "confirmed" };
+  }
+
+  async function setAvatarUpdatedAtAtomic(key, updatedAt) {
+    const storageKey = `chat:user:${key}`;
+    const user = await studiquoData.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    user.avatarUpdatedAt = updatedAt;
+    await studiquoData.put(storageKey, JSON.stringify(user));
+    return { status: "updated" };
+  }
+
   async function removeAccountReferencesAtomic(key, deletedCode) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
@@ -527,6 +548,12 @@ function fakeUserRegistryBinding(studiquoData) {
         },
         removeFriend(k, otherCode, blockedContact) {
           return enqueue(key, () => removeFriendAtomic(k, otherCode, blockedContact));
+        },
+        confirmFriendship(k, friend, options) {
+          return enqueue(key, () => confirmFriendshipAtomic(k, friend, options));
+        },
+        setAvatarUpdatedAt(k, updatedAt) {
+          return enqueue(key, () => setAvatarUpdatedAtAtomic(k, updatedAt));
         },
         removeAccountReferences(k, deletedCode) {
           return enqueue(key, () => removeAccountReferencesAtomic(k, deletedCode));
@@ -3593,4 +3620,60 @@ test("40: once concurrent deletion removes group membership, the deleting accoun
   assert.equal((await deletion).status, 202);
   const messages = await (await readMessages(fixture.env, fixture.bobToken, fixture.groupRoomID)).json();
   assert.equal(messages.some(message => message.text === "削除中の書き込み"), false);
+});
+
+// Runs `after` once, right after the next `chat:user:*` read has returned its
+// (soon to be stale) value — i.e. exactly in the read-modify-write window a
+// handler that overwrites the whole record would be exposed in.
+function interleaveAfterNextUserRead(env, after) {
+  const realGet = env.STUDIQUO_DATA.get;
+  env.STUDIQUO_DATA.get = async (key, type) => {
+    const value = await realGet(key, type);
+    if (after && key.startsWith("chat:user:")) {
+      const run = after;
+      after = null;
+      await run();
+    }
+    return value;
+  };
+}
+
+test("a profile photo upload racing a friend removal cannot bring the removed friend back", async () => {
+  const env = environment();
+  const aliceToken = freshToken("rr1");
+  const bobToken = freshToken("rr2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  await acceptRequest(env, bobToken, alice.code);
+
+  interleaveAfterNextUserRead(env, async () => {
+    const removed = await worker.fetch(request(`/api/chat/friends/${bob.code}`, { method: "DELETE", token: aliceToken }), env, noopCtx);
+    assert.equal(removed.status, 200);
+  });
+  const uploaded = await uploadAvatar(env, aliceToken, "image/jpeg", "aGVsbG8=");
+  assert.equal(uploaded.status, 200);
+  assert.equal((await friends(env, aliceToken)).length, 0);
+  assert.equal((await friends(env, bobToken)).length, 0);
+});
+
+test("accepting a request cannot overwrite a removal made on the requester's own record meanwhile", async () => {
+  const env = environment();
+  const carolToken = freshToken("rr3");
+  const daveToken = freshToken("rr4");
+  const bobToken = freshToken("rr5");
+  const carol = await registerUser(env, carolToken, "Carol");
+  const dave = await registerUser(env, daveToken, "Dave");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, carolToken, dave.code);
+  await acceptRequest(env, daveToken, carol.code);
+  await addFriend(env, carolToken, bob.code);
+
+  interleaveAfterNextUserRead(env, async () => {
+    const removed = await worker.fetch(request(`/api/chat/friends/${dave.code}`, { method: "DELETE", token: carolToken }), env, noopCtx);
+    assert.equal(removed.status, 200);
+  });
+  const accepted = await acceptRequest(env, bobToken, carol.code);
+  assert.equal(accepted.status, 200);
+  assert.deepEqual((await friends(env, carolToken)).map(item => item.code), [bob.code]);
 });

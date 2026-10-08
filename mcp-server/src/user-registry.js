@@ -207,6 +207,33 @@ export class UserRegistry extends DurableObject {
     return { status: "removed" };
   }
 
+  // Records the other half of a new friendship on `key`'s own record. These
+  // used to be written straight from the request handlers (chat.js) as a
+  // whole-record overwrite of a possibly stale read, which could silently
+  // undo a concurrent removeFriend / request change on the same record — the
+  // "deleted friend comes back" bug. Routing every write of `chat:user:*`
+  // through this per-key instance serializes them.
+  async confirmFriendship(key, friend, { clearOutgoing = false } = {}) {
+    const storageKey = `chat:user:${key}`;
+    const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    user.friends = [...(user.friends ?? []).filter(item => item.code !== friend.code), friend];
+    if (clearOutgoing) {
+      user.outgoingRequests = (user.outgoingRequests ?? []).filter(item => item.code !== friend.code);
+    }
+    await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+    return { status: "confirmed" };
+  }
+
+  async setAvatarUpdatedAt(key, updatedAt) {
+    const storageKey = `chat:user:${key}`;
+    const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
+    if (!user) return { status: "not_found" };
+    user.avatarUpdatedAt = updatedAt;
+    await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
+    return { status: "updated" };
+  }
+
   async removeAccountReferences(key, deletedCode) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get(storageKey, "json");
