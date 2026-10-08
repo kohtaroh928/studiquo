@@ -85,16 +85,29 @@ export async function approvePairing(env, code, sub) {
 
 export async function listConnections(env, sub) {
   const prefix = `mcp:grant:${await sha256Hex(sub)}:`;
-  const result = await env.STUDIQUO_DATA.list({ prefix });
-  return Promise.all(result.keys.map(async key => ({
-    id: key.name.slice(prefix.length),
-    ...(await env.STUDIQUO_DATA.get(key.name, "json")),
+  const names = [];
+  let cursor;
+  do {
+    const page = await env.STUDIQUO_DATA.list({ prefix, ...(cursor ? { cursor } : {}) });
+    names.push(...page.keys.map(key => key.name));
+    cursor = page.list_complete === false ? page.cursor : undefined;
+  } while (cursor);
+  return Promise.all(names.map(async name => ({
+    id: name.slice(prefix.length),
+    ...(await env.STUDIQUO_DATA.get(name, "json")),
   })));
 }
 
-/** Disconnects every connected app (grant) of the account, e.g. when its password is reset. */
-export async function revokeAllConnections(env, sub) {
-  for (const connection of await listConnections(env, sub)) await revokeConnection(env, sub, connection.id);
+/**
+ * Disconnects every connected app (grant) of the account, e.g. when its
+ * password is reset. A grant is keyed by the identity that approved it, so an
+ * app approved before two sign-in methods were linked sits under the other
+ * identity: pass the account's own key together with every linked identity.
+ */
+export async function revokeAllConnections(env, subs) {
+  for (const sub of new Set(Array.isArray(subs) ? subs : [subs])) {
+    for (const connection of await listConnections(env, sub)) await revokeConnection(env, sub, connection.id);
+  }
 }
 
 export async function revokeConnection(env, sub, id) {

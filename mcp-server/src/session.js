@@ -60,6 +60,10 @@ export async function mintSession(env, identityKey, randomValue) {
     const hashes = await Promise.all([...new Set([identityKey, ...(deletionState.identityKeys ?? [])])].map(sha256Hex));
     const cleared = await clearDeletedCustomerRecords(env, hashes);
     await env.STUDIQUO_DATA.delete(`privacy-account-delete:${await sha256Hex(identityKey)}`);
+    // The provider treats every id of one customer as the same customer, so a
+    // queued DELETE for ANY alias of the old account would erase the
+    // re-registered one. They all go, not only the identity that signed in.
+    await Promise.all(hashes.map(hash => env.STUDIQUO_DATA.delete(`privacy-rc-delete:${hash}`)));
     // The new account starts now whether or not the provider records could be
     // cleared: a state that stayed "deleted" would make the person's next
     // deletion of this account return early and erase nothing. What could not
@@ -76,9 +80,9 @@ export async function mintSession(env, identityKey, randomValue) {
   // same reason: the customer id is the same again, so running it later would
   // erase the newly re-registered customer's records, and refusing to sign in
   // until it runs locks the person out for as long as it cannot run (no secret
-  // configured, provider outage). Other aliases of the old account stay
-  // queued: they were not signed in to, so they are not that customer again,
-  // and a queued job no longer blocks any sign-in.
+  // configured, provider outage). The other aliases of an account that has
+  // just come back are dropped above; this read covers a job left for the
+  // identity that signed in when no "deleted" marker applies.
   const providerJobKey = `privacy-rc-delete:${await sha256Hex(identityKey)}`;
   // Read first: an ordinary sign-in has no job, and must not pay for a write.
   if (await env.STUDIQUO_DATA.get(providerJobKey)) await env.STUDIQUO_DATA.delete(providerJobKey);
