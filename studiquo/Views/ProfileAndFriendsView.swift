@@ -486,16 +486,31 @@ final class FriendStore: ObservableObject {
     /// completes (later launches start from the last persisted real code).
     private static let placeholderCode = "準備中"
 
+    /// Persisted lists may contain the same friend twice (an earlier build
+    /// could write duplicates). Keep the first entry: a duplicate id must never
+    /// stop the app from launching.
+    static func uniqueByID(_ records: [FriendRecord]) -> [FriendRecord] {
+        var seen = Set<UUID>()
+        return records.filter { seen.insert($0.id).inserted }
+    }
+
     init(client: FriendChatClient = LiveFriendChatClient(), defaults: UserDefaults = .standard, autoRefresh: Bool = true) {
         self.client = client
         self.defaults = defaults
         myCode = defaults.string(forKey: "studiquoFriendCode") ?? Self.placeholderCode
         myLinkToken = defaults.string(forKey: "studiquoFriendLinkToken") ?? Self.placeholderCode
         if let data = defaults.data(forKey: friendsKey) {
-            friends = (try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? []
+            friends = Self.uniqueByID((try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? [])
         }
         if let data = defaults.data(forKey: archivedFriendsKey) {
-            archivedFriends = (try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? []
+            archivedFriends = Self.uniqueByID((try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? [])
+        }
+        // Repair data left by the demo-friend duplication bug.
+        var seenDemoCodes = Set<String>()
+        let dedupedFriends = friends.filter { $0.isDemo != true || seenDemoCodes.insert($0.code).inserted }
+        if dedupedFriends.count != friends.count { friends = dedupedFriends }
+        if archivedFriends.contains(where: { $0.isDemo == true }) {
+            archivedFriends.removeAll { $0.isDemo == true }
         }
         if let data = defaults.data(forKey: locallyRemovedCodesKey) {
             locallyRemovedCodes = (try? JSONDecoder().decode(Set<String>.self, from: data)) ?? []
@@ -508,7 +523,7 @@ final class FriendStore: ObservableObject {
         }
         if let data = defaults.data(forKey: messagesKey) {
             if let decoded = try? JSONDecoder().decode([FriendMessage].self, from: data) {
-                let roomsByFriend = Dictionary(uniqueKeysWithValues: friends.map { ($0.id, $0.roomID) })
+                let roomsByFriend = Dictionary(friends.map { ($0.id, $0.roomID) }, uniquingKeysWith: { first, _ in first })
                 messages = decoded.map { message in
                     var migrated = message
                     if migrated.roomID == nil { migrated.roomID = roomsByFriend[message.friendID] ?? nil }
@@ -885,9 +900,14 @@ final class FriendStore: ObservableObject {
     /// time. Without this, polling this repeatedly would reassign every
     /// friend a new id on each call, silently orphaning their accumulated
     /// `messages` (keyed by `friendID`) and `unreadCounts` (keyed by `id`).
-    private static func mergedFriends(existing: [FriendRecord], remote: [FriendChatService.Friend]) -> [FriendRecord] {
+    private static func mergedFriends(existing: [FriendRecord], activeDemos: [FriendRecord], remote: [FriendChatService.Friend]) -> [FriendRecord] {
         let today = todayDateKey()
-        let demos = existing.filter { $0.isDemo == true }
+        // Only the demo friends currently in the active list are carried
+        // over (one per code). `existing` also holds archived friends, and an
+        // archived demo used to be copied back in on every poll, so the demo
+        // friend multiplied with each refresh.
+        var seenDemoCodes = Set<String>()
+        let demos = activeDemos.filter { seenDemoCodes.insert($0.code).inserted }
         let mapped = remote.map { item -> FriendRecord in
             let hasFreshSharedStudyTime = item.studyDate == today && item.todayStudySeconds != nil
             let freshSeconds = hasFreshSharedStudyTime ? (item.todayStudySeconds ?? 0) : 0
@@ -929,7 +949,7 @@ final class FriendStore: ObservableObject {
         let visibleCodes = Set(visibleRemote.map(\.code))
         let removed = friends.filter { $0.isDemo != true && !visibleCodes.contains($0.code) }
         for friend in removed { archiveFriend(friend) }
-        friends = Self.mergedFriends(existing: friends + archivedFriends, remote: visibleRemote)
+        friends = Self.mergedFriends(existing: friends + archivedFriends, activeDemos: friends.filter { $0.isDemo == true }, remote: visibleRemote)
         archivedFriends.removeAll { visibleCodes.contains($0.code) }
     }
 
@@ -964,7 +984,11 @@ final class FriendStore: ObservableObject {
     @discardableResult
     func removeFriend(_ friend: FriendRecord) async -> Bool {
         if friend.isDemo == true {
-            archiveFriend(friend)
+            // A demo friend has no server-side room or history to keep, so
+            // it is dropped outright instead of archived.
+            unreadCounts.removeValue(forKey: friend.id)
+            if activeFriendID == friend.id { activeFriendID = nil }
+            friends.removeAll { $0.isDemo == true && $0.code == friend.code }
             return true
         }
         guard let roomID = friend.roomID else { return false }
