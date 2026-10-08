@@ -751,7 +751,23 @@ async function handleConfirmEmailVerification(request, env, ctx) {
   try {
     await upsertLocalAccount(env, normalizedEmail, password);
   } catch {
-    return json({ error: "Could not save the account." }, 400);
+    // Not a problem with the request (its password was validated above): the
+    // store was busy or unavailable. Retryable, so not a 400.
+    return json({ error: "Could not save the account. Please try again." }, 503);
+  }
+  if (replacedPassword) {
+    // Storing the password takes a while (a deliberately slow hash). Someone
+    // who still knew the OLD password could have signed in during it, after the
+    // first cut-off but before the old password stopped working, and would
+    // otherwise keep that session. A second pass now that the old password is
+    // gone closes that window. Best effort: the first pass already did the
+    // work that must not be skipped.
+    try {
+      await revokeSessionsIssuedBefore(env, accountKey);
+      await revokeAllConnections(env, [accountKey, ...(link.linkedIdentities ?? []).map(identityKey)]);
+    } catch {
+      console.warn("password reset: second sign-out pass failed");
+    }
   }
   const token = await mintSession(env, accountKey, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
