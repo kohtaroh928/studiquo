@@ -604,8 +604,17 @@ private struct UITestAIProvider: AIProvider {
 
 /// Exercises the real loading view and ContentView transition with a delayed store.
 private struct StartupUITestRoot: View {
-    @StateObject private var loader = StartupStoreLoader<ModelContainer>(timeout: 0.05) {
-        Thread.sleep(forTimeInterval: 0.15)
+    /// `--startup-slow` keeps the store closed long enough for the slow-launch
+    /// notice to be visible; `--startup-fail-once` makes the first open fail so
+    /// the failure screen and its retry button can be exercised.
+    @StateObject private var loader = StartupStoreLoader<ModelContainer>(
+        timeout: ProcessInfo.processInfo.arguments.contains("--startup-slow") ? 0.3 : 0.05
+    ) {
+        let arguments = ProcessInfo.processInfo.arguments
+        Thread.sleep(forTimeInterval: arguments.contains("--startup-slow") ? 4 : 0.15)
+        if arguments.contains("--startup-fail-once"), StartupUITestAttempts.next() == 1 {
+            throw NSError(domain: "StartupUITest", code: 1, userInfo: [NSLocalizedDescriptionKey: "テスト用の読み込み失敗"])
+        }
         let configuration = ModelConfiguration(schema: studiquoSchema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         return try ModelContainer(for: studiquoSchema, configurations: configuration)
     }
@@ -630,6 +639,18 @@ private struct StartupUITestRoot: View {
             }
         }
         .task { loader.start() }
+    }
+}
+
+private enum StartupUITestAttempts {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var count = 0
+
+    static func next() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        count += 1
+        return count
     }
 }
 
