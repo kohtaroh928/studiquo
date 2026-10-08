@@ -132,6 +132,22 @@ final class FriendStoreTests: XCTestCase {
     // Regression coverage for "unread counts aren't persisted, so a
     // relaunch silently resets every unread badge to zero even though the
     // underlying messages are still there and genuinely unread".
+    func testDuplicateFriendIDsInThePersistedStoreDoNotCrashLaunch() throws {
+        let id = UUID()
+        let first = FriendRecord(id: id, name: "A", code: "AAAAAA", todayStudySeconds: 0, roomID: "room-1", isDemo: false)
+        let second = FriendRecord(id: id, name: "A", code: "AAAAAA", todayStudySeconds: 0, roomID: nil, isDemo: false)
+        defaults.set(try JSONEncoder().encode([first, second]), forKey: "studiquoFriends")
+        defaults.set(try JSONEncoder().encode([first, second]), forKey: "studiquoArchivedFriends")
+        defaults.set(try JSONEncoder().encode([
+            FriendMessage(id: UUID(), friendID: id, text: "hi", sentAt: .now, isMine: true)
+        ]), forKey: "studiquoFriendMessages")
+
+        let store = FriendStore(client: MockFriendChatClient(), defaults: defaults, autoRefresh: false)
+
+        XCTAssertEqual(store.friends.map(\.id), [id])
+        XCTAssertEqual(store.archivedFriends.map(\.id), [id])
+    }
+
     func testUnreadCountsSurviveBeingRecreatedFromTheSamePersistedStore() {
         let friendID = UUID()
         let firstLaunch = FriendStore(client: MockFriendChatClient(), defaults: defaults, autoRefresh: false)
@@ -292,6 +308,31 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertTrue(sent)
 
         XCTAssertEqual(store.friends.map(\.code), ["ALICE1"])
+        XCTAssertTrue(store.archivedFriends.isEmpty)
+    }
+
+    func testDemoFriendDoesNotMultiplyAcrossRefreshesOrAfterRemoval() async {
+        let client = MockFriendChatClient(friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.addDemoFriend()
+        for _ in 0..<3 { await store.refreshFriends() }
+        XCTAssertEqual(store.friends.filter { $0.isDemo == true }.count, 1)
+
+        let demo = try! XCTUnwrap(store.friends.first(where: { $0.isDemo == true }))
+        _ = await store.removeFriend(demo)
+        for _ in 0..<3 { await store.refreshFriends() }
+        XCTAssertEqual(store.friends.filter { $0.isDemo == true }.count, 0, "a removed demo friend must stay removed")
+        XCTAssertTrue(store.archivedFriends.filter { $0.isDemo == true }.isEmpty)
+        XCTAssertEqual(store.friends.map(\.code), ["ALICE1"])
+    }
+
+    func testRelaunchRepairsDemoFriendsDuplicatedByTheOldBug() {
+        let demo = FriendRecord(id: UUID(), name: "デモフレンド", code: "DEMO123", todayStudySeconds: 0, roomID: nil, isDemo: true)
+        let copy = FriendRecord(id: UUID(), name: "デモフレンド", code: "DEMO123", todayStudySeconds: 0, roomID: nil, isDemo: true)
+        defaults.set(try! JSONEncoder().encode([demo, copy, demo]), forKey: "studiquoFriends")
+        defaults.set(try! JSONEncoder().encode([demo]), forKey: "studiquoArchivedFriends")
+        let store = FriendStore(client: MockFriendChatClient(), defaults: defaults, autoRefresh: false)
+        XCTAssertEqual(store.friends.filter { $0.isDemo == true }.count, 1)
         XCTAssertTrue(store.archivedFriends.isEmpty)
     }
 
