@@ -131,7 +131,9 @@ test("creates bounded, user-verified passkey registration options", async () => 
       headers: { authorization: `Bearer ${freshToken("a")}`, "content-type": "application/json" },
       body: JSON.stringify({ email: "student@example.com" }),
     });
-  const response = await handlePasskeys(new URL(request.url), request, environment());
+  const env = environment();
+  await env.STUDIQUO_DATA.put("email-account-owner:student@example.com", "test"); // the default test session's account
+  const response = await handlePasskeys(new URL(request.url), request, env);
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.options.rp.id, "studiquo-mcp.studiquo-mcp-server.workers.dev");
@@ -213,6 +215,7 @@ test("POST /api/passkeys/login/verify: allows up to the limit, then 429s", async
 
 test("POST /api/passkeys/register/options: allows up to the limit, then 429s", async () => {
   const env = environment();
+  await env.STUDIQUO_DATA.put("email-account-owner:student@example.com", "test");
   const token = freshToken("d");
   for (let i = 0; i < 5; i++) {
     const request = registerOptionsRequest(token);
@@ -224,6 +227,7 @@ test("POST /api/passkeys/register/options: allows up to the limit, then 429s", a
 
 test("POST /api/passkeys/register/options: a different token (userKey) is not affected by another token's limit", async () => {
   const env = environment();
+  await env.STUDIQUO_DATA.put("email-account-owner:student@example.com", "test");
   const token = freshToken("e");
   for (let i = 0; i < 5; i++) {
     const request = registerOptionsRequest(token);
@@ -249,4 +253,52 @@ test("POST /api/passkeys/register/verify: allows up to the limit, then 429s", as
   const sixth = registerVerifyRequest(token);
   const response = await handlePasskeys(new URL(sixth.url), sixth, env);
   assert.equal(response.status, 429);
+});
+
+// --- A passkey can only be registered for an e-mail the signed-in account already owns ---
+
+function registerFor(token, email) {
+  return new Request("https://example.test/api/passkeys/register/options", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+}
+
+test("a session for one account cannot register a passkey for another account's e-mail", async () => {
+  const env = environment(); // the default test session belongs to the account "test"
+  await env.STUDIQUO_DATA.put("email-account-owner:victim@example.com", "google:victim-sub");
+  const request = registerFor(freshToken("v"), "victim@example.com");
+  const response = await handlePasskeys(new URL(request.url), request, env);
+  assert.equal(response.status, 403);
+});
+
+test("an e-mail that no account owns yet cannot be claimed ahead of its owner", async () => {
+  const env = environment();
+  const request = registerFor(freshToken("u"), "not-signed-up-yet@example.com");
+  const response = await handlePasskeys(new URL(request.url), request, env);
+  assert.equal(response.status, 403);
+});
+
+test("the owner of an e-mail can register a passkey for it, including through a linked identity", async () => {
+  const env = environment();
+  await env.STUDIQUO_DATA.put("email-account-owner:me@example.com", "apple:my-canonical");
+  // The session was minted for a linked identity; it resolves to the canonical account.
+  const token = freshToken("m");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:me@example.com", issuedAt: Math.floor(Date.now() / 1000) }));
+  await env.STUDIQUO_DATA.put("identity-canonical:email:me@example.com", "apple:my-canonical");
+  const request = registerFor(token, "ME@Example.com ");
+  const response = await handlePasskeys(new URL(request.url), request, env);
+  assert.equal(response.status, 200, "case and surrounding spaces do not matter");
+});
+
+test("the e-mail check happens before anything is stored for the attempt", async () => {
+  const env = environment();
+  await env.STUDIQUO_DATA.put("email-account-owner:victim@example.com", "google:victim-sub");
+  const stored = [];
+  const realPut = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (key, value, options) => { stored.push(key); return realPut(key, value, options); };
+  const request = registerFor(freshToken("w"), "victim@example.com");
+  await handlePasskeys(new URL(request.url), request, env);
+  assert.deepEqual(stored.filter(key => key.startsWith("passkeys:")), [], "no challenge or credential is left behind");
 });
