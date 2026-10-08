@@ -26,17 +26,18 @@ export async function mintSession(env, identityKey, randomValue) {
   const deletionState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
   if (deletionState?.status === "deleting") return null;
   // The deletion finished and this identity has now signed in again, so it is
-  // a new account. Forget the "deleted" marker (it only exists so a stale
-  // retry can't run twice): left in place, a later deletion of this new
-  // account would return early and erase nothing.
+  // a new account. The "deleted" marker (which only exists so a stale retry
+  // can't run twice) must not outlive that: left in place, a later deletion of
+  // this new account would return early and erase nothing.
   //
   // Whatever that deletion still had queued belongs to the previous account
-  // and must go with the marker. The marker is what stops a leftover cleanup
-  // job from doing its full run again; once it is gone that job would erase
-  // the account that was just created.
+  // and goes with it. And the marker is replaced, not just removed, by one
+  // recording when the new account began: a retry that had already read the
+  // old job before this moment still runs deleteAccount afterwards, and that
+  // timestamp is how deleteAccount knows to leave the new account alone.
   if (deletionState?.status === "deleted") {
     await env.STUDIQUO_DATA.delete(`privacy-account-delete:${await sha256Hex(identityKey)}`);
-    await env.STUDIQUO_DATA.delete(deletionStateKey);
+    await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "active", reregisteredAt: Date.now() }));
   }
   // A queued provider (RevenueCat) DELETE for THIS identity is dropped for the
   // same reason: the customer id is the same again, so running it later would

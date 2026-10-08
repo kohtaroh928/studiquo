@@ -60,7 +60,9 @@ test("H1: an account re-registered after deletion is really erased by a second d
 
   // Same person signs in again: a new account. The marker must not outlive that.
   const secondToken = await signInWithData(env, identity, "second-life");
-  assert.equal(env._values.has(await stateKey(identity)), false, "the deleted marker is cleared by the new sign-in");
+  const marker = JSON.parse(env._values.get(await stateKey(identity)));
+  assert.equal(marker.status, "active", "the deleted marker is replaced by the new sign-in");
+  assert.equal(typeof marker.reregisteredAt, "number");
 
   // Deleting the new account must run in full, not return early with nothing erased.
   assert.deepEqual(await startAccountDeletion(env, identity), { deleted: true, externalDeletionPending: true });
@@ -227,4 +229,121 @@ test("N4: a run that is not the full retention job takes only a few jobs at a ti
   await runScheduledPrivacyWork(env, Date.now()); // flag off: limit of 2 per kind
   const remaining = [...env._values.keys()].filter(key => key.startsWith("privacy-account-delete:")).length;
   assert.equal(remaining, 3);
+});
+
+test("M1: a retry that read the old job just before the person came back leaves the new account alone", async () => {
+  const env = environment();
+  const identity = "apple:race";
+  await signInWithData(env, identity, "first-life");
+  const jobName = `privacy-account-delete:${await sha256Hex(identity)}`;
+  // The deletion finishes, but removing its job fails: the job stays queued.
+  const realDelete = env.STUDIQUO_DATA.delete;
+  env.STUDIQUO_DATA.delete = async key => { if (key === jobName) throw new Error("temporary storage outage"); return realDelete(key); };
+  await startAccountDeletion(env, identity);
+  env.STUDIQUO_DATA.delete = realDelete;
+  const jobRead = JSON.parse(env._values.get(jobName)); // what a cron run has just read
+
+  // The person signs in again, then the cron run carries on with what it read.
+  const token = await signInWithData(env, identity, "second-life");
+  assert.equal(env._values.has(jobName), false);
+  assert.deepEqual(await deleteAccount(env, jobRead.canonicalSub), { deleted: true });
+  assert.equal(env._values.has("account:apple:race"), true, "the new account is untouched");
+  assert.ok(await realSession(env, token));
+});
+
+test("M1: a deletion the person asks for after coming back is not mistaken for a leftover", async () => {
+  const env = environment();
+  const identity = "apple:asks-again";
+  await signInWithData(env, identity, "first-life");
+  await startAccountDeletion(env, identity);
+  await signInWithData(env, identity, "second-life");
+  // No timer is faked: requestedAt is written after reregisteredAt by construction.
+  assert.deepEqual(await startAccountDeletion(env, identity), { deleted: true, externalDeletionPending: true });
+  assert.equal(env._values.has("account:apple:asks-again"), false);
+});
+
+test("the cycle sign in, delete, sign in again works any number of times", async () => {
+  const env = environment();
+  const identity = "apple:cycles";
+  for (let life = 1; life <= 3; life++) {
+    const token = await signInWithData(env, identity, `life${life}`);
+    assert.ok(await realSession(env, token), `life ${life} can sign in`);
+    assert.deepEqual(await startAccountDeletion(env, identity), { deleted: true, externalDeletionPending: true });
+    assert.equal(env._values.has("account:apple:cycles"), false, `life ${life} is erased`);
+    assert.equal(await realSession(env, token), null, `life ${life}'s session is revoked`);
+  }
+});
+
+test("N4: without the provider secret the RevenueCat pass is skipped and its jobs stay put", async () => {
+  const env = environment();
+  const key = await jobKey("apple:no-secret");
+  env._values.set(key, JSON.stringify({ identity: "apple:no-secret", requestedAt: Date.now() }));
+  let calls = 0;
+  await processPendingDeletions(env, async () => { calls++; return new Response(null, { status: 200 }); });
+  assert.equal(calls, 0);
+  assert.equal(env._values.has(key), true);
+  env.REVENUECAT_SECRET_API_KEY = "test-only-secret";
+  await processPendingDeletions(env, async () => { calls++; return new Response(null, { status: 200 }); });
+  assert.equal(calls, 1);
+  assert.equal(env._values.has(key), false);
+});
+
+test("M1: a leftover job from before the new account is cleared without touching the account", async () => {
+  const env = environment();
+  const identity = "apple:stale-present";
+  await signInWithData(env, identity, "first-life");
+  await startAccountDeletion(env, identity);
+  await signInWithData(env, identity, "second-life");
+  // A leftover job that is still queued, older than the new account.
+  const jobName = `privacy-account-delete:${await sha256Hex(identity)}`;
+  env._values.set(jobName, JSON.stringify({ canonicalSub: identity, requestedAt: 1 }));
+  assert.deepEqual(await processPendingDeletions(env), undefined);
+  assert.equal(env._values.has("account:apple:stale-present"), true, "the new account is untouched");
+  assert.equal(env._values.has(jobName), false, "and the leftover job is cleared");
+});
+
+test("M1: a request made while a leftover is being cleared is not lost", async () => {
+  const env = environment();
+  const identity = "apple:request-in-flight";
+  await signInWithData(env, identity, "first-life");
+  await startAccountDeletion(env, identity);
+  await signInWithData(env, identity, "second-life");
+  const jobName = `privacy-account-delete:${await sha256Hex(identity)}`;
+  // The first read sees a leftover; before the second read the person's own request has written its job.
+  env._values.set(jobName, JSON.stringify({ canonicalSub: identity, requestedAt: 1 }));
+  const realGet = env.STUDIQUO_DATA.get;
+  let jobReads = 0;
+  env.STUDIQUO_DATA.get = async (key, type) => {
+    if (key === jobName && ++jobReads === 2) env._values.set(jobName, JSON.stringify({ canonicalSub: identity, requestedAt: Date.now() + 1000 }));
+    return realGet(key, type);
+  };
+  await deleteAccount(env, identity);
+  assert.equal(env._values.has("account:apple:request-in-flight"), false, "the person's request is carried out");
+});
+
+test("M1: an 'active' marker without a usable time never makes a request a no-op", async () => {
+  const env = environment();
+  const identity = "apple:bad-marker";
+  await signInWithData(env, identity, "life");
+  env._values.set(await stateKey(identity), JSON.stringify({ status: "active" }));
+  env._values.set(`privacy-account-delete:${await sha256Hex(identity)}`, JSON.stringify({ canonicalSub: identity, requestedAt: Date.now() }));
+  await deleteAccount(env, identity);
+  assert.equal(env._values.has("account:apple:bad-marker"), false);
+});
+
+test("N4: queued provider deletions without a secret are reported, and only then", async () => {
+  const warnings = [];
+  const realWarn = console.warn;
+  console.warn = message => warnings.push(message);
+  try {
+    const env = environment();
+    await processPendingDeletions(env);
+    assert.equal(warnings.length, 0, "nothing queued, nothing to say");
+    env._values.set(await jobKey("apple:waiting"), JSON.stringify({ identity: "apple:waiting", requestedAt: Date.now() }));
+    await processPendingDeletions(env);
+    assert.equal(warnings.length, 1);
+    assert.doesNotMatch(warnings[0], /apple:waiting/, "no identity in the log");
+  } finally {
+    console.warn = realWarn;
+  }
 });

@@ -62,7 +62,15 @@ export async function processPendingDeletions(env, fetcher = fetch, { limit = 10
   // Import lazily to avoid a module cycle with deleteAccount's shared helpers.
   const { deleteAccount } = await import("./account-deletion.js");
   await processJobs(env, "privacy-account-delete:", async (_key, job) => deleteAccount(env, job.canonicalSub), limit);
-  await processJobs(env, "privacy-rc-delete:", (key, job) => retryRevenueCatDeletion(env, key, job, fetcher), limit);
+  // Without the provider secret every attempt fails, so skip the pass: it
+  // would only spend subrequests and keep cycling the same jobs. Say so when
+  // jobs are waiting, so queued erasures don't pile up unnoticed.
+  if (env.REVENUECAT_SECRET_API_KEY) {
+    await processJobs(env, "privacy-rc-delete:", (key, job) => retryRevenueCatDeletion(env, key, job, fetcher), limit);
+  } else {
+    const waiting = await env.STUDIQUO_DATA.list({ prefix: "privacy-rc-delete:", limit: 1 });
+    if (waiting.keys?.length) console.warn(JSON.stringify({ message: "provider deletions are queued but REVENUECAT_SECRET_API_KEY is not configured" }));
+  }
 }
 
 /**
