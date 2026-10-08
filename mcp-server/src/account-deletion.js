@@ -40,11 +40,34 @@ function linkedIdentityKey(identity) {
 
 export async function deleteAccount(env, canonicalSub) {
   const deletionStateKey = `account-deletion:${await sha256Hex(canonicalSub)}`;
-  const previousState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
+  let previousState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
   if (previousState?.status === "deleted") {
     await env.STUDIQUO_DATA.delete(jobKey);
     return { deleted: true };
+  }
+  if (previousState?.status === "active") {
+    // The person signed in again after the earlier deletion finished (see
+    // mintSession), so there is a new account. A request made since then
+    // wrote its job after that moment; a job from before it (or one that has
+    // already been cleared) is a leftover of the earlier deletion — a retry
+    // that read it just before the person came back — and running it would
+    // erase the new account. A marker without a usable time can't tell the
+    // two apart, and then the person's own request wins.
+    const startedAt = previousState.reregisteredAt;
+    const isRequestedSince = job => Number.isFinite(startedAt) ? job?.requestedAt >= startedAt : true;
+    let job = await env.STUDIQUO_DATA.get(jobKey, "json");
+    if (!isRequestedSince(job)) {
+      // Read once more before clearing: the person may have asked to delete
+      // the new account in the meantime, and that job must not be removed.
+      job = await env.STUDIQUO_DATA.get(jobKey, "json");
+      if (!isRequestedSince(job)) {
+        if (job) await env.STUDIQUO_DATA.delete(jobKey);
+        return { deleted: true };
+      }
+    }
+    // The earlier account's checkpoint does not describe this one.
+    previousState = null;
   }
   await env.STUDIQUO_DATA.put(jobKey, JSON.stringify({ canonicalSub, requestedAt: Date.now() }));
   const checkpointKeys = new Set(previousState?.deletionKeys ?? []);
