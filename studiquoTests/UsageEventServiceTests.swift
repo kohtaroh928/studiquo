@@ -1,27 +1,39 @@
 import XCTest
 @testable import studiquo
 
-/// Coverage for `UsageEventService.ping()` — the client-side half of the
+/// Coverage for `UsageEventService.ping(session: testSession)` — the client-side half of the
 /// DAU/MAU/retention dashboard (see mcp-server/src/admin.js's
 /// handleUsageEvent, which the server side already had tests for). The
 /// dashboard's numbers are only ever as good as this call actually firing
 /// with a real bearer token, so that's what these tests check.
 final class UsageEventServiceTests: XCTestCase {
+    private var testSession: URLSession!
+    private var previousEndpoint: String?
     override func setUp() {
         super.setUp()
-        URLProtocol.registerClass(RecordingUsageEventProtocol.self)
+        previousEndpoint = UserDefaults.standard.string(forKey: "mcpCloudEndpoint")
+        UserDefaults.standard.set(WorkerAIProvider.defaultEndpoint, forKey: "mcpCloudEndpoint")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RecordingUsageEventProtocol.self]
+        testSession = URLSession(configuration: configuration)
         RecordingUsageEventProtocol.reset()
     }
 
     override func tearDown() {
-        URLProtocol.unregisterClass(RecordingUsageEventProtocol.self)
+        testSession.invalidateAndCancel()
+        testSession = nil
+        if let previousEndpoint {
+            UserDefaults.standard.set(previousEndpoint, forKey: "mcpCloudEndpoint")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "mcpCloudEndpoint")
+        }
         super.tearDown()
     }
 
     func testPingPostsToTheUsageEventsEndpointWithABearerToken() async {
         RecordingUsageEventProtocol.respond(status: 200, body: ["recorded": true])
 
-        await UsageEventService.ping()
+        await UsageEventService.ping(session: testSession)
 
         let requests = RecordingUsageEventProtocol.recordedRequests()
         XCTAssertEqual(requests.count, 1, "1回のpingで、リクエストがちょうど1件送られる必要があります。")
@@ -37,7 +49,7 @@ final class UsageEventServiceTests: XCTestCase {
 
         // ping() returns Void and swallows errors by design — this just
         // confirms a 401 doesn't crash or hang the caller.
-        await UsageEventService.ping()
+        await UsageEventService.ping(session: testSession)
 
         XCTAssertEqual(RecordingUsageEventProtocol.recordedRequests().count, 1)
     }
@@ -45,7 +57,7 @@ final class UsageEventServiceTests: XCTestCase {
     func testPingDoesNotThrowOrHangWhenTheNetworkFailsEntirely() async {
         RecordingUsageEventProtocol.failNextRequest()
 
-        await UsageEventService.ping()
+        await UsageEventService.ping(session: testSession)
         // No assertion beyond "this returned at all" — a hang or crash here
         // would fail the test via timeout, same as the network-failure
         // coverage FriendChatService's own tests rely on.
@@ -80,12 +92,13 @@ private final class RecordingUsageEventProtocol: URLProtocol {
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
-        request.url?.host == "studiquo-mcp.studiquo-mcp-server.workers.dev"
+        true // Dedicated test session must never reach the network.
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        XCTAssertEqual(request.url?.host, "studiquo-mcp.studiquo-mcp-server.workers.dev", "Unexpected test request host")
         Self.lock.lock()
         Self.requests.append(request)
         let shouldFail = Self.shouldFailNext
