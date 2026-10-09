@@ -3149,7 +3149,7 @@ struct ContentView: View {
                     .padding(.horizontal, 11)
                     .frame(height: 34)
                     .background(selectedNotebook === notebook ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-                    .draggable("notebook:\(notebookID(notebook))")
+                    .tabDraggable("notebook:\(notebookID(notebook))")
                 }
                 ForEach(openStudyNotebooks.filter { !$0.isTrashed }) { notebook in
                     HStack(spacing: 5) {
@@ -3170,7 +3170,7 @@ struct ContentView: View {
                     .padding(.horizontal, 11)
                     .frame(height: 34)
                     .background(Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-                    .draggable("flashcards:\(notebookID(notebook))")
+                    .tabDraggable("flashcards:\(notebookID(notebook))")
                 }
                 ForEach(openFlashcardDecks) { deck in
                     HStack(spacing: 5) {
@@ -3186,7 +3186,7 @@ struct ContentView: View {
                     .padding(.horizontal, 11)
                     .frame(height: 34)
                     .background(selectedFlashcardDeck === deck ? Color.indigo.opacity(0.22) : Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-                    .draggable("deck:\(deckID(deck))")
+                    .tabDraggable("deck:\(deckID(deck))")
                 }
                 ForEach(openWebTabs) { tab in
                     HStack(spacing: 5) {
@@ -3202,7 +3202,7 @@ struct ContentView: View {
                     .padding(.horizontal, 11)
                     .frame(height: 34)
                     .background(Color.teal.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
-                    .draggable("web:\(tab.title)|\(tab.homeURL)")
+                    .tabDraggable("web:\(tab.title)|\(tab.homeURL)")
                 }
 
                 ForEach(openTextDocuments.filter { !$0.isTrashed }) { document in
@@ -3228,7 +3228,7 @@ struct ContentView: View {
                         in: RoundedRectangle(cornerRadius: 8)
                     )
                     .accessibilityIdentifier("tab-document-\(document.title)")
-                    .draggable("document:\(textDocumentID(document))")
+                    .tabDraggable("document:\(textDocumentID(document))")
                 }
                 ForEach(openSlideDecks.filter { !$0.isTrashed }) { deck in
                     HStack(spacing: 5) {
@@ -3253,7 +3253,7 @@ struct ContentView: View {
                         in: RoundedRectangle(cornerRadius: 8)
                     )
                     .accessibilityIdentifier("tab-slide-\(deck.title)")
-                    .draggable("slide:\(slideDeckID(deck))")
+                    .tabDraggable("slide:\(slideDeckID(deck))")
                 }
 
                 ForEach(openAIChatTabs) { tab in
@@ -3275,7 +3275,7 @@ struct ContentView: View {
                         selectedAIChatTabID == tab.id ? Color.purple.opacity(0.22) : Color.purple.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 8)
                     )
-                    .draggable("ai:\(String(describing: tab.id))")
+                    .tabDraggable("ai:\(String(describing: tab.id))")
                 }
 
                 // Replaces the old sidebar toggle in the editor's tool strip:
