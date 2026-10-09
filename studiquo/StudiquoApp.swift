@@ -223,7 +223,8 @@ struct StudiquoApp: App {
                 } else if ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test") ||
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test") ||
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test") ||
-                            ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test") {
+                            ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test") ||
+                            ProcessInfo.processInfo.arguments.contains(NoteSnippetFriendUITestRoot.tabDropArgument) {
                     NoteSnippetFriendUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--math-spike") {
                     MathSpikeView()
@@ -250,6 +251,7 @@ struct StudiquoApp: App {
                       !ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains(NoteSnippetFriendUITestRoot.tabDropArgument),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--math-spike"),
@@ -379,18 +381,52 @@ private struct NoteSnippetFriendUITestRoot: View {
         _ = NoteSnippetFriendUITestStore.container
     }
 
+    /// Starts the note editor with no snippet seeded, for tests that only need an
+    /// editor plus the tab-drag source chips.
+    static let tabDropArgument = "--tab-drop-ui-test"
+    /// Adds a bar of draggable chips above the editor, standing in for the top
+    /// tab bar: dragging one onto a split pane is the "drop a tab" gesture.
+    static let tabDragSourcesArgument = "--ui-test-tab-drag-sources"
+
+    private var showsTabDragSources: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains(Self.tabDragSourcesArgument) || arguments.contains(Self.tabDropArgument)
+    }
+
     var body: some View {
-        NoteEditorView(
-            notebook: NoteSnippetFriendUITestStore.notebook,
-            columnVisibility: $columnVisibility,
-            onHome: {}
-        )
-        .modelContainer(NoteSnippetFriendUITestStore.container)
-        .environmentObject(AIChatStore.shared(for: NoteSnippetFriendUITestStore.container.mainContext))
-        .environmentObject(splitState)
-        .environmentObject(friendStore)
+        VStack(spacing: 0) {
+            if showsTabDragSources {
+                HStack(spacing: 12) {
+                    // Not the notebook's own title: a test looks for that title to see the
+                    // drop land, and the chip must not satisfy it by itself.
+                    Text("タブ(\(NoteSnippetFriendUITestStore.dropTargetNotebookTitle))")
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Color.accentColor.opacity(0.15), in: Capsule())
+                        .tabDraggable("notebook:\(NoteSnippetFriendUITestStore.dropTargetNotebookID)")
+                        .accessibilityIdentifier("tab-drag-source-notebook")
+                    Text("タブ(\(NoteSnippetFriendUITestStore.dropTargetDocumentTitle))")
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Color.accentColor.opacity(0.15), in: Capsule())
+                        .tabDraggable("document:\(NoteSnippetFriendUITestStore.dropTargetDocumentID)")
+                        .accessibilityIdentifier("tab-drag-source-document")
+                    Spacer()
+                }
+                .padding(8)
+                .background(Color(.secondarySystemBackground))
+            }
+            NoteEditorView(
+                notebook: NoteSnippetFriendUITestStore.notebook,
+                columnVisibility: $columnVisibility,
+                onHome: {}
+            )
+            .modelContainer(NoteSnippetFriendUITestStore.container)
+            .environmentObject(AIChatStore.shared(for: NoteSnippetFriendUITestStore.container.mainContext))
+            .environmentObject(splitState)
+            .environmentObject(friendStore)
+        }
         .task {
             guard !seededSnippet else { return }
+            if ProcessInfo.processInfo.arguments.contains(Self.tabDropArgument) { return }
             try? await Task.sleep(for: .milliseconds(600))
             seededSnippet = true
             if ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test") ||
@@ -463,12 +499,44 @@ private enum NoteSnippetFriendUITestStore {
         page.notebook = notebook
         notebook.addPage(page)
         container.mainContext.insert(notebook)
+        // The notebook a dragged tab stands for, so a drop has somewhere real to land.
+        let dropTarget = Notebook(title: dropTargetNotebookTitle)
+        let dropTargetPage = NotePage(order: 0)
+        dropTargetPage.notebook = dropTarget
+        dropTarget.addPage(dropTargetPage)
+        container.mainContext.insert(dropTarget)
+        container.mainContext.insert(TextDocument(title: dropTargetDocumentTitle))
         try! container.mainContext.save()
         return container
     }()
 
+    static let dropTargetNotebookTitle = "ドロップ先ノート"
+    static let dropTargetDocumentTitle = "ドロップ先文書"
+
+    /// The id a tab for the drop-target document carries.
+    static var dropTargetDocumentID: String {
+        let title = dropTargetDocumentTitle
+        let target = try! container.mainContext.fetch(
+            FetchDescriptor<TextDocument>(predicate: #Predicate { $0.title == title })
+        ).first!
+        return String(describing: target.persistentModelID)
+    }
+
     static var notebook: Notebook {
-        try! container.mainContext.fetch(FetchDescriptor<Notebook>()).first!
+        let title = "切り抜き送信テスト"
+        return try! container.mainContext.fetch(
+            FetchDescriptor<Notebook>(predicate: #Predicate { $0.title == title })
+        ).first!
+    }
+
+    /// The id a tab for the drop-target notebook carries, in the same `String(describing:)`
+    /// form the real tab bar uses.
+    static var dropTargetNotebookID: String {
+        let title = dropTargetNotebookTitle
+        let target = try! container.mainContext.fetch(
+            FetchDescriptor<Notebook>(predicate: #Predicate { $0.title == title })
+        ).first!
+        return String(describing: target.persistentModelID)
     }
 }
 

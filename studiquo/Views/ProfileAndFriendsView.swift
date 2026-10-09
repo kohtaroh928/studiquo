@@ -3456,6 +3456,9 @@ struct GroupChatView: View {
     var onBack: () -> Void
     var pendingSnippet: PageSnippet? = nil
     var onConsumePendingSnippet: (UUID) -> Void = { _ in }
+    /// A tab dropped on this pane while it sits in a split: asks the editor to show
+    /// that material here instead.
+    var onPaneDrop: (String) -> Bool = { _ in false }
 
     @State private var draft = ""
     @State private var attachments: [FriendMessageAttachment] = []
@@ -3464,6 +3467,7 @@ struct GroupChatView: View {
     @State private var showsCameraScanner = false
     @State private var isAttachingAppMaterial = false
     @State private var isComposerDropTargeted = false
+    @State private var isPaneDropTargeted = false
     @State private var snippetAttachmentTracker = ChatSnippetAttachmentTracker()
     @State private var partialCopyText: PartialCopyText?
     @State private var reportingMessage: GroupReportMessage?
@@ -3698,6 +3702,20 @@ struct GroupChatView: View {
             Text(store.errorMessage)
         }
         .background(Color(red: 0.84, green: 0.94, blue: 1.0))
+        .dropDestination(for: String.self) { items, _ in
+            guard let value = items.first, PaneDropPayload.isTab(value) else { return false }
+            return onPaneDrop(value)
+        } isTargeted: { targeted in
+            withAnimation(.easeOut(duration: 0.15)) { isPaneDropTargeted = targeted }
+        }
+        .overlay {
+            if isPaneDropTargeted {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                    .padding(4)
+                    .allowsHitTesting(false)
+            }
+        }
         .onAppear { store.startReadingGroup(roomID: roomID) }
         .onDisappear { store.stopReadingGroup(roomID: roomID) }
         .task {
@@ -4426,12 +4444,7 @@ struct FriendChatView: View {
     }
 
     private func isPaneSwitchDrop(_ value: String) -> Bool {
-        value.hasPrefix("notebook:")
-        || value.hasPrefix("deck:")
-        || value.hasPrefix("flashcards:")
-        || value.hasPrefix("web:")
-        || value.hasPrefix("ai:")
-        || value.hasPrefix("friend:")
+        PaneDropPayload.isTab(value)
     }
 
     private func openAttachment(_ attachment: FriendMessageAttachment) {

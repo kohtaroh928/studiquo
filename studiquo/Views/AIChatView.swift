@@ -665,10 +665,25 @@ struct AIChatPane: View {
         }
         // The whole pane accepts crops, not just the composer — aiming a
         // drag at a text field on a split screen is fiddly, and there is
-        // nothing else here a page snippet could mean.
-        .dropDestination(for: PageSnippet.self) { snippets, _ in
-            for snippet in snippets { accept(snippet) }
-            return !snippets.isEmpty
+        // nothing else here a page snippet could mean. It also accepts a tab,
+        // which switches this pane to that material (the composer, inside,
+        // keeps attaching tabs instead).
+        //
+        // ONE destination for both kinds: with one destination per type on the
+        // same view, only one is consulted and the tab drop never arrived.
+        // See `PaneDropPayload`.
+        .dropDestination(for: PaneDropPayload.self) { drops, _ in
+            var handled = false
+            for drop in drops {
+                switch drop {
+                case .snippet(let snippet):
+                    accept(snippet)
+                    handled = true
+                case .tab(let value):
+                    if onPaneDrop?(value) ?? false { handled = true }
+                }
+            }
+            return handled
         } isTargeted: { targeted in
             withAnimation(.easeOut(duration: 0.15)) { isDropTargeted = targeted }
         }
