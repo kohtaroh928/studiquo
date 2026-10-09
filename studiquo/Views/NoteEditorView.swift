@@ -1498,7 +1498,7 @@ struct NoteEditorView: View {
             case .slideDeck(let deck):
                 SlideDeckView(deck: deck)
             case .externalFile(let session):
-                ExternalFilePaneView(session: session)
+                ExternalFilePaneView(session: session, onClose: { closeTemporaryChatMaterial(in: pane) })
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
