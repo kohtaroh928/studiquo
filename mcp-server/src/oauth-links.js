@@ -107,7 +107,7 @@ async function repairMappings(env, canonicalKeys, canonicalIdentityKey, known) {
     .map(key => env.STUDIQUO_DATA.put(key, canonicalIdentityKey)));
 }
 
-function identityKey(identity) {
+export function identityKey(identity) {
   if (identity.provider === "google") return `google:${identity.sub}`;
   if (identity.provider === "email") return `email:${identity.sub}`;
   return identity.sub; // Apple keeps its historical bare-sub session key.
