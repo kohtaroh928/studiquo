@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import worker from "./app.js";
+import { mintSession } from "./session.js";
 
 // Regression coverage for "friend requests are approved, not instant": adding
 // a friend by code must create a one-directional pending request instead of
@@ -3509,8 +3510,10 @@ test("29: a deleted friend code can no longer be used to add the account", async
 test("30: registering again after deletion starts with a new friend code and empty social data", async () => {
   const fixture = await deletionFriendFixture();
   await deleteAccount(fixture.env, fixture.aliceToken);
-  const newToken = freshToken("dn");
-  await seedAccountSession(fixture.env, newToken, fixture.aliceSub);
+  // Signing in again goes through mintSession, which is what turns the
+  // "deleted" marker into a new account; a session seeded behind its back is
+  // (rightly) refused.
+  const newToken = await mintSession(fixture.env, fixture.aliceSub, "dn".repeat(40));
   const recreated = await registerUser(fixture.env, newToken, "Alice Again");
   assert.notEqual(recreated.code, fixture.alice.code);
   assert.deepEqual(await friends(fixture.env, newToken), []);
