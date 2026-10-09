@@ -148,6 +148,68 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(store.archivedFriends.map(\.id), [id])
     }
 
+    private func record(_ id: UUID, name: String, roomID: String?) -> FriendRecord {
+        FriendRecord(id: id, name: name, code: "AAAAAA", todayStudySeconds: 0, roomID: roomID, isDemo: false)
+    }
+
+    func testDuplicateFriendKeepsTheFirstEntryAndItsRoom() throws {
+        let id = UUID()
+        defaults.set(try JSONEncoder().encode([record(id, name: "First", roomID: "room-1"), record(id, name: "Second", roomID: "room-2")]),
+                     forKey: "studiquoFriends")
+
+        let store = FriendStore(client: MockFriendChatClient(), defaults: defaults, autoRefresh: false)
+
+        XCTAssertEqual(store.friends.count, 1)
+        XCTAssertEqual(store.friends.first?.name, "First")
+        XCTAssertEqual(store.friends.first?.roomID, "room-1")
+    }
+
+    func testMessagesOfADuplicatedFriendAreMigratedToTheFirstEntrysRoom() throws {
+        let id = UUID()
+        defaults.set(try JSONEncoder().encode([record(id, name: "A", roomID: "room-1"), record(id, name: "A", roomID: "room-2")]),
+                     forKey: "studiquoFriends")
+        defaults.set(try JSONEncoder().encode([FriendMessage(id: UUID(), friendID: id, text: "x", sentAt: .now, isMine: true)]),
+                     forKey: "studiquoFriendMessages")
+
+        let store = FriendStore(client: MockFriendChatClient(), defaults: defaults, autoRefresh: false)
+
+        XCTAssertEqual(store.messages.first?.roomID, "room-1")
+    }
+
+    func testUniqueByIDHandlesEmptyOrderedAndTriplicateInput() {
+        let a = UUID(), b = UUID()
+        XCTAssertEqual(FriendStore.uniqueByID([]), [])
+        let ordered = [record(a, name: "A", roomID: nil), record(b, name: "B", roomID: nil)]
+        XCTAssertEqual(FriendStore.uniqueByID(ordered), ordered, "重複が無ければ並び順も内容も変わらない")
+        let triple = [record(a, name: "1", roomID: nil), record(b, name: "B", roomID: nil), record(a, name: "2", roomID: nil), record(a, name: "3", roomID: nil)]
+        XCTAssertEqual(FriendStore.uniqueByID(triple).map(\.name), ["1", "B"])
+    }
+
+    func testCorruptedPersistedFriendsLaunchWithAnEmptyListAndCorruptedMessagesAreReported() {
+        defaults.set(Data("not json".utf8), forKey: "studiquoFriends")
+        defaults.set(Data("not json".utf8), forKey: "studiquoArchivedFriends")
+        defaults.set(Data("not json".utf8), forKey: "studiquoFriendMessages")
+
+        let store = FriendStore(client: MockFriendChatClient(), defaults: defaults, autoRefresh: false)
+
+        XCTAssertTrue(store.friends.isEmpty)
+        XCTAssertTrue(store.archivedFriends.isEmpty)
+        XCTAssertFalse(store.errorMessage.isEmpty, "復元できないメッセージ履歴は、利用者へ知らせる必要があります。")
+    }
+
+    func testSavingAfterLoadingDuplicatesPersistsEachFriendOnce() throws {
+        let id = UUID()
+        defaults.set(try JSONEncoder().encode([record(id, name: "A", roomID: nil), record(id, name: "A", roomID: nil)]), forKey: "studiquoFriends")
+        let store = FriendStore(client: MockFriendChatClient(), defaults: defaults, autoRefresh: false)
+
+        store.friends = store.friends // any mutation re-persists
+
+        let saved = try JSONDecoder().decode([FriendRecord].self, from: try XCTUnwrap(defaults.data(forKey: "studiquoFriends")))
+        XCTAssertEqual(saved.map(\.id), [id])
+        let relaunched = FriendStore(client: MockFriendChatClient(), defaults: defaults, autoRefresh: false)
+        XCTAssertEqual(relaunched.friends.map(\.id), [id])
+    }
+
     func testUnreadCountsSurviveBeingRecreatedFromTheSamePersistedStore() {
         let friendID = UUID()
         let firstLaunch = FriendStore(client: MockFriendChatClient(), defaults: defaults, autoRefresh: false)
