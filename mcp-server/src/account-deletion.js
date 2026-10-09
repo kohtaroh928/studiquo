@@ -96,17 +96,23 @@ function linkedIdentityKey(identity) {
  *
  * A state that belongs to somebody else is left alone: an alias that has
  * already begun a new account ("active"), or one being deleted for a
- * different account.
+ * different account. The aliases left alone for having begun a new account
+ * are returned, so the caller can keep them out of the provider-side erasure.
  */
 async function markAliases(env, canonicalSub, identityKeys, state) {
+  const beganNewAccount = new Set();
   for (const identity of identityKeys) {
     if (identity === canonicalSub) continue;
     const aliasStateKey = `account-deletion:${await sha256Hex(identity)}`;
     const existing = await env.STUDIQUO_DATA.get(aliasStateKey, "json");
-    if (existing?.status === "active") continue;
+    if (existing?.status === "active") {
+      beganNewAccount.add(identity);
+      continue;
+    }
     if (existing?.status === "deleting" && existing.of !== canonicalSub) continue;
     await env.STUDIQUO_DATA.put(aliasStateKey, JSON.stringify(state));
   }
+  return beganNewAccount;
 }
 
 export async function deleteAccount(env, canonicalSub) {
@@ -192,13 +198,6 @@ export async function deleteAccount(env, canonicalSub) {
     }
   }
 
-  const activeAliases = new Set();
-  for (const identity of identityKeys) {
-    if (identity === canonicalSub) continue;
-    const aliasState = await env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(identity)}`, "json");
-    if (aliasState?.status === "active") activeAliases.add(identity);
-  }
-
   const sessionKeys = await entries(env, "session:");
   const ownedSessionKeys = [];
   const ownedTokenHashes = [...(previousState?.tokenHashes ?? [])];
@@ -216,10 +215,12 @@ export async function deleteAccount(env, canonicalSub) {
   // Persist the cleanup plan before revoking sessions. If a later binding
   // call times out, a retry still knows which token-derived data belonged to
   // this account even though those session rows are already gone.
+  // The writes just below replace the account's state, so the check comes
+  // first: after them the state always reads "deleting" again, whatever it was.
+  if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
   checkpoint = { status: "deleting", generation, deletionKeys: [...checkpointKeys], emails, identityKeys: [...identityKeys], tokenHashes: [...new Set(ownedTokenHashes)] };
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(checkpoint));
-  await markAliases(env, canonicalSub, identityKeys, { status: "deleting", of: canonicalSub });
-  if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
+  const activeAliases = await markAliases(env, canonicalSub, identityKeys, { status: "deleting", of: canonicalSub });
   await deleteKeys(env, ownedSessionKeys);
 
   const accountKeys = [];
