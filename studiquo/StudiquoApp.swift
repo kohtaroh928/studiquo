@@ -301,9 +301,14 @@ private struct FriendChatUITestRoot: View {
         defaults: UserDefaults(suiteName: "FriendChatUITest-\(UUID().uuidString)")!,
         autoRefresh: false
     )
+    /// Normally a friend whose room is unavailable, so a send is rejected and the tests can
+    /// check the typed text survives. The scroll test needs the opposite — a send that
+    /// succeeds, so there is a newest message to scroll to — and a demo friend accepts
+    /// sends locally.
     private let friend = FriendRecord(
         id: UUID(), name: "Test friend", code: "TEST01",
-        todayStudySeconds: 0, roomID: nil, isDemo: false
+        todayStudySeconds: 0, roomID: nil,
+        isDemo: ProcessInfo.processInfo.arguments.contains("--friend-chat-scroll-test")
     )
 
     var body: some View {
