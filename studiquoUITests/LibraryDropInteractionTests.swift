@@ -533,6 +533,7 @@ final class LibraryDropInteractionTests: XCTestCase {
     private func openSplit(_ option: String, in app: XCUIApplication) {
         let splitButton = app.buttons["画面分割"]
         XCTAssertTrue(splitButton.waitForExistence(timeout: 5), "Split control did not appear")
+        app.scrollToolStrip(toReveal: splitButton)
         splitButton.tap()
         let choice = app.buttons[option]
         XCTAssertTrue(choice.waitForExistence(timeout: 5), "Split option \(option) did not appear")

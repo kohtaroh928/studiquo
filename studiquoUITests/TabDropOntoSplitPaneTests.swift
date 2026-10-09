@@ -249,6 +249,7 @@ final class TabDropOntoSplitPaneTests: XCTestCase {
 
         let split = app.buttons["画面分割"]
         XCTAssertTrue(split.waitForExistence(timeout: 10), "split menu missing")
+        app.scrollToolStrip(toReveal: split)
         split.tap()
         let vertical = app.buttons["上下に2分割"]
         XCTAssertTrue(vertical.waitForExistence(timeout: 5), "top/bottom split option missing")
