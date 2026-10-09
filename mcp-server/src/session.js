@@ -6,6 +6,15 @@
 import { sha256Hex } from "./auth.js";
 import { VALIDITY_SECONDS } from "./token.js";
 
+// Which life of the account a record belongs to. Each time a deleted account
+// is signed into again (mintSession) the count goes up by one, and jobs and
+// states carry the count they were written under. Comparing counts tells an
+// earlier life's leftovers from the current one without trusting clocks that
+// differ between the isolates serving a request and the one running a retry.
+export function generationOf(state) {
+  return Number.isFinite(state?.generation) ? state.generation : 0;
+}
+
 const SESSION_PREFIX = "session:";
 const IDENTITY_CANONICAL_PREFIX = "identity-canonical:";
 
@@ -57,7 +66,13 @@ export async function mintSession(env, identityKey, randomValue) {
   // old job before this moment still runs deleteAccount afterwards, and that
   // timestamp is how deleteAccount knows to leave the new account alone.
   if (deletionState?.status === "deleted") {
-    const hashes = await Promise.all([...new Set([identityKey, ...(deletionState.identityKeys ?? [])])].map(sha256Hex));
+    // The marker keeps hashes of the account's identities (older ones kept the
+    // identities themselves; both are read).
+    const hashes = [...new Set([
+      await sha256Hex(identityKey),
+      ...(deletionState.identityHashes ?? []),
+      ...await Promise.all((deletionState.identityKeys ?? []).map(sha256Hex)),
+    ])];
     const cleared = await clearDeletedCustomerRecords(env, hashes);
     await env.STUDIQUO_DATA.delete(`privacy-account-delete:${await sha256Hex(identityKey)}`);
     // The provider treats every id of one customer as the same customer, so a
@@ -69,11 +84,12 @@ export async function mintSession(env, identityKey, randomValue) {
     // deletion of this account return early and erase nothing. What could not
     // be cleared is remembered and retried at the next sign-in.
     await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({
-      status: "active", reregisteredAt: Date.now(), ...(cleared ? {} : { pendingCustomerClear: hashes }),
+      status: "active", reregisteredAt: Date.now(), generation: generationOf(deletionState) + 1,
+      ...(cleared ? {} : { pendingCustomerClear: hashes }),
     }));
   } else if (deletionState?.status === "active" && Array.isArray(deletionState.pendingCustomerClear)) {
     if (await clearDeletedCustomerRecords(env, deletionState.pendingCustomerClear)) {
-      await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "active", reregisteredAt: deletionState.reregisteredAt }));
+      await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "active", reregisteredAt: deletionState.reregisteredAt, generation: generationOf(deletionState) }));
     }
   }
   // A queued provider (RevenueCat) DELETE for THIS identity is dropped for the
@@ -120,11 +136,28 @@ export async function realSession(env, token) {
     env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(resolved.sub)}`, "json"),
     sessionCutoff(env, resolved.sub),
   ]);
-  if (deletionState?.status === "deleting") return null;
+  // "deleted" refuses too: a session minted just before the deletion read its
+  // state can outlive the cleanup, and left usable it would let the person
+  // keep working in a deleted account (and ask for a second deletion that,
+  // finding the marker, erased nothing). Signing in again replaces the marker
+  // (mintSession), so no legitimate session exists while it stands.
+  if (deletionState?.status === "deleting" || deletionState?.status === "deleted") return null;
   // A password was set (reset) after this session was issued: it belongs to
   // whoever had the old password.
   if (sessionIsBeforeCutoff(resolved, cutoff)) return null;
   return resolved;
+}
+
+/**
+ * Whether the account behind `sub` is being deleted or has been deleted, for
+ * credentials that are not sessions (connected-app tokens). `sub` may be a
+ * linked identity rather than the canonical account, so both are looked at.
+ */
+export async function accountIsUnavailable(env, sub) {
+  const canonical = await env.STUDIQUO_DATA.get(`${IDENTITY_CANONICAL_PREFIX}${sub}`);
+  const subs = canonical && canonical !== sub ? [sub, canonical] : [sub];
+  const states = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(item)}`, "json")));
+  return states.some(state => state?.status === "deleting" || state?.status === "deleted");
 }
 
 const CUTOFF_PREFIX = "session-valid-from:";

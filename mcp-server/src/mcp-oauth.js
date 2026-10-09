@@ -1,6 +1,7 @@
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readJSONLimited, readTextLimited } from "./http.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
+import { accountIsUnavailable } from "./session.js";
 
 const AUTH_TTL = 600;
 const CODE_TTL = 300;
@@ -53,6 +54,9 @@ export async function externalSession(env, request) {
   const session = await env.STUDIQUO_DATA.get(`mcp:access:${await sha256Hex(token)}`, "json");
   if (!session?.sub || !session?.clientId) return null;
   if (!(await env.STUDIQUO_DATA.get(await grantKey(session.sub, session.clientId)))) return null;
+  // A token issued before the account was deleted must stop working at once,
+  // not only when its own expiry comes.
+  if (await accountIsUnavailable(env, session.sub)) return null;
   return session;
 }
 
@@ -202,6 +206,7 @@ export async function handleMCPOAuth(url, request, env) {
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
       const challenge = btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
       if (challenge !== code.codeChallenge) return json({ error: "invalid_grant" }, 400);
+      if (await accountIsUnavailable(env, code.sub)) return json({ error: "invalid_grant" }, 400);
       const accountHash = await sha256Hex(`mcp-account:${code.sub}`);
       if (!(await env.MCP_INBOX.getByName(accountHash).consumeOnce(await sha256Hex(rawCode)))) {
         return json({ error: "invalid_grant" }, 400);
@@ -216,6 +221,7 @@ export async function handleMCPOAuth(url, request, env) {
       if (!refresh || refresh.clientId !== clientId || !(await env.STUDIQUO_DATA.get(await grantKey(refresh.sub, clientId)))) {
         return json({ error: "invalid_grant" }, 400);
       }
+      if (await accountIsUnavailable(env, refresh.sub)) return json({ error: "invalid_grant" }, 400);
       const accountHash = await sha256Hex(`mcp-account:${refresh.sub}`);
       if (!(await env.MCP_INBOX.getByName(accountHash).consumeOnce(await sha256Hex(raw)))) {
         return json({ error: "invalid_grant" }, 400);
