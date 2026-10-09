@@ -1,4 +1,20 @@
 import XCTest
+
+final class FriendProfileInteractionTests: XCTestCase {
+    func testMessageAvatarOpensProfileAndCloseReturnsToChat() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--friend-chat-ui-test"]
+        app.launch()
+        let icon = app.buttons["friend-chat-profile"].firstMatch
+        XCTAssertTrue(icon.waitForExistence(timeout: 15))
+        icon.tap()
+        XCTAssertTrue(app.staticTexts["フレンドコード"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["自己紹介はまだありません"].exists)
+        app.buttons["閉じる"].tap()
+        XCTAssertTrue(app.textFields["friend-chat-draft"].waitForExistence(timeout: 5))
+    }
+}
 import UIKit
 
 final class LibraryDropInteractionTests: XCTestCase {
@@ -755,5 +771,24 @@ private func darkPixelCount(in elementFrame: CGRect, of image: UIImage, appFrame
         let green = Int(pixels[index + 1])
         let blue = Int(pixels[index + 2])
         return count + ((red < 100 && green < 100 && blue < 100) ? 1 : 0)
+    }
+}
+
+final class FriendRequestsInteractionTests: XCTestCase {
+    func testRequestsAndGroupInvitesShareOneButtonAndOneList() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--friend-requests-ui-test"]
+        app.launch()
+
+        let button = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "申請・招待")).firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["フレンド申請"].exists)
+        XCTAssertFalse(app.buttons["グループ招待"].exists)
+        XCTAssertTrue(button.label.contains("2"), "badge should total requests and invites: \(button.label)")
+
+        button.tap()
+        XCTAssertTrue(app.staticTexts["申請フレンド"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["招待グループ"].exists)
     }
 }

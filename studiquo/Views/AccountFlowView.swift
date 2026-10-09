@@ -194,6 +194,7 @@ private struct EmailVerificationView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
     @State private var code = ""
     @State private var didResend = false
+    @State private var newPassword = ""
 
     var body: some View {
         NavigationStack {
@@ -223,15 +224,36 @@ private struct EmailVerificationView: View {
                 } else if didResend {
                     Text("コードを再送信しました。").font(.footnote).foregroundStyle(.secondary)
                 }
-                Button("確認") {
-                    Task {
-                        didResend = false
-                        if await authentication.confirmEmailVerification(code: code) { code = "" }
+                if authentication.needsNewPassword {
+                    // The server refused the password (it appears in a known
+                    // breach) but kept the code valid: ask for another one here.
+                    SecureField("新しいパスワード(8文字以上)", text: $newPassword)
+                        .textContentType(.newPassword)
+                        .accountFieldStyle()
+                        .frame(maxWidth: 320)
+                    Button("パスワードを変更して続ける") {
+                        Task {
+                            didResend = false
+                            if await authentication.changePendingPassword(newPassword, code: code) {
+                                code = ""
+                                newPassword = ""
+                            }
+                        }
                     }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(code.count != 6 || newPassword.count < 8 || authentication.isEmailVerifyBusy)
+                } else {
+                    Button("確認") {
+                        Task {
+                            didResend = false
+                            if await authentication.confirmEmailVerification(code: code) { code = "" }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(code.count != 6 || authentication.isEmailVerifyBusy)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(code.count != 6 || authentication.isEmailVerifyBusy)
                 Button("コードを再送信") {
                     Task {
                         didResend = await authentication.requestEmailVerification()

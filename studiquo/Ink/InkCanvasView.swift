@@ -1721,6 +1721,16 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             .cgColor
     }
 
+#if DEBUG
+    /// Test seam: commits `points` (page space) exactly as lifting the pen does.
+    func commitPenStrokeForTesting(_ points: [CGPoint]) {
+        rawPoints = points.enumerated().map { index, point in
+            InkPoint(location: point, force: 0.5, timeOffset: Double(index) / Double(max(points.count, 1)))
+        }
+        finishStroke()
+    }
+#endif
+
     private func finishStroke() {
         holdTimer?.invalidate()
         holdTimer = nil
@@ -1770,7 +1780,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         if !isHighlighter {
             let looksLikeScratchOut = Self.hasScratchMotion(rawStroke.points.map(\.location))
             let erased = looksLikeScratchOut
-                ? Self.scratchOutErasedStrokes(drawing.strokes, scribble: rawStroke, contentScale: contentScale)
+                ? Self.scratchOutErasedStrokes(drawing.strokes, scribble: rawStroke, contentScale: onScreenScale)
                 : nil
             GestureDiagnostics.scratchOutRemoval(candidates: drawing.strokes.count, removed: erased == nil ? 0 : max(1, drawing.strokes.count - erased!.count))
             if let erased {
@@ -1943,6 +1953,15 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         for stroke in strokes {
             let radius = scratchOutHitRadius(strokeWidth: stroke.width, scribbleWidth: scribble.width, contentScale: scale)
             guard stroke.bounds.insetBy(dx: -radius, dy: -radius).intersects(scribble.bounds) else {
+                result.append(stroke)
+                continue
+            }
+
+            // The footprint below is wider than the pen line (hit margin plus
+            // closed gaps between passes), so it may only trim a stroke the
+            // pen line itself actually overlaps. A stroke that merely sits
+            // near or between the passes is not a target.
+            guard scratchOutTouches(stroke, scribblePath: scribblePath, scribbleWidth: scribble.width) else {
                 result.append(stroke)
                 continue
             }
@@ -2552,25 +2571,41 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     }
 
     private func strokeIsCoveredBy(_ stroke: InkStroke, scribble: InkStroke) -> Bool {
-        Self.scratchOutCoversStroke(stroke, scribble: scribble, contentScale: contentScale)
+        Self.scratchOutCoversStroke(stroke, scribble: scribble, contentScale: onScreenScale)
+    }
+
+    /// Screen points per page unit as the user actually sees it: the
+    /// fit-to-width `contentScale` times any pinch zoom applied by an ancestor
+    /// scroll view. The scratch-out margins are defined in screen points, so
+    /// without the zoom factor they would grow with the zoom and erase ink
+    /// that looks clearly separate from the scribble.
+    var onScreenScale: CGFloat {
+        guard window != nil else { return contentScale }
+        let origin = convert(CGPoint.zero, to: nil)
+        let unit = convert(CGPoint(x: 1, y: 0), to: nil)
+        let zoom = hypot(unit.x - origin.x, unit.y - origin.y)
+        return contentScale * (zoom > 0.0001 ? zoom : 1)
     }
 
     static func scratchOutCoversStroke(_ stroke: InkStroke, scribble: InkStroke, contentScale: CGFloat) -> Bool {
         let scale = max(contentScale, 0.0001)
         let radius = scratchOutHitRadius(strokeWidth: stroke.width, scribbleWidth: scribble.width, contentScale: scale)
         guard stroke.bounds.insetBy(dx: -radius, dy: -radius).intersects(scribble.bounds) else { return false }
-        let scribblePoints = scribble.points.map(\.location)
-        guard scribblePoints.count > 1 else { return false }
+        return scratchOutTouches(stroke, scribblePath: scribble.points.map(\.location), scribbleWidth: scribble.width)
+    }
+
+    /// Whether the pen line of a scribble really overlaps `stroke`'s ink:
+    /// the two centrelines come within the sum of their half-widths, with no
+    /// extra margin. This is what decides that a stroke is a scratch-out
+    /// target at all; the hit radius only shapes how much of it is trimmed.
+    static func scratchOutTouches(_ stroke: InkStroke, scribblePath: [CGPoint], scribbleWidth: CGFloat) -> Bool {
+        guard scribblePath.count > 1, !stroke.points.isEmpty else { return false }
+        let reach = stroke.width / 2 + scribbleWidth / 2
         // Resample the whole target path, including the middle of corrected
         // lines that are stored with only two endpoints.
-        let samples = Self.linearlyResampled(stroke.points, maxSpacing: 6).map(\.location)
-        guard !samples.isEmpty else { return false }
-        // A scratch-out should erase ink the scribble actually touches, not
-        // nearby notes. The old fixed 14pt minimum made a normal 4pt pen
-        // erase lines more than a fingertip-width away from the scribble.
-        return samples.contains { sample in
-            Self.distance(from: sample, to: scribblePoints) <= radius
-        }
+        let source = isGeneratedPolygon(stroke.points) ? stroke.points : smoothed(stroke.points)
+        let samples = linearlyResampled(source, maxSpacing: max(0.5, reach * 0.5))
+        return samples.contains { distance(from: $0.location, to: scribblePath) <= reach }
     }
 
     static func scratchOutHitRadius(strokeWidth: CGFloat, scribbleWidth: CGFloat, contentScale: CGFloat) -> CGFloat {

@@ -61,6 +61,8 @@ struct UserProfileView: View {
                     TextField("職業・身分", text: $occupation)
                     TextField("自己紹介", text: $bioDraft, axis: .vertical).lineLimit(3...6)
                     LabeledContent("メールアドレス", value: authentication.email)
+                } footer: {
+                    Text("名前・写真・自己紹介はフレンドに表示されます。自己紹介は500文字まで共有されます。")
                 }
                 Section {
                     Button {
@@ -131,6 +133,7 @@ struct FriendRecord: Identifiable, Codable, Hashable {
     /// against `friends()`'s response on each poll so a friend changing
     /// their photo is picked up without re-downloading it on every poll.
     var avatarUpdatedAt: Double? = nil
+    var bio: String? = nil
 }
 
 struct FriendProfile: Identifiable, Hashable {
@@ -139,10 +142,24 @@ struct FriendProfile: Identifiable, Hashable {
     var code: String
     var iconSystemName: String
     var avatarData: Data?
+    var bio: String?
     var todayStudySeconds: TimeInterval?
     var roomID: String?
     var isDemo: Bool
     var isBlockedByMe: Bool
+
+    /// Match the server's Unicode scalar limit without splitting a visible character.
+    static func sharedBio(_ text: String) -> String {
+        var result = ""
+        var scalarCount = 0
+        for character in text {
+            let count = character.unicodeScalars.count
+            guard scalarCount + count <= 500 else { break }
+            result.append(character)
+            scalarCount += count
+        }
+        return result
+    }
 
     init(friend: FriendRecord, blockedByMeRoomIDs: Set<String>) {
         id = friend.id
@@ -150,6 +167,7 @@ struct FriendProfile: Identifiable, Hashable {
         code = friend.code
         iconSystemName = friend.isDemo == true ? "sparkles" : "person.crop.circle.fill"
         avatarData = friend.avatarData
+        bio = friend.bio
         todayStudySeconds = friend.sharesStudyTime == false ? nil : friend.todayStudySeconds
         roomID = friend.roomID
         isDemo = friend.isDemo == true
@@ -376,6 +394,7 @@ final class FriendStore: ObservableObject {
     /// `blockedByOther`; nothing in the UI currently needs that beyond what
     /// a failed send already surfaces.
     @Published var blockedByMeRoomIDs: Set<String> = []
+    @Published private(set) var pendingBlockRoomIDs: Set<String> = []
     private let client: FriendChatClient
     private let defaults: UserDefaults
     private let friendsKey = "studiquoFriends"
@@ -416,6 +435,19 @@ final class FriendStore: ObservableObject {
     private var locallyRemovedCodes: Set<String> = [] {
         didSet { persist(locallyRemovedCodes, key: locallyRemovedCodesKey) }
     }
+    private let locallyRemovedTimesKey = "studiquoLocallyRemovedFriendTimes"
+    /// When each tombstone in `locallyRemovedCodes` was written. The friends
+    /// list is served from an eventually consistent KV read, so one poll
+    /// without the removed friend does not prove the next poll will not bring
+    /// them back; a tombstone is only dropped once it is older than
+    /// `removalTombstoneGrace` AND the server has stopped listing the friend.
+    /// A tombstone without a time (written by an older build) counts as expired.
+    private var locallyRemovedTimes: [String: Date] = [:] {
+        didSet { persist(locallyRemovedTimes, key: locallyRemovedTimesKey) }
+    }
+    /// Comfortably longer than the KV edge cache (~60s) that can serve a
+    /// pre-removal friends list.
+    var removalTombstoneGrace: TimeInterval = 300 // internal so tests can shorten it
     /// Bumped whenever `friends` is authoritatively changed by a definitive
     /// local action — right now, only a successfully redeemed invite link
     /// (see `confirmPendingLinkAdd()`) — rather than by a server poll.
@@ -454,26 +486,44 @@ final class FriendStore: ObservableObject {
     /// completes (later launches start from the last persisted real code).
     private static let placeholderCode = "準備中"
 
+    /// Persisted lists may contain the same friend twice (an earlier build
+    /// could write duplicates). Keep the first entry: a duplicate id must never
+    /// stop the app from launching.
+    static func uniqueByID(_ records: [FriendRecord]) -> [FriendRecord] {
+        var seen = Set<UUID>()
+        return records.filter { seen.insert($0.id).inserted }
+    }
+
     init(client: FriendChatClient = LiveFriendChatClient(), defaults: UserDefaults = .standard, autoRefresh: Bool = true) {
         self.client = client
         self.defaults = defaults
         myCode = defaults.string(forKey: "studiquoFriendCode") ?? Self.placeholderCode
         myLinkToken = defaults.string(forKey: "studiquoFriendLinkToken") ?? Self.placeholderCode
         if let data = defaults.data(forKey: friendsKey) {
-            friends = (try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? []
+            friends = Self.uniqueByID((try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? [])
         }
         if let data = defaults.data(forKey: archivedFriendsKey) {
-            archivedFriends = (try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? []
+            archivedFriends = Self.uniqueByID((try? JSONDecoder().decode([FriendRecord].self, from: data)) ?? [])
+        }
+        // Repair data left by the demo-friend duplication bug.
+        var seenDemoCodes = Set<String>()
+        let dedupedFriends = friends.filter { $0.isDemo != true || seenDemoCodes.insert($0.code).inserted }
+        if dedupedFriends.count != friends.count { friends = dedupedFriends }
+        if archivedFriends.contains(where: { $0.isDemo == true }) {
+            archivedFriends.removeAll { $0.isDemo == true }
         }
         if let data = defaults.data(forKey: locallyRemovedCodesKey) {
             locallyRemovedCodes = (try? JSONDecoder().decode(Set<String>.self, from: data)) ?? []
+        }
+        if let data = defaults.data(forKey: locallyRemovedTimesKey) {
+            locallyRemovedTimes = (try? JSONDecoder().decode([String: Date].self, from: data)) ?? [:]
         }
         if let data = defaults.data(forKey: groupsKey) {
             groups = (try? JSONDecoder().decode([FriendChatService.Group].self, from: data)) ?? []
         }
         if let data = defaults.data(forKey: messagesKey) {
             if let decoded = try? JSONDecoder().decode([FriendMessage].self, from: data) {
-                let roomsByFriend = Dictionary(uniqueKeysWithValues: friends.map { ($0.id, $0.roomID) })
+                let roomsByFriend = Dictionary(friends.map { ($0.id, $0.roomID) }, uniquingKeysWith: { first, _ in first })
                 messages = decoded.map { message in
                     var migrated = message
                     if migrated.roomID == nil { migrated.roomID = roomsByFriend[message.friendID] ?? nil }
@@ -617,7 +667,7 @@ final class FriendStore: ObservableObject {
     func refresh() async {
         do {
             let name = defaults.string(forKey: "profileName") ?? "Studiquoユーザー"
-            let identity = try await client.register(name: name, todayStudySeconds: nil, studyDate: nil)
+            let identity = try await client.register(name: name, todayStudySeconds: nil, studyDate: nil, bio: FriendProfile.sharedBio(defaults.string(forKey: "profileBio") ?? ""))
             myCode = identity.code
             defaults.set(myCode, forKey: "studiquoFriendCode")
             if let linkToken = identity.linkToken {
@@ -676,19 +726,23 @@ final class FriendStore: ObservableObject {
             return cached.avatarUpdatedAt != item.avatarUpdatedAt
         }
         guard !needsFetch.isEmpty else { return }
-        var working = friends
+        let generation = friendsGeneration
+        let sequence = friendsRequestSequence
         for item in needsFetch {
-            guard let index = working.firstIndex(where: { $0.isDemo != true && $0.code == item.code }) else { continue }
+            guard generation == friendsGeneration, sequence == friendsRequestSequence else { return }
             guard item.avatarUpdatedAt != nil else {
-                working[index].avatarData = nil
-                working[index].avatarUpdatedAt = nil
+                guard let index = friends.firstIndex(where: { $0.isDemo != true && $0.code == item.code }) else { continue }
+                friends[index].avatarData = nil
+                friends[index].avatarUpdatedAt = nil
                 continue
             }
             guard let data = try? await client.downloadAvatar(code: item.code) else { continue }
-            working[index].avatarData = data
-            working[index].avatarUpdatedAt = item.avatarUpdatedAt
+            guard generation == friendsGeneration, sequence == friendsRequestSequence,
+                  !locallyRemovedCodes.contains(item.code),
+                  let index = friends.firstIndex(where: { $0.isDemo != true && $0.code == item.code }) else { continue }
+            friends[index].avatarData = data
+            friends[index].avatarUpdatedAt = item.avatarUpdatedAt
         }
-        friends = working
     }
 
     /// Pushes the profile screen's current photo to the server whenever it's
@@ -696,7 +750,7 @@ final class FriendStore: ObservableObject {
     /// `uploadedAvatarDigestKey`. Without this, a friend never learns about a
     /// new (or first-ever) profile photo no matter how many times this
     /// device polls, because nothing about it was ever sent.
-    private func syncMyAvatarIfNeeded() async {
+    func syncMyAvatarIfNeeded() async {
         let imageData = defaults.data(forKey: "profileImage") ?? Data()
         guard !imageData.isEmpty else { return }
         let digest = SHA256.hash(data: imageData).map { String(format: "%02x", $0) }.joined()
@@ -823,7 +877,8 @@ final class FriendStore: ObservableObject {
             _ = try? await client.register(
                 name: name,
                 todayStudySeconds: sharesStudyTime ? Int(seconds) : nil,
-                studyDate: sharesStudyTime ? Self.todayDateKey() : nil
+                studyDate: sharesStudyTime ? Self.todayDateKey() : nil,
+                bio: FriendProfile.sharedBio(defaults.string(forKey: "profileBio") ?? "")
             )
         }
     }
@@ -845,9 +900,14 @@ final class FriendStore: ObservableObject {
     /// time. Without this, polling this repeatedly would reassign every
     /// friend a new id on each call, silently orphaning their accumulated
     /// `messages` (keyed by `friendID`) and `unreadCounts` (keyed by `id`).
-    private static func mergedFriends(existing: [FriendRecord], remote: [FriendChatService.Friend]) -> [FriendRecord] {
+    private static func mergedFriends(existing: [FriendRecord], activeDemos: [FriendRecord], remote: [FriendChatService.Friend]) -> [FriendRecord] {
         let today = todayDateKey()
-        let demos = existing.filter { $0.isDemo == true }
+        // Only the demo friends currently in the active list are carried
+        // over (one per code). `existing` also holds archived friends, and an
+        // archived demo used to be copied back in on every poll, so the demo
+        // friend multiplied with each refresh.
+        var seenDemoCodes = Set<String>()
+        let demos = activeDemos.filter { seenDemoCodes.insert($0.code).inserted }
         let mapped = remote.map { item -> FriendRecord in
             let hasFreshSharedStudyTime = item.studyDate == today && item.todayStudySeconds != nil
             let freshSeconds = hasFreshSharedStudyTime ? (item.todayStudySeconds ?? 0) : 0
@@ -857,6 +917,7 @@ final class FriendStore: ObservableObject {
                 updated.roomID = item.roomID
                 updated.todayStudySeconds = freshSeconds
                 updated.sharesStudyTime = hasFreshSharedStudyTime
+                updated.bio = item.bio
                 // `avatarData`/`avatarUpdatedAt` deliberately untouched here:
                 // they track what's actually cached, and this is a pure,
                 // synchronous merge that can't make the network call a
@@ -869,7 +930,7 @@ final class FriendStore: ObservableObject {
             return FriendRecord(
                 id: UUID(), name: item.name, code: item.code,
                 todayStudySeconds: freshSeconds, roomID: item.roomID,
-                isDemo: false, sharesStudyTime: hasFreshSharedStudyTime
+                isDemo: false, sharesStudyTime: hasFreshSharedStudyTime, bio: item.bio
             )
         }
         return demos + mapped
@@ -877,13 +938,29 @@ final class FriendStore: ObservableObject {
 
     private func applyRemoteFriends(_ remote: [FriendChatService.Friend]) {
         let serverCodes = Set(remote.map(\.code))
-        locallyRemovedCodes.formIntersection(serverCodes)
+        let now = Date()
+        for code in locallyRemovedCodes where !serverCodes.contains(code) {
+            let removedAt = locallyRemovedTimes[code] ?? .distantPast
+            if now.timeIntervalSince(removedAt) >= removalTombstoneGrace {
+                clearRemovalTombstone(code)
+            }
+        }
         let visibleRemote = remote.filter { !locallyRemovedCodes.contains($0.code) }
         let visibleCodes = Set(visibleRemote.map(\.code))
         let removed = friends.filter { $0.isDemo != true && !visibleCodes.contains($0.code) }
         for friend in removed { archiveFriend(friend) }
-        friends = Self.mergedFriends(existing: friends + archivedFriends, remote: visibleRemote)
+        friends = Self.mergedFriends(existing: friends + archivedFriends, activeDemos: friends.filter { $0.isDemo == true }, remote: visibleRemote)
         archivedFriends.removeAll { visibleCodes.contains($0.code) }
+    }
+
+    private func markLocallyRemoved(_ code: String) {
+        locallyRemovedCodes.insert(code)
+        locallyRemovedTimes[code] = Date()
+    }
+
+    private func clearRemovalTombstone(_ code: String) {
+        locallyRemovedCodes.remove(code)
+        locallyRemovedTimes.removeValue(forKey: code)
     }
 
     private func archiveFriend(_ friend: FriendRecord) {
@@ -905,20 +982,61 @@ final class FriendStore: ObservableObject {
     }
 
     @discardableResult
+    func removeFriend(_ friend: FriendRecord) async -> Bool {
+        if friend.isDemo == true {
+            // A demo friend has no server-side room or history to keep, so
+            // it is dropped outright instead of archived.
+            unreadCounts.removeValue(forKey: friend.id)
+            if activeFriendID == friend.id { activeFriendID = nil }
+            friends.removeAll { $0.isDemo == true && $0.code == friend.code }
+            return true
+        }
+        guard let roomID = friend.roomID else { return false }
+        return await removeFriend(.init(code: friend.code, name: friend.name, roomID: roomID))
+    }
+
+    @discardableResult
     func removeFriend(_ contact: FriendChatService.BlockedContact) async -> Bool {
         guard friends.contains(where: { $0.code == contact.code }),
               !pendingRemovalCodes.contains(contact.code) else { return false }
         pendingRemovalCodes.insert(contact.code)
         defer { pendingRemovalCodes.remove(contact.code) }
+        // Hide the friend immediately instead of after the server round trip,
+        // and invalidate any friends poll already in flight so its
+        // pre-removal snapshot cannot bring them back. Rolled back below if
+        // the server does not confirm.
+        let previousIndex = friends.firstIndex(where: { $0.code == contact.code })
+        let previousFriend = previousIndex.map { friends[$0] }
+        let previousUnread = previousFriend.flatMap { unreadCounts[$0.id] }
+        let previousArchived = archivedFriends.first(where: { $0.code == contact.code })
+        let previousActiveID = activeFriendID
+        let hadTombstone = locallyRemovedCodes.contains(contact.code)
+        let previousRemovedAt = locallyRemovedTimes[contact.code]
+        friendsGeneration += 1
+        markLocallyRemoved(contact.code)
+        if let previousFriend { archiveFriend(previousFriend) }
         do {
             _ = try await client.removeFriend(code: contact.code)
-            locallyRemovedCodes.insert(contact.code)
-            if let friend = friends.first(where: { $0.code == contact.code }) {
-                archiveFriend(friend)
-            }
+            friendsGeneration += 1
+            markLocallyRemoved(contact.code)
             await refreshBlockedContacts()
             return true
         } catch {
+            friendsGeneration += 1
+            if !hadTombstone {
+                clearRemovalTombstone(contact.code)
+            } else if let previousRemovedAt {
+                locallyRemovedTimes[contact.code] = previousRemovedAt
+            } else {
+                locallyRemovedTimes.removeValue(forKey: contact.code)
+            }
+            archivedFriends.removeAll { $0.code == contact.code }
+            if let previousArchived { archivedFriends.append(previousArchived) }
+            if let previousFriend, !friends.contains(where: { $0.code == contact.code }) {
+                friends.insert(previousFriend, at: min(previousIndex ?? friends.count, friends.count))
+                if let previousUnread { unreadCounts[previousFriend.id] = previousUnread }
+                if previousActiveID == previousFriend.id { activeFriendID = previousActiveID }
+            }
             errorMessage = "フレンドを削除できませんでした。もう一度お試しください。"
             return false
         }
@@ -950,12 +1068,12 @@ final class FriendStore: ObservableObject {
                 // A new friendship reopened this retained room. Allow the
                 // archived contact back even if an earlier friends-list
                 // response was still showing the just-deleted relationship.
-                locallyRemovedCodes.remove(archived.code)
+                clearRemovalTombstone(archived.code)
                 await refreshFriends()
             }
             guard let friend = friends.first(where: { $0.roomID == state.roomID }) else { continue }
             if state.closed == true {
-                locallyRemovedCodes.insert(friend.code)
+                markLocallyRemoved(friend.code)
                 archiveFriend(friend)
                 continue
             }
@@ -1322,6 +1440,9 @@ final class FriendStore: ObservableObject {
               !friends.contains(where: { $0.code == code }) else { return false }
         do {
             _ = try await client.add(code: code)
+            // Deliberately re-adding someone removed earlier: lift the
+            // removal tombstone so the renewed friendship is not hidden.
+            clearRemovalTombstone(code)
             errorMessage = ""
             // Just the outgoing list (the new pending request) and friends
             // (in case the server reports already_friends) need updating —
@@ -1349,6 +1470,8 @@ final class FriendStore: ObservableObject {
             defer { pendingRequestActions.remove(request.code) }
             do {
                 let friend = try await client.accept(code: request.code)
+                clearRemovalTombstone(friend.code)
+                archivedFriends.removeAll { $0.code == friend.code }
                 // A refresh() landing in between the request and this
                 // response can result in this friend already being present
                 // — don't add a second, duplicate entry.
@@ -1503,6 +1626,8 @@ final class FriendStore: ObservableObject {
         Task {
             do {
                 let result = try await client.addViaLink(token: token)
+                clearRemovalTombstone(result.code)
+                archivedFriends.removeAll { $0.code == result.code }
                 if !friends.contains(where: { $0.code == result.code }) {
                     friends.append(FriendRecord(id: UUID(), name: result.name, code: result.code, todayStudySeconds: 0, roomID: result.roomID, isDemo: false, sharesStudyTime: false))
                 }
@@ -1724,8 +1849,11 @@ final class FriendStore: ObservableObject {
     }
 
     func block(_ friend: FriendRecord) {
-        guard let roomID = friends.first(where: { $0.id == friend.id })?.roomID else { return }
+        guard let roomID = friends.first(where: { $0.id == friend.id })?.roomID,
+              !pendingBlockRoomIDs.contains(roomID) else { return }
+        pendingBlockRoomIDs.insert(roomID)
         Task {
+            defer { pendingBlockRoomIDs.remove(roomID) }
             do {
                 _ = try await client.block(roomID: roomID)
                 blockedByMeRoomIDs.insert(roomID)
@@ -1737,8 +1865,11 @@ final class FriendStore: ObservableObject {
     }
 
     func unblock(_ friend: FriendRecord) {
-        guard let roomID = friends.first(where: { $0.id == friend.id })?.roomID else { return }
+        guard let roomID = friends.first(where: { $0.id == friend.id })?.roomID,
+              !pendingBlockRoomIDs.contains(roomID) else { return }
+        pendingBlockRoomIDs.insert(roomID)
         Task {
+            defer { pendingBlockRoomIDs.remove(roomID) }
             do {
                 _ = try await client.unblock(roomID: roomID)
                 blockedByMeRoomIDs.remove(roomID)
@@ -2107,11 +2238,14 @@ struct FriendsHomeView: View {
     // reading them only there.
     @AppStorage("profileName") private var profileName = ""
     @AppStorage("profileImage") private var profileImageData = Data()
+    @AppStorage("profileBio") private var profileBio = ""
     @State private var showsAdd = false
     @State private var showsCreateGroup = false
     @State private var selection: FriendsDetailSelection = .chats
     @State private var popover: FriendsPopover?
     @State private var pendingReportIssue: PendingIssueReport?
+    @State private var friendToRemove: FriendRecord?
+    @State private var friendToBlock: FriendRecord?
 
     private enum FriendsDetailSelection: Hashable {
         case chats
@@ -2125,7 +2259,6 @@ struct FriendsHomeView: View {
         case profile(UUID)
         case group(String)
         case settings
-        case groupInvites
 
         var id: String {
             switch self {
@@ -2134,7 +2267,6 @@ struct FriendsHomeView: View {
             case .profile(let id): return "profile-\(id.uuidString)"
             case .group(let roomID): return "group-\(roomID)"
             case .settings: return "settings"
-            case .groupInvites: return "groupInvites"
             }
         }
     }
@@ -2168,6 +2300,34 @@ struct FriendsHomeView: View {
         .sheet(isPresented: $showsAdd) { AddFriendView(store: store) }
         .sheet(isPresented: $showsCreateGroup) { CreateGroupView(store: store) }
         .sheet(item: $pendingReportIssue) { pending in ReportIssueSheet(capturedScreenshot: pending.screenshot) }
+        .confirmationDialog("フレンドを削除しますか？", isPresented: Binding(
+            get: { friendToRemove != nil },
+            set: { if !$0 { friendToRemove = nil } }
+        ), titleVisibility: .visible) {
+            if let friend = friendToRemove {
+                Button("削除する", role: .destructive) {
+                    friendToRemove = nil
+                    Task { _ = await store.removeFriend(friend) }
+                }
+            }
+            Button("キャンセル", role: .cancel) { friendToRemove = nil }
+        } message: {
+            Text("\(friendToRemove?.name ?? "")さんをフレンドから削除します。過去のやり取りは残ります。")
+        }
+        .confirmationDialog("フレンドをブロックしますか？", isPresented: Binding(
+            get: { friendToBlock != nil },
+            set: { if !$0 { friendToBlock = nil } }
+        ), titleVisibility: .visible) {
+            if let friend = friendToBlock {
+                Button("ブロックする", role: .destructive) {
+                    store.block(friend)
+                    friendToBlock = nil
+                }
+            }
+            Button("キャンセル", role: .cancel) { friendToBlock = nil }
+        } message: {
+            Text("ブロックすると、相手からのメッセージが届かなくなります。相手には通知されません。")
+        }
         .sheet(item: $popover) { item in
             NavigationStack {
                 popoverContent(for: item)
@@ -2218,6 +2378,11 @@ struct FriendsHomeView: View {
         .onChange(of: shareStudyTime) { _, newValue in
             store.reportMyStudyTime(myStudySeconds, sharesStudyTime: newValue)
         }
+        .task(id: profileName + "\u{0}" + profileBio) {
+            do { try await Task.sleep(for: .milliseconds(600)) } catch { return }
+            await store.refresh()
+        }
+        .task(id: profileImageData) { await store.syncMyAvatarIfNeeded() }
         // store.errorMessage was previously set by add/accept/reject but
         // never shown anywhere — this is the first surface that renders
         // it. FriendsHomeView stays visible underneath the add-friend
@@ -2298,24 +2463,10 @@ struct FriendsHomeView: View {
             Section {
                 Button { popover = .requests } label: {
                     HStack {
-                        Label("フレンド申請", systemImage: "person.badge.clock")
+                        Label("申請・招待", systemImage: "tray")
                         Spacer()
-                        if !store.incomingRequests.isEmpty {
-                            Text("\(store.incomingRequests.count)")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(Color.red, in: Capsule())
-                        }
-                    }
-                }
-                Button { popover = .groupInvites } label: {
-                    HStack {
-                        Label("グループ招待", systemImage: "person.3.sequence")
-                        Spacer()
-                        if !store.incomingGroupInvites.isEmpty {
-                            Text("\(store.incomingGroupInvites.count)")
+                        if store.incomingRequests.count + store.incomingGroupInvites.count > 0 {
+                            Text("\(store.incomingRequests.count + store.incomingGroupInvites.count)")
                                 .font(.caption2.weight(.bold))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 7)
@@ -2333,6 +2484,27 @@ struct FriendsHomeView: View {
                             profile: FriendProfile(friend: friend, blockedByMeRoomIDs: store.blockedByMeRoomIDs),
                             unreadCount: store.unreadCounts[friend.id, default: 0]
                         )
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) { friendToRemove = friend } label: {
+                            Label("削除", systemImage: "trash")
+                        }
+                        .disabled(store.pendingRemovalCodes.contains(friend.code))
+                        if friend.isDemo != true, let roomID = friend.roomID {
+                            if store.blockedByMeRoomIDs.contains(roomID) {
+                                Button { store.unblock(friend) } label: {
+                                    Label("ブロック解除", systemImage: "checkmark.circle")
+                                }
+                                .tint(.orange)
+                                .disabled(store.pendingBlockRoomIDs.contains(roomID))
+                            } else {
+                                Button { friendToBlock = friend } label: {
+                                    Label("ブロック", systemImage: "nosign")
+                                }
+                                .tint(.orange)
+                                .disabled(store.pendingBlockRoomIDs.contains(roomID))
+                            }
+                        }
                     }
                 }
                 if store.friends.isEmpty {
@@ -2434,8 +2606,6 @@ struct FriendsHomeView: View {
             MyFriendCardPopover(myCode: store.myCode, myStudySeconds: myStudySeconds, sharesStudyTime: shareStudyTime)
         case .requests:
             FriendRequestsPopover(store: store)
-        case .groupInvites:
-            GroupInvitesPopover(store: store)
         case .profile(let id):
             if let friend = store.friends.first(where: { $0.id == id }) {
                 FriendProfileView(
@@ -2561,16 +2731,16 @@ private struct FriendRequestsPopover: View {
                     }
                 }
             }
+            groupInvites
         }
-        .navigationTitle("フレンド申請")
+        .navigationTitle("申請・招待")
+        .task {
+            await store.refreshIncomingRequests()
+            await store.refreshGroupInvites()
+        }
     }
-}
 
-private struct GroupInvitesPopover: View {
-    @ObservedObject var store: FriendStore
-
-    var body: some View {
-        List {
+    @ViewBuilder private var groupInvites: some View {
             if store.incomingGroupInvites.isEmpty {
                 ContentUnavailableView("グループ招待はありません", systemImage: "person.3.sequence")
             } else {
@@ -2602,8 +2772,6 @@ private struct GroupInvitesPopover: View {
                     }
                 }
             }
-        }
-        .navigationTitle("グループ招待")
     }
 }
 
@@ -2818,6 +2986,13 @@ private struct FriendProfileView: View {
                 LabeledContent("フレンドコード", value: profile.code)
                 if profile.isDemo {
                     LabeledContent("種類", value: "デモフレンド")
+                }
+            }
+            Section("自己紹介") {
+                if let bio = profile.bio, !bio.isEmpty {
+                    Text(bio).textSelection(.enabled)
+                } else {
+                    Text("自己紹介はまだありません").foregroundStyle(.secondary)
                 }
             }
             Section {
@@ -3891,6 +4066,7 @@ struct FriendChatView: View {
     @State private var showsBlockConfirmation = false
     @State private var reportingMessage: FriendMessage?
     @State private var scrollRequest = 0
+    @State private var showsFriendProfile = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -4058,6 +4234,21 @@ struct FriendChatView: View {
         }
         .navigationTitle(currentFriend.name)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showsFriendProfile) {
+            NavigationStack {
+                FriendProfileView(
+                    profile: FriendProfile(friend: currentFriend, blockedByMeRoomIDs: store.blockedByMeRoomIDs),
+                    friend: currentFriend,
+                    store: store,
+                    openChat: { showsFriendProfile = false }
+                )
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("閉じる") { showsFriendProfile = false }
+                    }
+                }
+            }
+        }
         .toolbar {
             if let onBack {
                 ToolbarItem(placement: .topBarLeading) {
@@ -4265,6 +4456,7 @@ struct FriendChatView: View {
             ?? store.friends.first(where: { $0.roomID != nil && $0.roomID == friend.roomID })
             ?? store.friends.first(where: { $0.code == friend.code && $0.roomID != nil })
             ?? store.friends.first(where: { $0.code == friend.code })
+            ?? store.archivedFriends.first(where: { $0.id == friend.id })
             ?? friend
     }
 
@@ -4431,8 +4623,13 @@ struct FriendChatView: View {
             HStack(alignment: .top, spacing: 8) {
             if message.isMine { Spacer(minLength: 54) }
             if !message.isMine {
-                FriendAvatarView(avatarData: friend.avatarData, iconSystemName: "person.crop.circle.fill", size: 30)
-                    .padding(.top, 4)
+                Button { showsFriendProfile = true } label: {
+                    FriendAvatarView(avatarData: currentFriend.avatarData, iconSystemName: "person.crop.circle.fill", size: 30)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(currentFriend.name)さんのプロフィール")
+                .accessibilityIdentifier("friend-chat-profile")
             }
             VStack(alignment: message.isMine ? .trailing : .leading, spacing: 4) {
                 if !parts.body.isEmpty {

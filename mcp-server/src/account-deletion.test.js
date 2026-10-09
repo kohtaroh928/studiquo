@@ -5,6 +5,7 @@ import { deleteAccount } from "./account-deletion.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 import worker from "./app.js";
 import { mintSession } from "./session.js";
+import { accountGenerationMethods } from "./test-account-generations.js";
 
 function environment() {
   const values = new Map();
@@ -454,7 +455,9 @@ test("49. KV削除が途中で失敗しても再実行できる", async () => {
   assert.notEqual(await env.STUDIQUO_DATA.get("snapshot:failure-token-49"), null);
   await deleteAccount(env, canonical);
   assert.equal(await env.STUDIQUO_DATA.get("snapshot:failure-token-49"), null);
-  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted", identityKeys: [canonical] });
+  const state = await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json");
+  assert.ok(Number.isFinite(state.deletedAt) && state.deletedAt <= Date.now());
+  assert.deepEqual(state, { status: "deleted", deletedAt: state.deletedAt, identityKeys: [canonical] });
 });
 
 test("50. Durable Objectの削除処理が途中で失敗しても再実行できる", async () => {
@@ -506,7 +509,9 @@ test("52. 同じ削除要求を2回送っても安全", async () => {
   assert.deepEqual(await deleteAccount(env, canonical), { deleted: true });
   assert.deepEqual(await deleteAccount(env, canonical), { deleted: true });
   assert.equal(await env.STUDIQUO_DATA.get(`account:${canonical}`), null);
-  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted", identityKeys: [canonical] });
+  const state = await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json");
+  assert.ok(Number.isFinite(state.deletedAt) && state.deletedAt <= Date.now());
+  assert.deepEqual(state, { status: "deleted", deletedAt: state.deletedAt, identityKeys: [canonical] });
 });
 
 test("53. 同時に2回削除してもデータが復活しない", async () => {
@@ -601,4 +606,149 @@ test("56. タイムアウト後に再試行すると残りを削除できる", a
   await deleteAccount(env, canonical);
   assert.equal(await env.STUDIQUO_DATA.get("snapshot:timeout-token-56"), null);
   assert.equal((await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json")).status, "deleted");
+});
+
+// A RATE_COUNTER double that records what happens to each named object, with
+// the same contracts as the real one for the methods deletion uses.
+function fakeRateCounter(env, { failPurgeOnce = false } = {}) {
+  const generations = new Map();
+  const purged = [];
+  const retired = new Map();
+  const log = [];
+  let shouldFail = failPurgeOnce;
+  return {
+    purged, retired, generations, log,
+    getByName(name) {
+      return {
+        ...accountGenerationMethods(name, generations, () => env.STUDIQUO_DATA),
+        async retireAccountGeneration(ttlSeconds) {
+          // Retired before the account's own keys are touched.
+          log.push({ call: "retire", name, accountStillThere: (await env.STUDIQUO_DATA.get("account:local:local@example.com")) !== null });
+          generations.set(name, (generations.get(name) ?? 0) + 1);
+          retired.set(name, ttlSeconds);
+        },
+        async purgeAll() {
+          log.push({ call: "purge", name, accountStillThere: (await env.STUDIQUO_DATA.get("account:local:local@example.com")) !== null });
+          if (shouldFail) { shouldFail = false; throw new Error("DO down"); }
+          purged.push(name);
+        },
+      };
+    },
+  };
+}
+
+const sha = value => createHash("sha256").update(value).digest("hex");
+
+test("退会後に、進行中のパスワードハッシュのアップグレードがローカルアカウントを復活させない", async () => {
+  const env = environment();
+  env.RATE_COUNTER = fakeRateCounter(env);
+  await seedLinked(env, "email:local@example.com", "local@example.com", [{ provider: "email", sub: "local@example.com" }]);
+  await env.STUDIQUO_DATA.put("account:local:local@example.com", JSON.stringify({ gen: 3 }));
+  const stub = env.RATE_COUNTER.getByName(`account-gen:${sha("local@example.com")}`);
+  for (let i = 0; i < 3; i++) await stub.nextAccountGeneration();
+
+  await deleteAccount(env, "email:local@example.com");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:local@example.com"), null);
+
+  // The login that started before the deletion now tries to land its upgrade.
+  assert.equal(await stub.upgradeAccountIfCurrent("account:local:local@example.com", "{\"algo\":\"argon2id\"}", 3), false);
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:local@example.com"), null);
+});
+
+test("退会は、メールに紐づく国・失敗回数・通知枠・コード試行のDurable Objectを消し、世代は期限付きで残す", async () => {
+  const env = environment();
+  env.RATE_COUNTER = fakeRateCounter(env);
+  await seedLinked(env, "email:local@example.com", "local@example.com", [{ provider: "email", sub: "local@example.com" }]);
+  await env.STUDIQUO_DATA.put("account:local:local@example.com", "{}");
+
+  await deleteAccount(env, "email:local@example.com");
+
+  const hash = sha("local@example.com");
+  for (const name of ["login-seen", "login-fail-account", "login-notice", "email-code-send", "email-code-confirm"]) {
+    assert.ok(env.RATE_COUNTER.purged.includes(`${name}:${hash}`), `${name} should be purged`);
+  }
+  // The generation is retired with a bounded lifetime, never purged outright.
+  assert.ok(!env.RATE_COUNTER.purged.includes(`account-gen:${hash}`));
+  assert.equal(env.RATE_COUNTER.retired.get(`account-gen:${hash}`), 7 * 86_400);
+  assert.ok(env.RATE_COUNTER.generations.get(`account-gen:${hash}`) >= 1);
+  assert.ok(env.RATE_COUNTER.purged.every(name => name.endsWith(`:${hash}`)), "nothing belonging to anyone else");
+});
+
+test("退会は、連携した別のメールアドレス分のDurable Objectも消し、他人のものには触れない", async () => {
+  const env = environment();
+  env.RATE_COUNTER = fakeRateCounter(env);
+  await seedLinked(env, "apple:a-1", "owner@example.com", [{ provider: "apple", sub: "a-1" }, { provider: "email", sub: "owner@example.com" }]);
+  await env.STUDIQUO_DATA.put("account:local:owner@example.com", "{}");
+  await seedLinked(env, "apple:b-1", "someone-else@example.com", [{ provider: "apple", sub: "b-1" }]);
+
+  await deleteAccount(env, "apple:a-1");
+
+  assert.ok(env.RATE_COUNTER.purged.includes(`login-seen:${sha("owner@example.com")}`));
+  assert.ok(env.RATE_COUNTER.purged.every(name => !name.endsWith(sha("someone-else@example.com"))));
+});
+
+test("退会の再実行でも、同じ後始末が冪等に完了する", async () => {
+  const env = environment();
+  env.RATE_COUNTER = fakeRateCounter(env);
+  await seedLinked(env, "email:local@example.com", "local@example.com", [{ provider: "email", sub: "local@example.com" }]);
+  await env.STUDIQUO_DATA.put("account:local:local@example.com", "{}");
+  await deleteAccount(env, "email:local@example.com");
+  await deleteAccount(env, "email:local@example.com");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:local@example.com"), null);
+});
+
+test("退会は、RATE_COUNTERが無い環境でもローカルアカウントを削除できる", async () => {
+  const env = environment();
+  await seedLinked(env, "email:local@example.com", "local@example.com", [{ provider: "email", sub: "local@example.com" }]);
+  await env.STUDIQUO_DATA.put("account:local:local@example.com", "{}");
+  await deleteAccount(env, "email:local@example.com");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:local@example.com"), null);
+});
+
+test("退会は、世代の退役を先に、残りのDO削除を本体の削除の後に行う", async () => {
+  const env = environment();
+  env.RATE_COUNTER = fakeRateCounter(env);
+  await seedLinked(env, "email:local@example.com", "local@example.com", [{ provider: "email", sub: "local@example.com" }]);
+  await env.STUDIQUO_DATA.put("account:local:local@example.com", "{}");
+
+  await deleteAccount(env, "email:local@example.com");
+
+  const retire = env.RATE_COUNTER.log.filter(entry => entry.call === "retire");
+  const purge = env.RATE_COUNTER.log.filter(entry => entry.call === "purge");
+  assert.ok(retire.length > 0 && purge.length > 0);
+  assert.ok(retire.every(entry => entry.accountStillThere), "generation retired while the account still exists");
+  assert.ok(purge.every(entry => !entry.accountStillThere), "the rest only after the account is gone");
+});
+
+test("退会の途中でDO削除が失敗しても、本体は消え、再実行で残りが完了する", async () => {
+  const env = environment();
+  env.RATE_COUNTER = fakeRateCounter(env, { failPurgeOnce: true });
+  await seedLinked(env, "email:local@example.com", "local@example.com", [{ provider: "email", sub: "local@example.com" }]);
+  await env.STUDIQUO_DATA.put("account:local:local@example.com", "{}");
+  await env.STUDIQUO_DATA.put("email-verify:local@example.com", "{}");
+
+  await assert.rejects(() => deleteAccount(env, "email:local@example.com"), /DO down/);
+  // The account itself is already gone, not held up behind the failure.
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:local@example.com"), null);
+  assert.equal(await env.STUDIQUO_DATA.get("email-verify:local@example.com"), null);
+  assert.ok(await env.STUDIQUO_DATA.get(`privacy-account-delete:${sha("email:local@example.com")}`) !== null, "the job is still pending, so it will be retried");
+
+  await deleteAccount(env, "email:local@example.com");
+  const hash = sha("local@example.com");
+  for (const name of ["login-seen", "login-fail-account", "login-notice", "email-code-send", "email-code-confirm"]) {
+    assert.ok(env.RATE_COUNTER.purged.includes(`${name}:${hash}`), name);
+  }
+  assert.equal(await env.STUDIQUO_DATA.get(`privacy-account-delete:${sha("email:local@example.com")}`), null);
+});
+
+test("退会は、大文字小文字の違うメールアドレスでも、同じ小文字ハッシュのDOを対象にする", async () => {
+  const env = environment();
+  env.RATE_COUNTER = fakeRateCounter(env);
+  await seedLinked(env, "email:mixed@example.com", "mixed@example.com", [{ provider: "email", sub: "Mixed@Example.com" }]);
+  await env.STUDIQUO_DATA.put("account:local:Mixed@Example.com", "{}");
+
+  await deleteAccount(env, "email:mixed@example.com");
+
+  assert.ok(env.RATE_COUNTER.purged.includes(`login-seen:${sha("mixed@example.com")}`));
+  assert.ok(!env.RATE_COUNTER.purged.some(name => name.endsWith(sha("Mixed@Example.com"))));
 });

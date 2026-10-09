@@ -28,6 +28,11 @@ final class AuthenticationStore: ObservableObject {
 
     @Published private(set) var state: State = .needsLogin
     @Published var errorMessage = ""
+    /// Set when the server refused the sign-up/reset password as one found in a
+    /// known data breach. The emailed code was NOT used up, so the verification
+    /// screen asks for a different password and retries with the same code
+    /// (`changePendingPassword(_:code:)`) instead of starting over.
+    @Published private(set) var needsNewPassword = false
     /// UI tests sign in without a real token, so every server call 401s;
     /// they set this so only an explicit logout ends the session.
     var ignoresAuthFailures = false
@@ -48,6 +53,10 @@ final class AuthenticationStore: ObservableObject {
     private let unregisterPushDevice: () async -> Void
     private let revokeCloudCredentials: () async -> Void
     private let deleteAccountOnServer: () async throws -> Void
+    private let authenticationSession: URLSession
+    private var authenticationEndpoint: URL {
+        MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)!
+    }
     /// Email + new password held only in memory between `beginAccountCreation`
     /// and a successful `confirmEmailVerification` — nothing is written to
     /// Keychain until the code is confirmed, so an abandoned sign-up (or
@@ -73,7 +82,8 @@ final class AuthenticationStore: ObservableObject {
         defaults: UserDefaults = .standard,
         unregisterPushDevice: @escaping () async -> Void = { await PushNotificationRegistration.unregisterCurrentDevice() },
         revokeCloudCredentials: @escaping () async -> Void = { await MCPCloudCredentials.revoke() },
-        deleteAccountOnServer: @escaping () async throws -> Void = { try await AccountDeletionService.deleteAccount() }
+        deleteAccountOnServer: @escaping () async throws -> Void = { try await AccountDeletionService.deleteAccount() },
+        authenticationSession: URLSession = .shared
     ) {
         self.service = service
         self.now = now
@@ -81,6 +91,7 @@ final class AuthenticationStore: ObservableObject {
         self.unregisterPushDevice = unregisterPushDevice
         self.revokeCloudCredentials = revokeCloudCredentials
         self.deleteAccountOnServer = deleteAccountOnServer
+        self.authenticationSession = authenticationSession
         restore()
         authFailureSubscription = NotificationCenter.default.publisher(for: .studiquoAuthFailed)
             .receive(on: DispatchQueue.main)
@@ -116,8 +127,9 @@ final class AuthenticationStore: ObservableObject {
         isEmailVerifyBusy = true
         defer { isEmailVerifyBusy = false }
         do {
-            try await EmailVerificationService.sendCode(email: normalized)
+            try await EmailVerificationService.sendCode(email: normalized, endpoint: authenticationEndpoint, session: authenticationSession)
             pendingSignUp = (normalized, password)
+            needsNewPassword = false
             errorMessage = ""
             state = .verifyingEmail
             return true
@@ -141,7 +153,7 @@ final class AuthenticationStore: ObservableObject {
         isLoginBusy = true
         defer { isLoginBusy = false }
         do {
-            let token = try await LocalAuthService.login(email: normalized, password: password)
+            let token = try await loginRetryingWhileServerBusy(email: normalized, password: password)
             MCPCloudCredentials.save(token)
             persistOAuthIdentity(provider: "email", subject: normalized, email: normalized)
             createSession()
@@ -149,9 +161,44 @@ final class AuthenticationStore: ObservableObject {
             errorMessage = ""
             state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
+        } catch let error as LocalAuthError {
+            // A wait or a busy server says nothing about the password, so it
+            // must not read as "wrong password".
+            switch error {
+            case .tooManyAttempts, .serverBusy: errorMessage = error.localizedDescription
+            case .rejected: errorMessage = "メールアドレスまたはパスワードが違います。"
+            }
+            return false
         } catch {
             errorMessage = "メールアドレスまたはパスワードが違います。"
             return false
+        }
+    }
+
+    /// How many times a "server busy" answer is retried on its own, and how
+    /// long (at most) to pause first. A busy answer means the password was not
+    /// even checked or counted, so trying again is safe and the person
+    /// usually never sees it.
+    static let busyRetryLimit = 2
+    static let busyRetryDelayRange: ClosedRange<TimeInterval> = 1...5
+
+    /// How to pause between those retries; replaceable so tests need not wait.
+    var pauseBeforeRetry: (TimeInterval) async -> Void = { seconds in
+        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    }
+
+    private func loginRetryingWhileServerBusy(email: String, password: String) async throws -> String {
+        var retries = 0
+        while true {
+            do {
+                return try await LocalAuthService.login(email: email, password: password,
+                    randomValue: MCPCloudCredentials.makeRandomValue(),
+                    endpoint: authenticationEndpoint, session: authenticationSession)
+            } catch LocalAuthError.serverBusy(let retryAfter) where retries < Self.busyRetryLimit {
+                retries += 1
+                let delay = min(max(retryAfter ?? 2, Self.busyRetryDelayRange.lowerBound), Self.busyRetryDelayRange.upperBound)
+                await pauseBeforeRetry(delay)
+            }
         }
     }
 
@@ -244,7 +291,7 @@ final class AuthenticationStore: ObservableObject {
         isEmailVerifyBusy = true
         defer { isEmailVerifyBusy = false }
         do {
-            try await EmailVerificationService.sendCode(email: pending.email)
+            try await EmailVerificationService.sendCode(email: pending.email, endpoint: authenticationEndpoint, session: authenticationSession)
             errorMessage = ""
             return true
         } catch {
@@ -263,7 +310,8 @@ final class AuthenticationStore: ObservableObject {
         do {
             let token = try await EmailVerificationService.confirmCode(
                 email: pending.email, code: code, password: pending.password,
-                randomValue: MCPCloudCredentials.makeRandomValue()
+                randomValue: MCPCloudCredentials.makeRandomValue(),
+                endpoint: authenticationEndpoint, session: authenticationSession
             )
             // The user may have tapped キャンセル (or started a different
             // sign-up) while the request above was in flight — don't
@@ -272,15 +320,41 @@ final class AuthenticationStore: ObservableObject {
             MCPCloudCredentials.save(token)
             persistOAuthIdentity(provider: "email", subject: pending.email, email: pending.email)
             pendingSignUp = nil
+            needsNewPassword = false
             createSession()
             syncRevenueCatIdentity(provider: "email", subject: pending.email)
             errorMessage = ""
             state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
             return true
         } catch {
+            // Only meaningful for the sign-up still in progress.
+            if case EmailVerificationError.passwordBreached = error, pendingSignUp?.email == pending.email {
+                needsNewPassword = true
+            }
             errorMessage = error.localizedDescription
             return false
         }
+    }
+
+    /// Replaces the sign-up/reset password the server refused (a known
+    /// breached one) and confirms again with the same `code`, which the server
+    /// left unspent. Returns true once signed in.
+    func changePendingPassword(_ newPassword: String, code: String) async -> Bool {
+        guard needsNewPassword, let pending = pendingSignUp else { return false }
+        guard newPassword.count >= 8, newPassword.count <= 1_024 else {
+            errorMessage = "パスワードは8文字以上にしてください。"
+            return false
+        }
+        guard newPassword != pending.password else {
+            errorMessage = "同じパスワードです。別のパスワードを入力してください。"
+            return false
+        }
+        pendingSignUp = (pending.email, newPassword)
+        // The new password is not a refused one, so any failure from here on
+        // (a mistyped code, no connection) is an ordinary one: back to the plain
+        // confirm button. A second breached answer turns this on again.
+        needsNewPassword = false
+        return await confirmEmailVerification(code: code)
     }
 
     /// Abandons the sign-up/reset in progress and returns to the login screen
@@ -291,6 +365,7 @@ final class AuthenticationStore: ObservableObject {
     func cancelAccountCreation() {
         guard state == .verifyingEmail else { return }
         pendingSignUp = nil
+        needsNewPassword = false
         errorMessage = ""
         state = .needsLogin
     }
