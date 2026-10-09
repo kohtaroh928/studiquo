@@ -455,7 +455,7 @@ test("49. KV削除が途中で失敗しても再実行できる", async () => {
   assert.notEqual(await env.STUDIQUO_DATA.get("snapshot:failure-token-49"), null);
   await deleteAccount(env, canonical);
   assert.equal(await env.STUDIQUO_DATA.get("snapshot:failure-token-49"), null);
-  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted", identityKeys: [canonical] });
+  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted", generation: 0, identityHashes: [hash(canonical)] });
 });
 
 test("50. Durable Objectの削除処理が途中で失敗しても再実行できる", async () => {
@@ -507,7 +507,7 @@ test("52. 同じ削除要求を2回送っても安全", async () => {
   assert.deepEqual(await deleteAccount(env, canonical), { deleted: true });
   assert.deepEqual(await deleteAccount(env, canonical), { deleted: true });
   assert.equal(await env.STUDIQUO_DATA.get(`account:${canonical}`), null);
-  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted", identityKeys: [canonical] });
+  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted", generation: 0, identityHashes: [hash(canonical)] });
 });
 
 test("53. 同時に2回削除してもデータが復活しない", async () => {
@@ -747,4 +747,260 @@ test("退会は、大文字小文字の違うメールアドレスでも、同�
 
   assert.ok(env.RATE_COUNTER.purged.includes(`login-seen:${sha("mixed@example.com")}`));
   assert.ok(!env.RATE_COUNTER.purged.some(name => name.endsWith(sha("Mixed@Example.com"))));
+});
+
+// ---- Hardening from the 2026-10 reviews (M-1, M-2, M-3, M-A, M-B) ----
+
+function recordD1(env) {
+  const calls = [];
+  const original = env.ADMIN_DB;
+  env.ADMIN_DB = {
+    prepare(sql) {
+      const statement = original.prepare(sql);
+      return { bind(...args) { calls.push({ sql, args }); return statement.bind(...args); } };
+    },
+  };
+  return calls;
+}
+
+test("H-2. 連携アプリのgrantとトークンは、別名側のものも消え、受信箱の消去より先に消える", async () => {
+  const env = environment();
+  const alias = "google:alias-mcp";
+  await seedLinked(env, "apple-mcp", "mcp@example.com", [
+    { provider: "apple", sub: "apple-mcp" }, { provider: "google", sub: "alias-mcp" },
+  ]);
+  const clientId = "studiquo_" + "a".repeat(32);
+  const aliasGrant = `mcp:grant:${hash(alias)}:${hash(clientId)}`;
+  const aliasAccess = `mcp:access:${hash("alias-access")}`;
+  const aliasRefresh = `mcp:refresh:${hash("alias-refresh")}`;
+  const otherAccess = `mcp:access:${hash("other-access")}`;
+  await env.STUDIQUO_DATA.put(aliasGrant, "{}");
+  await env.STUDIQUO_DATA.put(aliasAccess, JSON.stringify({ sub: alias, clientId }));
+  await env.STUDIQUO_DATA.put(aliasRefresh, JSON.stringify({ sub: alias, clientId }));
+  await env.STUDIQUO_DATA.put(otherAccess, JSON.stringify({ sub: "someone-else", clientId }));
+  await env.STUDIQUO_DATA.put(`snapshot:${hash(`mcp-account:${alias}`)}`, "{}");
+
+  const purged = [];
+  env.MCP_INBOX = {
+    getByName(name) {
+      return {
+        async purge() {
+          // Credentials must already be gone when the inbox is emptied.
+          purged.push({ name, grantGone: (await env.STUDIQUO_DATA.get(aliasGrant)) === null, accessGone: (await env.STUDIQUO_DATA.get(aliasAccess)) === null });
+        },
+      };
+    },
+  };
+  await deleteAccount(env, "apple-mcp");
+
+  for (const key of [aliasGrant, aliasAccess, aliasRefresh, `snapshot:${hash(`mcp-account:${alias}`)}`]) {
+    assert.equal(await env.STUDIQUO_DATA.get(key), null, key);
+  }
+  assert.notEqual(await env.STUDIQUO_DATA.get(otherAccess), null);
+  assert.ok(purged.some(item => item.name === hash(`mcp-account:${alias}`)), "the alias's inbox is purged");
+  assert.ok(purged.every(item => item.grantGone && item.accessGone), "credentials are removed before any inbox purge");
+});
+
+test("H-3. 退会中・退会済みのアカウントの連携アプリのトークンは、期限前でも使えない", async () => {
+  const { externalSession } = await import("./mcp-oauth.js");
+  const env = environment();
+  const sub = "mcp-gone-sub";
+  const clientId = "studiquo_" + "b".repeat(32);
+  const token = "mcp_" + "c".repeat(40);
+  await env.STUDIQUO_DATA.put(`mcp:access:${hash(token)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read" }));
+  await env.STUDIQUO_DATA.put(`mcp:grant:${hash(sub)}:${hash(clientId)}`, "{}");
+  const ask = () => externalSession(env, new Request("https://example.test/mcp", { headers: { authorization: `Bearer ${token}` } }));
+
+  assert.equal((await ask())?.sub, sub, "works while the account is active");
+  for (const status of ["deleting", "deleted"]) {
+    await env.STUDIQUO_DATA.put(`account-deletion:${hash(sub)}`, JSON.stringify({ status }));
+    assert.equal(await ask(), null, status);
+  }
+  await env.STUDIQUO_DATA.delete(`account-deletion:${hash(sub)}`);
+  await env.STUDIQUO_DATA.put(`identity-canonical:${sub}`, "canonical-sub");
+  await env.STUDIQUO_DATA.put(`account-deletion:${hash("canonical-sub")}`, JSON.stringify({ status: "deleted" }));
+  assert.equal(await ask(), null, "judged by the canonical account too");
+});
+
+test("H-3b. 退会済みのアカウントのセッションは、削除マーカーが残っている間は使えない", async () => {
+  const { realSession } = await import("./session.js");
+  const env = environment();
+  const token = `${Math.floor(Date.now() / 1000)}.${"z".repeat(40)}`;
+  await env.STUDIQUO_DATA.put(`session:${hash(token)}`, JSON.stringify({ sub: "late-session-sub", issuedAt: Math.floor(Date.now() / 1000) }));
+  assert.notEqual(await realSession(env, token), null);
+  await env.STUDIQUO_DATA.put(`account-deletion:${hash("late-session-sub")}`, JSON.stringify({ status: "deleted" }));
+  assert.equal(await realSession(env, token), null);
+});
+
+test("M-1. 退会後に残る完了マーカーにメールアドレスは入らず、再登録で提携先の記録は消える", async () => {
+  const env = environment();
+  const email = "gone-forever@example.com";
+  const canonical = `email:${email}`;
+  await seedLinked(env, canonical, email, [{ provider: "email", sub: email }]);
+  await env.STUDIQUO_DATA.put(`account:local:${email}`, "{}");
+  const calls = recordD1(env);
+  await deleteAccount(env, canonical);
+
+  const finished = await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json");
+  assert.equal(finished.status, "deleted");
+  assert.deepEqual(finished.identityHashes, [hash(canonical)]);
+  assert.equal(JSON.stringify(finished).includes(email), false);
+  for (const [key, value] of env._values) {
+    if (key.startsWith("account-deletion:")) assert.equal(String(value).includes(email), false, key);
+  }
+
+  // Signing in again clears the provider-side records using those hashes.
+  await mintSession(env, canonical, "q".repeat(40));
+  const cleared = calls.find(call => call.sql.includes("DELETE FROM privacy_deleted_customers"));
+  assert.ok(cleared, "the deleted-customer record is cleared");
+  assert.ok(JSON.parse(cleared.args[0]).includes(hash(canonical)));
+});
+
+test("M-1b. 旧形式(identityKeys)の完了マーカーでも、再登録で提携先の記録を消せる", async () => {
+  const env = environment();
+  const calls = recordD1(env);
+  await env.STUDIQUO_DATA.put(`account-deletion:${hash("legacy-sub")}`, JSON.stringify({ status: "deleted", identityKeys: ["legacy-sub", "google:legacy-alias"] }));
+  await mintSession(env, "legacy-sub", "w".repeat(40));
+  const cleared = calls.find(call => call.sql.includes("DELETE FROM privacy_deleted_customers"));
+  assert.deepEqual(new Set(JSON.parse(cleared.args[0])), new Set([hash("legacy-sub"), hash("google:legacy-alias")]));
+});
+
+test("M-1c. 提携先(RevenueCat)への削除ジョブは期限付きで保存される", async () => {
+  const { queueRevenueCatDeletion } = await import("./privacy-retention.js");
+  const puts = [];
+  const env = { STUDIQUO_DATA: { async put(key, value, options) { puts.push({ key, options }); } } };
+  await queueRevenueCatDeletion(env, "email:x@example.com");
+  assert.equal(puts[0].options.expirationTtl, 90 * 86_400);
+});
+
+test("M-A. 再登録した新しいアカウントに、古い世代の退会ジョブは効かない(時計がずれていても)", async () => {
+  const env = environment();
+  const sub = "regen-sub";
+  await env.STUDIQUO_DATA.put(`account:${sub}`, "{}");
+  await deleteAccount(env, sub);
+  await mintSession(env, sub, "r".repeat(40));
+  const state = await env.STUDIQUO_DATA.get(`account-deletion:${hash(sub)}`, "json");
+  assert.equal(state.status, "active");
+  assert.equal(state.generation, 1);
+
+  // A leftover job from the first life, stamped far in the future: the clock
+  // alone would call it newer than the re-registration.
+  const jobKey = `privacy-account-delete:${hash(sub)}`;
+  await env.STUDIQUO_DATA.put(jobKey, JSON.stringify({ canonicalSub: sub, requestedAt: Date.now() + 86_400_000, generation: 0 }));
+  await env.STUDIQUO_DATA.put(`account:${sub}`, JSON.stringify({ new: true }));
+  assert.deepEqual(await deleteAccount(env, sub), { deleted: true });
+  assert.notEqual(await env.STUDIQUO_DATA.get(`account:${sub}`), null, "the new account survives");
+  assert.equal(await env.STUDIQUO_DATA.get(jobKey), null, "the stale job is cleared");
+
+  // A request made in the new life (generation 1) is honoured.
+  await env.STUDIQUO_DATA.put(jobKey, JSON.stringify({ canonicalSub: sub, requestedAt: 1, generation: 1 }));
+  await deleteAccount(env, sub);
+  assert.equal(await env.STUDIQUO_DATA.get(`account:${sub}`), null);
+});
+
+test("M-A2. 退会の最中に別の実行が終わって再登録された場合、遅れた実行は新しいアカウントに触れない", async () => {
+  const env = environment();
+  const sub = "race-sub";
+  await env.STUDIQUO_DATA.put(`account:${sub}`, "{}");
+  const stateKey = `account-deletion:${hash(sub)}`;
+  const original = env.STUDIQUO_DATA.list;
+  let flipped = false;
+  env.STUDIQUO_DATA.list = async options => {
+    // Part-way through the run, "another run finished and the person came back".
+    if (!flipped && options.prefix === "passkeys:credential:") {
+      flipped = true;
+      await env.STUDIQUO_DATA.put(stateKey, JSON.stringify({ status: "active", generation: 1, reregisteredAt: Date.now() }));
+      await env.STUDIQUO_DATA.put(`account:${sub}`, JSON.stringify({ new: true }));
+    }
+    return original(options);
+  };
+  assert.deepEqual(await deleteAccount(env, sub), { deleted: true });
+  assert.ok(flipped);
+  assert.deepEqual(await env.STUDIQUO_DATA.get(stateKey, "json") && (await env.STUDIQUO_DATA.get(stateKey, "json")).status, "active");
+  assert.notEqual(await env.STUDIQUO_DATA.get(`account:${sub}`), null, "the new account is not erased");
+});
+
+test("M-B. すでに新しいアカウントを始めた別名は、削除済みの顧客として記録されない", async () => {
+  const env = environment();
+  const alias = "google:reborn-alias";
+  await seedLinked(env, "apple-reborn", "reborn@example.com", [
+    { provider: "apple", sub: "apple-reborn" }, { provider: "google", sub: "reborn-alias" },
+  ]);
+  await env.STUDIQUO_DATA.put(`account-deletion:${hash(alias)}`, JSON.stringify({ status: "active", generation: 1, reregisteredAt: Date.now() }));
+  const calls = recordD1(env);
+  await deleteAccount(env, "apple-reborn");
+
+  const marked = calls.filter(call => call.sql.includes("INSERT OR IGNORE INTO privacy_deleted_customers")).map(call => call.args[0]);
+  assert.ok(marked.includes(hash("apple-reborn")));
+  assert.equal(marked.includes(hash(alias)), false);
+  assert.equal(await env.STUDIQUO_DATA.get(`privacy-rc-delete:${hash(alias)}`), null, "its provider record is not queued for erasure");
+  assert.notEqual(await env.STUDIQUO_DATA.get(`privacy-rc-delete:${hash("apple-reborn")}`), null);
+});
+
+test("M-A3. 遅れた実行が計画を書く前に再登録されていたら、'active'を'deleting'に戻さない", async () => {
+  const env = environment();
+  const sub = "clobber-sub";
+  await env.STUDIQUO_DATA.put(`account:${sub}`, "{}");
+  const stateKey = `account-deletion:${hash(sub)}`;
+  const original = env.STUDIQUO_DATA.list;
+  let flipped = false;
+  env.STUDIQUO_DATA.list = async options => {
+    // After the first checkpoint, before the plan is written: the person is back.
+    if (!flipped && options.prefix === "session:") {
+      flipped = true;
+      await env.STUDIQUO_DATA.put(stateKey, JSON.stringify({ status: "active", generation: 1, reregisteredAt: Date.now() }));
+      await env.STUDIQUO_DATA.put(`account:${sub}`, JSON.stringify({ new: true }));
+    }
+    return original(options);
+  };
+  await deleteAccount(env, sub);
+  assert.ok(flipped);
+  assert.equal((await env.STUDIQUO_DATA.get(stateKey, "json")).status, "active");
+  assert.notEqual(await env.STUDIQUO_DATA.get(`account:${sub}`), null);
+});
+
+test("M-A4. 負けた実行は、すでに'deleted'の別名を'deleting'に書き換えない", async () => {
+  const env = environment();
+  const alias = "google:stuck-alias";
+  await seedLinked(env, "apple-stuck", "stuck@example.com", [
+    { provider: "apple", sub: "apple-stuck" }, { provider: "google", sub: "stuck-alias" },
+  ]);
+  const aliasKey = `account-deletion:${hash(alias)}`;
+  await env.STUDIQUO_DATA.put(aliasKey, JSON.stringify({ status: "deleted", generation: 0, identityHashes: [] }));
+  const stateKey = `account-deletion:${hash("apple-stuck")}`;
+  const original = env.STUDIQUO_DATA.list;
+  let flipped = false;
+  env.STUDIQUO_DATA.list = async options => {
+    if (!flipped && options.prefix === "session:") {
+      flipped = true;
+      await env.STUDIQUO_DATA.put(stateKey, JSON.stringify({ status: "active", generation: 1, reregisteredAt: Date.now() }));
+    }
+    return original(options);
+  };
+  await deleteAccount(env, "apple-stuck");
+  assert.equal((await env.STUDIQUO_DATA.get(aliasKey, "json")).status, "deleted", "the alias can still sign in again");
+});
+
+test("H-3c. 退会済みのアカウントには、認可コードの交換も更新トークンも発行されない", async () => {
+  const { handleMCPOAuth } = await import("./mcp-oauth.js");
+  const env = environment();
+  env.RATE_LIMIT_MCP_TOKEN = { async limit() { return { success: true }; } };
+  env.MCP_INBOX = { getByName() { return { async consumeOnce() { return true; } }; } };
+  const sub = "oauth-gone-sub";
+  const clientId = "studiquo_" + "d".repeat(32);
+  const refreshToken = "mcp_refresh_" + "e".repeat(40);
+  await env.STUDIQUO_DATA.put(`mcp:refresh:${hash(refreshToken)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read" }));
+  await env.STUDIQUO_DATA.put(`mcp:grant:${hash(sub)}:${hash(clientId)}`, "{}");
+  const exchange = () => handleMCPOAuth(new URL("https://example.test/oauth/token"), new Request("https://example.test/oauth/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "refresh_token", client_id: clientId, refresh_token: refreshToken }).toString(),
+  }), env);
+
+  assert.equal((await exchange()).status, 200, "active accounts can refresh");
+  await env.STUDIQUO_DATA.put(`mcp:refresh:${hash(refreshToken)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read" }));
+  await env.STUDIQUO_DATA.put(`account-deletion:${hash(sub)}`, JSON.stringify({ status: "deleting" }));
+  const refused = await exchange();
+  assert.equal(refused.status, 400);
+  assert.equal((await refused.json()).error, "invalid_grant");
 });

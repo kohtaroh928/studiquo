@@ -125,8 +125,19 @@ export async function handleDocumentCollab(url, request, env, key, ctx) {
     const userKey = await env.STUDIQUO_DATA.get(`chat:code:${code}`);
     if (!userKey) return json({ error: "No user found for that code." }, 404);
     try {
-      const result = await env.DOCUMENT_ROOM.getByName(inviteMatch[1]).invite(key, userKey, role);
+      const room = env.DOCUMENT_ROOM.getByName(inviteMatch[1]);
+      const result = await room.invite(key, userKey, role);
       await recordRoomMembership(env, userKey, inviteMatch[1], role);
+      // The friend code was resolved before this ran. If that account was
+      // deleted in between, its deletion has already passed the point where it
+      // collects the rooms it is in, and the seat just made would stay behind
+      // under a key that nothing can name again (and come back as a
+      // participant if the same sign-in registers anew). Take it out again.
+      if (!(await env.STUDIQUO_DATA.get(`chat:user:${userKey}`))) {
+        await room.removeAccount(userKey);
+        await env.STUDIQUO_DATA.delete(roomMembershipKey(userKey, inviteMatch[1]));
+        return json({ error: "No user found for that code." }, 404);
+      }
       const inviterName = await friendDisplayName(env, key);
       const delivery = sendPush(env, userKey, {
         category: "shareInvite",

@@ -51,6 +51,10 @@ function fakeDocumentRoomBinding() {
         async roleOf(userKey) {
           return state.participants.get(userKey) ?? null;
         },
+        async removeAccount(userKey) {
+          state.participants.delete(userKey);
+          return "removed";
+        },
         async listParticipants(userKey) {
           requireParticipant(state, userKey);
           return Array.from(state.participants, ([key, role]) => ({ userKey: key, role }));
@@ -454,4 +458,36 @@ test("a request outside /api/document/ is not handled by this router", async () 
   const env = environment();
   const response = await worker.fetch(request("/health"), env, noopCtx);
   assert.equal(response.status, 200);
+});
+
+test("an invitee whose account is deleted while the invite is being made is not left in the room", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  const invitee = freshToken("2");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  const code = await registerFriend(env, invitee, "友人");
+  const inviteeKey = await sha256Hex(invitee);
+  const binding = env.DOCUMENT_ROOM;
+  // The deletion lands after the code was resolved and the seat was made.
+  env.DOCUMENT_ROOM = {
+    getByName(id) {
+      const room = binding.getByName(id);
+      return {
+        ...room,
+        async invite(ownerKey, userKey, role) {
+          const result = await room.invite(ownerKey, userKey, role);
+          await env.STUDIQUO_DATA.delete(`chat:user:${userKey}`);
+          return result;
+        },
+      };
+    },
+  };
+  const response = await worker.fetch(
+    request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: owner, body: { code, role: "editor" } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 404);
+  assert.equal(await binding.getByName(ROOM_ID).roleOf(inviteeKey), null);
+  assert.equal(await env.STUDIQUO_DATA.get(`doc-room:${inviteeKey}:${ROOM_ID}`), null);
 });
