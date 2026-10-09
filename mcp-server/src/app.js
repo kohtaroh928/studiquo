@@ -16,7 +16,8 @@ import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats
 import { handleInvitePage } from "./invite.js";
 import { accessAllowed, isAccessGuardedPath } from "./access.js";
 import { isRevoked, revoke } from "./revocation.js";
-import { isExpired } from "./token.js";
+import { isExpired, remainingValiditySeconds } from "./token.js";
+import { resolveChatUserKey } from "./chat-identity.js";
 import { realSession } from "./session.js";
 import { handleMCPOAuth, externalSession, pairingInfo, approvePairing, listConnections, revokeConnection, revokeAllConnections } from "./mcp-oauth.js";
 import { verifyAppleIdentityToken } from "./apple-auth.js";
@@ -46,16 +47,18 @@ async function loadSnapshot(env, key) {
   return value;
 }
 
-async function queueAction(env, key, action) {
+async function queueAction(env, key, action, ttlSeconds = null) {
   const storageKey = `actions:${key}`;
   const existing = await env.STUDIQUO_DATA.get(storageKey, "json");
   const actions = Array.isArray(existing) ? existing : [];
   if (actions.length >= 1_000) throw new Error("Too many pending actions. Sync the app before adding more.");
   actions.push(action);
-  await env.STUDIQUO_DATA.put(storageKey, JSON.stringify(actions));
+  // Queued under a device token's hash: it expires with that token's session,
+  // so account deletion can always account for it (see remainingValiditySeconds).
+  await env.STUDIQUO_DATA.put(storageKey, JSON.stringify(actions), ttlSeconds ? { expirationTtl: ttlSeconds } : undefined);
 }
 
-function createServer(env, key, accountHash = null, source = "MCP", canWrite = true, canRead = true) {
+function createServer(env, key, accountHash = null, source = "MCP", canWrite = true, canRead = true, actionTtlSeconds = null) {
   const server = new McpServer(
     { name: "studiquo", version: "0.2.0" },
     { instructions: "Access only the authenticated user's Studiquo data. Write tools queue materials for import when the iPad app next connects; pending does not mean imported." }
@@ -167,7 +170,7 @@ function createServer(env, key, accountHash = null, source = "MCP", canWrite = t
           crypto.randomUUID(), "create_flashcards", { deckTitle, cards, folderPath }, source
         ));
       }
-      await queueAction(env, key, { type: "create_flashcards", deckTitle, cards });
+      await queueAction(env, key, { type: "create_flashcards", deckTitle, cards }, actionTtlSeconds);
       return toolResult({ queued: true, deckTitle, cardCount: cards.length });
     }
   );
@@ -190,7 +193,7 @@ function createServer(env, key, accountHash = null, source = "MCP", canWrite = t
         const result = await env.MCP_INBOX.getByName(accountHash).enqueue(crypto.randomUUID(), "add_calendar_event", input, source);
         return toolResult(result);
       }
-      await queueAction(env, key, { type: "add_calendar_event", ...input });
+      await queueAction(env, key, { type: "add_calendar_event", ...input }, actionTtlSeconds);
       return toolResult({ queued: true, title: input.title });
     }
   );
@@ -282,7 +285,8 @@ async function handleMCP(request, env) {
   const client = external ? await env.STUDIQUO_DATA.get(`mcp:client:${external.clientId}`, "json") : null;
   const server = createServer(env, key, accountHash, client?.clientName ?? "MCP",
     !external || external.scope?.split(" ").includes("studiquo.write"),
-    !external || external.scope?.split(" ").includes("studiquo.read"));
+    !external || external.scope?.split(" ").includes("studiquo.read"),
+    external ? null : remainingValiditySeconds(token));
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -416,7 +420,10 @@ export default {
         if (parsed.version !== 1 || !Array.isArray(parsed.notebooks)) {
           return json({ error: "Invalid Studiquo snapshot." }, 400);
         }
-        await env.STUDIQUO_DATA.put(`snapshot:${key}`, body);
+        // Under the token's hash, so it expires with the token's session. The
+        // account-level copy below has no expiry: it lives until the account
+        // is deleted.
+        await env.STUDIQUO_DATA.put(`snapshot:${key}`, body, { expirationTtl: remainingValiditySeconds(token) });
         if (accountHash) await env.STUDIQUO_DATA.put(`snapshot:${accountHash}`, body);
         return json({ synced: true, exportedAt: parsed.exportedAt });
       }
@@ -445,7 +452,12 @@ export default {
         if (ai) return ai;
       }
 
-      const documentCollab = await handleDocumentCollab(url, request, env, key, ctx);
+      // A room's members are recorded by account, not by session: the token's
+      // hash changes on every sign-in, and invitations are addressed to the
+      // friend code's account key (the same key chat uses).
+      // Resolved only for these routes: it is a Durable Object call.
+      const documentUserKey = url.pathname.startsWith("/api/document/") ? await resolveChatUserKey(env, session?.sub, key) : key;
+      const documentCollab = await handleDocumentCollab(url, request, env, documentUserKey, ctx);
       if (documentCollab) return documentCollab;
 
       return json({ error: "Not found" }, 404);
