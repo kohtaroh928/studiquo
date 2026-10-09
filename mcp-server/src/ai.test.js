@@ -440,10 +440,12 @@ test("chat allows an OpenAI logical model on the pro plan, resolving it via env.
     upstreamURL = url;
     upstreamOptions = options;
     const chunks = [
-      { choices: [{ delta: { content: "やっ" } }] },
-      { choices: [{ delta: { content: "ほー" } }] },
+      { type: "response.created", response: {} },
+      { type: "response.output_text.delta", item_id: "msg_1", output_index: 0, content_index: 0, delta: "やっ" },
+      { type: "response.output_text.delta", item_id: "msg_1", output_index: 0, content_index: 0, delta: "ほー" },
+      { type: "response.completed", response: {} },
     ];
-    const body = chunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n";
+    const body = chunks.map(chunk => `event: ${chunk.type}\ndata: ${JSON.stringify(chunk)}\n\n`).join("");
     return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
   };
 
@@ -464,13 +466,16 @@ test("chat allows an OpenAI logical model on the pro plan, resolving it via env.
     assert.match(body, /data: \{"text":"やっ"\}/);
     assert.match(body, /data: \{"text":"ほー"\}/);
 
-    assert.equal(upstreamURL, "https://api.openai.com/v1/chat/completions");
+    assert.equal(upstreamURL, "https://api.openai.com/v1/responses");
     assert.equal(upstreamOptions.headers.authorization, "Bearer openai-test-key");
     const sentBody = JSON.parse(upstreamOptions.body);
     // The logical name in PLAN_MODELS/the request body is never sent
     // upstream — only the real id from OPENAI_FLAGSHIP_MODEL is.
     assert.equal(sentBody.model, "gpt-test-flagship");
-    assert.equal(sentBody.messages[0].role, "system");
+    assert.equal(typeof sentBody.instructions, "string");
+    assert.equal(sentBody.store, false);
+    assert.equal(sentBody.stream, true);
+    assert.equal(sentBody.input[0].role, "user");
   } finally {
     globalThis.fetch = originalFetch;
   }
