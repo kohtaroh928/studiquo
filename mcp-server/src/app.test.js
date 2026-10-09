@@ -4,6 +4,10 @@ import test from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import worker from "./app.js";
 import { realSession } from "./session.js";
+import { reserveAttempt, refundAttempt, trustPair } from "./login-throttle.js";
+import { touchSeenContext } from "./login-monitor.js";
+import { argon2QueueState, engine } from "./local-auth.js";
+import { accountGenerationMethods } from "./test-account-generations.js";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.js";
 
 // Regression coverage for "logging out doesn't revoke the cloud sync token":
@@ -23,9 +27,45 @@ function fakeCloudflareLimiter(limit = 5) {
   };
 }
 
+// Mirrors RateCounter.bump's contract: true while under `limit`, false once spent.
+function fakeRateCounterBinding(getData) {
+  const counts = new Map();
+  const generations = new Map();
+  const logins = new Map();
+  const seen = new Map();
+  return {
+    getByName(name) {
+      return {
+        async bump(limit) {
+          const used = (counts.get(name) ?? 0) + 1;
+          if (used > limit) return false;
+          counts.set(name, used);
+          return true;
+        },
+        // Same pure transitions the real RateCounter applies; these methods
+        // contain no await between read and write, so like the real object
+        // each call is atomic with respect to the others.
+        async loginReserve(policy, options) {
+          const result = reserveAttempt(logins.get(name), Date.now(), policy, options);
+          if (result.waitSeconds === 0) logins.set(name, result.state);
+          return { waitSeconds: result.waitSeconds, trusted: result.trusted };
+        },
+        async loginRefund(policy) { if (logins.has(name)) logins.set(name, refundAttempt(logins.get(name), policy)); },
+        ...accountGenerationMethods(name, generations, getData),
+        async seenContext(key, { maxEntries, ttlSeconds }) {
+          const result = touchSeenContext(seen.get(name), key, Date.now(), maxEntries, ttlSeconds);
+          seen.set(name, result.state);
+          return { isNew: result.isNew, wasEmpty: result.wasEmpty };
+        },
+        async loginTrust() { logins.set(name, trustPair(logins.get(name), Date.now())); },
+      };
+    },
+  };
+}
+
 function environment({ strictSessions = false } = {}) {
   const values = new Map();
-  return {
+  const env = {
     STUDIQUO_DATA: {
       async get(key, type) {
         let value = values.get(key) ?? null;
@@ -52,8 +92,12 @@ function environment({ strictSessions = false } = {}) {
     RATE_LIMIT_EMAIL_VERIFY_CONFIRM: fakeCloudflareLimiter(),
     RATE_LIMIT_LOCAL_LOGIN: fakeCloudflareLimiter(),
     RATE_LIMIT_ISSUE_REPORT: fakeCloudflareLimiter(),
+    RATE_COUNTER: fakeRateCounterBinding(() => env.STUDIQUO_DATA),
+    // Never reach the real HIBP from tests: by default nothing is breached.
+    PWNED_PASSWORDS_FETCH: async () => new Response("", { status: 200 }),
     RESEND_API_KEY: "test-key",
   };
+  return env;
 }
 
 const noopCtx = { waitUntil() {} };
@@ -713,6 +757,161 @@ test("POST /api/auth/email/send-code: allows up to the limit, then 429s", async 
   }
 });
 
+test("POST /api/auth/email/send-code: per-email limit holds across different IPs", async () => {
+  const env = environment();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("{}", { status: 200 });
+  const attempt = (ip, email = "person@example.com") => worker.fetch(
+    request("/api/auth/email/send-code", { method: "POST", ip, body: { email } }),
+    env,
+    noopCtx
+  );
+
+  try {
+    for (let i = 0; i < 5; i++) {
+      assert.equal((await attempt(`203.0.113.${i + 1}`)).status, 200);
+    }
+    // A sixth, from an IP that has sent nothing yet, is still refused.
+    assert.equal((await attempt("198.51.100.77")).status, 429);
+    // Case and whitespace don't make it a different address.
+    assert.equal((await attempt("198.51.100.78", "  Person@Example.com ")).status, 429);
+    // Another mailbox is unaffected.
+    assert.equal((await attempt("198.51.100.79", "other@example.com")).status, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("POST /api/auth/email/confirm-code: per-email attempts persist across resends and refuse even the right code", async () => {
+  const env = environment();
+  const stub = stubResendCapturingCode();
+  const send = () => worker.fetch(
+    request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }),
+    env,
+    noopCtx
+  );
+  const confirm = (ip, code) => worker.fetch(
+    request("/api/auth/email/confirm-code", {
+      method: "POST",
+      ip,
+      body: { email: "person@example.com", code, password: "correct-horse-battery", randomValue: "r".repeat(40) },
+    }),
+    env,
+    noopCtx
+  );
+
+  try {
+    // 10 wrong guesses spread over several IPs and two resends: each resend
+    // resets the code's own attempt count, but not the per-email budget.
+    await send();
+    for (let i = 0; i < 4; i++) assert.equal((await confirm(`203.0.113.${i + 1}`, "000000")).status, 401);
+    await send();
+    for (let i = 0; i < 4; i++) assert.equal((await confirm(`203.0.113.${i + 10}`, "000000")).status, 401);
+    await send();
+    for (let i = 0; i < 2; i++) assert.equal((await confirm(`203.0.113.${i + 20}`, "000000")).status, 401);
+
+    // Budget spent: the genuine code is refused too, from a fresh IP.
+    const response = await confirm("198.51.100.5", stub.code());
+    assert.equal(response.status, 429);
+    assert.equal(await env.STUDIQUO_DATA.get("email-accounts:person@example.com", "json"), null);
+  } finally {
+    stub.restore();
+  }
+});
+
+test("email-code budgets: send and confirm are counted separately, per address, and confirm normalizes the address", async () => {
+  const env = environment();
+  const stub = stubResendCapturingCode();
+  // Each call comes from its own IP so only the per-email budget is in play.
+  let ipCounter = 0;
+  const nextIp = () => `203.0.113.${++ipCounter}`;
+  const send = (email) => worker.fetch(
+    request("/api/auth/email/send-code", { method: "POST", ip: nextIp(), body: { email } }),
+    env,
+    noopCtx
+  );
+  const confirm = (email, code) => worker.fetch(
+    request("/api/auth/email/confirm-code", {
+      method: "POST",
+      ip: nextIp(),
+      body: { email, code, password: "correct-horse-battery", randomValue: "r".repeat(40) },
+    }),
+    env,
+    noopCtx
+  );
+
+  try {
+    // Exhaust person@'s send budget; its confirm budget and other@'s are untouched.
+    for (let i = 0; i < 5; i++) assert.equal((await send("person@example.com")).status, 200);
+    assert.equal((await send("person@example.com")).status, 429);
+    assert.equal((await send("person+alias@example.com")).status, 200);
+    assert.notEqual((await confirm("person@example.com", "000000")).status, 429);
+
+    // Exhaust person@'s confirm budget through a differently cased spelling.
+    for (let i = 0; i < 9; i++) await confirm("  PERSON@Example.com ", "000000");
+    assert.equal((await confirm("person@example.com", "000000")).status, 429);
+    assert.notEqual((await confirm("other@example.com", "000000")).status, 429);
+  } finally {
+    stub.restore();
+  }
+});
+
+test("POST /api/auth/email/confirm-code: a breached password is refused and the emailed code stays usable", async () => {
+  const env = environment();
+  // SHA-1("breached-password-1") is looked up by prefix; answer as if its suffix were in the corpus.
+  const hibpCalls = [];
+  env.PWNED_PASSWORDS_FETCH = async (url) => {
+    hibpCalls.push(url);
+    const digest = createHash("sha1").update("breached-password-1").digest("hex").toUpperCase();
+    return new Response(url.endsWith(digest.slice(0, 5)) ? `${digest.slice(5)}:42\r\n` : "", { status: 200 });
+  };
+  const stub = stubResendCapturingCode();
+  await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }), env, noopCtx);
+  stub.restore();
+  const confirm = (password) => worker.fetch(
+    request("/api/auth/email/confirm-code", {
+      method: "POST",
+      body: { email: "person@example.com", code: stub.code(), password, randomValue: "r".repeat(40) },
+    }),
+    env,
+    noopCtx
+  );
+
+  const refused = await confirm("breached-password-1");
+  assert.equal(refused.status, 400);
+  const refusedBody = await refused.json();
+  assert.equal(refusedBody.code, "password_breached");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:person@example.com"), null);
+  assert.ok(hibpCalls.every(url => /\/range\/[0-9A-F]{5}$/.test(url)));
+
+  // The code wasn't spent or counted: a different password with the same code works.
+  const accepted = await confirm("a-different-long-password");
+  assert.equal(accepted.status, 200);
+});
+
+test("POST /api/auth/email/confirm-code: if HIBP is unreachable the password is accepted", async () => {
+  const env = environment();
+  env.PWNED_PASSWORDS_FETCH = async () => { throw new Error("network down"); };
+  const originalError = console.error;
+  console.error = () => {};
+  const stub = stubResendCapturingCode();
+  try {
+    await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }), env, noopCtx);
+    stub.restore();
+    const response = await worker.fetch(
+      request("/api/auth/email/confirm-code", {
+        method: "POST",
+        body: { email: "person@example.com", code: stub.code(), password: "correct-horse-battery", randomValue: "r".repeat(40) },
+      }),
+      env,
+      noopCtx
+    );
+    assert.equal(response.status, 200);
+  } finally {
+    console.error = originalError;
+  }
+});
+
 test("local and Google sign-ins with the same verified email authenticate as one canonical account", async () => {
   const env = environment();
   const stub = stubResendCapturingCode();
@@ -1001,6 +1200,512 @@ test("POST /api/auth/local/login: allows up to the limit, then 429s", async () =
     assert.equal((await attempt()).status, 401);
   }
   assert.equal((await attempt()).status, 429);
+});
+
+// MARK: - local login: distributed credential stuffing
+
+// The per-IP Cloudflare limiter (5/min in these fakes) would answer before
+// the throttle under test ever runs; lift it so only the throttle is in play.
+function throttleEnvironment() {
+  const env = environment();
+  env.RATE_LIMIT_LOCAL_LOGIN = fakeCloudflareLimiter(10_000);
+  return env;
+}
+
+function loginAttempt(env, { email = "person@example.com", password = "wrong-password", ip, asn } = {}) {
+  const req = request("/api/auth/local/login", {
+    method: "POST",
+    ip,
+    body: { email, password, randomValue: "l".repeat(40) },
+  });
+  if (asn !== undefined) Object.defineProperty(req, "cf", { value: { asn } });
+  return worker.fetch(req, env, noopCtx);
+}
+
+test("local login: one client failing repeatedly against one account gets an escalating wait, even with the right password", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  // 5 failures are free; the 6th starts the wait.
+  for (let i = 0; i < 6; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.1" })).status, 401);
+
+  const blocked = await loginAttempt(env, { ip: "203.0.113.1", password: "correct-horse-battery" });
+  assert.equal(blocked.status, 429);
+  assert.ok(Number(blocked.headers.get("retry-after")) > 0);
+  assert.equal((await blocked.json()).error, "Too many attempts. Please try again later.");
+});
+
+test("local login: rotating IPs doesn't escape the per-account wait, and it ends in a wait rather than a lock", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  // 11 failures (10 are free), each from a different IP: no single IP+account streak trips.
+  for (let i = 0; i < 11; i++) assert.equal((await loginAttempt(env, { ip: `198.51.100.${i + 1}` })).status, 401);
+
+  // The next try, from yet another IP and with the correct password, is held.
+  const held = await loginAttempt(env, { ip: "198.51.100.200", password: "correct-horse-battery" });
+  assert.equal(held.status, 429);
+  const retryAfter = Number(held.headers.get("retry-after"));
+  assert.ok(retryAfter > 0 && retryAfter <= 900);
+
+  // Another account is untouched.
+  await createLocalAccount(env, "other@example.com", "another-long-password");
+  const other = await loginAttempt(env, { email: "other@example.com", ip: "198.51.100.201", password: "another-long-password" });
+  assert.equal(other.status, 200);
+});
+
+test("local login: an address with no account is throttled exactly like a real one", async () => {
+  const env = throttleEnvironment();
+  for (let i = 0; i < 6; i++) assert.equal((await loginAttempt(env, { email: "nobody@example.com", ip: "203.0.113.2" })).status, 401);
+  assert.equal((await loginAttempt(env, { email: "nobody@example.com", ip: "203.0.113.2" })).status, 429);
+});
+
+test("local login: a success clears this client's streak and does not count as a failure", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  for (let i = 0; i < 4; i++) await loginAttempt(env, { ip: "203.0.113.3" });
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.3", password: "correct-horse-battery" })).status, 200);
+  // Streak was cleared, so four more failures are still within the allowance.
+  for (let i = 0; i < 4; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.3" })).status, 401);
+});
+
+test("local login: many failures from one ASN slow that ASN, but not a different one", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  // 101 failures (100 are free) against throwaway addresses, each from its own IP, so only the ASN key accumulates.
+  for (let i = 0; i < 101; i++) {
+    const response = await loginAttempt(env, { email: `n${i}@example.com`, ip: `10.1.${Math.floor(i / 200)}.${i % 200 + 1}`, asn: 64500 });
+    assert.equal(response.status, 401);
+  }
+  const held = await loginAttempt(env, { ip: "10.9.9.9", asn: 64500, password: "correct-horse-battery" });
+  assert.equal(held.status, 429);
+
+  const elsewhere = await loginAttempt(env, { ip: "10.9.9.10", asn: 64501, password: "correct-horse-battery" });
+  assert.equal(elsewhere.status, 200);
+});
+
+test("local login: parallel guesses can't all slip past a wait that hasn't been recorded yet", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  // 40 simultaneous wrong guesses, each from its own IP, against one account.
+  const responses = await Promise.all(
+    Array.from({ length: 40 }, (_, i) => loginAttempt(env, { ip: `198.51.100.${i + 1}` }))
+  );
+  const verified = responses.filter(response => response.status === 401).length;
+  // Account key: 10 free attempts, plus the one that starts the wait.
+  assert.equal(verified, 11);
+  assert.equal(responses.filter(response => response.status === 429).length, 29);
+});
+
+test("local login: a blocked try is not itself counted as a failure", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  for (let i = 0; i < 6; i++) await loginAttempt(env, { ip: "203.0.113.4" });
+
+  const first = await loginAttempt(env, { ip: "203.0.113.4" });
+  const second = await loginAttempt(env, { ip: "203.0.113.4" });
+  assert.equal(first.status, 429);
+  assert.equal(second.status, 429);
+  // Hammering while blocked must not push the wait further out.
+  assert.ok(Number(second.headers.get("retry-after")) <= Number(first.headers.get("retry-after")));
+});
+
+test("local login: addresses differing only in case or whitespace share one throttle", async () => {
+  const env = throttleEnvironment();
+  for (let i = 0; i < 6; i++) {
+    const email = i % 2 ? "  PERSON@Example.com " : "person@example.com";
+    assert.equal((await loginAttempt(env, { email, ip: "203.0.113.5" })).status, 401);
+  }
+  assert.equal((await loginAttempt(env, { email: "Person@example.COM", ip: "203.0.113.5" })).status, 429);
+});
+
+test("local login: an IP that already signed in keeps working while strangers hammer the account", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  // The owner signs in from home once.
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.50", password: "correct-horse-battery" })).status, 200);
+
+  // A botnet drives the account into its wait.
+  for (let i = 0; i < 11; i++) await loginAttempt(env, { ip: `198.51.100.${i + 1}` });
+  assert.equal((await loginAttempt(env, { ip: "198.51.100.99", password: "correct-horse-battery" })).status, 429);
+
+  // The owner, from the IP they've used before, still gets in...
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.50", password: "correct-horse-battery" })).status, 200);
+  // ...but a trusted IP isn't a free pass to guess: its own streak still escalates.
+  for (let i = 0; i < 6; i++) await loginAttempt(env, { ip: "203.0.113.50" });
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.50", password: "correct-horse-battery" })).status, 429);
+});
+
+test("local login: failures from a trusted IP still count toward the shared account limit", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.60", password: "correct-horse-battery" })).status, 200);
+
+  // 3 wrong guesses from the trusted IP are never refused...
+  for (let i = 0; i < 3; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.60" })).status, 401);
+  // ...but they used up part of the account's 10 free attempts: 7 more from
+  // strangers still pass, and the one after that (the 11th failure overall)
+  // starts the wait, so the following attempt is held.
+  for (let i = 0; i < 8; i++) assert.equal((await loginAttempt(env, { ip: `198.51.100.${i + 1}` })).status, 401);
+  assert.equal((await loginAttempt(env, { ip: "198.51.100.90" })).status, 429);
+});
+
+test("local login: an over-long email is refused without creating throttle state", async () => {
+  const env = throttleEnvironment();
+  const response = await loginAttempt(env, { email: `${"a".repeat(300)}@example.com`, ip: "203.0.113.6" });
+  assert.equal(response.status, 401);
+});
+
+// MARK: - local login: metrics and new-context notice
+
+// A ctx that remembers what was handed to waitUntil, so a test can wait for
+// the background monitoring to finish before asserting on it.
+function collectingCtx() {
+  const pending = [];
+  return { waitUntil(promise) { pending.push(promise); }, flush: () => Promise.all(pending) };
+}
+
+function geoRequest(path, { cf, ip, body }) {
+  const req = request(path, { method: "POST", ip, body });
+  return Object.defineProperty(req, "cf", { value: cf });
+}
+
+test("local login: a sign-in from a new country+network emails the owner; the baseline and repeats don't", async () => {
+  const env = throttleEnvironment();
+  const home = { country: "JP", asn: 2516, region: "Tokyo", asOrganization: "KDDI" };
+  const abroad = { country: "RO", asn: 9050, region: "Bucharest", asOrganization: "Some Hosting" };
+
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const mails = [];
+  const logs = [];
+  globalThis.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.text?.includes("確認コード")) mails.push({ kind: "code", body });
+    else if (body.subject?.includes("新しい環境")) mails.push({ kind: "notice", body });
+    const match = /確認コード: (\d{6})/.exec(body.text ?? "");
+    globalThis.__code = match ? match[1] : globalThis.__code;
+    return new Response("{}", { status: 200 });
+  };
+  console.log = line => logs.push(String(line));
+  try {
+    // Sign-up from home: baseline, no notice.
+    let ctx = collectingCtx();
+    await worker.fetch(geoRequest("/api/auth/email/send-code", { cf: home, ip: "203.0.113.70", body: { email: "person@example.com" } }), env, ctx);
+    await worker.fetch(geoRequest("/api/auth/email/confirm-code", {
+      cf: home, ip: "203.0.113.70",
+      body: { email: "person@example.com", code: globalThis.__code, password: "correct-horse-battery", randomValue: "r".repeat(40) },
+    }), env, ctx);
+    await ctx.flush();
+
+    const login = async (cf, ip) => {
+      const c = collectingCtx();
+      const response = await worker.fetch(geoRequest("/api/auth/local/login", {
+        cf, ip, body: { email: "person@example.com", password: "correct-horse-battery", randomValue: "l".repeat(40) },
+      }), env, c);
+      await c.flush();
+      return response.status;
+    };
+
+    assert.equal(await login(home, "203.0.113.71"), 200);
+    assert.equal(mails.filter(mail => mail.kind === "notice").length, 0);
+
+    assert.equal(await login(abroad, "198.51.100.80"), 200);
+    const notices = mails.filter(mail => mail.kind === "notice");
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].body.to, "person@example.com");
+    assert.ok(!notices[0].body.text.includes("198.51.100.80"));
+
+    assert.equal(await login(abroad, "198.51.100.81"), 200);
+    assert.equal(mails.filter(mail => mail.kind === "notice").length, 1);
+
+    const outcomes = logs.map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(event => event?.event === "local_login");
+    assert.deepEqual(outcomes.map(event => [event.outcome, event.newContext]), [["success", false], ["success", true], ["success", false]]);
+    assert.ok(!logs.join("").includes("person@example.com"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    delete globalThis.__code;
+  }
+});
+
+test("local login: failures and throttled tries are logged as outcomes, and a broken mail provider never breaks sign-in", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  const cf = { country: "US", asn: 7922 };
+
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const originalError = console.error;
+  const logs = [];
+  globalThis.fetch = async () => new Response("no", { status: 500 });
+  console.log = line => logs.push(String(line));
+  console.error = () => {};
+  try {
+    const attempt = async (password, ip) => {
+      const c = collectingCtx();
+      const response = await worker.fetch(geoRequest("/api/auth/local/login", {
+        cf, ip, body: { email: "person@example.com", password, randomValue: "l".repeat(40) },
+      }), env, c);
+      await c.flush();
+      return response.status;
+    };
+    for (let i = 0; i < 6; i++) assert.equal(await attempt("wrong-password", "203.0.113.90"), 401);
+    assert.equal(await attempt("wrong-password", "203.0.113.90"), 429);
+    // A different IP, right password: the mail call fails (500) but sign-in succeeds.
+    assert.equal(await attempt("correct-horse-battery", "203.0.113.91"), 200);
+
+    const outcomes = logs.map(line => { try { return JSON.parse(line); } catch { return null; } })
+      .filter(event => event?.event === "local_login").map(event => event.outcome);
+    assert.deepEqual(outcomes, ["failure", "failure", "failure", "failure", "failure", "failure", "throttled", "success"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    console.error = originalError;
+  }
+});
+
+// MARK: - local login: the Argon2id queue is full
+
+test("local login: with the hashing queue full the attempt gets a 503 and Retry-After, and is not counted against anyone", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+
+  const original = engine.argon2idAsync;
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  engine.argon2idAsync = async (...args) => { await gate; return original(...args); };
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    // 34 sign-ins for made-up addresses (each from its own IP) fill the queue: 2 running, 32 waiting.
+    const fillers = Array.from({ length: 34 }, (_, i) => loginAttempt(env, { email: `filler${i}@example.com`, ip: `10.2.0.${i + 1}` }));
+    for (let i = 0; i < 600; i++) {
+      const { active, waiting } = argon2QueueState();
+      if (active === 2 && waiting === 32) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(argon2QueueState(), { active: 2, waiting: 32 });
+
+    // Three attempts at a real account from one client are turned away.
+    for (let i = 0; i < 3; i++) {
+      const refused = await loginAttempt(env, { ip: "203.0.113.77", password: "correct-horse-battery" });
+      assert.equal(refused.status, 503);
+      assert.equal(refused.headers.get("retry-after"), "2");
+      assert.match((await refused.json()).error, /busy/i);
+    }
+
+    open();
+    for (const response of await Promise.all(fillers)) assert.equal(response.status, 401, "everyone already queued is still served");
+  } finally {
+    open();
+    engine.argon2idAsync = original;
+    console.log = originalLog;
+  }
+
+  // Not one of those three counted: all six free attempts are still there
+  // (5 free, then the 6th starts the wait), so the 7th is the first refusal.
+  for (let i = 0; i < 6; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.77" })).status, 401, `attempt ${i + 1}`);
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.77" })).status, 429);
+});
+
+test("local login: if handing the refused attempt back fails, the answer is still a 503", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  const original = engine.argon2idAsync;
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  engine.argon2idAsync = async (...args) => { await gate; return original(...args); };
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    const fillers = Array.from({ length: 34 }, (_, i) => loginAttempt(env, { email: `filler${i}@example.com`, ip: `10.4.0.${i + 1}` }));
+    for (let i = 0; i < 600; i++) {
+      const { active, waiting } = argon2QueueState();
+      if (active === 2 && waiting === 32) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    // The attempt is reserved first and then refused for the full queue; make
+    // the call that hands the reservation back fail.
+    const realGetByName = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
+    env.RATE_COUNTER.getByName = name => {
+      const stub = realGetByName(name);
+      return { ...stub, loginRefund: async () => { throw new Error("DO down"); } };
+    };
+    const refused = await loginAttempt(env, { ip: "203.0.113.80", password: "correct-horse-battery" });
+    assert.equal(refused.status, 503);
+    open();
+    await Promise.all(fillers);
+  } finally {
+    open();
+    engine.argon2idAsync = original;
+    console.log = originalLog;
+    console.error = originalError;
+  }
+});
+
+test("local login: with the hashing queue full, a known client still gets in while an unfamiliar one is turned away", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  // Signing in once from this IP makes the (IP, account) pair known.
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.90", password: "correct-horse-battery" })).status, 200);
+
+  const original = engine.argon2idAsync;
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  engine.argon2idAsync = async (...args) => { await gate; return original(...args); };
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const fillers = Array.from({ length: 34 }, (_, i) => loginAttempt(env, { email: `filler${i}@example.com`, ip: `10.5.0.${i + 1}` }));
+    for (let i = 0; i < 600; i++) {
+      const { active, waiting } = argon2QueueState();
+      if (active === 2 && waiting === 32) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(argon2QueueState(), { active: 2, waiting: 32 });
+
+    // A different IP, with the right password: turned away, as before.
+    const stranger = await loginAttempt(env, { ip: "203.0.113.91", password: "correct-horse-battery" });
+    assert.equal(stranger.status, 503);
+
+    // The known IP is let into the reserved place, not turned away.
+    let settled = false;
+    const known = loginAttempt(env, { ip: "203.0.113.90", password: "correct-horse-battery" }).then(response => { settled = true; return response; });
+    for (let i = 0; i < 600 && argon2QueueState().waiting < 33; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(argon2QueueState().waiting, 33, "queued in the reserved part, behind the others");
+    assert.equal(settled, false);
+
+    open();
+    assert.equal((await known).status, 200);
+    for (const response of await Promise.all(fillers)) assert.equal(response.status, 401);
+  } finally {
+    open();
+    engine.argon2idAsync = original;
+    console.log = originalLog;
+  }
+});
+
+// Fills the hashing queue (2 running, 32 waiting) with sign-ins for made-up
+// addresses, runs `during` with it full, then lets everything finish.
+async function withFullHashingQueue(env, ipPrefix, during) {
+  const original = engine.argon2idAsync;
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  engine.argon2idAsync = async (...args) => { await gate; return original(...args); };
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const fillers = Array.from({ length: 34 }, (_, i) => loginAttempt(env, { email: `filler${i}@example.com`, ip: `${ipPrefix}.${i + 1}` }));
+    for (let i = 0; i < 600; i++) {
+      const { active, waiting } = argon2QueueState();
+      if (active === 2 && waiting === 32) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(argon2QueueState(), { active: 2, waiting: 32 });
+    await during(open);
+    open();
+    await Promise.all(fillers);
+  } finally {
+    open();
+    engine.argon2idAsync = original;
+    console.log = originalLog;
+  }
+}
+
+test("local login: a known client's wrong password in a full queue is still a counted failure, and earns no new trust", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.92", password: "correct-horse-battery" })).status, 200);
+
+  await withFullHashingQueue(env, "10.6.0", async (open) => {
+    const wrong = loginAttempt(env, { ip: "203.0.113.92", password: "wrong-password" });
+    for (let i = 0; i < 600 && argon2QueueState().waiting < 33; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    open();
+    assert.equal((await wrong).status, 401);
+  });
+
+  // That wrong guess counted: five more are the 6th failure on this pair, so
+  // the next one is the first refusal. (The success above cleared the streak.)
+  for (let i = 0; i < 5; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.92" })).status, 401, `attempt ${i + 1}`);
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.92" })).status, 429);
+});
+
+test("local login: when even the reserved places are taken, a known client is turned away and the attempt is handed back", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.93", password: "correct-horse-battery" })).status, 200);
+  // 16 more known clients: each its own IP, each signed in once beforehand.
+  for (let i = 0; i < 16; i++) {
+    assert.equal((await loginAttempt(env, { ip: `203.0.114.${i + 1}`, password: "correct-horse-battery" })).status, 200);
+  }
+
+  await withFullHashingQueue(env, "10.7.0", async (open) => {
+    // They come back together and take the whole reserve.
+    const reserve = Array.from({ length: 16 }, (_, i) => loginAttempt(env, { ip: `203.0.114.${i + 1}`, password: "correct-horse-battery" }));
+    for (let i = 0; i < 600 && argon2QueueState().waiting < 48; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(argon2QueueState().waiting, 48);
+
+    for (let i = 0; i < 3; i++) {
+      assert.equal((await loginAttempt(env, { ip: "203.0.113.93", password: "correct-horse-battery" })).status, 503);
+    }
+    open();
+    for (const response of await Promise.all(reserve)) assert.equal(response.status, 200);
+  });
+
+  // The three refusals were handed back: all five free attempts are intact.
+  for (let i = 0; i < 6; i++) assert.equal((await loginAttempt(env, { ip: "203.0.113.93" })).status, 401, `attempt ${i + 1}`);
+  assert.equal((await loginAttempt(env, { ip: "203.0.113.93" })).status, 429);
+});
+
+test("local login: without a client address nobody is treated as a known client", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  // No cf-connecting-ip: every request shares the "unknown" client. Sign in once
+  // (which would make that "client" known)...
+  assert.equal((await loginAttempt(env, { password: "correct-horse-battery" })).status, 200);
+
+  await withFullHashingQueue(env, "10.8.0", async () => {
+    // ...yet a full queue still turns it away.
+    const refused = await loginAttempt(env, { password: "correct-horse-battery" });
+    assert.equal(refused.status, 503);
+  });
+});
+
+test("local login: a 503 for a busy queue is not offered as a way to learn whether an address exists", async () => {
+  const env = throttleEnvironment();
+  await createLocalAccount(env, "person@example.com", "correct-horse-battery");
+  const original = engine.argon2idAsync;
+  let open;
+  const gate = new Promise(resolve => { open = resolve; });
+  engine.argon2idAsync = async (...args) => { await gate; return original(...args); };
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const fillers = Array.from({ length: 34 }, (_, i) => loginAttempt(env, { email: `filler${i}@example.com`, ip: `10.3.0.${i + 1}` }));
+    for (let i = 0; i < 600; i++) {
+      const { active, waiting } = argon2QueueState();
+      if (active === 2 && waiting === 32) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    const known = await loginAttempt(env, { ip: "203.0.113.78", email: "person@example.com" });
+    const unknown = await loginAttempt(env, { ip: "203.0.113.79", email: "nobody-at-all@example.com" });
+    assert.equal(known.status, 503);
+    assert.equal(unknown.status, 503);
+    assert.deepEqual(await known.json(), await unknown.json());
+    open();
+    await Promise.all(fillers);
+  } finally {
+    open();
+    engine.argon2idAsync = original;
+    console.log = originalLog;
+  }
 });
 
 // MARK: - requireRealSession: a client-fabricated token must not work

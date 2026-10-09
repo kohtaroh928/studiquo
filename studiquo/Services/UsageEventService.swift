@@ -18,11 +18,11 @@ enum UsageEventService {
     /// a stale token, a 429 from the (generous, 20/min) rate limit — none of
     /// it is actionable for the caller, and the next scenePhase transition
     /// to `.active` will just try again.
-    static func ping() async {
+    static func ping(session: URLSession = .shared) async {
         var request = URLRequest(url: endpoint.appending(path: "api/usage-events"))
         request.httpMethod = "POST"
         request.timeoutInterval = 10
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
-        _ = try? await URLSession.shared.data(for: request)
+        _ = try? await session.data(for: request)
     }
 }

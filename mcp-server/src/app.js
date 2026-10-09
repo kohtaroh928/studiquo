@@ -23,10 +23,13 @@ import { verifyAppleIdentityToken } from "./apple-auth.js";
 import { verifyGoogleIdentityToken } from "./google-auth.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
-import { upsertLocalAccount, verifyLocalAccount } from "./local-auth.js";
+import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError } from "./local-auth.js";
 import { startAccountDeletion } from "./account-deletion.js";
 import { mintSession, hasRealSession } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
+import { beginLoginAttempt, finishLoginAttempt, abandonLoginAttempt } from "./login-throttle.js";
+import { isBreachedPassword } from "./pwned-passwords.js";
+import { recordLoginOutcome, noteSignInContext } from "./login-monitor.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readTextLimited, readJSONLimited, securityHeaders } from "./http.js";
 
@@ -348,10 +351,10 @@ export default {
         return handleSendEmailVerification(request, env);
       }
       if (url.pathname === "/api/auth/email/confirm-code" && request.method === "POST") {
-        return handleConfirmEmailVerification(request, env);
+        return handleConfirmEmailVerification(request, env, ctx);
       }
       if (url.pathname === "/api/auth/local/login" && request.method === "POST") {
-        return handleLocalLogin(request, env);
+        return handleLocalLogin(request, env, ctx);
       }
 
       const token = bearerToken(request);
@@ -596,6 +599,33 @@ async function handleGoogleSignIn(request, env) {
   return json({ token });
 }
 
+// Per-email budget for the two email-code endpoints. The per-IP Cloudflare
+// limits above only slow one address down; a botnet can still spread
+// guesses at one mailbox across many IPs, and every send-code call hands
+// out a fresh code with a fresh attempt count (email-verification.js), so
+// resending alone would otherwise reset the guessing budget indefinitely.
+// This counts per address no matter which IP asks, and is deliberately a
+// fixed window (it starts at the first attempt, per RateCounter) rather than
+// a lockout: it clears itself after an hour, so it never leaves a victim's
+// login blocked indefinitely. The cost is that someone who knows the
+// address can burn its budget to stall that address's signup / password
+// reset for the rest of the window.
+const EMAIL_CODE_WINDOW_SECONDS = 3_600;
+const EMAIL_SEND_LIMIT_PER_WINDOW = 5;
+const EMAIL_CONFIRM_LIMIT_PER_WINDOW = 10;
+
+async function withinEmailCodeBudget(env, action, email, limit) {
+  const emailHash = await sha256Hex(email.trim().toLowerCase());
+  return env.RATE_COUNTER.getByName(`email-code-${action}:${emailHash}`).bump(limit, EMAIL_CODE_WINDOW_SECONDS);
+}
+
+// Monitoring must never delay or fail a sign-in: run it after the response
+// where the runtime allows, and in any case swallow its errors.
+function inBackground(ctx, work) {
+  if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
+  return work;
+}
+
 // POST /api/auth/email/send-code: emails a 6-digit verification code to the
 // address a local email/password account was just created (or is being
 // re-verified) with. Doesn't authenticate anything itself — it only proves
@@ -616,6 +646,10 @@ async function handleSendEmailVerification(request, env) {
 
   const { email } = parsed ?? {};
   if (typeof email !== "string" || !email) return json({ error: "email is required." }, 400);
+
+  if (!(await withinEmailCodeBudget(env, "send", email, EMAIL_SEND_LIMIT_PER_WINDOW))) {
+    return json({ error: "Too many attempts. Please try again later." }, 429);
+  }
 
   try {
     await sendVerificationCode(env, email);
@@ -638,7 +672,7 @@ async function handleSendEmailVerification(request, env) {
 // either way — and mints a real session, same as Apple/Google do on their
 // own exchange. `password` and `randomValue` are required for this reason:
 // this is the only place a local account's password is ever set.
-async function handleConfirmEmailVerification(request, env) {
+async function handleConfirmEmailVerification(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_EMAIL_VERIFY_CONFIRM, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -661,6 +695,23 @@ async function handleConfirmEmailVerification(request, env) {
     return json({ error: "randomValue is required." }, 400);
   }
 
+  // Checked before the code is: a refused password costs the caller no code
+  // attempt and leaves the emailed code valid, so they can just pick another.
+  // Only the password's SHA-1 prefix goes to HIBP (pwned-passwords.js).
+  if (await isBreachedPassword(password, typeof env.PWNED_PASSWORDS_FETCH === "function" ? env.PWNED_PASSWORDS_FETCH : fetch)) {
+    return json({
+      error: "このパスワードは過去の情報漏えいで見つかっています。別のパスワードを設定してください。",
+      code: "password_breached",
+    }, 400);
+  }
+
+  // Counts every attempt, correct or not, and runs before the code is
+  // checked: once spent, even the right code is refused, so the budget can't
+  // be probed past its limit.
+  if (!(await withinEmailCodeBudget(env, "confirm", email, EMAIL_CONFIRM_LIMIT_PER_WINDOW))) {
+    return json({ error: "Too many attempts. Please try again later." }, 429);
+  }
+
   const result = await confirmVerificationCode(env, email, code);
   if (!result.verified) return json({ error: "Incorrect or expired code.", attemptsRemaining: result.attemptsRemaining }, 401);
 
@@ -677,17 +728,20 @@ async function handleConfirmEmailVerification(request, env) {
   });
   const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
+  // The owner just proved they hold this mailbox from here, so this is the
+  // baseline context: remember it without sending a notice.
+  inBackground(ctx, noteSignInContext(env, request, normalizedEmail, { notify: false }));
   return json({ verified: true, token });
 }
 
 // POST /api/auth/local/login: verifies an email/password against the hash
 // upsertLocalAccount stored, and mints a real session on success — the
 // server-side counterpart to what AuthenticationStore.login() used to check
-// entirely on-device. Rate-limited like every other unauthenticated
-// exchange endpoint; there is no separate per-account lockout the way the
-// old on-device check had one, since a flat per-IP limit is what every
-// other sign-in path here already relies on.
-async function handleLocalLogin(request, env) {
+// entirely on-device. Rate-limited per IP like every other unauthenticated
+// exchange endpoint, plus an escalating wait (never a hard lock) keyed by
+// account, IP+account and ASN so a distributed credential-stuffing run
+// can't just rotate IPs.
+async function handleLocalLogin(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_LOCAL_LOGIN, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -707,9 +761,54 @@ async function handleLocalLogin(request, env) {
     return json({ error: "randomValue is required." }, 400);
   }
 
-  if (!(await verifyLocalAccount(env, email, password))) {
+  // Not a deliverable address: refuse without creating throttle state for it.
+  if (email.length > 254) return json({ error: "メールアドレスまたはパスワードが違います。" }, 401);
+
+  // Escalating wait per account / IP+account / ASN (login-throttle.js). The
+  // attempt is counted before the password is checked, atomically with the
+  // wait check, so a burst of parallel requests can't all get a guess in.
+  // While a wait runs the password isn't checked at all, so a correct guess
+  // can't get through mid-wait either.
+  const attempt = await beginLoginAttempt(env, request, email);
+  if (attempt.waitSeconds > 0) {
+    inBackground(ctx, recordLoginOutcome(env, request, "throttled"));
+    return Response.json(
+      { error: "Too many attempts. Please try again later.", retryAfterSeconds: attempt.waitSeconds },
+      { status: 429, headers: securityHeaders({ "retry-after": String(attempt.waitSeconds) }) }
+    );
+  }
+
+  let verified;
+  try {
+    // A client already known to this account may use the reserved part of the
+    // hashing queue, so a flood of unfamiliar sign-ins can't shut out the
+    // people who are simply coming back from their usual network.
+    // (Without the Cloudflare-set client address every request shares one
+    // "unknown" client, which must never be treated as a known one.)
+    verified = await verifyLocalAccount(env, email, password, { priority: attempt.trusted && clientKey(request) !== "unknown" });
+  } catch (error) {
+    if (!(error instanceof Argon2BusyError)) throw error;
+    // The hashing queue is full: nothing was checked, so none of this counts
+    // against the person (or the account), and they are asked to try again.
+    // Best effort: failing to hand the attempt back must not turn a polite
+    // "try again" into an error.
+    try {
+      await abandonLoginAttempt(attempt);
+    } catch (refundError) {
+      console.error(JSON.stringify({ message: "could not hand back a refused sign-in attempt", error: refundError instanceof Error ? refundError.message : String(refundError) }));
+    }
+    inBackground(ctx, recordLoginOutcome(env, request, "busy"));
+    return Response.json(
+      { error: "The server is busy. Please try again in a moment." },
+      { status: 503, headers: securityHeaders({ "retry-after": "2" }) }
+    );
+  }
+  if (!verified) {
+    await finishLoginAttempt(attempt, false);
+    inBackground(ctx, recordLoginOutcome(env, request, "failure"));
     return json({ error: "メールアドレスまたはパスワードが違います。" }, 401);
   }
+  await finishLoginAttempt(attempt, true);
 
   const normalizedEmail = email.trim().toLowerCase();
   const link = await linkVerifiedEmail(env, {
@@ -717,5 +816,11 @@ async function handleLocalLogin(request, env) {
   });
   const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
+  // A sign-in from a country+network this account hasn't used lately emails
+  // the owner (login-monitor.js); the outcome also feeds the spike alerts.
+  inBackground(ctx, (async () => {
+    const { newContext, firstSeen } = await noteSignInContext(env, request, normalizedEmail, { notify: true });
+    await recordLoginOutcome(env, request, "success", { newContext, firstSeen });
+  })());
   return json({ token });
 }

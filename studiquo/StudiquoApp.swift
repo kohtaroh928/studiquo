@@ -218,6 +218,8 @@ struct StudiquoApp: App {
                     LibraryDropUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test") {
                     FriendChatUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test") {
+                    FriendRequestsUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test") ||
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test") ||
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test") ||
@@ -229,6 +231,8 @@ struct StudiquoApp: App {
                     NoteAIChatUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--tab-picker-create-ui-test") {
                     TabPickerCreateUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--split-source-picker-ui-test") {
+                    SplitSourcePickerUITestRoot()
                 } else {
                     normalRoot
                 }
@@ -242,6 +246,8 @@ struct StudiquoApp: App {
                 guard !ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--startup-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--split-source-picker-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test"),
@@ -323,6 +329,31 @@ private struct FriendChatUITestRoot: View {
                 )]
             }
         }
+    }
+}
+
+/// Hosts the real friends screen with one pending friend request and one
+/// pending group invite, so UI tests can cover the combined 申請・招待 list.
+private struct FriendRequestsUITestRoot: View {
+    @StateObject private var store = FriendStore(
+        defaults: UserDefaults(suiteName: "FriendRequestsUITest-\(UUID().uuidString)")!,
+        autoRefresh: false
+    )
+
+    var body: some View {
+        FriendsHomeView(store: store, myStudySeconds: 0)
+            .onAppear {
+                store.incomingRequests = [
+                    IncomingFriendRequest(code: "REQ001", name: "申請フレンド", requestedAt: Date())
+                ]
+                store.incomingGroupInvites = [
+                    FriendChatService.GroupInvite(
+                        roomID: "room-1", name: "招待グループ",
+                        inviterCode: "INV001", inviterName: "招待者",
+                        invitedAt: Date().timeIntervalSince1970 * 1_000
+                    )
+                ]
+            }
     }
 }
 
@@ -573,8 +604,17 @@ private struct UITestAIProvider: AIProvider {
 
 /// Exercises the real loading view and ContentView transition with a delayed store.
 private struct StartupUITestRoot: View {
-    @StateObject private var loader = StartupStoreLoader<ModelContainer>(timeout: 0.05) {
-        Thread.sleep(forTimeInterval: 0.15)
+    /// `--startup-slow` keeps the store closed long enough for the slow-launch
+    /// notice to be visible; `--startup-fail-once` makes the first open fail so
+    /// the failure screen and its retry button can be exercised.
+    @StateObject private var loader = StartupStoreLoader<ModelContainer>(
+        timeout: ProcessInfo.processInfo.arguments.contains("--startup-slow") ? 0.3 : 0.05
+    ) {
+        let arguments = ProcessInfo.processInfo.arguments
+        Thread.sleep(forTimeInterval: arguments.contains("--startup-slow") ? 4 : 0.15)
+        if arguments.contains("--startup-fail-once"), StartupUITestAttempts.next() == 1 {
+            throw NSError(domain: "StartupUITest", code: 1, userInfo: [NSLocalizedDescriptionKey: "テスト用の読み込み失敗"])
+        }
         let configuration = ModelConfiguration(schema: studiquoSchema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         return try ModelContainer(for: studiquoSchema, configurations: configuration)
     }
@@ -599,6 +639,18 @@ private struct StartupUITestRoot: View {
             }
         }
         .task { loader.start() }
+    }
+}
+
+private enum StartupUITestAttempts {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var count = 0
+
+    static func next() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        count += 1
+        return count
     }
 }
 
@@ -819,6 +871,89 @@ private enum LibraryDropUITestStore {
         container.mainContext.insert(staleRelationship)
         try! container.mainContext.save()
         return container
+    }()
+}
+
+/// Hosts the split-screen source picker on its own, over a disposable library:
+/// a note at the top level, a PDF in 科目, and a flashcard deck in 科目/数学.
+/// `--split-source-picker-narrow` squeezes it to 600pt so three columns no
+/// longer fit and must scroll. `--split-source-picker-sheet` presents it as a
+/// sheet that closes on a pick or on キャンセル, as in the note editor.
+private struct SplitSourcePickerUITestRoot: View {
+    @State private var selected = "なし"
+    @State private var isOpen = true
+
+    private var asSheet: Bool {
+        ProcessInfo.processInfo.arguments.contains("--split-source-picker-sheet")
+    }
+
+    private func picker(_ library: SplitSourcePickerUITestStore.Library) -> some View {
+        SplitSourcePicker(
+            notebooks: library.notebooks,
+            flashcardDecks: library.decks,
+            primaryNotebook: library.notebooks[0],
+            onSelectNotebook: { selected = $0.title; isOpen = false },
+            onSelectDeck: { selected = $0.title; isOpen = false }
+        )
+    }
+
+    var body: some View {
+        let library = SplitSourcePickerUITestStore.library
+        let narrow = ProcessInfo.processInfo.arguments.contains("--split-source-picker-narrow")
+        VStack(spacing: 0) {
+            Text(selected).accessibilityIdentifier("split-source-selected")
+            Text(isOpen ? "open" : "closed").accessibilityIdentifier("split-source-sheet-state")
+            if asSheet {
+                Spacer()
+            } else {
+                picker(library)
+                    .frame(width: narrow ? 600 : nil)
+            }
+        }
+        .sheet(isPresented: Binding(get: { asSheet && isOpen }, set: { isOpen = $0 })) {
+            picker(library)
+        }
+        .modelContainer(library.container)
+        // Once, on first appearance: every test launch starts as the list.
+        .task { UserDefaults.standard.removeObject(forKey: "splitSourcePickerLayout") }
+    }
+}
+
+@MainActor
+private enum SplitSourcePickerUITestStore {
+    typealias Library = (container: ModelContainer, notebooks: [Notebook], decks: [FlashcardDeck])
+
+    static let library: Library = {
+        let configuration = ModelConfiguration(schema: studiquoSchema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        let container = try! ModelContainer(for: studiquoSchema, configurations: configuration)
+        let context = container.mainContext
+        let subject = Folder(name: "科目")
+        let math = Folder(name: "数学", parent: subject)
+        context.insert(subject)
+        context.insert(math)
+
+        let note = Notebook(title: "分割ノート")
+        let notePage = NotePage(order: 0)
+        notePage.notebook = note
+        note.addPage(notePage)
+
+        let pdf = Notebook(title: "分割PDF")
+        let pdfPage = NotePage(order: 0, backgroundImageData: Data([0]))
+        pdfPage.notebook = pdf
+        pdf.addPage(pdfPage)
+        pdf.refreshLibraryMetadata()
+        pdf.folderName = subject.legacyPath
+        pdf.folder = subject
+
+        let deck = FlashcardDeck(title: "分割暗記")
+        deck.folderName = math.legacyPath
+        deck.folder = math
+
+        context.insert(note)
+        context.insert(pdf)
+        context.insert(deck)
+        try! context.save()
+        return (container, [note, pdf], [deck])
     }()
 }
 

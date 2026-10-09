@@ -218,6 +218,7 @@ enum FriendChatService {
         /// whether the one it already has cached is still current — see
         /// `FriendStore.syncFriendAvatarsIfNeeded`.
         var avatarUpdatedAt: Double? = nil
+        var bio: String? = nil
     }
     struct Identity: Codable {
         let code: String
@@ -350,15 +351,16 @@ enum FriendChatService {
 
     private struct MeRequestBody: Encodable {
         let name: String
+        var bio: String? = nil
         var todayStudySeconds: Int? = nil
         var studyDate: String? = nil
     }
     private struct CreateGroupBody: Encodable { let name: String; let memberCodes: [String] }
 
-    static func register(name: String, todayStudySeconds: Int? = nil, studyDate: String? = nil) async throws -> Identity {
+    static func register(name: String, todayStudySeconds: Int? = nil, studyDate: String? = nil, bio: String? = nil) async throws -> Identity {
         try await request(
             path: "api/chat/me", method: "POST",
-            body: MeRequestBody(name: name, todayStudySeconds: todayStudySeconds, studyDate: studyDate)
+            body: MeRequestBody(name: name, bio: bio, todayStudySeconds: todayStudySeconds, studyDate: studyDate)
         )
     }
 
@@ -658,7 +660,7 @@ enum FriendChatService {
 }
 
 protocol FriendChatClient {
-    func register(name: String, todayStudySeconds: Int?, studyDate: String?) async throws -> FriendChatService.Identity
+    func register(name: String, todayStudySeconds: Int?, studyDate: String?, bio: String?) async throws -> FriendChatService.Identity
     func friends() async throws -> [FriendChatService.Friend]
     func blockedContacts() async throws -> [FriendChatService.BlockedContact]
     func inbox() async throws -> [FriendChatService.InboxState]
@@ -735,8 +737,8 @@ extension FriendChatClient {
 }
 
 struct LiveFriendChatClient: FriendChatClient {
-    func register(name: String, todayStudySeconds: Int?, studyDate: String?) async throws -> FriendChatService.Identity {
-        try await FriendChatService.register(name: name, todayStudySeconds: todayStudySeconds, studyDate: studyDate)
+    func register(name: String, todayStudySeconds: Int?, studyDate: String?, bio: String?) async throws -> FriendChatService.Identity {
+        try await FriendChatService.register(name: name, todayStudySeconds: todayStudySeconds, studyDate: studyDate, bio: bio)
     }
 
     func friends() async throws -> [FriendChatService.Friend] {

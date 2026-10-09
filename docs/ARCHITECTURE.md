@@ -125,6 +125,8 @@ Wranglerは`src/worker.js`を読み込み、実処理を`src/app.js`へ委譲す
 
 HTTP本文にはサイズ上限を設け、入力スキーマ、認可、Rate Limitを各境界で確認する。
 
+AIの公開APIでは`ai-privacy.js`が提供条件の承認フラグ、同意バージョン、Google限定モデルを検証する。旧direct-provider経路は初期提供では停止する。退会ジョブ・RevenueCat削除ジョブはKVへ永続化し、`worker.js`の定期ハンドラーから`privacy-retention.js`が再試行と期限超過データ削除を行う。実装の公開条件は[PRIVACY_RELEASE_CHECKLIST.md](PRIVACY_RELEASE_CHECKLIST.md)を参照する。
+
 ### 5.2 Workerの永続化
 
 | ストレージ | 主な用途 |
@@ -276,7 +278,7 @@ iOSのProduct ID、Entitlement ID、Workerのプラン対応は複数箇所で�
 - Workerの開発用KVが本番namespaceと共有されている。
 - `ClaudeDirectProvider`とWorker経由AIの2経路があり、機能差と秘密情報の責任範囲が異なる。
 - API契約はSwift構造体、Zod schema、ハンドラーへ分散しており、機械可読な単一仕様はない。
-- 詳細なデータ保持・削除表、障害Runbook、Release Checklistは別文書として今後整備する。
+- データ保持・移行、公開チェック、障害対応は関連文書を参照する。監視・連絡体制や復元訓練の未整備事項は各文書で管理する。
 
 これらを変更する場合は、現行挙動を先にテストで固定し、小さな単位で移行する。
 
@@ -286,6 +288,9 @@ iOSのProduct ID、Entitlement ID、Workerのプラン対応は複数箇所で�
 - `AGENTS.md`: AIエージェントの常時ルールと開発手順モード
 - `docs/DEVELOPMENT_WORKFLOW.md`: fullモードで使う詳細開発手順
 - `docs/SECURITY_AND_PRIVACY.md`: データ分類、セキュリティ境界、保持・削除、既知課題
+- `docs/DATA_AND_MIGRATIONS.md`: 保存先と正本、スキーマ・形式移行、バックアップ・復元、検証・適用順序
+- `docs/RELEASE_CHECKLIST.md`: 公開前後の確認、証拠・担当の記録、人間による公開判断
+- `docs/RUNBOOK.md`: 症状別の障害調査、承認付き復旧、正常化確認、対応記録・再発防止
 - `docs/cloudkit-verification.md`: CloudKit設定と確認事項
 - `docs/ai-math-rendering.md`: AI数式表示の設計と公開順序
 - `mcp-server/README.md`: WorkerとMCPの利用・運用概要

@@ -9,7 +9,7 @@ import { isExpired } from "./token.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readJSONLimited } from "./http.js";
-import { mintSession, hasRealSession } from "./session.js";
+import { mintSession, hasRealSession, realSession } from "./session.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 
 const RP_ID = "studiquo-mcp.studiquo-mcp-server.workers.dev";
@@ -54,11 +54,21 @@ export async function handlePasskeys(url, request, env) {
     const email = String(payload?.email ?? "").trim().toLowerCase();
     if (!token || email.length > 254 || !email.includes("@")) return json({ error: "Invalid request." }, 400);
     if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
-    if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
+    const session = await realSession(env, token);
+    if (!session) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
     const userKey = await sha256Hex(token);
     const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_REGISTER_OPTIONS, userKey);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
     if (await isRevoked(env, userKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
+    // Signing in with this passkey later is treated as proof of THIS e-mail
+    // (mintPasskeySession), so the address must already belong to the account
+    // that is registering it. A session for any account used to be enough to
+    // register a passkey for somebody else's address, and then to sign in as
+    // them; an address nobody has signed in with yet could be claimed ahead of
+    // its owner the same way.
+    if (await env.STUDIQUO_DATA.get(`email-account-owner:${email}`) !== session.sub) {
+      return json({ error: "This e-mail address does not belong to the signed-in account." }, 403);
+    }
     const existing = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
     const options = await generateRegistrationOptions({
       rpName: "Studiquo",
