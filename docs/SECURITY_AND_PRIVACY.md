@@ -1,6 +1,6 @@
 # Studiquo Security and Privacy
 
-最終更新: 2026-10-05  
+最終更新: 2026-10-07  
 状態: 現行実装を基準にした内部設計・運用基準
 
 読み方: 「現行」「現在」は開発ブランチの実装を指し、本番へ反映済みとは限らない。独立レビューを実施し、指摘に基づく修正を進めている。公開手順と未完了項目は`PRIVACY_RELEASE_CHECKLIST.md`を参照する。
@@ -31,7 +31,7 @@
 | --- | --- | --- |
 | Restricted | パスワード、Bearer token、OAuth token、Passkey情報、AI/API secret、APNs鍵、Webhook secret、暗号鍵 | 生の秘密値はKeychainまたはWorker secretsへ保存する。パスワード・tokenの検証用hashやPasskey公開鍵は認証用ストレージに限定する。平文ログ・Git・分析基盤へ出さない |
 | Confidential | ノート、OCR、答案画像、文書、スライド、チャット、添付、カレンダー予定、AI会話、問題報告の画像 | 利用者または明示的に許可された相手だけがアクセスする。外部送信前に目的を表示する |
-| Personal | メールアドレス、外部ID、表示名、友達関係、端末token、購読状態、利用履歴、IPに由来する制限キー | 目的を限定し、識別子は可能な範囲でハッシュ化する。削除経路を持つ |
+| Personal | メールアドレス、外部ID、表示名、友達関係、端末token、購読状態、利用履歴、IPに由来する制限キー、ログイン元の国・ASNの履歴 | 目的を限定し、識別子は可能な範囲でハッシュ化する。削除経路を持つ |
 | Internal | エラーfingerprint、集計済み件数、アプリ・OSバージョン、管理メモ | 運営者だけがアクセスする。本文やアカウント情報を混ぜない |
 | Public | 公開お知らせ、法務ページ、公開ドキュメント | 公開前に機密情報と個人情報が含まれないことを確認する |
 
@@ -67,7 +67,14 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 | 保護ノートの暗号文 | SwiftData / CloudKit | 通常は送信しない | ノートとともに削除。AES-GCM鍵はiCloud Keychain同期 |
 | Workerセッション | 端末Keychain、KVにはtoken hashとsession | Worker API | 90日。ログアウト時に端末から削除し、サーバー失効をbest effortで要求 |
 | Apple、Google、メール、Passkeyのidentity | 端末Keychain、KV | 各認証提供者 | アカウント削除処理の対象 |
-| メール確認コード | KV | Resendでメール送信 | 15分で失効。コードはhash化して保存 |
+| メール確認コード | KV | Resendでメール送信 | 15分で失効。コードはhash化して保存。退会時にも削除する |
+| パスワードのhash | KV(`account:local:`) | 送らない | Argon2id(移行中は旧PBKDF2も)。退会時に削除。詳細は6.4 |
+| 漏えいパスワードの照合 | 保存しない | Have I Been Pwned(パスワードのSHA-1の先頭5文字だけ) | 登録・再設定のときだけ送る。パスワード本体と残りのhashは送らない |
+| ログインの失敗回数・待機(アカウント単位、IP+アカウント単位、ASN単位) | `RATE_COUNTER`(メール・IPのhashを名前に使う) | 送らない | 約1時間の窓。IP+アカウント単位は、信頼済みの記録を含めて最大約14日+1時間。アカウント単位は退会時に削除。IP+アカウント単位はIPを列挙できず、自然に失効するまで残る |
+| ログイン元の履歴(国+ASN、最大20件) | `RATE_COUNTER`(メールのhashを名前に使う) | 新しい環境のとき、本人へメール(Resend) | 90日。退会時に削除。新しい環境の通知の判定にだけ使う |
+| ログイン通知の枠、コード送信・確認の試行回数 | `RATE_COUNTER`(メールのhashを名前に使う) | 送らない | 1日／1時間で失効。退会時に削除 |
+| パスワードの世代カウンタ | `RATE_COUNTER`(メールのhashを名前に使う) | 送らない | 整数だけ。退会後7日間残して自動削除(15.2)。再登録で保持に戻る |
+| ログインの結果ログ | Workers Logs | 送らない | 結果・国・ASNだけ。メールとIPは含めない。保持はCloudflareの設定による |
 | チャット、友達、グループ、添付 | KV、`USER_REGISTRY`、`CHAT_ROOM` | 参加者、APNs | アカウント削除時に参照を除去し、過去発言は匿名化され得る。期間による自動削除は未定義 |
 | 共同編集状態 | `DOCUMENT_ROOM` | 許可された参加者 | アカウント削除との完全な保持表は未定義 |
 | MCPスナップショット | KV | 接続を許可したMCP client | アカウント削除対象。再同期まで古い内容が残り得る |
@@ -90,7 +97,8 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 
 - AppleとGoogleのtokenはWorkerで署名、issuer、audience、期限などを検証する。
 - メール登録は6桁確認コードによる所有確認を完了してから有効化する。
-- パスワードは平文で保存しない。認証方式の変更時は既存hashの移行を考慮する。
+- パスワードは平文で保存しない。保存はArgon2id(6.4)で、旧PBKDF2のレコードは検証でき、正しいパスワードでログインしたときに書き換える。
+- 登録・再設定のパスワードは、長さ8〜1024文字と、漏えいパスワードの照合(6.4)だけで判断する。大文字・記号の必須や、定期変更の強制はしない(NIST SP 800-63Bの方針)。
 - Passkey challengeは使い捨てかつ短命とし、origin、RP ID、challenge、counterを検証する。
 - 同じ確認済みメールに属するidentityはcanonical accountへ統合する。統合前後の既存sessionにもcanonical identityを適用する。
 
@@ -109,6 +117,34 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 - 管理画面が同じoriginにあることだけを認可根拠にしない。
 - RevenueCat webhookは専用shared secretで検証し、通常の利用者sessionとは分離する。
 - 管理権限とWebhook secretに失敗した場合はfail closedとし、処理を継続しない。
+
+### 6.4 パスワード認証への攻撃対策(クレデンシャルスタッフィング等)
+
+メールとパスワードのログイン(`/api/auth/local/login`)と確認コードの送信・確認は、漏えいした認証情報の使い回しによる自動攻撃を想定して、次の層で守る。CAPTCHAは採用しない(効果に対して、手間・外部依存・有効化時の事故のリスクが見合わないと判断した。記録は履歴を参照)。
+
+| 層 | 内容 | 実装 |
+| --- | --- | --- |
+| IPごとの回数制限 | Cloudflare Rate Limitingで、IPごとに回数を制限する | `rate-limit.js`、`wrangler.jsonc` |
+| 複数キーの失敗回数 | アカウント、IP+アカウント、ASNを別々に数える。IPだけでは、分散した攻撃で効かないため | `login-throttle.js` |
+| 段階的な待機 | 無料回数を超えると、待ち時間が倍々に増える(上限あり)。ロックはしない。待機中はパスワードを検証しない | `login-throttle.js` |
+| 並行リクエスト対策 | 待機の確認と失敗の加算を、Durable Object内の1つの操作にする。検証の前に1回分を数え、正しければ戻す | `rate-counter.js` |
+| 信頼済みの組 | 過去にログインに成功したIP+アカウントは、共有(アカウント・ASN)の待機を免除する。失敗は共有にも数える。14日で失効。攻撃者が失敗を重ねて持ち主を待たせることを防ぐ | `login-throttle.js` |
+| 確認コードの制限 | メールごとに、送信は1時間5回、確認は1時間10回(成功も数える)。再送しても試行回数は戻らない。IPを分散した総当たりとメール爆撃を防ぐ | `app.js` |
+| 漏えいパスワードの拒否 | 登録・再設定で、HIBPのk-匿名性API(SHA-1の先頭5文字だけ)で照合する。拒否しても確認コードは消費しない。アプリは、コード入力の画面で、新しいパスワードだけを入れ直させ、同じコードで続ける。障害時は照合を飛ばして受け付け、ログに残す | `pwned-passwords.js` |
+| ユーザー列挙の防止 | 未登録・パスワード違い・壊れたレコードで、メッセージ・ステータス・処理量を揃える(PBKDF2とArgon2idを1回ずつ実行) | `local-auth.js` |
+| ハッシュ | Argon2id(m=19MiB, t=2, p=1、OWASPの最小構成)。純JSの`@noble/hashes`。同時実行は2、待ちは32まで。満杯のログインは、ハッシュも照合もせずに503(`Retry-After: 2`)とし、試行は数えない。ただし、過去にそのアカウントへのログインに成功したIP(信頼済みの組)だけは、予備の16件まで受け付ける。パスワードを保存する操作(登録・再設定)は、確認コードを消費した後なので、満杯でも待つ | `local-auth.js` |
+| 検知 | ログインの結果を、メール・IPを含めない構造化ログに出す。失敗(100件/時)・待機中の拒否(300件/時)・ハッシュ処理の混雑による拒否(50件/時)・履歴のあるアカウントへの未知の環境からの成功(10件/時)が閾値を超えたら、Slackへ1回通知する | `login-monitor.js` |
+| 本人への通知 | 過去90日に使われていない「国+ASN」からのログイン成功で、本人にメールする。IPは載せない。1日3通まで | `login-monitor.js` |
+
+運用上の性質は次の通り。
+
+- **待機は、他人に起こされうる。** 攻撃者が標的のメールに失敗を重ねると、その人は新しい端末・回線から、最大15分の待機を受ける。ロックはしないので、待機は自動で解け、信頼済みのIPと、パスキー・Apple・Googleのサインインは影響を受けない。
+- **確認コードの制限も同じ性質を持つ。** 他人が標的のメールの枠を使い切ると、その人の登録・再設定が最大1時間止まる。
+- **国+ASNは粗い判定である。** 端末ごとの判定ではない。ログインの要求には端末の識別子がなく、モバイル回線やVPNで、通知が増えたり減ったりする。
+- **履歴のない既存アカウント**は、機能の導入後の最初のログインで、1回だけ新しい環境の通知を受ける。休眠アカウントの乗っ取りを検知するためである。急増の集計には数えない。
+- 保存する識別子(メールのhash、IPのhash)は、塩のないSHA-256である。メールは推測可能な識別子なので、これは「匿名化」ではなく「仮名化」として扱う。
+
+Argon2idへの移行は、2段階でリリースする。詳しい手順と戻し方は`RUNBOOK.md`のRB-11を参照する。
 
 ## 7. 認可とテナント分離
 
@@ -209,6 +245,8 @@ AI機能では、操作に応じて次の情報が端末外へ出る。
 - 添付内容、ファイルpath、利用者が入力したエラー文
 - Authorization header、Webhook payload全体
 
+ログインの結果ログ(`event=local_login`)は、結果・国・ASN・初めての環境かどうかだけを出し、メールとIPを含めない。漏えいパスワードの照合を飛ばしたときのログにも、パスワードとhashを含めない。
+
 必要な相関にはtokenやidentityの用途別hashを使い、hashであっても個人関連データとして扱う。
 
 ### 12.2 自動エラー診断
@@ -271,9 +309,20 @@ Workerは削除状態を`deleting`として先に記録し、途中失敗後も�
 - MCP grant、access・refresh token、inbox
 - 友達・グループ参照、chat profile、code、avatar、device token
 - D1の利用イベント、初回利用日、エラーとaccountの関連
+- メールのhashで名づけた`RATE_COUNTER`のデータ: ログイン元の履歴(国+ASN)、アカウント単位のログイン失敗、ログイン通知の枠、コード送信・確認の試行回数。メールの確認コードの記録(`email-verify:`)も含む
 - iOSの全SwiftData model、UserDefaultsのaccount関連設定、認証Keychain item
 - D1の問題報告・購読者情報・購入イベント、KVの報告画像
 - Documents、Caches、一時ファイル、自動バックアップ、共有Inbox内のアプリ管理コピー（外部の原本は削除しない）
+
+次のものは、退会時に消せない。
+
+| データ | 残る期間 | 理由と内容 |
+| --- | --- | --- |
+| パスワードの世代カウンタ(メールのhash+整数) | 退会後7日。同じメールで再登録すると、自動削除の予約が取り消され、保持に戻る | 退会より前に始まったPBKDF2→Argon2idの書き換えが、削除済みのパスワードのhashを書き戻さないようにするため。KVの古い読み取りは最大約1分なので、7日は十分な余裕である |
+| IP+メールのhashで名づけた失敗回数・信頼済みの記録 | 最大約14日+1時間 | IPを列挙できないため、削除できない。それぞれの有効期限で消える |
+| 退会と同時に進行中のログインが作る、ログイン元の履歴 | 最大90日 | 退会の最中のログインが履歴を作り直す、まれな競合 |
+
+世代の退役は、アカウント本体を消す前に行う。メールに紐づくその他のデータの削除は、本体を消した後に行う。前者に失敗すると退会は先へ進まず、後者に失敗しても、本体はすでに消えていて、毎時の再試行で残りが完了する。
 
 他利用者側の会話を壊さないため、過去メッセージは「削除済みユーザー」として匿名化され得る。App Storeの購読はApple側で別途解約が必要である。
 
@@ -337,17 +386,30 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 
 ### P0: 公開前に判断が必要
 
-1. `PrivacyInfo.xcprivacy`の`NSPrivacyCollectedDataTypes`が空である一方、account情報、利用状況、問題報告、診断などをWorkerへ送る。Appleの最新定義に基づきPrivacy ManifestとApp Store Privacy Nutrition Labelの両方を再評価する。
-2. アプリ内AI開示とprivacy policyはGeminiと任意direct Anthropicを中心に説明しているが、Workerのmodel catalogはAnthropicとOpenAIも選択可能である。実際の提供状態に合わせて説明を同期する。
-3. 利用者向けprivacy policyは「account関連dataを削除」と説明するが、D1の`issue_reports`、`subscribers`、`revenuecat_events`、集約済み`app_errors`にはaccount削除時の完全な扱いと保持期間が定義されていない。
+1. Privacy Manifestにデータ分類を追加したが、App Store Connect申告・責任者照合は未実施。
+2. Google一社に制限し、同意・承認gateを実装した。学生・未成年者への提供可否、契約、訓練利用・保存条件の承認は未完了。承認までAIは停止する。
+3. D1/KV削除・90日/180日保持・RevenueCat削除ジョブを実装した。本番migration・secret設定・定期処理有効化・監視は未実施。詳細は`PRIVACY_RELEASE_CHECKLIST.md`。
+4. 再登録時の課金顧客世代管理、Apple認可取消し、共同編集データ削除範囲を公開前に確定する。
 
 ### P1: 早期に修正する
 
-4. account削除はSwiftDataと設定を削除するが、Application Supportの自動backup、Documentsのexport・共有添付、cache、一時fileを一括消去しない。残存範囲を決め、削除処理とtestを追加する。
-5. 手動問題報告のKV copyとscreenshotは90日で消えるが、D1 rowにはTTL・purge jobがない。metadataと説明文の保持期間を決める。
-6. 自動エラー集約のD1 rowには保持期間がない。accountとの関連削除後に残す匿名集約の期間を決める。
+5. 端末管理ファイルの消去と再試行を実装。CloudKit同期削除・App Group共有Inboxは実機でも確認する。
+6. 旧Slack投稿と所有者を復元できない旧問題報告の処理は別途運営対応が必要。
 7. `StudiquoApp.swift`の一部起動ログは`String(describing: error)`をpublic privacyで記録する。pathや利用者由来文字列が混ざらない形式へ限定する。
 8. `PrivacyPolicyView`と`mcp-server/src/legal.js`は手作業で重複管理されている。単一sourceから生成するか、同一性testを強化する。
+
+### P1(追加): パスワード認証まわり
+
+- Argon2idの待ち行列(同時2、待ち最大32、信頼済みの組の予備16)は、Workerのインスタンスごと。偽のメールで待ち行列を埋めると、そのインスタンスで、新しい端末・回線からのログインが503になる(既知の端末は予備枠で通る)。IPごとの同時実行の制限は、共有IP(学校など)の正規の学生が429になる副作用に対して効果が小さいので、採用していない。攻撃者が、自分の無料アカウントで多数のIPを信頼済みにすると、予備枠を埋められる(通常の枠だけの状態に戻るだけ)。
+- 確認コードの送信・確認の429は、サーバーが待ち時間(`Retry-After`)を返さないので、アプリは時間を言わずに「しばらく待ってから」と案内する。メール単位の制限は最長1時間、IPごとの制限は1分と、原因で長さが違う。サーバーが残り時間を返すようにすれば、アプリは自動でその時間を表示する。
+- 応答時間の均一化、通知メールとSlackの実送信、`ARGON2_WRITE=true`の本番相当の環境での確認は未実施。
+- 保存する識別子の塩なしSHA-256は、メール・IPの推測に弱い。サーバー秘密鍵によるHMACへ、横断的に移行することを検討する。
+- Argon2id移行後に、PBKDF2のレコードが残らなくなったら、`local-auth.js`のPBKDF2のダミー計算と旧レコードの分岐を外す。
+- App Attest(端末とアプリの証明)の導入を、CAPTCHAに代わる強い対策として検討する。
+
+- ログインに成功する経路が、KVの遅さのために、約3〜6秒かかる(ステージングの実測。失敗の経路は約0.9秒)。`linkVerifiedEmail`の無駄な書き込みは減らした。残る主な原因は、`mintSession`のKVの操作を、順番に3回行っていること(最初の2つの読み取りは、並列にできる)と、KVの読み取りそのものの遅延。Apple・Google・メールのすべてのサインインが通る処理で、本番の現行コードにも、同じ遅さがある可能性が高い。
+
+- メール(確認コード・新しい環境の通知)の送信元が、`RESEND_FROM_EMAIL`未設定のとき、Resendの共通の送信元(`onboarding@resend.dev`)になる。この送信元は、Resendのアカウントの持ち主のアドレスにだけ配送できる(ステージングで、`example.com`宛が422になった)。本番に、`RESEND_FROM_EMAIL`が設定されているかは、CLIからは確認できていない(ダッシュボードで確認する)。本番の前に、Resendで自分のドメインを認証し、そのドメインのアドレスを設定する。
 
 ### P2: 設計改善
 
@@ -399,6 +461,11 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 - `studiquo/Services/DiagnosticReportBuilder.swift`: MetricKit診断の最小化
 - `studiquo/Services/NotebookBackupService.swift`: 自動backupと保護ノートの扱い
 - `mcp-server/src/session.js`: sessionの実在確認とcanonical identity
+- `mcp-server/src/local-auth.js`: パスワードのhash(Argon2id、PBKDF2からの移行、世代による競合対策)
+- `mcp-server/src/login-throttle.js`: ログイン失敗の多段制限と待機
+- `mcp-server/src/login-monitor.js`: ログイン結果のログ、Slackアラート、新しい環境の通知
+- `mcp-server/src/pwned-passwords.js`: 漏えいパスワードの照合(HIBP)
+- `mcp-server/src/rate-counter.js`: 回数制限・失敗回数・履歴・世代を保持するDurable Object
 - `mcp-server/src/account-deletion.js`: server側account削除
 - `mcp-server/src/mcp-oauth.js`: MCP OAuth、PKCE、token期限
 - `mcp-server/src/ai.js`: AI provider、quota、入力処理
