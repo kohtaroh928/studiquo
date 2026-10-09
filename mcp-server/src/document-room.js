@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, removeAccountData } from "./document-room-store.js";
 
 // Mirrors chat-room.js's ChatRoom shape closely — same Durable Object
 // pattern, same per-room SQLite storage, same requireParticipant-throws-
@@ -14,29 +15,7 @@ export class DocumentRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS participants (
-          user_key TEXT PRIMARY KEY,
-          role TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS blocks (
-          block_order INTEGER PRIMARY KEY,
-          kind TEXT NOT NULL,
-          text TEXT NOT NULL DEFAULT '',
-          list_kind TEXT,
-          list_level INTEGER NOT NULL DEFAULT 0,
-          paragraph_style TEXT
-        );
-        CREATE TABLE IF NOT EXISTS changes (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          author_key TEXT NOT NULL,
-          block_order INTEGER NOT NULL,
-          previous_text TEXT NOT NULL,
-          new_text TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'pending',
-          created_at INTEGER NOT NULL
-        );
-      `);
+      this.ctx.storage.sql.exec(DOCUMENT_ROOM_SCHEMA);
     });
   }
 
@@ -152,5 +131,26 @@ export class DocumentRoom extends DurableObject {
     const finalStatus = decision === "accept" ? "accepted" : "rejected";
     this.ctx.storage.sql.exec("UPDATE changes SET status = ? WHERE id = ?", finalStatus, changeID);
     return { status: finalStatus };
+  }
+
+  // The three methods below are for account deletion and the room index: they
+  // are Worker-to-Durable-Object calls, and no HTTP route reaches them.
+
+  // The caller's role in this room, or null. Used to tell whether a
+  // `already_initialized` answer means "this room is yours".
+  async roleOf(userKey) {
+    const row = this.ctx.storage.sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray()[0];
+    return row?.role ?? null;
+  }
+
+  // The room's members if `userKey` is its owner, otherwise null.
+  async ownerMembers(userKey) {
+    return membersIfOwner(this.ctx.storage.sql, userKey);
+  }
+
+  // Removes `userKey`'s account from the room: erases the room if they own
+  // it, otherwise takes only them out.
+  async removeAccount(userKey) {
+    return removeAccountData(this.ctx.storage.sql, userKey);
   }
 }
