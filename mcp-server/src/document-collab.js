@@ -92,12 +92,17 @@ export async function handleDocumentCollab(url, request, env, key, ctx) {
   if (initMatch && request.method === "POST") {
     const body = await readBody(request);
     const blocks = Array.isArray(body?.blocks) ? body.blocks : [];
-    const result = await env.DOCUMENT_ROOM.getByName(initMatch[1]).initialize(key, blocks);
+    const room = env.DOCUMENT_ROOM.getByName(initMatch[1]);
+    const result = await room.initialize(key, blocks);
     // Which rooms an account is in, so deleting the account can find them: a
     // room is only reachable by its id, and the room itself knows its members
-    // by opaque keys. Written only when this call created the room, i.e. when
-    // the caller is its owner.
-    if (result?.status === "initialized") await recordRoomMembership(env, key, initMatch[1], "owner");
+    // by opaque keys. Written when the caller owns the room. An
+    // `already_initialized` answer counts too when the room says the caller is
+    // its owner: the first attempt may have created the room and then failed
+    // before this entry was written, and the client's retry lands here.
+    if (result?.status === "initialized" || (await room.roleOf(key)) === "owner") {
+      await recordRoomMembership(env, key, initMatch[1], "owner");
+    }
     return json(result);
   }
 
