@@ -18,14 +18,14 @@ import { accessAllowed, isAccessGuardedPath } from "./access.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired } from "./token.js";
 import { realSession } from "./session.js";
-import { handleMCPOAuth, externalSession, pairingInfo, approvePairing, listConnections, revokeConnection } from "./mcp-oauth.js";
+import { handleMCPOAuth, externalSession, pairingInfo, approvePairing, listConnections, revokeConnection, revokeAllConnections } from "./mcp-oauth.js";
 import { verifyAppleIdentityToken } from "./apple-auth.js";
 import { verifyGoogleIdentityToken } from "./google-auth.js";
-import { linkVerifiedEmail } from "./oauth-links.js";
+import { linkVerifiedEmail, identityKey } from "./oauth-links.js";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
 import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError } from "./local-auth.js";
 import { startAccountDeletion } from "./account-deletion.js";
-import { mintSession, hasRealSession } from "./session.js";
+import { mintSession, hasRealSession, revokeSessionsIssuedBefore } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { beginLoginAttempt, finishLoginAttempt, abandonLoginAttempt } from "./login-throttle.js";
 import { isBreachedPassword } from "./pwned-passwords.js";
@@ -716,9 +716,12 @@ async function handleConfirmEmailVerification(request, env, ctx) {
   if (!result.verified) return json({ error: "Incorrect or expired code.", attemptsRemaining: result.attemptsRemaining }, 401);
 
   let normalizedEmail;
+  let replacedPassword;
   try {
     normalizedEmail = email.trim().toLowerCase();
-    await upsertLocalAccount(env, normalizedEmail, password);
+    // A password that already existed is being replaced: a reset. Adding the
+    // first one to an account that signs in another way is not.
+    replacedPassword = (await env.STUDIQUO_DATA.get(`account:local:${normalizedEmail}`)) !== null;
   } catch {
     return json({ error: "Could not save the account." }, 400);
   }
@@ -726,7 +729,47 @@ async function handleConfirmEmailVerification(request, env, ctx) {
   const link = await linkVerifiedEmail(env, {
     provider: "email", sub: normalizedEmail, email: normalizedEmail, emailVerified: true,
   });
-  const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, randomValue);
+  const accountKey = link.canonicalIdentityKey ?? `email:${normalizedEmail}`;
+  if (replacedPassword) {
+    // A reset signs out whoever held the old password — the new session below
+    // is minted after the cut-off — and so disconnects the apps (MCP) they
+    // may have connected, which hold their own tokens (an app approved before
+    // sign-in methods were linked sits under one of the linked identities).
+    //
+    // This happens BEFORE the new password is stored. If it cannot be
+    // completed the request fails and nothing has changed: the old password
+    // still works, so the owner simply asks for a new code. Done after, a
+    // failure here would leave the new password in place while the stolen
+    // session (the very thing a reset is for) stayed alive.
+    try {
+      await revokeSessionsIssuedBefore(env, accountKey);
+      await revokeAllConnections(env, [accountKey, ...(link.linkedIdentities ?? []).map(identityKey)]);
+    } catch {
+      return json({ error: "Could not complete the password reset. Please try again." }, 503);
+    }
+  }
+  try {
+    await upsertLocalAccount(env, normalizedEmail, password);
+  } catch {
+    // Not a problem with the request (its password was validated above): the
+    // store was busy or unavailable. Retryable, so not a 400.
+    return json({ error: "Could not save the account. Please try again." }, 503);
+  }
+  if (replacedPassword) {
+    // Storing the password takes a while (a deliberately slow hash). Someone
+    // who still knew the OLD password could have signed in during it, after the
+    // first cut-off but before the old password stopped working, and would
+    // otherwise keep that session. A second pass now that the old password is
+    // gone closes that window. Best effort: the first pass already did the
+    // work that must not be skipped.
+    try {
+      await revokeSessionsIssuedBefore(env, accountKey);
+      await revokeAllConnections(env, [accountKey, ...(link.linkedIdentities ?? []).map(identityKey)]);
+    } catch {
+      console.warn("password reset: second sign-out pass failed");
+    }
+  }
+  const token = await mintSession(env, accountKey, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
   // The owner just proved they hold this mailbox from here, so this is the
   // baseline context: remember it without sending a notice.
