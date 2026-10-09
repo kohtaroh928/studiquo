@@ -11,9 +11,13 @@ final class AuthenticationStoreTests: XCTestCase {
     private var storeService = ""
     private var defaultsSuiteName = ""
     private var testDefaults: UserDefaults!
+    private var testSession: URLSession!
+    private var previousEndpoint: String?
 
     override func setUp() {
         super.setUp()
+        previousEndpoint = UserDefaults.standard.string(forKey: "mcpCloudEndpoint")
+        UserDefaults.standard.set(WorkerAIProvider.defaultEndpoint, forKey: "mcpCloudEndpoint")
         storeService = "com.yabuko.studiquo.tests.\(UUID().uuidString)"
         // A private suite, not `.standard` — the onboarding flag `login()`
         // etc. read/write is real, persistent app state, and `.standard` is
@@ -23,20 +27,27 @@ final class AuthenticationStoreTests: XCTestCase {
         // alongside the test suite silently violates.
         defaultsSuiteName = "com.yabuko.studiquo.tests.\(UUID().uuidString)"
         testDefaults = UserDefaults(suiteName: defaultsSuiteName)
-        UserDefaults.standard.removeObject(forKey: "mcpCloudEndpoint")
-        URLProtocol.registerClass(StubAuthNetworkProtocol.self)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubAuthNetworkProtocol.self]
+        testSession = URLSession(configuration: configuration)
         StubAuthNetworkProtocol.reset()
     }
 
     override func tearDown() {
-        URLProtocol.unregisterClass(StubAuthNetworkProtocol.self)
+        testSession.invalidateAndCancel()
+        testSession = nil
         MCPCloudCredentials.clear()
         testDefaults.removePersistentDomain(forName: defaultsSuiteName)
+        if let previousEndpoint {
+            UserDefaults.standard.set(previousEndpoint, forKey: "mcpCloudEndpoint")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "mcpCloudEndpoint")
+        }
         super.tearDown()
     }
 
     private func makeStore() -> AuthenticationStore {
-        AuthenticationStore(service: storeService, defaults: testDefaults)
+        AuthenticationStore(service: storeService, defaults: testDefaults, authenticationSession: testSession)
     }
 
     func testBeingTurnedAwayFromSendingACodeShowsAWaitNotAFailure() async {
@@ -503,12 +514,13 @@ private final class StubAuthNetworkProtocol: URLProtocol {
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
-        request.url?.host == "studiquo-mcp.studiquo-mcp-server.workers.dev"
+        true // Dedicated test session must never reach the network.
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        XCTAssertEqual(request.url?.host, "studiquo-mcp.studiquo-mcp-server.workers.dev", "Unexpected test request host")
         let path = request.url?.path ?? ""
         Self.lock.lock()
         let forbidden = Self.forbidden.first { path.hasSuffix($0) }
