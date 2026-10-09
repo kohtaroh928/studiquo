@@ -1,5 +1,6 @@
 import { sha256Hex } from "./auth.js";
 import { queueRevenueCatDeletion } from "./privacy-retention.js";
+import { roomMembershipKey } from "./document-room-store.js";
 
 // How long the retired password generation outlives the deletion. KV can serve
 // a stale record for about a minute; a week is a wide margin on top of that.
@@ -15,6 +16,42 @@ export async function startAccountDeletion(env, canonicalSub) {
   } catch {
     return { deleted: false, cleanupPending: true };
   }
+}
+
+// Collaborative document rooms. A room the account owns is erased: the document
+// is the owner's, and the people it was shared with lose their view of it. In a
+// room the account was only invited to, just its own place goes, with the
+// proposals it made that did not become part of the document.
+//
+// The per-account index only says where to look; the room decides what the
+// account is to it. Order matters for a run that is cut short and repeated:
+// the other members' index entries are dropped before the room is erased (once
+// it is erased nothing could name them again), and this account's own entry is
+// dropped last, so a repeat still finds the room. One room failing does not
+// stop the others, and one run does at most MAX_ROOMS_PER_RUN, so a person who
+// was invited into a great many rooms cannot make deletion exceed what a
+// single invocation may do; the rest is finished by the retry.
+const MAX_ROOMS_PER_RUN = 40;
+
+async function removeDocumentRooms(env, chatKey) {
+  const prefix = roomMembershipKey(chatKey, "");
+  const keys = await entries(env, prefix);
+  let failure = null;
+  for (const key of keys.slice(0, MAX_ROOMS_PER_RUN)) {
+    try {
+      const roomID = key.slice(prefix.length);
+      const room = env.DOCUMENT_ROOM.getByName(roomID);
+      for (const member of (await room.ownerMembers(chatKey)) ?? []) {
+        if (member !== chatKey) await env.STUDIQUO_DATA.delete(roomMembershipKey(member, roomID));
+      }
+      await room.removeAccount(chatKey);
+      await env.STUDIQUO_DATA.delete(key);
+    } catch (error) {
+      failure ??= error;
+    }
+  }
+  if (failure) throw failure;
+  if (keys.length > MAX_ROOMS_PER_RUN) throw new Error("More document rooms remain to be removed.");
 }
 
 async function entries(env, prefix) {
@@ -312,6 +349,10 @@ export async function deleteAccount(env, canonicalSub) {
       }
     }
   }
+
+  // Last of the data steps: if a room cannot be removed, everything else is
+  // already gone and the retry only has the rooms left.
+  if (env.DOCUMENT_ROOM) await removeDocumentRooms(env, chatKey);
 
   const finishedState = JSON.stringify({ status: "deleted", identityKeys: [...identityKeys] });
   // The other identities get the same marker, so whichever sign-in method the
