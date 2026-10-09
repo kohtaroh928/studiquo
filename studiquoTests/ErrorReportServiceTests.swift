@@ -179,11 +179,17 @@ final class StartupFailureReportingTests: XCTestCase {
 
 /// Sending: the real `ErrorReportService` against a stubbed network.
 final class ErrorReportServiceTests: XCTestCase {
+    private var testSession: URLSession!
+    private var previousEndpoint: String?
     private let enabledKey = ErrorReportSettings.enabledKey
 
     override func setUp() {
         super.setUp()
-        URLProtocol.registerClass(RecordingErrorReportProtocol.self)
+        previousEndpoint = UserDefaults.standard.string(forKey: "mcpCloudEndpoint")
+        UserDefaults.standard.set(WorkerAIProvider.defaultEndpoint, forKey: "mcpCloudEndpoint")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RecordingErrorReportProtocol.self]
+        testSession = URLSession(configuration: configuration)
         RecordingErrorReportProtocol.reset()
         UserDefaults.standard.set(true, forKey: enabledKey)
         ErrorReportService.queue.clear()
@@ -191,10 +197,16 @@ final class ErrorReportServiceTests: XCTestCase {
     }
 
     override func tearDown() {
-        URLProtocol.unregisterClass(RecordingErrorReportProtocol.self)
+        testSession.invalidateAndCancel()
+        testSession = nil
         UserDefaults.standard.removeObject(forKey: enabledKey)
         ErrorReportService.queue.clear()
         UserDefaults.standard.removeObject(forKey: "pendingErrorReports.daily")
+        if let previousEndpoint {
+            UserDefaults.standard.set(previousEndpoint, forKey: "mcpCloudEndpoint")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "mcpCloudEndpoint")
+        }
         super.tearDown()
     }
 
@@ -220,7 +232,7 @@ final class ErrorReportServiceTests: XCTestCase {
         record("a")
         record("b")
 
-        await ErrorReportService.flush()
+        await ErrorReportService.flush(session: testSession)
 
         let requests = RecordingErrorReportProtocol.recordedRequests()
         XCTAssertEqual(requests.count, 1)
@@ -238,7 +250,7 @@ final class ErrorReportServiceTests: XCTestCase {
     func testTheRequestCarriesOnlyDiagnosticFields() async throws {
         RecordingErrorReportProtocol.respond(status: 200)
         record()
-        await ErrorReportService.flush()
+        await ErrorReportService.flush(session: testSession)
 
         let body = try XCTUnwrap(RecordingErrorReportProtocol.recordedBodies().first)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
@@ -254,21 +266,21 @@ final class ErrorReportServiceTests: XCTestCase {
             ErrorReportService.queue.clear()
             RecordingErrorReportProtocol.respond(status: status)
             record()
-            await ErrorReportService.flush()
+            await ErrorReportService.flush(session: testSession)
             XCTAssertEqual(ErrorReportService.queue.pending().count, 1, "\(status) の場合は、次回のために残す必要があります。")
         }
         RecordingErrorReportProtocol.reset()
         ErrorReportService.queue.clear()
         RecordingErrorReportProtocol.failNextRequest()
         record()
-        await ErrorReportService.flush()
+        await ErrorReportService.flush(session: testSession)
         XCTAssertEqual(ErrorReportService.queue.pending().count, 1, "通信できない場合も残す必要があります。")
     }
 
     func testAReportTheServerRefusesIsDroppedSoItCannotBlockTheQueue() async {
         RecordingErrorReportProtocol.respond(status: 400)
         record()
-        await ErrorReportService.flush()
+        await ErrorReportService.flush(session: testSession)
         XCTAssertTrue(ErrorReportService.queue.pending().isEmpty)
     }
 
@@ -276,14 +288,14 @@ final class ErrorReportServiceTests: XCTestCase {
         record()
         UserDefaults.standard.set(false, forKey: enabledKey)
 
-        await ErrorReportService.flush()
+        await ErrorReportService.flush(session: testSession)
 
         XCTAssertTrue(RecordingErrorReportProtocol.recordedRequests().isEmpty, "オフにした後は何も送られてはいけません。")
         XCTAssertTrue(ErrorReportService.queue.pending().isEmpty, "オフにする前に溜まっていた分も破棄される必要があります。")
     }
 
     func testAnEmptyQueueSendsNothing() async {
-        await ErrorReportService.flush()
+        await ErrorReportService.flush(session: testSession)
         XCTAssertTrue(RecordingErrorReportProtocol.recordedRequests().isEmpty)
     }
 
@@ -291,7 +303,7 @@ final class ErrorReportServiceTests: XCTestCase {
         RecordingErrorReportProtocol.respond(status: 200)
         for i in 0..<(ErrorReportService.batchSize + 5) { record("sig-\(i)") }
 
-        await ErrorReportService.flush()
+        await ErrorReportService.flush(session: testSession)
 
         let bodies = RecordingErrorReportProtocol.recordedBodies()
         XCTAssertEqual(bodies.count, 2)
@@ -348,12 +360,13 @@ private final class RecordingErrorReportProtocol: URLProtocol {
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
-        request.url?.host == "studiquo-mcp.studiquo-mcp-server.workers.dev"
+        true // Dedicated test session must never reach the network.
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        XCTAssertEqual(request.url?.host, "studiquo-mcp.studiquo-mcp-server.workers.dev", "Unexpected test request host")
         let body = request.httpBody ?? request.httpBodyStream.map { stream -> Data in
             stream.open(); defer { stream.close() }
             var data = Data()

@@ -201,7 +201,7 @@ enum ErrorReportService {
     private static var isFlushing = false
 
     /// Sends what is queued. Safe to call often; only one send runs at a time.
-    static func flush() async {
+    static func flush(session: URLSession = .shared) async {
         // Anything queued before the setting was turned off is discarded
         // rather than sent later.
         guard ErrorReportSettings.isEnabled else {
@@ -217,7 +217,7 @@ enum ErrorReportService {
         while ErrorReportSettings.isEnabled {
             let batch = Array(queue.pending().prefix(batchSize))
             guard !batch.isEmpty else { return }
-            switch await send(batch) {
+            switch await send(batch, session: session) {
             case .delivered, .rejected:
                 // A report the server refuses outright (400) would be
                 // refused again forever; dropping it keeps the queue moving.
@@ -230,7 +230,7 @@ enum ErrorReportService {
 
     private enum Outcome { case delivered, rejected, retryLater }
 
-    private static func send(_ batch: [ErrorReport]) async -> Outcome {
+    private static func send(_ batch: [ErrorReport], session: URLSession) async -> Outcome {
         var request = URLRequest(url: endpoint.appending(path: "api/app-errors"))
         request.httpMethod = "POST"
         request.timeoutInterval = 15
@@ -242,7 +242,7 @@ enum ErrorReportService {
         request.httpBody = data
 
         guard ErrorReportSettings.isEnabled else { return .rejected }
-        guard let (_, response) = try? await URLSession.shared.data(for: request),
+        guard let (_, response) = try? await session.data(for: request),
               let http = response as? HTTPURLResponse else { return .retryLater }
         switch http.statusCode {
         case 200..<300: return .delivered
