@@ -18,6 +18,18 @@ final class FriendProfileInteractionTests: XCTestCase {
 import UIKit
 
 final class LibraryDropInteractionTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        continueAfterFailure = false
+    }
+
+    override func tearDown() {
+        XCUIApplication(bundleIdentifier: "com.yabuko.studiquo").terminate()
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.appearance = .light
+        super.tearDown()
+    }
+
     func testFriendChatRemainsLightAndReadableWhenDeviceUsesDarkAppearance() {
         XCUIDevice.shared.appearance = .dark
         defer { XCUIDevice.shared.appearance = .light }
@@ -94,6 +106,18 @@ final class LibraryDropInteractionTests: XCTestCase {
 
         let title = app.textFields["calendar-event-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
+
+        // The event form is a sheet of fixed height. With the notification
+        // rows ("通知日時" and its footer) showing, the notes section falls
+        // below the sheet's bottom edge, where the lazy list has not built it
+        // and scrolling would push the title out too. This test is about the
+        // notes field, so switch notifications off to keep the form short.
+        let notify = app.switches["通知する"]
+        XCTAssertTrue(notify.waitForExistence(timeout: 5))
+        if (notify.value as? String) == "1" {
+            notify.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        }
+
         title.tap()
         title.typeText("メモ保持テスト")
 

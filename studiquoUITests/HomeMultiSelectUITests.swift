@@ -11,10 +11,24 @@ final class HomeMultiSelectUITests: XCTestCase {
         return app
     }
 
-    private func beginSelecting(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        let begin = app.buttons["library-selection-begin"]
+    private func selectionAction(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        var begin = app.buttons["library-selection-begin"]
+        // iPad's native toolbar overflow contains the same selection action
+        // when portrait width cannot display every trailing item.
+        if !begin.waitForExistence(timeout: 2) || !begin.isHittable {
+            let overflow = app.buttons["OverflowBarButtonItem"]
+            XCTAssertTrue(overflow.waitForExistence(timeout: 10), "ツールバーの追加操作が表示されません", file: file, line: line)
+            overflow.tap()
+            // UIKit's native menu retains the action label, but not the
+            // SwiftUI toolbar item's custom accessibility identifier.
+            begin = app.buttons["選択"]
+        }
         XCTAssertTrue(begin.waitForExistence(timeout: 15), "「選択」ボタンが表示されません", file: file, line: line)
-        begin.tap()
+        return begin
+    }
+
+    private func beginSelecting(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        selectionAction(in: app, file: file, line: line).tap()
         XCTAssertTrue(
             selectionCount(app).waitForExistence(timeout: 5),
             "選択モードに入れません", file: file, line: line
@@ -48,7 +62,7 @@ final class HomeMultiSelectUITests: XCTestCase {
         XCTAssertEqual(countLabel(app), "0件選択中")
 
         app.buttons["library-selection-done"].tap()
-        XCTAssertTrue(app.buttons["library-selection-begin"].waitForExistence(timeout: 5))
+        XCTAssertTrue(selectionAction(in: app).waitForExistence(timeout: 5))
     }
 
     func testTappingAnItemTogglesItInsteadOfOpeningIt() {
@@ -97,8 +111,12 @@ final class HomeMultiSelectUITests: XCTestCase {
             app.descendants(matching: .any)["library-entry-Drag me"].waitForExistence(timeout: 3),
             "移動した資料がホームに残っています"
         )
-        XCTAssertTrue(app.buttons["library-selection-begin"].waitForExistence(timeout: 5), "移動後に選択モードが終わっていません")
+        XCTAssertTrue(selectionAction(in: app).waitForExistence(timeout: 5), "移動後に選択モードが終わっていません")
 
+        // Dismiss the native overflow menu exposed by the end-state check.
+        if app.buttons["選択"].exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.3)).tap()
+        }
         app.buttons["library-folder-Parent"].tap()
         app.buttons["library-folder-Parent/Destination"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["library-entry-Drag me"].waitForExistence(timeout: 5))
