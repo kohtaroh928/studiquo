@@ -1102,11 +1102,6 @@ private struct LaunchLoadingView: View {
     }
 }
 
-/// Tracks whether this device's very first CloudKit hand-off (schema push +
-/// initial import) is still in flight, so the UI can show a brief, dismissible
-/// hint instead of silently waiting for notes to appear from other devices.
-/// Never blocks app launch; CloudKit sync runs in the background.
-@MainActor
 /// Reports iCloud sync failures that point at a real problem. Being offline,
 /// signed out of iCloud or rate-limited is ordinary and not worth a report.
 enum CloudKitErrorReporting {
@@ -1140,6 +1135,11 @@ enum CloudKitErrorReporting {
     }
 }
 
+/// Tracks whether this device's very first CloudKit hand-off (schema push +
+/// initial import) is still in flight, so the UI can show a brief, dismissible
+/// hint instead of silently waiting for notes to appear from other devices.
+/// Never blocks app launch; CloudKit sync runs in the background.
+@MainActor
 private final class CloudKitSyncStatus: ObservableObject {
     private static let hasCompletedFirstSyncKey = "hasCompletedFirstCloudKitSync"
     /// Safety net for accounts that never get a CloudKit event at all (no
