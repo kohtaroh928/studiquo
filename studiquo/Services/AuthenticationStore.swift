@@ -53,6 +53,10 @@ final class AuthenticationStore: ObservableObject {
     private let unregisterPushDevice: () async -> Void
     private let revokeCloudCredentials: () async -> Void
     private let deleteAccountOnServer: () async throws -> Void
+    private let authenticationSession: URLSession
+    private var authenticationEndpoint: URL {
+        MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)!
+    }
     /// Email + new password held only in memory between `beginAccountCreation`
     /// and a successful `confirmEmailVerification` — nothing is written to
     /// Keychain until the code is confirmed, so an abandoned sign-up (or
@@ -78,7 +82,8 @@ final class AuthenticationStore: ObservableObject {
         defaults: UserDefaults = .standard,
         unregisterPushDevice: @escaping () async -> Void = { await PushNotificationRegistration.unregisterCurrentDevice() },
         revokeCloudCredentials: @escaping () async -> Void = { await MCPCloudCredentials.revoke() },
-        deleteAccountOnServer: @escaping () async throws -> Void = { try await AccountDeletionService.deleteAccount() }
+        deleteAccountOnServer: @escaping () async throws -> Void = { try await AccountDeletionService.deleteAccount() },
+        authenticationSession: URLSession = .shared
     ) {
         self.service = service
         self.now = now
@@ -86,6 +91,7 @@ final class AuthenticationStore: ObservableObject {
         self.unregisterPushDevice = unregisterPushDevice
         self.revokeCloudCredentials = revokeCloudCredentials
         self.deleteAccountOnServer = deleteAccountOnServer
+        self.authenticationSession = authenticationSession
         restore()
         authFailureSubscription = NotificationCenter.default.publisher(for: .studiquoAuthFailed)
             .receive(on: DispatchQueue.main)
@@ -121,7 +127,7 @@ final class AuthenticationStore: ObservableObject {
         isEmailVerifyBusy = true
         defer { isEmailVerifyBusy = false }
         do {
-            try await EmailVerificationService.sendCode(email: normalized)
+            try await EmailVerificationService.sendCode(email: normalized, endpoint: authenticationEndpoint, session: authenticationSession)
             pendingSignUp = (normalized, password)
             needsNewPassword = false
             errorMessage = ""
@@ -185,7 +191,9 @@ final class AuthenticationStore: ObservableObject {
         var retries = 0
         while true {
             do {
-                return try await LocalAuthService.login(email: email, password: password)
+                return try await LocalAuthService.login(email: email, password: password,
+                    randomValue: MCPCloudCredentials.makeRandomValue(),
+                    endpoint: authenticationEndpoint, session: authenticationSession)
             } catch LocalAuthError.serverBusy(let retryAfter) where retries < Self.busyRetryLimit {
                 retries += 1
                 let delay = min(max(retryAfter ?? 2, Self.busyRetryDelayRange.lowerBound), Self.busyRetryDelayRange.upperBound)
@@ -283,7 +291,7 @@ final class AuthenticationStore: ObservableObject {
         isEmailVerifyBusy = true
         defer { isEmailVerifyBusy = false }
         do {
-            try await EmailVerificationService.sendCode(email: pending.email)
+            try await EmailVerificationService.sendCode(email: pending.email, endpoint: authenticationEndpoint, session: authenticationSession)
             errorMessage = ""
             return true
         } catch {
@@ -302,7 +310,8 @@ final class AuthenticationStore: ObservableObject {
         do {
             let token = try await EmailVerificationService.confirmCode(
                 email: pending.email, code: code, password: pending.password,
-                randomValue: MCPCloudCredentials.makeRandomValue()
+                randomValue: MCPCloudCredentials.makeRandomValue(),
+                endpoint: authenticationEndpoint, session: authenticationSession
             )
             // The user may have tapped キャンセル (or started a different
             // sign-up) while the request above was in flight — don't
