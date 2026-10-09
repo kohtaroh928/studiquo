@@ -254,7 +254,7 @@ final class AccountDeletionIOSTests: XCTestCase {
         try manager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: root) }
         let sandbox = root.appendingPathComponent("sandbox")
-        let files = ["Documents/import.pdf", "Library/Caches/image.png", "tmp/export.pdf", "Library/Application Support/studiquo/AutoBackups/note.json", "Library/Application Support/default.store"]
+        let files = ["Documents/import.pdf", "Library/Caches/image.png", "tmp/export.pdf", "Library/Application Support/studiquo/AutoBackups/note.json", "Library/Application Support/studiquo/ExternalFileBookmarks.json", "Library/Application Support/default.store"]
         for path in files {
             let file = sandbox.appendingPathComponent(path)
             try manager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
