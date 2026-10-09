@@ -455,7 +455,9 @@ test("49. KV削除が途中で失敗しても再実行できる", async () => {
   assert.notEqual(await env.STUDIQUO_DATA.get("snapshot:failure-token-49"), null);
   await deleteAccount(env, canonical);
   assert.equal(await env.STUDIQUO_DATA.get("snapshot:failure-token-49"), null);
-  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted", identityKeys: [canonical] });
+  const state = await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json");
+  assert.ok(Number.isFinite(state.deletedAt) && state.deletedAt <= Date.now());
+  assert.deepEqual(state, { status: "deleted", deletedAt: state.deletedAt, identityKeys: [canonical] });
 });
 
 test("50. Durable Objectの削除処理が途中で失敗しても再実行できる", async () => {
@@ -507,7 +509,9 @@ test("52. 同じ削除要求を2回送っても安全", async () => {
   assert.deepEqual(await deleteAccount(env, canonical), { deleted: true });
   assert.deepEqual(await deleteAccount(env, canonical), { deleted: true });
   assert.equal(await env.STUDIQUO_DATA.get(`account:${canonical}`), null);
-  assert.deepEqual(await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json"), { status: "deleted", identityKeys: [canonical] });
+  const state = await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json");
+  assert.ok(Number.isFinite(state.deletedAt) && state.deletedAt <= Date.now());
+  assert.deepEqual(state, { status: "deleted", deletedAt: state.deletedAt, identityKeys: [canonical] });
 });
 
 test("53. 同時に2回削除してもデータが復活しない", async () => {

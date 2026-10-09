@@ -2,3 +2,5 @@ node_modules/
 build/
 .wrangler/
 test-actions.json
+/.dev.vars
+/.dev.vars.*
