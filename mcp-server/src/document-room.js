@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { DOCUMENT_ROOM_SCHEMA, purgeRoomData, removeParticipantData } from "./document-room-store.js";
+import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, removeAccountData } from "./document-room-store.js";
 
 // Mirrors chat-room.js's ChatRoom shape closely — same Durable Object
 // pattern, same per-room SQLite storage, same requireParticipant-throws-
@@ -133,15 +133,24 @@ export class DocumentRoom extends DurableObject {
     return { status: finalStatus };
   }
 
-  // Called by account deletion (a Worker-to-Durable-Object call; there is no
-  // HTTP route to it). Erases the room when its owner's account is deleted and
-  // returns the members it had.
-  async purge() {
-    return purgeRoomData(this.ctx.storage.sql);
+  // The three methods below are for account deletion and the room index: they
+  // are Worker-to-Durable-Object calls, and no HTTP route reaches them.
+
+  // The caller's role in this room, or null. Used to tell whether a
+  // `already_initialized` answer means "this room is yours".
+  async roleOf(userKey) {
+    const row = this.ctx.storage.sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray()[0];
+    return row?.role ?? null;
   }
 
-  // Called by account deletion for a member who is not the owner.
-  async removeParticipant(userKey) {
-    return removeParticipantData(this.ctx.storage.sql, userKey);
+  // The room's members if `userKey` is its owner, otherwise null.
+  async ownerMembers(userKey) {
+    return membersIfOwner(this.ctx.storage.sql, userKey);
+  }
+
+  // Removes `userKey`'s account from the room: erases the room if they own
+  // it, otherwise takes only them out.
+  async removeAccount(userKey) {
+    return removeAccountData(this.ctx.storage.sql, userKey);
   }
 }

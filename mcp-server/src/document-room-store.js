@@ -37,13 +37,15 @@ export function purgeRoomData(sql) {
   return members;
 }
 
-// Takes one member out of the room. Whatever they proposed and nobody has
-// decided yet goes with them; text they proposed that was accepted is already
-// part of the owner's document and stays. A room left with nobody in it is
-// erased. Returns "removed", "purged" (they were the last one), or "absent".
+// Takes one member out of the room. What they proposed and nobody decided, and
+// what was decided against, goes with them. Text of theirs that was accepted is
+// already part of the owner's document and stays, but without their key or the
+// text it replaced. A room left with nobody in it is erased. Returns "removed",
+// "purged" (they were the last one), or "absent".
 export function removeParticipantData(sql, userKey) {
   const present = sql.exec("SELECT 1 AS present FROM participants WHERE user_key = ?", userKey).toArray().length > 0;
-  sql.exec("DELETE FROM changes WHERE author_key = ? AND status = 'pending'", userKey);
+  sql.exec("DELETE FROM changes WHERE author_key = ? AND status IN ('pending', 'rejected')", userKey);
+  sql.exec("UPDATE changes SET author_key = '', previous_text = '' WHERE author_key = ?", userKey);
   sql.exec("DELETE FROM participants WHERE user_key = ?", userKey);
   const remaining = sql.exec("SELECT COUNT(*) AS count FROM participants").toArray()[0].count;
   if (remaining === 0) {
@@ -51,6 +53,28 @@ export function removeParticipantData(sql, userKey) {
     return present ? "purged" : "absent";
   }
   return present ? "removed" : "absent";
+}
+
+// The members of the room if `userKey` is its owner, otherwise null. Lets the
+// caller forget the members' index entries before the room is erased, so a
+// failure half-way never leaves entries that nothing can find again.
+export function membersIfOwner(sql, userKey) {
+  const role = sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray()[0]?.role;
+  if (role !== "owner") return null;
+  return sql.exec("SELECT user_key FROM participants").toArray().map(row => row.user_key);
+}
+
+// Deletes `userKey`'s account from the room, judged by what the room itself
+// says. The per-account index only says where to look: a room that has since
+// been erased and re-created by someone else, or an index that is out of date,
+// must never cost another person their document. The owner's room is erased;
+// anyone else is taken out. Returns "purged-owner", "removed", "purged" or "absent".
+export function removeAccountData(sql, userKey) {
+  if (membersIfOwner(sql, userKey)) {
+    purgeRoomData(sql);
+    return "purged-owner";
+  }
+  return removeParticipantData(sql, userKey);
 }
 
 // `doc-room:<member key>:<room id>` -> the member's role. Lists the rooms an

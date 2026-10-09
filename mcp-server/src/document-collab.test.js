@@ -48,6 +48,9 @@ function fakeDocumentRoomBinding() {
           state.participants.set(userKey, role);
           return { status: "invited" };
         },
+        async roleOf(userKey) {
+          return state.participants.get(userKey) ?? null;
+        },
         async listParticipants(userKey) {
           requireParticipant(state, userKey);
           return Array.from(state.participants, ([key, role]) => ({ userKey: key, role }));
