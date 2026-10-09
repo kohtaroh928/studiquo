@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { DOCUMENT_ROOM_SCHEMA, purgeRoomData, removeParticipantData } from "./document-room-store.js";
 
 // Mirrors chat-room.js's ChatRoom shape closely — same Durable Object
 // pattern, same per-room SQLite storage, same requireParticipant-throws-
@@ -14,29 +15,7 @@ export class DocumentRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS participants (
-          user_key TEXT PRIMARY KEY,
-          role TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS blocks (
-          block_order INTEGER PRIMARY KEY,
-          kind TEXT NOT NULL,
-          text TEXT NOT NULL DEFAULT '',
-          list_kind TEXT,
-          list_level INTEGER NOT NULL DEFAULT 0,
-          paragraph_style TEXT
-        );
-        CREATE TABLE IF NOT EXISTS changes (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          author_key TEXT NOT NULL,
-          block_order INTEGER NOT NULL,
-          previous_text TEXT NOT NULL,
-          new_text TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'pending',
-          created_at INTEGER NOT NULL
-        );
-      `);
+      this.ctx.storage.sql.exec(DOCUMENT_ROOM_SCHEMA);
     });
   }
 
@@ -152,5 +131,17 @@ export class DocumentRoom extends DurableObject {
     const finalStatus = decision === "accept" ? "accepted" : "rejected";
     this.ctx.storage.sql.exec("UPDATE changes SET status = ? WHERE id = ?", finalStatus, changeID);
     return { status: finalStatus };
+  }
+
+  // Called by account deletion (a Worker-to-Durable-Object call; there is no
+  // HTTP route to it). Erases the room when its owner's account is deleted and
+  // returns the members it had.
+  async purge() {
+    return purgeRoomData(this.ctx.storage.sql);
+  }
+
+  // Called by account deletion for a member who is not the owner.
+  async removeParticipant(userKey) {
+    return removeParticipantData(this.ctx.storage.sql, userKey);
   }
 }

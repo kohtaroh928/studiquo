@@ -76,7 +76,7 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 | パスワードの世代カウンタ | `RATE_COUNTER`(メールのhashを名前に使う) | 送らない | 整数だけ。退会後7日間残して自動削除(15.2)。再登録で保持に戻る |
 | ログインの結果ログ | Workers Logs | 送らない | 結果・国・ASNだけ。メールとIPは含めない。保持はCloudflareの設定による |
 | チャット、友達、グループ、添付 | KV、`USER_REGISTRY`、`CHAT_ROOM` | 参加者、APNs | アカウント削除時に参照を除去し、過去発言は匿名化され得る。期間による自動削除は未定義 |
-| 共同編集状態 | `DOCUMENT_ROOM` | 許可された参加者 | アカウント削除との完全な保持表は未定義 |
+| 共同編集状態 | `DOCUMENT_ROOM` | 許可された参加者(アカウントごとのキー) | 持ち主の削除で部屋ごと消去。招待されただけの人の削除では、その人の席と未決の提案を消去(ADR-0004) |
 | MCPスナップショット | KV | 接続を許可したMCP client | アカウント削除対象。再同期まで古い内容が残り得る |
 | MCP grant、access token、refresh token | KV | MCP client | access tokenは1時間、refresh tokenは90日。grantは取消しまたはアカウント削除まで |
 | MCPからの作成要求 | `MCP_INBOX` | iPadへ取り込み | アカウント削除時にpurge。取り込み後は端末データとして管理 |

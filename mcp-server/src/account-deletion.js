@@ -1,5 +1,6 @@
 import { sha256Hex } from "./auth.js";
 import { queueRevenueCatDeletion } from "./privacy-retention.js";
+import { roomMembershipKey } from "./document-room-store.js";
 
 // How long the retired password generation outlives the deletion. KV can serve
 // a stale record for about a minute; a week is a wide margin on top of that.
@@ -14,6 +15,26 @@ export async function startAccountDeletion(env, canonicalSub) {
     return { deleted: true, externalDeletionPending: true };
   } catch {
     return { deleted: false, cleanupPending: true };
+  }
+}
+
+// Collaborative document rooms. A room the account owns is erased: the document
+// is the owner's, and the people it was shared with lose their view of it. In a
+// room the account was only invited to, just its own place and the proposals it
+// made that nobody has decided yet are removed. Every step can run again after
+// a partial failure: an erased room purges to nothing, an absent member is a
+// no-op, and a membership entry is deleted only after its room is dealt with.
+async function removeDocumentRooms(env, chatKey) {
+  const prefix = roomMembershipKey(chatKey, "");
+  for (const key of await entries(env, prefix)) {
+    const roomID = key.slice(prefix.length);
+    const room = env.DOCUMENT_ROOM.getByName(roomID);
+    if ((await env.STUDIQUO_DATA.get(key)) === "owner") {
+      for (const member of await room.purge()) await env.STUDIQUO_DATA.delete(roomMembershipKey(member, roomID));
+    } else {
+      await room.removeParticipant(chatKey);
+    }
+    await env.STUDIQUO_DATA.delete(key);
   }
 }
 
@@ -229,6 +250,8 @@ export async function deleteAccount(env, canonicalSub) {
       await env.CHAT_ROOM.getByName(group.roomID).removeDeletedAccount(chatKey);
     }
   }
+
+  if (env.DOCUMENT_ROOM) await removeDocumentRooms(env, chatKey);
 
   const mcpHash = await sha256Hex(`mcp-account:${canonicalSub}`);
   const usageHash = await sha256Hex(`usage-account:${canonicalSub}`);

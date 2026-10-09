@@ -1,5 +1,6 @@
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { sendPush } from "./push.js";
+import { roomMembershipKey } from "./document-room-store.js";
 
 // A full block snapshot for a modest document (well past what any
 // reasonably-sized study document needs) plus JSON overhead — same
@@ -53,6 +54,10 @@ function roomForbiddenResponse(error) {
   return null;
 }
 
+async function recordRoomMembership(env, userKey, roomID, role) {
+  await env.STUDIQUO_DATA.put(roomMembershipKey(userKey, roomID), role);
+}
+
 async function roomResponse(promise) {
   try {
     return json(await promise);
@@ -87,7 +92,13 @@ export async function handleDocumentCollab(url, request, env, key, ctx) {
   if (initMatch && request.method === "POST") {
     const body = await readBody(request);
     const blocks = Array.isArray(body?.blocks) ? body.blocks : [];
-    return json(await env.DOCUMENT_ROOM.getByName(initMatch[1]).initialize(key, blocks));
+    const result = await env.DOCUMENT_ROOM.getByName(initMatch[1]).initialize(key, blocks);
+    // Which rooms an account is in, so deleting the account can find them: a
+    // room is only reachable by its id, and the room itself knows its members
+    // by opaque keys. Written only when this call created the room, i.e. when
+    // the caller is its owner.
+    if (result?.status === "initialized") await recordRoomMembership(env, key, initMatch[1], "owner");
+    return json(result);
   }
 
   const inviteMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/invite$/.exec(url.pathname);
@@ -110,6 +121,7 @@ export async function handleDocumentCollab(url, request, env, key, ctx) {
     if (!userKey) return json({ error: "No user found for that code." }, 404);
     try {
       const result = await env.DOCUMENT_ROOM.getByName(inviteMatch[1]).invite(key, userKey, role);
+      await recordRoomMembership(env, userKey, inviteMatch[1], role);
       const inviterName = await friendDisplayName(env, key);
       const delivery = sendPush(env, userKey, {
         category: "shareInvite",

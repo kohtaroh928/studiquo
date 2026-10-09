@@ -1,4 +1,5 @@
 import { isRevoked } from "./revocation.js";
+import { resolveChatUserKey } from "./chat-identity.js";
 import { isExpired } from "./token.js";
 import { checkRateLimit } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
@@ -207,8 +208,7 @@ export async function handleChat(url, request, env, ctx) {
   // A session changes on each sign-in, but a person's chat identity must not.
   // Preserve the old token-derived key when upgrading an existing account so
   // its friend codes and room participants remain usable after token rotation.
-  const identityHash = await sha256Hex(`chat-account:${session.sub}`);
-  const key = await env.USER_REGISTRY.getByName(identityHash).resolveChatKey(identityHash, tokenKey);
+  const key = await resolveChatUserKey(env, session.sub, tokenKey);
 
   const devices = await handleDeviceRoutes(url, request, env, key, ctx);
   if (devices) return devices;
