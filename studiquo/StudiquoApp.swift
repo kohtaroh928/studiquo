@@ -745,6 +745,9 @@ private struct LibraryDropUITestRoot: View {
             LibraryDropUITestStore.authentication.ignoresAuthFailures = true
             LibraryDropUITestStore.authentication.finishOnboarding()
         }
+        if ProcessInfo.processInfo.arguments.contains(SharedInboxUITestSeed.argument) {
+            SharedInboxUITestSeed.seed()
+        }
         // Lets UI tests drive the AIトーク (home tab and editor) without a network.
         if ProcessInfo.processInfo.arguments.contains("--ui-test-fake-ai") {
             AI.provider = UITestAIProvider()

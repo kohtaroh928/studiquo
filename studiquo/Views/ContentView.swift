@@ -1991,6 +1991,9 @@ struct ContentView: View {
     /// Files that arrived from the Files app's share sheet or "Open in…",
     /// waiting for the student to choose a destination folder.
     @StateObject private var sharedImport = SharedImportCoordinator()
+    /// PDF imports that were started by the password prompt and are still
+    /// rendering. A running batch waits for these before it moves on.
+    @State private var pdfImportsInFlight = 0
     /// Legacy folder path that `assignToCurrentFolder` uses instead of the
     /// open library folder while a shared batch is being imported.
     @State private var importDestinationPath: String?
@@ -2542,7 +2545,7 @@ struct ContentView: View {
                 // PDF slipped through with no prompt and came in blank.
                 isImportingFiles = false
                 let picked = urls
-                DispatchQueue.main.async { picked.forEach(importFile) }
+                Task { @MainActor in await importPickedFiles(picked) }
             } onCancel: {
                 isImportingFiles = false
             }
@@ -5618,7 +5621,11 @@ struct ContentView: View {
     }
 
     @discardableResult
-    private func importPDF(from url: URL, password: String? = nil) -> Notebook? {
+    private func importPDF(from url: URL, password: String? = nil) async -> Notebook? {
+        // Rendering takes a while now that it no longer blocks the screen, and
+        // the student may open another folder meanwhile. Decide the destination
+        // before waiting, not after.
+        let destinationPath = importDestinationPath ?? selectedFolder ?? ""
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
 
@@ -5645,10 +5652,19 @@ struct ContentView: View {
         // 解除" to ever act on later.
         let lockedPDFData = password != nil ? try? Data(contentsOf: url) : nil
 
-        let extractedPages = PDFImportService.extractPages(from: url, password: password)
+        let coordinator = sharedImport
+        let extractedPages = await PDFImportService.extractPagesAsync(from: url, password: password) { done, total in
+            Task { @MainActor in coordinator.advancePage(done: done, of: total) }
+        }
+        guard !extractedPages.isEmpty else {
+            // Broken or unsupported PDF. Saying so matters most in a batch,
+            // where silence used to count it as imported.
+            pdfPrepareError = L("このPDFを読み込めませんでした。壊れているか、対応していない形式の可能性があります。")
+            return nil
+        }
         let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
         notebook.lockedPDFData = lockedPDFData
-        assignToCurrentFolder(notebook)
+        assign(notebook, toLegacyPath: destinationPath)
         for (index, pageData) in extractedPages.enumerated() {
             let page = NotePage(order: index, backgroundImageData: pageData.imageData, pageWidth: pageData.width, pageHeight: pageData.height)
             page.recognizedText = pageData.text
@@ -5689,17 +5705,23 @@ struct ContentView: View {
             }
             pdfPendingImport = nil
             pdfPasswordEntry = ""
-            let notebook = importPDF(from: url, password: password)
-            // The file is unlocked and its password is now known — offer to
-            // keep a password-free copy right away, the way PDF Expert does
-            // once you've opened a protected file. The password is held only
-            // long enough to write that copy if the student says yes; the
-            // notebook itself keeps the encrypted bytes regardless, so
-            // "PDFのパスワードを削除" also stays available later from its
-            // long-press menu if the student says no here — or if this
-            // offer is skipped entirely because they already turned it off.
-            if !pdfPasswordRemovalOfferDisabled, let notebook {
-                pdfRemovalOffer = PendingRemoval(url: url, password: password, notebook: notebook)
+            // Counted now, before the task starts, so a batch waiting on this
+            // prompt cannot see "no prompt, nothing running" and move on.
+            pdfImportsInFlight += 1
+            Task { @MainActor in
+                let notebook = await importPDF(from: url, password: password)
+                pdfImportsInFlight -= 1
+                // The file is unlocked and its password is now known — offer to
+                // keep a password-free copy right away, the way PDF Expert does
+                // once you've opened a protected file. The password is held only
+                // long enough to write that copy if the student says yes; the
+                // notebook itself keeps the encrypted bytes regardless, so
+                // "PDFのパスワードを削除" also stays available later from its
+                // long-press menu if the student says no here — or if this
+                // offer is skipped entirely because they already turned it off.
+                if !pdfPasswordRemovalOfferDisabled, let notebook {
+                    pdfRemovalOffer = PendingRemoval(url: url, password: password, notebook: notebook)
+                }
             }
             return
         }
@@ -5771,41 +5793,23 @@ struct ContentView: View {
         importDestinationPath = destination
         sharedImportSummary = nil
         homeSection = .notes
+        // Synchronously, so a second tap on the button finds an import running.
         sharedImport.begin(total: items.count)
 
         Task { @MainActor in
-            var unsupported: [String] = []
-            var held: [SharedInbox.Item] = []
-            for (index, item) in items.enumerated() {
-                sharedImport.advance(completed: index, currentName: item.displayName)
+            let summary = await SharedImportRunner.run(items: items, coordinator: sharedImport) { item in
                 pdfPrepareError = nil
-                guard SharedInbox.isImportable(item.url) else {
-                    unsupported.append(item.displayName)
-                    sharedImport.finish(item)
-                    continue
-                }
-                importFile(from: item.url)
-                while pdfPendingImport != nil {
-                    try? await Task.sleep(for: .milliseconds(200))
-                }
-                if pdfPrepareError != nil {
-                    // Clear it at once: the end-of-import notice reports every
-                    // skipped file together instead of one alert per file.
-                    pdfPrepareError = nil
-                    held.append(item)
-                } else {
-                    sharedImport.finish(item)
-                }
-                await Task.yield()
+                await importFile(from: item.url)
+                await waitForPDFPromptsToSettle()
+                guard pdfPrepareError != nil else { return .imported }
+                // Clear it at once: the end-of-import notice reports every
+                // skipped file together instead of one alert per file.
+                pdfPrepareError = nil
+                return .failed
             }
             try? modelContext.save()
             importDestinationPath = nil
-            sharedImport.end(attempted: held)
-            sharedImportSummary = SharedImportSummary(
-                imported: items.count - unsupported.count - held.count,
-                unsupported: unsupported,
-                held: held.map(\.displayName)
-            )
+            sharedImportSummary = summary
             if isBatch {
                 // 28 files should not leave 28 notebooks open as tabs.
                 openNotebooks = tabsBefore
@@ -5816,7 +5820,29 @@ struct ContentView: View {
         }
     }
 
-    private func importFile(from url: URL) {
+    /// Waits until no password prompt is showing and no prompted PDF is still
+    /// being imported — each prompt belongs to one file, and the next file
+    /// must not start (or overwrite `pdfPendingImport`) before it is answered.
+    private func waitForPDFPromptsToSettle() async {
+        while pdfPendingImport != nil || pdfImportsInFlight > 0 {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+    }
+
+    /// Imports files chosen with the file picker, one at a time, showing the
+    /// same progress card as a shared batch.
+    private func importPickedFiles(_ urls: [URL]) async {
+        let showsProgress = !sharedImport.isImporting
+        if showsProgress { sharedImport.begin(total: urls.count) }
+        for (index, url) in urls.enumerated() {
+            if showsProgress { sharedImport.advance(completed: index, currentName: url.lastPathComponent) }
+            await importFile(from: url)
+            await waitForPDFPromptsToSettle()
+        }
+        if showsProgress { sharedImport.end(attempted: []) }
+    }
+
+    private func importFile(from url: URL) async {
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
         let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
@@ -5825,7 +5851,7 @@ struct ContentView: View {
             return
         }
         if type?.conforms(to: .pdf) == true || fileExtension == "pdf" {
-            importPDF(from: url)
+            await importPDF(from: url)
             return
         }
         if fileExtension == "docx" {
