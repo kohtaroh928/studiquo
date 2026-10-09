@@ -22,7 +22,9 @@ export async function mintSession(env, identityKey, randomValue) {
   const issuedAt = Math.floor(Date.now() / 1000);
   const token = `${issuedAt}.${randomValue}`;
   if (token.length < 32 || token.length > 256) return null;
-  const deletionState = await env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(identityKey)}`, "json");
+  const identityHash = await sha256Hex(identityKey);
+  const deletionGroup = await env.STUDIQUO_DATA.get(`privacy-deletion-group:${identityHash}`);
+  const deletionState = await env.STUDIQUO_DATA.get(`account-deletion:${deletionGroup || identityHash}`, "json");
   if (deletionState?.status === "deleting") return null;
   // A queued provider DELETE must never erase a newly re-registered customer.
   // Check all known aliases, not only the sign-in method used this time.

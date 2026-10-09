@@ -6,6 +6,7 @@ import { sha256Hex } from "./auth.js";
 import { runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.js";
 import { deleteAccount, startAccountDeletion } from "./account-deletion.js";
 import { handleAdminWebhook } from "./admin.js";
+import { mintSession } from "./session.js";
 
 function environment() {
   const db = new DatabaseSync(":memory:");
@@ -20,7 +21,18 @@ function environment() {
   return {
     PRIVACY_RETENTION_ENABLED: "true",
     RATE_LIMIT_ADMIN_WEBHOOK: { async limit() { return { success: true }; } },
-    ADMIN_DB: { prepare: statement },
+    ADMIN_DB: {
+      prepare: statement,
+      async batch(statements) {
+        db.exec("BEGIN");
+        try {
+          const results = [];
+          for (const item of statements) results.push(await item.run());
+          db.exec("COMMIT");
+          return results;
+        } catch (error) { db.exec("ROLLBACK"); throw error; }
+      },
+    },
     STUDIQUO_DATA: {
       async get(key, type) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
       async put(key, value) { values.set(key, value); },
@@ -115,4 +127,44 @@ test("future renewal and transfer aliases cannot recreate a deleted customer's r
   assert.deepEqual(await response.json(), { received: true, ignored: true });
   assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM subscribers").get().n, 0);
   assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM revenuecat_events").get().n, 0);
+});
+
+test("a deletion arriving after the webhook precheck still blocks both SQL writes", async () => {
+  const env = environment(); env.REVENUECAT_WEBHOOK_SECRET = "test-secret";
+  const hash = await sha256Hex("race-owner");
+  const original = env.ADMIN_DB.prepare;
+  env.ADMIN_DB.prepare = sql => {
+    const statement = original(sql);
+    if (!sql.startsWith("SELECT customer_hash")) return statement;
+    return { bind(...args) {
+      const bound = statement.bind(...args);
+      return { async first() {
+        const result = await bound.first();
+        env._db.prepare("INSERT OR IGNORE INTO privacy_deleted_customers VALUES (?, 1)").run(hash);
+        return result;
+      } };
+    } };
+  };
+  const url = new URL("https://test.example/api/admin/revenuecat-webhook");
+  await handleAdminWebhook(url, new Request(url, { method: "POST", headers: { authorization: "test-secret", "content-type": "application/json" }, body: JSON.stringify({ event: { id: "race", app_user_id: "race-owner", type: "RENEWAL" } }) }), env);
+  assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM subscribers").get().n, 0);
+  assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM revenuecat_events").get().n, 0);
+});
+
+test("pending remote erasure prevents signing in under the same or linked identity", async () => {
+  const env = environment(); const sub = "reregister-owner"; const alias = "google:reregister-alias";
+  env._values.set(`identity-canonical:${alias}`, sub);
+  await deleteAccount(env, sub);
+  const random = "r".repeat(40);
+  assert.equal(await mintSession(env, sub, random), null);
+  assert.equal(await mintSession(env, alias, random), null);
+  assert.ok(await mintSession(env, "unrelated-owner", random));
+  // Even when this identity's job completed, an alias job still blocks it.
+  env._values.delete(`privacy-rc-delete:${await sha256Hex(sub)}`);
+  assert.equal(await mintSession(env, sub, random), null);
+  // The reverse completion order must also block the alias after its login
+  // mapping has been removed by erasure.
+  env._values.set(`privacy-rc-delete:${await sha256Hex(sub)}`, "{}");
+  env._values.delete(`privacy-rc-delete:${await sha256Hex(alias)}`);
+  assert.equal(await mintSession(env, alias, random), null);
 });

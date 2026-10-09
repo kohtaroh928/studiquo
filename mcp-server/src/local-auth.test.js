@@ -287,12 +287,14 @@ test("a reset that lands between the upgrade's read and its write is not overwri
   const env = environment();
   await seedLegacyAccount(env, "person@example.com", "old-password-1");
   const original = engine.argon2idAsync;
-  let first = true;
+  let oldPasswordRuns = 0;
   // The upgrade's own Argon2id run is the window: reset while it computes.
   engine.argon2idAsync = async (...args) => {
     const result = await original(...args);
-    if (first && args[0] === "old-password-1" && args[1].length === 24 && args[1][0] !== 0x5a) {
-      first = false;
+    // Legacy verification does dummy Argon2 first, then the real upgrade.
+    // A random upgrade salt can also begin with 0x5a; its first byte cannot
+    // distinguish those runs without occasionally skipping the reset entirely.
+    if (args[0] === "old-password-1" && ++oldPasswordRuns === 2) {
       await upsertLocalAccount(env, "person@example.com", "brand-new-password");
     }
     return result;
@@ -302,6 +304,7 @@ test("a reset that lands between the upgrade's read and its write is not overwri
   } finally {
     engine.argon2idAsync = original;
   }
+  assert.equal(oldPasswordRuns, 2, "reset was injected during the actual upgrade");
   assert.equal(await verifyLocalAccount(env, "person@example.com", "brand-new-password"), true);
   assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), false);
 });
