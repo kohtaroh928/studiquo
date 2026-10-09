@@ -10,8 +10,9 @@ import UniformTypeIdentifiers
 /// providers, Downloads. `asCopy: false` hands back the file in place.
 struct ExternalFileBrowserRepresentable: UIViewControllerRepresentable {
     let onPick: (URL) -> Void
+    let onCancel: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick, onCancel: onCancel) }
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let controller = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: false)
@@ -23,13 +24,22 @@ struct ExternalFileBrowserRepresentable: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {
         context.coordinator.onPick = onPick
+        context.coordinator.onCancel = onCancel
     }
 
     final class Coordinator: NSObject, UIDocumentPickerDelegate {
         var onPick: (URL) -> Void
+        var onCancel: () -> Void
 
-        init(onPick: @escaping (URL) -> Void) {
+        init(onPick: @escaping (URL) -> Void, onCancel: @escaping () -> Void) {
             self.onPick = onPick
+            self.onCancel = onCancel
+        }
+
+        /// The picker's own close button. Embedded in a pane there is nothing
+        /// for it to dismiss, so it closes the pane instead.
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onCancel()
         }
 
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
@@ -42,6 +52,8 @@ struct ExternalFileBrowserRepresentable: UIViewControllerRepresentable {
 /// A pane that browses the Files app and shows the chosen file in place.
 struct ExternalFilePaneView: View {
     @ObservedObject var session: ExternalFileSession
+    /// Closes the whole pane (the picker's own close button asks for this).
+    let onClose: () -> Void
     @State private var showsImporter = false
 
     var body: some View {
@@ -104,7 +116,7 @@ struct ExternalFilePaneView: View {
         switch session.state {
         case .browsing:
             if ExternalFilePanePolicy.usesEmbeddedBrowser(paneWidth: width) {
-                ExternalFileBrowserRepresentable { session.open(pickedURL: $0) }
+                ExternalFileBrowserRepresentable(onPick: { session.open(pickedURL: $0) }, onCancel: onClose)
                     .accessibilityIdentifier("external-file-pane-browser")
             } else {
                 message(icon: "folder", text: "ファイルアプリから資料を選びます。") {
