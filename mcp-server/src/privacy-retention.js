@@ -14,7 +14,12 @@ export async function eraseReport(env, id) {
 // Separate durable outbox: a failed remote deletion must survive local erasure.
 export async function queueRevenueCatDeletion(env, identity, now = Date.now()) {
   const hash = await sha256Hex(identity);
-  await env.STUDIQUO_DATA.put(`privacy-rc-delete:${hash}`, JSON.stringify({ identity, requestedAt: now }));
+  // The job holds the identity in the clear (the provider's DELETE needs it),
+  // so it expires with the personal-data retention period instead of staying
+  // forever when the provider can never be reached (no secret configured).
+  await env.STUDIQUO_DATA.put(`privacy-rc-delete:${hash}`, JSON.stringify({ identity, requestedAt: now }), {
+    expirationTtl: PERSONAL_RETENTION_MS / 1000,
+  });
 }
 
 export async function retryRevenueCatDeletion(env, key, job, fetcher = fetch) {
