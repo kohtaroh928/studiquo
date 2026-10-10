@@ -1993,7 +1993,6 @@ struct ContentView: View {
     /// since `renameNotebook()`'s wiring is otherwise untouched; the two
     /// are never open at the same time, so sharing `renameText` is safe.
     @State private var entryToRename: HomeEntry?
-    @State private var showsEmptyTrashConfirmation = false
     @State private var isShowingNewFolderAlert = false
     @State private var newFolderName = ""
     @State private var notebookToEditTags: Notebook?
@@ -4347,12 +4346,6 @@ struct ContentView: View {
             if selectedFolder == nil { homeSelection.end() }
         }
         .onChange(of: selectionDataFingerprint) { _, _ in pruneSelection() }
-        .confirmationDialog("ゴミ箱を空にしますか？", isPresented: $showsEmptyTrashConfirmation, titleVisibility: .visible) {
-            Button("完全に削除", role: .destructive) { emptyTrash() }
-            Button("キャンセル", role: .cancel) {}
-        } message: {
-            Text("この操作は取り消せません。")
-        }
         .alert(
             "フォルダ名",
             isPresented: Binding(get: { folderToRename != nil }, set: { if !$0 { folderToRename = nil } })
@@ -4479,8 +4472,12 @@ struct ContentView: View {
                 Label("新規暗記カードを作成", systemImage: "plus")
             }
         } else if libraryMode == .trash && selectedFolder == nil {
-            Button("空にする", role: .destructive) {
-                showsEmptyTrashConfirmation = true
+            // A `Menu`, not a `.confirmationDialog`/`.popover`: those need the
+            // button on screen as their anchor, and when the toolbar is too
+            // narrow this button folds into the "…" overflow menu, so the
+            // dialog appeared beside the sidebar. A menu works in both places.
+            Menu("空にする") {
+                Button("ゴミ箱を空にする(取り消せません)", role: .destructive) { emptyTrash() }
             }
             .disabled(isTrashEmpty)
         } else {
