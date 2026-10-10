@@ -1406,10 +1406,14 @@ private struct AIReviewIntegration: ViewModifier {
     let count: Int
     @Binding var presentedItem: AIReviewItem?
     let onCountChange: () -> Void
+    @Environment(\.modelContext) private var modelContext
 
     func body(content: Content) -> some View {
         content
             .onChange(of: count) { _, _ in onCountChange() }
+            .onReceive(NotificationCenter.default.publisher(for: AIReviewDecisionQueue.didChange)) { _ in
+                AIReviewService.reconcile(modelContext: modelContext)
+            }
             .sheet(item: $presentedItem) { item in
                 AIReviewDetailView(item: item)
             }
@@ -6198,6 +6202,7 @@ struct ContentView: View {
             flashcardDecks: flashcardDecks,
             textDocuments: textDocuments
         )
+        AIReviewService.reconcile(modelContext: modelContext)
     }
 
     private func cloneElement(_ source: PageElement) -> PageElement {

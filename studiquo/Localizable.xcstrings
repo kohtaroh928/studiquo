@@ -1,6 +1,70 @@
 {
   "sourceLanguage" : "ja",
   "strings" : {
+    "文書として残す" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep as document"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文書として残す"
+          }
+        }
+      }
+    },
+    "残さない" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don't keep"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "残さない"
+          }
+        }
+      }
+    },
+    "文書「%@」に保存済み" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved to the “%@” folder"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文書「%@」に保存済み"
+          }
+        }
+      }
+    },
+    "この解説を文書として残しますか？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep this explanation as a document?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この解説を文書として残しますか？"
+          }
+        }
+      }
+    },
     " ・ 逆向き" : {
       "extractionState" : "stale",
       "localizations" : {

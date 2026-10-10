@@ -6,10 +6,9 @@ import SwiftData
 ///
 /// Only created for questions the AI judged worth reviewing (see
 /// `AIReviewService`) — idle chat never produces one of these. The
-/// explanation is also saved as a `TextDocument` (`explanationDocument`) so
-/// it lives in the student's own 文書 library and can be exported as a PDF
-/// through the existing `ExportService` path, rather than being a piece of
-/// content only this feature knows how to show.
+/// student can choose to keep the explanation as a `TextDocument`
+/// (`explanationDocument`, filed in the AI復習 folder) when the review
+/// notification arrives; until then, and if they decline, no document exists.
 @Model
 final class AIReviewItem {
     /// Stable identifier independent of `persistentModelID`, used to key this
@@ -27,7 +26,13 @@ final class AIReviewItem {
     var explanationMarkdown: String = ""
     /// JSON-encoded `[AIQuizQuestion]`.
     @Attribute(.externalStorage) var quizData: Data?
+    /// Set once the student has chosen to keep or not keep the explanation as
+    /// a 文書. Kept means `explanationDocument != nil`; nil here means the
+    /// choice is still open (the review screen asks).
+    var documentDecidedAt: Date?
     var explanationDocument: TextDocument?
+
+    var needsDocumentDecision: Bool { documentDecidedAt == nil && explanationDocument == nil }
 
     init(
         questionText: String,

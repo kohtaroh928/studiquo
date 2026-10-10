@@ -130,6 +130,17 @@ enum AppNotificationPreferences {
                     title: L("あとで"),
                     options: []
                 ),
+            ] : kind == .aiReview ? [
+                UNNotificationAction(
+                    identifier: AIReviewNotifications.keepActionIdentifier,
+                    title: L("文書として残す"),
+                    options: []
+                ),
+                UNNotificationAction(
+                    identifier: AIReviewNotifications.declineActionIdentifier,
+                    title: L("残さない"),
+                    options: []
+                ),
             ] : []
             return UNNotificationCategory(identifier: kind.categoryIdentifier, actions: actions, intentIdentifiers: [])
         })
