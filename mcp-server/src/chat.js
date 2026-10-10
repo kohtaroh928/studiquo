@@ -254,7 +254,10 @@ export async function handleChat(url, request, env, ctx) {
   }
 
   if (url.pathname === "/api/chat/friends" && request.method === "GET") {
-    const user = await ensureUser(env, key);
+    // Read through the user's Durable Object, not straight from KV: a KV read
+    // can be a minute old, and the friends list is where a removal has to show
+    // at once. A user the object has never seen is registered as before.
+    const user = (await env.USER_REGISTRY.getByName(key).getUser(key)) ?? await ensureUser(env, key);
     // Each friend's own current name and study stats are looked up live
     // (rather than trusting this user's stored friends entry, a snapshot
     // frozen at accept time) so a friend renaming themselves later doesn't

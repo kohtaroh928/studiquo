@@ -2280,6 +2280,71 @@ test("POST /api/auth/email/confirm-code: a reset whose sign-out cannot be comple
   assert.equal(retried.status, 200, "a retry with a fresh code completes the reset");
 });
 
+// A passkey signs in as the e-mail address it was registered for, so one
+// registered by whoever held the old password must not survive the reset.
+async function seedPasskey(env, email, id, userKey) {
+  const record = { id, publicKey: [1, 2, 3], counter: 0, transports: ["internal"], email, userKey };
+  await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify(record));
+  const existing = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
+  await env.STUDIQUO_DATA.put(`passkeys:user:${userKey}`, JSON.stringify([...existing, record]));
+}
+
+test("POST /api/auth/email/confirm-code: a reset removes the account's passkeys, and nobody else's", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-reset@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  await seedPasskey(env, "pk-reset@example.com", "attacker-passkey", "device-a");
+  await seedPasskey(env, "pk-reset@example.com", "second-passkey", "device-b");
+  await seedPasskey(env, "someone-else@example.com", "other-passkey", "device-c");
+  // A device list that holds both this account's passkey and another person's.
+  await seedPasskey(env, "someone-else@example.com", "shared-list-other", "device-a");
+
+  mock.timers.tick(5_000);
+  assert.equal((await resetPasswordWith(env, "pk-reset@example.com", "another-passphrase-1", "n".repeat(40))).status, 200);
+
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:attacker-passkey"), null);
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:second-passkey"), null);
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:user:device-b"), null, "a list left empty is deleted");
+  assert.deepEqual((await env.STUDIQUO_DATA.get("passkeys:user:device-a", "json")).map(item => item.id), ["shared-list-other"],
+    "a list is cleaned, not wiped, when it also holds another person's passkey");
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:other-passkey"), null, "another address's passkey is untouched");
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:user:device-c"), null);
+});
+
+test("POST /api/auth/email/confirm-code: setting a first password keeps the passkeys", async () => {
+  const env = environment({ strictSessions: true });
+  await seedPasskey(env, "pk-first@example.com", "owners-passkey", "device-a");
+  assert.equal((await resetPasswordWith(env, "pk-first@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:owners-passkey"), null, "only a reset, not the first password, removes them");
+});
+
+test("POST /api/auth/email/confirm-code: a reset whose passkeys cannot be removed changes nothing", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-failclosed@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  await seedPasskey(env, "pk-failclosed@example.com", "attacker-passkey", "device-a");
+  const stored = await env.STUDIQUO_DATA.get("account:local:pk-failclosed@example.com");
+  mock.timers.tick(5_000);
+
+  const realList = env.STUDIQUO_DATA.list;
+  env.STUDIQUO_DATA.list = async options => {
+    if (options.prefix === "passkeys:credential:") throw new Error("KV unavailable");
+    return realList.call(env.STUDIQUO_DATA, options);
+  };
+  const failed = await resetPasswordWith(env, "pk-failclosed@example.com", "another-passphrase-1", "n".repeat(40));
+  env.STUDIQUO_DATA.list = realList;
+
+  assert.equal(failed.status, 503, "the person is told to try again");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:pk-failclosed@example.com"), stored,
+    "the new password is not stored while a passkey that could still sign in remains");
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:attacker-passkey"), null);
+  const retried = await resetPasswordWith(env, "pk-failclosed@example.com", "another-passphrase-1", "m".repeat(40));
+  assert.equal(retried.status, 200);
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:attacker-passkey"), null, "and the retry removes it");
+});
+
 test("POST /api/auth/email/confirm-code: a reset also disconnects an app approved under a linked identity", async t => {
   t.after(() => mock.timers.reset());
   mock.timers.enable({ apis: ["Date"], now: Date.now() });

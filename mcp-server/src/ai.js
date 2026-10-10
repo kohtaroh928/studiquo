@@ -13,6 +13,7 @@
  */
 
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { sha256Hex } from "./auth.js";
 import { sendPush } from "./push.js";
 import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.js";
 import { callOpenAIChat, extractDeltaText as openaiDeltaText } from "./openai.js";
@@ -198,7 +199,7 @@ function model(env, kind) {
 
 const DAY_SECONDS = 86_400;
 
-/** Per-device and whole-service caps, each a RateCounter Durable Object
+/** Per-account and whole-service caps, each a RateCounter Durable Object
  * (see rate-counter.js) keyed by bucket/device so it resets on its own once
  * a day passes — a soft cap rather than an exact one, same as before: a
  * burst of simultaneous requests can still slip a few over. Both must pass. */
@@ -328,7 +329,7 @@ const CHAT_SYSTEM = `あなたは学習アプリ「Studiquo」に組み込まれ
  * to parse regardless of which provider's full event envelope it came
  * from.
  */
-async function handleChat(request, env, key, ctx, plan) {
+async function handleChat(request, env, key, ctx, plan, quotaKey = key) {
   const payload = await readJSONLimited(request);
   const turns = Array.isArray(payload?.messages) ? payload.messages : [];
   if (turns.length === 0) return json({ error: "messages is required." }, 400);
@@ -354,7 +355,7 @@ async function handleChat(request, env, key, ctx, plan) {
   }
 
   if (!(await withinQuota(
-    env, key, "chat",
+    env, quotaKey, "chat",
     planLimit(env, plan, "CHAT_DAILY_LIMIT"),
     Number(env.GLOBAL_CHAT_DAILY_LIMIT) || DEFAULT_GLOBAL_CHAT_LIMIT
   ))) {
@@ -640,9 +641,9 @@ const GRADE_SCHEMA = {
   required: ["score", "maxScore", "verdict", "criteria", "issues"],
 };
 
-async function handleRubric(request, env, key, ctx, plan) {
+async function handleRubric(request, env, key, ctx, plan, quotaKey = key) {
   if (!(await withinQuota(
-    env, key, "grade",
+    env, quotaKey, "grade",
     planLimit(env, plan, "GRADING_DAILY_LIMIT"),
     Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT
   ))) {
@@ -770,9 +771,9 @@ function streamJSON(env, { kind, systemInstruction, contents, responseSchema, fa
   });
 }
 
-async function handleGrade(request, env, key, ctx, plan) {
+async function handleGrade(request, env, key, ctx, plan, quotaKey = key) {
   if (!(await withinQuota(
-    env, key, "grade",
+    env, quotaKey, "grade",
     planLimit(env, plan, "GRADING_DAILY_LIMIT"),
     Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT
   ))) {
@@ -861,9 +862,9 @@ const REVIEW_SCHEMA = {
   required: ["isStudyRelevant", "explanationMarkdown", "quiz"],
 };
 
-async function handleReview(request, env, key, ctx, plan) {
+async function handleReview(request, env, key, ctx, plan, quotaKey = key) {
   if (!(await withinQuota(
-    env, key, "review",
+    env, quotaKey, "review",
     planLimit(env, plan, "REVIEW_DAILY_LIMIT"),
     Number(env.GLOBAL_REVIEW_DAILY_LIMIT) || DEFAULT_GLOBAL_REVIEW_LIMIT
   ))) {
@@ -915,7 +916,13 @@ export async function handleAI(url, request, env, key, ctx, session, plan) {
     default: return null;
   }
   try {
-    return await handler(request, env, key, ctx, effectivePlan);
+    // The daily limits are counted per account, not per sign-in: the token's
+    // hash (`key`) changes every time the person signs in again, on another
+    // device, or after deleting the account and starting over, and each of
+    // those used to start a fresh allowance. `key` is still what push
+    // notifications and the like address.
+    const quotaKey = session?.sub ? await sha256Hex(`ai-quota-account:${session.sub}`) : key;
+    return await handler(request, env, key, ctx, effectivePlan, quotaKey);
   } catch (error) {
     // Without this, a missing GEMINI_API_KEY surfaced as a bare 500 with no
     // hint of the cause.

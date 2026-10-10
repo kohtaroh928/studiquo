@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { handleAI } from "./ai.js";
+import { sha256Hex } from "./auth.js";
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1ZkAAAAASUVORK5CYII=";
 
@@ -535,8 +536,9 @@ test("each plan's chat quota uses PLAN_LIMITS, not one fixed number for everyone
       await response.text();
       await Promise.all(ctx.promises);
 
-      const deviceCall = rateCounter.calls.find(call => call.name === `ai:chat:device`);
-      assert.ok(deviceCall, `expected a per-device rate-counter call for plan ${plan}`);
+      const counterName = `ai:chat:${await sha256Hex("ai-quota-account:user-1")}`;
+      const deviceCall = rateCounter.calls.find(call => call.name === counterName);
+      assert.ok(deviceCall, `expected a per-account rate-counter call for plan ${plan}`);
       assert.equal(deviceCall.limit, expectedLimit);
     }
   } finally {
@@ -566,7 +568,8 @@ test("an explicit CHAT_DAILY_LIMIT env var still overrides the plan table", asyn
     await response.text();
     await Promise.all(ctx.promises);
 
-    const deviceCall = rateCounter.calls.find(call => call.name === `ai:chat:device`);
+    const counterName = `ai:chat:${await sha256Hex("ai-quota-account:user-1")}`;
+    const deviceCall = rateCounter.calls.find(call => call.name === counterName);
     assert.equal(deviceCall.limit, 5);
   } finally {
     globalThis.fetch = originalFetch;
@@ -592,6 +595,41 @@ test("handleAI with no plan argument at all (every pre-Phase-B caller) defaults 
 
     const deviceCall = rateCounter.calls.find(call => call.name === `ai:chat:device`);
     assert.equal(deviceCall.limit, 30);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("the daily allowance is the account's: another sign-in of the same account shares it, another account does not", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] })}\n\n`,
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  );
+  try {
+    const env = environment();
+    const rateCounter = capturingRateCounterBinding();
+    env.RATE_COUNTER = rateCounter;
+    const ask = async (deviceKey, sub) => {
+      const ctx = executionContext();
+      const response = await handleAI(
+        new URL("https://example.test/api/ai/chat"),
+        chatRequest({ messages: [{ role: "user", text: "こんにちは" }] }),
+        env, deviceKey, ctx, sub ? { sub } : null, "standard",
+      );
+      assert.equal(response.status, 200);
+      await response.text();
+      await Promise.all(ctx.promises);
+    };
+    await ask("token-hash-of-first-sign-in", "email:person@example.com");
+    await ask("token-hash-after-signing-in-again", "email:person@example.com");
+    await ask("token-hash-of-someone-else", "email:other@example.com");
+
+    const chatCounters = rateCounter.calls.map(call => call.name).filter(name => name.startsWith("ai:chat:"));
+    const person = `ai:chat:${await sha256Hex("ai-quota-account:email:person@example.com")}`;
+    const other = `ai:chat:${await sha256Hex("ai-quota-account:email:other@example.com")}`;
+    assert.deepEqual(chatCounters, [person, person, other], "signing in again does not start a fresh allowance");
+    assert.ok(chatCounters.every(name => !name.includes("token-hash")), "no counter is keyed by a sign-in");
   } finally {
     globalThis.fetch = originalFetch;
   }
