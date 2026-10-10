@@ -66,8 +66,6 @@
 	<string>授業資料やQRコードを読み取るためにカメラを使用します。</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>ロックしたノートを安全に開くためにFace IDを使用します。</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>AIトークの通話機能と文字起こし機能で音声を入力するためにマイクを使用します。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>ノートを見ながら資料写真を表示するために写真ライブラリを使用します。</string>
 	<key>UIBackgroundModes</key>
