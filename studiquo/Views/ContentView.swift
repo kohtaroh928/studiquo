@@ -4558,7 +4558,7 @@ struct ContentView: View {
                             .padding(.vertical, 10)
                             Divider()
                             }
-                            .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: folder) != nil) {
+                            .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: folder) != nil, identifier: "library-folder-trash-\(folder)") {
                                 if let target = folderObject(forLegacyPath: folder) {
                                     performLibraryRemoval {
                                         removeFolderMovingContentsToTrash(target)
@@ -6421,13 +6421,27 @@ struct ContentView: View {
 /// `swipeActions` only works on `List` rows, but the folder-organized home
 /// screen lays its rows out in a `ScrollView` (so each folder owns its drop
 /// area). This gives those rows the same swipe-left-to-trash gesture.
-private struct SwipeToTrashRow: ViewModifier {
+struct SwipeToTrashRow: ViewModifier {
+    static let revealWidth: CGFloat = 88
+
+    /// Row offset while dragging: continues from where the drag began, so a
+    /// row left open does not jump back to the closed position.
+    static func offset(start: CGFloat, translation: CGFloat) -> CGFloat {
+        min(0, max(-revealWidth, start + translation))
+    }
+
+    /// Where the row comes to rest when the finger is lifted.
+    static func settledOffset(_ offset: CGFloat) -> CGFloat {
+        offset < -revealWidth / 2 ? -revealWidth : 0
+    }
+
     let enabled: Bool
+    let identifier: String
     let action: () -> Void
 
     @State private var offset: CGFloat = 0
     @State private var dragStartOffset: CGFloat?
-    private let revealWidth: CGFloat = 88
+    private var revealWidth: CGFloat { Self.revealWidth }
 
     @ViewBuilder func body(content: Content) -> some View {
         if enabled {
@@ -6435,19 +6449,20 @@ private struct SwipeToTrashRow: ViewModifier {
                 .background(Color(.systemBackground))
                 .offset(x: offset)
                 .background(alignment: .trailing) {
-                    Button(role: .destructive) {
-                        withAnimation { offset = 0 }
-                        action()
-                    } label: {
-                        Text("ゴミ箱")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: revealWidth)
-                            .frame(maxHeight: .infinity)
-                            .background(Color.red)
+                    if offset < 0 {
+                        Button(role: .destructive) {
+                            withAnimation { offset = 0 }
+                            action()
+                        } label: {
+                            Text("ゴミ箱")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: revealWidth)
+                                .frame(maxHeight: .infinity)
+                                .background(Color.red)
+                        }
+                        .accessibilityIdentifier(identifier)
                     }
-                    .opacity(offset < 0 ? 1 : 0)
-                    .accessibilityIdentifier("library-folder-trash")
                 }
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 20)
@@ -6455,12 +6470,12 @@ private struct SwipeToTrashRow: ViewModifier {
                             guard abs(value.translation.width) > abs(value.translation.height) else { return }
                             let start = dragStartOffset ?? offset
                             dragStartOffset = start
-                            offset = min(0, max(-revealWidth, start + value.translation.width))
+                            offset = Self.offset(start: start, translation: value.translation.width)
                         }
                         .onEnded { _ in
                             dragStartOffset = nil
                             withAnimation(.easeOut(duration: 0.15)) {
-                                offset = offset < -revealWidth / 2 ? -revealWidth : 0
+                                offset = Self.settledOffset(offset)
                             }
                         }
                 )

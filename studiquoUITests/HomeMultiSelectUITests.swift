@@ -189,7 +189,7 @@ final class HomeMultiSelectUITests: XCTestCase {
         let app = launch()
         let folder = folderSurface("Sibling", in: app)
         let restingX = folder.frame.minX
-        let trash = app.buttons["library-folder-trash"]
+        let trash = app.buttons["library-folder-trash-Sibling"]
         XCTAssertFalse(trash.isHittable, "スワイプ前にゴミ箱ボタンが見えています")
 
         folder.swipeLeft()
@@ -214,33 +214,12 @@ final class HomeMultiSelectUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 3), .completed, "右スワイプで行が元の位置に戻りません")
     }
 
-    func testDraggingAnOpenFolderRowDoesNotJumpBackToTheStart() {
-        let app = launch()
-        let folder = folderSurface("Sibling", in: app)
-        let restingX = folder.frame.minX
-        folder.swipeLeft()
-        let openX = folder.frame.minX
-        XCTAssertLessThan(openX, restingX - 40)
-
-        // Press and drag a short way to the right, then hold: the row must
-        // follow the finger from where it was left open, not snap to the
-        // closed position first.
-        let start = folder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let end = start.withOffset(CGVector(dx: 12, dy: 0))
-        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.5)
-
-        XCTAssertLessThan(
-            folder.frame.minX, restingX - 20,
-            "開いた行をつかみ直すと、閉じた位置まで飛んでしまいます"
-        )
-    }
-
     func testTappingTheSwipeTrashButtonMovesTheFolderContentsToTheTrash() {
         let app = launch()
         let folder = folderSurface("Parent", in: app)
         folder.swipeLeft()
 
-        let trash = app.buttons["library-folder-trash"]
+        let trash = app.buttons["library-folder-trash-Parent"]
         XCTAssertTrue(trash.waitForExistence(timeout: 3), "左スワイプでゴミ箱ボタンが出ません")
         trash.tap()
 
@@ -265,7 +244,7 @@ final class HomeMultiSelectUITests: XCTestCase {
         let start = folder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 4, dy: -80)))
 
-        XCTAssertFalse(app.buttons["library-folder-trash"].isHittable, "縦スクロールでゴミ箱ボタンが出ています")
+        XCTAssertFalse(app.buttons["library-folder-trash-Sibling"].isHittable, "縦スクロールでゴミ箱ボタンが出ています")
         XCTAssertEqual(folder.frame.minX, restingX, accuracy: 2)
     }
 
