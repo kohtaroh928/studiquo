@@ -3,8 +3,6 @@ import SwiftData
 import UIKit
 import UniformTypeIdentifiers
 import VisionKit
-import Speech
-import AVFoundation
 
 /// The width of the chat pane, read so a narrow pane can start with its
 /// history folded away. Reads the pane's own size, which nothing inside the
@@ -77,119 +75,6 @@ struct AIChatPanel: View {
         )
         .onAppear { store.surfaceDidAppear(surfaceID) }
         .onDisappear { store.surfaceDidDisappear(surfaceID) }
-    }
-}
-
-@MainActor
-final class SpeechInputController: ObservableObject {
-    @Published var isRecording = false
-    @Published var isCallMode = false
-    @Published var statusText = ""
-
-    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
-    private let audioEngine = AVAudioEngine()
-    private var request: SFSpeechAudioBufferRecognitionRequest?
-    private var task: SFSpeechRecognitionTask?
-    private var baseText = ""
-
-    func toggleDictation(draft: Binding<String>) {
-        if isRecording {
-            stop()
-        } else {
-            start(draft: draft, callMode: false)
-        }
-    }
-
-    func toggleCall(draft: Binding<String>) {
-        if isRecording && isCallMode {
-            stop()
-        } else {
-            start(draft: draft, callMode: true)
-        }
-    }
-
-    func stop() {
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-        request?.endAudio()
-        task?.cancel()
-        request = nil
-        task = nil
-        isRecording = false
-        isCallMode = false
-        statusText = ""
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-    }
-
-    private func start(draft: Binding<String>, callMode: Bool) {
-        Task {
-            let authorized = await requestAuthorization()
-            guard authorized else {
-                statusText = L("マイクまたは音声認識の許可が必要です。")
-                return
-            }
-            do {
-                try beginRecognition(draft: draft, callMode: callMode)
-            } catch {
-                statusText = L("音声入力を開始できませんでした：\(error.localizedDescription)")
-                stop()
-            }
-        }
-    }
-
-    private func requestAuthorization() async -> Bool {
-        let speechAllowed = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status == .authorized)
-            }
-        }
-
-        let micAllowed = await withCheckedContinuation { continuation in
-            AVAudioApplication.requestRecordPermission { allowed in
-                continuation.resume(returning: allowed)
-            }
-        }
-
-        return speechAllowed && micAllowed
-    }
-
-    private func beginRecognition(draft: Binding<String>, callMode: Bool) throws {
-        stop()
-        baseText = draft.wrappedValue
-
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
-        try session.setActive(true, options: .notifyOthersOnDeactivation)
-
-        let newRequest = SFSpeechAudioBufferRecognitionRequest()
-        newRequest.shouldReportPartialResults = true
-        request = newRequest
-
-        let input = audioEngine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak newRequest] buffer, _ in
-            newRequest?.append(buffer)
-        }
-
-        audioEngine.prepare()
-        try audioEngine.start()
-
-        isRecording = true
-        isCallMode = callMode
-        statusText = callMode ? L("通話モードで聞き取っています…") : L("文字起こし中…")
-
-        task = recognizer?.recognitionTask(with: newRequest) { [weak self] result, error in
-            Task { @MainActor in
-                guard let self else { return }
-                if let text = result?.bestTranscription.formattedString {
-                    let separator = self.baseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n"
-                    draft.wrappedValue = self.baseText + separator + text
-                }
-                if error != nil || result?.isFinal == true {
-                    self.stop()
-                }
-            }
-        }
     }
 }
 
@@ -347,7 +232,6 @@ struct AIChatPane: View {
     @State private var markingQuestionSnippet: PageSnippet?
     @State private var markingAnswerSnippet: PageSnippet?
     @State private var showsCameraScanner = false
-    @StateObject private var speechInput = SpeechInputController()
 
     private enum AttachmentPickerMode: Identifiable {
         case files
@@ -558,29 +442,6 @@ struct AIChatPane: View {
                                 .onSubmit(onSend)
                                 .accessibilityIdentifier("ai-chat-draft")
 
-                            Button {
-                                speechInput.toggleDictation(draft: $draft)
-                            } label: {
-                                Image(systemName: speechInput.isRecording && !speechInput.isCallMode ? "waveform.circle.fill" : "waveform")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundStyle(speechInput.isRecording && !speechInput.isCallMode ? Color.accentColor : .primary)
-                                    .frame(width: 34, height: 34)
-                                    .background(Color(uiColor: .secondarySystemBackground), in: Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(L("文字起こし"))
-
-                            Button {
-                                speechInput.toggleCall(draft: $draft)
-                            } label: {
-                                Image(systemName: speechInput.isRecording && speechInput.isCallMode ? "phone.circle.fill" : "phone")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(speechInput.isRecording && speechInput.isCallMode ? Color.green : .primary)
-                                    .frame(width: 34, height: 34)
-                                    .background(Color(uiColor: .secondarySystemBackground), in: Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(L("通話"))
 
                             // Turns into a stop button while a reply is streaming, so
                             // a long answer can be cut short.
@@ -594,13 +455,6 @@ struct AIChatPane: View {
                             .disabled(!isResponding && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             .accessibilityLabel(isResponding ? L("生成を止める") : L("送信"))
                             .accessibilityIdentifier(isResponding ? "ai-chat-stop" : "ai-chat-send")
-                        }
-
-                        if !speechInput.statusText.isEmpty {
-                            Text(speechInput.statusText)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .padding(.leading, 44)
                         }
                     }
                     .padding(12)
