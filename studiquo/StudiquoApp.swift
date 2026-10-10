@@ -130,6 +130,16 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
             await FlashcardReviewNotifications.snooze(content)
             return
         }
+        if response.actionIdentifier == AIReviewNotifications.keepActionIdentifier
+            || response.actionIdentifier == AIReviewNotifications.declineActionIdentifier {
+            if let raw = content.userInfo["reviewID"] as? String, let id = UUID(uuidString: raw) {
+                AIReviewDecisionQueue.enqueue(
+                    reviewID: id,
+                    keep: response.actionIdentifier == AIReviewNotifications.keepActionIdentifier
+                )
+            }
+            return
+        }
         await MainActor.run {
             NotificationCenter.default.post(
                 name: .studiquoNotificationRoute,
