@@ -1853,13 +1853,6 @@ struct NoteEditorView: View {
 
                 toolStripButton("テキスト", icon: "textformat", action: addTextElement)
                 toolStripButton("写真", icon: "photo") { showsImagePicker = true }
-                toolStripButton(
-                    "写真資料",
-                    icon: "photo.stack",
-                    isActive: photoStudyPane != nil,
-                    action: togglePhotoStudy
-                )
-                .accessibilityIdentifier("photo-study-toolbar-button")
                 toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
                 Menu {
                     Toggle("直線補正", isOn: $isLineCorrectionEnabled)
@@ -1902,6 +1895,10 @@ struct NoteEditorView: View {
                         openExternalFileSplit()
                     }
                     .accessibilityIdentifier("note-split-external-file-button")
+                    Button("写真アプリと2分割", systemImage: "photo.stack") {
+                        openPhotoStudySplit()
+                    }
+                    .accessibilityIdentifier("note-split-photo-study-button")
                 } label: { toolStripLabel("画面分割", icon: splitMode.icon, isActive: splitMode != .single) }
 
                 if splitMode != .single {
@@ -2036,6 +2033,13 @@ struct NoteEditorView: View {
 
     /// Splits the screen and shows the Files browser in the secondary pane, for
     /// opening a PDF or other material from where it is stored.
+    /// Already open means nothing to do: "1画面" is the one way to close it,
+    /// the same as for the Files app split.
+    private func openPhotoStudySplit() {
+        guard photoStudyPane == nil else { return }
+        togglePhotoStudy()
+    }
+
     private func openExternalFileSplit() {
         dismissPhotoStudy(restorePreviousLayout: false)
         secondaryNotebook = nil
