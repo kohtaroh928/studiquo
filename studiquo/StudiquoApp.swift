@@ -795,6 +795,17 @@ private struct LibraryDropUITestRoot: View {
                     content: content,
                     trigger: UNTimeIntervalNotificationTrigger(timeInterval: 15, repeats: false)
                 ))
+                // A later one, to open the review by tapping after a button decided it.
+                let reopen = UNMutableNotificationContent()
+                reopen.title = "復習をもう一度開く"
+                reopen.body = "確認用"
+                reopen.categoryIdentifier = content.categoryIdentifier
+                reopen.userInfo = content.userInfo
+                try? await UNUserNotificationCenter.current().add(UNNotificationRequest(
+                    identifier: "ui-test-ai-review-reopen",
+                    content: reopen,
+                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 50, repeats: false)
+                ))
             }
         }
         if ProcessInfo.processInfo.arguments.contains("--ui-test-ai-notification-route") {
