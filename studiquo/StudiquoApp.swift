@@ -988,7 +988,9 @@ private struct SplitSourcePickerUITestRoot: View {
         }
         .modelContainer(library.container)
         // Once, on first appearance: every test launch starts as the list.
-        .task { UserDefaults.standard.removeObject(forKey: "splitSourcePickerLayout") }
+        .task {
+            UserDefaults.standard.removeObject(forKey: "splitSourcePickerLayout")
+        }
     }
 }
 

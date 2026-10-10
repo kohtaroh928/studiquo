@@ -26,12 +26,12 @@ final class SplitSourcePickerLayoutTests: XCTestCase {
 
     // MARK: 並べ方
 
-    func testStartsAsListAndShowsEveryKind() {
+    func testStartsAsListAtTheTopLevelWithFoldersAndNotes() {
         let app = launch()
         XCTAssertTrue(app.buttons["split-source-layout-list"].isSelected)
-        for title in ["分割ノート", "分割PDF", "分割暗記"] {
-            XCTAssertTrue(item(app, title).exists, title)
-        }
+        XCTAssertTrue(folder(app, "科目").exists)
+        XCTAssertTrue(item(app, "分割ノート").exists)
+        XCTAssertFalse(item(app, "分割PDF").exists, "materials inside folders are reached through the folder")
         XCTAssertTrue(app.staticTexts["表示中"].exists)
     }
 
@@ -41,7 +41,8 @@ final class SplitSourcePickerLayoutTests: XCTestCase {
         app.buttons["split-source-layout-icon"].tap()
         XCTAssertTrue(app.buttons["split-source-layout-icon"].isSelected)
         XCTAssertTrue(app.scrollViews["split-source-icons"].waitForExistence(timeout: 5))
-        XCTAssertTrue(item(app, "分割PDF").exists)
+        XCTAssertTrue(folder(app, "科目").exists)
+        XCTAssertTrue(item(app, "分割ノート").exists)
 
         app.buttons["split-source-layout-column"].tap()
         XCTAssertTrue(app.buttons["split-source-layout-column"].isSelected)
@@ -50,20 +51,89 @@ final class SplitSourcePickerLayoutTests: XCTestCase {
 
         app.buttons["split-source-layout-list"].tap()
         XCTAssertTrue(app.buttons["split-source-layout-list"].isSelected)
-        XCTAssertTrue(item(app, "分割暗記").exists)
+        XCTAssertTrue(folder(app, "科目").exists)
     }
 
     func testSelectingAMaterialWorksInEveryLayout() {
         let app = launch()
-        let cases: [(layout: String, title: String)] = [
-            ("list", "分割ノート"), ("icon", "分割PDF"), ("column", "分割ノート"),
-        ]
-        for (layout, title) in cases {
+        for layout in ["list", "icon", "column"] {
             app.buttons["split-source-layout-\(layout)"].tap()
-            XCTAssertTrue(item(app, title).waitForExistence(timeout: 5), "\(title) in \(layout)")
-            item(app, title).tap()
-            XCTAssertEqual(selected(app), title, layout)
+            XCTAssertTrue(item(app, "分割ノート").waitForExistence(timeout: 5), layout)
+            item(app, "分割ノート").tap()
+            XCTAssertEqual(selected(app), "分割ノート", layout)
         }
+    }
+
+    // MARK: リスト・アイコンのフォルダ移動
+
+    func testListAndIconLayoutsOpenFoldersAndGoBack() {
+        let app = launch()
+        for layout in ["list", "icon"] {
+            app.buttons["split-source-layout-\(layout)"].tap()
+            XCTAssertTrue(folder(app, "科目").waitForExistence(timeout: 5), layout)
+
+            folder(app, "科目").tap()
+            XCTAssertTrue(item(app, "分割PDF").waitForExistence(timeout: 5), layout)
+            XCTAssertTrue(folder(app, "科目/数学").exists, layout)
+            XCTAssertFalse(item(app, "分割ノート").exists, layout)
+
+            folder(app, "科目/数学").tap()
+            XCTAssertTrue(item(app, "分割暗記").waitForExistence(timeout: 5), layout)
+
+            app.buttons["split-source-back"].tap()
+            XCTAssertTrue(item(app, "分割PDF").waitForExistence(timeout: 5), layout)
+            app.buttons["split-source-back"].tap()
+            XCTAssertTrue(item(app, "分割ノート").waitForExistence(timeout: 5), layout)
+            XCTAssertFalse(app.buttons["split-source-back"].exists, layout)
+        }
+    }
+
+    func testSwitchingLayoutKeepsTheOpenFolder() {
+        let app = launch()
+        folder(app, "科目").tap()
+        XCTAssertTrue(item(app, "分割PDF").waitForExistence(timeout: 5))
+
+        app.buttons["split-source-layout-icon"].tap()
+        XCTAssertTrue(item(app, "分割PDF").waitForExistence(timeout: 5))
+        XCTAssertFalse(item(app, "分割ノート").exists)
+
+        app.buttons["split-source-layout-column"].tap()
+        XCTAssertTrue(item(app, "分割PDF").waitForExistence(timeout: 5))
+        XCTAssertTrue(item(app, "分割ノート").exists, "the column layout also shows the top level")
+    }
+
+    // MARK: 種類(資料の種類ごとに分ける)
+
+    func testKindLayoutSortsEveryMaterialByKindIgnoringFolders() {
+        let app = launch()
+        app.buttons["split-source-layout-kind"].tap()
+        XCTAssertTrue(app.buttons["split-source-layout-kind"].isSelected)
+        XCTAssertTrue(app.descendants(matching: .any)["split-source-kinds"].waitForExistence(timeout: 5))
+
+        for title in ["分割ノート", "分割PDF", "分割暗記"] {
+            XCTAssertTrue(item(app, title).exists, "\(title) is reachable without opening folders")
+        }
+        XCTAssertFalse(folder(app, "科目").exists, "folders are set aside in this layout")
+        XCTAssertFalse(app.buttons["split-source-back"].exists)
+        for header in ["ノート", "PDF", "暗記カード"] {
+            XCTAssertTrue(app.staticTexts[header].exists, header)
+        }
+
+        item(app, "分割暗記").tap()
+        XCTAssertEqual(selected(app), "分割暗記")
+    }
+
+    func testBackToFolderLayoutsFromKindLayoutKeepsTheOpenFolder() {
+        let app = launch()
+        folder(app, "科目").tap()
+        XCTAssertTrue(item(app, "分割PDF").waitForExistence(timeout: 5))
+
+        app.buttons["split-source-layout-kind"].tap()
+        XCTAssertTrue(item(app, "分割ノート").waitForExistence(timeout: 5))
+
+        app.buttons["split-source-layout-list"].tap()
+        XCTAssertTrue(item(app, "分割PDF").waitForExistence(timeout: 5))
+        XCTAssertFalse(item(app, "分割ノート").exists)
     }
 
     // MARK: カラム(フォルダ階層)
