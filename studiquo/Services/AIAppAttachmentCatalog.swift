@@ -10,8 +10,8 @@ struct AppAttachmentOption: Identifiable {
     let attachment: AIChatAttachment
 }
 
-/// Builds what the model is shown for notebooks, flashcard decks, documents
-/// and slide decks. Shared by the note editor's chat and the home AI screen,
+/// Builds what the model is shown for notebooks, flashcard decks and
+/// documents. Shared by the note editor's chat and the home AI screen,
 /// so a document reads the same wherever it is attached.
 enum AIAppAttachmentCatalog {
     static func readablePDFText(in notebook: Notebook, pageIndex: Int? = nil, limit: Int = 24_000) -> String {
@@ -70,8 +70,7 @@ enum AIAppAttachmentCatalog {
     static func options(
         notebooks: [Notebook],
         flashcardDecks: [FlashcardDeck],
-        textDocuments: [TextDocument],
-        slideDecks: [SlideDeck]
+        textDocuments: [TextDocument]
     ) -> [AppAttachmentOption] {
         let noteOptions = notebooks
             .filter { !$0.isTrashed }
@@ -82,10 +81,7 @@ enum AIAppAttachmentCatalog {
         let documentOptions = textDocuments
             .filter { !$0.isTrashed }
             .map { documentAttachmentOption($0) }
-        let slideOptions = slideDecks
-            .filter { !$0.isTrashed }
-            .map { slideDeckAttachmentOption($0) }
-        return noteOptions + deckOptions + documentOptions + slideOptions
+        return noteOptions + deckOptions + documentOptions
     }
 
     static func notebookAttachmentOption(_ notebook: Notebook) -> AppAttachmentOption? {
@@ -148,39 +144,6 @@ enum AIAppAttachmentCatalog {
                 path: "",
                 kind: .document,
                 sourceID: "document:\(String(describing: document.persistentModelID))",
-                contextText: contextText
-            )
-        )
-    }
-
-    static func slideDeckAttachmentOption(_ deck: SlideDeck) -> AppAttachmentOption {
-        let slides = deck.sortedSlides.enumerated().map { index, slide in
-            var parts = ["スライド \(index + 1)"]
-            if !slide.titleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                parts.append("タイトル: \(slide.titleText)")
-            }
-            if !slide.bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                parts.append("本文: \(slide.bodyText)")
-            }
-            if !slide.secondaryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                parts.append("補足: \(slide.secondaryText)")
-            }
-            if !slide.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                parts.append("発表ノート: \(slide.notes)")
-            }
-            return parts.joined(separator: "\n")
-        }
-        let contextText = slides.isEmpty ? L("このスライドには内容がまだありません。") : slides.joined(separator: "\n\n")
-        return AppAttachmentOption(
-            id: "slide:\(String(describing: deck.persistentModelID))",
-            title: deck.title,
-            subtitle: L("スライド \(deck.sortedSlides.count)枚"),
-            icon: "rectangle.on.rectangle",
-            attachment: AIChatAttachment(
-                name: deck.title,
-                path: "",
-                kind: .slideDeck,
-                sourceID: "slide:\(String(describing: deck.persistentModelID))",
                 contextText: contextText
             )
         )

@@ -12,7 +12,7 @@ final class PaneDropPayloadTests: XCTestCase {
 
     func testEveryKindOfTabInTheTabBarIsRecognised() {
         // Payload shapes produced by the tab bar's `.draggable(...)`.
-        for value in ["notebook:abc", "deck:abc", "flashcards:abc", "document:abc", "slide:abc", "web:Google|https://x", "ai:abc", "friend:abc", "group:abc"] {
+        for value in ["notebook:abc", "deck:abc", "flashcards:abc", "document:abc", "web:Google|https://x", "ai:abc", "friend:abc", "group:abc"] {
             XCTAssertTrue(PaneDropPayload.isTab(value), value)
         }
     }

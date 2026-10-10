@@ -72,8 +72,7 @@ let studiquoSchema = Schema([
     Notebook.self, NotePage.self, PageElement.self,
     FlashcardDeck.self, Flashcard.self, CalendarEvent.self, StudyActivity.self,
     AIChatThread.self, AIChatMessage.self,
-    TextDocument.self, SlideDeck.self, Slide.self,
-    SlideMaster.self, SlideLayoutTemplate.self, SlidePlaceholder.self, SlideElement.self,
+    TextDocument.self,
     DocumentBlock.self, DocumentTableRow.self, DocumentTableCell.self,
     DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
     AIReviewItem.self,
@@ -906,7 +905,6 @@ private enum LibraryDropUITestStore {
             container.mainContext.insert(Notebook(title: "Drag me"))
             container.mainContext.insert(FlashcardDeck(title: "Cards"))
             container.mainContext.insert(TextDocument(title: "Document"))
-            container.mainContext.insert(SlideDeck(title: "Y"))
             try! container.mainContext.save()
             return container
         }
@@ -926,7 +924,6 @@ private enum LibraryDropUITestStore {
         container.mainContext.insert(Notebook(title: "Other two"))
         container.mainContext.insert(FlashcardDeck(title: "Cards"))
         container.mainContext.insert(TextDocument(title: "Document"))
-        container.mainContext.insert(SlideDeck(title: "Y"))
         let nested = Notebook(title: "Source note")
         nested.folder = sourceFolder
         nested.folderName = sourceFolder.legacyPath
