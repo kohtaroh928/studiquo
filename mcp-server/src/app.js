@@ -224,14 +224,6 @@ function createServer(env, key, accountHash = null, source = "MCP", canWrite = t
     inputSchema: z.object({ title: z.string().min(1).max(150), body: z.string().min(1).max(100_000), folderPath: z.string().max(500).default("") }),
   }, input => submit("create_document", input));
 
-  server.registerTool("create_slides", {
-    description: "Send a slide deck to Studiquo for import. Each slide has a title, bullets and optional speaker notes.",
-    inputSchema: z.object({
-      title: z.string().min(1).max(150), folderPath: z.string().max(500).default(""),
-      slides: z.array(z.object({ title: z.string().max(200), bullets: z.array(z.string().max(1000)).max(30), notes: z.string().max(4000).default("") })).min(1).max(100),
-    }),
-  }, input => submit("create_slides", input));
-
   server.registerTool("create_notebook", {
     description: "Send a text-based notebook to Studiquo for import. This creates editable pages, not handwriting strokes.",
     inputSchema: z.object({
