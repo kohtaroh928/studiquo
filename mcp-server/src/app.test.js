@@ -2312,6 +2312,104 @@ test("POST /api/auth/email/confirm-code: a reset removes the account's passkeys,
   assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:user:device-c"), null);
 });
 
+test("POST /api/auth/email/confirm-code: a reset removes the passkeys of every address the account owns, not only the one reset", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-multi@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  const owner = await env.STUDIQUO_DATA.get("email-account-owner:pk-multi@example.com");
+  assert.ok(owner, "the account's owner record exists");
+  // A second address of the same account, and someone else's address.
+  await env.STUDIQUO_DATA.put("email-account-owner:second-address@example.com", owner);
+  await env.STUDIQUO_DATA.put("email-account-owner:foreign@example.com", "email:foreign@example.com");
+  await seedPasskey(env, "second-address@example.com", "second-address-passkey", "device-a");
+  await seedPasskey(env, "foreign@example.com", "foreign-passkey", "device-b");
+
+  mock.timers.tick(5_000);
+  assert.equal((await resetPasswordWith(env, "pk-multi@example.com", "another-passphrase-1", "n".repeat(40))).status, 200);
+
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:second-address-passkey"), null, "the other address of the account is covered");
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:foreign-passkey"), null, "someone else's address is not");
+});
+
+test("POST /api/auth/email/confirm-code: passkeys are found across every page of the listing", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-pages@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  for (let n = 1; n <= 7; n++) await seedPasskey(env, "pk-pages@example.com", `page-passkey-${n}`, `device-${n}`);
+
+  const realList = env.STUDIQUO_DATA.list;
+  env.STUDIQUO_DATA.list = async ({ prefix, cursor }) => {
+    const all = (await realList.call(env.STUDIQUO_DATA, { prefix })).keys;
+    const start = cursor ? Number(cursor) : 0;
+    return { keys: all.slice(start, start + 2), list_complete: start + 2 >= all.length, cursor: String(start + 2) };
+  };
+  mock.timers.tick(5_000);
+  assert.equal((await resetPasswordWith(env, "pk-pages@example.com", "another-passphrase-1", "n".repeat(40))).status, 200);
+
+  for (let n = 1; n <= 7; n++) assert.equal(await env.STUDIQUO_DATA.get(`passkeys:credential:page-passkey-${n}`), null, `passkey ${n}`);
+});
+
+test("POST /api/auth/email/confirm-code: a passkey registered while the new password is being stored is removed, even if the second sign-out pass fails", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-window@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  mock.timers.tick(5_000);
+
+  // Whoever still knew the old password registers a passkey at the moment the
+  // new password is written, after the first pass has already run; and the
+  // sessions' part of the second pass then fails.
+  const realPut = env.STUDIQUO_DATA.put;
+  let stored = false;
+  env.STUDIQUO_DATA.put = async (key, value, options) => {
+    if (key === "account:local:pk-window@example.com" && !stored) {
+      stored = true;
+      await seedPasskey(env, "pk-window@example.com", "window-passkey", "attacker-device");
+    }
+    if (stored && key.startsWith("session-valid-from:")) throw new Error("KV unavailable");
+    return realPut(key, value, options);
+  };
+  const response = await resetPasswordWith(env, "pk-window@example.com", "another-passphrase-1", "n".repeat(40));
+  env.STUDIQUO_DATA.put = realPut;
+
+  assert.equal(response.status, 200, "the password was stored, so the reset succeeds");
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:window-passkey"), null,
+    "the passkeys' pass does not depend on the sessions' pass");
+});
+
+test("POST /api/auth/email/confirm-code: the second passkey pass is tried again when it fails", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-retry@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  mock.timers.tick(5_000);
+
+  const realPut = env.STUDIQUO_DATA.put;
+  const realList = env.STUDIQUO_DATA.list;
+  let stored = false;
+  let failures = 0;
+  env.STUDIQUO_DATA.put = async (key, value, options) => {
+    if (key === "account:local:pk-retry@example.com" && !stored) {
+      stored = true;
+      await seedPasskey(env, "pk-retry@example.com", "retry-passkey", "attacker-device");
+    }
+    return realPut(key, value, options);
+  };
+  env.STUDIQUO_DATA.list = async options => {
+    if (stored && options.prefix === "passkeys:credential:" && failures < 2) { failures += 1; throw new Error("KV unavailable"); }
+    return realList.call(env.STUDIQUO_DATA, options);
+  };
+  const response = await resetPasswordWith(env, "pk-retry@example.com", "another-passphrase-1", "n".repeat(40));
+  env.STUDIQUO_DATA.put = realPut;
+  env.STUDIQUO_DATA.list = realList;
+
+  assert.equal(response.status, 200);
+  assert.equal(failures, 2, "two attempts failed");
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:retry-passkey"), null, "and the third removed the passkey");
+});
+
 test("POST /api/auth/email/confirm-code: setting a first password keeps the passkeys", async () => {
   const env = environment({ strictSessions: true });
   await seedPasskey(env, "pk-first@example.com", "owners-passkey", "device-a");

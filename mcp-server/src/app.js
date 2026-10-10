@@ -6,7 +6,7 @@ import { aiPrivacyRejection } from "./ai-privacy.js";
 import { getPlan } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
-import { associationFile, handlePasskeys, revokePasskeysForEmails } from "./passkeys.js";
+import { associationFile, handlePasskeys, revokePasskeysForAccount } from "./passkeys.js";
 import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
 import { handleAppErrors } from "./app-errors.js";
@@ -742,8 +742,8 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     provider: "email", sub: normalizedEmail, email: normalizedEmail, emailVerified: true,
   });
   const accountKey = link.canonicalIdentityKey ?? `email:${normalizedEmail}`;
-  // Every address of this account: a passkey registered for any of them signs
-  // in as the account, so all of them go with a reset.
+  // A passkey registered for any address of this account signs in as the
+  // account, so all of them go with a reset (see revokePasskeysForAccount).
   const accountEmails = [normalizedEmail, ...(link.linkedIdentities ?? []).map(identityKey).filter(key => key.startsWith("email:")).map(key => key.slice("email:".length))];
   if (replacedPassword) {
     // A reset signs out whoever held the old password — the new session below
@@ -756,10 +756,12 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     // still works, so the owner simply asks for a new code. Done after, a
     // failure here would leave the new password in place while the stolen
     // session (the very thing a reset is for) stayed alive.
+    // The steps run in order (sign-out, apps, passkeys); one that fails stops the
+    // reset, but the ones before it have been done and stay done.
     try {
       await revokeSessionsIssuedBefore(env, accountKey);
       await revokeAllConnections(env, [accountKey, ...(link.linkedIdentities ?? []).map(identityKey)]);
-      await revokePasskeysForEmails(env, accountEmails);
+      await revokePasskeysForAccount(env, { accountKey, emails: accountEmails });
     } catch {
       return json({ error: "Could not complete the password reset. Please try again." }, 503);
     }
@@ -781,9 +783,20 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     try {
       await revokeSessionsIssuedBefore(env, accountKey);
       await revokeAllConnections(env, [accountKey, ...(link.linkedIdentities ?? []).map(identityKey)]);
-      await revokePasskeysForEmails(env, accountEmails);
     } catch {
       console.warn("password reset: second sign-out pass failed");
+    }
+    // Passkeys are removed on their own, and tried a few times: unlike a
+    // session, one does not expire, so a pass that only the sessions' failure
+    // skipped would leave a way in that lasts. This is the pass that removes a
+    // passkey registered while the new password was being stored.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await revokePasskeysForAccount(env, { accountKey, emails: accountEmails });
+        break;
+      } catch {
+        if (attempt === 3) console.warn("password reset: second passkey pass failed");
+      }
     }
   }
   const token = await mintSession(env, accountKey, randomValue);
