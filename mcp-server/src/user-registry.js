@@ -28,6 +28,14 @@ export class UserRegistry extends DurableObject {
     });
   }
 
+  // Reads a user's record through the Durable Object that also writes it. A
+  // KV read from elsewhere can return a value up to a minute old, so a friend
+  // who was just removed could still be listed; the writes (removeFriend and
+  // the like) happen in this object's location, where a read sees them at once.
+  async getUser(key) {
+    return await this.env.STUDIQUO_DATA.get(`chat:user:${key}`, "json");
+  }
+
   async ensureUser(key, name, studyStats = null, bio = undefined) {
     const storageKey = `chat:user:${key}`;
     let user = await this.env.STUDIQUO_DATA.get(storageKey, "json");

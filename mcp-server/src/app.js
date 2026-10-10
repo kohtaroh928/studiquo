@@ -6,7 +6,7 @@ import { aiPrivacyRejection } from "./ai-privacy.js";
 import { getPlan } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
-import { associationFile, handlePasskeys } from "./passkeys.js";
+import { associationFile, handlePasskeys, revokePasskeysForEmails } from "./passkeys.js";
 import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
 import { handleAppErrors } from "./app-errors.js";
@@ -742,6 +742,9 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     provider: "email", sub: normalizedEmail, email: normalizedEmail, emailVerified: true,
   });
   const accountKey = link.canonicalIdentityKey ?? `email:${normalizedEmail}`;
+  // Every address of this account: a passkey registered for any of them signs
+  // in as the account, so all of them go with a reset.
+  const accountEmails = [normalizedEmail, ...(link.linkedIdentities ?? []).map(identityKey).filter(key => key.startsWith("email:")).map(key => key.slice("email:".length))];
   if (replacedPassword) {
     // A reset signs out whoever held the old password — the new session below
     // is minted after the cut-off — and so disconnects the apps (MCP) they
@@ -756,6 +759,7 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     try {
       await revokeSessionsIssuedBefore(env, accountKey);
       await revokeAllConnections(env, [accountKey, ...(link.linkedIdentities ?? []).map(identityKey)]);
+      await revokePasskeysForEmails(env, accountEmails);
     } catch {
       return json({ error: "Could not complete the password reset. Please try again." }, 503);
     }
@@ -777,6 +781,7 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     try {
       await revokeSessionsIssuedBefore(env, accountKey);
       await revokeAllConnections(env, [accountKey, ...(link.linkedIdentities ?? []).map(identityKey)]);
+      await revokePasskeysForEmails(env, accountEmails);
     } catch {
       console.warn("password reset: second sign-out pass failed");
     }
