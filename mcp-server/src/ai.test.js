@@ -635,6 +635,27 @@ test("the daily allowance is the account's: another sign-in of the same account 
   }
 });
 
+test("grading, rubric and review allowances are the account's too, not the sign-in's", async () => {
+  const env = environment();
+  const rateCounter = capturingRateCounterBinding();
+  env.RATE_COUNTER = rateCounter;
+  const account = await sha256Hex("ai-quota-account:email:person@example.com");
+  for (const [path, bucket] of [["/api/ai/grade", "grade"], ["/api/ai/rubric", "grade"], ["/api/ai/review", "review"]]) {
+    for (const deviceKey of ["first-sign-in", "second-sign-in"]) {
+      rateCounter.calls.length = 0;
+      // Whatever the request does after the allowance check does not matter
+      // here; the check itself runs first and names the counter.
+      await handleAI(
+        new URL(`https://example.test${path}`),
+        new Request(`https://example.test${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }),
+        env, deviceKey, executionContext(), { sub: "email:person@example.com" }, "standard",
+      );
+      const names = rateCounter.calls.map(call => call.name).filter(name => name.startsWith(`ai:${bucket}:`) && !name.startsWith(`ai:${bucket}:global`));
+      assert.deepEqual(names, [`ai:${bucket}:${account}`], `${path} (${deviceKey}) is counted per account`);
+    }
+  }
+});
+
 test("every prompt shown to a student tells the model to delimit math with $ and $$", async () => {
   const originalFetch = globalThis.fetch;
   const seen = {};

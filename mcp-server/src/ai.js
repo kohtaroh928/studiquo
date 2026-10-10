@@ -200,7 +200,7 @@ function model(env, kind) {
 const DAY_SECONDS = 86_400;
 
 /** Per-account and whole-service caps, each a RateCounter Durable Object
- * (see rate-counter.js) keyed by bucket/device so it resets on its own once
+ * (see rate-counter.js) keyed by bucket/account so it resets on its own once
  * a day passes — a soft cap rather than an exact one, same as before: a
  * burst of simultaneous requests can still slip a few over. Both must pass. */
 async function withinQuota(env, key, bucket, limit, globalLimit) {
@@ -899,10 +899,9 @@ async function handleReview(request, env, key, ctx, plan, quotaKey = key) {
  * here, and a caller with no real session (shouldn't happen past app.js's
  * own bearer-token gate, but also every existing test that calls this
  * directly without either) is treated as the "standard" plan: the exact
- * pre-existing Gemini-only, flat-limit behavior. `session` itself isn't
- * read in this file yet; it's accepted now so app.js's call site doesn't
- * need to change shape again if a future endpoint here needs the account
- * identity directly rather than just its resolved plan.
+ * pre-existing Gemini-only, flat-limit behavior. `session.sub` is what the
+ * daily limits are counted per (see quotaKey below); without a session they
+ * fall back to `key`, the sign-in's own token hash.
  */
 export async function handleAI(url, request, env, key, ctx, session, plan) {
   if (request.method !== "POST") return null;
