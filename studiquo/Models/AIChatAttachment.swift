@@ -14,7 +14,6 @@ struct AIChatAttachment: Identifiable, Hashable {
         case notebook
         case flashcards
         case document
-        case slideDeck
         /// A rectangle cut out of a page — see `PageSnippet`.
         case snippet
 
@@ -26,7 +25,6 @@ struct AIChatAttachment: Identifiable, Hashable {
             case .notebook: return L("ノート・PDF")
             case .flashcards: return L("暗記カード")
             case .document: return L("文書")
-            case .slideDeck: return L("スライド")
             case .snippet: return L("切り抜き")
             }
         }
@@ -39,7 +37,6 @@ struct AIChatAttachment: Identifiable, Hashable {
             case .notebook: return "doc.richtext"
             case .flashcards: return "rectangle.on.rectangle.angled"
             case .document: return "doc.text"
-            case .slideDeck: return "rectangle.on.rectangle"
             case .snippet: return "rectangle.dashed"
             }
         }

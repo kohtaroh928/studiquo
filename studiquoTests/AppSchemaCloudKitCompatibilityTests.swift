@@ -20,8 +20,7 @@ final class AppSchemaCloudKitCompatibilityTests: XCTestCase {
         Notebook.self, NotePage.self, PageElement.self,
         FlashcardDeck.self, Flashcard.self, CalendarEvent.self, StudyActivity.self,
         AIChatThread.self, AIChatMessage.self,
-        TextDocument.self, SlideDeck.self, Slide.self,
-        SlideMaster.self, SlideLayoutTemplate.self, SlidePlaceholder.self, SlideElement.self,
+        TextDocument.self,
         DocumentBlock.self, DocumentTableRow.self, DocumentTableCell.self,
         DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
         AIReviewItem.self,
@@ -61,27 +60,13 @@ final class AppSchemaCloudKitCompatibilityTests: XCTestCase {
         XCTAssertNoThrow(try ModelContainer(for: schema, configurations: configuration))
     }
 
-    /// Same check for the canvas-based slide structure (design steps 2/4):
-    /// `SlideDeck.master`, the master→layout→placeholder cascade, `Slide.elements`,
-    /// `SlidePlaceholder.sourceElements` (deliberately non-cascade — see its
-    /// doc comment), and `SlideElement`'s self-referencing group relationship
-    /// all need their own inverse.
-    func testSlideElementStructureHasMutualInverseRelationships() throws {
-        let schema = Schema([
-            SlideDeck.self, Slide.self,
-            SlideMaster.self, SlideLayoutTemplate.self, SlidePlaceholder.self, SlideElement.self,
-        ])
-        let configuration = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
-        XCTAssertNoThrow(try ModelContainer(for: schema, configurations: configuration))
-    }
-
     /// `Folder` has a self-referencing `parent`/`children` pair plus one
-    /// inverse back from each of the four item types it can contain — all
+    /// inverse back from each of the three item types it can contain — all
     /// five need to validate on their own, not just as part of the full
     /// schema above.
     func testFolderStructureHasMutualInverseRelationships() throws {
         let schema = Schema([
-            Folder.self, Notebook.self, FlashcardDeck.self, TextDocument.self, SlideDeck.self,
+            Folder.self, Notebook.self, FlashcardDeck.self, TextDocument.self,
         ])
         let configuration = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
         XCTAssertNoThrow(try ModelContainer(for: schema, configurations: configuration))

@@ -21,8 +21,16 @@ private struct AIChatPaneWidthKey: PreferenceKey {
 /// pane-switching and paste-onto-page behaviour; the home screen adds none of
 /// that and none of those menu items appear.
 /// Recognises a dragged tab's id that a text field swallowed as plain text.
+/// Where the AIチャット message list rests when it is shown. A conversation
+/// opens on its newest message; only the empty-state greeting starts at the top.
+enum AIChatScrollPolicy {
+    static func anchor(messageCount: Int) -> UnitPoint {
+        messageCount == 0 ? .top : .bottom
+    }
+}
+
 enum DroppedTabText {
-    static let prefixes = ["notebook:", "deck:", "web:", "ai:", "friend:", "group:", "document:", "slide:"]
+    static let prefixes = ["notebook:", "deck:", "web:", "ai:", "friend:", "group:", "document:"]
 
     /// The tab id inserted by the change from `old` to `new`, or nil when the
     /// change is ordinary typing, a deletion, or text that is not a tab id.
@@ -362,6 +370,12 @@ struct AIChatPane: View {
                                 }
                             }
                             .padding(18)
+                        }
+                        .defaultScrollAnchor(AIChatScrollPolicy.anchor(messageCount: messages.count))
+                        .onAppear {
+                            if let last = messages.last {
+                                proxy.scrollTo(last.persistentModelID, anchor: .bottom)
+                            }
                         }
                         .onChange(of: messages.count) { _, _ in
                             if let last = messages.last {

@@ -4438,7 +4438,7 @@ struct FriendChatView: View {
         guard !trimmed.isEmpty else { return false }
         guard !trimmed.hasPrefix("[studiquo-attachment:") else { return false }
         guard !isPaneSwitchDrop(trimmed) else { return false }
-        let blockedPrefixes = ["notebook-", "deck-", "document-", "slide-", "file-", "photo-"]
+        let blockedPrefixes = ["notebook-", "deck-", "document-", "file-", "photo-"]
         guard !blockedPrefixes.contains(where: { trimmed.hasPrefix($0) }) else { return false }
         return !trimmed.contains(":")
     }

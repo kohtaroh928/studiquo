@@ -133,7 +133,6 @@ enum PaneSwitchTarget {
     case notebook(Notebook)
     case flashcardDeck(FlashcardDeck)
     case document(TextDocument)
-    case slideDeck(SlideDeck)
     case web(title: String, homeURL: String)
     case ai(PersistentIdentifier)
     case friend(UUID)
@@ -146,7 +145,6 @@ private enum TemporaryChatMaterial: Identifiable {
     case notebook(Notebook)
     case flashcardDeck(FlashcardDeck)
     case document(TextDocument)
-    case slideDeck(SlideDeck)
     case externalFile(ExternalFileSession)
 
     var id: String {
@@ -156,7 +154,6 @@ private enum TemporaryChatMaterial: Identifiable {
         case .notebook(let notebook): return "notebook-\(notebook.persistentModelID)"
         case .flashcardDeck(let deck): return "deck-\(deck.persistentModelID)"
         case .document(let document): return "document-\(document.persistentModelID)"
-        case .slideDeck(let deck): return "slide-\(deck.persistentModelID)"
         // Not the file's path: the id is the pane's identity, and the path of a
         // file opened in place is the user's data about their own storage.
         case .externalFile(let session): return "external-file-\(session.id)"
@@ -170,7 +167,6 @@ private enum TemporaryChatMaterial: Identifiable {
         case .notebook(let notebook): return notebook.title
         case .flashcardDeck(let deck): return deck.title
         case .document(let document): return document.title
-        case .slideDeck(let deck): return deck.title
         case .externalFile: return String(localized: "ファイル")
         }
     }
@@ -190,7 +186,6 @@ private enum TemporaryChatMaterial: Identifiable {
         case .notebook: return "notebook"
         case .flashcardDeck: return "deck"
         case .document: return "document"
-        case .slideDeck: return "slide"
         case .externalFile: return "external-file"
         }
     }
@@ -233,7 +228,6 @@ struct NoteEditorView: View {
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var notebooks: [Notebook]
     @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
     @Query(sort: \TextDocument.updatedAt, order: .reverse) private var textDocuments: [TextDocument]
-    @Query(sort: \SlideDeck.updatedAt, order: .reverse) private var slideDecks: [SlideDeck]
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var splitState: EditorSplitState
@@ -1499,8 +1493,6 @@ struct NoteEditorView: View {
                 FlashcardPaneView(deck: deck, onHome: {})
             case .document(let document):
                 TextDocumentView(document: document)
-            case .slideDeck(let deck):
-                SlideDeckView(deck: deck)
             case .externalFile(let session):
                 ExternalFilePaneView(session: session, onClose: { closeTemporaryChatMaterial(in: pane) })
             }
@@ -2290,16 +2282,6 @@ struct NoteEditorView: View {
                 sourceID: String(describing: $0.persistentModelID)
             )
         })
-        options.append(contentsOf: slideDecks.filter { !$0.isTrashed }.map {
-            FriendMessageAttachment(
-                id: "slide-\(String(describing: $0.persistentModelID))",
-                title: $0.title,
-                kind: "スライド",
-                icon: "rectangle.on.rectangle",
-                sourceKind: "slide",
-                sourceID: String(describing: $0.persistentModelID)
-            )
-        })
         return options
     }
 
@@ -2320,8 +2302,7 @@ struct NoteEditorView: View {
                 sourceID: sourceID,
                 notebooks: notebooks,
                 flashcardDecks: flashcardDecks,
-                textDocuments: textDocuments,
-                slideDecks: slideDecks
+                textDocuments: textDocuments
               ) else { return attachment }
 
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -2389,18 +2370,6 @@ struct NoteEditorView: View {
                 icon: "doc.text",
                 sourceKind: "document",
                 sourceID: String(describing: document.persistentModelID)
-            )
-        case "slide":
-            guard let deck = slideDecks.first(where: {
-                String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
-            }) else { return nil }
-            return FriendMessageAttachment(
-                id: "slide-\(String(describing: deck.persistentModelID))",
-                title: deck.title,
-                kind: "スライド",
-                icon: "rectangle.on.rectangle",
-                sourceKind: "slide",
-                sourceID: String(describing: deck.persistentModelID)
             )
         default:
             return nil
@@ -2559,11 +2528,6 @@ struct NoteEditorView: View {
                 String(describing: $0.persistentModelID) == rawID && !$0.isTrashed
             }) else { return nil }
             return .document(document)
-        case "slide":
-            guard let deck = slideDecks.first(where: {
-                String(describing: $0.persistentModelID) == rawID && !$0.isTrashed
-            }) else { return nil }
-            return .slideDeck(deck)
         default:
             return nil
         }
@@ -2699,8 +2663,7 @@ struct NoteEditorView: View {
         AIAppAttachmentCatalog.options(
             notebooks: notebooks,
             flashcardDecks: flashcardDecks,
-            textDocuments: textDocuments,
-            slideDecks: slideDecks
+            textDocuments: textDocuments
         )
     }
 
@@ -2808,9 +2771,6 @@ struct NoteEditorView: View {
             }
         case .document(let document):
             setTemporaryChatMaterial(.document(document), in: pane)
-            return
-        case .slideDeck(let deck):
-            setTemporaryChatMaterial(.slideDeck(deck), in: pane)
             return
         case .web(_, let homeURL):
             webBrowser.openHomeIfNeeded(homeURL)
@@ -3207,14 +3167,6 @@ struct NoteEditorView: View {
                String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
            }) {
             applyPaneTarget(.document(document), to: pane)
-            return true
-        }
-
-        if parts[0] == "slide",
-           let deck = slideDecks.first(where: {
-               String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
-           }) {
-            applyPaneTarget(.slideDeck(deck), to: pane)
             return true
         }
 

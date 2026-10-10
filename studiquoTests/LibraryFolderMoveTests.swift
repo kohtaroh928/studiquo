@@ -18,12 +18,11 @@ final class LibraryFolderMoveTests: XCTestCase {
         let notebook = Notebook(title: "ノート")
         let deck = FlashcardDeck(title: "暗記帳")
         let document = TextDocument(title: "文書")
-        let slides = SlideDeck(title: "スライド")
         context.insert(parent)
         context.insert(source)
         context.insert(destination)
 
-        let items: [any HomeItem] = [notebook, deck, document, slides]
+        let items: [any HomeItem] = [notebook, deck, document]
         for item in items {
             item.folder = source
             item.folderName = source.legacyPath
@@ -31,7 +30,6 @@ final class LibraryFolderMoveTests: XCTestCase {
         context.insert(notebook)
         context.insert(deck)
         context.insert(document)
-        context.insert(slides)
         try context.save()
 
         for item in items {
@@ -46,14 +44,12 @@ final class LibraryFolderMoveTests: XCTestCase {
         let fetchedNotebook = try XCTUnwrap(readContext.fetch(FetchDescriptor<Notebook>()).first)
         let fetchedDeck = try XCTUnwrap(readContext.fetch(FetchDescriptor<FlashcardDeck>()).first)
         let fetchedDocument = try XCTUnwrap(readContext.fetch(FetchDescriptor<TextDocument>()).first)
-        let fetchedSlides = try XCTUnwrap(readContext.fetch(FetchDescriptor<SlideDeck>()).first)
         XCTAssertEqual([fetchedNotebook.folderName, fetchedDeck.folderName,
-                        fetchedDocument.folderName, fetchedSlides.folderName],
-                       Array(repeating: "親/先", count: 4))
+                        fetchedDocument.folderName],
+                       Array(repeating: "親/先", count: 3))
         XCTAssertEqual(fetchedNotebook.folder?.legacyPath, "親/先")
         XCTAssertEqual(fetchedDeck.folder?.legacyPath, "親/先")
         XCTAssertEqual(fetchedDocument.folder?.legacyPath, "親/先")
-        XCTAssertEqual(fetchedSlides.folder?.legacyPath, "親/先")
     }
 
     func testMovesBetweenLevelsButRejectsCurrentFolderAndTrashedItem() throws {
