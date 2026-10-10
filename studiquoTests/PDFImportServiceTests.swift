@@ -159,6 +159,145 @@ final class PDFImportServiceTests: XCTestCase {
         XCTAssertEqual(PDFImportService.effectiveScale(for: CGSize(width: 4096, height: 100), requested: 2), 1, accuracy: 0.0001)
     }
 
+    // MARK: Rotated pages
+
+    /// A portrait page (200×400) whose upper half is red and lower half blue,
+    /// saved with the given `/Rotate`. Slides exported from PowerPoint or a
+    /// scanner often look like this: a portrait MediaBox plus `/Rotate 90`.
+    private func makeRotatedPDF(name: String, rotation: Int) throws -> URL {
+        let source = workDir.appendingPathComponent("unrotated-\(name)")
+        var box = CGRect(x: 0, y: 0, width: 200, height: 400)
+        let context = try XCTUnwrap(CGContext(source as CFURL, mediaBox: &box, nil))
+        context.beginPage(mediaBox: &box)
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 200, width: 200, height: 200))
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 200, height: 200))
+        context.endPage()
+        context.closePDF()
+
+        let document = try XCTUnwrap(PDFDocument(url: source))
+        try XCTUnwrap(document.page(at: 0)).rotation = rotation
+        let url = workDir.appendingPathComponent(name)
+        XCTAssertTrue(document.write(to: url))
+        return url
+    }
+
+    /// The colour of the pixel at `(x, y)` (top-left origin) as 0-255 RGB.
+    private func rgb(of data: Data, x: Int, y: Int) throws -> (r: Int, g: Int, b: Int) {
+        let image = try XCTUnwrap(UIImage(data: data)?.cgImage)
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
+        return (Int(pixel[0]), Int(pixel[1]), Int(pixel[2]))
+    }
+
+    private func isReddish(_ c: (r: Int, g: Int, b: Int)) -> Bool { c.r > 200 && c.g < 60 && c.b < 60 }
+    private func isBluish(_ c: (r: Int, g: Int, b: Int)) -> Bool { c.b > 200 && c.r < 60 && c.g < 60 }
+
+    /// The bug: a landscape slide stored as a portrait page with `/Rotate 90`
+    /// was drawn into a bitmap sized from the unrotated box, so only part of it
+    /// showed and the rest of the canvas stayed white.
+    func testExtractPages_rotated90UsesTheRotatedSizeAndShowsTheWholePage() throws {
+        let url = try makeRotatedPDF(name: "rotate90.pdf", rotation: 90)
+        let page = try XCTUnwrap(PDFImportService.extractPages(from: url, scale: 1).first)
+        XCTAssertEqual(page.width, 400)
+        XCTAssertEqual(page.height, 200, "the page is stored at the size it is displayed")
+        XCTAssertEqual(pixelSize(of: page.imageData), CGSize(width: 400, height: 200))
+        // Rotating clockwise turns the red top to the right and the blue bottom
+        // to the left, and nothing is left white.
+        XCTAssertTrue(isBluish(try rgb(of: page.imageData, x: 5, y: 5)))
+        XCTAssertTrue(isBluish(try rgb(of: page.imageData, x: 195, y: 195)))
+        XCTAssertTrue(isReddish(try rgb(of: page.imageData, x: 205, y: 5)))
+        XCTAssertTrue(isReddish(try rgb(of: page.imageData, x: 395, y: 195)))
+    }
+
+    func testExtractPages_rotated270UsesTheRotatedSizeAndShowsTheWholePage() throws {
+        let url = try makeRotatedPDF(name: "rotate270.pdf", rotation: 270)
+        let page = try XCTUnwrap(PDFImportService.extractPages(from: url, scale: 1).first)
+        XCTAssertEqual(page.width, 400)
+        XCTAssertEqual(page.height, 200)
+        XCTAssertEqual(pixelSize(of: page.imageData), CGSize(width: 400, height: 200))
+        XCTAssertTrue(isReddish(try rgb(of: page.imageData, x: 5, y: 5)))
+        XCTAssertTrue(isReddish(try rgb(of: page.imageData, x: 195, y: 195)))
+        XCTAssertTrue(isBluish(try rgb(of: page.imageData, x: 205, y: 5)))
+        XCTAssertTrue(isBluish(try rgb(of: page.imageData, x: 395, y: 195)))
+    }
+
+    func testExtractPages_rotated180KeepsTheSizeAndTurnsThePageUpsideDown() throws {
+        let url = try makeRotatedPDF(name: "rotate180.pdf", rotation: 180)
+        let page = try XCTUnwrap(PDFImportService.extractPages(from: url, scale: 1).first)
+        XCTAssertEqual(page.width, 200)
+        XCTAssertEqual(page.height, 400)
+        XCTAssertEqual(pixelSize(of: page.imageData), CGSize(width: 200, height: 400))
+        XCTAssertTrue(isBluish(try rgb(of: page.imageData, x: 100, y: 10)))
+        XCTAssertTrue(isReddish(try rgb(of: page.imageData, x: 100, y: 390)))
+    }
+
+    func testExtractPages_unrotatedPageIsUnchanged() throws {
+        let url = try makeRotatedPDF(name: "rotate0.pdf", rotation: 0)
+        let page = try XCTUnwrap(PDFImportService.extractPages(from: url, scale: 1).first)
+        XCTAssertEqual(page.width, 200)
+        XCTAssertEqual(page.height, 400)
+        XCTAssertTrue(isReddish(try rgb(of: page.imageData, x: 100, y: 10)))
+        XCTAssertTrue(isBluish(try rgb(of: page.imageData, x: 100, y: 390)))
+    }
+
+    /// The shape of the real handout that broke: A4 portrait boxes with
+    /// `/Rotate 90` on every page, drawn as landscape slides. Each page has a
+    /// green bar along its displayed right edge and a black bar along the top,
+    /// the two regions the bug cut off.
+    func testExtractPages_everyPageOfAnA4RotatedHandoutKeepsItsEdges() throws {
+        let source = workDir.appendingPathComponent("a4-source.pdf")
+        var box = CGRect(x: 0, y: 0, width: 595.22, height: 842)
+        let context = try XCTUnwrap(CGContext(source as CFURL, mediaBox: &box, nil))
+        for _ in 0..<3 {
+            context.beginPage(mediaBox: &box)
+            // Unrotated page space: displayed right edge = top (y near 842),
+            // displayed top edge = left (x near 0), for a clockwise /Rotate 90.
+            context.setFillColor(CGColor(red: 0, green: 1, blue: 0, alpha: 1))
+            context.fill(CGRect(x: 0, y: 812, width: 595.22, height: 30))
+            context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 30, height: 842))
+            context.endPage()
+        }
+        context.closePDF()
+        let document = try XCTUnwrap(PDFDocument(url: source))
+        for index in 0..<document.pageCount { document.page(at: index)?.rotation = 90 }
+        let url = workDir.appendingPathComponent("a4-rotated.pdf")
+        XCTAssertTrue(document.write(to: url))
+
+        let pages = PDFImportService.extractPages(from: url, scale: 1)
+        XCTAssertEqual(pages.count, 3)
+        for (index, page) in pages.enumerated() {
+            XCTAssertEqual(page.width, 842, accuracy: 0.01, "page \(index)")
+            XCTAssertEqual(page.height, 595.22, accuracy: 0.01, "page \(index)")
+            let size = pixelSize(of: page.imageData)
+            XCTAssertEqual(size.width, 842, accuracy: 1, "page \(index)")
+            XCTAssertEqual(size.height, 595, accuracy: 1, "page \(index)")
+            let rightEdge = try rgb(of: page.imageData, x: Int(size.width) - 10, y: Int(size.height) / 2)
+            XCTAssertTrue(rightEdge.g > 200 && rightEdge.r < 60 && rightEdge.b < 60, "right edge lost on page \(index)")
+            let topEdge = try rgb(of: page.imageData, x: Int(size.width) / 2, y: 10)
+            XCTAssertTrue(topEdge.r < 60 && topEdge.g < 60 && topEdge.b < 60, "top edge lost on page \(index)")
+        }
+    }
+
+    func testDisplaySize_swapsWidthAndHeightForQuarterTurns() throws {
+        for (rotation, swapped) in [(0, false), (90, true), (180, false), (270, true)] {
+            let url = try makeRotatedPDF(name: "size\(rotation).pdf", rotation: rotation)
+            let page = try XCTUnwrap(PDFDocument(url: url)?.page(at: 0))
+            XCTAssertEqual(
+                PDFImportService.displaySize(of: page),
+                swapped ? CGSize(width: 400, height: 200) : CGSize(width: 200, height: 400),
+                "rotation \(rotation)"
+            )
+        }
+    }
+
     // MARK: Background rendering
 
     /// Collects progress reports from the rendering thread.
