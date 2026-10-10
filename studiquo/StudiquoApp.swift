@@ -771,6 +771,32 @@ private struct LibraryDropUITestRoot: View {
             }
         }
         _ = LibraryDropUITestStore.container
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-ai-review-notification") {
+            // A review awaiting the keep/decline choice, and the real
+            // notification for it a few seconds from now.
+            let context = LibraryDropUITestStore.container.mainContext
+            let item = AIReviewItem(
+                questionText: "通知ボタンの確認", threadTitle: "テスト", createdAt: .now,
+                reviewDate: .now, explanationMarkdown: "確認用の解説", quiz: []
+            )
+            context.insert(item)
+            try? context.save()
+            let content = UNMutableNotificationContent()
+            content.title = "復習の時間です"
+            content.body = "昨日の質問「通知ボタンの確認」を復習できます"
+            content.categoryIdentifier = AppNotificationKind.aiReview.categoryIdentifier
+            content.userInfo = ["route": AppNotificationKind.aiReview.rawValue, "reviewID": item.id.uuidString]
+            AppNotificationPreferences.registerCategories()
+            // Scheduling before the permission is granted drops the request.
+            Task {
+                _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+                try? await UNUserNotificationCenter.current().add(UNNotificationRequest(
+                    identifier: "ui-test-ai-review",
+                    content: content,
+                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 15, repeats: false)
+                ))
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--ui-test-ai-notification-route") {
             let context = LibraryDropUITestStore.container.mainContext
             let thread = AIChatThread(title: "通知から")
