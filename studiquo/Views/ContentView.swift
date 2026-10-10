@@ -607,149 +607,11 @@ private struct PDFPasswordRemovalOfferSheet: View {
     }
 }
 
-/// Which of `TabPickerView`'s own "+" buttons was tapped — read back by
+/// Which "新規作成" entry of the tab picker was chosen — read back by
 /// `ContentView` once the picker sheet has actually finished dismissing,
 /// so it knows which "new item" alert/sheet to present next.
 private enum TabPickerCreationKind {
     case notebook, deck, document
-}
-
-private struct TabPickerView: View {
-    let notebooks: [Notebook]
-    let decks: [FlashcardDeck]
-    let documents: [TextDocument]
-    let onSelectNotebook: (Notebook) -> Void
-    let onSelectDeck: (FlashcardDeck) -> Void
-    let onSelectDocument: (TextDocument) -> Void
-    let onCreateNotebook: () -> Void
-    let onCreateDeck: () -> Void
-    let onCreateDocument: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-
-    private var filteredNotebooks: [Notebook] {
-        guard !searchText.isEmpty else { return notebooks }
-        return notebooks.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    private var filteredDecks: [FlashcardDeck] {
-        guard !searchText.isEmpty else { return decks }
-        return decks.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    private var filteredDocuments: [TextDocument] {
-        guard !searchText.isEmpty else { return documents }
-        return documents.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    /// A section header with a trailing "+" for creating a brand-new item of
-    /// that section's kind, right from this picker, instead of only being
-    /// able to pick from what already exists below it.
-    private func sectionHeader(_ title: String, identifier: String, onCreate: @escaping () -> Void) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Button(action: onCreate) {
-                Image(systemName: "plus.circle.fill")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier(identifier)
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    if filteredNotebooks.isEmpty {
-                        Text("ノートはありません").foregroundStyle(.secondary)
-                    }
-                    ForEach(filteredNotebooks) { notebook in
-                        Button {
-                            onSelectNotebook(notebook)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
-                                    .foregroundStyle(notebook.containsPDF ? .red : .blue)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(notebook.title).lineLimit(1)
-                                    Text("\(notebook.sortedPages.count)ページ")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    sectionHeader("ノート・PDF", identifier: "tab-picker-create-notebook", onCreate: onCreateNotebook)
-                }
-
-                Section {
-                    if filteredDecks.isEmpty {
-                        Text("暗記帳はありません").foregroundStyle(.secondary)
-                    }
-                    ForEach(filteredDecks) { deck in
-                        Button {
-                            onSelectDeck(deck)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "rectangle.on.rectangle.angled")
-                                    .foregroundStyle(.indigo)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(deck.title).lineLimit(1)
-                                    Text("\(deck.sortedCards.count)枚")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    sectionHeader("暗記帳", identifier: "tab-picker-create-deck", onCreate: onCreateDeck)
-                }
-
-                Section {
-                    if filteredDocuments.isEmpty {
-                        Text("文書はありません").foregroundStyle(.secondary)
-                    }
-                    ForEach(filteredDocuments) { document in
-                        Button { onSelectDocument(document) } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "doc.text").foregroundStyle(.teal)
-                                Text(document.title).lineLimit(1)
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    sectionHeader("文書", identifier: "tab-picker-create-document", onCreate: onCreateDocument)
-                }
-
-            }
-            .searchable(text: $searchText, prompt: "名前で検索")
-            .navigationTitle("タブを追加")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("キャンセル") { dismiss() }
-                }
-            }
-        }
-        // A fixed portrait sheet. It used to offer both a large and a medium
-        // detent, so the list could be dragged into a half-height panel that
-        // showed two or three notes at a time.
-        .modifier(FixedSheetSize(shape: .portrait))
-        .presentationDragIndicator(.hidden)
-    }
 }
 
 private enum AppLanguage: String, CaseIterable, Identifiable {
@@ -2721,10 +2583,11 @@ struct ContentView: View {
             ReportIssueSheet(capturedScreenshot: pending.screenshot)
         }
         .sheet(isPresented: $showsTabPicker, onDismiss: presentPendingTabPickerCreation) {
-            TabPickerView(
+            SplitSourcePicker(
                 notebooks: allNotebooks.filter { !$0.isTrashed },
-                decks: flashcardDecks.filter { !$0.isTrashed },
-                documents: textDocuments.filter { !$0.isTrashed },
+                flashcardDecks: flashcardDecks.filter { !$0.isTrashed },
+                textDocuments: textDocuments.filter { !$0.isTrashed },
+                title: "タブを追加",
                 onSelectNotebook: { notebook in
                     showsTabPicker = false
                     selectNotebookTab(notebook)
@@ -2737,9 +2600,14 @@ struct ContentView: View {
                     showsTabPicker = false
                     openTextDocument(document)
                 },
-                onCreateNotebook: { pendingTabPickerCreation = .notebook; showsTabPicker = false },
-                onCreateDeck: { pendingTabPickerCreation = .deck; showsTabPicker = false },
-                onCreateDocument: { pendingTabPickerCreation = .document; showsTabPicker = false }
+                onCreate: { kind in
+                    switch kind {
+                    case .note, .pdf: pendingTabPickerCreation = .notebook
+                    case .deck: pendingTabPickerCreation = .deck
+                    case .document: pendingTabPickerCreation = .document
+                    }
+                    showsTabPicker = false
+                }
             )
         }
         .onChange(of: libraryMode) { _, _ in

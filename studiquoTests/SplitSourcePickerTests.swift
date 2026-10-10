@@ -2,7 +2,7 @@ import SwiftData
 import XCTest
 @testable import studiquo
 
-/// 分割画面の資料選択で、資料が種類ごとに分かれることと、並べ方の保存値の扱いの確認。
+/// 分割画面の資料選択で、資料の種類ごとの並べ方、フォルダの辿り方と、並べ方の保存値の扱いの確認。
 @MainActor
 final class SplitSourcePickerTests: XCTestCase {
     private static var retainedContainers: [ModelContainer] = []
@@ -24,23 +24,26 @@ final class SplitSourcePickerTests: XCTestCase {
         return notebook
     }
 
-    func testGroupsAreAlwaysNotePdfDeckInThatOrder() throws {
-        let groups = SplitSourceCatalog.groups(notebooks: [], flashcardDecks: [], primaryNotebook: nil)
-        XCTAssertEqual(groups.map(\.kind), [.note, .pdf, .deck])
-        XCTAssertTrue(groups.allSatisfy { $0.items.isEmpty })
+    private func items(
+        _ notebooks: [Notebook] = [], _ decks: [FlashcardDeck] = [], primary: Notebook? = nil
+    ) -> [SplitSourceItem] {
+        SplitSourceCatalog.items(notebooks: notebooks, flashcardDecks: decks, primaryNotebook: primary)
     }
 
-    func testNotesPdfsAndDecksAreSeparatedByKind() throws {
+    func testNoMaterialsGivesNoItems() {
+        XCTAssertTrue(items().isEmpty)
+    }
+
+    func testNotesPdfsAndDecksKeepTheirKind() throws {
         let context = try makeContext()
         let note = notebook("ノートA", in: context)
         let pdf = notebook("PDF-A", isPDF: true, in: context)
         let deck = FlashcardDeck(title: "暗記A")
         context.insert(deck)
 
-        let groups = SplitSourceCatalog.groups(notebooks: [note, pdf], flashcardDecks: [deck], primaryNotebook: nil)
-        XCTAssertEqual(groups[0].items.map(\.title), ["ノートA"])
-        XCTAssertEqual(groups[1].items.map(\.title), ["PDF-A"])
-        XCTAssertEqual(groups[2].items.map(\.title), ["暗記A"])
+        let all = items([pdf, note], [deck])
+        XCTAssertEqual(all.map(\.title), ["ノートA", "PDF-A", "暗記A"], "notes, then PDFs, then decks")
+        XCTAssertEqual(all.map(\.kind), [.note, .pdf, .deck])
     }
 
     func testTrashedMaterialsAreLeftOut() throws {
@@ -52,35 +55,30 @@ final class SplitSourcePickerTests: XCTestCase {
         trashedDeck.isTrashed = true
         context.insert(trashedDeck)
 
-        let groups = SplitSourceCatalog.groups(notebooks: [kept, trashed], flashcardDecks: [trashedDeck], primaryNotebook: nil)
-        XCTAssertEqual(groups.flatMap(\.items).map(\.title), ["残す"])
+        XCTAssertEqual(items([kept, trashed], [trashedDeck]).map(\.title), ["残す"])
     }
 
     func testOrderWithinAKindFollowsTheInputOrder() throws {
         let context = try makeContext()
         let b = notebook("B", in: context)
         let a = notebook("A", in: context)
-        let groups = SplitSourceCatalog.groups(notebooks: [b, a], flashcardDecks: [], primaryNotebook: nil)
-        XCTAssertEqual(groups[0].items.map(\.title), ["B", "A"])
+        XCTAssertEqual(items([b, a]).map(\.title), ["B", "A"])
     }
 
     func testOnlyThePrimaryNotebookIsMarkedAsDisplayedAndStaysListed() throws {
         let context = try makeContext()
         let open = notebook("表示中のノート", in: context)
         let other = notebook("別のノート", in: context)
-        let items = SplitSourceCatalog.groups(notebooks: [open, other], flashcardDecks: [], primaryNotebook: open)
-            .flatMap(\.items)
-        XCTAssertEqual(items.filter(\.isDisplayed).map(\.title), ["表示中のノート"])
-        XCTAssertEqual(items.count, 2)
+        let all = items([open, other], primary: open)
+        XCTAssertEqual(all.filter(\.isDisplayed).map(\.title), ["表示中のノート"])
+        XCTAssertEqual(all.count, 2)
     }
 
     func testItemIdsAreUnique() throws {
         let context = try makeContext()
         let first = notebook("同名", in: context)
         let second = notebook("同名", in: context)
-        let ids = SplitSourceCatalog.groups(notebooks: [first, second], flashcardDecks: [], primaryNotebook: nil)
-            .flatMap(\.items).map(\.id)
-        XCTAssertEqual(Set(ids).count, 2)
+        XCTAssertEqual(Set(items([first, second]).map(\.id)).count, 2)
     }
 
     func testStoredLayoutFallsBackToListWhenUnknown() {
@@ -92,8 +90,13 @@ final class SplitSourcePickerTests: XCTestCase {
     }
 
     func testLayoutButtonsOfferListIconColumnWithHomeScreenSymbols() {
-        XCTAssertEqual(SplitSourceLayout.allCases, [.list, .icon, .column])
-        XCTAssertEqual(SplitSourceLayout.allCases.map(\.systemImage), ["list.bullet", "square.grid.2x2", "rectangle.split.3x1"])
+        XCTAssertEqual(SplitSourceLayout.allCases, [.list, .icon, .column, .kind])
+        XCTAssertEqual(
+            SplitSourceLayout.allCases.map(\.systemImage),
+            ["list.bullet", "square.grid.2x2", "rectangle.split.3x1", "square.stack.3d.up"]
+        )
+        XCTAssertEqual(SplitSourceLayout.kind.title, "種類")
+        XCTAssertEqual(SplitSourceLayout(storedValue: "kind"), .kind)
     }
 
     // MARK: フォルダ階層(カラム)
@@ -141,22 +144,49 @@ final class SplitSourcePickerTests: XCTestCase {
         mathDeck.folderName = "科目/数学"
         context.insert(mathDeck)
 
-        let groups = SplitSourceCatalog.groups(
-            notebooks: [rootNote, subjectPDF, subjectNote], flashcardDecks: [mathDeck], primaryNotebook: nil
-        )
-        XCTAssertEqual(SplitSourceCatalog.items(inFolder: nil, from: groups).map(\.title), ["ルートのノート"])
-        XCTAssertEqual(SplitSourceCatalog.items(inFolder: "科目", from: groups).map(\.title), ["科目のノート", "科目のPDF"])
-        XCTAssertEqual(SplitSourceCatalog.items(inFolder: "科目/数学", from: groups).map(\.title), ["数学の暗記"])
-        XCTAssertTrue(SplitSourceCatalog.items(inFolder: "なし", from: groups).isEmpty)
+        let all = items([rootNote, subjectPDF, subjectNote], [mathDeck])
+        XCTAssertEqual(SplitSourceCatalog.items(inFolder: nil, from: all).map(\.title), ["ルートのノート"])
+        XCTAssertEqual(SplitSourceCatalog.items(inFolder: "科目", from: all).map(\.title), ["科目のノート", "科目のPDF"])
+        XCTAssertEqual(SplitSourceCatalog.items(inFolder: "科目/数学", from: all).map(\.title), ["数学の暗記"])
+        XCTAssertTrue(SplitSourceCatalog.items(inFolder: "なし", from: all).isEmpty)
+        XCTAssertEqual(SplitSourceCatalog.itemCount(inFolderTree: "科目", from: all), 3)
+        XCTAssertEqual(SplitSourceCatalog.itemCount(inFolderTree: "科目/数学", from: all), 1)
+        XCTAssertEqual(SplitSourceCatalog.itemCount(inFolderTree: "科", from: all), 0, "a prefix of the name is not the folder")
     }
 
     func testItemIdIsThePersistentIdentityNotTheTitle() throws {
         let context = try makeContext()
         let first = notebook("同名", in: context)
         try context.save()
-        let before = SplitSourceCatalog.groups(notebooks: [first], flashcardDecks: [], primaryNotebook: nil)[0].items[0].id
-        let after = SplitSourceCatalog.groups(notebooks: [first], flashcardDecks: [], primaryNotebook: nil)[0].items[0].id
+        let before = items([first])[0].id
+        let after = items([first])[0].id
         XCTAssertEqual(before, after)
         XCTAssertEqual(before, .notebook(first.persistentModelID))
+    }
+
+    func testTextDocumentsAreOfferedAsTheirOwnKind() throws {
+        let context = try makeContext()
+        let document = TextDocument(title: "文書A")
+        document.folderName = "科目"
+        context.insert(document)
+        let trashed = TextDocument(title: "捨てた文書")
+        trashed.isTrashed = true
+        context.insert(trashed)
+
+        let all = SplitSourceCatalog.items(notebooks: [], flashcardDecks: [], textDocuments: [document, trashed], primaryNotebook: nil)
+        XCTAssertEqual(all.map(\.title), ["文書A"])
+        XCTAssertEqual(all.first?.kind, .document)
+        XCTAssertEqual(all.first?.id, .document(document.persistentModelID))
+    }
+
+    func testSearchMatchesTitlesIgnoringCaseAndSurroundingSpaces() throws {
+        let context = try makeContext()
+        let a = notebook("Algebra", in: context)
+        let b = notebook("歴史", in: context)
+        let all = items([a, b])
+        XCTAssertEqual(SplitSourceCatalog.items(all, matchingSearch: " alg ").map(\.title), ["Algebra"])
+        XCTAssertEqual(SplitSourceCatalog.items(all, matchingSearch: "歴").map(\.title), ["歴史"])
+        XCTAssertEqual(SplitSourceCatalog.items(all, matchingSearch: "  ").count, 2)
+        XCTAssertTrue(SplitSourceCatalog.items(all, matchingSearch: "なし").isEmpty)
     }
 }
