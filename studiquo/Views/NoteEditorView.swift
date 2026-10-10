@@ -7,8 +7,6 @@ import AudioToolbox
 import JavaScriptCore
 import UniformTypeIdentifiers
 import VisionKit
-import Speech
-import AVFoundation
 
 extension Notification.Name {
     static let studiquoOpenPageLink = Notification.Name("StudiquoOpenPageLink")
