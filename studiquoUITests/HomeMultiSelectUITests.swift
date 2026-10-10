@@ -113,12 +113,17 @@ final class HomeMultiSelectUITests: XCTestCase {
         )
         XCTAssertTrue(selectionAction(in: app).waitForExistence(timeout: 5), "移動後に選択モードが終わっていません")
 
-        // Dismiss the native overflow menu exposed by the end-state check.
-        if app.buttons["選択"].exists {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.3)).tap()
+        // Dismiss the native overflow menu only if the end-state check left
+        // it open. A menu item has lost the toolbar button's identifier; the
+        // toolbar button itself keeps it, and tapping blindly would land on
+        // the iPad sidebar (the trash row) instead.
+        if app.buttons["選択"].exists && !app.buttons["library-selection-begin"].exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.9)).tap()
         }
-        app.buttons["library-folder-Parent"].tap()
-        app.buttons["library-folder-Parent/Destination"].tap()
+        let parentFolder = app.descendants(matching: .any)["library-folder-Parent"].firstMatch
+        XCTAssertTrue(parentFolder.waitForExistence(timeout: 5), "移動後にフォルダ「Parent」が表示されません")
+        parentFolder.tap()
+        app.descendants(matching: .any)["library-folder-Parent/Destination"].firstMatch.tap()
         XCTAssertTrue(app.descendants(matching: .any)["library-entry-Drag me"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["library-entry-Other one"].exists)
     }
