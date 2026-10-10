@@ -4169,6 +4169,14 @@ struct ContentView: View {
         }
         .contentShape(Rectangle())
         .onDrag { folderDragProvider(for: folder) }
+        .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: folder) != nil) {
+            if let target = folderObject(forLegacyPath: folder) {
+                performLibraryRemoval {
+                    removeFolderMovingContentsToTrash(target)
+                    try? modelContext.save()
+                }
+            }
+        })
         .contextMenu {
             if let target = folderObject(forLegacyPath: folder) {
                 Button {
@@ -6778,6 +6786,53 @@ struct ContentView: View {
 
 /// The all-files screen uses ScrollView so folder rows can receive drops.
 /// List used to supply these insets and separators automatically.
+/// `swipeActions` only works on `List` rows, but the folder-organized home
+/// screen lays its rows out in a `ScrollView` (so each folder owns its drop
+/// area). This gives those rows the same swipe-left-to-trash gesture.
+private struct SwipeToTrashRow: ViewModifier {
+    let enabled: Bool
+    let action: () -> Void
+
+    @State private var offset: CGFloat = 0
+    private let revealWidth: CGFloat = 88
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled {
+            content
+                .offset(x: offset)
+                .background(alignment: .trailing) {
+                    Button(role: .destructive) {
+                        withAnimation { offset = 0 }
+                        action()
+                    } label: {
+                        Text("ゴミ箱")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: revealWidth)
+                            .frame(maxHeight: .infinity)
+                            .background(Color.red)
+                    }
+                    .opacity(offset < 0 ? 1 : 0)
+                    .accessibilityIdentifier("library-folder-trash")
+                }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 20)
+                        .onChanged { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            offset = min(0, max(-revealWidth, value.translation.width))
+                        }
+                        .onEnded { value in
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                offset = value.translation.width < -revealWidth / 2 ? -revealWidth : 0
+                            }
+                        }
+                )
+        } else {
+            content
+        }
+    }
+}
+
 private struct DocumentLibraryRowStyle: ViewModifier {
     let enabled: Bool
 
