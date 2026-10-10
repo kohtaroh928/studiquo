@@ -3906,8 +3906,9 @@ private struct GroupMessageBubble: View {
                             .padding(.vertical, 11)
                             .background(message.isMine ? Color(red: 0.37, green: 0.92, blue: 0.40) : .white, in: RoundedRectangle(cornerRadius: 20))
                             .foregroundStyle(Color.black)
-                            .frame(maxWidth: 280, alignment: message.isMine ? .trailing : .leading)
+                            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 20))
                             .contextMenu { messageActions(parts: parts) }
+                            .frame(maxWidth: 280, alignment: message.isMine ? .trailing : .leading)
                     }
                     ForEach(parts.attachments) { attachment in
                         Button { onOpenAttachment(attachment) } label: {
@@ -4674,6 +4675,7 @@ struct FriendChatView: View {
                                 }
                             }
                         }
+                        .frame(maxWidth: 280, alignment: message.isMine ? .trailing : .leading)
                 }
                 if message.isCanceled != true {
                     ForEach(parts.attachments) { attachment in
@@ -4759,7 +4761,7 @@ struct FriendChatView: View {
             .padding(.vertical, 11)
             .background(isMine ? Color(red: 0.37, green: 0.92, blue: 0.40) : .white, in: RoundedRectangle(cornerRadius: 20))
             .foregroundStyle(Color.black)
-            .frame(maxWidth: 280, alignment: isMine ? .trailing : .leading)
+            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 20))
     }
 
     /// A message that already failed to send never reached anyone — there's
