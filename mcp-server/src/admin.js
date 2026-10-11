@@ -14,6 +14,7 @@ import { bearerToken, sha256Hex } from "./auth.js";
 import { isExpired } from "./token.js";
 import { isRevoked } from "./revocation.js";
 import { realSession } from "./session.js";
+import { productForPlanChange } from "./entitlements.js";
 import { INBOX_CSS, INBOX_HTML, INBOX_SCRIPT } from "./admin-inbox-ui.js";
 
 // CANCELLATION isn't here on purpose: it only means "won't auto-renew", not
@@ -119,7 +120,10 @@ export async function handleAdminWebhook(url, request, env) {
 
   const expiresAt = Number(event.expiration_at_ms) || null;
   if (ACTIVATING_EVENT_TYPES.has(event.type)) {
-    await upsertSubscriber(env, event.app_user_id, "active", event.product_id ?? null, expiresAt, identityHashes);
+    const productId = event.type === "PRODUCT_CHANGE"
+      ? productForPlanChange(event.product_id, event.new_product_id)
+      : event.product_id ?? null;
+    await upsertSubscriber(env, event.app_user_id, "active", productId, expiresAt, identityHashes);
   } else if (event.type === "BILLING_ISSUE") {
     await upsertSubscriber(env, event.app_user_id, "billing_issue", event.product_id ?? null, expiresAt, identityHashes);
   } else if (DEACTIVATING_EVENT_TYPES.has(event.type)) {
