@@ -13,11 +13,15 @@ function fakeRateCounterBinding() {
   return {
     getByName(name) {
       return {
-        async bump(limit) {
-          const used = (counts.get(name) ?? 0) + 1;
-          if (used > limit) return false;
+        async bump(limit, window, amount = 1) { return (await this.take(limit, window, amount)).ok; },
+        async take(limit, _window, amount = 1) {
+          const used = (counts.get(name) ?? 0) + amount;
+          if (used > limit) return { ok: false };
           counts.set(name, used);
-          return true;
+          return { ok: true, windowEndsAt: 1 };
+        },
+        async give(amount = 1) {
+          counts.set(name, Math.max(0, (counts.get(name) ?? 0) - amount));
         },
       };
     },
@@ -146,51 +150,28 @@ test("review rejects a request with no question", async () => {
   assert.equal(response.status, 400);
 });
 
-test("review enforces its own daily quota independently of chat", async () => {
+test("review spends credits from the same allowance as chat", async () => {
   const env = environment();
   const ctx = executionContext();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
     const event = { candidates: [{ content: { parts: [{ text: '{"isStudyRelevant":false,"explanationMarkdown":"","quiz":[]}' }] } }] };
-    return new Response(`data: ${JSON.stringify(event)}\n\n`, {
-      status: 200,
-      headers: { "content-type": "text/event-stream" },
-    });
+    return new Response(`data: ${JSON.stringify(event)}\n\n`, { status: 200, headers: { "content-type": "text/event-stream" } });
   };
-
   try {
-    env.REVIEW_DAILY_LIMIT = "1";
     const makeRequest = () => new Request("https://example.test/api/ai/review", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ question: "テスト" }),
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question: "テスト" }),
     });
-
-    const first = await handleAI(new URL(makeRequest().url), makeRequest(), env, "device", ctx);
-    assert.equal(first.status, 200);
-    await first.text();
+    // standard: 40 credits per 5 hours, a review costs 3 x 4 (Gemini) = 12 -> three reviews fit, the fourth does not.
+    for (let i = 0; i < 3; i += 1) {
+      const response = await handleAI(new URL(makeRequest().url), makeRequest(), env, "device", ctx, { sub: "user-1" }, "standard");
+      assert.equal(response.status, 200, `review ${i + 1}`);
+      await response.text();
+    }
     await Promise.all(ctx.promises);
-
-    const second = await handleAI(new URL(makeRequest().url), makeRequest(), env, "device", ctx);
-    assert.equal(second.status, 429);
-
-    // The review bucket is exhausted, but chat must be unaffected — a
-    // student mid-lesson shouldn't lose AI replies because the review
-    // feature (a background extra) hit its own separate cap.
-    globalThis.fetch = async () => {
-      const event = { candidates: [{ content: { parts: [{ text: "こんにちは" }] } }] };
-      return new Response(`data: ${JSON.stringify(event)}\n\n`, {
-        status: 200,
-        headers: { "content-type": "text/event-stream" },
-      });
-    };
-    const chatRequest = new Request("https://example.test/api/ai/chat", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", text: "こんにちは" }] }),
-    });
-    const chatResponse = await handleAI(new URL(chatRequest.url), chatRequest, env, "device", ctx);
-    assert.equal(chatResponse.status, 200);
+    const fourth = await handleAI(new URL(makeRequest().url), makeRequest(), env, "device", ctx, { sub: "user-1" }, "standard");
+    assert.equal(fourth.status, 429);
+    assert.equal((await fourth.json()).window, "fiveHours");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -376,7 +357,7 @@ test("chat rejects a model the caller's plan does not include, with 403", async 
   const ctx = executionContext();
   const response = await handleAI(
     new URL("https://example.test/api/ai/chat"),
-    chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "claude-haiku-4-5-20251001" }),
+    chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "claude-sonnet-5-5" }),
     environment(), "device", ctx, { sub: "user-1" }, "standard",
   );
   assert.equal(response.status, 403);
@@ -407,7 +388,7 @@ test("chat allows an Anthropic model on the plus plan and normalizes its SSE to 
     const ctx = executionContext();
     const response = await handleAI(
       new URL("https://example.test/api/ai/chat"),
-      chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "claude-haiku-4-5-20251001" }),
+      chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "claude-sonnet-5-5" }),
       env, "device", ctx, { sub: "user-1" }, "plus",
     );
     assert.equal(response.status, 200);
@@ -424,7 +405,7 @@ test("chat allows an Anthropic model on the plus plan and normalizes its SSE to 
     assert.equal(upstreamOptions.headers["x-api-key"], "anthropic-test-key");
     assert.equal(upstreamOptions.headers["anthropic-version"], "2023-06-01");
     const sentBody = JSON.parse(upstreamOptions.body);
-    assert.equal(sentBody.model, "claude-haiku-4-5-20251001");
+    assert.equal(sentBody.model, "claude-sonnet-5-5");
     assert.equal(sentBody.stream, true);
     assert.equal(sentBody.messages[0].role, "user");
   } finally {
@@ -432,7 +413,7 @@ test("chat allows an Anthropic model on the plus plan and normalizes its SSE to 
   }
 });
 
-test("chat allows an OpenAI logical model on the pro plan, resolving it via env.OPENAI_FLAGSHIP_MODEL", async () => {
+test("chat allows an OpenAI logical model on the pro plan, resolving it via env.OPENAI_ASTRA_MODEL", async () => {
   const originalFetch = globalThis.fetch;
   let upstreamURL;
   let upstreamOptions;
@@ -452,11 +433,11 @@ test("chat allows an OpenAI logical model on the pro plan, resolving it via env.
   try {
     const env = environment();
     env.OPENAI_API_KEY = "openai-test-key";
-    env.OPENAI_FLAGSHIP_MODEL = "gpt-test-flagship";
+    env.OPENAI_ASTRA_MODEL = "gpt-test-astra";
     const ctx = executionContext();
     const response = await handleAI(
       new URL("https://example.test/api/ai/chat"),
-      chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "openai-flagship" }),
+      chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "openai-astra" }),
       env, "device", ctx, { sub: "user-1" }, "pro",
     );
     assert.equal(response.status, 200);
@@ -470,8 +451,8 @@ test("chat allows an OpenAI logical model on the pro plan, resolving it via env.
     assert.equal(upstreamOptions.headers.authorization, "Bearer openai-test-key");
     const sentBody = JSON.parse(upstreamOptions.body);
     // The logical name in PLAN_MODELS/the request body is never sent
-    // upstream — only the real id from OPENAI_FLAGSHIP_MODEL is.
-    assert.equal(sentBody.model, "gpt-test-flagship");
+    // upstream — only the real id from OPENAI_ASTRA_MODEL is.
+    assert.equal(sentBody.model, "gpt-test-astra");
     assert.equal(typeof sentBody.instructions, "string");
     assert.equal(sentBody.store, false);
     assert.equal(sentBody.stream, true);
@@ -484,90 +465,162 @@ test("chat allows an OpenAI logical model on the pro plan, resolving it via env.
 test("chat 503s an OpenAI logical model this Worker hasn't configured a real model id for", async () => {
   const env = environment();
   env.OPENAI_API_KEY = "openai-test-key";
-  // OPENAI_MID_MODEL deliberately left unset.
+  // OPENAI_TERRA_MODEL deliberately left unset.
   const ctx = executionContext();
   const response = await handleAI(
     new URL("https://example.test/api/ai/chat"),
-    chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "openai-mid" }),
+    chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "openai-terra" }),
     env, "device", ctx, { sub: "user-1" }, "plus",
   );
   assert.equal(response.status, 503);
 });
 
-// Records every RateCounter bucket a call touches, so the plan-derived
-// per-device limit (ai.js's planLimit/PLAN_LIMITS) can be asserted directly
-// instead of requiring hundreds of requests in a loop to find where a plan
-// actually 429s.
-function capturingRateCounterBinding() {
-  const calls = [];
-  return {
-    calls,
-    getByName(name) {
-      return {
-        async bump(limit) {
-          calls.push({ name, limit });
-          return true;
-        },
-      };
-    },
-  };
-}
-
-test("each plan's chat quota uses PLAN_LIMITS, not one fixed number for everyone", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(
+function okChatFetch() {
+  return async () => new Response(
     `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] })}\n\n`,
     { status: 200, headers: { "content-type": "text/event-stream" } },
   );
+}
 
+async function chatOnce(env, plan, model, sub = "user-1") {
+  const ctx = executionContext();
+  const body = { messages: [{ role: "user", text: "こんにちは" }], ...(model ? { model } : {}) };
+  const response = await handleAI(new URL("https://example.test/api/ai/chat"), chatRequest(body), env, "device", ctx, { sub }, plan);
+  response.bodyText = await response.text().catch(() => "");
+  await Promise.all(ctx.promises);
+  return response;
+}
+
+test("standard allows 5 calls a minute, then answers 429 for the minute window", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = okChatFetch();
   try {
-    for (const [plan, expectedLimit] of [["standard", 30], ["plus", 750], ["pro", 2000]]) {
-      const env = environment();
-      const rateCounter = capturingRateCounterBinding();
-      env.RATE_COUNTER = rateCounter;
-      const ctx = executionContext();
-      const response = await handleAI(
-        new URL("https://example.test/api/ai/chat"),
-        chatRequest({ messages: [{ role: "user", text: "こんにちは" }] }),
-        env, "device", ctx, { sub: "user-1" }, plan,
-      );
-      assert.equal(response.status, 200);
-      await response.text();
-      await Promise.all(ctx.promises);
-
-      const deviceCall = rateCounter.calls.find(call => call.name === `ai:chat:device`);
-      assert.ok(deviceCall, `expected a per-device rate-counter call for plan ${plan}`);
-      assert.equal(deviceCall.limit, expectedLimit);
-    }
+    const env = environment();
+    for (let i = 0; i < 5; i += 1) assert.equal((await chatOnce(env, "standard")).status, 200, `call ${i + 1}`);
+    const sixth = await chatOnce(env, "standard");
+    assert.equal(sixth.status, 429);
+    assert.equal(sixth.headers.get("retry-after"), "60");
+    const body = JSON.parse(sixth.bodyText);
+    assert.deepEqual({ code: body.code, window: body.window }, { code: "ai_limit", window: "minute" });
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("an explicit CHAT_DAILY_LIMIT env var still overrides the plan table", async () => {
+test("a malformed request costs no credits", async () => {
+  const env = environment();
+  const ctx = executionContext();
+  const bad = {
+    review: { question: "" },
+    rubric: { question: "x" },
+    grade: { question: "x", criteria: [] },
+  };
+  for (const [name, body] of Object.entries(bad)) {
+    for (let i = 0; i < 20; i += 1) {
+      const request = new Request(`https://example.test/api/ai/${name}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const response = await handleAI(new URL(request.url), request, env, "device", ctx, { sub: "user-1" }, "standard");
+      assert.equal(response.status, 400, `${name} #${i + 1}`);
+    }
+  }
+  // Sixty rejected requests later the standard allowance is untouched: a valid chat still goes through.
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(
-    `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] })}\n\n`,
-    { status: 200, headers: { "content-type": "text/event-stream" } },
-  );
+  globalThis.fetch = okChatFetch();
+  try {
+    assert.equal((await chatOnce(env, "standard")).status, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
+test("a chat the upstream refuses is given back", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("{}", { status: 500 });
   try {
     const env = environment();
-    env.CHAT_DAILY_LIMIT = "5";
-    const rateCounter = capturingRateCounterBinding();
-    env.RATE_COUNTER = rateCounter;
-    const ctx = executionContext();
-    const response = await handleAI(
-      new URL("https://example.test/api/ai/chat"),
-      chatRequest({ messages: [{ role: "user", text: "こんにちは" }] }),
-      env, "device", ctx, { sub: "user-1" }, "pro",
-    );
-    assert.equal(response.status, 200);
-    await response.text();
-    await Promise.all(ctx.promises);
+    // Without a refund the fifth failure would hit the per-minute limit (5).
+    for (let i = 0; i < 8; i += 1) assert.notEqual((await chatOnce(env, "standard")).status, 429, `call ${i + 1}`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
-    const deviceCall = rateCounter.calls.find(call => call.name === `ai:chat:device`);
-    assert.equal(deviceCall.limit, 5);
+test("a heavy model spends more credits: plus fits 20 Sonnet calls in 5 hours, not 21", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    ["message_start", "message_stop"].map(type => `data: ${JSON.stringify({ type })}\n\n`).join(""),
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  );
+  try {
+    const env = environment();
+    env.ANTHROPIC_API_KEY = "test";
+    // 400 credits / 20 per Sonnet call = 20 calls; the minute window (10) is
+    // reset by using a fresh account per batch of 10 only for the minute
+    // counter, so drive the five-hour window with the minute limit out of the way.
+    const counters = env.RATE_COUNTER;
+    const originalGetByName = counters.getByName.bind(counters);
+    counters.getByName = name => name.startsWith("ai:cr:min:")
+      ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
+      : originalGetByName(name);
+    for (let i = 0; i < 20; i += 1) assert.equal((await chatOnce(env, "plus", "claude-sonnet-5-5")).status, 200, `call ${i + 1}`);
+    const over = await chatOnce(env, "plus", "claude-sonnet-5-5");
+    assert.equal(over.status, 429);
+    assert.equal(JSON.parse(over.bodyText).window, "fiveHours");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a refused window gives back what the earlier windows took", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = okChatFetch();
+  try {
+    const env = environment();
+    for (let i = 0; i < 5; i += 1) await chatOnce(env, "standard");
+    // The sixth is refused by the minute window; it must not have used any credits.
+    assert.equal((await chatOnce(env, "standard")).status, 429);
+    const probe = { calls: [] };
+    const original = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
+    env.RATE_COUNTER.getByName = name => {
+      const real = original(name);
+      return {
+        async take(limit, window, amount) { const result = await real.take(limit, window, amount); probe.calls.push({ name, ok: result.ok }); return result; },
+        give: (amount, windowEndsAt) => real.give(amount, windowEndsAt),
+      };
+    };
+    assert.equal((await chatOnce(env, "standard")).status, 429);
+    assert.ok(probe.calls.every(call => !call.name.startsWith("ai:cr:5h:")), "the 5-hour window must not be reached while the minute window refuses");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("credits are counted per account, not per device", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = okChatFetch();
+  try {
+    const env = environment();
+    for (let i = 0; i < 5; i += 1) await chatOnce(env, "standard", undefined, "user-1");
+    assert.equal((await chatOnce(env, "standard", undefined, "user-1")).status, 429);
+    assert.equal((await chatOnce(env, "standard", undefined, "user-2")).status, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("each plan allows exactly the models in the plan table", async () => {
+  const env = environment();
+  const expectations = {
+    standard: { ok: ["gemini-3.5-flash-lite"], no: ["claude-sonnet-5-5", "openai-luna", "claude-opus-5-5", "openai-astra"] },
+    plus: { ok: ["claude-sonnet-5-5", "openai-luna", "openai-terra", "openai-sol"], no: ["claude-opus-5-5", "openai-astra", "claude-haiku-4-5-20251001"] },
+    pro: { ok: ["claude-opus-5-5", "openai-astra", "claude-sonnet-5-5"], no: ["claude-haiku-4-5-20251001", "openai-mid", "openai-flagship"] },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("", { status: 503 });
+  try {
+    for (const [plan, { ok, no }] of Object.entries(expectations)) {
+      for (const model of no) assert.equal((await chatOnce(env, plan, model, `${plan}-${model}`)).status, 403, `${plan} must refuse ${model}`);
+      for (const model of ok) assert.notEqual((await chatOnce(env, plan, model, `${plan}-${model}`)).status, 403, `${plan} must allow ${model}`);
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -575,23 +628,17 @@ test("an explicit CHAT_DAILY_LIMIT env var still overrides the plan table", asyn
 
 test("handleAI with no plan argument at all (every pre-Phase-B caller) defaults to the standard plan", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(
-    `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] })}\n\n`,
-    { status: 200, headers: { "content-type": "text/event-stream" } },
-  );
+  globalThis.fetch = okChatFetch();
   try {
     const env = environment();
-    const rateCounter = capturingRateCounterBinding();
-    env.RATE_COUNTER = rateCounter;
     const ctx = executionContext();
-    // Same 5-argument call shape the pre-existing tests above all use.
     const response = await handleAI(new URL("https://example.test/api/ai/chat"), chatRequest({ messages: [{ role: "user", text: "こんにちは" }] }), env, "device", ctx);
     assert.equal(response.status, 200);
     await response.text();
     await Promise.all(ctx.promises);
-
-    const deviceCall = rateCounter.calls.find(call => call.name === `ai:chat:device`);
-    assert.equal(deviceCall.limit, 30);
+    // Standard's model list, not an open door: a Sonnet request is refused.
+    const sonnet = await handleAI(new URL("https://example.test/api/ai/chat"), chatRequest({ messages: [{ role: "user", text: "こんにちは" }], model: "claude-sonnet-5-5" }), env, "device", ctx);
+    assert.equal(sonnet.status, 403);
   } finally {
     globalThis.fetch = originalFetch;
   }

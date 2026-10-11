@@ -34,7 +34,17 @@ Studiquoアプリから同期したノート・OCRテキスト・暗記カード
 
 認証は `/api/*` と同じ端末トークンで、`session.sub` を `entitlements.js`の`getPlan`でRevenueCatの`subscribers`テーブル（D1 `ADMIN_DB`、`admin.js`のWebhookが書き込む）に照会し、standard/plus/proのいずれかを解決します。RevenueCatの`app_user_id`はiOS側が`Purchases.shared.logIn(session.sub)`を呼ぶ前提でstudiquoの`sub`と一致させています（呼ばれていないと常にstandard扱いになります）。
 
-1端末・1日あたりのAIクレジット上限はプラン別（standard 30 / plus 750 / pro 2000、`ai.js`の`PLAN_LIMITS`）で、`CHAT_DAILY_LIMIT` / `GRADING_DAILY_LIMIT` / `REVIEW_DAILY_LIMIT` で上書きできます。`/api/ai/chat`のみ、リクエストボディの`model`でプラン対応モデル（standardはGemini、plus以降でAnthropic Haiku/Sonnet・OpenAIミッド、proでAnthropic Opus・OpenAIフラッグシップまで）を選べ、プラン外のモデルを指定すると403になります。`model`を省略した場合は従来通りGeminiのみを呼びます。
+AIの利用量は**クレジット**で数え、プランごとに4つの窓（1分あたりの回数・5時間・1日・1か月。1日と1か月は日本時間）で同時に制限します。数える単位は端末ではなく**アカウント**です（`ai-credits.js`）。1クレジットは約$0.0007の原価で、モデルごとの重み（Gemini 4 / Luna 1 / Sonnet・Sol 20 / Terra 22 / Opus 40 / Astra 100）と機能ごとの倍率（チャット1 / 採点基準2 / 採点・復習3）を掛けた値を、1回の呼び出しで消費します。
+
+| | 1分(回数) | 5時間 | 1日 | 1か月 |
+|---|---|---|---|---|
+| standard | 5 | 40 | 60 | 120 |
+| plus | 10 | 400 | 600 | 1,500 |
+| pro | 20 | 1,000 | 1,500 | 4,000 |
+
+上限に達すると429（`code: "ai_limit"`、`window` は `minute` / `fiveHours` / `day` / `month` / `global`）を返します。別に、機能ごとのサービス全体の1日の上限（`GLOBAL_*_DAILY_LIMIT`）も残してあります。重みや上限を直すときは`ai-credits.js`の表だけを変えます（アプリに表示するクレジット数は`SubscriptionPlansView.swift`に手で合わせます）。
+
+`/api/ai/chat`のみ、リクエストボディの`model`でプラン対応モデルを選べます（standardはGemini、plusはGeminiに加えてClaude Sonnet・ChatGPT Luna/Terra/Sol、proはさらにClaude Opus・ChatGPT Astra）。プラン外のモデルは403です。`model`を省略した場合は従来通りGeminiのみを呼びます。他社のモデルは、同意文と`AI_PROVIDER_APPROVED`の承認が済むまで`ai-privacy.js`が止めます。
 
 システムプロンプトと採点スキーマはWorker側にあるので、**採点の指示を直すのにアプリの再申請は要りません。** Geminiのモデルは `GEMINI_CHAT_MODEL` / `GEMINI_GRADING_MODEL` で差し替えられます。
 
@@ -49,11 +59,15 @@ npx wrangler secret put OPENAI_API_KEY
 プロンプトが出たらキーを貼り付けます。キーはCloudflareに保存され、コードにもgitにも残りません。OpenAIの実際のモデルIDは本リポジトリでは未確定のため、OpenAIの最新ドキュメントを見て決め、下記も設定してください（モデル名自体は機密情報ではないので `wrangler.jsonc` の `vars` に書いても構いません）。
 
 ```bash
-npx wrangler secret put OPENAI_MID_MODEL
-npx wrangler secret put OPENAI_FLAGSHIP_MODEL
+npx wrangler secret put OPENAI_LUNA_MODEL
+npx wrangler secret put OPENAI_TERRA_MODEL
+npx wrangler secret put OPENAI_SOL_MODEL
+npx wrangler secret put OPENAI_ASTRA_MODEL
 ```
 
-`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` が未設定のまま該当プロバイダのモデルを選ぶとそのリクエストだけがエラーになり（Geminiや設定済みの他モデルには影響しません）、`OPENAI_MID_MODEL` / `OPENAI_FLAGSHIP_MODEL` が未設定のまま`"openai-mid"` / `"openai-flagship"`を選ぶと503を返します。
+（`wrangler.jsonc` の `vars` に、2026-10-12時点のIDを入れてあります。変えるときはそこを直します。）
+
+`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` が未設定のまま該当プロバイダのモデルを選ぶとそのリクエストだけがエラーになり（Geminiや設定済みの他モデルには影響しません）、`OPENAI_*_MODEL` が未設定のまま該当の`"openai-luna"` / `"openai-terra"` / `"openai-sol"` / `"openai-astra"`を選ぶと503を返します。
 
 ```bash
 npx wrangler deploy
