@@ -181,13 +181,17 @@ struct SubscriptionPlansView: View {
                 Spacer()
                 Text(package.storeProduct.localizedPriceString)
                 Text(isYearly ? "／年" : "／月")
+                if store.isCurrentProduct(package) {
+                    Text("利用中")
+                        .font(.caption.bold())
+                }
             }
             .font(.headline)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
         }
         .buttonStyle(.borderedProminent)
-        .disabled(store.isPurchasing || store.purchasedPlan == plan)
+        .disabled(store.isPurchasing || store.isCurrentProduct(package))
     }
 
     /// "7日間無料のあと 年額" when the App Store product carries a free-trial
