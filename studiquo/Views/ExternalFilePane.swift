@@ -1,28 +1,62 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
-/// A pane that shows a file chosen from the Files app in place.
+/// The Files browser, placed inside a pane.
 ///
-/// The system picker is presented modally (`fileImporter`) rather than embedded
-/// in the pane: an embedded `UIDocumentPickerViewController` browses fine but
-/// never calls its delegate when a file is tapped, so nothing would open.
+/// `UIDocumentBrowserViewController` is used rather than the document picker
+/// (`UIDocumentPickerViewController`): embedded in a pane the picker browses
+/// fine but never calls its delegate when a file is tapped, so nothing opens.
+/// The browser reports the pick, and its "Browse" tab reaches iCloud Drive,
+/// On My iPad and other providers; only its default "Recents" tab is limited
+/// to files this app opened. The file is handed back in place, not copied.
+struct ExternalFileBrowserRepresentable: UIViewControllerRepresentable {
+    let onPick: (URL) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+
+    func makeUIViewController(context: Context) -> UIDocumentBrowserViewController {
+        let controller = UIDocumentBrowserViewController(forOpening: [.item])
+        controller.allowsDocumentCreation = false
+        controller.allowsPickingMultipleItems = false
+        controller.delegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentBrowserViewController, context: Context) {
+        context.coordinator.onPick = onPick
+    }
+
+    final class Coordinator: NSObject, UIDocumentBrowserViewControllerDelegate {
+        var onPick: (URL) -> Void
+
+        init(onPick: @escaping (URL) -> Void) {
+            self.onPick = onPick
+        }
+
+        func documentBrowser(_ controller: UIDocumentBrowserViewController, didPickDocumentsAt documentURLs: [URL]) {
+            guard let url = documentURLs.first else { return }
+            onPick(url)
+        }
+    }
+}
+
+/// A pane that browses the Files app and shows the chosen file in place.
 struct ExternalFilePaneView: View {
     @ObservedObject var session: ExternalFileSession
     @State private var showsImporter = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            subHeader
-            Divider()
-            content
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                subHeader
+                Divider()
+                content(width: proxy.size.width)
+            }
         }
         .accessibilityIdentifier("external-file-pane")
         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.item]) { result in
             if case .success(let url) = result { session.open(pickedURL: url) }
-        }
-        .onAppear {
-            // Opening the split is a request to pick a file, so ask right away.
-            if session.state == .browsing { showsImporter = true }
         }
     }
 
@@ -68,13 +102,18 @@ struct ExternalFilePaneView: View {
     }
 
     @ViewBuilder
-    private var content: some View {
+    private func content(width: CGFloat) -> some View {
         switch session.state {
         case .browsing:
-            message(icon: "folder", text: "ファイルアプリから資料を選びます。") {
-                Button("ファイルを選ぶ") { showsImporter = true }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("external-file-pane-choose")
+            if ExternalFilePanePolicy.usesEmbeddedBrowser(paneWidth: width) {
+                ExternalFileBrowserRepresentable(onPick: { session.open(pickedURL: $0) })
+                    .accessibilityIdentifier("external-file-pane-browser")
+            } else {
+                message(icon: "folder", text: "ファイルアプリから資料を選びます。") {
+                    Button("ファイルを選ぶ") { showsImporter = true }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("external-file-pane-choose")
+                }
             }
         case .loading:
             VStack(spacing: 12) {
