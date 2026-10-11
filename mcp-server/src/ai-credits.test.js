@@ -8,13 +8,13 @@ function counters() {
     used,
     getByName(name) {
       return {
-        async bump(limit, _seconds, amount = 1) {
+        async take(limit, _seconds, amount = 1) {
           const next = (used.get(name) ?? 0) + amount;
-          if (next > limit) return false;
+          if (next > limit) return { ok: false };
           used.set(name, next);
-          return true;
+          return { ok: true, windowEndsAt: 1 };
         },
-        async release(amount = 1) { used.set(name, Math.max(0, (used.get(name) ?? 0) - amount)); },
+        async give(amount = 1) { used.set(name, Math.max(0, (used.get(name) ?? 0) - amount)); },
       };
     },
   };
@@ -30,18 +30,19 @@ test("credit weights match the published plan: Luna 1, Sonnet/Sol 20, Terra 22, 
     ["openai-luna", "claude-sonnet-5-5", "openai-sol", "openai-terra", "claude-opus-5-5", "openai-astra"].map(id => MODEL_CREDITS[id]),
     [1, 20, 20, 22, 40, 100],
   );
+  assert.equal(MODEL_CREDITS["gemini-3.5-flash-lite"], 4);
 });
 
 test("non-chat features cost more than a chat turn on the same model", () => {
-  assert.equal(creditCost("chat", undefined), 1);
-  assert.equal(creditCost("rubric", undefined), 2);
-  assert.equal(creditCost("grade", undefined), 3);
-  assert.equal(creditCost("review", undefined), 3);
+  assert.equal(creditCost("chat", undefined), 4);
+  assert.equal(creditCost("rubric", undefined), 8);
+  assert.equal(creditCost("grade", undefined), 12);
+  assert.equal(creditCost("review", undefined), 12);
   assert.equal(creditCost("chat", "some-future-model"), 100);
 });
 
 test("the published budgets are what the Worker enforces", () => {
-  assert.deepEqual(PLAN_BUDGETS.standard, { perMinute: 5, fiveHours: 10, day: 15, month: 30 });
+  assert.deepEqual(PLAN_BUDGETS.standard, { perMinute: 5, fiveHours: 40, day: 60, month: 120 });
   assert.deepEqual(PLAN_BUDGETS.plus, { perMinute: 10, fiveHours: 400, day: 600, month: 1500 });
   assert.deepEqual(PLAN_BUDGETS.pro, { perMinute: 20, fiveHours: 1000, day: 1500, month: 4000 });
 });
@@ -126,8 +127,8 @@ test("the month rolls over at midnight Japan time", async () => {
 test("a refusal by the month window gives back the minute, 5-hour and day credits and the global count", async () => {
   const env = { RATE_COUNTER: counters() };
   const now = Date.UTC(2026, 9, 12, 3, 0, 0);
-  env.RATE_COUNTER.used.set("ai:cr:mon:202610:acct", 29); // standard month = 30
-  const refused = await call(env, { plan: "standard", kind: "grade", now }); // costs 3
+  env.RATE_COUNTER.used.set("ai:cr:mon:202610:acct", 119); // standard month = 120
+  const refused = await call(env, { plan: "standard", kind: "grade", now }); // costs 12
   assert.deepEqual(refused, { ok: false, window: "month" });
   const leftovers = [...env.RATE_COUNTER.used.entries()].filter(([name, value]) => name !== "ai:cr:mon:202610:acct" && value !== 0);
   assert.deepEqual(leftovers, []);
@@ -139,6 +140,38 @@ test("the service-wide cap still stops everyone, and costs the account nothing",
   const result = await call(env, { plan: "pro", globalLimit: 5 });
   assert.deepEqual(result, { ok: false, window: "global" });
   assert.equal([...env.RATE_COUNTER.used.keys()].filter(name => name.startsWith("ai:cr:")).length, 0);
+});
+
+test("a refusal by the day window also gives back the minute and 5-hour credits", async () => {
+  const env = { RATE_COUNTER: counters() };
+  const now = Date.UTC(2026, 9, 12, 3, 0, 0);
+  env.RATE_COUNTER.used.set("ai:cr:day:20261012:acct", 59); // standard day = 60
+  assert.deepEqual(await call(env, { plan: "standard", now }), { ok: false, window: "day" }); // costs 4
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:min:acct") ?? 0, 0);
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:5h:acct") ?? 0, 0);
+  assert.equal(env.RATE_COUNTER.used.get("ai:global:chat") ?? 0, 0);
+});
+
+test("refund() hands everything back once, and a second call does nothing", async () => {
+  const env = { RATE_COUNTER: counters() };
+  const result = await call(env, { plan: "pro", model: "claude-opus-5-5" });
+  assert.equal(result.ok, true);
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:mon:202610:acct"), 40);
+  await result.refund();
+  await result.refund();
+  assert.ok([...env.RATE_COUNTER.used.values()].every(value => value === 0));
+});
+
+test("a refund still returns the other windows when one give throws", async () => {
+  const env = { RATE_COUNTER: counters() };
+  const result = await call(env, { plan: "pro", model: "claude-opus-5-5" });
+  const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
+  env.RATE_COUNTER.getByName = name => name.startsWith("ai:cr:5h:")
+    ? { async give() { throw new Error("boom"); } }
+    : real(name);
+  await result.refund(); // must not throw
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:mon:202610:acct"), 0);
+  assert.equal(env.RATE_COUNTER.used.get("ai:cr:5h:acct"), 40, "the failed give leaves only its own window held");
 });
 
 test("free has no budget at all", async () => {

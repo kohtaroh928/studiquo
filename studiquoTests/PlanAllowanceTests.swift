@@ -4,7 +4,7 @@ import XCTest
 final class PlanAllowanceTests: XCTestCase {
     /// The Worker's `PLAN_BUDGETS` (`mcp-server/src/ai-credits.js`).
     func testAllowancesMatchTheWorkersBudgets() {
-        XCTAssertEqual(PlanAllowance.forPlan(.standard), PlanAllowance(monthlyCredits: 30, dailyCredits: 15, fiveHourCredits: 10, callsPerMinute: 5))
+        XCTAssertEqual(PlanAllowance.forPlan(.standard), PlanAllowance(monthlyCredits: 120, dailyCredits: 60, fiveHourCredits: 40, callsPerMinute: 5))
         XCTAssertEqual(PlanAllowance.forPlan(.plus), PlanAllowance(monthlyCredits: 1_500, dailyCredits: 600, fiveHourCredits: 400, callsPerMinute: 10))
         XCTAssertEqual(PlanAllowance.forPlan(.pro), PlanAllowance(monthlyCredits: 4_000, dailyCredits: 1_500, fiveHourCredits: 1_000, callsPerMinute: 20))
         XCTAssertEqual(PlanAllowance.forPlan(.free).monthlyCredits, 0)
@@ -17,6 +17,7 @@ final class PlanAllowanceTests: XCTestCase {
         XCTAssertEqual(plus.monthlyTurns(creditsPerTurn: 1), 1_500)  // Luna
         XCTAssertEqual(pro.monthlyTurns(creditsPerTurn: 40), 100)    // Opus
         XCTAssertEqual(pro.monthlyTurns(creditsPerTurn: 100), 40)    // Astra
+        XCTAssertEqual(PlanAllowance.forPlan(.standard).monthlyTurns(creditsPerTurn: 4), 30) // Gemini
         XCTAssertEqual(plus.monthlyTurns(creditsPerTurn: 0), 0)
     }
 

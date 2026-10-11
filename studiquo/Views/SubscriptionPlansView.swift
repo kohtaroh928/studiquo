@@ -115,7 +115,9 @@ struct SubscriptionPlansView: View {
     /// the Worker's own plan gate) actually offer.
     private var standardFeatures: [String] {
         let models = AIModelCatalog.offered.filter { $0.requiredPlan == .standard }.map(\.displayName)
-        return allowanceFeatures(.standard) + [models.joined(separator: "・"), "資料作成・共同編集は無制限"]
+        let geminiCredits = AIModelCatalog.info(for: AIModelCatalog.defaultModel)?.credits ?? 1
+        let turns = PlanAllowance.forPlan(.standard).monthlyTurns(creditsPerTurn: geminiCredits)
+        return allowanceFeatures(.standard) + ["AIトークは月に約\(turns)回", models.joined(separator: "・"), "資料作成・共同編集は無制限"]
     }
 
     private var plusFeatures: [String] {
