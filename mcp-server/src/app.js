@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import * as z from "zod/v4";
 import { handleAI } from "./ai.js";
 import { aiPrivacyRejection } from "./ai-privacy.js";
-import { getPlan } from "./entitlements.js";
+import { getPlan, paywallEnabled } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys } from "./passkeys.js";
@@ -437,6 +437,14 @@ export default {
         return json({ cleared: true });
       }
 
+      // The plan the app should act on. The app can see purchases through
+      // RevenueCat but not the server-only legacy-account grant, so it asks
+      // here; `paywallRequired` stays false until PAYWALL_ENABLED is set.
+      if (url.pathname === "/api/plan" && request.method === "GET") {
+        const plan = session ? await getPlan(env, [session.sub, session.originalSub]) : "standard";
+        return json({ plan, paywallRequired: paywallEnabled(env) });
+      }
+
       // AI proxy (Gemini/Anthropic/OpenAI, gated and rate-limited by plan).
       // Deliberately not gated on a synced snapshot the way /mcp is — the AI
       // features work on a fresh install, before the user has ever run a
@@ -447,7 +455,7 @@ export default {
       if (url.pathname.startsWith("/api/ai/")) {
         const privacyFailure = await aiPrivacyRejection(request, env);
         if (privacyFailure) return privacyFailure;
-        const plan = session ? await getPlan(env, session.sub) : "standard";
+        const plan = session ? await getPlan(env, [session.sub, session.originalSub]) : "standard";
         const ai = await handleAI(url, request, env, key, ctx, session, plan);
         if (ai) return ai;
       }

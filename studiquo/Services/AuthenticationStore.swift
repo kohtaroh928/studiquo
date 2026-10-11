@@ -504,7 +504,30 @@ final class AuthenticationStore: ObservableObject {
         case "email": canonicalIdentity = "email:\(subject)"
         default: canonicalIdentity = subject // Apple: the bare JWT `sub`, unprefixed.
         }
-        Task { _ = try? await Purchases.shared.logIn(canonicalIdentity) }
+        revenueCatLogin = Task { _ = try? await Purchases.shared.logIn(canonicalIdentity) }
+    }
+
+    /// The in-flight RevenueCat `logIn`, so the plan lookup can wait for it:
+    /// reading CustomerInfo before it finishes returns the anonymous user's,
+    /// and a purchase made in that window is transferred rather than recorded
+    /// under this account.
+    private var revenueCatLogin: Task<Void, Never>?
+
+    /// Waits for the login, but never longer than `timeout`: a RevenueCat
+    /// that does not answer must not hold the plan lookup (and with it a
+    /// grandfathered student's entitlement) forever.
+    func waitForRevenueCatIdentity(timeout: Duration = .seconds(15)) async {
+        guard let login = revenueCatLogin else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            var resumed = false
+            let finish = {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume()
+            }
+            Task { await login.value; finish() }
+            Task { try? await Task.sleep(for: timeout); finish() }
+        }
     }
 
     private func passkeyIdentity() -> PasskeyIdentity? { load(account: passkeyIdentityAccount) }
