@@ -50,7 +50,7 @@ struct AIModelInfo: Identifiable, Equatable {
 enum AIModelCatalog {
     /// Every model the app can ask for, in the order shown in the picker.
     static let all: [AIModelInfo] = [
-        AIModelInfo(id: .geminiFlashLite, displayName: "Gemini 3.5 Flash-Lite", providerName: "Google", requiredPlan: .standard, credits: 1),
+        AIModelInfo(id: .geminiFlashLite, displayName: "Gemini 3.5 Flash-Lite", providerName: "Google", requiredPlan: .standard, credits: 4),
         AIModelInfo(id: .claudeSonnet, displayName: "Claude Sonnet 5.5", providerName: "Anthropic", requiredPlan: .plus, credits: 20),
         AIModelInfo(id: .openAILuna, displayName: "ChatGPT Luna", providerName: "OpenAI", requiredPlan: .plus, credits: 1),
         AIModelInfo(id: .openAITerra, displayName: "ChatGPT Terra", providerName: "OpenAI", requiredPlan: .plus, credits: 22),

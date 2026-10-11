@@ -55,7 +55,7 @@ final class AIModelCatalogTests: XCTestCase {
     func testCreditsPerModelMatchTheWorkersWeights() {
         let credits = Dictionary(uniqueKeysWithValues: AIModelCatalog.all.map { ($0.id, $0.credits) })
         XCTAssertEqual(credits, [
-            .geminiFlashLite: 1, .openAILuna: 1, .claudeSonnet: 20, .openAISol: 20,
+            .geminiFlashLite: 4, .openAILuna: 1, .claudeSonnet: 20, .openAISol: 20,
             .openAITerra: 22, .claudeOpus: 40, .openAIAstra: 100,
         ])
     }

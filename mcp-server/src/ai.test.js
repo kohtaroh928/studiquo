@@ -13,13 +13,14 @@ function fakeRateCounterBinding() {
   return {
     getByName(name) {
       return {
-        async bump(limit, _window, amount = 1) {
+        async bump(limit, window, amount = 1) { return (await this.take(limit, window, amount)).ok; },
+        async take(limit, _window, amount = 1) {
           const used = (counts.get(name) ?? 0) + amount;
-          if (used > limit) return false;
+          if (used > limit) return { ok: false };
           counts.set(name, used);
-          return true;
+          return { ok: true, windowEndsAt: 1 };
         },
-        async release(amount = 1) {
+        async give(amount = 1) {
           counts.set(name, Math.max(0, (counts.get(name) ?? 0) - amount));
         },
       };
@@ -161,7 +162,7 @@ test("review spends credits from the same allowance as chat", async () => {
     const makeRequest = () => new Request("https://example.test/api/ai/review", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ question: "テスト" }),
     });
-    // standard: 10 credits per 5 hours, a review costs 3 -> three reviews fit, the fourth does not.
+    // standard: 40 credits per 5 hours, a review costs 3 x 4 (Gemini) = 12 -> three reviews fit, the fourth does not.
     for (let i = 0; i < 3; i += 1) {
       const response = await handleAI(new URL(makeRequest().url), makeRequest(), env, "device", ctx, { sub: "user-1" }, "standard");
       assert.equal(response.status, 200, `review ${i + 1}`);
@@ -506,6 +507,43 @@ test("standard allows 5 calls a minute, then answers 429 for the minute window",
   }
 });
 
+test("a malformed request costs no credits", async () => {
+  const env = environment();
+  const ctx = executionContext();
+  const bad = {
+    review: { question: "" },
+    rubric: { question: "x" },
+    grade: { question: "x", criteria: [] },
+  };
+  for (const [name, body] of Object.entries(bad)) {
+    for (let i = 0; i < 20; i += 1) {
+      const request = new Request(`https://example.test/api/ai/${name}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const response = await handleAI(new URL(request.url), request, env, "device", ctx, { sub: "user-1" }, "standard");
+      assert.equal(response.status, 400, `${name} #${i + 1}`);
+    }
+  }
+  // Sixty rejected requests later the standard allowance is untouched: a valid chat still goes through.
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = okChatFetch();
+  try {
+    assert.equal((await chatOnce(env, "standard")).status, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a chat the upstream refuses is given back", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("{}", { status: 500 });
+  try {
+    const env = environment();
+    // Without a refund the fifth failure would hit the per-minute limit (5).
+    for (let i = 0; i < 8; i += 1) assert.notEqual((await chatOnce(env, "standard")).status, 429, `call ${i + 1}`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("a heavy model spends more credits: plus fits 20 Sonnet calls in 5 hours, not 21", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(
@@ -521,7 +559,7 @@ test("a heavy model spends more credits: plus fits 20 Sonnet calls in 5 hours, n
     const counters = env.RATE_COUNTER;
     const originalGetByName = counters.getByName.bind(counters);
     counters.getByName = name => name.startsWith("ai:cr:min:")
-      ? { async bump() { return true; }, async release() {} }
+      ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
       : originalGetByName(name);
     for (let i = 0; i < 20; i += 1) assert.equal((await chatOnce(env, "plus", "claude-sonnet-5-5")).status, 200, `call ${i + 1}`);
     const over = await chatOnce(env, "plus", "claude-sonnet-5-5");
@@ -545,8 +583,8 @@ test("a refused window gives back what the earlier windows took", async () => {
     env.RATE_COUNTER.getByName = name => {
       const real = original(name);
       return {
-        async bump(limit, window, amount) { const ok = await real.bump(limit, window, amount); probe.calls.push({ name, ok }); return ok; },
-        release: amount => real.release(amount),
+        async take(limit, window, amount) { const result = await real.take(limit, window, amount); probe.calls.push({ name, ok: result.ok }); return result; },
+        give: (amount, windowEndsAt) => real.give(amount, windowEndsAt),
       };
     };
     assert.equal((await chatOnce(env, "standard")).status, 429);

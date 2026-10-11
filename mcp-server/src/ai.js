@@ -189,15 +189,17 @@ const DAY_SECONDS = 86_400;
 
 /**
  * Takes this call's credits from every window of the plan (ai-credits.js), or
- * answers 429 saying which limit was hit. `kind` is the feature, `model` the
+ * answers 429 saying which limit was hit. Called only once the request is known
+ * to be valid, so a malformed one never costs credits; `refund` returns them
+ * when the upstream refuses before producing anything. `kind` is the feature, `model` the
  * model that will answer.
  */
 async function creditGate(env, { account, plan, kind, model, globalBucket, globalLimit }) {
   const result = await consumeCredits(env, { accountKey: account, plan, kind, model, globalBucket, globalLimit });
-  if (result.ok) return null;
+  if (result.ok) return { response: null, refund: result.refund };
   const response = json({ error: LIMIT_MESSAGES[result.window], code: "ai_limit", window: result.window }, 429);
   if (result.window === "minute" || result.window === "global") response.headers.set("retry-after", "60");
-  return response;
+  return { response, refund: async () => {} };
 }
 
 async function callGemini(env, { kind, systemInstruction, contents, responseSchema, stream }) {
@@ -345,11 +347,11 @@ async function handleChat(request, env, key, ctx, plan, account) {
     return json({ error: "このプランでは選択できないモデルです。" }, 403);
   }
 
-  const limited = await creditGate(env, {
+  const gate = await creditGate(env, {
     account, plan, kind: "chat", model: requestedModel || DEFAULT_MODEL,
     globalBucket: "chat", globalLimit: Number(env.GLOBAL_CHAT_DAILY_LIMIT) || DEFAULT_GLOBAL_CHAT_LIMIT,
   });
-  if (limited) return limited;
+  if (gate.response) return gate.response;
 
   console.log(JSON.stringify({
     message: "AI chat request accepted",
@@ -385,6 +387,7 @@ async function handleChat(request, env, key, ctx, plan, account) {
   } else if (provider === "openai") {
     const resolvedModel = resolveOpenAIModel(env, requestedModel);
     if (!resolvedModel) {
+      await gate.refund();
       return json({ error: "このモデルは現在このWorkerで設定されていません。" }, 503);
     }
     upstream = await callOpenAIChat(env, {
@@ -420,6 +423,7 @@ async function handleChat(request, env, key, ctx, plan, account) {
   }
 
   if (!upstream.ok || !upstream.body) {
+    await gate.refund();
     return upstreamFailureResponse(upstream);
   }
 
@@ -631,11 +635,6 @@ const GRADE_SCHEMA = {
 };
 
 async function handleRubric(request, env, key, ctx, plan, account) {
-  const limited = await creditGate(env, {
-    account, plan, kind: "rubric", model: DEFAULT_MODEL,
-    globalBucket: "grade", globalLimit: Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT,
-  });
-  if (limited) return limited;
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 20_000);
   const modelAnswer = String(payload?.modelAnswer ?? "").trim().slice(0, 30_000);
@@ -645,6 +644,12 @@ async function handleRubric(request, env, key, ctx, plan, account) {
   if ((questionImage && !isPNGBase64(questionImage)) || (!questionImage && !modelAnswer)) {
     return json({ error: "questionImageBase64 or modelAnswer is required." }, 400);
   }
+
+  const gate = await creditGate(env, {
+    account, plan, kind: "rubric", model: DEFAULT_MODEL,
+    globalBucket: "grade", globalLimit: Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT,
+  });
+  if (gate.response) return gate.response;
 
   const parts = [];
   if (questionImage) parts.push({ inlineData: { mimeType: "image/png", data: questionImage } });
@@ -759,11 +764,6 @@ function streamJSON(env, { kind, systemInstruction, contents, responseSchema, fa
 }
 
 async function handleGrade(request, env, key, ctx, plan, account) {
-  const limited = await creditGate(env, {
-    account, plan, kind: "grade", model: DEFAULT_MODEL,
-    globalBucket: "grade", globalLimit: Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT,
-  });
-  if (limited) return limited;
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 20_000);
   const answerText = String(payload?.answerText ?? "").trim().slice(0, 30_000);
@@ -785,6 +785,12 @@ async function handleGrade(request, env, key, ctx, plan, account) {
 
   // The question goes in first so the model reads what was asked before it
   // reads the attempt, in the order a marker would.
+  const gate = await creditGate(env, {
+    account, plan, kind: "grade", model: DEFAULT_MODEL,
+    globalBucket: "grade", globalLimit: Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT,
+  });
+  if (gate.response) return gate.response;
+
   const parts = [];
   if (questionImage) {
     parts.push({ text: "次の画像は問題です。" });
@@ -848,15 +854,16 @@ const REVIEW_SCHEMA = {
 };
 
 async function handleReview(request, env, key, ctx, plan, account) {
-  const limited = await creditGate(env, {
-    account, plan, kind: "review", model: DEFAULT_MODEL,
-    globalBucket: "review", globalLimit: Number(env.GLOBAL_REVIEW_DAILY_LIMIT) || DEFAULT_GLOBAL_REVIEW_LIMIT,
-  });
-  if (limited) return limited;
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 4_000);
   if (!question) return json({ error: "question is required." }, 400);
   const context = String(payload?.context ?? "").trim().slice(0, 4_000);
+
+  const gate = await creditGate(env, {
+    account, plan, kind: "review", model: DEFAULT_MODEL,
+    globalBucket: "review", globalLimit: Number(env.GLOBAL_REVIEW_DAILY_LIMIT) || DEFAULT_GLOBAL_REVIEW_LIMIT,
+  });
+  if (gate.response) return gate.response;
 
   const parts = [{
     text: [

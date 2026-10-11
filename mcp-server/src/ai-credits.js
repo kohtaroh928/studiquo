@@ -6,7 +6,9 @@
 // bounded whichever models a student picks. Prices behind the weights (per
 // 1M tokens, 3,000 input + 800 output tokens assumed per call; checked on the
 // providers' price pages 2026-10-12):
-//   Gemini Flash-Lite  (price not checked)  1
+//   Gemini Flash-Lite $0.30 / $2.50         4   (the models actually called,
+//     gemini-3.5-flash and -3.7-flash, were not on Google's price page when
+//     this was written; Flash-Lite is the closest priced model — check them)
 //   GPT Luna   $0.10 / $0.50                1
 //   Sonnet 5.5 $2 / $10                    20
 //   GPT Sol    $2 / $10                    20
@@ -25,7 +27,7 @@ import { sha256Hex } from "./auth.js";
 export const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 
 export const MODEL_CREDITS = {
-  "gemini-3.5-flash-lite": 1,
+  "gemini-3.5-flash-lite": 4,
   "openai-luna": 1,
   "claude-sonnet-5-5": 20,
   "openai-sol": 20,
@@ -40,7 +42,8 @@ export const KIND_MULTIPLIER = { chat: 1, rubric: 2, grade: 3, review: 3 };
 
 export const PLAN_BUDGETS = {
   free: { perMinute: 0, fiveHours: 0, day: 0, month: 0 },
-  standard: { perMinute: 5, fiveHours: 10, day: 15, month: 30 },
+  // Standard is sized as "about 30 Gemini chat turns a month" (4 credits each).
+  standard: { perMinute: 5, fiveHours: 40, day: 60, month: 120 },
   plus: { perMinute: 10, fiveHours: 400, day: 600, month: 1500 },
   pro: { perMinute: 20, fiveHours: 1000, day: 1500, month: 4000 },
 };
@@ -86,30 +89,37 @@ export async function accountCounterKey(sub, fallback) {
  * window refuses, what the earlier ones took is given back. Also counts the
  * call against the service-wide daily cap for `globalBucket`.
  *
- * Returns `{ ok: true }` or `{ ok: false, window }` where `window` is the
- * first limit that was hit ("global" for the service-wide one).
+ * Returns `{ ok: true, refund }` or `{ ok: false, window }` where `window` is
+ * the first limit that was hit ("global" for the service-wide one). `refund()`
+ * hands the credits back, for a call that fails before producing anything.
  */
 export async function consumeCredits(env, { accountKey, plan, kind, model, globalBucket, globalLimit, now = Date.now() }) {
   const budget = PLAN_BUDGETS[plan] ?? PLAN_BUDGETS.free;
   const cost = creditCost(kind, model);
   const taken = [];
+  // Every give is attempted even if one fails, and each goes back to the exact
+  // window it was taken from. Safe to call once; a second call does nothing.
+  let refunded = false;
   const refund = async () => {
-    for (const { name, amount } of taken) await env.RATE_COUNTER.getByName(name).release(amount);
+    if (refunded) return;
+    refunded = true;
+    await Promise.allSettled(taken.map(({ name, amount, windowEndsAt }) =>
+      env.RATE_COUNTER.getByName(name).give(amount, windowEndsAt)));
   };
 
   const globalName = `ai:global:${globalBucket}`;
-  if (!(await env.RATE_COUNTER.getByName(globalName).bump(globalLimit, 86_400))) {
-    return { ok: false, window: "global" };
-  }
-  taken.push({ name: globalName, amount: 1 });
+  const globalTake = await env.RATE_COUNTER.getByName(globalName).take(globalLimit, 86_400, 1);
+  if (!globalTake.ok) return { ok: false, window: "global" };
+  taken.push({ name: globalName, amount: 1, windowEndsAt: globalTake.windowEndsAt });
 
   for (const window of windowsFor(accountKey, now)) {
     const amount = window.perCall ? 1 : cost;
-    if (!(await env.RATE_COUNTER.getByName(window.name).bump(budget[window.limitKey], window.seconds, amount))) {
+    const result = await env.RATE_COUNTER.getByName(window.name).take(budget[window.limitKey], window.seconds, amount);
+    if (!result.ok) {
       await refund();
       return { ok: false, window: window.id };
     }
-    taken.push({ name: window.name, amount });
+    taken.push({ name: window.name, amount, windowEndsAt: result.windowEndsAt });
   }
-  return { ok: true };
+  return { ok: true, refund };
 }
