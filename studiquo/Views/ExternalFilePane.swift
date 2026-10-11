@@ -1,72 +1,28 @@
 import SwiftUI
-import UIKit
 import UniformTypeIdentifiers
 
-/// The system file picker, placed inside a pane.
+/// A pane that shows a file chosen from the Files app in place.
 ///
-/// The document browser (`UIDocumentBrowserViewController`) is meant for
-/// document-based apps and only showed this app's own folder here. The picker
-/// shows everything the Files app does — iCloud Drive, On My iPad, other
-/// providers, Downloads. `asCopy: false` hands back the file in place.
-struct ExternalFileBrowserRepresentable: UIViewControllerRepresentable {
-    let onPick: (URL) -> Void
-    let onCancel: () -> Void
-
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick, onCancel: onCancel) }
-
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let controller = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: false)
-        controller.allowsMultipleSelection = false
-        controller.shouldShowFileExtensions = true
-        controller.delegate = context.coordinator
-        return controller
-    }
-
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {
-        context.coordinator.onPick = onPick
-        context.coordinator.onCancel = onCancel
-    }
-
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
-        var onPick: (URL) -> Void
-        var onCancel: () -> Void
-
-        init(onPick: @escaping (URL) -> Void, onCancel: @escaping () -> Void) {
-            self.onPick = onPick
-            self.onCancel = onCancel
-        }
-
-        /// The picker's own close button. Embedded in a pane there is nothing
-        /// for it to dismiss, so it closes the pane instead.
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            onCancel()
-        }
-
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            guard let url = urls.first else { return }
-            onPick(url)
-        }
-    }
-}
-
-/// A pane that browses the Files app and shows the chosen file in place.
+/// The system picker is presented modally (`fileImporter`) rather than embedded
+/// in the pane: an embedded `UIDocumentPickerViewController` browses fine but
+/// never calls its delegate when a file is tapped, so nothing would open.
 struct ExternalFilePaneView: View {
     @ObservedObject var session: ExternalFileSession
-    /// Closes the whole pane (the picker's own close button asks for this).
-    let onClose: () -> Void
     @State private var showsImporter = false
 
     var body: some View {
-        GeometryReader { proxy in
-            VStack(spacing: 0) {
-                subHeader
-                Divider()
-                content(width: proxy.size.width)
-            }
+        VStack(spacing: 0) {
+            subHeader
+            Divider()
+            content
         }
         .accessibilityIdentifier("external-file-pane")
         .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.item]) { result in
             if case .success(let url) = result { session.open(pickedURL: url) }
+        }
+        .onAppear {
+            // Opening the split is a request to pick a file, so ask right away.
+            if session.state == .browsing { showsImporter = true }
         }
     }
 
@@ -112,18 +68,13 @@ struct ExternalFilePaneView: View {
     }
 
     @ViewBuilder
-    private func content(width: CGFloat) -> some View {
+    private var content: some View {
         switch session.state {
         case .browsing:
-            if ExternalFilePanePolicy.usesEmbeddedBrowser(paneWidth: width) {
-                ExternalFileBrowserRepresentable(onPick: { session.open(pickedURL: $0) }, onCancel: onClose)
-                    .accessibilityIdentifier("external-file-pane-browser")
-            } else {
-                message(icon: "folder", text: "ファイルアプリから資料を選びます。") {
-                    Button("ファイルを選ぶ") { showsImporter = true }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("external-file-pane-choose")
-                }
+            message(icon: "folder", text: "ファイルアプリから資料を選びます。") {
+                Button("ファイルを選ぶ") { showsImporter = true }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("external-file-pane-choose")
             }
         case .loading:
             VStack(spacing: 12) {

@@ -47,10 +47,4 @@ final class ExternalFilePanePolicyTests: XCTestCase {
             "ブックマークが解決できないなら、ダウンロード状態に関わらず見つかりません扱いにする必要があります。"
         )
     }
-
-    func testEmbeddedBrowserNeedsEnoughWidth() {
-        let threshold = ExternalFilePanePolicy.minimumEmbeddedBrowserWidth
-        XCTAssertFalse(ExternalFilePanePolicy.usesEmbeddedBrowser(paneWidth: threshold - 1), "狭いペインでは、ボタン経由のピッカーに切り替える必要があります。")
-        XCTAssertTrue(ExternalFilePanePolicy.usesEmbeddedBrowser(paneWidth: threshold), "十分な幅があれば、ペイン内にブラウザを出せる必要があります。")
-    }
 }
