@@ -298,7 +298,6 @@ struct NoteEditorView: View {
     @State private var pdfExportDocument: PDFExportDocument?
     @State private var pdfExportFilename = "ノート.pdf"
     @State private var showsPDFExporter = false
-    @State private var showsPageSidebar = false
     @State private var usesDarkPageDisplay = false
     @State private var isShowingTextAlert = false
     @State private var textToInsert = ""
@@ -367,16 +366,7 @@ struct NoteEditorView: View {
             let editorFrame = geometry.frame(in: .global)
             ZStack {
                 HStack(spacing: 0) {
-                    if showsPageSidebar {
-                        PageSidebar(
-                            notebook: notebook,
-                            currentPageIndex: $primaryPageIndex,
-                            onRequestAddPage: { requestPageAddition(to: notebook) }
-                        )
-                            .frame(width: min(260, geometry.size.width * 0.28))
-                        Divider()
-                    }
-                    workspace(in: workspaceSize(in: geometry.size))
+                    workspace(in: geometry.size)
                         .environment(\.allowsInkSelectionTransfer, !panesShowSameNotebook)
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
@@ -1111,19 +1101,11 @@ struct NoteEditorView: View {
             && secondaryNotebook === displayedPrimaryNotebook
     }
 
-    private func sidebarWidth(in size: CGSize) -> CGFloat {
-        showsPageSidebar ? min(260, size.width * 0.28) : 0
-    }
-
-    private func workspaceSize(in size: CGSize) -> CGSize {
-        CGSize(width: size.width - sidebarWidth(in: size), height: size.height)
-    }
-
     /// primaryPane is always the leading (horizontal split) or top
     /// (vertical split) slice of `workspace` — matching the sizing done
     /// there keeps the drawing toolbar's confinement in step with it.
     private func primaryPaneSize(in size: CGSize) -> CGSize {
-        let workspace = workspaceSize(in: size)
+        let workspace = size
         switch splitMode {
         case .single:
             return workspace
@@ -1382,6 +1364,7 @@ struct NoteEditorView: View {
                                 notebook: secondaryNotebook,
                                 currentPageIndex: $secondaryPageIndex,
                                 showsTitle: true,
+                                pageListEdge: splitMode == .horizontal ? .trailing : .leading,
                                 onRequestAddPage: { requestPageAddition(to: secondaryNotebook) },
                                 onSummarizeCurrentPDFPage: {
                                     summarizePDFPage(in: secondaryNotebook, pageIndex: secondaryPageIndex)
@@ -1451,7 +1434,14 @@ struct NoteEditorView: View {
                     .lineLimit(1)
                 Spacer()
                 Button {
-                    closeTemporaryChatMaterial(in: pane)
+                    if case .externalFile = material, pane == .secondary {
+                        // The file was the only thing in the right pane, so
+                        // closing it returns to one screen rather than leaving
+                        // an empty "select a note" pane.
+                        collapseSplit()
+                    } else {
+                        closeTemporaryChatMaterial(in: pane)
+                    }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
@@ -1598,12 +1588,6 @@ struct NoteEditorView: View {
                 showsStudySession = true
             } label: {
                 Label("学習モード", systemImage: "graduationcap")
-            }
-
-            Button {
-                showsPageSidebar.toggle()
-            } label: {
-                Label("ページ一覧", systemImage: "sidebar.left")
             }
 
             if Self.showsDarkPageToggle {
@@ -1880,7 +1864,6 @@ struct NoteEditorView: View {
                             || isParabolaCorrectionEnabled || isCurveCorrectionEnabled
                     )
                 }
-                toolStripButton("ページ一覧", icon: "rectangle.split.1x2", isActive: showsPageSidebar) { showsPageSidebar.toggle() }
 
                 toolStripButton(
                     "用紙",
@@ -3121,6 +3104,7 @@ struct NoteEditorView: View {
             currentPageIndex: $primaryPageIndex,
             showsTitle: splitMode != .single || displayedPrimaryNotebook.containsPDF,
             usesDarkPageDisplay: usesDarkPageDisplay,
+            pageListEdge: .leading,
             onRequestAddPage: { requestPageAddition(to: displayedPrimaryNotebook) },
             onSummarizeCurrentPDFPage: {
                 summarizePDFPage(in: displayedPrimaryNotebook, pageIndex: primaryPageIndex)
@@ -5357,17 +5341,73 @@ private struct NotebookPaneView: View {
     @Binding var currentPageIndex: Int
     var showsTitle = false
     var usesDarkPageDisplay = false
+    /// Which side the page list opens from. `nil` hides the page list and its
+    /// toggle (used by the read-only chat material preview).
+    var pageListEdge: HorizontalEdge?
     let onRequestAddPage: () -> Void
     var onSummarizeCurrentPDFPage: () -> Void = {}
     var onSummarizeAllPDFPages: () -> Void = {}
     var onQuickAddPage: () -> Void = {}
     var onQuickAddPageAtTop: () -> Void = {}
     @State private var pageViewMode: PageViewMode = .continuous
+    /// Always starts closed; deliberately not persisted.
+    @State private var showsPageList = false
 
     var body: some View {
+        GeometryReader { geometry in
+            let listWidth = min(220, geometry.size.width * 0.4)
+            let isListOpen = showsPageList && pageListEdge != nil
+            HStack(spacing: 0) {
+                if isListOpen, pageListEdge == .leading {
+                    pageList.frame(width: listWidth)
+                    Divider()
+                }
+                paneColumn
+                    .overlay(alignment: pageListEdge == .trailing ? .topTrailing : .topLeading) {
+                        pageListToggle
+                    }
+                if isListOpen, pageListEdge == .trailing {
+                    Divider()
+                    pageList.frame(width: listWidth)
+                }
+            }
+        }
+    }
+
+    private var pageList: some View {
+        PageSidebar(
+            notebook: notebook,
+            currentPageIndex: $currentPageIndex,
+            onRequestAddPage: onRequestAddPage
+        )
+    }
+
+    @ViewBuilder
+    private var pageListToggle: some View {
+        if let edge = pageListEdge {
+            let pointsOutward = (edge == .leading) == showsPageList
+            Button {
+                showsPageList.toggle()
+            } label: {
+                Image(systemName: pointsOutward ? "chevron.left" : "chevron.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .frame(width: 32, height: 32)
+                    .background(.regularMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.primary.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
+            .opacity(0.85)
+            .padding(8)
+            .padding(.top, showsTitle ? 38 : 0)
+            .accessibilityLabel(showsPageList ? L("ページ一覧を閉じる") : L("ページ一覧を開く"))
+            .accessibilityIdentifier("pane-page-list-toggle")
+        }
+    }
+
+    private var paneColumn: some View {
         let pages = notebook.sortedPages
 
-        VStack(spacing: 0) {
+        return VStack(spacing: 0) {
             if showsTitle {
                 HStack {
                     Image(systemName: notebook.sortedPages.contains(where: { $0.backgroundImageData != nil }) ? "doc.richtext" : "note.text")
