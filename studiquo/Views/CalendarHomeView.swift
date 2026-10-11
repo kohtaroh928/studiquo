@@ -1146,11 +1146,6 @@ struct CalendarHomeView: View {
                               ? "link.badge.plus" : "link.circle.fill")
                     }
                     .accessibilityLabel("カレンダー連携")
-                    Button {
-                        showsNewEvent = true
-                    } label: {
-                        Label("予定を追加", systemImage: "plus")
-                    }
                     ReportIssueButton {
                         pendingReportIssue = PendingIssueReport(screenshot: ScreenshotCapture.captureFrontWindow())
                     }
@@ -1497,6 +1492,7 @@ struct CalendarHomeView: View {
                 Button { showsNewEvent = true } label: {
                     Image(systemName: "plus.circle.fill").font(.title2)
                 }
+                .accessibilityLabel("予定を追加")
             }
             .padding()
 
