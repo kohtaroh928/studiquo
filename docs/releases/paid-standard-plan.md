@@ -15,7 +15,7 @@
 
 ## 有効化の前提(手作業)
 
-StandardからPlus/Proへのアップグレードは、アプリでは各プランの購入ボタンから行い、差額の日割りはAppleが処理する。Workerは、RevenueCatの`PRODUCT_CHANGE`で新しい商品に切り替える(アップグレードは即時、ダウングレードは期間の終わりまで元のまま)。
+StandardからPlus/Proへのアップグレードは、アプリでは各プランの購入ボタンから行い、差額の日割りはAppleが処理する。Workerは、RevenueCatの`PRODUCT_CHANGE`で新しい商品に切り替える(アップグレードは即時、ダウングレードは期間の終わりまで元のまま)。同じプランの月額↔年額の切り替えも、現在の商品以外のボタンから行う(プランは同じなのでWorkerの判定は変わらない)。
 
 1. App Store Connect: `com.yabuko.studiquo.standard.yearly`(年額980円)を作り、導入オファーに7日間の無料トライアルを設定する。
 1b. **Standard・Plus・Proの全商品(月額・年額とも)を、App Store Connectの同じ「サブスクリプショングループ」に入れ、ランクをStandard<Plus<Proの順に付ける。** 別グループだと上位プランへの変更ではなく二重課金になる。

@@ -215,4 +215,13 @@ final class SubscriptionStoreTests: XCTestCase {
         await off.confirmPlanOnServer()
         XCTAssertEqual(asked, 0)
     }
+
+    func testOnlyTheProductAlreadyHeldIsTreatedAsCurrent() {
+        let held: Set<String> = [SubscriptionProductID.plusMonthly]
+        XCTAssertTrue(SubscriptionStore.isCurrentProduct(SubscriptionProductID.plusMonthly, activeProductIDs: held))
+        // The other billing period of the same plan, and a higher plan, stay purchasable.
+        XCTAssertFalse(SubscriptionStore.isCurrentProduct(SubscriptionProductID.plusYearly, activeProductIDs: held))
+        XCTAssertFalse(SubscriptionStore.isCurrentProduct(SubscriptionProductID.proMonthly, activeProductIDs: held))
+        XCTAssertFalse(SubscriptionStore.isCurrentProduct(SubscriptionProductID.standardYearly, activeProductIDs: []))
+    }
 }

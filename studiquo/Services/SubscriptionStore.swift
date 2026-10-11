@@ -116,6 +116,10 @@ final class SubscriptionStore: ObservableObject {
     /// never flashes the paywall at someone who is entitled.
     @Published private(set) var hasResolvedPlan = false
     @Published private(set) var activeEntitlementIDs: Set<String> = []
+    /// App Store products the student is subscribed to right now, so the
+    /// plans screen can offer every *other* product (a plan upgrade, or the
+    /// other billing period of the same plan) and disable only the current one.
+    @Published private(set) var activeProductIDs: Set<String> = []
     @Published private(set) var isLoading = false
     @Published private(set) var isPurchasing = false
     @Published var message: String?
@@ -298,6 +302,7 @@ final class SubscriptionStore: ObservableObject {
         serverPlan = nil
         cachedAccountID = nil
         purchasedPlan = .free
+        activeProductIDs = []
         defaults.removeObject(forKey: Self.cachedServerPlanKey)
         recomputePlan()
     }
@@ -348,6 +353,15 @@ final class SubscriptionStore: ObservableObject {
         }
     }
 
+    /// Whether this package is the one the student already has.
+    func isCurrentProduct(_ package: Package) -> Bool {
+        Self.isCurrentProduct(package.storeProduct.productIdentifier, activeProductIDs: activeProductIDs)
+    }
+
+    static func isCurrentProduct(_ productID: String, activeProductIDs: Set<String>) -> Bool {
+        activeProductIDs.contains(productID)
+    }
+
     func packages(for plan: StudiquoPlan) -> [Package] {
         packages.filter { SubscriptionProductID.plan(for: $0.storeProduct.productIdentifier) == plan }
     }
@@ -361,6 +375,7 @@ final class SubscriptionStore: ObservableObject {
     private func apply(_ info: CustomerInfo) {
         let active = Set(info.entitlements.active.keys)
         activeEntitlementIDs = active
+        activeProductIDs = info.activeSubscriptions
         purchasedPlan = Self.plan(forActiveEntitlementIDs: active)
         recomputePlan()
     }
