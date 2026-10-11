@@ -33,15 +33,6 @@ public enum ExternalFileDownloadStatus: Equatable {
 }
 
 public enum ExternalFilePanePolicy {
-    /// Below this width the Files browser has no room for its sidebar and list
-    /// side by side, so the pane shows a "choose a file" button instead and
-    /// presents the picker modally.
-    public static let minimumEmbeddedBrowserWidth: CGFloat = 320
-
-    public static func usesEmbeddedBrowser(paneWidth: CGFloat) -> Bool {
-        paneWidth >= minimumEmbeddedBrowserWidth
-    }
-
     public static func state(
         resolution: ExternalFileBookmarkResolution,
         fileExists: Bool,

@@ -1497,7 +1497,7 @@ struct NoteEditorView: View {
             case .document(let document):
                 TextDocumentView(document: document)
             case .externalFile(let session):
-                ExternalFilePaneView(session: session, onClose: { closeTemporaryChatMaterial(in: pane) })
+                ExternalFilePaneView(session: session)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
