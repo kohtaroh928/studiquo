@@ -319,6 +319,7 @@ private struct StudyNotificationList: View {
     let onSelect: (StudyNotification) -> Void
     let onMarkAllRead: () -> Void
     let onMarkRead: (StudyNotification) -> Void
+    let onDelete: (StudyNotification) -> Void
     let onOpenSettings: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -349,14 +350,21 @@ private struct StudyNotificationList: View {
                     )
                     .frame(maxHeight: .infinity)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(visibleNotifications) { notification in
-                                row(for: notification)
-                                Divider()
-                            }
+                    List {
+                        ForEach(visibleNotifications) { notification in
+                            row(for: notification)
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.visible)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) {
+                                        onDelete(notification)
+                                    } label: {
+                                        Label(L("削除"), systemImage: "trash")
+                                    }
+                                }
                         }
                     }
+                    .listStyle(.plain)
 
                     if notifications.count > Self.previewCount {
                         Divider()
@@ -1795,7 +1803,7 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var libraryMode: LibraryMode = .documents
     @State private var selectedFolder: String?
-    @State private var sortOption: NotebookSortOption = .updatedNewest
+    @AppStorage("librarySortOption") private var sortOption: NotebookSortOption = .updatedNewest
     @AppStorage("homeViewMode") private var viewMode: HomeViewMode = .list
     @State private var searchText = ""
     @State private var isImportingFiles = false
@@ -1925,6 +1933,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("readStudyNotificationIDs") private var readStudyNotificationIDsStorage = ""
+    @AppStorage("deletedStudyNotificationIDs") private var deletedStudyNotificationIDsStorage = ""
 
     private enum HomeSection: String, CaseIterable, Identifiable {
         case notes = "ノート"
@@ -2153,7 +2162,7 @@ struct ContentView: View {
                         ForEach(homeNotebooks) { notebook in
                             sidebarNotebookButton(notebook)
                         }
-                        ForEach(flashcardDecks.filter { $0.folderName.isEmpty }) { deck in
+                        ForEach(flashcardDecks.filter { $0.folderName.isEmpty }.sorted(by: sortOption.areInOrder)) { deck in
                             sidebarFlashcardDeckButton(deck)
                         }
                         ForEach(sidebarDocuments) { document in
@@ -3778,13 +3787,13 @@ struct ContentView: View {
     private func decksInFolder(_ folder: String) -> [FlashcardDeck] {
         flashcardDecks
             .filter { $0.folderName == folder }
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted(by: sortOption.areInOrder)
     }
 
     private func textDocumentsInFolder(_ folder: String) -> [TextDocument] {
         textDocuments
             .filter { !$0.isTrashed && $0.folderName == folder }
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted(by: sortOption.areInOrder)
     }
 
     private func sidebarFolderBinding(_ folder: String) -> Binding<Bool> {
@@ -4175,9 +4184,15 @@ struct ContentView: View {
                         }
                     }
                     Menu {
-                        Picker("並べ替え", selection: $sortOption) {
-                            ForEach(NotebookSortOption.allCases) { option in
-                                Text(option.title).tag(option)
+                        ForEach(NotebookSortKey.allCases) { key in
+                            Button {
+                                sortOption = sortOption.selecting(key)
+                            } label: {
+                                if sortOption.key == key {
+                                    Label(key.title, systemImage: sortOption.isAscending ? "chevron.up" : "chevron.down")
+                                } else {
+                                    Text(key.title)
+                                }
                             }
                         }
                     } label: {
@@ -4416,31 +4431,20 @@ struct ContentView: View {
                 // each folder owns its actual drop area.
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(visibleFolderPaths, id: \.self) { folder in
-                            VStack(spacing: 0) {
-                            folderRow(
-                                folder,
-                                notebookCount: notebookCounts[folder, default: 0],
-                                deckCount: deckCounts[folder, default: 0],
-                                documentCount: documentCounts[folder, default: 0]
-                            )
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            Divider()
+                        mistakeReviewBanner
+                        ForEach(sortedHomeItems) { item in
+                            switch item {
+                            case .folder(let folder):
+                                listFolderRow(
+                                    folder,
+                                    notebookCount: notebookCounts[folder, default: 0],
+                                    deckCount: deckCounts[folder, default: 0],
+                                    documentCount: documentCounts[folder, default: 0]
+                                )
+                            case .entry(let entry):
+                                entryListRow(entry)
                             }
-                            .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: folder) != nil, identifier: "library-folder-trash-\(folder)") {
-                                if let target = folderObject(forLegacyPath: folder) {
-                                    performLibraryRemoval {
-                                        removeFolderMovingContentsToTrash(target)
-                                        try? modelContext.save()
-                                    }
-                                }
-                            })
                         }
-                        let displayedNotebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
-                        notebookRows(displayedNotebooks)
-                        studyCardRows
-                        documentRows
                     }
                     .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 24))
                     .padding()
@@ -4476,89 +4480,20 @@ struct ContentView: View {
         ).mapValues(\.count)
         let deckCounts = Dictionary(grouping: flashcardDecks, by: \.folderName).mapValues(\.count)
         let documentCounts = Dictionary(grouping: textDocuments.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
-        let displayedNotebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
-        let entries: [HomeEntry] =
-            displayedNotebooks.map(HomeEntry.notebook)
-            + displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
-            + displayedTextDocuments.map(HomeEntry.textDocument)
-
         return ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: 18)], spacing: 24) {
-                ForEach(visibleFolderPaths, id: \.self) { folder in
-                    // A plain SwiftUI `.onDrag`/`.dropDestination` pair on a
-                    // `LazyVGrid` cell doesn't reliably deliver drops on
-                    // iPad — the same iPad-only gap `folderRow`'s list-mode
-                    // row hit here first, fixed there by routing the drop
-                    // through a real `UIDropInteraction` instead (see
-                    // `LibraryFolderDropSurface`). The tile stays the visual
-                    // layer (non-interactive); the drop surface underneath
-                    // it is what actually receives taps and drops.
-                    ZStack {
-                        HomeFolderTile(
-                            name: folderDisplayName(folder),
-                            isFavorite: favoriteFolderPaths.contains(folder),
+                ForEach(sortedHomeItems) { item in
+                    switch item {
+                    case .folder(let folder):
+                        iconFolderTile(
+                            folder,
                             itemCount: notebookCounts[folder, default: 0]
                                 + deckCounts[folder, default: 0]
                                 + documentCounts[folder, default: 0]
-                        ) {}
-                        .allowsHitTesting(false)
-                        LibraryFolderDropSurface(
-                            identifier: "library-folder-\(folder)",
-                            onTap: { selectedFolder = folder },
-                            onDrop: { values in handleFolderDrop(values, into: folder) },
-                            onTargeted: { isTargeted in
-                                setFolderDropTarget(folder, isTargeted: isTargeted)
-                            }
                         )
+                    case .entry(let entry):
+                        iconEntryTile(entry)
                     }
-                    .onDrag { folderDragProvider(for: folder) }
-                    .overlay(alignment: .bottomTrailing) { folderDropBadge(folder) }
-                    .contextMenu {
-                        Button {
-                            toggleFolderFavorite(folder)
-                        } label: {
-                            Label(
-                                favoriteFolderPaths.contains(folder) ? "お気に入り解除" : "お気に入り",
-                                systemImage: favoriteFolderPaths.contains(folder) ? "star.slash" : "star"
-                            )
-                        }
-                        if let target = folderObject(forLegacyPath: folder) {
-                            Button {
-                                folderRenameText = target.name
-                                folderToRename = target
-                            } label: {
-                                Label("名前を変更", systemImage: "pencil")
-                            }
-                        }
-                    }
-                    .modifier(selectable(folderPath: folder, layout: .tile))
-                }
-                ForEach(entries) { entry in
-                    HomeEntryTile(entry: entry) {
-                        open(entry)
-                    }
-                    .accessibilityIdentifier("library-entry-\(entry.title)")
-                    .draggable(dragPayload(for: entry))
-                    .overlay(alignment: .topTrailing) { entryDropBadge(entry.id) }
-                    .dropDestination(
-                        for: String.self,
-                        action: { items, _ in handleEntryDrop(items, onto: entry) },
-                        isTargeted: { isTargeted in setEntryDropTarget(isTargeted, entry.id) }
-                    )
-                    .contextMenu {
-                        // Notebooks get the exact same long-press menu here
-                        // as in list view (`notebookRows`'s own
-                        // `.contextMenu { notebookActions(notebook) }`) —
-                        // rename, tags, protection, folder move, duplicate,
-                        // etc. — instead of the pared-down favorite/trash
-                        // pair this used to show only in icon view.
-                        if case .notebook(let notebook) = entry {
-                            notebookActions(notebook)
-                        } else {
-                            entryActions(entry)
-                        }
-                    }
-                    .modifier(selectable(entry: entry, layout: .tile))
                 }
             }
             .padding()
@@ -4614,75 +4549,13 @@ struct ContentView: View {
     private func columnPane(parentPath: String?, highlightedPath: String?) -> some View {
         ScrollView(.vertical) {
             LazyVStack(spacing: 0) {
-            ForEach(subfolderPaths(of: parentPath), id: \.self) { path in
-                Button { selectedFolder = path } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "folder.fill").foregroundStyle(.tint)
-                        Text(folderDisplayName(path)).lineLimit(1)
-                        if favoriteFolderPaths.contains(path) {
-                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 45)
-                    .contentShape(Rectangle())
+            ForEach(columnItems(parentPath: parentPath)) { item in
+                switch item {
+                case .folder(let path):
+                    columnFolderRow(path, highlightedPath: highlightedPath)
+                case .entry(let entry):
+                    columnEntryRow(entry)
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .background(path == highlightedPath ? Color.accentColor.opacity(0.15) : Color.clear)
-                .accessibilityIdentifier("library-folder-\(path)")
-                .onDrag { folderDragProvider(for: path) }
-                .overlay(alignment: .trailing) { folderDropBadge(path).padding(.trailing, 28) }
-                .dropDestination(for: String.self) { items, _ in
-                    handleFolderDrop(items, into: path)
-                } isTargeted: { isTargeted in
-                    setFolderDropTarget(path, isTargeted: isTargeted)
-                }
-                .contextMenu {
-                    if let folder = folderObject(forLegacyPath: path) {
-                        Button {
-                            folderRenameText = folder.name
-                            folderToRename = folder
-                        } label: {
-                            Label("名前を変更", systemImage: "pencil")
-                        }
-                    }
-                }
-                .modifier(selectable(folderPath: path, layout: .row, open: { selectedFolder = path }))
-            }
-            ForEach(entries(inLegacyPath: parentPath)) { entry in
-                Button { open(entry) } label: {
-                    HStack(spacing: 10) {
-                        if case .notebook(let notebook) = entry, notebook.containsPDF {
-                            NotebookCoverView(notebook: notebook, size: CGSize(width: 28, height: 36))
-                        } else {
-                            Image(systemName: entry.iconName).foregroundStyle(entry.tintColor)
-                        }
-                        Text(entry.title).lineLimit(1)
-                        if entry.isFavorite {
-                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
-                        }
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 45)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .accessibilityIdentifier("library-entry-\(entry.title)")
-                .draggable(dragPayload(for: entry))
-                // Column view had no long-press menu for entries at all
-                // (only the folder rows above do) — notebooks now get the
-                // same menu list/icon view already show.
-                .contextMenu {
-                    if case .notebook(let notebook) = entry {
-                        notebookActions(notebook)
-                    } else {
-                        entryActions(entry)
-                    }
-                }
-                .modifier(selectable(entry: entry, layout: .row))
             }
             Rectangle()
                 .fill(Color.clear)
@@ -4713,6 +4586,7 @@ struct ContentView: View {
             onSelect: openNotification,
             onMarkAllRead: markAllNotificationsRead,
             onMarkRead: markNotificationRead,
+            onDelete: deleteNotification,
             onOpenSettings: {
                 showsNotifications = false
                 showsAppSettings = true
@@ -4771,8 +4645,18 @@ struct ContentView: View {
         }
     }
 
+    /// Swiped-away notifications are generated from app data, so removing one
+    /// means remembering its id and filtering it out on every refresh.
+    private func deleteNotification(_ notification: StudyNotification) {
+        var ids = Set(deletedStudyNotificationIDsStorage.split(separator: "\n").map(String.init))
+        ids.insert(notification.id)
+        deletedStudyNotificationIDsStorage = ids.joined(separator: "\n")
+        cachedStudyNotifications.removeAll { $0.id == notification.id }
+    }
+
     private func refreshStudyNotifications() {
-        cachedStudyNotifications = makeStudyNotifications()
+        let deleted = Set(deletedStudyNotificationIDsStorage.split(separator: "\n").map(String.init))
+        cachedStudyNotifications = makeStudyNotifications().filter { !deleted.contains($0.id) }
     }
 
     private var studyCardCount: Int {
@@ -4782,13 +4666,21 @@ struct ContentView: View {
     private var displayedFlashcardDecks: [FlashcardDeck] {
         let visible = flashcardDecks.filter { !$0.isTrashed }
         if libraryMode == .documents {
-            return visible.filter { $0.folderName == (selectedFolder ?? "") }
+            return visible.filter { $0.folderName == (selectedFolder ?? "") }.sorted(by: sortOption.areInOrder)
         }
-        return visible
+        return visible.sorted(by: sortOption.areInOrder)
     }
 
     @ViewBuilder
     private var studyCardRows: some View {
+        mistakeReviewBanner
+        ForEach(displayedFlashcardDecks) { deck in
+            deckRow(deck)
+        }
+    }
+
+    @ViewBuilder
+    private var mistakeReviewBanner: some View {
         let dueDecks = dueMistakeDecks
         if let top = dueDecks.first {
             Button { startMistakeReview(in: top.deck) } label: {
@@ -4800,7 +4692,9 @@ struct ContentView: View {
             }
             .accessibilityIdentifier("library-mistake-review-banner")
         }
-        ForEach(displayedFlashcardDecks) { deck in
+    }
+
+    private func deckRow(_ deck: FlashcardDeck) -> some View {
             HStack(spacing: 10) {
                 Button { openFlashcardDeck(deck) } label: {
                     HStack(spacing: 12) {
@@ -4841,20 +4735,250 @@ struct ContentView: View {
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.flashcardDeck(deck).id) }
             )
             .modifier(selectable(entry: .flashcardDeck(deck), layout: .row))
+    }
+
+    /// Folders and files shown together so the sort choice orders them as
+    /// one list (a new note sorts above older folders, not below them).
+    private enum LibraryRowItem: Identifiable {
+        case folder(String)
+        case entry(HomeEntry)
+
+        var id: AnyHashable {
+            switch self {
+            case .folder(let path): AnyHashable("folder:" + path)
+            case .entry(let entry): AnyHashable(entry.id)
+            }
         }
+    }
+
+    private func sortedItems(folders: [String], entries: [HomeEntry]) -> [LibraryRowItem] {
+        func fields(_ item: LibraryRowItem) -> (title: String, created: Date, updated: Date) {
+            switch item {
+            case .entry(let entry):
+                return (entry.title, entry.createdAt, entry.updatedAt)
+            case .folder(let path):
+                let object = folderObject(forLegacyPath: path)
+                let stored = folderCreatedAt[path].map { Date(timeIntervalSince1970: $0) }
+                let created = object?.createdAt ?? stored ?? .distantPast
+                return (folderDisplayName(path), created, object?.updatedAt ?? created)
+            }
+        }
+        let items = folders.map(LibraryRowItem.folder) + entries.map(LibraryRowItem.entry)
+        return items.sorted { sortOption.areInOrder(fields($0), fields($1)) }
+    }
+
+    private var sortedHomeItems: [LibraryRowItem] {
+        sortedItems(folders: visibleFolderPaths, entries: sortedHomeEntries)
+    }
+
+    private func columnItems(parentPath: String?) -> [LibraryRowItem] {
+        sortedItems(folders: subfolderPaths(of: parentPath), entries: entries(inLegacyPath: parentPath))
+    }
+
+    /// Everything shown on the all-files screen in the current folder, sorted.
+    private var sortedHomeEntries: [HomeEntry] {
+        let notebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
+        var result = notebooks.map(HomeEntry.notebook)
+        result += displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
+        result += displayedTextDocuments.map(HomeEntry.textDocument)
+        return result.sorted(by: sortOption.areInOrder)
+    }
+
+    @ViewBuilder
+    private func entryListRow(_ entry: HomeEntry) -> some View {
+        switch entry {
+        case .notebook(let notebook): notebookRow(notebook)
+        case .flashcardDeck(let deck): deckRow(deck)
+        case .textDocument(let document): documentRow(document)
+        }
+    }
+
+    private func listFolderRow(_ folder: String, notebookCount: Int, deckCount: Int, documentCount: Int) -> some View {
+                            VStack(spacing: 0) {
+                            folderRow(
+                                folder,
+                                notebookCount: notebookCount,
+                                deckCount: deckCount,
+                                documentCount: documentCount
+                            )
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            Divider()
+                            }
+                            .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: folder) != nil, identifier: "library-folder-trash-\(folder)") {
+                                if let target = folderObject(forLegacyPath: folder) {
+                                    performLibraryRemoval {
+                                        removeFolderMovingContentsToTrash(target)
+                                        try? modelContext.save()
+                                    }
+                                }
+                            })
+    }
+
+    private func iconFolderTile(_ folder: String, itemCount: Int) -> some View {
+                    // A plain SwiftUI `.onDrag`/`.dropDestination` pair on a
+                    // `LazyVGrid` cell doesn't reliably deliver drops on
+                    // iPad — the same iPad-only gap `folderRow`'s list-mode
+                    // row hit here first, fixed there by routing the drop
+                    // through a real `UIDropInteraction` instead (see
+                    // `LibraryFolderDropSurface`). The tile stays the visual
+                    // layer (non-interactive); the drop surface underneath
+                    // it is what actually receives taps and drops.
+                    ZStack {
+                        HomeFolderTile(
+                            name: folderDisplayName(folder),
+                            isFavorite: favoriteFolderPaths.contains(folder),
+                            itemCount: itemCount
+                        ) {}
+                        .allowsHitTesting(false)
+                        LibraryFolderDropSurface(
+                            identifier: "library-folder-\(folder)",
+                            onTap: { selectedFolder = folder },
+                            onDrop: { values in handleFolderDrop(values, into: folder) },
+                            onTargeted: { isTargeted in
+                                setFolderDropTarget(folder, isTargeted: isTargeted)
+                            }
+                        )
+                    }
+                    .onDrag { folderDragProvider(for: folder) }
+                    .overlay(alignment: .bottomTrailing) { folderDropBadge(folder) }
+                    .contextMenu {
+                        Button {
+                            toggleFolderFavorite(folder)
+                        } label: {
+                            Label(
+                                favoriteFolderPaths.contains(folder) ? "お気に入り解除" : "お気に入り",
+                                systemImage: favoriteFolderPaths.contains(folder) ? "star.slash" : "star"
+                            )
+                        }
+                        if let target = folderObject(forLegacyPath: folder) {
+                            Button {
+                                folderRenameText = target.name
+                                folderToRename = target
+                            } label: {
+                                Label("名前を変更", systemImage: "pencil")
+                            }
+                        }
+                    }
+                    .modifier(selectable(folderPath: folder, layout: .tile))
+    }
+
+    private func iconEntryTile(_ entry: HomeEntry) -> some View {
+                    HomeEntryTile(entry: entry) {
+                        open(entry)
+                    }
+                    .accessibilityIdentifier("library-entry-\(entry.title)")
+                    .draggable(dragPayload(for: entry))
+                    .overlay(alignment: .topTrailing) { entryDropBadge(entry.id) }
+                    .dropDestination(
+                        for: String.self,
+                        action: { items, _ in handleEntryDrop(items, onto: entry) },
+                        isTargeted: { isTargeted in setEntryDropTarget(isTargeted, entry.id) }
+                    )
+                    .contextMenu {
+                        // Notebooks get the exact same long-press menu here
+                        // as in list view (`notebookRows`'s own
+                        // `.contextMenu { notebookActions(notebook) }`) —
+                        // rename, tags, protection, folder move, duplicate,
+                        // etc. — instead of the pared-down favorite/trash
+                        // pair this used to show only in icon view.
+                        if case .notebook(let notebook) = entry {
+                            notebookActions(notebook)
+                        } else {
+                            entryActions(entry)
+                        }
+                    }
+                    .modifier(selectable(entry: entry, layout: .tile))
+    }
+
+    private func columnFolderRow(_ path: String, highlightedPath: String?) -> some View {
+                Button { selectedFolder = path } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "folder.fill").foregroundStyle(.tint)
+                        Text(folderDisplayName(path)).lineLimit(1)
+                        if favoriteFolderPaths.contains(path) {
+                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 45)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .background(path == highlightedPath ? Color.accentColor.opacity(0.15) : Color.clear)
+                .accessibilityIdentifier("library-folder-\(path)")
+                .onDrag { folderDragProvider(for: path) }
+                .overlay(alignment: .trailing) { folderDropBadge(path).padding(.trailing, 28) }
+                .dropDestination(for: String.self) { items, _ in
+                    handleFolderDrop(items, into: path)
+                } isTargeted: { isTargeted in
+                    setFolderDropTarget(path, isTargeted: isTargeted)
+                }
+                .contextMenu {
+                    if let folder = folderObject(forLegacyPath: path) {
+                        Button {
+                            folderRenameText = folder.name
+                            folderToRename = folder
+                        } label: {
+                            Label("名前を変更", systemImage: "pencil")
+                        }
+                    }
+                }
+                .modifier(selectable(folderPath: path, layout: .row, open: { selectedFolder = path }))
+    }
+
+    private func columnEntryRow(_ entry: HomeEntry) -> some View {
+                Button { open(entry) } label: {
+                    HStack(spacing: 10) {
+                        if case .notebook(let notebook) = entry, notebook.containsPDF {
+                            NotebookCoverView(notebook: notebook, size: CGSize(width: 28, height: 36))
+                        } else {
+                            Image(systemName: entry.iconName).foregroundStyle(entry.tintColor)
+                        }
+                        Text(entry.title).lineLimit(1)
+                        if entry.isFavorite {
+                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                        }
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 45)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .accessibilityIdentifier("library-entry-\(entry.title)")
+                .draggable(dragPayload(for: entry))
+                // Column view had no long-press menu for entries at all
+                // (only the folder rows above do) — notebooks now get the
+                // same menu list/icon view already show.
+                .contextMenu {
+                    if case .notebook(let notebook) = entry {
+                        notebookActions(notebook)
+                    } else {
+                        entryActions(entry)
+                    }
+                }
+                .modifier(selectable(entry: entry, layout: .row))
     }
 
     private var displayedTextDocuments: [TextDocument] {
         let visible = textDocuments.filter { !$0.isTrashed }
         if libraryMode == .documents {
-            return visible.filter { $0.folderName == (selectedFolder ?? "") }
+            return visible.filter { $0.folderName == (selectedFolder ?? "") }.sorted(by: sortOption.areInOrder)
         }
-        return visible
+        return visible.sorted(by: sortOption.areInOrder)
     }
 
     @ViewBuilder
     private var documentRows: some View {
         ForEach(displayedTextDocuments) { document in
+            documentRow(document)
+        }
+    }
+
+    private func documentRow(_ document: TextDocument) -> some View {
             HStack(spacing: 10) {
                 Button { openTextDocument(document) } label: {
                     HStack(spacing: 12) {
@@ -4895,7 +5019,6 @@ struct ContentView: View {
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.textDocument(document).id) }
             )
             .modifier(selectable(entry: .textDocument(document), layout: .row))
-        }
     }
 
     /// Trashed decks and documents — shown in the trash alongside
@@ -5041,9 +5164,16 @@ struct ContentView: View {
     /// relationship must not make an item appear in a different column.
     private func entries(inLegacyPath path: String?) -> [HomeEntry] {
         let path = path ?? ""
-        return allNotebooks.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.notebook)
-            + flashcardDecks.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.flashcardDeck)
-            + textDocuments.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.textDocument)
+        var result: [HomeEntry] = allNotebooks
+            .filter { !$0.isTrashed && $0.folderName == path }
+            .map(HomeEntry.notebook)
+        result += flashcardDecks
+            .filter { !$0.isTrashed && $0.folderName == path }
+            .map(HomeEntry.flashcardDeck)
+        result += textDocuments
+            .filter { !$0.isTrashed && $0.folderName == path }
+            .map(HomeEntry.textDocument)
+        return result.sorted(by: sortOption.areInOrder)
     }
 
     private func subfolderPaths(of parentPath: String?) -> [String] {
@@ -6230,6 +6360,12 @@ struct ContentView: View {
     @ViewBuilder
     private func notebookRows(_ notebooks: [Notebook]) -> some View {
         ForEach(notebooks) { notebook in
+            notebookRow(notebook)
+        }
+    }
+
+    @ViewBuilder
+    private func notebookRow(_ notebook: Notebook) -> some View {
             Group {
                 // The all-files screen uses ScrollView, not List(selection:), so a
                 // NavigationLink(value:) row has no selection binding or
@@ -6287,7 +6423,6 @@ struct ContentView: View {
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.notebook(notebook).id) }
             )
             .modifier(selectable(entry: .notebook(notebook), layout: .row))
-        }
     }
 }
 
@@ -6655,9 +6790,56 @@ private struct NotebookRow: View {
     }
 }
 
+private enum NotebookSortKey: CaseIterable, Identifiable {
+    case name, updated, created
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .name: L("名前")
+        case .updated: L("更新日")
+        case .created: L("作成日")
+        }
+    }
+}
+
 private enum NotebookSortOption: String, CaseIterable, Identifiable {
-    case updatedNewest, updatedOldest, createdNewest, createdOldest, nameAscending, nameDescending, pageCount
+    case updatedNewest, updatedOldest, createdNewest, createdOldest, nameAscending, nameDescending
     var id: String { rawValue }
+
+    var key: NotebookSortKey {
+        switch self {
+        case .updatedNewest, .updatedOldest: .updated
+        case .createdNewest, .createdOldest: .created
+        case .nameAscending, .nameDescending: .name
+        }
+    }
+
+    var isAscending: Bool {
+        switch self {
+        case .updatedOldest, .createdOldest, .nameAscending: true
+        default: false
+        }
+    }
+
+    /// Tapping the active key flips its direction; tapping another key
+    /// selects it with its natural default (newest first, A–Z).
+    func selecting(_ newKey: NotebookSortKey) -> NotebookSortOption {
+        if newKey == key {
+            switch self {
+            case .updatedNewest: return .updatedOldest
+            case .updatedOldest: return .updatedNewest
+            case .createdNewest: return .createdOldest
+            case .createdOldest: return .createdNewest
+            case .nameAscending: return .nameDescending
+            case .nameDescending: return .nameAscending
+            }
+        }
+        switch newKey {
+        case .updated: return .updatedNewest
+        case .created: return .createdNewest
+        case .name: return .nameAscending
+        }
+    }
 
     var title: String {
         switch self {
@@ -6667,7 +6849,6 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
         case .createdOldest: L("作成日が古い順")
         case .nameAscending: L("名前 A–Z")
         case .nameDescending: L("名前 Z–A")
-        case .pageCount: L("ページ数が多い順")
         }
     }
 
@@ -6679,7 +6860,27 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
         case .createdOldest: { $0.createdAt < $1.createdAt }
         case .nameAscending: { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         case .nameDescending: { $0.title.localizedStandardCompare($1.title) == .orderedDescending }
-        case .pageCount: { $0.pageCountForLibrary > $1.pageCountForLibrary }
+        }
+    }
+
+    /// Same ordering for any home item kind (notes, decks, documents), so a
+    /// sort choice applies to everything on screen, not only notes.
+    func areInOrder(_ a: some HomeItem, _ b: some HomeItem) -> Bool {
+        areInOrder((a.title, a.createdAt, a.updatedAt), (b.title, b.createdAt, b.updatedAt))
+    }
+
+    func areInOrder(_ a: HomeEntry, _ b: HomeEntry) -> Bool {
+        areInOrder((a.title, a.createdAt, a.updatedAt), (b.title, b.createdAt, b.updatedAt))
+    }
+
+    func areInOrder(_ a: (title: String, created: Date, updated: Date), _ b: (title: String, created: Date, updated: Date)) -> Bool {
+        switch self {
+        case .updatedNewest: a.updated > b.updated
+        case .updatedOldest: a.updated < b.updated
+        case .createdNewest: a.created > b.created
+        case .createdOldest: a.created < b.created
+        case .nameAscending: a.title.localizedStandardCompare(b.title) == .orderedAscending
+        case .nameDescending: a.title.localizedStandardCompare(b.title) == .orderedDescending
         }
     }
 }
