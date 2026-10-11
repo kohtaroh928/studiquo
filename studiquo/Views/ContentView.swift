@@ -669,6 +669,7 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = false
     @AppStorage(ErrorReportSettings.enabledKey) private var autoErrorReportingEnabled = false
+    @AppStorage("pdfPasswordRemovalOfferDisabled") private var pdfPasswordRemovalOfferDisabled = false
     @State private var showsAIDataDisclosure = false
     @State private var showsPrivacyPolicy = false
     @State private var showsTermsOfUse = false
@@ -742,6 +743,17 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
                 Text("描画")
             } footer: {
                 Text("描画バーの並びを左利き向けに反転します。")
+            }
+
+            Section {
+                Toggle("パスワード削除の確認を表示する", isOn: Binding(
+                    get: { !pdfPasswordRemovalOfferDisabled },
+                    set: { pdfPasswordRemovalOfferDisabled = !$0 }
+                ))
+            } header: {
+                Text("PDF")
+            } footer: {
+                Text("パスワード付きPDFを開いたあとに「パスワードを削除しますか？」と確認します。確認カードで「次回から確認しない」を選んだ場合は、ここでオンに戻せます。")
             }
 
             Section {
@@ -5455,6 +5467,9 @@ struct ContentView: View {
         guard !notebook.sortedPages.isEmpty else { return nil }
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
+        // The password was just verified for this import; don't ask again
+        // when the gate sees the notebook open for the first time.
+        if password != nil { ImportedPDFPasswordSession.markVerified(notebook.persistentModelID) }
         openNotebookTab(notebook)
         selectedNotebook = notebook
         libraryMode = .documents
@@ -5500,6 +5515,9 @@ struct ContentView: View {
                 // long-press menu if the student says no here — or if this
                 // offer is skipped entirely because they already turned it off.
                 if !pdfPasswordRemovalOfferDisabled, let notebook {
+                    // Wait for the password alert / picker sheet to finish
+                    // dismissing; SwiftUI drops a sheet requested mid-dismissal.
+                    try? await Task.sleep(for: .milliseconds(500))
                     pdfRemovalOffer = PendingRemoval(url: url, password: password, notebook: notebook)
                 }
             }
@@ -6682,7 +6700,11 @@ private struct PDFPasswordRemovalOfferModifier: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .studiquoPDFPasswordVerified)) { notification in
                 guard !pdfPasswordRemovalOfferDisabled,
                       let event = notification.object as? PDFPasswordVerifiedEvent else { return }
-                pdfRemovalOffer = PendingRemoval(url: event.sourceURL, password: event.password, notebook: event.notebook)
+                // The gate's alert is still dismissing when this fires.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    pdfRemovalOffer = PendingRemoval(url: event.sourceURL, password: event.password, notebook: event.notebook)
+                }
             }
     }
 }
