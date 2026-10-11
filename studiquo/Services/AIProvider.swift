@@ -126,6 +126,7 @@ final class WorkerAIProvider: AIProvider {
             case .notConfigured:
                 return L("AIサーバーのURLが設定されていません。設定のMCPクラウド連携を確認してください。")
             case .http(let status, let message):
+                if status == 402 { return L("AI機能のご利用にはStandard以上のプランが必要です。購入した直後は、反映まで数分かかることがあります。") }
                 if status == 429 { return message.isEmpty ? L("利用回数の上限に達しました。") : message }
                 if status == 401 { return L("この端末はまだAIサーバーに認証されていません。") }
                 return message.isEmpty ? L("AIに接続できませんでした（\(status)）。") : message

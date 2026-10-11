@@ -1379,7 +1379,7 @@ private struct NotificationPreferenceToggle: View {
     }
 }
 
-private struct DeleteAccountView: View {
+struct DeleteAccountView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
