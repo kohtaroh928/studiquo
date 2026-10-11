@@ -5,13 +5,13 @@
 ## 方針
 
 - 決済はApp内課金(RevenueCat+StoreKit)のみ。アプリ内にカード番号の入力欄は作らない。Web決済(Stripe)は後から追加する。
-- 新規ユーザーは、Standard年額の導入オファー(無料トライアル)で最初に無料期間を得る。トライアルの長さと「1つのApple IDで1回」の制限はApp Store側が管理する(サーバーに試用状態は持たない)。
+- 新規ユーザーは、Standard年額の導入オファー(無料トライアル、**7日間**)で最初に無料期間を得る。トライアルの長さと「1つのApple IDで1回」の制限はApp Store側が管理する(サーバーに試用状態は持たない)。
 - 無料期間のあとはアプリ全体を購読必須にする(`PaywallGate`)。購読もなく既存ユーザーでもない場合、Workerのプランは`free`になり、AIは402を返す。
-- 既存ユーザーは`legacy_standard_accounts`に登録し、購読なしでもStandardにする。期限は設けていない。
+- 既存ユーザーは`legacy_standard_accounts`に登録し、購読なしでもStandardにする。期限は設けていない(2026-10-11決定: 開発中のUI確認のため、当面は期限なし)。
 
 ## 有効化の前提(手作業)
 
-1. App Store Connect: `com.yabuko.studiquo.standard.yearly`(年額980円)を作り、導入オファーに無料トライアルを設定する。
+1. App Store Connect: `com.yabuko.studiquo.standard.yearly`(年額980円)を作り、導入オファーに7日間の無料トライアルを設定する。
 2. RevenueCat: Entitlement `standard` を作り、上の商品を紐付ける。Offeringに含める。
 3. D1 migration `0006_legacy_standard_accounts.sql` を適用する。
 4. **有効化の直前に**、その時点の既存アカウントを`legacy_standard_accounts`へ登録する(下記)。
@@ -55,5 +55,4 @@ npx wrangler d1 execute studiquo-admin --remote --command \
 
 - AI以外のサーバー機能(同期、チャット、共同編集)は、サーバー側では購読を強制していない。強制するのはアプリのペイウォールのみ。
 - Web決済(Stripe Checkout)は未着手。外部リンク誘導の手数料と文言は、Appleの日本向け規定を確認してから設計する。
-- 既存ユーザーのStandardをいつまで無料にするか(現状は期限なし)。
 - `/api/plan`のルートテストは未追加(`getPlan`の挙動はentitlements.test.jsで検証済み)。
