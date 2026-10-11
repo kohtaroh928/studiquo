@@ -67,15 +67,16 @@ struct AccountGateView: View {
                 subscriptionStore.resetForSignOut()
                 return
             }
-            // Wait for RevenueCat to know who this is before asking what they own.
-            await authentication.waitForRevenueCatIdentity()
+            // The store waits for RevenueCat to know who this is before asking
+            // what they own, on every path (launch, sign-in, foreground).
+            subscriptionStore.waitForIdentity = { await authentication.waitForRevenueCatIdentity() }
             await subscriptionStore.refresh()
         }
         // A trial that lapsed, or a purchase made on another device, shows up
         // when the app comes back to the front.
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active, !cleanupPending, authentication.state == .authenticated else { return }
-            Task { await subscriptionStore.refresh() }
+            Task { await subscriptionStore.refreshIfStale() }
         }
         .task(id: cleanupPending) {
             if cleanupPending { await finishLocalCleanup() }
