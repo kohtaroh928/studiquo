@@ -71,6 +71,7 @@ struct AIChatPanel: View {
             onSelectThread: { store.select($0) },
             onNewThread: { store.startNewThread() },
             onDeleteThread: { store.delete($0) },
+            onRenameThread: { store.rename($0, to: $1) },
             onSend: { store.send(noteContext: noteContext()) },
             respondingThreadIDs: store.respondingThreadIDs,
             onCancel: { store.cancelResponse() },
@@ -153,6 +154,7 @@ struct AIChatPane: View {
     let onSelectThread: (AIChatThread) -> Void
     let onNewThread: () -> Void
     let onDeleteThread: (AIChatThread) -> Void
+    let onRenameThread: (AIChatThread, String) -> Void
     let onSend: () -> Void
     let respondingThreadIDs: Set<String>
     let onCancel: () -> Void
@@ -176,6 +178,7 @@ struct AIChatPane: View {
         onSelectThread: @escaping (AIChatThread) -> Void,
         onNewThread: @escaping () -> Void,
         onDeleteThread: @escaping (AIChatThread) -> Void,
+        onRenameThread: @escaping (AIChatThread, String) -> Void,
         onSend: @escaping () -> Void,
         respondingThreadIDs: Set<String>,
         onCancel: @escaping () -> Void,
@@ -193,6 +196,7 @@ struct AIChatPane: View {
         self.onSelectThread = onSelectThread
         self.onNewThread = onNewThread
         self.onDeleteThread = onDeleteThread
+        self.onRenameThread = onRenameThread
         self.onSend = onSend
         self.respondingThreadIDs = respondingThreadIDs
         self.onCancel = onCancel
@@ -229,6 +233,8 @@ struct AIChatPane: View {
         width >= historySidebarMinimumWidth
     }
     @State private var pendingDeleteThread: AIChatThread?
+    @State private var renamingThread: AIChatThread?
+    @State private var renameDraft = ""
     @State private var attachmentPickerMode: AttachmentPickerMode?
     @State private var isDropTargeted = false
     @State private var isComposerDropTargeted = false
@@ -519,6 +525,22 @@ struct AIChatPane: View {
                 deleteConfirmationCard(for: pendingDeleteThread)
             }
         }
+        .alert(L("名前を変更"), isPresented: Binding(
+            get: { renamingThread != nil },
+            set: { if !$0 { renamingThread = nil } }
+        )) {
+            TextField(L("トークの名前"), text: $renameDraft)
+                .onChange(of: renameDraft) { _, value in
+                    if value.count > AIChatStore.maxTitleLength {
+                        renameDraft = String(value.prefix(AIChatStore.maxTitleLength))
+                    }
+                }
+            Button(L("キャンセル"), role: .cancel) {}
+            Button(L("保存")) {
+                if let renamingThread { onRenameThread(renamingThread, renameDraft) }
+            }
+            .disabled(renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
         .background(Color(uiColor: .systemBackground))
         .background(
             GeometryReader { proxy in
@@ -667,6 +689,19 @@ struct AIChatPane: View {
                     .accessibilityIdentifier("ai-chat-thread-\(thread.title)")
                     .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
                     .listRowBackground(Color.clear)
+                    .contextMenu {
+                        Button {
+                            renameDraft = thread.title
+                            renamingThread = thread
+                        } label: {
+                            Label(L("名前を変更"), systemImage: "pencil")
+                        }
+                        Button(role: .destructive) {
+                            pendingDeleteThread = thread
+                        } label: {
+                            Label(L("削除"), systemImage: "trash")
+                        }
+                    }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {
                             pendingDeleteThread = thread

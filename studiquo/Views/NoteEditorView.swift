@@ -27,6 +27,9 @@ extension Notification.Name {
     static let studiquoSelectPageElement = Notification.Name("StudiquoSelectPageElement")
     /// Editor → ContentView: this conversation is open, give it a tab.
     static let studiquoOpenAIChatTab = Notification.Name("StudiquoOpenAIChatTab")
+    /// Editor → ContentView: this conversation was renamed; retitle its tab
+    /// if it has one.
+    static let studiquoRenameAIChatTab = Notification.Name("StudiquoRenameAIChatTab")
     /// Editor → ContentView: this conversation is gone, drop its tab.
     static let studiquoCloseAIChatTab = Notification.Name("StudiquoCloseAIChatTab")
     /// ContentView → editor: bring this conversation to the front.

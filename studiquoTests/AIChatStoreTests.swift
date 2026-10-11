@@ -43,6 +43,7 @@ final class AIChatStoreTests: XCTestCase {
         let store = AIChatStore(modelContext: context)
         store.announceThread = { [weak self] in self?.announced.append($0.title) }
         store.closeThreadTab = { [weak self] _ in self?.closedTabs += 1 }
+        store.renameThreadTab = { [weak self] in self?.renamedTabs.append($0.title) }
         store.deliverCompletion = { [weak self] thread in self?.delivered.append(thread.title) }
         store.clearCompletion = { [weak self] thread in self?.cleared.append(thread.title) }
         return (store, context)
@@ -50,6 +51,7 @@ final class AIChatStoreTests: XCTestCase {
 
     private var announced: [String] = []
     private var closedTabs = 0
+    private var renamedTabs: [String] = []
     /// Titles of conversations an "answer ready" notification was sent for / taken back.
     private var delivered: [String] = []
     private var cleared: [String] = []
@@ -66,6 +68,43 @@ final class AIChatStoreTests: XCTestCase {
 
     private func settle(_ store: AIChatStore) async {
         await waitUntil("replies to finish") { store.respondingThreadIDs.isEmpty }
+    }
+
+    // MARK: Renaming
+
+    private func makeThread(_ store: AIChatStore, _ context: ModelContext, title: String) -> AIChatThread {
+        let thread = AIChatThread(title: title)
+        context.insert(thread)
+        let message = AIChatMessage(text: "q", role: .user)
+        message.thread = thread
+        thread.addMessage(message)
+        try? context.save()
+        store.loadThreads()
+        return thread
+    }
+
+    func testRenameTrimsCapsAtFiftyCharactersKeepsOrderAndRetitlesTheTab() {
+        let (store, context) = makeStore()
+        let thread = makeThread(store, context, title: "古い名前")
+        let updatedAt = thread.updatedAt
+
+        store.rename(thread, to: "  " + String(repeating: "あ", count: 80) + "  ")
+
+        XCTAssertEqual(thread.title, String(repeating: "あ", count: 50))
+        XCTAssertEqual(thread.updatedAt, updatedAt)
+        XCTAssertEqual(renamedTabs, [String(repeating: "あ", count: 50)])
+        XCTAssertEqual(store.threads.first?.title, thread.title)
+    }
+
+    func testRenameIgnoresBlankAndUnchangedNames() {
+        let (store, context) = makeStore()
+        let thread = makeThread(store, context, title: "名前")
+
+        store.rename(thread, to: "   ")
+        store.rename(thread, to: "名前")
+
+        XCTAssertEqual(thread.title, "名前")
+        XCTAssertTrue(renamedTabs.isEmpty)
     }
 
     // MARK: Sending

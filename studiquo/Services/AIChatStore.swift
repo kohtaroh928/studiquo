@@ -100,6 +100,14 @@ final class AIChatStore: ObservableObject {
             object: AIChatTabInfo(id: thread.persistentModelID, title: thread.title)
         )
     }
+    /// Tells the tab bar a conversation was renamed. Unlike `announceThread`
+    /// it never opens a tab or switches to one.
+    var renameThreadTab: (AIChatThread) -> Void = { thread in
+        NotificationCenter.default.post(
+            name: .studiquoRenameAIChatTab,
+            object: AIChatTabInfo(id: thread.persistentModelID, title: thread.title)
+        )
+    }
     /// Tells the tab bar a conversation is gone.
     var closeThreadTab: (AIChatThread) -> Void = { thread in
         NotificationCenter.default.post(name: .studiquoCloseAIChatTab, object: thread.persistentModelID)
@@ -484,6 +492,21 @@ final class AIChatStore: ObservableObject {
         tasks[threadKey]?.cancel()
         tasks[threadKey] = nil
         respondingThreadIDs.remove(threadKey)
+    }
+
+    static let maxTitleLength = 50
+
+    /// Renames a conversation. A blank name is ignored; `updatedAt` is left
+    /// alone so the history order does not change.
+    func rename(_ thread: AIChatThread, to newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let title = String(trimmed.prefix(Self.maxTitleLength))
+        guard title != thread.title else { return }
+        thread.title = title
+        try? modelContext.save()
+        loadThreads()
+        renameThreadTab(thread)
     }
 
     func delete(_ thread: AIChatThread) {
