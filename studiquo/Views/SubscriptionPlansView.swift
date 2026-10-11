@@ -115,15 +115,32 @@ struct SubscriptionPlansView: View {
     /// the Worker's own plan gate) actually offer.
     private var standardFeatures: [String] {
         let models = AIModelCatalog.offered.filter { $0.requiredPlan == .standard }.map(\.displayName)
-        return ["月30 AIクレジット", models.joined(separator: "・"), "資料作成・共同編集は無制限"]
+        return allowanceFeatures(.standard) + [models.joined(separator: "・"), "資料作成・共同編集は無制限"]
     }
 
     private var plusFeatures: [String] {
-        return ["月750 AIクレジット", "GoogleのAIモデル"]
+        allowanceFeatures(.plus) + [modelsLine(for: .plus)]
     }
 
     private var proFeatures: [String] {
-        return ["月2,000 AIクレジット", "GoogleのAIモデル"]
+        allowanceFeatures(.pro) + [modelsLine(for: .pro)]
+    }
+
+    /// "月1,500 AIクレジット" plus the shorter-window limits that keep a month's
+    /// allowance from being spent in one sitting.
+    private func allowanceFeatures(_ plan: StudiquoPlan) -> [String] {
+        let allowance = PlanAllowance.forPlan(plan)
+        return [
+            "月\(allowance.monthlyCredits.formatted()) AIクレジット",
+            "1日\(allowance.dailyCredits.formatted())・5時間\(allowance.fiveHourCredits.formatted())クレジットまで",
+        ]
+    }
+
+    /// The models this plan adds over the one below — or "GoogleのAIモデル"
+    /// while only Google's are offered.
+    private func modelsLine(for plan: StudiquoPlan) -> String {
+        let added = AIModelCatalog.offered.filter { $0.requiredPlan == plan }.map(\.displayName)
+        return added.isEmpty ? "GoogleのAIモデル" : (plan == .plus ? "" : "Plusのモデルに加えて、") + added.joined(separator: "・")
     }
 
     private func planCard(plan: StudiquoPlan, subtitle: String, features: [String]) -> some View {
