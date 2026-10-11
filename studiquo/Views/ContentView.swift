@@ -361,6 +361,7 @@ private struct StudyNotificationList: View {
                                     } label: {
                                         Label(L("削除"), systemImage: "trash")
                                     }
+                                    .tint(.red)
                                 }
                         }
                     }
@@ -465,7 +466,7 @@ private struct StudyNotificationList: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
             .contentShape(Rectangle())
             .background(readIDs.contains(notification.id) ? Color.clear : Color.accentColor.opacity(0.06))
         }
