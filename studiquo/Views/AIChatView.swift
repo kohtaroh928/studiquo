@@ -82,8 +82,53 @@ struct AIChatPanel: View {
             onOpenAttachment: onOpenAttachment,
             onPaneDrop: onPaneDrop
         )
+        .overlay {
+            if store.pendingConsentSend != nil {
+                consentCard
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: store.pendingConsentSend != nil)
         .onAppear { store.surfaceDidAppear(surfaceID) }
         .onDisappear { store.surfaceDidDisappear(surfaceID) }
+    }
+
+    private var consentCard: some View {
+        ZStack {
+            Color.black.opacity(0.18).ignoresSafeArea()
+            VStack(spacing: 14) {
+                Image(systemName: "hand.raised")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                VStack(spacing: 6) {
+                    Text(L("AIへの送信を許可しますか？"))
+                        .font(.headline)
+                    Text(L("質問・会話履歴と、送信対象として選んだ資料・画像がGoogleのAI(Gemini)へ送信されます。許可はいつでも設定 → プライバシーから取り消せます。"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                HStack(spacing: 10) {
+                    Button { store.declinePendingSend() } label: {
+                        Text(L("許可しない")).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("ai-chat-consent-decline")
+                    Button { store.allowPendingSend() } label: {
+                        Text(L("許可して送信")).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("ai-chat-consent-allow")
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: 340)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+            .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+            .padding(24)
+        }
+        .transition(.opacity)
+        .zIndex(30)
     }
 }
 

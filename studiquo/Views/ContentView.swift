@@ -1452,6 +1452,7 @@ enum AIDataDisclosure {
     static let acknowledgedDefaultsKey = "hasAcknowledgedAIDataDisclosure"
     static let consentVersionDefaultsKey = "aiDataConsentVersion"
     static let decisionVersionDefaultsKey = "aiDataDecisionVersion"
+    static let chatDeclinedVersionDefaultsKey = "aiChatConsentDeclinedVersion"
     static let currentVersion = "google-v2"
     static let allowsDirectProviders = false
 
@@ -1472,12 +1473,27 @@ enum AIDataDisclosure {
         defaults.string(forKey: decisionVersionDefaultsKey) == currentVersion
     }
 
+    /// True once the student has said no on the card shown when sending an
+    /// AI chat message. From then on sending shows the "not allowed" error
+    /// in the chat instead of asking again; allowing or revoking from
+    /// settings resets it.
+    static var hasDeclinedInChat: Bool {
+        defaults.string(forKey: chatDeclinedVersionDefaultsKey) == currentVersion
+    }
+
     static func acknowledge() {
         defaults.set(currentVersion, forKey: consentVersionDefaultsKey)
         defaults.set(currentVersion, forKey: decisionVersionDefaultsKey)
+        defaults.removeObject(forKey: chatDeclinedVersionDefaultsKey)
+    }
+
+    static func declineInChat() {
+        revoke()
+        defaults.set(currentVersion, forKey: chatDeclinedVersionDefaultsKey)
     }
 
     static func revoke() {
+        defaults.removeObject(forKey: chatDeclinedVersionDefaultsKey)
         defaults.removeObject(forKey: consentVersionDefaultsKey)
         defaults.set(currentVersion, forKey: decisionVersionDefaultsKey)
         defaults.set(false, forKey: AIReviewService.isEnabledDefaultsKey)

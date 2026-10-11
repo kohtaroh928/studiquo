@@ -12,8 +12,15 @@ final class AIChatStoreTests: XCTestCase {
     private var storeURLs: [URL] = []
     private var provider: ScriptedAIProvider!
 
+    private var consentSuiteName = ""
+
     override func setUp() {
         super.setUp()
+        // Sending is gated on the student's AI-sharing permission; most tests
+        // are about the conversation itself, so they start out allowed.
+        consentSuiteName = "AIChatStoreTests-\(UUID().uuidString)"
+        AIDataDisclosure.defaults = UserDefaults(suiteName: consentSuiteName)!
+        AIDataDisclosure.acknowledge()
         provider = ScriptedAIProvider()
         AI.provider = provider
         // Keep the fire-and-forget "review tomorrow" step away from the
@@ -26,6 +33,8 @@ final class AIChatStoreTests: XCTestCase {
         // still in place before it is deleted.
         try? await Task.sleep(for: .milliseconds(150))
         AI.provider = WorkerAIProvider()
+        AIDataDisclosure.defaults.removePersistentDomain(forName: consentSuiteName)
+        AIDataDisclosure.defaults = .standard
         AIReviewService.scheduleNotification = { await AIReviewNotifications.schedule(for: $0) }
         for url in storeURLs { try? FileManager.default.removeItem(at: url) }
         storeURLs = []
@@ -172,6 +181,58 @@ final class AIChatStoreTests: XCTestCase {
         XCTAssertTrue(seenTurns.first?.text.contains("- ファイル: 資料") ?? false)
         XCTAssertEqual(seenContext, "追加の文脈\n\n【資料】\n添付の中身")
         XCTAssertFalse(seenContext.contains("ページの文章"))
+    }
+
+    // MARK: Consent
+
+    func testSendWithoutPermissionAsksFirstAndKeepsTheDraft() {
+        AIDataDisclosure.revoke()
+        let (store, _) = makeStore()
+        store.activeDraft = "質問"
+
+        store.send()
+
+        XCTAssertNotNil(store.pendingConsentSend)
+        XCTAssertNil(store.selectedThread)
+        XCTAssertEqual(store.activeDraft, "質問")
+        XCTAssertEqual(provider.chatCallCount, 0)
+    }
+
+    func testAllowingSendsThePendingMessage() async {
+        AIDataDisclosure.revoke()
+        let (store, _) = makeStore()
+        provider.chat = { _, _, _, _, onDelta in onDelta("答え") }
+        store.activeDraft = "質問"
+        store.send()
+
+        store.allowPendingSend()
+
+        XCTAssertNil(store.pendingConsentSend)
+        XCTAssertTrue(AIDataDisclosure.hasBeenAcknowledged)
+        await settle(store)
+        XCTAssertEqual(store.selectedThread?.sortedMessages.last?.text, "答え")
+    }
+
+    func testDecliningShowsTheErrorInChatAndLaterSendsDoNotAskAgain() async {
+        AIDataDisclosure.revoke()
+        AI.provider = WorkerAIProvider()
+        let (store, _) = makeStore()
+        store.activeDraft = "質問"
+        store.send()
+
+        store.declinePendingSend()
+
+        XCTAssertNil(store.pendingConsentSend)
+        XCTAssertFalse(AIDataDisclosure.hasBeenAcknowledged)
+        await settle(store)
+        let expected = WorkerAIProvider.ProviderError.consentRequired.errorDescription
+        XCTAssertEqual(store.selectedThread?.sortedMessages.last?.text, expected)
+
+        store.activeDraft = "もう一度"
+        store.send()
+        XCTAssertNil(store.pendingConsentSend)
+        await settle(store)
+        XCTAssertEqual(store.selectedThread?.sortedMessages.last?.text, expected)
     }
 
     func testBlankDraftSendsNothing() {
