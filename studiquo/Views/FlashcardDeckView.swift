@@ -117,6 +117,9 @@ struct FlashcardDeckView: View {
             if mode == .edit { editor }
             else { study }
         }
+        // Notes and documents hide the navigation bar; leaving it here put an
+        // empty bar above the tab strip and pushed the tabs down.
+        .toolbar(.hidden, for: .navigationBar)
     }
 
     private var editor: some View {
