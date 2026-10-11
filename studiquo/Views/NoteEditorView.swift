@@ -3588,6 +3588,12 @@ struct NoteEditorView: View {
         page.addElement(element)
         recordElementAddition(element, on: page)
         notebook.updatedAt = .now
+        if kind == .studyTape {
+            NotificationCenter.default.post(
+                name: .studiquoSelectPageElement,
+                object: element.persistentModelID
+            )
+        }
     }
 
     private func addPageLink(to pageIndex: Int, title: String) {
@@ -7357,9 +7363,10 @@ private struct EditablePageElement: View {
         selectedElementID == element.persistentModelID
     }
 
-    /// Study tape and page links answer a tap with their own behaviour
-    /// (reveal, navigate), so they keep it rather than trading it for a
-    /// selection box.
+    /// Page links answer a tap with their own behaviour (navigate), so they
+    /// keep it rather than trading it for a selection box. Study tape reveals
+    /// on tap too, but is selected from the context menu (or on placement) so
+    /// it can be moved and resized like any other element.
     private var supportsSelection: Bool {
         element.kind != .studyTape && element.kind != .pageLink
     }
@@ -7397,6 +7404,13 @@ private struct EditablePageElement: View {
                         isEditingText = true
                     } label: {
                         Label("テキストを編集", systemImage: "pencil")
+                    }
+                }
+                if element.kind == .studyTape {
+                    Button {
+                        selectedElementID = element.persistentModelID
+                    } label: {
+                        Label("移動・サイズ調整", systemImage: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left")
                     }
                 }
                 Menu {
@@ -7491,7 +7505,15 @@ private struct EditablePageElement: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(isStudyTapeRevealed ? color : .white)
                 }
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.18)) { isStudyTapeRevealed.toggle() } }
+                .onTapGesture {
+                    // While selected for moving/resizing, a tap puts it down
+                    // instead of flipping the reveal.
+                    if isSelected {
+                        selectedElementID = nil
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.18)) { isStudyTapeRevealed.toggle() }
+                    }
+                }
         case .pageLink:
             let link = pageLinkDetails
             Label(link.title, systemImage: "link")
