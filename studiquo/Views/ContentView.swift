@@ -2650,6 +2650,7 @@ struct ContentView: View {
             }
             selectedAIChatTabID = tab.id
         }
+        .modifier(AIChatTabRenameModifier(tabs: $openAIChatTabs))
         .onReceive(NotificationCenter.default.publisher(for: .studiquoCloseAIChatTab)) { notification in
             guard let id = notification.object as? PersistentIdentifier else { return }
             closeAIChatTab(id)
@@ -7091,5 +7092,19 @@ extension ContentView {
                 )
             }
         )
+    }
+}
+
+/// Retitles an open AI chat tab when its conversation is renamed. Kept out of
+/// `ContentView.body`, which is already at the type-checker's limit.
+private struct AIChatTabRenameModifier: ViewModifier {
+    @Binding var tabs: [AIChatTabInfo]
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .studiquoRenameAIChatTab)) { notification in
+            guard let tab = notification.object as? AIChatTabInfo,
+                  let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+            tabs[index] = tab
+        }
     }
 }

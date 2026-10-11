@@ -2085,6 +2085,22 @@
         }
       }
     },
+    "トークの名前" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chat name"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トークの名前"
+          }
+        }
+      }
+    },
     "このトークを削除しますか？" : {
       "extractionState" : "stale",
       "localizations" : {
