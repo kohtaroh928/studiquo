@@ -2,6 +2,10 @@
 
 状態: **実装済み・無効**。`PaywallConfiguration.isEnabled`(アプリ)と`PAYWALL_ENABLED`(Worker)がどちらもオフの間は、挙動は従来と同じ(全員がStandard、ペイウォールなし)。
 
+## 開発中のUI確認(DEBUGビルドのみ)
+
+設定 → 「開発用(UI確認用)」で「有料Standardを有効にする」をオンにし、「サーバーのプラン」を `free` にして再起動すると、ペイウォールが出る。`standard` なら既存ユーザー相当(ペイウォールなし)。Releaseビルドでは項目ごとコンパイルされず、フラグは常にオフ。
+
 ## 方針
 
 - 決済はApp内課金(RevenueCat+StoreKit)のみ。アプリ内にカード番号の入力欄は作らない。Web決済(Stripe)は後から追加する。

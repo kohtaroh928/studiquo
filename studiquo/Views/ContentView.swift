@@ -870,6 +870,10 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
                 Text("Plus・Proへの変更や購入履歴の復元ができます。")
             }
 
+            #if DEBUG
+            PaywallDebugSection()
+            #endif
+
             Section {
                 Picker("言語", selection: $appLanguage) {
                     ForEach(AppLanguage.allCases) { language in
