@@ -82,28 +82,39 @@ function planFromRow(row) {
  * plan — pro over plus — rather than whichever happened to be written last.
  */
 export async function getPlan(env, sub) {
+  // `sub` may be a list: after accounts are linked, session.sub is the
+  // canonical identity while RevenueCat's app_user_id (and a legacy grant)
+  // may still be under the identity the app signed in with
+  // (session.originalSub). Either one counts.
+  const subs = [sub].flat().filter(Boolean);
   if (!paywallEnabled(env)) {
-    if (!sub) return "standard";
-    return (await subscribedPlan(env, sub)) ?? "standard";
+    if (subs.length === 0) return "standard";
+    return (await subscribedPlan(env, subs)) ?? "standard";
   }
-  if (!sub) return "free";
-  const subscribed = await subscribedPlan(env, sub);
+  if (subs.length === 0) return "free";
+  const subscribed = await subscribedPlan(env, subs);
   if (subscribed) return subscribed;
-  return (await isLegacyAccount(env, sub)) ? "standard" : "free";
+  return (await isLegacyAccount(env, subs)) ? "standard" : "free";
 }
 
-async function subscribedPlan(env, sub) {
-  const { results } = await env.ADMIN_DB.prepare(
-    `SELECT status, product_id, expires_at FROM subscribers WHERE app_user_id = ?`
-  ).bind(sub).all();
-  const plans = (results ?? []).map(planFromRow).filter(Boolean);
+async function subscribedPlan(env, subs) {
+  const plans = [];
+  for (const sub of subs) {
+    const { results } = await env.ADMIN_DB.prepare(
+      `SELECT status, product_id, expires_at FROM subscribers WHERE app_user_id = ?`
+    ).bind(sub).all();
+    plans.push(...(results ?? []).map(planFromRow).filter(Boolean));
+  }
   if (plans.length === 0) return null;
   return plans.reduce((best, plan) => (PLAN_RANK[plan] > PLAN_RANK[best] ? plan : best));
 }
 
-async function isLegacyAccount(env, sub) {
-  const { results } = await env.ADMIN_DB.prepare(
-    `SELECT app_user_id FROM legacy_standard_accounts WHERE app_user_id = ?`
-  ).bind(sub).all();
-  return (results ?? []).length > 0;
+async function isLegacyAccount(env, subs) {
+  for (const sub of subs) {
+    const { results } = await env.ADMIN_DB.prepare(
+      `SELECT app_user_id FROM legacy_standard_accounts WHERE app_user_id = ?`
+    ).bind(sub).all();
+    if ((results ?? []).length > 0) return true;
+  }
+  return false;
 }

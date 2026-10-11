@@ -155,6 +155,14 @@ final class SubscriptionStore: ObservableObject {
         }
     }
 
+    /// Forgets the previous account's plan when the student signs out, so the
+    /// next account on this device never inherits it.
+    func resetForSignOut() {
+        serverPlan = nil
+        purchasedPlan = .free
+        recomputePlan()
+    }
+
     func purchase(_ package: Package) async {
         await performPurchase {
             let result = try await Purchases.shared.purchase(package: package)
