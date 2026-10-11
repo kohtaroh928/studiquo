@@ -138,10 +138,22 @@ final class SubscriptionStore: ObservableObject {
 
     /// The last plan the Worker confirmed, kept so a launch without a network
     /// (or a failing `/api/plan`) still knows a grandfathered student is
-    /// entitled. Only a paid-or-better answer is kept: a stale "free" must
-    /// never lock someone out. Cleared on sign-out, which every account
-    /// switch passes through.
+    /// entitled. Stored as `{account, plan}` and used only while RevenueCat's
+    /// current user is that same account, so it can never carry over to
+    /// someone else even if sign-out cleanup did not run. Only a
+    /// paid-or-better answer is kept: a stale "free" must never lock anyone
+    /// out. Also cleared on sign-out.
     static let cachedServerPlanKey = "cachedServerPlan"
+    private let accountIDProvider: () -> String?
+    private var cachedAccountID: String?
+
+    /// RevenueCat's current user, once it has been logged in as a studiquo
+    /// account; `nil` for the anonymous user or before the SDK is configured.
+    nonisolated static func currentAccountID() -> String? {
+        guard Purchases.isConfigured else { return nil }
+        let id = Purchases.shared.appUserID
+        return id.hasPrefix("$RCAnonymousID") ? nil : id
+    }
 
     /// True when the paywall must block the app: the paywall is on, the plan
     /// is known, and it is `.free`.
@@ -151,16 +163,21 @@ final class SubscriptionStore: ObservableObject {
         automaticallyRefresh: Bool = true,
         paywallEnabled: Bool = PaywallConfiguration.isEnabled,
         serverPlanProvider: @escaping () async -> StudiquoPlan? = { await ServerPlanClient.fetch() },
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        accountIDProvider: @escaping () -> String? = { SubscriptionStore.currentAccountID() }
     ) {
+        self.accountIDProvider = accountIDProvider
         self.paywallEnabled = paywallEnabled
         self.serverPlanProvider = serverPlanProvider
         self.defaults = defaults
         self.currentPlan = paywallEnabled ? .free : .standard
         if paywallEnabled,
-           let raw = defaults.object(forKey: Self.cachedServerPlanKey) as? Int,
+           let entry = defaults.dictionary(forKey: Self.cachedServerPlanKey),
+           let account = entry["account"] as? String, account == accountIDProvider(),
+           let raw = entry["plan"] as? Int,
            let cached = StudiquoPlan(rawValue: raw), cached >= .standard {
             serverPlan = cached
+            cachedAccountID = account
             currentPlan = cached
             hasResolvedPlan = true
         }
@@ -204,6 +221,13 @@ final class SubscriptionStore: ObservableObject {
     private func performRefresh() async {
         let startedGeneration = generation
         await waitForIdentity()
+        // A plan remembered for another account is not this one's.
+        if let cachedAccountID, cachedAccountID != accountIDProvider(), startedGeneration == generation {
+            self.cachedAccountID = nil
+            serverPlan = nil
+            defaults.removeObject(forKey: Self.cachedServerPlanKey)
+            recomputePlan()
+        }
         isLoading = true
         defer { isLoading = false }
 
@@ -218,16 +242,53 @@ final class SubscriptionStore: ObservableObject {
             message = "プラン情報を読み込めませんでした。通信状況を確認して、もう一度お試しください。"
         }
         if paywallEnabled, let fetched = await serverPlanProvider(), startedGeneration == generation {
-            serverPlan = fetched
-            if fetched >= .standard {
-                defaults.set(fetched.rawValue, forKey: Self.cachedServerPlanKey)
-            } else {
-                defaults.removeObject(forKey: Self.cachedServerPlanKey)
-            }
-            recomputePlan()
+            acceptServerPlan(fetched)
         }
         if startedGeneration == generation { lastRefresh = Date() }
     }
+
+    private func acceptServerPlan(_ fetched: StudiquoPlan) {
+        serverPlan = fetched
+        if fetched >= .standard, let account = accountIDProvider() {
+            cachedAccountID = account
+            defaults.set(["account": account, "plan": fetched.rawValue], forKey: Self.cachedServerPlanKey)
+        } else {
+            cachedAccountID = nil
+            defaults.removeObject(forKey: Self.cachedServerPlanKey)
+        }
+        recomputePlan()
+    }
+
+    /// True while the app is waiting for the Worker to learn about a purchase.
+    @Published private(set) var isActivatingPlan = false
+    /// How long to wait between checks after a purchase; the webhook that
+    /// tells the Worker usually lands within seconds.
+    var activationDelays: [Duration] = [.seconds(2), .seconds(4), .seconds(8), .seconds(15), .seconds(30)]
+
+    /// Right after a purchase the app already knows the plan (RevenueCat), but
+    /// the Worker only learns of it through a webhook, and until then its AI
+    /// routes still answer 402. Ask again a few times until it catches up.
+    func confirmPlanOnServer() async {
+        guard paywallEnabled, purchasedPlan > (serverPlan ?? .free), !isActivatingPlan else { return }
+        isActivatingPlan = true
+        defer { isActivatingPlan = false }
+        let startedGeneration = generation
+        for delay in activationDelays {
+            try? await Task.sleep(for: delay)
+            guard startedGeneration == generation else { return }
+            if let fetched = await serverPlanProvider(), startedGeneration == generation {
+                acceptServerPlan(fetched)
+                if fetched >= purchasedPlan { return }
+            }
+        }
+    }
+
+    #if DEBUG
+    func setPurchasedPlanForTesting(_ plan: StudiquoPlan) {
+        purchasedPlan = plan
+        recomputePlan()
+    }
+    #endif
 
     /// Forgets the previous account's plan when the student signs out, so the
     /// next account on this device never inherits it.
@@ -235,6 +296,7 @@ final class SubscriptionStore: ObservableObject {
         generation += 1
         lastRefresh = nil
         serverPlan = nil
+        cachedAccountID = nil
         purchasedPlan = .free
         defaults.removeObject(forKey: Self.cachedServerPlanKey)
         recomputePlan()
@@ -259,6 +321,7 @@ final class SubscriptionStore: ObservableObject {
             guard !result.userCancelled else { return }
             apply(result.customerInfo)
             message = "\(purchasedPlan.title)プランが利用できるようになりました。"
+            Task { await self.confirmPlanOnServer() }
         } catch {
             message = error.localizedDescription
         }

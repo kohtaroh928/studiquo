@@ -92,6 +92,11 @@ struct SubscriptionPlansView: View {
                 .foregroundStyle(.secondary)
             Text(store.currentPlan.title)
                 .font(.largeTitle.bold())
+            if store.isActivatingPlan {
+                Label("購入内容をサーバーに反映しています…", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             if store.purchasedPlan != .free {
                 Text("購入内容はApp Storeからいつでも管理できます")
                     .font(.footnote)
