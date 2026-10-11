@@ -225,6 +225,9 @@ final class EditorSplitState: ObservableObject {
 }
 
 struct NoteEditorView: View {
+    /// 明暗表示ボタンをツールバーに出すか。今は非表示。将来、ユーザーがツールバーに追加できるオプションにする。
+    private static let showsDarkPageToggle = false
+
     @Bindable var notebook: Notebook
     @Binding var columnVisibility: NavigationSplitViewVisibility
     var onHome: () -> Void
@@ -1603,10 +1606,12 @@ struct NoteEditorView: View {
                 Label("ページ一覧", systemImage: "sidebar.left")
             }
 
-            Button {
-                usesDarkPageDisplay.toggle()
-            } label: {
-                Label("ページダーク表示", systemImage: usesDarkPageDisplay ? "sun.max" : "moon")
+            if Self.showsDarkPageToggle {
+                Button {
+                    usesDarkPageDisplay.toggle()
+                } label: {
+                    Label("ページダーク表示", systemImage: usesDarkPageDisplay ? "sun.max" : "moon")
+                }
             }
 
             Button {
@@ -1856,7 +1861,9 @@ struct NoteEditorView: View {
 
                 toolStripButton("テキスト", icon: "textformat", action: addTextElement)
                 toolStripButton("写真", icon: "photo") { showsImagePicker = true }
-                toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
+                if Self.showsDarkPageToggle {
+                    toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
+                }
                 Menu {
                     Toggle("直線補正", isOn: $isLineCorrectionEnabled)
                     Toggle("円・楕円補正", isOn: $isEllipseCorrectionEnabled)
