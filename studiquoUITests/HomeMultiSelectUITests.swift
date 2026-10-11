@@ -241,6 +241,52 @@ final class HomeMultiSelectUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["library-entry-Source note"].exists)
     }
 
+    func testSwipingAColumnFolderRowRevealsTheTrashButton() {
+        let app = launch(["--column-mode"])
+        let folder = folderSurface("Parent", in: app)
+        folder.swipeLeft()
+
+        let trash = app.buttons["library-folder-trash-Parent"]
+        XCTAssertTrue(trash.waitForExistence(timeout: 3), "カラム表示で左スワイプしてもゴミ箱ボタンが出ません")
+        trash.tap()
+
+        XCTAssertFalse(
+            app.descendants(matching: .any)["library-folder-Parent"].waitForExistence(timeout: 3),
+            "ゴミ箱へ送ったフォルダが残っています"
+        )
+    }
+
+    func testSwipingAColumnEntryRowRevealsTheTrashButton() {
+        let app = launch(["--column-mode"])
+        let entry = app.descendants(matching: .any)["library-entry-Drag me"].firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 15), "資料「Drag me」が表示されません")
+        entry.swipeLeft()
+
+        let trash = app.buttons["library-entry-trash-Drag me"]
+        XCTAssertTrue(trash.waitForExistence(timeout: 3), "カラム表示で資料を左スワイプしてもゴミ箱ボタンが出ません")
+        trash.tap()
+
+        XCTAssertFalse(
+            app.descendants(matching: .any)["library-entry-Drag me"].waitForExistence(timeout: 3),
+            "ゴミ箱へ送った資料が残っています"
+        )
+    }
+
+    func testLongPressingAFolderOffersMoveToTrash() {
+        let app = launch(["--icon-mode"])
+        let folder = folderSurface("Sibling", in: app)
+        folder.press(forDuration: 1.0)
+
+        let trash = app.buttons["ゴミ箱に移動"]
+        XCTAssertTrue(trash.waitForExistence(timeout: 3), "フォルダの長押しメニューに「ゴミ箱に移動」がありません")
+        trash.tap()
+
+        XCTAssertFalse(
+            app.descendants(matching: .any)["library-folder-Sibling"].waitForExistence(timeout: 3),
+            "ゴミ箱へ送ったフォルダが残っています"
+        )
+    }
+
     func testVerticalScrollingDoesNotOpenAFolderRow() {
         let app = launch()
         let folder = folderSurface("Sibling", in: app)

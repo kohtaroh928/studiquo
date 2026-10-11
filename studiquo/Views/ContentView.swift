@@ -3890,6 +3890,10 @@ struct ContentView: View {
                 } label: {
                     Label("名前を変更", systemImage: "pencil")
                 }
+                Divider()
+                Button(role: .destructive) { trashFolder(target) } label: {
+                    Label("ゴミ箱に移動", systemImage: "trash")
+                }
             }
         }
         .modifier(selectable(folderPath: folder, layout: .row, leadingInset: 0))
@@ -4519,6 +4523,7 @@ struct ContentView: View {
             let columnWidth: CGFloat = horizontalSizeClass == .compact
                 ? max(geometry.size.width - 56, 220)
                 : 280
+            let contentFitsWidth = CGFloat(chain.count + 1) * (columnWidth + 1) <= geometry.size.width
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
@@ -4535,6 +4540,13 @@ struct ContentView: View {
                         }
                     }
                 }
+                // A horizontal ScrollView claims every sideways drag, so rows
+                // could never be swiped left to reveal the trash button. While
+                // the columns all fit on screen there is nothing to scroll to,
+                // so it steps aside; once the chain outgrows the screen
+                // (a deep chain, or iPhone) scrolling to the hidden columns
+                // wins and the row swipe is unavailable.
+                .scrollDisabled(contentFitsWidth)
                 .onChange(of: chain.count) { _, newCount in
                     withAnimation { proxy.scrollTo(newCount, anchor: .trailing) }
                 }
@@ -4554,8 +4566,17 @@ struct ContentView: View {
                 switch item {
                 case .folder(let path):
                     columnFolderRow(path, highlightedPath: highlightedPath)
+                        .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: path) != nil, identifier: "library-folder-trash-\(path)") {
+                            if let target = folderObject(forLegacyPath: path) {
+                                trashFolder(target)
+                            }
+                        })
                 case .entry(let entry):
                     columnEntryRow(entry)
+                        .modifier(SwipeToTrashRow(enabled: !entry.isTrashed, identifier: "library-entry-trash-\(entry.title)") {
+                            trash(entry)
+                            try? modelContext.save()
+                        })
                 }
             }
             Rectangle()
@@ -4808,10 +4829,7 @@ struct ContentView: View {
                             }
                             .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: folder) != nil, identifier: "library-folder-trash-\(folder)") {
                                 if let target = folderObject(forLegacyPath: folder) {
-                                    performLibraryRemoval {
-                                        removeFolderMovingContentsToTrash(target)
-                                        try? modelContext.save()
-                                    }
+                                    trashFolder(target)
                                 }
                             })
     }
@@ -4859,6 +4877,10 @@ struct ContentView: View {
                             } label: {
                                 Label("名前を変更", systemImage: "pencil")
                             }
+                            Divider()
+                            Button(role: .destructive) { trashFolder(target) } label: {
+                                Label("ゴミ箱に移動", systemImage: "trash")
+                            }
                         }
                     }
                     .modifier(selectable(folderPath: folder, layout: .tile))
@@ -4893,7 +4915,7 @@ struct ContentView: View {
     }
 
     private func columnFolderRow(_ path: String, highlightedPath: String?) -> some View {
-                Button { selectedFolder = path } label: {
+                Button { if !SwipeToTrashRow.justSwiped { selectedFolder = path } } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "folder.fill").foregroundStyle(.tint)
                         Text(folderDisplayName(path)).lineLimit(1)
@@ -4925,13 +4947,17 @@ struct ContentView: View {
                         } label: {
                             Label("名前を変更", systemImage: "pencil")
                         }
+                        Divider()
+                        Button(role: .destructive) { trashFolder(folder) } label: {
+                            Label("ゴミ箱に移動", systemImage: "trash")
+                        }
                     }
                 }
                 .modifier(selectable(folderPath: path, layout: .row, open: { selectedFolder = path }))
     }
 
     private func columnEntryRow(_ entry: HomeEntry) -> some View {
-                Button { open(entry) } label: {
+                Button { if !SwipeToTrashRow.justSwiped { open(entry) } } label: {
                     HStack(spacing: 10) {
                         if case .notebook(let notebook) = entry, notebook.containsPDF {
                             NotebookCoverView(notebook: notebook, size: CGSize(width: 28, height: 36))
@@ -6435,6 +6461,12 @@ struct ContentView: View {
 struct SwipeToTrashRow: ViewModifier {
     static let revealWidth: CGFloat = 88
 
+    /// When a row last saw sideways movement. A Button inside a swiped row
+    /// still gets its tap when the finger lifts, so rows built on a Button
+    /// check `justSwiped` before acting (a swipe used to open the note).
+    @MainActor static var lastSwipeActivity = Date.distantPast
+    @MainActor static var justSwiped: Bool { Date().timeIntervalSince(lastSwipeActivity) < 0.4 }
+
     /// Row offset while dragging: continues from where the drag began, so a
     /// row left open does not jump back to the closed position.
     static func offset(start: CGFloat, translation: CGFloat) -> CGFloat {
@@ -6481,6 +6513,7 @@ struct SwipeToTrashRow: ViewModifier {
                             guard abs(value.translation.width) > abs(value.translation.height) else { return }
                             let start = dragStartOffset ?? offset
                             dragStartOffset = start
+                            Self.lastSwipeActivity = Date()
                             offset = Self.offset(start: start, translation: value.translation.width)
                         }
                         .onEnded { _ in
@@ -6488,6 +6521,7 @@ struct SwipeToTrashRow: ViewModifier {
                             withAnimation(.easeOut(duration: 0.15)) {
                                 offset = Self.settledOffset(offset)
                             }
+                            Self.lastSwipeActivity = Date()
                         }
                 )
                 .clipped()
@@ -7166,6 +7200,15 @@ extension ContentView {
         }
         homeSelection.end()
         try? modelContext.save()
+    }
+
+    /// Long-press menu and swipe action for a single folder: same result as
+    /// deleting it from the selection bar.
+    private func trashFolder(_ folder: Folder) {
+        performLibraryRemoval {
+            removeFolderMovingContentsToTrash(folder)
+            try? modelContext.save()
+        }
     }
 
     /// Folders have no trash of their own: deleting one sends everything
