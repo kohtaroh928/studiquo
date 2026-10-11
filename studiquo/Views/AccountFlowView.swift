@@ -22,6 +22,8 @@ enum AccountFlowLogic {
 struct AccountGateView: View {
     @StateObject private var authentication = AuthenticationStore()
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AccountDeletionWorkflow.pendingLocalDeletionKey) private var cleanupPending = false
     @State private var cleanupError = ""
 
@@ -48,7 +50,7 @@ struct AccountGateView: View {
             case .onboarding:
                 OnboardingView()
             case .authenticated:
-                ContentView()
+                ContentView().modifier(PaywallGate())
             }
             }
         }
@@ -57,6 +59,24 @@ struct AccountGateView: View {
         .task(id: authentication.state) {
             guard !cleanupPending, authentication.state == .authenticated else { return }
             await PushNotificationRegistration.refreshIfAuthorized()
+        }
+        // The Worker can only answer "which plan?" once there is a session.
+        .task(id: authentication.state) {
+            guard !cleanupPending else { return }
+            guard authentication.state == .authenticated else {
+                subscriptionStore.resetForSignOut()
+                return
+            }
+            // The store waits for RevenueCat to know who this is before asking
+            // what they own, on every path (launch, sign-in, foreground).
+            subscriptionStore.waitForIdentity = { await authentication.waitForRevenueCatIdentity() }
+            await subscriptionStore.refresh()
+        }
+        // A trial that lapsed, or a purchase made on another device, shows up
+        // when the app comes back to the front.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, !cleanupPending, authentication.state == .authenticated else { return }
+            Task { await subscriptionStore.refreshIfStale() }
         }
         .task(id: cleanupPending) {
             if cleanupPending { await finishLocalCleanup() }

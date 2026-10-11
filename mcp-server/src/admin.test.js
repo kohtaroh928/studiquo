@@ -397,3 +397,38 @@ test("every /api/admin/* route except RevenueCat's webhook needs a verified Acce
   const webhook = await worker.fetch(request("/api/admin/revenuecat-webhook", { method: "POST", authorization: "wrong", body: { event: {} } }), env, noopCtx);
   assert.equal(webhook.status, 401);
 });
+
+// --- PRODUCT_CHANGE: which product the subscriber is on afterwards ----------
+
+async function subscriberProduct(env, appUserId) {
+  const row = await env.ADMIN_DB.prepare("SELECT product_id FROM subscribers WHERE app_user_id = ?").bind(appUserId).first();
+  return row?.product_id;
+}
+
+test("an upgrade PRODUCT_CHANGE moves the subscriber to the new product at once", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ product_id: "com.yabuko.studiquo.standard.yearly" }));
+  await sendWebhook(env, purchaseEvent({
+    type: "PRODUCT_CHANGE",
+    product_id: "com.yabuko.studiquo.standard.yearly",
+    new_product_id: "com.yabuko.studiquo.plus.yearly",
+  }));
+  assert.equal(await subscriberProduct(env, "user-1"), "com.yabuko.studiquo.plus.yearly");
+});
+
+test("a downgrade PRODUCT_CHANGE keeps the current product until the period ends", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ product_id: "com.yabuko.studiquo.pro.yearly" }));
+  await sendWebhook(env, purchaseEvent({
+    type: "PRODUCT_CHANGE",
+    product_id: "com.yabuko.studiquo.pro.yearly",
+    new_product_id: "com.yabuko.studiquo.standard.yearly",
+  }));
+  assert.equal(await subscriberProduct(env, "user-1"), "com.yabuko.studiquo.pro.yearly");
+});
+
+test("a PRODUCT_CHANGE without new_product_id behaves as before", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ type: "PRODUCT_CHANGE", product_id: "com.yabuko.studiquo.plus.monthly" }));
+  assert.equal(await subscriberProduct(env, "user-1"), "com.yabuko.studiquo.plus.monthly");
+});

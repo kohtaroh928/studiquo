@@ -216,6 +216,8 @@ struct StudiquoApp: App {
                     StartupUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test") {
                     LibraryDropUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--paywall-ui-test") {
+                    PaywallUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test") {
                     FriendChatUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test") {
@@ -246,6 +248,7 @@ struct StudiquoApp: App {
                 #if DEBUG
                 guard !ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--startup-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--paywall-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--split-source-picker-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test"),
@@ -712,6 +715,29 @@ private struct StartupUITestRoot: View {
             }
         }
         .task { loader.start() }
+    }
+}
+
+/// DEBUG-only: shows the blocking paywall on its own, with a paywall-enabled
+/// store and a throwaway keychain service, so the screen (and its exits) can
+/// be looked at without signing in or any App Store products.
+private struct PaywallUITestRoot: View {
+    @StateObject private var authentication = AuthenticationStore(service: "com.yabuko.studiquo.paywall-ui-tests")
+    @StateObject private var subscriptionStore = SubscriptionStore(
+        automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { .free }
+    )
+    private let container = try? ModelContainer(
+        for: studiquoSchema,
+        configurations: ModelConfiguration(schema: studiquoSchema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+    )
+
+    var body: some View {
+        if let container {
+            SubscriptionPlansView(isBlocking: true)
+                .modelContainer(container)
+                .environmentObject(authentication)
+                .environmentObject(subscriptionStore)
+        }
     }
 }
 
