@@ -843,3 +843,20 @@ test("marking tells the student in Japanese — not Google's English text — wh
     globalThis.fetch = originalFetch;
   }
 });
+
+test("a free-plan account is refused every AI route with 402 before any upstream call", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstreamCalls = 0;
+  globalThis.fetch = async () => { upstreamCalls += 1; return new Response("{}"); };
+  try {
+    for (const path of ["/api/ai/chat", "/api/ai/rubric", "/api/ai/grade", "/api/ai/review"]) {
+      const request = new Request(`https://example.com${path}`, { method: "POST", body: "{}" });
+      const response = await handleAI(new URL(request.url), request, environment(), "device", executionContext(), undefined, "free");
+      assert.equal(response.status, 402, path);
+      assert.equal((await response.json()).code, "subscription_required");
+    }
+    assert.equal(upstreamCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

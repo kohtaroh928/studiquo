@@ -6,13 +6,19 @@ struct SubscriptionPlansView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showsTermsOfUse = false
     @State private var showsPrivacyPolicy = false
+    /// Presented by the paywall gate: no way to dismiss it without a plan.
+    var isBlocking = false
+
+    init(isBlocking: Bool = false) {
+        self.isBlocking = isBlocking
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
                     currentPlanHeader
-                    planCard(plan: .standard, subtitle: "ずっと無料", features: standardFeatures)
+                    planCard(plan: .standard, subtitle: store.paywallEnabled ? "学習の基本プラン" : "ずっと無料", features: standardFeatures)
                     planCard(plan: .plus, subtitle: "学習をもっと深く", features: plusFeatures)
                     planCard(plan: .pro, subtitle: "難関課題・研究に", features: proFeatures)
 
@@ -42,8 +48,10 @@ struct SubscriptionPlansView: View {
             .navigationTitle("プラン")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完了") { dismiss() }
+                if !isBlocking {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完了") { dismiss() }
+                    }
                 }
             }
             .overlay {
@@ -82,7 +90,7 @@ struct SubscriptionPlansView: View {
                 .foregroundStyle(.secondary)
             Text(store.currentPlan.title)
                 .font(.largeTitle.bold())
-            if store.currentPlan != .standard {
+            if store.purchasedPlan != .free {
                 Text("購入内容はApp Storeからいつでも管理できます")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -134,7 +142,7 @@ struct SubscriptionPlansView: View {
                     .foregroundStyle(.primary, Color.accentColor)
             }
 
-            if plan == .standard {
+            if plan == .standard && !store.paywallEnabled {
                 Text("無料")
                     .font(.headline)
             } else if store.packages(for: plan).isEmpty {
@@ -162,7 +170,7 @@ struct SubscriptionPlansView: View {
             Task { await store.purchase(package) }
         } label: {
             HStack {
-                Text(isYearly ? "年額" : "月額")
+                Text(Self.periodLabel(for: package, isYearly: isYearly))
                 Spacer()
                 Text(package.storeProduct.localizedPriceString)
                 Text(isYearly ? "／年" : "／月")
@@ -172,6 +180,38 @@ struct SubscriptionPlansView: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.borderedProminent)
-        .disabled(store.isPurchasing || store.currentPlan == plan)
+        .disabled(store.isPurchasing || store.purchasedPlan == plan)
+    }
+
+    /// "7日間無料のあと 年額" when the App Store product carries a free-trial
+    /// introductory offer the student is still eligible for; otherwise
+    /// "年額"/"月額". The trial itself is configured in App Store Connect.
+    private static func periodLabel(for package: Package, isYearly: Bool) -> String {
+        let base = isYearly ? "年額" : "月額"
+        guard let offer = package.storeProduct.introductoryDiscount, offer.paymentMode == .freeTrial else { return base }
+        let period = offer.subscriptionPeriod
+        let days: Int = switch period.unit {
+        case .day: period.value
+        case .week: period.value * 7
+        case .month: period.value * 30
+        case .year: period.value * 365
+        @unknown default: period.value
+        }
+        return "\(days)日間無料のあと \(base)"
+    }
+}
+
+/// Blocks the app behind the plans screen when the paywall is on and the
+/// account has no plan. Never shows while `PaywallConfiguration.isEnabled`
+/// is false, or while the plan is still unknown (offline launch).
+struct PaywallGate: ViewModifier {
+    @EnvironmentObject private var store: SubscriptionStore
+
+    func body(content: Content) -> some View {
+        content.fullScreenCover(isPresented: .constant(store.requiresSubscription)) {
+            SubscriptionPlansView(isBlocking: true)
+                .environmentObject(store)
+                .interactiveDismissDisabled()
+        }
     }
 }

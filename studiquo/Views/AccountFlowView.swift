@@ -22,6 +22,7 @@ enum AccountFlowLogic {
 struct AccountGateView: View {
     @StateObject private var authentication = AuthenticationStore()
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @AppStorage(AccountDeletionWorkflow.pendingLocalDeletionKey) private var cleanupPending = false
     @State private var cleanupError = ""
 
@@ -48,7 +49,7 @@ struct AccountGateView: View {
             case .onboarding:
                 OnboardingView()
             case .authenticated:
-                ContentView()
+                ContentView().modifier(PaywallGate())
             }
             }
         }
@@ -57,6 +58,11 @@ struct AccountGateView: View {
         .task(id: authentication.state) {
             guard !cleanupPending, authentication.state == .authenticated else { return }
             await PushNotificationRegistration.refreshIfAuthorized()
+        }
+        // The Worker can only answer "which plan?" once there is a session.
+        .task(id: authentication.state) {
+            guard !cleanupPending, authentication.state == .authenticated else { return }
+            await subscriptionStore.refresh()
         }
         .task(id: cleanupPending) {
             if cleanupPending { await finishLocalCleanup() }

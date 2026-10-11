@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import * as z from "zod/v4";
 import { handleAI } from "./ai.js";
 import { aiPrivacyRejection } from "./ai-privacy.js";
-import { getPlan } from "./entitlements.js";
+import { getPlan, paywallEnabled } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys } from "./passkeys.js";
@@ -435,6 +435,14 @@ export default {
       if (url.pathname === "/api/actions" && request.method === "DELETE") {
         await env.STUDIQUO_DATA.delete(`actions:${key}`);
         return json({ cleared: true });
+      }
+
+      // The plan the app should act on. The app can see purchases through
+      // RevenueCat but not the server-only legacy-account grant, so it asks
+      // here; `paywallRequired` stays false until PAYWALL_ENABLED is set.
+      if (url.pathname === "/api/plan" && request.method === "GET") {
+        const plan = session ? await getPlan(env, session.sub) : "standard";
+        return json({ plan, paywallRequired: paywallEnabled(env) });
       }
 
       // AI proxy (Gemini/Anthropic/OpenAI, gated and rate-limited by plan).

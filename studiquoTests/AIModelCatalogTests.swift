@@ -27,8 +27,12 @@ final class AIModelCatalogTests: XCTestCase {
         XCTAssertTrue(AIModelCatalog.isAvailable(.claudeOpus, for: .pro))
     }
 
+    func testNoModelIsAvailableWithoutAPlan() {
+        XCTAssertTrue(AIModelCatalog.availableModels(for: .free).isEmpty)
+    }
+
     func testDefaultModelIsAlwaysAvailableOnEveryPlan() {
-        for plan in StudiquoPlan.allCases {
+        for plan in StudiquoPlan.allCases where plan >= .standard {
             XCTAssertTrue(AIModelCatalog.isAvailable(AIModelCatalog.defaultModel, for: plan))
         }
     }
