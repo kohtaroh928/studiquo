@@ -25,20 +25,34 @@ export class RateCounter extends DurableObject {
    * exact one, same as the KV version was, just without its burst-at-the
    * -boundary quirk.
    */
-  async bump(limit, windowSeconds) {
+  async bump(limit, windowSeconds, amount = 1) {
     const now = Date.now();
     const stored = await this.ctx.storage.get("state");
     const state = stored && now < stored.windowEndsAt
       ? stored
       : { count: 0, windowEndsAt: now + windowSeconds * 1000 };
-    if (state.count >= limit) return false;
-    state.count += 1;
+    // `amount` lets one call cost more than one unit (AI credits, ai-credits.js).
+    // The default keeps every existing caller counting calls.
+    if (state.count + amount > limit) return false;
+    state.count += amount;
     await this.ctx.storage.put("state", state);
     // Lets this object's storage be reclaimed once its window is long
     // over, instead of one object per distinct key (every user × every
     // counted action) persisting forever.
     await this.ctx.storage.setAlarm(state.windowEndsAt + windowSeconds * 1000);
     return true;
+  }
+
+  /**
+   * Gives back `amount` that an earlier `bump` took, for when a later check
+   * in the same request refused it. Never goes below zero, and does nothing
+   * once the window it was taken in has ended.
+   */
+  async release(amount = 1) {
+    const stored = await this.ctx.storage.get("state");
+    if (!stored || Date.now() >= stored.windowEndsAt) return;
+    stored.count = Math.max(0, stored.count - amount);
+    await this.ctx.storage.put("state", stored);
   }
 
   // Failed-login backoff (login-throttle.js owns the policy and the state
