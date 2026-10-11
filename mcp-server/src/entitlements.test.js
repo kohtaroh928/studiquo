@@ -186,3 +186,16 @@ test("paywall on: plus outranks standard and a legacy grant never lowers a subsc
   });
   assert.equal(await getPlan(env, "u"), "plus");
 });
+
+test("a purchase under the pre-link identity still counts once the session is canonical", async () => {
+  const env = fakePaywallDB({
+    subscribers: [{ app_user_id: "apple-sub", status: "active", product_id: STANDARD_YEARLY, expires_at: FAR_FUTURE }],
+  });
+  assert.equal(await getPlan(env, ["google:canonical", "apple-sub"]), "standard");
+  assert.equal(await getPlan(env, ["google:canonical", undefined]), "free");
+});
+
+test("a legacy grant under the pre-link identity still counts", async () => {
+  const env = fakePaywallDB({ legacy: ["apple-sub"] });
+  assert.equal(await getPlan(env, ["google:canonical", "apple-sub"]), "standard");
+});

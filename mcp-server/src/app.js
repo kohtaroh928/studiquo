@@ -441,7 +441,7 @@ export default {
       // RevenueCat but not the server-only legacy-account grant, so it asks
       // here; `paywallRequired` stays false until PAYWALL_ENABLED is set.
       if (url.pathname === "/api/plan" && request.method === "GET") {
-        const plan = session ? await getPlan(env, session.sub) : "standard";
+        const plan = session ? await getPlan(env, [session.sub, session.originalSub]) : "standard";
         return json({ plan, paywallRequired: paywallEnabled(env) });
       }
 
@@ -455,7 +455,7 @@ export default {
       if (url.pathname.startsWith("/api/ai/")) {
         const privacyFailure = await aiPrivacyRejection(request, env);
         if (privacyFailure) return privacyFailure;
-        const plan = session ? await getPlan(env, session.sub) : "standard";
+        const plan = session ? await getPlan(env, [session.sub, session.originalSub]) : "standard";
         const ai = await handleAI(url, request, env, key, ctx, session, plan);
         if (ai) return ai;
       }

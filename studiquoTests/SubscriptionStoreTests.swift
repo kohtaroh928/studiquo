@@ -97,4 +97,13 @@ final class SubscriptionStoreTests: XCTestCase {
         XCTAssertNil(plan(#"{"plan":"platinum"}"#))
         XCTAssertNil(plan("not json"))
     }
+
+    func testSignOutForgetsThePreviousAccountsPlan() async {
+        let store = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { .standard })
+        await store.restorePurchases { throw TestError.unavailable }
+        store.resetForSignOut()
+        XCTAssertEqual(store.currentPlan, .free)
+        XCTAssertFalse(store.hasResolvedPlan)
+        XCTAssertFalse(store.requiresSubscription)
+    }
 }

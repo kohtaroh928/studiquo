@@ -61,7 +61,11 @@ struct AccountGateView: View {
         }
         // The Worker can only answer "which plan?" once there is a session.
         .task(id: authentication.state) {
-            guard !cleanupPending, authentication.state == .authenticated else { return }
+            guard !cleanupPending else { return }
+            guard authentication.state == .authenticated else {
+                subscriptionStore.resetForSignOut()
+                return
+            }
             await subscriptionStore.refresh()
         }
         .task(id: cleanupPending) {
