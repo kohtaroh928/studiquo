@@ -151,4 +151,26 @@ final class SubscriptionStoreTests: XCTestCase {
         XCTAssertEqual(store.currentPlan, .standard)
         XCTAssertFalse(store.requiresSubscription)
     }
+
+    func testARefreshThatFinishesAfterSignOutWritesNothing() async {
+        let defaults = isolatedDefaults()
+        var store: SubscriptionStore!
+        store = SubscriptionStore(
+            automaticallyRefresh: false, paywallEnabled: true,
+            serverPlanProvider: { .standard }, defaults: defaults
+        )
+        // Sign out while the lookup is waiting for the identity.
+        store.waitForIdentity = { @MainActor in store.resetForSignOut() }
+        await store.refresh()
+        XCTAssertNil(defaults.object(forKey: SubscriptionStore.cachedServerPlanKey))
+        XCTAssertFalse(store.hasResolvedPlan)
+        XCTAssertFalse(store.requiresSubscription)
+    }
+
+    func testRefreshIfStaleDoesNothingWhileThePaywallIsOff() async {
+        var asked = false
+        let store = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: false, serverPlanProvider: { asked = true; return .free })
+        await store.refreshIfStale()
+        XCTAssertFalse(asked)
+    }
 }

@@ -169,19 +169,55 @@ final class SubscriptionStore: ObservableObject {
         }
     }
 
+    /// Set by the account gate: finishes once RevenueCat knows which account
+    /// this is (bounded — see `AuthenticationStore.waitForRevenueCatIdentity`).
+    /// Reading CustomerInfo earlier would return the anonymous user's.
+    var waitForIdentity: () async -> Void = {}
+
+    private var refreshTask: Task<Void, Never>?
+    private var lastRefresh: Date?
+    /// Bumped by `resetForSignOut`; a refresh that started under an older
+    /// value belongs to a previous account and must not write anything.
+    private var generation = 0
+
+    /// Every plan lookup goes through here: one at a time (a caller arriving
+    /// mid-flight just waits for the running one), after the identity is known.
     func refresh() async {
+        if let running = refreshTask {
+            await running.value
+            return
+        }
+        let task = Task { await self.performRefresh() }
+        refreshTask = task
+        await task.value
+        refreshTask = nil
+    }
+
+    /// For the app coming back to the front: skips the lookup if one finished
+    /// recently, and does nothing at all while the paywall is off.
+    func refreshIfStale(minimumInterval: TimeInterval = 60) async {
+        guard paywallEnabled else { return }
+        if let last = lastRefresh, Date().timeIntervalSince(last) < minimumInterval { return }
+        await refresh()
+    }
+
+    private func performRefresh() async {
+        let startedGeneration = generation
+        await waitForIdentity()
         isLoading = true
         defer { isLoading = false }
 
         do {
             let offerings = try await Purchases.shared.offerings()
-            packages = (offerings.current?.availablePackages ?? []).sorted(by: Self.packageSort)
             let info = try await Purchases.shared.customerInfo()
+            guard startedGeneration == generation else { return }
+            packages = (offerings.current?.availablePackages ?? []).sorted(by: Self.packageSort)
             apply(info)
         } catch {
+            guard startedGeneration == generation else { return }
             message = "プラン情報を読み込めませんでした。通信状況を確認して、もう一度お試しください。"
         }
-        if paywallEnabled, let fetched = await serverPlanProvider() {
+        if paywallEnabled, let fetched = await serverPlanProvider(), startedGeneration == generation {
             serverPlan = fetched
             if fetched >= .standard {
                 defaults.set(fetched.rawValue, forKey: Self.cachedServerPlanKey)
@@ -190,11 +226,14 @@ final class SubscriptionStore: ObservableObject {
             }
             recomputePlan()
         }
+        if startedGeneration == generation { lastRefresh = Date() }
     }
 
     /// Forgets the previous account's plan when the student signs out, so the
     /// next account on this device never inherits it.
     func resetForSignOut() {
+        generation += 1
+        lastRefresh = nil
         serverPlan = nil
         purchasedPlan = .free
         defaults.removeObject(forKey: Self.cachedServerPlanKey)

@@ -513,8 +513,21 @@ final class AuthenticationStore: ObservableObject {
     /// under this account.
     private var revenueCatLogin: Task<Void, Never>?
 
-    func waitForRevenueCatIdentity() async {
-        await revenueCatLogin?.value
+    /// Waits for the login, but never longer than `timeout`: a RevenueCat
+    /// that does not answer must not hold the plan lookup (and with it a
+    /// grandfathered student's entitlement) forever.
+    func waitForRevenueCatIdentity(timeout: Duration = .seconds(15)) async {
+        guard let login = revenueCatLogin else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            var resumed = false
+            let finish = {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume()
+            }
+            Task { await login.value; finish() }
+            Task { try? await Task.sleep(for: timeout); finish() }
+        }
     }
 
     private func passkeyIdentity() -> PasskeyIdentity? { load(account: passkeyIdentityAccount) }
