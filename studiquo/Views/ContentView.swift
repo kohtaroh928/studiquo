@@ -1785,6 +1785,9 @@ struct PrivacyPolicyView: View {
 }
 
 struct ContentView: View {
+    /// ホームの「単語帳を読み込む（Quizlet・CSV）」メニュー項目を出すか。今は非表示。取り込み処理（importFlashcards）は残してあり、将来のアップデートで再び出す。
+    private static let showsVocabularyImportMenu = false
+
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var allNotebooks: [Notebook]
@@ -5274,10 +5277,12 @@ struct ContentView: View {
             } label: {
                 Label("ファイルから読み込む", systemImage: "folder.badge.plus")
             }
-            Button {
-                presentFileImporter()
-            } label: {
-                Label("単語帳を読み込む（Quizlet・CSV）", systemImage: "rectangle.stack.badge.plus")
+            if Self.showsVocabularyImportMenu {
+                Button {
+                    presentFileImporter()
+                } label: {
+                    Label("単語帳を読み込む（Quizlet・CSV）", systemImage: "rectangle.stack.badge.plus")
+                }
             }
             Divider()
             Button {
