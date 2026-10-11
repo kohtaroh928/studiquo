@@ -348,12 +348,6 @@ struct NoteEditorView: View {
     @AppStorage("drawingColor") private var drawingColorHex = "#1C1C1E"
     @AppStorage("drawingWidth") private var drawingWidth = 4.0
     @AppStorage("eraserWidth") private var eraserWidth = 24.0
-    @AppStorage("lineCorrectionEnabled") private var isLineCorrectionEnabled = true
-    @AppStorage("ellipseCorrectionEnabled") private var isEllipseCorrectionEnabled = true
-    @AppStorage("rectangleCorrectionEnabled") private var isRectangleCorrectionEnabled = true
-    @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
-    @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
-    @AppStorage("curveCorrectionEnabled") private var isCurveCorrectionEnabled = true
     /// Armed shape kind ("" for none) for the drag-to-create shape tool.
     /// Shared via the same `@AppStorage` key with `PageCanvasContainer`, the
     /// same pattern `drawingToolRaw` already uses to reach the active page's
@@ -1848,23 +1842,6 @@ struct NoteEditorView: View {
                 if Self.showsDarkPageToggle {
                     toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
                 }
-                Menu {
-                    Toggle("直線補正", isOn: $isLineCorrectionEnabled)
-                    Toggle("円・楕円補正", isOn: $isEllipseCorrectionEnabled)
-                    Toggle("正方形・長方形補正", isOn: $isRectangleCorrectionEnabled)
-                    Toggle("三角形補正", isOn: $isTriangleCorrectionEnabled)
-                    Toggle("二次関数補正", isOn: $isParabolaCorrectionEnabled)
-                    Toggle("曲線補正", isOn: $isCurveCorrectionEnabled)
-                } label: {
-                    toolStripLabel(
-                        "補正設定",
-                        icon: "wand.and.stars",
-                        isActive: isLineCorrectionEnabled || isEllipseCorrectionEnabled
-                            || isRectangleCorrectionEnabled || isTriangleCorrectionEnabled
-                            || isParabolaCorrectionEnabled || isCurveCorrectionEnabled
-                    )
-                }
-
                 toolStripButton(
                     "用紙",
                     icon: "doc.text.image",

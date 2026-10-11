@@ -667,6 +667,12 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.system.rawValue
     @AppStorage("studyTimeTrackingEnabled") private var studyTimeTrackingEnabled = true
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
+    @AppStorage("lineCorrectionEnabled") private var isLineCorrectionEnabled = true
+    @AppStorage("ellipseCorrectionEnabled") private var isEllipseCorrectionEnabled = true
+    @AppStorage("rectangleCorrectionEnabled") private var isRectangleCorrectionEnabled = true
+    @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
+    @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
+    @AppStorage("curveCorrectionEnabled") private var isCurveCorrectionEnabled = true
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = false
     @AppStorage(ErrorReportSettings.enabledKey) private var autoErrorReportingEnabled = false
     @AppStorage("pdfPasswordRemovalOfferDisabled") private var pdfPasswordRemovalOfferDisabled = false
@@ -743,6 +749,19 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
                 Text("描画")
             } footer: {
                 Text("描画バーの並びを左利き向けに反転します。")
+            }
+
+            Section {
+                Toggle("直線補正", isOn: $isLineCorrectionEnabled)
+                Toggle("円・楕円補正", isOn: $isEllipseCorrectionEnabled)
+                Toggle("正方形・長方形補正", isOn: $isRectangleCorrectionEnabled)
+                Toggle("三角形補正", isOn: $isTriangleCorrectionEnabled)
+                Toggle("二次関数補正", isOn: $isParabolaCorrectionEnabled)
+                Toggle("曲線補正", isOn: $isCurveCorrectionEnabled)
+            } header: {
+                Text("ペンの補正")
+            } footer: {
+                Text("ペンで描いたあと、少し止めると線や図形を整えます。種類ごとにオン・オフできます。")
             }
 
             Section {
