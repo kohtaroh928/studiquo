@@ -565,6 +565,20 @@ private struct NoteAIChatUITestRoot: View {
     init() {
         AIDataDisclosure.acknowledge()
         AI.provider = UITestAIProvider()
+        // Stored settings (toolbar layout, tool choice, ...) would carry one
+        // UI test's state into the next, so start from nothing. The floating
+        // chat's frame is the one thing kept: a test that checks it survives
+        // a relaunch needs it, and `--note-ai-chat-reset-frame` drops it for
+        // a test that checks the first-launch placement.
+        let defaults = UserDefaults.standard
+        let frameKeys = ["centerX", "centerY", "width", "height"].map { "temporaryAIChat.\($0)" }
+        let keptFrame = ProcessInfo.processInfo.arguments.contains("--note-ai-chat-reset-frame")
+            ? [:]
+            : frameKeys.reduce(into: [String: Any]()) { result, key in
+                if let value = defaults.object(forKey: key) { result[key] = value }
+            }
+        if let domain = Bundle.main.bundleIdentifier { defaults.removePersistentDomain(forName: domain) }
+        for (key, value) in keptFrame { defaults.set(value, forKey: key) }
         let store = FriendStore(
             defaults: UserDefaults(suiteName: "NoteAIChatUITest-\(UUID().uuidString)")!,
             autoRefresh: false

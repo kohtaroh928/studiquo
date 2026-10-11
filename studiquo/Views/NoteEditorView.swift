@@ -284,6 +284,18 @@ struct NoteEditorView: View {
     @State private var primaryTemporaryChatMaterialPageIndex = 0
     @State private var secondaryTemporaryChatMaterialPageIndex = 0
     @State private var showsTemporaryAIChat = false
+    /// The pane the AI chat currently stands in for. Like Photo Study, the
+    /// pane's own content stays in state underneath, so closing the chat
+    /// brings it back untouched. Floating `showsTemporaryAIChat` is the opt-in
+    /// alternative; the two are never shown together.
+    @State private var aiSwapPane: ActivePane?
+    /// Last floating-panel frame as fractions of the editor, so the panel
+    /// reopens where it was left, also after the editor is closed and reopened.
+    /// Negative means nothing saved yet.
+    @AppStorage("temporaryAIChat.centerX") private var savedAIChatCenterX = -1.0
+    @AppStorage("temporaryAIChat.centerY") private var savedAIChatCenterY = -1.0
+    @AppStorage("temporaryAIChat.width") private var savedAIChatWidth = -1.0
+    @AppStorage("temporaryAIChat.height") private var savedAIChatHeight = -1.0
     /// Regions cut out with the snip tool, waiting to be dragged into a chat.
     @State private var snippetTray: [PageSnippet] = []
     @State private var snippetOriginPanes: [UUID: ActivePane] = [:]
@@ -685,6 +697,19 @@ struct NoteEditorView: View {
                     }
                     .contentShape(Rectangle())
                     .gesture(temporaryAIChatDragGesture(in: size, panelSize: panelSize))
+                    if splitMode != .single {
+                        Button {
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                swapInAIChat()
+                            }
+                        } label: {
+                            Image(systemName: "rectangle.lefthalf.inset.filled.arrow.left")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("ペインに入れ替え")
+                        .accessibilityIdentifier("note-ai-floating-to-pane")
+                    }
                     Button {
                         withAnimation(.easeOut(duration: 0.18)) {
                             showsTemporaryAIChat = false
@@ -717,6 +742,8 @@ struct NoteEditorView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
         .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("note-ai-floating-panel")
         .position(resolvedTemporaryAIChatCenter(in: size, panelSize: panelSize))
         .transaction { transaction in
             if temporaryAIChatDragOrigin != nil || temporaryAIChatResizeOrigin != nil {
@@ -725,6 +752,7 @@ struct NoteEditorView: View {
         }
         .transition(.move(edge: .trailing).combined(with: .opacity))
         .onAppear {
+            restoreTemporaryAIChatFrame(in: size)
             if temporaryAIChatCenter == nil {
                 temporaryAIChatCenter = clampedTemporaryAIChatCenter(
                     CGPoint(x: size.width - panelSize.width / 2 - 18, y: size.height - panelSize.height / 2 - 18),
@@ -733,6 +761,36 @@ struct NoteEditorView: View {
                 )
             }
         }
+    }
+
+    /// Fills in the frame left by the previous session. Only runs while this
+    /// editor has not placed the panel yet, so a position set in this session
+    /// always wins over the stored one.
+    private func restoreTemporaryAIChatFrame(in containerSize: CGSize) {
+        guard temporaryAIChatCenter == nil,
+              containerSize.width > 0, containerSize.height > 0,
+              savedAIChatCenterX >= 0, savedAIChatCenterY >= 0,
+              savedAIChatWidth > 0, savedAIChatHeight > 0 else { return }
+        let restoredSize = clampedTemporaryAIChatSize(
+            CGSize(width: savedAIChatWidth * containerSize.width, height: savedAIChatHeight * containerSize.height),
+            in: containerSize
+        )
+        temporaryAIChatSize = restoredSize
+        temporaryAIChatCenter = clampedTemporaryAIChatCenter(
+            CGPoint(x: savedAIChatCenterX * containerSize.width, y: savedAIChatCenterY * containerSize.height),
+            in: containerSize,
+            panelSize: restoredSize
+        )
+    }
+
+    private func saveTemporaryAIChatFrame(in containerSize: CGSize) {
+        guard containerSize.width > 0, containerSize.height > 0,
+              let center = temporaryAIChatCenter else { return }
+        let panelSize = resolvedTemporaryAIChatSize(in: containerSize)
+        savedAIChatCenterX = Double(center.x / containerSize.width)
+        savedAIChatCenterY = Double(center.y / containerSize.height)
+        savedAIChatWidth = Double(panelSize.width / containerSize.width)
+        savedAIChatHeight = Double(panelSize.height / containerSize.height)
     }
 
     private func temporaryAIChatResizeHandles(in containerSize: CGSize, panelSize: CGSize) -> some View {
@@ -788,7 +846,10 @@ struct NoteEditorView: View {
                     panelSize: resized
                 )
             }
-            .onEnded { _ in temporaryAIChatResizeOrigin = nil }
+            .onEnded { _ in
+                temporaryAIChatResizeOrigin = nil
+                saveTemporaryAIChatFrame(in: containerSize)
+            }
     }
 
     private func temporaryAIChatDragGesture(in containerSize: CGSize, panelSize: CGSize) -> some Gesture {
@@ -816,6 +877,7 @@ struct NoteEditorView: View {
                     )
                 }
                 temporaryAIChatDragOrigin = nil
+                saveTemporaryAIChatFrame(in: containerSize)
             }
     }
 
@@ -921,6 +983,7 @@ struct NoteEditorView: View {
         !isReadOnlyMode
             && showsDrawingToolbar
             && photoStudyPane != .primary
+            && aiSwapPane != .primary
             && primaryFlashcardDeck == nil
             && !primaryShowsWeb
             && !primaryShowsAIChat
@@ -933,6 +996,7 @@ struct NoteEditorView: View {
             && !isReadOnlyMode
             && showsDrawingToolbar
             && photoStudyPane != .secondary
+            && aiSwapPane != .secondary
             && secondaryNotebook != nil
             && secondaryFlashcardDeck == nil
             && !secondaryShowsWeb
@@ -1085,6 +1149,7 @@ struct NoteEditorView: View {
     private var panesShowSameNotebook: Bool {
         splitMode != .single
             && photoStudyPane == nil
+            && aiSwapPane == nil
             && primaryFlashcardDeck == nil
             && secondaryFlashcardDeck == nil
             && !primaryShowsWeb
@@ -1180,6 +1245,7 @@ struct NoteEditorView: View {
 
     private func splitDragPlaceholderLabel(for pane: ActivePane) -> (title: String, icon: String) {
         if photoStudyPane == pane { return ("写真資料", "photo.stack") }
+        if aiSwapPane == pane { return ("AIトーク", "sparkles") }
         if pane == .primary {
             if let material = primaryTemporaryChatMaterial { return (material.title, material.placeholderSymbol) }
             if primaryShowsWeb { return ("Web", "globe") }
@@ -1200,11 +1266,57 @@ struct NoteEditorView: View {
         return ("未選択", "rectangle.dashed")
     }
 
+    /// The chat standing in for `pane`. Attachments open in the other pane,
+    /// since anything opened in this one would sit hidden behind the chat.
+    private func swappedAIChatPane(in pane: ActivePane) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Label("AIトーク", systemImage: "sparkles")
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 0)
+                Button {
+                    floatSwappedAIChat()
+                } label: {
+                    Image(systemName: "macwindow.on.rectangle")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("臨時画面で開く")
+                .accessibilityIdentifier("note-ai-pane-to-floating")
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { aiSwapPane = nil }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("AIトークを閉じる")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(.regularMaterial)
+
+            AIChatPanel(
+                store: aiChat,
+                noteContext: aiChatNoteContext,
+                onInsertAssistantMessage: insertAIResponseOnPage,
+                onAttachDroppedTab: attachmentForDroppedTab,
+                onSelectAppAttachment: appAttachmentOptions,
+                onOpenAttachment: { openAIChatAttachment($0, target: pane == .primary ? .secondary : .primary) },
+                onPaneDrop: { handlePaneDrop($0, target: pane == .primary ? .primary : .secondary) }
+            )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("note-ai-swapped-pane")
+    }
+
     @ViewBuilder
     private var primaryPane: some View {
         Group {
             if photoStudyPane == .primary {
                 photoStudyLibraryPane
+            } else if aiSwapPane == .primary {
+                swappedAIChatPane(in: .primary)
             } else if let material = primaryTemporaryChatMaterial {
                 temporaryChatMaterialView(material, pane: .primary)
             } else if primaryShowsWeb {
@@ -1274,10 +1386,10 @@ struct NoteEditorView: View {
         .contentShape(Rectangle())
         .accessibilityIdentifier("split-pane-primary")
         .simultaneousGesture(TapGesture().onEnded {
-            if photoStudyPane != .primary { activePane = .primary }
+            if photoStudyPane != .primary, aiSwapPane != .primary { activePane = .primary }
         })
         .dropDestination(for: String.self) { items, _ in
-            guard photoStudyPane != .primary else { return false }
+            guard photoStudyPane != .primary, aiSwapPane != .primary else { return false }
             guard let value = items.first else { return false }
             guard splitMode != .single || value.hasPrefix("ai:") || value.hasPrefix("friend:") || value.hasPrefix("group:") else { return false }
             return handlePaneDrop(value, target: .primary)
@@ -1288,6 +1400,8 @@ struct NoteEditorView: View {
     private var secondaryPane: some View {
         if photoStudyPane == .secondary {
             photoStudyLibraryPane
+        } else if aiSwapPane == .secondary {
+            swappedAIChatPane(in: .secondary)
         } else if let material = secondaryTemporaryChatMaterial {
             temporaryChatMaterialView(material, pane: .secondary)
                 .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
@@ -1777,10 +1891,25 @@ struct NoteEditorView: View {
                 toolStripButton("やり直す", icon: "arrow.uturn.forward") {
                     postDrawingHistoryRequest(.studiquoRedoDrawing)
                 }
-                toolStripButton("AIトーク", icon: "sparkles", isActive: primaryShowsAIChat || secondaryShowsAIChat || showsTemporaryAIChat) {
+                toolStripButton("AIトーク", icon: "sparkles", isActive: primaryShowsAIChat || secondaryShowsAIChat || showsTemporaryAIChat || aiSwapPane != nil) {
                     presentAIChat()
                 }
                 .accessibilityIdentifier("note-ai-toolbar-button")
+                .contextMenu {
+                    if splitMode != .single, !isAIChatVisibleInSplit, aiSwapPane == nil {
+                        Button {
+                            swapInAIChat()
+                        } label: {
+                            Label("ペインに入れ替え", systemImage: "rectangle.lefthalf.inset.filled.arrow.left")
+                        }
+                        Button {
+                            aiSwapPane = nil
+                            presentTemporaryAIChat()
+                        } label: {
+                            Label("臨時画面で開く", systemImage: "macwindow.on.rectangle")
+                        }
+                    }
+                }
                 Button {
                     presentChatPicker()
                 } label: {
@@ -2146,26 +2275,62 @@ struct NoteEditorView: View {
         aiChat.loadThreads()
         guard let thread = aiChat.threads.first(where: { $0.persistentModelID == id }) else { return }
         aiChat.selectedThread = thread
-        if isAIChatVisibleInSplit {
+        if isAIChatVisibleInSplit || aiSwapPane != nil {
             showsTemporaryAIChat = false
+            aiChat.announceThread(thread)
+        } else if showsTemporaryAIChat {
             aiChat.announceThread(thread)
         } else if splitMode == .single {
             openAIChatSplit()
         } else {
-            presentTemporaryAIChat()
+            swapInAIChat()
         }
     }
 
+    /// With two panes the chat takes over the pane that is not being worked
+    /// in, and pressing the button again hands that pane back. The floating
+    /// panel is opt-in, from the chat's own header or the button's long press.
     private func presentAIChat() {
+        if aiSwapPane != nil {
+            withAnimation(.easeOut(duration: 0.18)) { aiSwapPane = nil }
+            return
+        }
+        if showsTemporaryAIChat {
+            withAnimation(.easeOut(duration: 0.18)) { showsTemporaryAIChat = false }
+            return
+        }
         dismissPhotoStudy(restorePreviousLayout: false)
         if isAIChatVisibleInSplit {
-            showsTemporaryAIChat = false
             collapseSplit()
             return
         }
         if splitMode == .single && !secondaryShowsAIChat {
             openAIChatSplit()
         } else {
+            swapInAIChat()
+        }
+    }
+
+    /// Shows the chat in the pane opposite `activePane`, leaving that pane's
+    /// own content in state so it returns when the chat is closed.
+    private func swapInAIChat() {
+        guard splitMode != .single else {
+            presentTemporaryAIChat()
+            return
+        }
+        aiChat.loadThreads()
+        aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
+        if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
+        dismissPhotoStudy(restorePreviousLayout: false)
+        showsTemporaryAIChat = false
+        aiSwapPane = activePane == .primary ? .secondary : .primary
+    }
+
+    /// Moves a swapped-in chat out into the floating panel; the pane it
+    /// covered shows its own content again.
+    private func floatSwappedAIChat() {
+        withAnimation(.easeOut(duration: 0.18)) {
+            aiSwapPane = nil
             presentTemporaryAIChat()
         }
     }
@@ -2770,6 +2935,7 @@ struct NoteEditorView: View {
             aiChat.selectedThread = thread
             aiChat.announceThread(thread)
             showsTemporaryAIChat = false
+            aiSwapPane = nil
             if isAIChatVisibleInSplit {
                 activePane = primaryShowsAIChat ? .primary : .secondary
                 return
@@ -2872,6 +3038,7 @@ struct NoteEditorView: View {
         secondaryTemporaryChatMaterialPageIndex = oldPrimaryTemporaryPageIndex
 
         activePane = activePane == .primary ? .secondary : .primary
+        if let swapped = aiSwapPane { aiSwapPane = swapped == .primary ? .secondary : .primary }
     }
 
     private var drawingTool: DrawingToolKind {
@@ -2929,6 +3096,7 @@ struct NoteEditorView: View {
 
     private var primaryPaneCanEditNote: Bool {
         primaryTemporaryChatMaterial == nil
+            && aiSwapPane != .primary
             && !primaryShowsWeb
             && !primaryShowsAIChat
             && primaryChatTarget == nil
@@ -2937,6 +3105,7 @@ struct NoteEditorView: View {
 
     private var secondaryPaneCanEditNote: Bool {
         secondaryTemporaryChatMaterial == nil
+            && aiSwapPane != .secondary
             && !secondaryShowsWeb
             && !secondaryShowsAIChat
             && secondaryChatTarget == nil
@@ -2954,6 +3123,7 @@ struct NoteEditorView: View {
             return
         }
 
+        aiSwapPane = nil
         photoStudyPreviousSplitMode = splitMode
         photoStudyPreviousSplitRatio = splitRatio
         photoStudyPreviousActivePane = activePane
@@ -2980,6 +3150,10 @@ struct NoteEditorView: View {
     /// different tool. In that case their new choice wins and the current
     /// two-pane layout remains available for the incoming tool.
     private func dismissPhotoStudy(restorePreviousLayout: Bool) {
+        // Every path that passes `false` is about to put other content in a
+        // pane (or collapse the split), which the chat standing in for a pane
+        // would otherwise hide. Restoring Photo Study's own layout is not one.
+        if !restorePreviousLayout { aiSwapPane = nil }
         guard photoStudyPane != nil
                 || photoStudyPreviousSplitMode != nil
                 || selectedPhotoStudyAssetID != nil else { return }
