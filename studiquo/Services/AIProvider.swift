@@ -93,7 +93,7 @@ final class WorkerAIProvider: AIProvider {
 
     /// Read fresh each call so changing the endpoint in settings takes effect
     /// without restarting.
-    private var baseURL: URL? {
+    var baseURL: URL? {
         var raw = (UserDefaults.standard.string(forKey: "mcpCloudEndpoint") ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if raw.isEmpty { raw = Self.defaultEndpoint }

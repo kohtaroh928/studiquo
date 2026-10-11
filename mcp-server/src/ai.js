@@ -38,6 +38,7 @@ const API_ROOT = "https://generativelanguage.googleapis.com/v1beta/models";
  * `env.OPENAI_MID_MODEL` / `env.OPENAI_FLAGSHIP_MODEL`.
  */
 const PLAN_MODELS = {
+  free: [],
   standard: ["gemini-3.5-flash-lite"],
   plus: ["gemini-3.5-flash-lite", "claude-haiku-4-5-20251001", "claude-sonnet-5", "openai-mid"],
   pro: [
@@ -51,7 +52,7 @@ const PLAN_MODELS = {
 };
 
 function modelAllowedForPlan(plan, modelId) {
-  const allowed = PLAN_MODELS[plan] ?? PLAN_MODELS.standard;
+  const allowed = PLAN_MODELS[plan] ?? PLAN_MODELS.free;
   return allowed.includes(modelId);
 }
 
@@ -155,7 +156,7 @@ async function upstreamFailureResponse(upstream) {
  * `SubscriptionPlansView` advertises; v1 treats every AI call as a flat one
  * credit regardless of which endpoint or model answered it.
  */
-const PLAN_LIMITS = { standard: 30, plus: 750, pro: 2000 };
+const PLAN_LIMITS = { free: 0, standard: 30, plus: 750, pro: 2000 };
 
 /**
  * `envVarName`, if set on the Worker, still overrides the plan table for a
@@ -167,7 +168,7 @@ const PLAN_LIMITS = { standard: 30, plus: 750, pro: 2000 };
 function planLimit(env, plan, envVarName) {
   const override = Number(env[envVarName]);
   if (override > 0) return override;
-  return PLAN_LIMITS[plan] ?? PLAN_LIMITS.standard;
+  return PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
 }
 
 /**
@@ -890,6 +891,8 @@ async function handleReview(request, env, key, ctx, plan) {
   }, ctx);
 }
 
+const AI_PATHS = new Set(["/api/ai/chat", "/api/ai/rubric", "/api/ai/grade", "/api/ai/review"]);
+
 /**
  * Returns a `Response`, or `null` when the path is not an AI route.
  *
@@ -906,6 +909,12 @@ async function handleReview(request, env, key, ctx, plan) {
 export async function handleAI(url, request, env, key, ctx, session, plan) {
   if (request.method !== "POST") return null;
   const effectivePlan = plan ?? "standard";
+  // Only reachable with PAYWALL_ENABLED (entitlements.js): an account with no
+  // subscription and no legacy grant. 402 so the app can tell "subscribe" apart
+  // from the 403 (model not in your plan) and 429 (daily cap) answers.
+  if (effectivePlan === "free" && AI_PATHS.has(url.pathname)) {
+    return json({ error: "AI機能のご利用にはStandard以上のプランが必要です。", code: "subscription_required" }, 402);
+  }
   let handler;
   switch (url.pathname) {
     case "/api/ai/chat": handler = handleChat; break;
