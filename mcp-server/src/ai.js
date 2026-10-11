@@ -12,6 +12,7 @@
  * response schema, and the app only supplies content.
  */
 
+import { consumeCredits, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES } from "./ai-credits.js";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { sendPush } from "./push.js";
 import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.js";
@@ -33,21 +34,28 @@ const API_ROOT = "https://generativelanguage.googleapis.com/v1beta/models";
  * "gemini" (or no model at all, the pre-existing behavior) still goes
  * through `callGemini`, which keeps picking its actual model from
  * `GEMINI_CHAT_MODEL`/`GEMINI_GRADING_MODEL`. The Anthropic entries are
- * real upstream model ids. The two OpenAI entries are logical names only —
+ * real upstream model ids. The OpenAI entries are logical names only —
  * see openai.js's header for why — resolved to real ids via
- * `env.OPENAI_MID_MODEL` / `env.OPENAI_FLAGSHIP_MODEL`.
+ * `env.OPENAI_LUNA_MODEL` / `OPENAI_TERRA_MODEL` / `OPENAI_SOL_MODEL` / `OPENAI_ASTRA_MODEL`.
  */
 const PLAN_MODELS = {
   free: [],
   standard: ["gemini-3.5-flash-lite"],
-  plus: ["gemini-3.5-flash-lite", "claude-haiku-4-5-20251001", "claude-sonnet-5", "openai-mid"],
+  plus: [
+    "gemini-3.5-flash-lite",
+    "claude-sonnet-5-5",
+    "openai-luna",
+    "openai-terra",
+    "openai-sol",
+  ],
   pro: [
     "gemini-3.5-flash-lite",
-    "claude-haiku-4-5-20251001",
-    "claude-sonnet-5",
-    "openai-mid",
+    "claude-sonnet-5-5",
+    "openai-luna",
+    "openai-terra",
+    "openai-sol",
     "claude-opus-5-5",
-    "openai-flagship",
+    "openai-astra",
   ],
 };
 
@@ -66,8 +74,10 @@ function providerFor(modelId) {
 /** Resolves a PLAN_MODELS logical OpenAI name to the real id this Worker is
  * configured with, or `null` if nobody has set it yet (see openai.js). */
 function resolveOpenAIModel(env, logicalName) {
-  if (logicalName === "openai-mid") return env.OPENAI_MID_MODEL || null;
-  if (logicalName === "openai-flagship") return env.OPENAI_FLAGSHIP_MODEL || null;
+  if (logicalName === "openai-luna") return env.OPENAI_LUNA_MODEL || null;
+  if (logicalName === "openai-terra") return env.OPENAI_TERRA_MODEL || null;
+  if (logicalName === "openai-sol") return env.OPENAI_SOL_MODEL || null;
+  if (logicalName === "openai-astra") return env.OPENAI_ASTRA_MODEL || null;
   return null;
 }
 
@@ -150,28 +160,6 @@ async function upstreamFailureResponse(upstream) {
 }
 
 /**
- * Soft daily caps per device, so one user cannot drain the shared quota —
- * now plan-based (see entitlements.js's `getPlan`) instead of one fixed
- * number for every account. Matches the credit counts
- * `SubscriptionPlansView` advertises; v1 treats every AI call as a flat one
- * credit regardless of which endpoint or model answered it.
- */
-const PLAN_LIMITS = { free: 0, standard: 30, plus: 750, pro: 2000 };
-
-/**
- * `envVarName`, if set on the Worker, still overrides the plan table for a
- * given endpoint — the same per-endpoint escape hatch
- * (`CHAT_DAILY_LIMIT`/`GRADING_DAILY_LIMIT`/`REVIEW_DAILY_LIMIT`) the old
- * flat constants gave ops, just layered on top of the plan now rather than
- * replacing it entirely.
- */
-function planLimit(env, plan, envVarName) {
-  const override = Number(env[envVarName]);
-  if (override > 0) return override;
-  return PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
-}
-
-/**
  * Caps across every device combined.
  *
  * Every AI route already requires a real, server-verified session — signed
@@ -199,14 +187,17 @@ function model(env, kind) {
 
 const DAY_SECONDS = 86_400;
 
-/** Per-device and whole-service caps, each a RateCounter Durable Object
- * (see rate-counter.js) keyed by bucket/device so it resets on its own once
- * a day passes — a soft cap rather than an exact one, same as before: a
- * burst of simultaneous requests can still slip a few over. Both must pass. */
-async function withinQuota(env, key, bucket, limit, globalLimit) {
-  const global = await env.RATE_COUNTER.getByName(`ai:global:${bucket}`).bump(globalLimit, DAY_SECONDS);
-  if (!global) return false;
-  return env.RATE_COUNTER.getByName(`ai:${bucket}:${key}`).bump(limit, DAY_SECONDS);
+/**
+ * Takes this call's credits from every window of the plan (ai-credits.js), or
+ * answers 429 saying which limit was hit. `kind` is the feature, `model` the
+ * model that will answer.
+ */
+async function creditGate(env, { account, plan, kind, model, globalBucket, globalLimit }) {
+  const result = await consumeCredits(env, { accountKey: account, plan, kind, model, globalBucket, globalLimit });
+  if (result.ok) return null;
+  const response = json({ error: LIMIT_MESSAGES[result.window], code: "ai_limit", window: result.window }, 429);
+  if (result.window === "minute" || result.window === "global") response.headers.set("retry-after", "60");
+  return response;
 }
 
 async function callGemini(env, { kind, systemInstruction, contents, responseSchema, stream }) {
@@ -329,7 +320,7 @@ const CHAT_SYSTEM = `あなたは学習アプリ「Studiquo」に組み込まれ
  * to parse regardless of which provider's full event envelope it came
  * from.
  */
-async function handleChat(request, env, key, ctx, plan) {
+async function handleChat(request, env, key, ctx, plan, account) {
   const payload = await readJSONLimited(request);
   const turns = Array.isArray(payload?.messages) ? payload.messages : [];
   if (turns.length === 0) return json({ error: "messages is required." }, 400);
@@ -354,13 +345,11 @@ async function handleChat(request, env, key, ctx, plan) {
     return json({ error: "このプランでは選択できないモデルです。" }, 403);
   }
 
-  if (!(await withinQuota(
-    env, key, "chat",
-    planLimit(env, plan, "CHAT_DAILY_LIMIT"),
-    Number(env.GLOBAL_CHAT_DAILY_LIMIT) || DEFAULT_GLOBAL_CHAT_LIMIT
-  ))) {
-    return json({ error: "今日のAI利用回数の上限に達しました。明日また使えます。" }, 429);
-  }
+  const limited = await creditGate(env, {
+    account, plan, kind: "chat", model: requestedModel || DEFAULT_MODEL,
+    globalBucket: "chat", globalLimit: Number(env.GLOBAL_CHAT_DAILY_LIMIT) || DEFAULT_GLOBAL_CHAT_LIMIT,
+  });
+  if (limited) return limited;
 
   console.log(JSON.stringify({
     message: "AI chat request accepted",
@@ -641,14 +630,12 @@ const GRADE_SCHEMA = {
   required: ["score", "maxScore", "verdict", "criteria", "issues"],
 };
 
-async function handleRubric(request, env, key, ctx, plan) {
-  if (!(await withinQuota(
-    env, key, "grade",
-    planLimit(env, plan, "GRADING_DAILY_LIMIT"),
-    Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT
-  ))) {
-    return json({ error: "今日の添削回数の上限に達しました。明日また使えます。" }, 429);
-  }
+async function handleRubric(request, env, key, ctx, plan, account) {
+  const limited = await creditGate(env, {
+    account, plan, kind: "rubric", model: DEFAULT_MODEL,
+    globalBucket: "grade", globalLimit: Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT,
+  });
+  if (limited) return limited;
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 20_000);
   const modelAnswer = String(payload?.modelAnswer ?? "").trim().slice(0, 30_000);
@@ -771,14 +758,12 @@ function streamJSON(env, { kind, systemInstruction, contents, responseSchema, fa
   });
 }
 
-async function handleGrade(request, env, key, ctx, plan) {
-  if (!(await withinQuota(
-    env, key, "grade",
-    planLimit(env, plan, "GRADING_DAILY_LIMIT"),
-    Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT
-  ))) {
-    return json({ error: "今日の添削回数の上限に達しました。明日また使えます。" }, 429);
-  }
+async function handleGrade(request, env, key, ctx, plan, account) {
+  const limited = await creditGate(env, {
+    account, plan, kind: "grade", model: DEFAULT_MODEL,
+    globalBucket: "grade", globalLimit: Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT,
+  });
+  if (limited) return limited;
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 20_000);
   const answerText = String(payload?.answerText ?? "").trim().slice(0, 30_000);
@@ -862,14 +847,12 @@ const REVIEW_SCHEMA = {
   required: ["isStudyRelevant", "explanationMarkdown", "quiz"],
 };
 
-async function handleReview(request, env, key, ctx, plan) {
-  if (!(await withinQuota(
-    env, key, "review",
-    planLimit(env, plan, "REVIEW_DAILY_LIMIT"),
-    Number(env.GLOBAL_REVIEW_DAILY_LIMIT) || DEFAULT_GLOBAL_REVIEW_LIMIT
-  ))) {
-    return json({ error: "今日の復習教材の作成回数の上限に達しました。明日また使えます。" }, 429);
-  }
+async function handleReview(request, env, key, ctx, plan, account) {
+  const limited = await creditGate(env, {
+    account, plan, kind: "review", model: DEFAULT_MODEL,
+    globalBucket: "review", globalLimit: Number(env.GLOBAL_REVIEW_DAILY_LIMIT) || DEFAULT_GLOBAL_REVIEW_LIMIT,
+  });
+  if (limited) return limited;
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 4_000);
   if (!question) return json({ error: "question is required." }, 400);
@@ -924,7 +907,10 @@ export async function handleAI(url, request, env, key, ctx, session, plan) {
     default: return null;
   }
   try {
-    return await handler(request, env, key, ctx, effectivePlan);
+    // Credits are counted per account; a caller with no session (only tests)
+    // falls back to its device key.
+    const account = await accountCounterKey(session?.sub, key);
+    return await handler(request, env, key, ctx, effectivePlan, account);
   } catch (error) {
     // Without this, a missing GEMINI_API_KEY surfaced as a bare 500 with no
     // hint of the cause.
