@@ -4654,7 +4654,11 @@ struct ContentView: View {
             ForEach(entries(inLegacyPath: parentPath)) { entry in
                 Button { open(entry) } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: entry.iconName).foregroundStyle(entry.tintColor)
+                        if case .notebook(let notebook) = entry, notebook.containsPDF {
+                            NotebookCoverView(notebook: notebook, size: CGSize(width: 28, height: 36))
+                        } else {
+                            Image(systemName: entry.iconName).foregroundStyle(entry.tintColor)
+                        }
                         Text(entry.title).lineLimit(1)
                         if entry.isFavorite {
                             Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
@@ -6235,13 +6239,13 @@ struct ContentView: View {
                     Button {
                         open(.notebook(notebook))
                     } label: {
-                        NotebookRow(notebook: notebook)
+                        NotebookRow(notebook: notebook, showsCover: libraryMode == .pdfs)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 } else {
                     NavigationLink(value: notebook) {
-                        NotebookRow(notebook: notebook)
+                        NotebookRow(notebook: notebook, showsCover: libraryMode == .pdfs)
                     }
                 }
             }
@@ -6577,9 +6581,13 @@ private struct HomeEntryTile: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: entry.iconName)
-                        .font(.system(size: 40))
-                        .foregroundStyle(entry.tintColor)
+                    if case .notebook(let notebook) = entry, notebook.containsPDF {
+                        NotebookCoverView(notebook: notebook, size: CGSize(width: 84, height: 84))
+                    } else {
+                        Image(systemName: entry.iconName)
+                            .font(.system(size: 40))
+                            .foregroundStyle(entry.tintColor)
+                    }
                     if entry.isFavorite {
                         Image(systemName: "star.fill")
                             .font(.caption2)
@@ -6600,13 +6608,19 @@ private struct HomeEntryTile: View {
 
 private struct NotebookRow: View {
     @Bindable var notebook: Notebook
+    /// A PDF's icon is its first page (the "PDF" filter); elsewhere the symbol.
+    var showsCover = false
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
-                .font(.title2)
-                .foregroundStyle(notebook.containsPDF ? .red : .blue)
-                .frame(width: 34)
+            if showsCover, notebook.containsPDF {
+                NotebookCoverView(notebook: notebook, size: CGSize(width: 34, height: 44))
+            } else {
+                Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
+                    .font(.title2)
+                    .foregroundStyle(notebook.containsPDF ? .red : .blue)
+                    .frame(width: 34)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(notebook.title).font(.headline).lineLimit(1)

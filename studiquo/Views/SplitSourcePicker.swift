@@ -91,6 +91,12 @@ struct SplitSourceItem: Identifiable {
     let detail: String
     let isDisplayed: Bool
     let source: Source
+
+    /// The notebook whose first page can stand in for this item's icon.
+    var coverNotebook: Notebook? {
+        if kind == .pdf, case .notebook(let notebook) = source { return notebook }
+        return nil
+    }
 }
 
 enum SplitSourceCatalog {
@@ -403,10 +409,12 @@ struct SplitSourcePicker: View {
         .accessibilityIdentifier("split-source-search-results")
     }
 
-    private func itemRow(_ item: SplitSourceItem, showsFolder: Bool = false) -> some View {
+    /// A PDF's icon is its first page where `showsCover` is set (the "種類"
+    /// layout); the plain list and the search results keep the kind symbol.
+    private func itemRow(_ item: SplitSourceItem, showsFolder: Bool = false, showsCover: Bool = false) -> some View {
         Button { select(item) } label: {
             HStack(spacing: 12) {
-                Image(systemName: item.kind.systemImage).foregroundStyle(item.kind.tint)
+                itemIcon(item, showsCover: showsCover)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.title).lineLimit(1)
                     Text(itemCaption(item, showsFolder: showsFolder))
@@ -434,7 +442,7 @@ struct SplitSourcePicker: View {
                         Text("\(kind.title)はありません").foregroundStyle(.secondary)
                     }
                     ForEach(items) { item in
-                        itemRow(item, showsFolder: true)
+                        itemRow(item, showsFolder: true, showsCover: true)
                     }
                 } header: {
                     Label(kind.title, systemImage: kind.systemImage)
@@ -443,6 +451,15 @@ struct SplitSourcePicker: View {
             }
         }
         .accessibilityIdentifier("split-source-kinds")
+    }
+
+    @ViewBuilder
+    private func itemIcon(_ item: SplitSourceItem, showsCover: Bool) -> some View {
+        if showsCover, let notebook = item.coverNotebook {
+            NotebookCoverView(notebook: notebook, size: CGSize(width: 28, height: 36))
+        } else {
+            Image(systemName: item.kind.systemImage).foregroundStyle(item.kind.tint)
+        }
     }
 
     private func itemCaption(_ item: SplitSourceItem, showsFolder: Bool) -> String {
@@ -518,7 +535,8 @@ struct SplitSourcePicker: View {
                                     systemImage: item.kind.systemImage,
                                     tint: item.kind.tint,
                                     title: item.title,
-                                    caption: item.isDisplayed ? "表示中" : item.detail
+                                    caption: item.isDisplayed ? "表示中" : item.detail,
+                                    cover: item.coverNotebook
                                 )
                             }
                             .buttonStyle(.plain)
@@ -533,13 +551,19 @@ struct SplitSourcePicker: View {
         .accessibilityIdentifier("split-source-icons")
     }
 
-    private func tile(systemImage: String, tint: Color, title: String, caption: String) -> some View {
+    private func tile(
+        systemImage: String, tint: Color, title: String, caption: String, cover: Notebook? = nil
+    ) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.system(size: 38))
-                .foregroundStyle(tint)
-                .frame(width: 84, height: 84)
-                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+            if let cover {
+                NotebookCoverView(notebook: cover, size: CGSize(width: 84, height: 84))
+            } else {
+                Image(systemName: systemImage)
+                    .font(.system(size: 38))
+                    .foregroundStyle(tint)
+                    .frame(width: 84, height: 84)
+                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+            }
             Text(title)
                 .font(.footnote.weight(.medium))
                 .lineLimit(2)
@@ -633,7 +657,7 @@ struct SplitSourcePicker: View {
                     ForEach(items) { item in
                         Button { select(item) } label: {
                             HStack(spacing: 10) {
-                                Image(systemName: item.kind.systemImage).foregroundStyle(item.kind.tint)
+                                itemIcon(item, showsCover: true)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.title).lineLimit(1)
                                     Text("\(item.kind.title) · \(item.detail)")
