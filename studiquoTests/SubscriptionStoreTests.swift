@@ -116,11 +116,11 @@ final class SubscriptionStoreTests: XCTestCase {
 
     func testRefreshCachesAPaidServerPlanAndAnOfflineLaunchUsesIt() async {
         let defaults = isolatedDefaults()
-        let online = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { .standard }, defaults: defaults)
+        let online = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { .standard }, defaults: defaults, accountIDProvider: { "acct" })
         await online.refresh()
         XCTAssertEqual(online.currentPlan, .standard)
 
-        let offline = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { nil }, defaults: defaults)
+        let offline = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { nil }, defaults: defaults, accountIDProvider: { "acct" })
         XCTAssertEqual(offline.currentPlan, .standard)
         XCTAssertTrue(offline.hasResolvedPlan)
         XCTAssertFalse(offline.requiresSubscription)
@@ -128,8 +128,8 @@ final class SubscriptionStoreTests: XCTestCase {
 
     func testAFreeAnswerIsNeverCachedAndClearsAStaleEntry() async {
         let defaults = isolatedDefaults()
-        defaults.set(StudiquoPlan.standard.rawValue, forKey: SubscriptionStore.cachedServerPlanKey)
-        let store = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { .free }, defaults: defaults)
+        defaults.set(["account": "acct", "plan": StudiquoPlan.standard.rawValue], forKey: SubscriptionStore.cachedServerPlanKey)
+        let store = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { .free }, defaults: defaults, accountIDProvider: { "acct" })
         await store.refresh()
         XCTAssertNil(defaults.object(forKey: SubscriptionStore.cachedServerPlanKey))
         XCTAssertTrue(store.requiresSubscription)
@@ -137,7 +137,7 @@ final class SubscriptionStoreTests: XCTestCase {
 
     func testSignOutClearsTheCachedPlan() async {
         let defaults = isolatedDefaults()
-        let store = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { .standard }, defaults: defaults)
+        let store = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { .standard }, defaults: defaults, accountIDProvider: { "acct" })
         await store.refresh()
         store.resetForSignOut()
         XCTAssertNil(defaults.object(forKey: SubscriptionStore.cachedServerPlanKey))
@@ -146,7 +146,7 @@ final class SubscriptionStoreTests: XCTestCase {
 
     func testPaywallIsOffWhenDisabledEvenWithACachedPlan() {
         let defaults = isolatedDefaults()
-        defaults.set(StudiquoPlan.free.rawValue, forKey: SubscriptionStore.cachedServerPlanKey)
+        defaults.set(["account": "acct", "plan": StudiquoPlan.free.rawValue], forKey: SubscriptionStore.cachedServerPlanKey)
         let store = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: false, defaults: defaults)
         XCTAssertEqual(store.currentPlan, .standard)
         XCTAssertFalse(store.requiresSubscription)
@@ -172,5 +172,47 @@ final class SubscriptionStoreTests: XCTestCase {
         let store = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: false, serverPlanProvider: { asked = true; return .free })
         await store.refreshIfStale()
         XCTAssertFalse(asked)
+    }
+
+    func testACachedPlanIsIgnoredForADifferentAccount() {
+        let defaults = isolatedDefaults()
+        defaults.set(["account": "someone-else", "plan": StudiquoPlan.standard.rawValue], forKey: SubscriptionStore.cachedServerPlanKey)
+        let store = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { nil }, defaults: defaults, accountIDProvider: { "acct" })
+        XCTAssertEqual(store.currentPlan, .free)
+        XCTAssertFalse(store.hasResolvedPlan)
+    }
+
+    func testNothingIsCachedWhileTheAccountIsUnknown() async {
+        let defaults = isolatedDefaults()
+        let store = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { .standard }, defaults: defaults, accountIDProvider: { nil })
+        await store.refresh()
+        XCTAssertNil(defaults.object(forKey: SubscriptionStore.cachedServerPlanKey))
+    }
+
+    func testConfirmPlanOnServerStopsOnceTheServerCatchesUp() async {
+        var answers: [StudiquoPlan] = [.free, .free, .standard]
+        var asked = 0
+        let store = SubscriptionStore(
+            automaticallyRefresh: false, paywallEnabled: true,
+            serverPlanProvider: { asked += 1; return answers.isEmpty ? nil : answers.removeFirst() },
+            defaults: isolatedDefaults(), accountIDProvider: { "acct" }
+        )
+        store.activationDelays = Array(repeating: .milliseconds(1), count: 5)
+        store.setPurchasedPlanForTesting(.standard)
+        await store.confirmPlanOnServer()
+        XCTAssertEqual(asked, 3)
+        XCTAssertFalse(store.isActivatingPlan)
+        XCTAssertEqual(store.currentPlan, .standard)
+    }
+
+    func testConfirmPlanOnServerDoesNothingWithoutAPurchaseOrWithThePaywallOff() async {
+        var asked = 0
+        let on = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { asked += 1; return .free }, defaults: isolatedDefaults())
+        on.activationDelays = [.milliseconds(1)]
+        await on.confirmPlanOnServer()
+        let off = SubscriptionStore(automaticallyRefresh: false, paywallEnabled: false, serverPlanProvider: { asked += 1; return .free })
+        off.setPurchasedPlanForTesting(.standard)
+        await off.confirmPlanOnServer()
+        XCTAssertEqual(asked, 0)
     }
 }
