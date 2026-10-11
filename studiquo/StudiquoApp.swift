@@ -950,6 +950,23 @@ private enum LibraryDropUITestStore {
         container.mainContext.insert(target)
         if compact {
             container.mainContext.insert(Notebook(title: "Drag me"))
+            if arguments.contains("--home-pdf-cover") {
+                // A PDF with a real first page, and a protected one whose
+                // first page must not be shown as its icon.
+                let firstPage = UIGraphicsImageRenderer(size: CGSize(width: 60, height: 80)).pngData { context in
+                    UIColor.systemRed.setFill()
+                    context.fill(CGRect(x: 0, y: 0, width: 60, height: 80))
+                }
+                for (title, locked) in [("表紙つきPDF", false), ("保護されたPDF", true)] {
+                    let pdf = Notebook(title: title)
+                    let page = NotePage(order: 0, backgroundImageData: firstPage)
+                    page.notebook = pdf
+                    pdf.addPage(page)
+                    pdf.refreshLibraryMetadata()
+                    pdf.isLocked = locked
+                    container.mainContext.insert(pdf)
+                }
+            }
             container.mainContext.insert(FlashcardDeck(title: "Cards"))
             container.mainContext.insert(TextDocument(title: "Document"))
             try! container.mainContext.save()
@@ -1060,12 +1077,27 @@ private enum SplitSourcePickerUITestStore {
         note.addPage(notePage)
 
         let pdf = Notebook(title: "分割PDF")
-        let pdfPage = NotePage(order: 0, backgroundImageData: Data([0]))
+        // A real, decodable first page: the pickers show it as the PDF's icon.
+        let firstPageImage = UIGraphicsImageRenderer(size: CGSize(width: 60, height: 80)).pngData { context in
+            UIColor.systemRed.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 60, height: 80))
+        }
+        let pdfPage = NotePage(order: 0, backgroundImageData: firstPageImage)
         pdfPage.notebook = pdf
         pdf.addPage(pdfPage)
         pdf.refreshLibraryMetadata()
         pdf.folderName = subject.legacyPath
         pdf.folder = subject
+
+        // A protected PDF: its first page must never be shown as the icon.
+        let protectedPDF = Notebook(title: "保護PDF")
+        let protectedPage = NotePage(order: 0, backgroundImageData: firstPageImage)
+        protectedPage.notebook = protectedPDF
+        protectedPDF.addPage(protectedPage)
+        protectedPDF.refreshLibraryMetadata()
+        protectedPDF.isLocked = true
+        protectedPDF.folderName = subject.legacyPath
+        protectedPDF.folder = subject
 
         let deck = FlashcardDeck(title: "分割暗記")
         deck.folderName = math.legacyPath
@@ -1073,9 +1105,10 @@ private enum SplitSourcePickerUITestStore {
 
         context.insert(note)
         context.insert(pdf)
+        context.insert(protectedPDF)
         context.insert(deck)
         try! context.save()
-        return (container, [note, pdf], [deck])
+        return (container, [note, pdf, protectedPDF], [deck])
     }()
 }
 

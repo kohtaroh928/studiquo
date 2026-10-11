@@ -102,6 +102,41 @@ final class SplitSourcePickerLayoutTests: XCTestCase {
         XCTAssertTrue(item(app, "分割ノート").exists, "the column layout also shows the top level")
     }
 
+    // MARK: PDFのアイコン(1ページ目)
+
+    private func cover(_ app: XCUIApplication, _ title: String) -> XCUIElement {
+        app.descendants(matching: .any)["notebook-cover-image-\(title)"].firstMatch
+    }
+
+    private func placeholder(_ app: XCUIApplication, _ title: String) -> XCUIElement {
+        app.descendants(matching: .any)["notebook-cover-placeholder-\(title)"].firstMatch
+    }
+
+    func testPDFShowsItsFirstPageAsTheIconInIconColumnAndKindLayouts() {
+        let app = launch()
+
+        app.buttons["split-source-layout-icon"].tap()
+        folder(app, "科目").tap()
+        XCTAssertTrue(item(app, "分割PDF").waitForExistence(timeout: 5))
+        XCTAssertTrue(cover(app, "分割PDF").waitForExistence(timeout: 5), "icon layout")
+
+        app.buttons["split-source-layout-column"].tap()
+        XCTAssertTrue(cover(app, "分割PDF").waitForExistence(timeout: 5), "column layout")
+
+        app.buttons["split-source-layout-kind"].tap()
+        XCTAssertTrue(cover(app, "分割PDF").waitForExistence(timeout: 5), "kind layout")
+    }
+
+    func testProtectedPDFKeepsTheSymbolAndNotesNeverGetACover() {
+        let app = launch()
+        app.buttons["split-source-layout-kind"].tap()
+        XCTAssertTrue(item(app, "保護PDF").waitForExistence(timeout: 5))
+        XCTAssertTrue(placeholder(app, "保護PDF").waitForExistence(timeout: 5), "a protected PDF shows the symbol")
+        XCTAssertFalse(cover(app, "保護PDF").exists, "its first page must not be shown")
+        XCTAssertFalse(cover(app, "分割ノート").exists)
+        XCTAssertFalse(placeholder(app, "分割ノート").exists, "a plain note keeps its own symbol")
+    }
+
     // MARK: 種類(資料の種類ごとに分ける)
 
     func testKindLayoutSortsEveryMaterialByKindIgnoringFolders() {
