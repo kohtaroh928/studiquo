@@ -22,6 +22,8 @@ struct SubscriptionPlansView: View {
                     planCard(plan: .plus, subtitle: "学習をもっと深く", features: plusFeatures)
                     planCard(plan: .pro, subtitle: "難関課題・研究に", features: proFeatures)
 
+                    if isBlocking { PaywallExits() }
+
                     Button("購入履歴を復元") {
                         Task { await store.restorePurchases() }
                     }
@@ -198,6 +200,34 @@ struct SubscriptionPlansView: View {
         @unknown default: period.value
         }
         return "\(days)日間無料のあと \(base)"
+    }
+}
+
+/// What a student can still do from the blocking paywall besides buying:
+/// reload the plan (a purchase or grant may not have reached the Worker yet),
+/// sign out, or delete the account. Without these the paywall would be a
+/// dead end for anyone it shows to by mistake, and App Store Review
+/// Guideline 5.1.1(v) requires account deletion to stay reachable in-app.
+private struct PaywallExits: View {
+    @EnvironmentObject private var store: SubscriptionStore
+    @EnvironmentObject private var authentication: AuthenticationStore
+    @State private var showsAccountDeletion = false
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Button("プランを再読み込み") {
+                Task { await store.refresh() }
+            }
+            .disabled(store.isLoading || store.isPurchasing)
+            HStack(spacing: 16) {
+                Button("ログアウト") { authentication.logout() }
+                Button(AccountDeletionUI.accountButtonTitle, role: .destructive) { showsAccountDeletion = true }
+            }
+            .font(.footnote)
+        }
+        .sheet(isPresented: $showsAccountDeletion) {
+            DeleteAccountView()
+        }
     }
 }
 

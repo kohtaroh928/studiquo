@@ -133,7 +133,15 @@ final class SubscriptionStore: ObservableObject {
 
     let paywallEnabled: Bool
     private let serverPlanProvider: () async -> StudiquoPlan?
+    private let defaults: UserDefaults
     private var serverPlan: StudiquoPlan?
+
+    /// The last plan the Worker confirmed, kept so a launch without a network
+    /// (or a failing `/api/plan`) still knows a grandfathered student is
+    /// entitled. Only a paid-or-better answer is kept: a stale "free" must
+    /// never lock someone out. Cleared on sign-out, which every account
+    /// switch passes through.
+    static let cachedServerPlanKey = "cachedServerPlan"
 
     /// True when the paywall must block the app: the paywall is on, the plan
     /// is known, and it is `.free`.
@@ -142,11 +150,20 @@ final class SubscriptionStore: ObservableObject {
     init(
         automaticallyRefresh: Bool = true,
         paywallEnabled: Bool = PaywallConfiguration.isEnabled,
-        serverPlanProvider: @escaping () async -> StudiquoPlan? = { await ServerPlanClient.fetch() }
+        serverPlanProvider: @escaping () async -> StudiquoPlan? = { await ServerPlanClient.fetch() },
+        defaults: UserDefaults = .standard
     ) {
         self.paywallEnabled = paywallEnabled
         self.serverPlanProvider = serverPlanProvider
+        self.defaults = defaults
         self.currentPlan = paywallEnabled ? .free : .standard
+        if paywallEnabled,
+           let raw = defaults.object(forKey: Self.cachedServerPlanKey) as? Int,
+           let cached = StudiquoPlan(rawValue: raw), cached >= .standard {
+            serverPlan = cached
+            currentPlan = cached
+            hasResolvedPlan = true
+        }
         if automaticallyRefresh {
             Task { await refresh() }
         }
@@ -166,6 +183,11 @@ final class SubscriptionStore: ObservableObject {
         }
         if paywallEnabled, let fetched = await serverPlanProvider() {
             serverPlan = fetched
+            if fetched >= .standard {
+                defaults.set(fetched.rawValue, forKey: Self.cachedServerPlanKey)
+            } else {
+                defaults.removeObject(forKey: Self.cachedServerPlanKey)
+            }
             recomputePlan()
         }
     }
@@ -175,6 +197,7 @@ final class SubscriptionStore: ObservableObject {
     func resetForSignOut() {
         serverPlan = nil
         purchasedPlan = .free
+        defaults.removeObject(forKey: Self.cachedServerPlanKey)
         recomputePlan()
     }
 

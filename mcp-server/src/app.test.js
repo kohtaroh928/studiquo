@@ -2351,3 +2351,48 @@ test("POST /api/auth/email/confirm-code: a failure to store the new password is 
   assert.equal(failed.status, 503);
   assert.equal(await env.STUDIQUO_DATA.get("account:local:busy@example.com"), stored, "the old password is untouched");
 });
+
+// --- GET /api/plan ----------------------------------------------------------
+
+function planEnvironment({ paywall = false, legacy = [] } = {}) {
+  const env = environment();
+  if (paywall) env.PAYWALL_ENABLED = "true";
+  env.ADMIN_DB = {
+    prepare(sql) {
+      return {
+        bind(appUserId) {
+          return {
+            async all() {
+              if (sql.includes("legacy_standard_accounts")) {
+                return { results: legacy.filter(id => id === appUserId).map(id => ({ app_user_id: id })) };
+              }
+              return { results: [] };
+            },
+          };
+        },
+      };
+    },
+  };
+  return env;
+}
+
+test("/api/plan: with the paywall off everyone is standard and paywallRequired is false", async () => {
+  const env = planEnvironment();
+  const response = await worker.fetch(request("/api/plan", { token: freshToken("p") }), env, noopCtx);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { plan: "standard", paywallRequired: false });
+});
+
+test("/api/plan: with the paywall on, an unlisted account is free and a legacy account is standard", async () => {
+  const free = await worker.fetch(request("/api/plan", { token: freshToken("p") }), planEnvironment({ paywall: true }), noopCtx);
+  assert.deepEqual(await free.json(), { plan: "free", paywallRequired: true });
+
+  // The test environment resolves every well-formed token to sub "test".
+  const legacy = await worker.fetch(request("/api/plan", { token: freshToken("p") }), planEnvironment({ paywall: true, legacy: ["test"] }), noopCtx);
+  assert.deepEqual(await legacy.json(), { plan: "standard", paywallRequired: true });
+});
+
+test("/api/plan: a request without a token is rejected", async () => {
+  const response = await worker.fetch(request("/api/plan"), planEnvironment(), noopCtx);
+  assert.equal(response.status, 401);
+});
