@@ -27,6 +27,21 @@ export const PRODUCT_PLAN_MAP = {
   "com.yabuko.studiquo.pro.yearly": "pro",
 };
 
+/**
+ * For a RevenueCat PRODUCT_CHANGE: `product_id` is the product being left and
+ * `new_product_id` the one being moved to. An upgrade takes effect at once, so
+ * the new product should count now; a downgrade only takes effect at the end
+ * of the current period (the subscriber keeps the old entitlement until then,
+ * and a RENEWAL event follows). Taking whichever product has the higher plan
+ * gets both right. Unknown products never win over a known one.
+ */
+export function productForPlanChange(oldProductId, newProductId) {
+  const rank = id => PLAN_RANK[PRODUCT_PLAN_MAP[id]] ?? -1;
+  if (!newProductId) return oldProductId ?? null;
+  if (!oldProductId) return newProductId;
+  return rank(newProductId) > rank(oldProductId) ? newProductId : oldProductId;
+}
+
 // Higher-ranked plans win when more than one applies at once (see below).
 const PLAN_RANK = { free: 0, standard: 1, plus: 2, pro: 3 };
 

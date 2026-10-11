@@ -199,3 +199,14 @@ test("a legacy grant under the pre-link identity still counts", async () => {
   const env = fakePaywallDB({ legacy: ["apple-sub"] });
   assert.equal(await getPlan(env, ["google:canonical", "apple-sub"]), "standard");
 });
+
+test("productForPlanChange: the higher plan wins, unknown products never beat a known one", async () => {
+  const { productForPlanChange } = await import("./entitlements.js");
+  const standard = "com.yabuko.studiquo.standard.yearly";
+  const plus = "com.yabuko.studiquo.plus.yearly";
+  assert.equal(productForPlanChange(standard, plus), plus);
+  assert.equal(productForPlanChange(plus, standard), plus);
+  assert.equal(productForPlanChange(standard, "mystery"), standard);
+  assert.equal(productForPlanChange(standard, undefined), standard);
+  assert.equal(productForPlanChange(undefined, plus), plus);
+});
