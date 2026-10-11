@@ -215,3 +215,27 @@ struct PaywallGate: ViewModifier {
         }
     }
 }
+
+#if DEBUG
+/// DEBUG builds only: lets the paywall be looked at without App Store
+/// products or a Worker that has PAYWALL_ENABLED. Not compiled into release.
+struct PaywallDebugSection: View {
+    @AppStorage(PaywallConfiguration.debugEnabledKey) private var enabled = false
+    @AppStorage(PaywallConfiguration.debugServerPlanKey) private var serverPlan = ""
+
+    var body: some View {
+        Section {
+            Toggle("有料Standardを有効にする", isOn: $enabled)
+            Picker("サーバーのプラン", selection: $serverPlan) {
+                Text("実サーバーに聞く").tag("")
+                Text("free(ペイウォールが出る)").tag("free")
+                Text("standard(既存ユーザー相当)").tag("standard")
+            }
+        } header: {
+            Text("開発用(UI確認用)")
+        } footer: {
+            Text("DEBUGビルドだけの項目です。変更はアプリを再起動すると反映されます。")
+        }
+    }
+}
+#endif

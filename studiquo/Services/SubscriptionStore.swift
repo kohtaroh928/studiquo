@@ -73,7 +73,22 @@ enum SubscriptionEntitlementID {
 /// shown and no Standard purchase button is offered. Delete this flag, and
 /// the `.standard` fallbacks it guards, after launch.
 enum PaywallConfiguration {
-    static let isEnabled = false
+    /// Release builds: always off. DEBUG builds can switch it on from
+    /// 設定 → 開発用(UI確認用) to look at the paywall; takes effect on the next
+    /// launch because `SubscriptionStore` reads it once at init.
+    static var isEnabled: Bool {
+        #if DEBUG
+        UserDefaults.standard.bool(forKey: debugEnabledKey)
+        #else
+        false
+        #endif
+    }
+
+    #if DEBUG
+    static let debugEnabledKey = "debugPaywallEnabled"
+    /// "" = ask the real Worker; otherwise "free" | "standard" | "plus" | "pro".
+    static let debugServerPlanKey = "debugPaywallServerPlan"
+    #endif
 }
 
 /// RevenueCat configuration. The public SDK key is safe to ship inside the
@@ -277,6 +292,11 @@ final class SubscriptionStore: ObservableObject {
 /// failure — the caller then keeps what it already knows.
 enum ServerPlanClient {
     static func fetch() async -> StudiquoPlan? {
+        #if DEBUG
+        if let forced = UserDefaults.standard.string(forKey: PaywallConfiguration.debugServerPlanKey), !forced.isEmpty {
+            return plan(fromResponse: Data(#"{"plan":"\#(forced)"}"#.utf8))
+        }
+        #endif
         guard let baseURL = WorkerAIProvider().baseURL else { return nil }
         var request = URLRequest(url: baseURL.appending(path: "api/plan"))
         request.timeoutInterval = 10
