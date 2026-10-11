@@ -5,12 +5,13 @@
  *
  * Model IDs are deliberately NOT hardcoded here. OpenAI's current
  * flagship/mid-tier model names were not confirmed at the time this file
- * was written, so the two "openai-mid"/"openai-flagship" logical models in
- * ai.js's `PLAN_MODELS` are resolved to real model ids via
- * `env.OPENAI_MID_MODEL` / `env.OPENAI_FLAGSHIP_MODEL` instead of a
+ * was written, so the logical models in ai.js's `PLAN_MODELS`
+ * ("openai-luna" / "openai-terra" / "openai-sol" / "openai-astra") are resolved
+ * to real model ids via `env.OPENAI_LUNA_MODEL` / `OPENAI_TERRA_MODEL` /
+ * `OPENAI_SOL_MODEL` / `OPENAI_ASTRA_MODEL` instead of a
  * constant in this file. Before enabling either logical model, check
  * OpenAI's current model documentation for the right id and set it with
- * `wrangler secret put OPENAI_MID_MODEL` (or as a plain `vars` entry in
+ * `wrangler secret put OPENAI_LUNA_MODEL` (or as a plain `vars` entry in
  * wrangler.jsonc, since a model name by itself isn't sensitive — only
  * `OPENAI_API_KEY` needs to stay a secret).
  */

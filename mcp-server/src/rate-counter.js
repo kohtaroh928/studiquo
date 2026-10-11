@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { takeFrom, giveTo } from "./counter-state.js";
 import { reserveAttempt, refundAttempt, trustPair, trustExpiryMs } from "./login-throttle.js";
 import { touchSeenContext } from "./login-monitor.js";
 
@@ -25,20 +26,34 @@ export class RateCounter extends DurableObject {
    * exact one, same as the KV version was, just without its burst-at-the
    * -boundary quirk.
    */
-  async bump(limit, windowSeconds) {
-    const now = Date.now();
-    const stored = await this.ctx.storage.get("state");
-    const state = stored && now < stored.windowEndsAt
-      ? stored
-      : { count: 0, windowEndsAt: now + windowSeconds * 1000 };
-    if (state.count >= limit) return false;
-    state.count += 1;
-    await this.ctx.storage.put("state", state);
+  async bump(limit, windowSeconds, amount = 1) {
+    return (await this.take(limit, windowSeconds, amount)).ok;
+  }
+
+  /**
+   * `bump`, but also says which window the amount was taken from, so a later
+   * `give` can return it to that window and no other. `amount` lets one call
+   * cost more than one unit (AI credits, ai-credits.js).
+   */
+  async take(limit, windowSeconds, amount = 1) {
+    const result = takeFrom(await this.ctx.storage.get("state"), Date.now(), limit, windowSeconds, amount);
+    if (!result.ok) return { ok: false };
+    await this.ctx.storage.put("state", result.state);
     // Lets this object's storage be reclaimed once its window is long
     // over, instead of one object per distinct key (every user × every
     // counted action) persisting forever.
-    await this.ctx.storage.setAlarm(state.windowEndsAt + windowSeconds * 1000);
-    return true;
+    await this.ctx.storage.setAlarm(result.windowEndsAt + windowSeconds * 1000);
+    return { ok: true, windowEndsAt: result.windowEndsAt };
+  }
+
+  /**
+   * Gives back what an earlier `take` took, for when a later check in the same
+   * request refused it. Only touches the window it was taken from (see
+   * counter-state.js).
+   */
+  async give(amount, windowEndsAt) {
+    const next = giveTo(await this.ctx.storage.get("state"), Date.now(), amount, windowEndsAt);
+    if (next) await this.ctx.storage.put("state", next);
   }
 
   // Failed-login backoff (login-throttle.js owns the policy and the state
