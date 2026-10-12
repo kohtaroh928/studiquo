@@ -275,6 +275,7 @@ async function handleChat(request, env, key, ctx, plan, account) {
 
     if (!upstream.ok || !upstream.body) {
       await gate.refund();
+      console.error(JSON.stringify({ message: "AI upstream refused", status: upstream.status, error: await upstream.clone().text().then(text => text.slice(0, 300)).catch(() => "") }));
       return upstreamFailureResponse(upstream);
     }
   } catch (error) {
@@ -343,7 +344,11 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
           let text = "";
           try {
             const event = JSON.parse(raw);
-            if (event?.type === "response.failed" || event?.type === "response.incomplete" || event?.type === "error") failed = true;
+            if (event?.type === "response.failed" || event?.type === "response.incomplete" || event?.type === "error") {
+              failed = true;
+              // Type and error code/message only — never the content.
+              console.error(JSON.stringify({ message: "AI stream failed", type: event.type, error: event?.response?.error ?? event?.error ?? null, incomplete: event?.response?.incomplete_details ?? null }));
+            }
             text = extractText(event);
           } catch {
             // A partial or unexpected event is skipped rather than failing
@@ -361,6 +366,7 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
       // answer: tell the student, give the credits back, and send no "done" push.
       if (failed || produced === 0) {
         completed = false;
+        if (!failed) console.error(JSON.stringify({ message: "AI stream ended with no text" }));
         await send("\n\n（AIが回答を完了できませんでした。もう一度お試しください）");
         await refund();
       }
@@ -509,10 +515,10 @@ async function handleRubric(request, env, key, ctx, plan, account) {
   const question = String(payload?.question ?? "").trim().slice(0, 20_000);
   const modelAnswer = String(payload?.modelAnswer ?? "").trim().slice(0, 30_000);
   const questionImage = String(payload?.questionImageBase64 ?? "");
-  // Either a picture of the exercise or a typed model answer is enough to
-  // build a scheme from; with neither there is nothing to mark against.
-  if ((questionImage && !isPNGBase64(questionImage)) || (!questionImage && !modelAnswer)) {
-    return json({ error: "questionImageBase64 or modelAnswer is required." }, 400);
+  // A picture of the exercise, its typed text or a model answer is enough to
+  // build a scheme from; with none there is nothing to mark against.
+  if ((questionImage && !isPNGBase64(questionImage)) || (!questionImage && !modelAnswer && !question)) {
+    return json({ error: "question, questionImageBase64 or modelAnswer is required." }, 400);
   }
   const blocked = await moderationRejection(env, [question, modelAnswer]);
   if (blocked) return json({ error: blocked, code: "content_rejected" }, 400);
@@ -596,6 +602,7 @@ function streamJSON(env, { refund = async () => {}, model, account, systemInstru
 
       if (!upstream.ok) {
         await refund();
+        console.error(JSON.stringify({ message: "AI structured upstream refused", status: upstream.status, error: await upstream.clone().text().then(text => text.slice(0, 300)).catch(() => "") }));
         await emit({
           error: isUpstreamOverloaded(upstream.status)
             ? AI_BUSY_MESSAGE
@@ -617,6 +624,7 @@ function streamJSON(env, { refund = async () => {}, model, account, systemInstru
               const event = JSON.parse(raw);
               if (event?.type === "response.failed" || event?.type === "error") {
                 upstreamError = event?.response?.error?.message ?? event?.message ?? failureMessage;
+                console.error(JSON.stringify({ message: "AI structured call failed", type: event.type, error: event?.response?.error ?? event?.error ?? null }));
               }
               assembled += openaiDeltaText(event);
             } catch {
@@ -635,6 +643,7 @@ function streamJSON(env, { refund = async () => {}, model, account, systemInstru
           try {
             parsed = JSON.parse(assembled);
           } catch {
+            console.error(JSON.stringify({ message: "AI structured output was not valid JSON", length: assembled.length }));
             await refund();
             await emit({ error: failureMessage });
           }
