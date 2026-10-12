@@ -23,7 +23,8 @@ export async function aiPrivacyRejection(request, env) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return json({ error: "Invalid AI request." }, 400);
   }
-  if (body.model != null && !allowedModelIds().includes(body.model)) {
+  const requested = typeof body.model === "string" ? body.model.trim() : body.model;
+  if (requested != null && requested !== "" && !allowedModelIds().includes(requested)) {
     return json({ error: "現在利用できるAIの送信先はOpenAIのみです。" }, 403);
   }
   return null;

@@ -34,7 +34,7 @@ final class AIDataDisclosureTests: XCTestCase {
     }
 
     func testAcknowledgingPersistsSoItIsNotShownAgain() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         XCTAssertTrue(AIDataDisclosure.hasBeenAcknowledged)
     }
 

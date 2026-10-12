@@ -18,7 +18,8 @@ const API_URL = "https://api.openai.com/v1/responses";
 const MODERATION_URL = "https://api.openai.com/v1/moderations";
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
 const ATTEMPTS = 3;
-const MAX_OUTPUT_TOKENS = 4096;
+// Reasoning tokens count against this too, so leave room beyond the visible answer.
+const MAX_OUTPUT_TOKENS = 8192;
 
 /** A user turn's content parts: its text, plus any images attached to it. */
 function userContent(turn, images) {

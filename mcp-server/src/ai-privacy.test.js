@@ -33,3 +33,8 @@ test("approved OpenAI requests remain readable by the actual handler", async () 
   assert.equal(await aiPrivacyRejection(input, APPROVED), null);
   assert.equal((await input.json()).messages[0].text, "test");
 });
+test("an empty or padded model name is treated like the handler treats it", async () => {
+  assert.equal(await aiPrivacyRejection(request({ model: "" }), APPROVED), null);
+  assert.equal(await aiPrivacyRejection(request({ model: " openai-luna " }), APPROVED), null);
+  assert.equal((await aiPrivacyRejection(request({ model: 5 }), APPROVED)).status, 403);
+});

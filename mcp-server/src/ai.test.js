@@ -545,3 +545,83 @@ test("a free-plan account is refused every AI route with 402 before any upstream
     fetchState.restore();
   }
 });
+
+// MARK: Review follow-ups
+
+function sse(...events) {
+  return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""), { status: 200 });
+}
+
+test("a chat stream that fails or ends empty tells the student and gives the credits back", async () => {
+  const bodies = [
+    () => sse({ type: "response.created" }, { type: "response.failed", response: { error: { message: "x" } } }),
+    () => sse({ type: "response.created" }, { type: "response.incomplete" }),
+    () => sse({ type: "response.created" }, { type: "response.completed" }),
+  ];
+  for (const make of bodies) {
+    const fetchState = installFetch(make);
+    try {
+      const env = environment();
+      for (let i = 0; i < 8; i += 1) {
+        const { response, text } = await run("chat", chatBody(), { env });
+        assert.equal(response.status, 200, `call ${i + 1} (would be 429 without refunds)`);
+        assert.match(text, /完了できませんでした/);
+      }
+    } finally {
+      fetchState.restore();
+    }
+  }
+});
+
+test("a chat that throws before streaming (e.g. no API key) gives the credits back", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const env = environment({ OPENAI_API_KEY: undefined });
+    for (let i = 0; i < 8; i += 1) assert.equal((await run("chat", chatBody(), { env })).response.status, 500);
+    env.OPENAI_API_KEY = "k";
+    assert.equal((await run("chat", chatBody(), { env })).response.status, 200);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("rubric/grade/review give the credits back when the upstream fails or returns broken JSON", async () => {
+  const cases = [
+    () => new Response(BUSY, { status: 500 }),
+    () => sse({ type: "response.failed", response: { error: { message: "x" } } }),
+    () => responsesOK("{ broken"),
+  ];
+  const requests = [
+    ["review", { question: "q" }],
+    ["rubric", { modelAnswer: "m" }],
+    ["grade", { question: "q", answerText: "a", criteria: [{ name: "n", maxPoints: 100, requirement: "r" }] }],
+  ];
+  for (const make of cases) {
+    const fetchState = installFetch(make);
+    try {
+      const env = environment();
+      for (const [path, body] of requests) {
+        for (let i = 0; i < 6; i += 1) {
+          const { response, text } = await run(path, body, { env });
+          assert.equal(response.status, 200, `${path} #${i + 1}`);
+          assert.match(text, /"error"/);
+        }
+      }
+    } finally {
+      fetchState.restore();
+    }
+  }
+});
+
+test("earlier turns and note text are screened too, not just the last message", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    await run("chat", {
+      messages: [{ role: "user", text: "前の発言" }, { role: "assistant", text: "回答" }, { role: "user", text: "いまの発言" }],
+      noteContext: "共有されたノート",
+    });
+    assert.deepEqual(fetchState.moderationCalls[0].input, ["前の発言", "いまの発言", "共有されたノート"]);
+  } finally {
+    fetchState.restore();
+  }
+});

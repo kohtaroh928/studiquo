@@ -17,7 +17,7 @@ test("request body uses Responses API fields and does not store the conversation
   assert.equal(body.instructions, "system prompt");
   assert.equal(body.store, false);
   assert.equal(body.stream, true);
-  assert.equal(body.max_output_tokens, 4096);
+  assert.equal(body.max_output_tokens, 8192);
   assert.equal("messages" in body, false);
   assert.equal("max_tokens" in body, false);
   assert.equal("previous_response_id" in body, false);
@@ -42,4 +42,17 @@ test("extractDeltaText returns only output_text deltas", () => {
   assert.equal(extractDeltaText({ type: "response.created" }), "");
   assert.equal(extractDeltaText({ choices: [{ delta: { content: "old" } }] }), "");
   assert.equal(extractDeltaText(null), "");
+});
+
+import { toStrictJSONSchema } from "./openai.js";
+test("toStrictJSONSchema lower-cases types, requires every property and forbids extras, keeping enums", () => {
+  const out = toStrictJSONSchema({
+    type: "OBJECT",
+    properties: { kind: { type: "STRING", enum: ["a", "b"] }, items: { type: "ARRAY", items: { type: "OBJECT", properties: { n: { type: "INTEGER" } } } } },
+  });
+  assert.deepEqual(out.required, ["kind", "items"]);
+  assert.equal(out.additionalProperties, false);
+  assert.deepEqual(out.properties.kind, { type: "string", enum: ["a", "b"] });
+  assert.equal(out.properties.items.items.additionalProperties, false);
+  assert.deepEqual(out.properties.items.items.required, ["n"]);
 });
