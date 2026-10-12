@@ -21,7 +21,7 @@ function counters() {
 }
 
 const call = (env, overrides = {}) => consumeCredits(env, {
-  accountKey: "acct", plan: "pro", kind: "chat", model: "gemini-3.5-flash-lite",
+  accountKey: "acct", plan: "pro", kind: "chat", model: "openai-luna",
   globalBucket: "chat", globalLimit: 1_000_000, now: Date.UTC(2026, 9, 12, 3, 0, 0), ...overrides,
 });
 
@@ -30,14 +30,13 @@ test("credit weights match the published plan: Luna 1, Sonnet/Sol 20, Terra 22, 
     ["openai-luna", "claude-sonnet-5-5", "openai-sol", "openai-terra", "claude-opus-5-5", "openai-astra"].map(id => MODEL_CREDITS[id]),
     [1, 20, 20, 22, 40, 100],
   );
-  assert.equal(MODEL_CREDITS["gemini-3.5-flash-lite"], 4);
 });
 
 test("non-chat features cost more than a chat turn on the same model", () => {
-  assert.equal(creditCost("chat", undefined), 4);
-  assert.equal(creditCost("rubric", undefined), 8);
-  assert.equal(creditCost("grade", undefined), 12);
-  assert.equal(creditCost("review", undefined), 12);
+  assert.equal(creditCost("chat", undefined), 1);
+  assert.equal(creditCost("rubric", undefined), 2);
+  assert.equal(creditCost("grade", undefined), 3);
+  assert.equal(creditCost("review", undefined), 3);
   assert.equal(creditCost("chat", "some-future-model"), 100);
 });
 
@@ -145,8 +144,8 @@ test("the service-wide cap still stops everyone, and costs the account nothing",
 test("a refusal by the day window also gives back the minute and 5-hour credits", async () => {
   const env = { RATE_COUNTER: counters() };
   const now = Date.UTC(2026, 9, 12, 3, 0, 0);
-  env.RATE_COUNTER.used.set("ai:cr:day:20261012:acct", 59); // standard day = 60
-  assert.deepEqual(await call(env, { plan: "standard", now }), { ok: false, window: "day" }); // costs 4
+  env.RATE_COUNTER.used.set("ai:cr:day:20261012:acct", 60); // standard day = 60
+  assert.deepEqual(await call(env, { plan: "standard", now }), { ok: false, window: "day" }); // costs 1
   assert.equal(env.RATE_COUNTER.used.get("ai:cr:min:acct") ?? 0, 0);
   assert.equal(env.RATE_COUNTER.used.get("ai:cr:5h:acct") ?? 0, 0);
   assert.equal(env.RATE_COUNTER.used.get("ai:global:chat") ?? 0, 0);
