@@ -95,13 +95,10 @@ enum PaywallConfiguration {
 /// app binary (unlike a server secret key) — it only identifies which
 /// RevenueCat project this app talks to.
 ///
-/// *** ACTION REQUIRED ***: `publicAPIKey` below is a placeholder. Create a
-/// project in the RevenueCat dashboard (https://app.revenuecat.com), add the
-/// App Store app, and copy its "public" API key (Project settings → API
-/// keys → Apple App Store) in here before shipping — purchases, restores,
-/// and entitlement checks all silently fail against the placeholder.
+/// The key below is the "Public app-specific API key" of the `studiquo (App
+/// Store)` app in the RevenueCat dashboard (API keys → Public API keys).
 enum RevenueCatConfiguration {
-    static let publicAPIKey = "REVENUECAT_API_KEY_PLACEHOLDER"
+    static let publicAPIKey = "appl_vVZTDpluttzBVtyfnYdYaklHPGc"
 }
 
 @MainActor
