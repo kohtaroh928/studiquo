@@ -9,8 +9,19 @@ struct SubscriptionPlansView: View {
     /// Presented by the paywall gate: no way to dismiss it without a plan.
     var isBlocking = false
 
+    /// Fixed prices shown in place of App Store products, only to capture the
+    /// App Review screenshot while RevenueCat/App Store products are not
+    /// available (see `PaywallUITestRoot`). Empty — and so unused — in every
+    /// real run.
+    var sampleOptions: [SamplePurchaseOption] = []
+
     init(isBlocking: Bool = false) {
         self.isBlocking = isBlocking
+    }
+
+    init(isBlocking: Bool = false, sampleOptions: [SamplePurchaseOption]) {
+        self.isBlocking = isBlocking
+        self.sampleOptions = sampleOptions
     }
 
     var body: some View {
@@ -74,7 +85,7 @@ struct SubscriptionPlansView: View {
             .sheet(isPresented: $showsPrivacyPolicy) {
                 PrivacyPolicyView()
             }
-            .task { await store.refresh() }
+            .task { if sampleOptions.isEmpty { await store.refresh() } }
         }
     }
 
@@ -171,6 +182,10 @@ struct SubscriptionPlansView: View {
             if plan == .standard && !store.paywallEnabled {
                 Text("無料")
                     .font(.headline)
+            } else if let samples = debugSamples(for: plan) {
+                ForEach(samples) { sample in
+                    sampleButton(sample)
+                }
             } else if store.packages(for: plan).isEmpty {
                 Text("App Storeで準備中")
                     .font(.subheadline)
@@ -188,6 +203,26 @@ struct SubscriptionPlansView: View {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(store.currentPlan == plan ? Color.accentColor : Color.secondary.opacity(0.2), lineWidth: store.currentPlan == plan ? 2 : 1)
         }
+    }
+
+    private func debugSamples(for plan: StudiquoPlan) -> [SamplePurchaseOption]? {
+        let samples = sampleOptions.filter { $0.plan == plan }
+        return samples.isEmpty ? nil : samples
+    }
+
+    private func sampleButton(_ sample: SamplePurchaseOption) -> some View {
+        Button {} label: {
+            HStack {
+                Text(sample.label)
+                Spacer()
+                Text(sample.price)
+                Text(sample.period)
+            }
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.borderedProminent)
     }
 
     private func purchaseButton(_ package: Package, plan: StudiquoPlan) -> some View {
@@ -297,3 +332,24 @@ struct PaywallDebugSection: View {
     }
 }
 #endif
+
+/// One purchase button's worth of fixed display data (see
+/// `SubscriptionPlansView.sampleOptions`).
+struct SamplePurchaseOption: Identifiable {
+    let plan: StudiquoPlan
+    let label: String
+    let price: String
+    let period: String
+    var id: String { "\(plan.rawValue)-\(label)" }
+
+    #if DEBUG
+    /// The five products as configured in App Store Connect (prices in JPY).
+    static let appStoreConnectProducts: [SamplePurchaseOption] = [
+        SamplePurchaseOption(plan: .standard, label: "7日間無料のあと 年額", price: "¥980", period: "／年"),
+        SamplePurchaseOption(plan: .plus, label: "月額", price: "¥600", period: "／月"),
+        SamplePurchaseOption(plan: .plus, label: "年額", price: "¥5,800", period: "／年"),
+        SamplePurchaseOption(plan: .pro, label: "月額", price: "¥1,500", period: "／月"),
+        SamplePurchaseOption(plan: .pro, label: "年額", price: "¥14,800", period: "／年"),
+    ]
+    #endif
+}

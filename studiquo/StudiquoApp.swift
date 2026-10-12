@@ -733,7 +733,11 @@ private struct PaywallUITestRoot: View {
 
     var body: some View {
         if let container {
-            SubscriptionPlansView(isBlocking: true)
+            SubscriptionPlansView(
+                isBlocking: !ProcessInfo.processInfo.arguments.contains("--paywall-ui-test-settings"),
+                sampleOptions: ProcessInfo.processInfo.arguments.contains("--paywall-ui-test-sample-prices")
+                    ? SamplePurchaseOption.appStoreConnectProducts : []
+            )
                 .modelContainer(container)
                 .environmentObject(authentication)
                 .environmentObject(subscriptionStore)
