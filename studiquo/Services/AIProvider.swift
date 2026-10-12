@@ -12,7 +12,7 @@ struct AITurn {
 ///
 /// The app talks only to this protocol, so changing model or vendor is one
 /// line in `AI.provider` rather than an edit at every call site. Two
-/// implementations exist today: the Worker proxy (Gemini, the shipping path)
+/// implementations exist today: the Worker proxy (OpenAI, the shipping path)
 /// and the direct Claude client kept from the earlier build.
 protocol AIProvider {
     /// True when the provider is configured well enough to be worth calling.
@@ -76,7 +76,7 @@ enum AI {
 
 // MARK: - Worker-backed provider
 
-/// Talks to the app's own Cloudflare Worker, which holds the Gemini key.
+/// Talks to the app's own Cloudflare Worker, which holds the OpenAI key.
 ///
 /// The app authenticates with the same device token the MCP sync already
 /// uses, so there is nothing extra for the student to set up — the AI is
@@ -157,6 +157,7 @@ final class WorkerAIProvider: AIProvider {
         request.timeoutInterval = 300
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(AIDataDisclosure.currentVersion, forHTTPHeaderField: "X-Studiquo-AI-Consent")
+        request.setValue(AIDataDisclosure.ageBand?.rawValue, forHTTPHeaderField: "X-Studiquo-Age")
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
@@ -207,7 +208,7 @@ final class WorkerAIProvider: AIProvider {
                Int(received) != encodedImages.count {
                 throw ProviderError.imageNotReceived
             }
-            // The Worker normalises Gemini's event envelope down to
+            // The Worker normalises the provider's event envelope down to
             // `data: {"text": "..."}`, so there is only one shape to parse.
             for try await line in stream.lines {
                 guard AIDataDisclosure.hasBeenAcknowledged else { throw ProviderError.consentRequired }

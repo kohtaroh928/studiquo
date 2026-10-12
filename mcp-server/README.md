@@ -21,20 +21,20 @@ Studiquoアプリから同期したノート・OCRテキスト・暗記カード
 
 リモートMCPの認証は動的クライアント登録、OAuth認可コード＋PKCE、アクセストークン更新を使います。初回接続時の確認はログイン済みiPadでのコード承認です。作成内容はアカウントごとのDurable Object受信箱に保持し、iPadのSwiftData保存記録と同じトランザクションで取り込み済みとして記録します。ChatGPT側の書き込み機能の利用可否は契約プランとクライアントの対応状況に依存します。
 
-## AI（Gemini / Anthropic / OpenAI）プロキシ
+## AI（OpenAI）プロキシ
 
 アプリのAIトークと証明添削は、各社のAPIを直接呼ばずにこのWorkerを経由します。**APIキーはこのWorkerだけが持ち、アプリには一切入りません。**
 
 | エンドポイント | 用途 |
 | --- | --- |
 | `POST /api/ai/chat` | AIトーク（SSEで逐次返す）。プラン対応モデルを選べる |
-| `POST /api/ai/rubric` | 模範解答から採点基準を作る（Gemini固定） |
-| `POST /api/ai/grade` | 答案画像を採点基準で採点する（Gemini固定） |
-| `POST /api/ai/review` | 復習教材（解説＋一問一答）を作る（Gemini固定） |
+| `POST /api/ai/rubric` | 模範解答から採点基準を作る（Luna固定） |
+| `POST /api/ai/grade` | 答案画像を採点基準で採点する（Luna固定） |
+| `POST /api/ai/review` | 復習教材（解説＋一問一答）を作る（Luna固定） |
 
 認証は `/api/*` と同じ端末トークンで、`session.sub` を `entitlements.js`の`getPlan`でRevenueCatの`subscribers`テーブル（D1 `ADMIN_DB`、`admin.js`のWebhookが書き込む）に照会し、standard/plus/proのいずれかを解決します。RevenueCatの`app_user_id`はiOS側が`Purchases.shared.logIn(session.sub)`を呼ぶ前提でstudiquoの`sub`と一致させています（呼ばれていないと常にstandard扱いになります）。
 
-AIの利用量は**クレジット**で数え、プランごとに4つの窓（1分あたりの回数・5時間・1日・1か月。1日と1か月は日本時間）で同時に制限します。数える単位は端末ではなく**アカウント**です（`ai-credits.js`）。1クレジットは約$0.0007の原価で、モデルごとの重み（Gemini 4 / Luna 1 / Sonnet・Sol 20 / Terra 22 / Opus 40 / Astra 100）と機能ごとの倍率（チャット1 / 採点基準2 / 採点・復習3）を掛けた値を、1回の呼び出しで消費します。
+AIの利用量は**クレジット**で数え、プランごとに4つの窓（1分あたりの回数・5時間・1日・1か月。1日と1か月は日本時間）で同時に制限します。数える単位は端末ではなく**アカウント**です（`ai-credits.js`）。1クレジットは約$0.0007の原価で、モデルごとの重み（Luna 1 / Sol 20 / Terra 22 / Astra 100）と機能ごとの倍率（チャット1 / 採点基準2 / 採点・復習3）を掛けた値を、1回の呼び出しで消費します。
 
 | | 1分(回数) | 5時間 | 1日 | 1か月 |
 |---|---|---|---|---|
@@ -44,15 +44,20 @@ AIの利用量は**クレジット**で数え、プランごとに4つの窓（1
 
 上限に達すると429（`code: "ai_limit"`、`window` は `minute` / `fiveHours` / `day` / `month` / `global`）を返します。別に、機能ごとのサービス全体の1日の上限（`GLOBAL_*_DAILY_LIMIT`）も残してあります。重みや上限を直すときは`ai-credits.js`の表だけを変えます（アプリに表示するクレジット数は`SubscriptionPlansView.swift`に手で合わせます）。
 
-`/api/ai/chat`のみ、リクエストボディの`model`でプラン対応モデルを選べます（standardはGemini、plusはGeminiに加えてClaude Sonnet・ChatGPT Luna/Terra/Sol、proはさらにClaude Opus・ChatGPT Astra）。プラン外のモデルは403です。`model`を省略した場合は従来通りGeminiのみを呼びます。他社のモデルは、同意文と`AI_PROVIDER_APPROVED`の承認が済むまで`ai-privacy.js`が止めます。
+`/api/ai/chat`のみ、リクエストボディの`model`でプラン対応モデルを選べます（standardはChatGPT Luna、plusはLunaに加えてTerra・Sol、proはさらにAstra）。プラン外のモデルは403です。`model`を省略した場合はLunaを呼びます。AnthropicのコードはWorkerに残っていますが、どのプランの表にも載せていないため無効です。
 
-システムプロンプトと採点スキーマはWorker側にあるので、**採点の指示を直すのにアプリの再申請は要りません。** Geminiのモデルは `GEMINI_CHAT_MODEL` / `GEMINI_GRADING_MODEL` で差し替えられます。
+**AIを使える人の条件と安全策**（OpenAIの利用条件が13歳未満を対象外とし、未成年には保護者の同意を求めるため）:
+
+- アプリは初回に年齢区分（`adult`＝18歳以上、`teen`＝13〜17歳で保護者の同意あり）を確認し、リクエストに`X-Studiquo-Age`ヘッダーを付けます。13歳未満は選べず、AIを使えません。ヘッダーが無い・不正な値のリクエストは`ai-privacy.js`が403で止めます。
+- 同意の版は`openai-v1`（`X-Studiquo-AI-Consent`）。古い版や`AI_PROVIDER_APPROVED`が`true`でないときは使えません。
+- 利用者の入力文はOpenAIのモデレーション（`omni-moderation-latest`）にかけ、不適切と判定されたら送らずに400（`code: "content_rejected"`）を返します（自傷関連は止めません。モデレーション自体が落ちているときは通します。`AI_MODERATION=off`で無効化）。
+- OpenAIへ送るときは`store: false`と、アカウントのハッシュを元にした`safety_identifier`を付けます（アカウントIDそのものは送りません）。
+
+システムプロンプトと採点スキーマはWorker側にあるので、**採点の指示を直すのにアプリの再申請は要りません。** モデルは`OPENAI_*_MODEL`で差し替えられます。
 
 ### 初回セットアップ
 
 ```bash
-npx wrangler secret put GEMINI_API_KEY
-npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put OPENAI_API_KEY
 ```
 
@@ -67,7 +72,7 @@ npx wrangler secret put OPENAI_ASTRA_MODEL
 
 （`wrangler.jsonc` の `vars` に、2026-10-12時点のIDを入れてあります。変えるときはそこを直します。）
 
-`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` が未設定のまま該当プロバイダのモデルを選ぶとそのリクエストだけがエラーになり（Geminiや設定済みの他モデルには影響しません）、`OPENAI_*_MODEL` が未設定のまま該当の`"openai-luna"` / `"openai-terra"` / `"openai-sol"` / `"openai-astra"`を選ぶと503を返します。
+`OPENAI_API_KEY` が未設定だとAIのリクエストはエラーになります。`OPENAI_*_MODEL` が未設定のまま該当の`"openai-luna"` / `"openai-terra"` / `"openai-sol"` / `"openai-astra"`を選ぶと503を返します。
 
 ```bash
 npx wrangler deploy
