@@ -378,7 +378,7 @@ private struct NoteSnippetFriendUITestRoot: View {
     @StateObject private var friendStore: FriendStore
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         let store = FriendStore(
             defaults: UserDefaults(suiteName: "NoteSnippetFriendUITest-\(UUID().uuidString)")!,
             autoRefresh: false
@@ -557,7 +557,7 @@ private struct NoteAIChatUITestRoot: View {
     @StateObject private var friendStore: FriendStore
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         AI.provider = UITestAIProvider()
         let store = FriendStore(
             defaults: UserDefaults(suiteName: "NoteAIChatUITest-\(UUID().uuidString)")!,
@@ -698,7 +698,7 @@ private struct StartupUITestRoot: View {
     @StateObject private var subscriptionStore = SubscriptionStore()
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         UserDefaults.standard.set("", forKey: "libraryFolderNames")
         UserDefaults.standard.set(true, forKey: "didMigrateFoldersToHierarchy")
     }
@@ -766,7 +766,7 @@ private struct LibraryDropUITestRoot: View {
     private let gatesOnLogin = ProcessInfo.processInfo.arguments.contains("--ui-test-login-gate")
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         if ProcessInfo.processInfo.arguments.contains("--ui-test-login-gate") {
             LibraryDropUITestStore.authentication.ignoresAuthFailures = true
             LibraryDropUITestStore.authentication.finishOnboarding()
@@ -1069,7 +1069,7 @@ private struct TabPickerCreateUITestRoot: View {
     @StateObject private var subscriptionStore = SubscriptionStore()
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         UserDefaults.standard.set("", forKey: "libraryFolderNames")
         UserDefaults.standard.set(true, forKey: "didMigrateFoldersToHierarchy")
         _ = TabPickerCreateUITestStore.container

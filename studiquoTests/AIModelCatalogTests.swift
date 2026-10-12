@@ -2,15 +2,14 @@ import XCTest
 @testable import studiquo
 
 final class AIModelCatalogTests: XCTestCase {
-    func testStandardPlanOnlyUnlocksTheFreeGeminiModel() {
+    func testStandardPlanOnlyUnlocksTheBaseModel() {
         let available = AIModelCatalog.availableModels(for: .standard).map(\.id)
-        XCTAssertEqual(available, [.geminiFlashLite])
+        XCTAssertEqual(available, [.openAILuna])
     }
 
-    func testPlusPlanUnlocksEveryStandardAndPlusModelButNotProModels() {
+    func testPlusPlanUnlocksStandardAndPlusModelsButNotProModels() {
         let available = Set(AIModelCatalog.availableModels(for: .plus).map(\.id))
-        XCTAssertEqual(available, [.geminiFlashLite, .claudeSonnet, .openAILuna, .openAITerra, .openAISol])
-        XCTAssertFalse(available.contains(.claudeOpus))
+        XCTAssertEqual(available, [.openAILuna, .openAITerra, .openAISol])
         XCTAssertFalse(available.contains(.openAIAstra))
     }
 
@@ -20,11 +19,11 @@ final class AIModelCatalogTests: XCTestCase {
     }
 
     func testIsAvailableMatchesTheRequiredPlanExactly() {
-        XCTAssertTrue(AIModelCatalog.isAvailable(.geminiFlashLite, for: .standard))
-        XCTAssertFalse(AIModelCatalog.isAvailable(.claudeSonnet, for: .standard))
-        XCTAssertTrue(AIModelCatalog.isAvailable(.claudeSonnet, for: .plus))
-        XCTAssertFalse(AIModelCatalog.isAvailable(.claudeOpus, for: .plus))
-        XCTAssertTrue(AIModelCatalog.isAvailable(.claudeOpus, for: .pro))
+        XCTAssertTrue(AIModelCatalog.isAvailable(.openAILuna, for: .standard))
+        XCTAssertFalse(AIModelCatalog.isAvailable(.openAISol, for: .standard))
+        XCTAssertTrue(AIModelCatalog.isAvailable(.openAISol, for: .plus))
+        XCTAssertFalse(AIModelCatalog.isAvailable(.openAIAstra, for: .plus))
+        XCTAssertTrue(AIModelCatalog.isAvailable(.openAIAstra, for: .pro))
     }
 
     func testNoModelIsAvailableWithoutAPlan() {
@@ -37,14 +36,9 @@ final class AIModelCatalogTests: XCTestCase {
         }
     }
 
-    /// Regression coverage for the one thing that must never silently drift:
-    /// the raw string sent to the Worker in the `"model"` field has to match
-    /// `mcp-server/src/ai.js`'s `PLAN_MODELS` table exactly (see
-    /// `AIModelID`'s own doc comment on why these are hand-synced).
+    /// The raw string sent to the Worker in the `"model"` field has to match
+    /// `mcp-server/src/ai.js`'s `PLAN_MODELS` table exactly.
     func testEveryModelIDRawValueMatchesTheAgreedWorkerContract() {
-        XCTAssertEqual(AIModelID.geminiFlashLite.rawValue, "gemini-3.5-flash-lite")
-        XCTAssertEqual(AIModelID.claudeSonnet.rawValue, "claude-sonnet-5-5")
-        XCTAssertEqual(AIModelID.claudeOpus.rawValue, "claude-opus-5-5")
         XCTAssertEqual(AIModelID.openAILuna.rawValue, "openai-luna")
         XCTAssertEqual(AIModelID.openAITerra.rawValue, "openai-terra")
         XCTAssertEqual(AIModelID.openAISol.rawValue, "openai-sol")
@@ -54,36 +48,27 @@ final class AIModelCatalogTests: XCTestCase {
     /// The Worker's `MODEL_CREDITS` (`mcp-server/src/ai-credits.js`).
     func testCreditsPerModelMatchTheWorkersWeights() {
         let credits = Dictionary(uniqueKeysWithValues: AIModelCatalog.all.map { ($0.id, $0.credits) })
-        XCTAssertEqual(credits, [
-            .geminiFlashLite: 4, .openAILuna: 1, .claudeSonnet: 20, .openAISol: 20,
-            .openAITerra: 22, .claudeOpus: 40, .openAIAstra: 100,
-        ])
+        XCTAssertEqual(credits, [.openAILuna: 1, .openAISol: 20, .openAITerra: 22, .openAIAstra: 100])
     }
 
-    func testPlusAndProModelsMatchThePublishedPlan() {
-        func ids(_ plan: StudiquoPlan) -> Set<AIModelID> { Set(AIModelCatalog.availableModels(for: plan).map(\.id)) }
-        XCTAssertEqual(ids(.standard), [.geminiFlashLite])
-        XCTAssertEqual(ids(.plus), [.geminiFlashLite, .claudeSonnet, .openAILuna, .openAITerra, .openAISol])
-        XCTAssertEqual(ids(.pro), ids(.plus).union([.claudeOpus, .openAIAstra]))
-    }
-
-    func testOtherProvidersStayHiddenUntilTheyAreExplicitlyEnabled() {
-        XCTAssertFalse(AIModelCatalog.thirdPartyModelsEnabled)
-        XCTAssertEqual(AIModelCatalog.offered.map(\.id), [.geminiFlashLite])
+    func testEveryModelIsOffered() {
+        XCTAssertEqual(AIModelCatalog.offered.map(\.id), AIModelCatalog.all.map(\.id))
+        XCTAssertTrue(AIModelCatalog.offered.allSatisfy { $0.providerName == "OpenAI" })
     }
 
     func testEveryCatalogEntryHasAMatchingAIModelIDCase() {
         XCTAssertEqual(Set(AIModelCatalog.all.map(\.id)), Set(AIModelID.allCases))
     }
 
-    func testInitialReleaseDoesNotSendToPreviouslySelectedOtherProviders() {
+    func testASavedSelectionFromAnEarlierProviderFallsBackToTheBaseModel() {
         let original = AIModelSelection.current
         defer { AIModelSelection.current = original }
 
-        AIModelSelection.current = .claudeSonnet
-        XCTAssertEqual(AIModelSelection.current, .geminiFlashLite)
-
-        AIModelSelection.current = .claudeOpus
-        XCTAssertEqual(AIModelSelection.current, .geminiFlashLite)
+        UserDefaults.standard.set("gemini-3.5-flash-lite", forKey: AIModelSelection.defaultsKey)
+        XCTAssertEqual(AIModelSelection.current, .openAILuna)
+        UserDefaults.standard.set("claude-opus-5-5", forKey: AIModelSelection.defaultsKey)
+        XCTAssertEqual(AIModelSelection.current, .openAILuna)
+        AIModelSelection.current = .openAISol
+        XCTAssertEqual(AIModelSelection.current, .openAISol)
     }
 }

@@ -138,11 +138,14 @@ struct SubscriptionPlansView: View {
         ]
     }
 
-    /// The models this plan adds over the one below — or "GoogleのAIモデル"
-    /// while only Google's are offered.
+    /// The models this plan adds over the one below.
     private func modelsLine(for plan: StudiquoPlan) -> String {
-        let added = AIModelCatalog.offered.filter { $0.requiredPlan == plan }.map(\.displayName)
-        return added.isEmpty ? "GoogleのAIモデル" : (plan == .plus ? "" : "Plusのモデルに加えて、") + added.joined(separator: "・")
+        let added = AIModelCatalog.offered.filter { $0.requiredPlan == plan }.map(\.displayName).joined(separator: "・")
+        switch plan {
+        case .plus: return "Standardのモデルに加えて、" + added
+        case .pro: return "Plusのモデルに加えて、" + added
+        default: return added
+        }
     }
 
     private func planCard(plan: StudiquoPlan, subtitle: String, features: [String]) -> some View {

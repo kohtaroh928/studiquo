@@ -13,11 +13,11 @@ final class PlanAllowanceTests: XCTestCase {
     func testMonthlyTurnsPerModel() {
         let plus = PlanAllowance.forPlan(.plus)
         let pro = PlanAllowance.forPlan(.pro)
-        XCTAssertEqual(plus.monthlyTurns(creditsPerTurn: 20), 75)    // Sonnet
+        XCTAssertEqual(plus.monthlyTurns(creditsPerTurn: 20), 75)    // Sol
         XCTAssertEqual(plus.monthlyTurns(creditsPerTurn: 1), 1_500)  // Luna
-        XCTAssertEqual(pro.monthlyTurns(creditsPerTurn: 40), 100)    // Opus
+        XCTAssertEqual(pro.monthlyTurns(creditsPerTurn: 22), 181)    // Terra
         XCTAssertEqual(pro.monthlyTurns(creditsPerTurn: 100), 40)    // Astra
-        XCTAssertEqual(PlanAllowance.forPlan(.standard).monthlyTurns(creditsPerTurn: 4), 30) // Gemini
+        XCTAssertEqual(PlanAllowance.forPlan(.standard).monthlyTurns(creditsPerTurn: 1), 120) // Luna
         XCTAssertEqual(plus.monthlyTurns(creditsPerTurn: 0), 0)
     }
 

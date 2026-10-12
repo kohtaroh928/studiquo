@@ -105,7 +105,7 @@
   "vars": {
     // OpenAI model ids behind the logical names in ai.js's PLAN_MODELS, from
     // OpenAI's price page on 2026-10-12. Confirm the account can call them
-    // before AI_PROVIDER_APPROVED / the multi-provider approval is switched on.
+    // before AI_PROVIDER_APPROVED is switched on (also needs the OPENAI_API_KEY secret).
     "OPENAI_LUNA_MODEL": "gpt-6-luna",
     "OPENAI_TERRA_MODEL": "gpt-5.6-terra",
     "OPENAI_SOL_MODEL": "gpt-6.1-sol",
@@ -114,12 +114,6 @@
     "PRIVACY_RETENTION_ENABLED": "false",
     // Approve the provider's audience/contract before enabling AI requests.
     "AI_PROVIDER_APPROVED": "false",
-    // Marking asks for structured output, and Gemini emits that only once the
-    // whole document is ready — nothing streams in the meantime. On the
-    // stronger model a two-image request stayed silent past two minutes, and
-    // Cloudflare cut the idle outbound connection with a 524 before any
-    // result existed. The faster model finishes inside the budget.
-    "GEMINI_GRADING_MODEL": "gemini-3.5-flash",
     "APNS_TOPIC": "com.yabuko.studiquo",
     // Two-step rollout of the PBKDF2 -> Argon2id password-hash move (see
     // src/local-auth.js). Argon2id records are always readable; this only
@@ -213,14 +207,13 @@
       "vars": {
         // OpenAI model ids behind the logical names in ai.js's PLAN_MODELS, from
         // OpenAI's price page on 2026-10-12. Confirm the account can call them
-        // before AI_PROVIDER_APPROVED / the multi-provider approval is switched on.
+        // before AI_PROVIDER_APPROVED is switched on (also needs the OPENAI_API_KEY secret).
         "OPENAI_LUNA_MODEL": "gpt-6-luna",
         "OPENAI_TERRA_MODEL": "gpt-5.6-terra",
         "OPENAI_SOL_MODEL": "gpt-6.1-sol",
         "OPENAI_ASTRA_MODEL": "gpt-6-astra",
         "PRIVACY_RETENTION_ENABLED": "false",
         "AI_PROVIDER_APPROVED": "false",
-        "GEMINI_GRADING_MODEL": "gemini-3.5-flash",
         "APNS_TOPIC": "com.yabuko.studiquo",
         "ARGON2_WRITE": "false",
         // Mail from staging says so, and uses Resend's shared test sender.
