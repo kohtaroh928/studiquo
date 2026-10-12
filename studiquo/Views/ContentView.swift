@@ -1655,7 +1655,7 @@ enum AIDataDisclosure {
         defaults.string(forKey: decisionVersionDefaultsKey) == currentVersion
     }
 
-    static func acknowledge(ageBand: AIAgeBand = .adult) {
+    static func acknowledge(ageBand: AIAgeBand) {
         defaults.set(ageBand.rawValue, forKey: ageBandDefaultsKey)
         defaults.set(currentVersion, forKey: consentVersionDefaultsKey)
         defaults.set(currentVersion, forKey: decisionVersionDefaultsKey)

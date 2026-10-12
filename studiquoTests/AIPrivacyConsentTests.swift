@@ -34,7 +34,7 @@ final class AIPrivacyConsentTests: XCTestCase {
     }
 
     func testConsentIsVersionedAndRevocationDisablesAutomaticReview() throws {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         let request = try WorkerAIProvider().request(path: "api/ai/chat", body: [:])
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Studiquo-AI-Consent"), "openai-v1")
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Studiquo-Age"), "adult")

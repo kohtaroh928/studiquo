@@ -211,8 +211,12 @@ async function handleChat(request, env, key, ctx, plan, account) {
     return json({ error: "このプランでは選択できないモデルです。" }, 403);
   }
 
-  const lastTurn = turns[turns.length - 1];
-  const blocked = await moderationRejection(env, [lastTurn?.text]);
+  // Every user-written turn and the attached note text are screened, not just
+  // the latest message (images are not screened).
+  const blocked = await moderationRejection(env, [
+    ...turns.slice(-20).filter(turn => turn?.role !== "assistant").map(turn => turn?.text),
+    payload?.noteContext,
+  ]);
   if (blocked) return json({ error: blocked, code: "content_rejected" }, 400);
 
   const gate = await creditGate(env, {
@@ -244,39 +248,44 @@ async function handleChat(request, env, key, ctx, plan, account) {
   const provider = providerFor(chatModel);
   let upstream;
   let extractText;
-
-  if (provider === "anthropic") {
-    upstream = await callAnthropicChat(env, {
-      model: requestedModel,
-      systemInstruction: system,
-      turns: recentTurns,
-      images,
-    });
-    extractText = anthropicDeltaText;
-  } else {
-    const resolvedModel = resolveOpenAIModel(env, chatModel);
-    if (!resolvedModel) {
-      await gate.refund();
-      return json({ error: "このモデルは現在このWorkerで設定されていません。" }, 503);
+  try {
+    if (provider === "anthropic") {
+      upstream = await callAnthropicChat(env, {
+        model: requestedModel,
+        systemInstruction: system,
+        turns: recentTurns,
+        images,
+      });
+      extractText = anthropicDeltaText;
+    } else {
+      const resolvedModel = resolveOpenAIModel(env, chatModel);
+      if (!resolvedModel) {
+        await gate.refund();
+        return json({ error: "このモデルは現在このWorkerで設定されていません。" }, 503);
+      }
+      upstream = await callOpenAIChat(env, {
+        model: resolvedModel,
+        systemInstruction: system,
+        turns: recentTurns,
+        images,
+        safetyId: account,
+      });
+      extractText = openaiDeltaText;
     }
-    upstream = await callOpenAIChat(env, {
-      model: resolvedModel,
-      systemInstruction: system,
-      turns: recentTurns,
-      images,
-      safetyId: account,
-    });
-    extractText = openaiDeltaText;
-  }
 
-  if (!upstream.ok || !upstream.body) {
+    if (!upstream.ok || !upstream.body) {
+      await gate.refund();
+      return upstreamFailureResponse(upstream);
+    }
+  } catch (error) {
+    // A missing key or a network failure must not cost the student credits.
     await gate.refund();
-    return upstreamFailureResponse(upstream);
+    throw error;
   }
 
   return streamNormalizedText(upstream, extractText, ctx, env, key, {
     "x-studiquo-images-received": String(images.length),
-  });
+  }, gate.refund);
 }
 
 /**
@@ -293,7 +302,7 @@ async function handleChat(request, env, key, ctx, plan, account) {
  * runtime cancelled it. Here the buffer is an ordinary local and the
  * response is returned immediately while the pump runs behind it.
  */
-function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders = {}) {
+function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders = {}, refund = async () => {}) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
@@ -303,6 +312,8 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
     let buffer = "";
     let clientGone = false;
     let completed = false;
+    let failed = false;
+    let produced = 0;
 
     // Every write is guarded. Once the app has the answer it closes the
     // connection, and a write into a stream nobody is reading rejects — the
@@ -331,16 +342,28 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
           if (!raw || raw === "[DONE]") continue;
           let text = "";
           try {
-            text = extractText(JSON.parse(raw));
+            const event = JSON.parse(raw);
+            if (event?.type === "response.failed" || event?.type === "response.incomplete" || event?.type === "error") failed = true;
+            text = extractText(event);
           } catch {
             // A partial or unexpected event is skipped rather than failing
             // the whole reply.
             continue;
           }
-          if (text) await send(text);
+          if (text) {
+            produced += text.length;
+            await send(text);
+          }
         }
       }
       completed = true;
+      // A stream that ends in failure, or without a single character, is not an
+      // answer: tell the student, give the credits back, and send no "done" push.
+      if (failed || produced === 0) {
+        completed = false;
+        await send("\n\n（AIが回答を完了できませんでした。もう一度お試しください）");
+        await refund();
+      }
     } catch (error) {
       await send(`\n\n（通信が中断しました: ${error?.message ?? "unknown"}）`);
     } finally {
@@ -512,13 +535,14 @@ async function handleRubric(request, env, key, ctx, plan, account) {
   });
 
   return streamJSON(env, {
+    refund: gate.refund,
     model: baseModel,
     account,
     systemInstruction: RUBRIC_SYSTEM,
     parts,
     responseSchema: RUBRIC_SCHEMA,
     schemaName: "rubric",
-    maxOutputTokens: 8192,
+    maxOutputTokens: 16384,
     failureMessage: "採点基準を読み取れませんでした。",
   }, ctx);
 }
@@ -534,7 +558,7 @@ async function handleRubric(request, env, key, ctx, plan, account) {
  * last event. It also gives the app something real to show a student who is
  * watching a spinner.
  */
-function streamJSON(env, { model, account, systemInstruction, parts, responseSchema, schemaName, maxOutputTokens, failureMessage }, ctx) {
+function streamJSON(env, { refund = async () => {}, model, account, systemInstruction, parts, responseSchema, schemaName, maxOutputTokens, failureMessage }, ctx) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
@@ -542,6 +566,7 @@ function streamJSON(env, { model, account, systemInstruction, parts, responseSch
     const decoder = new TextDecoder();
     const writer = writable.getWriter();
     let clientGone = false;
+    let delivered = false;
 
     const emit = async event => {
       if (clientGone) return;
@@ -570,6 +595,7 @@ function streamJSON(env, { model, account, systemInstruction, parts, responseSch
       });
 
       if (!upstream.ok) {
+        await refund();
         await emit({
           error: isUpstreamOverloaded(upstream.status)
             ? AI_BUSY_MESSAGE
@@ -602,16 +628,24 @@ function streamJSON(env, { model, account, systemInstruction, parts, responseSch
           await emit({ phase: "working", received: assembled.length });
         }
         if (upstreamError) {
+          await refund();
           await emit({ error: upstreamError });
         } else {
+          let parsed;
           try {
-            await emit({ result: JSON.parse(assembled) });
+            parsed = JSON.parse(assembled);
           } catch {
+            await refund();
             await emit({ error: failureMessage });
+          }
+          if (parsed !== undefined) {
+            delivered = true;
+            await emit({ result: parsed });
           }
         }
       }
     } catch (error) {
+      if (!delivered) await refund();
       await emit({ error: error?.message ?? failureMessage });
     } finally {
       try {
@@ -679,13 +713,14 @@ async function handleGrade(request, env, key, ctx, plan, account) {
   });
 
   return streamJSON(env, {
+    refund: gate.refund,
     model: baseModel,
     account,
     systemInstruction: GRADE_SYSTEM,
     parts,
     responseSchema: GRADE_SCHEMA,
     schemaName: "grade",
-    maxOutputTokens: 8192,
+    maxOutputTokens: 16384,
     failureMessage: "採点結果を読み取れませんでした。",
   }, ctx);
 }
@@ -749,13 +784,14 @@ async function handleReview(request, env, key, ctx, plan, account) {
   }];
 
   return streamJSON(env, {
+    refund: gate.refund,
     model: baseModel,
     account,
     systemInstruction: REVIEW_SYSTEM,
     parts,
     responseSchema: REVIEW_SCHEMA,
     schemaName: "review",
-    maxOutputTokens: 4096,
+    maxOutputTokens: 8192,
     failureMessage: "復習教材を作成できませんでした。",
   }, ctx);
 }
