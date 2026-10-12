@@ -12,16 +12,13 @@ import Foundation
 /// requested but rejected with 403 the moment it's actually sent. Keep the
 /// ID strings identical on both sides.
 ///
-/// The OpenAI cases are logical names the Worker resolves to whatever model
+/// Every case is a logical name the Worker resolves to whatever model
 /// it's currently configured with (`OPENAI_*_MODEL`) — the client never needs
 /// to know (or update to track) the real OpenAI model ID.
 enum AIModelID: String, CaseIterable, Identifiable, Codable {
-    case geminiFlashLite = "gemini-3.5-flash-lite"
-    case claudeSonnet = "claude-sonnet-5-5"
     case openAILuna = "openai-luna"
     case openAITerra = "openai-terra"
     case openAISol = "openai-sol"
-    case claudeOpus = "claude-opus-5-5"
     case openAIAstra = "openai-astra"
 
     var id: String { rawValue }
@@ -50,32 +47,19 @@ struct AIModelInfo: Identifiable, Equatable {
 enum AIModelCatalog {
     /// Every model the app can ask for, in the order shown in the picker.
     static let all: [AIModelInfo] = [
-        AIModelInfo(id: .geminiFlashLite, displayName: "Gemini 3.5 Flash-Lite", providerName: "Google", requiredPlan: .standard, credits: 4),
-        AIModelInfo(id: .claudeSonnet, displayName: "Claude Sonnet 5.5", providerName: "Anthropic", requiredPlan: .plus, credits: 20),
-        AIModelInfo(id: .openAILuna, displayName: "ChatGPT Luna", providerName: "OpenAI", requiredPlan: .plus, credits: 1),
+        AIModelInfo(id: .openAILuna, displayName: "ChatGPT Luna", providerName: "OpenAI", requiredPlan: .standard, credits: 1),
         AIModelInfo(id: .openAITerra, displayName: "ChatGPT Terra", providerName: "OpenAI", requiredPlan: .plus, credits: 22),
         AIModelInfo(id: .openAISol, displayName: "ChatGPT Sol", providerName: "OpenAI", requiredPlan: .plus, credits: 20),
-        AIModelInfo(id: .claudeOpus, displayName: "Claude Opus 5.5", providerName: "Anthropic", requiredPlan: .pro, credits: 40),
         AIModelInfo(id: .openAIAstra, displayName: "ChatGPT Astra", providerName: "OpenAI", requiredPlan: .pro, credits: 100),
     ]
 
     /// Always selectable, on every plan — what a freshly-installed app (or a
     /// chat thread that never had a model explicitly chosen) falls back to.
-    static let defaultModel = AIModelID.geminiFlashLite
+    static let defaultModel = AIModelID.openAILuna
 
-    /// Whether models from Anthropic and OpenAI are offered at all. Off until the
-    /// AI disclosure names those providers, `AIDataDisclosure.currentVersion`
-    /// is bumped to match the Worker's consent version, and the Worker's
-    /// `AI_PROVIDER_APPROVED` review covers them. While it is off the app
-    /// behaves as the initial single-processor (Google) release.
-    static let thirdPartyModelsEnabled = false
-
-    /// What the picker and the plan screen offer. The initial release offers
-    /// one processor; the rest stay catalogued but hidden until
-    /// `thirdPartyModelsEnabled`.
-    static var offered: [AIModelInfo] {
-        thirdPartyModelsEnabled ? all : all.filter { $0.id == defaultModel }
-    }
+    /// What the picker and the plan screen offer. Every model is OpenAI's;
+    /// the Worker enforces which plan may call which.
+    static var offered: [AIModelInfo] { all }
 
     static func info(for id: AIModelID) -> AIModelInfo? {
         all.first { $0.id == id }
