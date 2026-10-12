@@ -357,7 +357,7 @@ test("a malformed or moderated request costs no credits", async () => {
   });
   try {
     const env = environment();
-    const bad = { review: { question: "" }, rubric: { question: "x" }, grade: { question: "x", criteria: [] } };
+    const bad = { review: { question: "" }, rubric: { question: "" }, grade: { question: "x", criteria: [] } };
     for (const [name, body] of Object.entries(bad)) {
       for (let i = 0; i < 20; i += 1) assert.equal((await run(name, body, { env })).response.status, 400, `${name} #${i + 1}`);
     }
@@ -621,6 +621,18 @@ test("earlier turns and note text are screened too, not just the last message", 
       noteContext: "共有されたノート",
     });
     assert.deepEqual(fetchState.moderationCalls[0].input, ["前の発言", "いまの発言", "共有されたノート"]);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("rubric accepts a typed question alone (the app has no model-answer field)", async () => {
+  const fetchState = installFetch(() => responsesOK('{"criteria":[]}'));
+  try {
+    const { response } = await run("rubric", { question: "1+1=2 を示せ" });
+    assert.equal(response.status, 200);
+    assert.equal(fetchState.calls.length, 1);
+    assert.match(fetchState.calls[0].body.input[0].content.at(-1).text, /模範解答>（なし/);
   } finally {
     fetchState.restore();
   }
