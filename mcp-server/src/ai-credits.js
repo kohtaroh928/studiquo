@@ -6,9 +6,6 @@
 // bounded whichever models a student picks. Prices behind the weights (per
 // 1M tokens, 3,000 input + 800 output tokens assumed per call; checked on the
 // providers' price pages 2026-10-12):
-//   Gemini Flash-Lite $0.30 / $2.50         4   (the models actually called,
-//     gemini-3.5-flash and -3.7-flash, were not on Google's price page when
-//     this was written; Flash-Lite is the closest priced model — check them)
 //   GPT Luna   $0.10 / $0.50                1
 //   Sonnet 5.5 $2 / $10                    20
 //   GPT Sol    $2 / $10                    20
@@ -24,10 +21,9 @@
 // (not per device or per session), under a hash of the account id.
 import { sha256Hex } from "./auth.js";
 
-export const DEFAULT_MODEL = "gemini-3.5-flash-lite";
+export const DEFAULT_MODEL = "openai-luna";
 
 export const MODEL_CREDITS = {
-  "gemini-3.5-flash-lite": 4,
   "openai-luna": 1,
   "claude-sonnet-5-5": 20,
   "openai-sol": 20,
@@ -42,7 +38,7 @@ export const KIND_MULTIPLIER = { chat: 1, rubric: 2, grade: 3, review: 3 };
 
 export const PLAN_BUDGETS = {
   free: { perMinute: 0, fiveHours: 0, day: 0, month: 0 },
-  // Standard is sized as "about 30 Gemini chat turns a month" (4 credits each).
+  // Standard is sized as "about 120 Luna chat turns a month" (1 credit each).
   standard: { perMinute: 5, fiveHours: 40, day: 60, month: 120 },
   plus: { perMinute: 10, fiveHours: 400, day: 600, month: 1500 },
   pro: { perMinute: 20, fiveHours: 1000, day: 1500, month: 4000 },
