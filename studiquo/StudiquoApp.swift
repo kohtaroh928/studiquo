@@ -771,6 +771,9 @@ private struct LibraryDropUITestRoot: View {
             LibraryDropUITestStore.authentication.ignoresAuthFailures = true
             LibraryDropUITestStore.authentication.finishOnboarding()
         }
+        if ProcessInfo.processInfo.arguments.contains(SharedInboxUITestSeed.clearArgument) {
+            SharedInboxUITestSeed.clear()
+        }
         if ProcessInfo.processInfo.arguments.contains(SharedInboxUITestSeed.argument) {
             SharedInboxUITestSeed.seed()
         }
