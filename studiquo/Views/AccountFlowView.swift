@@ -146,13 +146,13 @@ struct LoginView: View {
                         Task { await authentication.loginWithApple(result: result) }
                     }
                     .signInWithAppleButtonStyle(.black)
-                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .frame(maxWidth: .infinity, minHeight: 50, maxHeight: 50)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .disabled(authentication.isAppleSignInBusy)
                     GoogleSignInButton {
                         Task { await authentication.loginWithGoogle() }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .frame(maxWidth: .infinity, minHeight: 50, maxHeight: 50)
                     .disabled(authentication.isGoogleSignInBusy)
                     Button("パスワードを忘れた場合") { showsReset = true }.font(.subheadline)
                     Button("アカウントをお持ちでない方はこちら") { showsCreateAccount = true }.font(.subheadline)
