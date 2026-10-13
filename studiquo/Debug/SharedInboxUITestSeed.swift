@@ -13,8 +13,16 @@ import Foundation
 ///   import (`notes.xyz`).
 enum SharedInboxUITestSeed {
     static let argument = "--ui-test-seed-shared-inbox"
+    /// Empties the inbox and does nothing else, so a test that seeded it can
+    /// leave the next test a clean one.
+    static let clearArgument = "--ui-test-clear-shared-inbox"
 
     private static var didSeed = false
+
+    static func clear() {
+        guard let inbox = SharedInbox.standard() else { return }
+        try? FileManager.default.removeItem(at: inbox.root)
+    }
 
     /// Once per process. SwiftUI may build the test root's `init` several times;
     /// re-seeding would delete files the running screen already knows about.
