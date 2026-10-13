@@ -73,14 +73,16 @@ enum SubscriptionEntitlementID {
 /// shown and no Standard purchase button is offered. Delete this flag, and
 /// the `.standard` fallbacks it guards, after launch.
 enum PaywallConfiguration {
-    /// Release builds: always off. DEBUG builds can switch it on from
-    /// 設定 → 開発用(UI確認用) to look at the paywall; takes effect on the next
-    /// launch because `SubscriptionStore` reads it once at init.
+    /// Release builds: always on (the first App Store release ships with paid
+    /// Standard). DEBUG builds stay off by default so every UI test and local run
+    /// keeps working without a subscription; switch it on from
+    /// 設定 → 開発用(UI確認用) to look at the paywall — it takes effect on the
+    /// next launch because `SubscriptionStore` reads it once at init.
     static var isEnabled: Bool {
         #if DEBUG
         UserDefaults.standard.bool(forKey: debugEnabledKey)
         #else
-        false
+        true
         #endif
     }
 
