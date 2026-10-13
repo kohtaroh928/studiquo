@@ -26,7 +26,7 @@ import { linkVerifiedEmail, identityKey } from "./oauth-links.js";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
 import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError } from "./local-auth.js";
 import { startAccountDeletion } from "./account-deletion.js";
-import { mintSession, hasRealSession, revokeSessionsIssuedBefore } from "./session.js";
+import { mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { beginLoginAttempt, finishLoginAttempt, abandonLoginAttempt } from "./login-throttle.js";
 import { isBreachedPassword } from "./pwned-passwords.js";
@@ -750,6 +750,12 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     provider: "email", sub: normalizedEmail, email: normalizedEmail, emailVerified: true,
   });
   const accountKey = link.canonicalIdentityKey ?? `email:${normalizedEmail}`;
+  // Nothing is stored for an account whose deletion is still running: the
+  // password would be saved and then the sign-in below refused with a message
+  // that says nothing about why. Say so, before anything changes.
+  if (await accountIsBeingDeleted(env, accountKey)) {
+    return json({ error: "このアカウントは削除の処理中です。しばらくしてからもう一度お試しください。", code: "account_deleting" }, 409);
+  }
   if (replacedPassword) {
     // A reset signs out whoever held the old password — the new session below
     // is minted after the cut-off — and so disconnects the apps (MCP) they

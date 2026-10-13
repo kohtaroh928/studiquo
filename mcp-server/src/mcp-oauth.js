@@ -37,13 +37,23 @@ async function grantKey(sub, clientId) {
   return `mcp:grant:${await sha256Hex(sub)}:${await sha256Hex(clientId)}`;
 }
 
-async function issueTokens(env, sub, clientId, scope) {
+// A grant carries a `nonce` made when the owner approves the app, and every
+// token issued under it carries that value as `grantId`. Revoking deletes the
+// grant; approving the same app again makes a new one with a new nonce, so
+// tokens from before the revocation do not come back to life with it. A grant
+// from before nonces existed has none, and neither do its tokens: those match.
+function sameGeneration(grant, token) {
+  return (grant?.nonce ?? null) === (token?.grantId ?? null);
+}
+
+async function issueTokens(env, sub, clientId, scope, grantId) {
+  const generation = grantId ? { grantId } : {};
   const accessToken = `mcp_${randomToken()}`;
   const accessHash = await sha256Hex(accessToken);
-  await env.STUDIQUO_DATA.put(`mcp:access:${accessHash}`, JSON.stringify({ sub, clientId, scope }), { expirationTtl: ACCESS_TTL });
+  await env.STUDIQUO_DATA.put(`mcp:access:${accessHash}`, JSON.stringify({ sub, clientId, scope, ...generation }), { expirationTtl: ACCESS_TTL });
   const result = { access_token: accessToken, token_type: "Bearer", expires_in: ACCESS_TTL, scope };
   const refreshToken = `mcp_refresh_${randomToken()}`;
-  await env.STUDIQUO_DATA.put(`mcp:refresh:${await sha256Hex(refreshToken)}`, JSON.stringify({ sub, clientId, scope }), { expirationTtl: REFRESH_TTL });
+  await env.STUDIQUO_DATA.put(`mcp:refresh:${await sha256Hex(refreshToken)}`, JSON.stringify({ sub, clientId, scope, ...generation }), { expirationTtl: REFRESH_TTL });
   result.refresh_token = refreshToken;
   return result;
 }
@@ -53,7 +63,8 @@ export async function externalSession(env, request) {
   if (!token?.startsWith("mcp_")) return null;
   const session = await env.STUDIQUO_DATA.get(`mcp:access:${await sha256Hex(token)}`, "json");
   if (!session?.sub || !session?.clientId) return null;
-  if (!(await env.STUDIQUO_DATA.get(await grantKey(session.sub, session.clientId)))) return null;
+  const grant = await env.STUDIQUO_DATA.get(await grantKey(session.sub, session.clientId), "json");
+  if (!grant || !sameGeneration(grant, session)) return null;
   // A token issued before the account was deleted must stop working at once,
   // not only when its own expiry comes.
   if (await accountIsUnavailable(env, session.sub)) return null;
@@ -80,7 +91,7 @@ export async function approvePairing(env, code, sub) {
     codeChallenge: pending.codeChallenge, scope: pending.scope,
   }), { expirationTtl: CODE_TTL });
   await env.STUDIQUO_DATA.put(await grantKey(sub, pending.clientId), JSON.stringify({
-    clientName: pending.clientName, createdAt: Date.now(),
+    clientName: pending.clientName, createdAt: Date.now(), nonce: randomToken(),
   }));
   await env.STUDIQUO_DATA.put(`mcp:auth:${id}`, JSON.stringify({ ...pending, status: "approved", authorizationCode }), { expirationTtl: CODE_TTL });
   await env.STUDIQUO_DATA.delete(`mcp:pair:${code}`);
@@ -211,14 +222,17 @@ export async function handleMCPOAuth(url, request, env) {
       if (!(await env.MCP_INBOX.getByName(accountHash).consumeOnce(await sha256Hex(rawCode)))) {
         return json({ error: "invalid_grant" }, 400);
       }
+      const grant = await env.STUDIQUO_DATA.get(await grantKey(code.sub, clientId), "json");
+      if (!grant) return json({ error: "invalid_grant" }, 400);
       await env.STUDIQUO_DATA.delete(storedKey);
-      return json(await issueTokens(env, code.sub, clientId, code.scope));
+      return json(await issueTokens(env, code.sub, clientId, code.scope, grant.nonce));
     }
     if (grantType === "refresh_token") {
       const raw = String(form.get("refresh_token") ?? "");
       const key = `mcp:refresh:${await sha256Hex(raw)}`;
       const refresh = await env.STUDIQUO_DATA.get(key, "json");
-      if (!refresh || refresh.clientId !== clientId || !(await env.STUDIQUO_DATA.get(await grantKey(refresh.sub, clientId)))) {
+      const grant = refresh && refresh.clientId === clientId ? await env.STUDIQUO_DATA.get(await grantKey(refresh.sub, clientId), "json") : null;
+      if (!grant || !sameGeneration(grant, refresh)) {
         return json({ error: "invalid_grant" }, 400);
       }
       if (await accountIsUnavailable(env, refresh.sub)) return json({ error: "invalid_grant" }, 400);
@@ -227,7 +241,7 @@ export async function handleMCPOAuth(url, request, env) {
         return json({ error: "invalid_grant" }, 400);
       }
       await env.STUDIQUO_DATA.delete(key);
-      return json(await issueTokens(env, refresh.sub, clientId, refresh.scope));
+      return json(await issueTokens(env, refresh.sub, clientId, refresh.scope, grant.nonce));
     }
     return json({ error: "unsupported_grant_type" }, 400);
   }
