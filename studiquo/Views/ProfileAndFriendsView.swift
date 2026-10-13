@@ -2241,6 +2241,7 @@ final class FriendStore: ObservableObject {
 }
 
 struct FriendsHomeView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject var store: FriendStore
     let myStudySeconds: TimeInterval
     var appAttachments: [FriendMessageAttachment] = []
@@ -2255,6 +2256,8 @@ struct FriendsHomeView: View {
     @State private var showsAdd = false
     @State private var showsCreateGroup = false
     @State private var selection: FriendsDetailSelection = .chats
+    @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
+    @State private var preferredCompactColumn: NavigationSplitViewColumn = .detail
     @State private var popover: FriendsPopover?
     @State private var pendingReportIssue: PendingIssueReport?
     @State private var friendToRemove: FriendRecord?
@@ -2285,10 +2288,22 @@ struct FriendsHomeView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        // In a collapsed split view, keep both columns available and switch
+        // the preferred column. Changing visibility at the same time causes
+        // UIKit to keep the detail on screen instead of revealing the sidebar.
+        NavigationSplitView(
+            columnVisibility: horizontalSizeClass == .compact ? .constant(.all) : $columnVisibility,
+            preferredCompactColumn: $preferredCompactColumn
+        ) {
             friendSidebar
                 .navigationTitle("フレンド")
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: closeSidebar) {
+                            Label("閉じる", systemImage: "sidebar.left")
+                        }
+                        .accessibilityIdentifier("friends-sidebar-close")
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Menu {
                             Button { showsAdd = true } label: { Label("フレンドを追加", systemImage: "person.badge.plus") }
@@ -2309,7 +2324,25 @@ struct FriendsHomeView: View {
                 }
         } detail: {
             friendDetail
+                .navigationBarBackButtonHidden()
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            if !isSidebarVisible {
+                                columnVisibility = .all
+                                preferredCompactColumn = .sidebar
+                            } else {
+                                closeSidebar()
+                            }
+                        } label: {
+                            Label(isSidebarVisible ? "サイドバーを閉じる" : "フレンド一覧", systemImage: "sidebar.left")
+                        }
+                        .accessibilityIdentifier("friends-sidebar-toggle")
+                    }
+                }
         }
+        .navigationSplitViewStyle(.balanced)
+        .toolbar(removing: .sidebarToggle)
         .sheet(isPresented: $showsAdd) { AddFriendView(store: store) }
         .sheet(isPresented: $showsCreateGroup) { CreateGroupView(store: store) }
         .sheet(item: $pendingReportIssue) { pending in ReportIssueSheet(capturedScreenshot: pending.screenshot) }
@@ -2532,7 +2565,7 @@ struct FriendsHomeView: View {
             if !store.archivedFriends.isEmpty {
                 Section("削除済みのやり取り") {
                     ForEach(store.archivedFriends) { friend in
-                        Button { selection = .chat(friend.id) } label: {
+                        Button { selectDetail(.chat(friend.id)) } label: {
                             FriendSidebarRow(
                                 profile: FriendProfile(friend: friend, blockedByMeRoomIDs: store.blockedByMeRoomIDs),
                                 unreadCount: 0
@@ -2568,6 +2601,22 @@ struct FriendsHomeView: View {
         }
     }
 
+    private var isSidebarVisible: Bool {
+        horizontalSizeClass == .compact
+            ? preferredCompactColumn == .sidebar
+            : columnVisibility != .detailOnly
+    }
+
+    private func closeSidebar() {
+        columnVisibility = .detailOnly
+        preferredCompactColumn = .detail
+    }
+
+    private func selectDetail(_ target: FriendsDetailSelection) {
+        selection = target
+        preferredCompactColumn = .detail
+    }
+
     @ViewBuilder private var friendDetail: some View {
         switch selection {
         case .chats:
@@ -2583,8 +2632,8 @@ struct FriendsHomeView: View {
                     unreadCounts: store.groupUnreadCounts,
                     avatarsByRoomID: store.groupAvatars
                 ),
-                openChat: { selection = .chat($0.id) },
-                openGroup: { selection = .group($0.roomID) }
+                openChat: { selectDetail(.chat($0.id)) },
+                openGroup: { selectDetail(.group($0.roomID)) }
             )
         case .chat(let id):
             if let friend = store.friends.first(where: { $0.id == id }) ?? store.archivedFriends.first(where: { $0.id == id }) {
@@ -2593,7 +2642,7 @@ struct FriendsHomeView: View {
                     store: store,
                     appAttachments: appAttachments,
                     resolveAppAttachment: resolveAppAttachment,
-                    onBack: { selection = .chats }
+                    onBack: { selectDetail(.chats) }
                 )
             } else {
                 ContentUnavailableView("フレンドを選択してください", systemImage: "person.crop.circle")
@@ -2605,7 +2654,7 @@ struct FriendsHomeView: View {
                     store: store,
                     appAttachments: appAttachments,
                     resolveAppAttachment: resolveAppAttachment,
-                    onBack: { selection = .chats }
+                    onBack: { selectDetail(.chats) }
                 )
             } else {
                 ContentUnavailableView("グループを選択してください", systemImage: "person.3")
@@ -2627,7 +2676,7 @@ struct FriendsHomeView: View {
                     store: store,
                     openChat: {
                         popover = nil
-                        selection = .chat(id)
+                        selectDetail(.chat(id))
                     }
                 )
             } else {
@@ -2640,11 +2689,11 @@ struct FriendsHomeView: View {
                     store: store,
                     openChat: {
                         popover = nil
-                        selection = .group(roomID)
+                        selectDetail(.group(roomID))
                     },
                     didLeave: {
                         popover = nil
-                        selection = .chats
+                        selectDetail(.chats)
                     }
                 )
             } else {

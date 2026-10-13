@@ -1971,6 +1971,7 @@ struct ContentView: View {
 
     @State private var selectedNotebook: Notebook?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var preferredCompactColumn: NavigationSplitViewColumn = .detail
     @State private var libraryMode: LibraryMode = .documents
     @State private var selectedFolder: String?
     @AppStorage("librarySortOption") private var sortOption: NotebookSortOption = .updatedNewest
@@ -2311,7 +2312,7 @@ struct ContentView: View {
     /// removes its reveal toggle (see `CalendarHomeView`), so the “すべて・
     /// お気に入り” list is gone there rather than one tap away.
     private var librarySplitView: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $preferredCompactColumn) {
             List {
                 if selectedNotebook != nil || selectedFlashcardDeck != nil
                     || selectedTextDocument != nil {
@@ -2343,8 +2344,7 @@ struct ContentView: View {
                     Section("ライブラリ") {
                         ForEach(LibraryMode.allCases) { mode in
                             Button {
-                                libraryMode = mode
-                                selectedFolder = nil
+                                selectLibraryLocation(mode: mode)
                             } label: {
                                 HStack {
                                     Label(mode.title, systemImage: mode.icon)
@@ -2356,13 +2356,13 @@ struct ContentView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("library-category-\(mode.rawValue)")
                         }
                     }
                     Section {
-                        ForEach(visibleFolderPaths, id: \.self) { folder in
+                        ForEach(sortedFolderNames.filter { parentFolder(of: $0) == nil }, id: \.self) { folder in
                             Button {
-                                selectedFolder = folder
-                                libraryMode = .documents
+                                selectLibraryLocation(mode: .documents, folder: folder)
                             } label: {
                                 HStack {
                                     Label(folderDisplayName(folder), systemImage: "folder")
@@ -2374,6 +2374,7 @@ struct ContentView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("library-sidebar-folder-\(folder)")
                             .dropDestination(for: String.self) { items, _ in
                                 handleFolderDrop(items, into: folder)
                             }
@@ -2388,7 +2389,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("ノート")
+            .navigationTitle("ライブラリ")
             .scrollContentBackground(.hidden)
             .background(Color(red: 0.86, green: 0.93, blue: 1.0))
         } detail: {
@@ -2399,7 +2400,7 @@ struct ContentView: View {
                     ProtectedNotebookView(
                         notebook: selectedNotebook,
                         columnVisibility: $columnVisibility,
-                        onHome: returnToHome
+                        onHome: returnToLibrary
                     )
                         .id(selectedNotebook.persistentModelID)
                         .environmentObject(editorSplitState)
@@ -2417,7 +2418,7 @@ struct ContentView: View {
                     let reviewRequest = mistakeReviewRequest.flatMap { $0.deckKey == deckID(selectedFlashcardDeck) ? $0 : nil }
                     FlashcardDeckView(
                         deck: selectedFlashcardDeck,
-                        onHome: returnToHome,
+                        onHome: returnToLibrary,
                         startsWithMistakeReview: reviewRequest != nil
                     )
                         .id("\(String(describing: selectedFlashcardDeck.persistentModelID))-\(reviewRequest?.token.uuidString ?? "")")
@@ -2426,13 +2427,16 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     notebookTabBar
                     Divider()
-                    TextDocumentView(document: selectedTextDocument, onHome: returnToHome)
+                    TextDocumentView(document: selectedTextDocument, onHome: returnToLibrary)
                         .id(selectedTextDocument.persistentModelID)
                         .environmentObject(friendStore)
                 }
             } else {
                 homeDashboard
             }
+        }
+        .onChange(of: horizontalSizeClass) { _, sizeClass in
+            if sizeClass == .compact { preferredCompactColumn = .detail }
         }
     }
 
@@ -2444,7 +2448,11 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if isAuxiliaryHomeFullScreen {
+            if homeSection == .friends {
+                // FriendsHomeView owns its NavigationSplitView. An outer
+                // NavigationStack prevents its columns from presenting correctly.
+                LibraryViewSection { AnyView(homeDashboard) }
+            } else if isAuxiliaryHomeFullScreen {
                 // A plain navigation stack keeps auxiliary home screens out
                 // of the notebook split view while still providing a toolbar.
                 NavigationStack {
@@ -3036,14 +3044,18 @@ struct ContentView: View {
             } else if homeSection == .more {
                 homeMore
             } else {
-                FriendsHomeView(
-                    store: friendStore,
-                    myStudySeconds: studyActivities
-                        .filter { Calendar.current.isDateInToday($0.startedAt) }
-                        .reduce(0) { $0 + $1.duration },
-                    appAttachments: friendMessageAttachmentOptions(),
-                    resolveAppAttachment: resolvedAppMessageAttachment
-                )
+                GeometryReader { geometry in
+                    FriendsHomeView(
+                        store: friendStore,
+                        myStudySeconds: studyActivities
+                            .filter { Calendar.current.isDateInToday($0.startedAt) }
+                            .reduce(0) { $0 + $1.duration },
+                        appAttachments: friendMessageAttachmentOptions(),
+                        resolveAppAttachment: resolvedAppMessageAttachment
+                    )
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+                }
             }
             Divider()
             HStack(spacing: 12) {
@@ -3418,6 +3430,24 @@ struct ContentView: View {
         libraryMode = .documents
         searchText = ""
         columnVisibility = .detailOnly
+        preferredCompactColumn = .detail
+    }
+
+    /// A sidebar button changes both the filter and the visible compact column,
+    /// even when the user taps the already-selected category or folder again.
+    private func selectLibraryLocation(mode: LibraryMode, folder: String? = nil) {
+        clearOpenSelection()
+        selectedFolder = folder
+        libraryMode = mode
+        searchText = ""
+        homeSelection.end()
+        preferredCompactColumn = .detail
+    }
+
+    private func returnToLibrary() {
+        mistakeReviewRequest = nil
+        clearOpenSelection()
+        preferredCompactColumn = .detail
     }
 
     private func routeNotification(_ userInfo: [AnyHashable: Any]?) {
@@ -4320,6 +4350,7 @@ struct ContentView: View {
                 : (selectedFolder.map(folderDisplayName) ?? (isHomeScreen ? L("ホーム") : libraryMode.title))
         )
         .searchable(text: $searchText, prompt: "ノートを検索")
+        .navigationBarBackButtonHidden(horizontalSizeClass == .compact)
         .scrollContentBackground(.hidden)
         .background(
             LinearGradient(
@@ -4330,6 +4361,14 @@ struct ContentView: View {
         )
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarLeading) {
+                if horizontalSizeClass == .compact {
+                    Button {
+                        preferredCompactColumn = .sidebar
+                    } label: {
+                        Label("ライブラリ", systemImage: "sidebar.left")
+                    }
+                    .accessibilityIdentifier("library-location-picker")
+                }
                 if selectedFolder != nil {
                     Button {
                         goBackOneFolder()
@@ -4442,13 +4481,7 @@ struct ContentView: View {
                 } description: {
                     Text("右上の＋から、ノート・暗記帳・文書を作成できます。")
                 }
-            } else if selectedFolder == nil
-                        && !isHomeScreen
-                        && visibleNotebooks.isEmpty
-                        && displayedFlashcardDecks.isEmpty
-                        && displayedTextDocuments.isEmpty
-                        && !(libraryMode == .favorites && hasFavoriteNonNotebookItems)
-                        && !(libraryMode == .trash && !isTrashEmpty) {
+            } else if !isHomeScreen && isCurrentLibraryLocationEmpty {
                 ContentUnavailableView(
                     searchText.isEmpty ? (selectedFolder == nil ? libraryMode.emptyTitle : "このフォルダは空です") : "見つかりません",
                     systemImage: searchText.isEmpty ? (selectedFolder == nil ? libraryMode.icon : "folder") : "magnifyingglass",
@@ -4647,6 +4680,20 @@ struct ContentView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// Empty-state decisions must count the items in this category, not other
+    /// kinds of materials that happen to exist elsewhere in the library.
+    private var isCurrentLibraryLocationEmpty: Bool {
+        if selectedFolder != nil { return sortedHomeItems.isEmpty }
+        switch libraryMode {
+        case .documents: return sortedHomeItems.isEmpty
+        case .favorites: return visibleNotebooks.isEmpty && !hasFavoriteNonNotebookItems
+        case .pdfs: return visibleNotebooks.isEmpty
+        case .studyCards: return displayedFlashcardDecks.isEmpty
+        case .textDocuments: return displayedTextDocuments.isEmpty
+        case .trash: return isTrashEmpty
         }
     }
 
