@@ -149,6 +149,18 @@ export async function realSession(env, token) {
 }
 
 /**
+ * Whether the account behind `sub` is partway through its deletion. Unlike
+ * `accountIsUnavailable`, an already-deleted account is not counted: a person
+ * who has left may register again.
+ */
+export async function accountIsBeingDeleted(env, sub) {
+  const canonical = await env.STUDIQUO_DATA.get(`${IDENTITY_CANONICAL_PREFIX}${sub}`);
+  const subs = canonical && canonical !== sub ? [sub, canonical] : [sub];
+  const states = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(item)}`, "json")));
+  return states.some(state => state?.status === "deleting");
+}
+
+/**
  * Whether the account behind `sub` is being deleted or has been deleted, for
  * credentials that are not sessions (connected-app tokens). `sub` may be a
  * linked identity rather than the canonical account, so both are looked at.
