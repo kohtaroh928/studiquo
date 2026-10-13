@@ -368,8 +368,16 @@ export async function deleteAccount(env, canonicalSub) {
   const devices = await env.STUDIQUO_DATA.get(`chat:devices:${chatKey}`, "json") ?? [];
 
   const cutoffKeys = await Promise.all([...identityKeys].map(async identity => `session-valid-from:${await sha256Hex(identity)}`));
+  // The per-account passkey list and any recovery in progress. Left behind they
+  // would make a person who signs up again with the same address look like
+  // they still had a passkey that no longer exists.
+  const passkeyPolicyKeys = [];
+  for (const identity of new Set([...identityKeys, canonicalSub, ...emails.map(email => `email:${String(email).trim().toLowerCase()}`)])) {
+    const hash = await sha256Hex(identity);
+    passkeyPolicyKeys.push(`passkey-account:${hash}`, `passkey-recovery:${hash}`);
+  }
   const deletionKeys = [
-    ...checkpointKeys, ...ownedSessionKeys, ...accountKeys, ...ownedCredentialKeys, ...ownedPasskeyUserKeys, ...mcpKeys, ...cutoffKeys,
+    ...checkpointKeys, ...ownedSessionKeys, ...accountKeys, ...ownedCredentialKeys, ...ownedPasskeyUserKeys, ...passkeyPolicyKeys, ...mcpKeys, ...cutoffKeys,
     ...emails.flatMap(email => [`email-account-owner:${email}`, `email-accounts:${email}`, `email-verify:${email}`]),
     ...[...identityKeys].map(key => `identity-canonical:${key}`),
     ...ownedTokenHashes.flatMap(hash => [`snapshot:${hash}`, `actions:${hash}`]),
