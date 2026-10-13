@@ -23,7 +23,7 @@ final class ExternalFilePaneTests: XCTestCase {
         super.tearDown()
     }
 
-    private func openExternalFileSplit() {
+    private func openSplitMenuEntry(_ identifier: String, name: String) {
         let splitMenu = app.buttons["画面分割"]
         XCTAssertTrue(splitMenu.waitForExistence(timeout: 30), "ノート画面の「画面分割」ボタンが見つかりません。")
         // The tool strip scrolls sideways, and the split control sits past the
@@ -38,9 +38,13 @@ final class ExternalFilePaneTests: XCTestCase {
         }
         XCTAssertLessThanOrEqual(splitMenu.frame.maxX, strip.frame.maxX, "「画面分割」ボタンが画面内に表示されません。")
         splitMenu.tap()
-        let entry = app.buttons["note-split-external-file-button"]
-        XCTAssertTrue(entry.waitForExistence(timeout: 5), "分割メニューに「ファイルアプリと2分割」がありません。")
+        let entry = app.buttons[identifier]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5), "分割メニューに「\(name)」がありません。")
         entry.tap()
+    }
+
+    private func openExternalFileSplit() {
+        openSplitMenuEntry("note-split-external-file-button", name: "ファイルアプリと2分割")
     }
 
     func testSplitMenuOpensFileBrowserPane() {
@@ -56,5 +60,17 @@ final class ExternalFilePaneTests: XCTestCase {
         attachment.name = "external-file-pane-opened"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    func testSplitMenuOpensPhotoStudyPane() {
+        openSplitMenuEntry("note-split-photo-study-button", name: "写真アプリと2分割")
+        XCTAssertTrue(
+            app.buttons["写真資料を閉じる"].waitForExistence(timeout: 10),
+            "写真アプリと2分割を選んでも、写真ペインが開きません。"
+        )
+        XCTAssertFalse(
+            app.buttons["photo-study-toolbar-button"].exists,
+            "ツールバーに写真資料ボタンが残っています。"
+        )
     }
 }

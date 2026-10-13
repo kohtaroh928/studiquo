@@ -13,8 +13,7 @@ final class StoreSchemaTests: XCTestCase {
         let names = Set(studiquoSchema.entities.map(\.name))
         let expected: Set<String> = [
             "Notebook", "NotePage", "PageElement", "FlashcardDeck", "Flashcard", "CalendarEvent",
-            "StudyActivity", "AIChatThread", "AIChatMessage", "TextDocument", "SlideDeck", "Slide",
-            "SlideMaster", "SlideLayoutTemplate", "SlidePlaceholder", "SlideElement", "DocumentBlock",
+            "StudyActivity", "AIChatThread", "AIChatMessage", "TextDocument", "DocumentBlock",
             "DocumentTableRow", "DocumentTableCell", "DocumentHeaderFooter", "DocumentComment",
             "DocumentChangeRecord", "DocumentFootnote", "AIReviewItem", "Folder", "MCPImportReceipt",
         ]
@@ -24,7 +23,7 @@ final class StoreSchemaTests: XCTestCase {
     /// iCloud sync (CloudKit) rejects unique constraints, and an upgrade can
     /// only fill a new attribute from a default or nil.
     func testEveryEntityIsCloudKitAndUpgradeCompatible() {
-        XCTAssertGreaterThan(studiquoSchema.entities.count, 20, "the schema looks empty; the checks below would prove nothing")
+        XCTAssertGreaterThan(studiquoSchema.entities.count, 15, "the schema looks empty; the checks below would prove nothing")
         for entity in studiquoSchema.entities {
             XCTAssertTrue(entity.uniquenessConstraints.isEmpty, "\(entity.name) has a unique constraint")
             for attribute in entity.attributes where !attribute.isOptional {

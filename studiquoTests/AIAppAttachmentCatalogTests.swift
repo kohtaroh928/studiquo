@@ -30,27 +30,24 @@ final class AIAppAttachmentCatalogTests: XCTestCase {
 
     // MARK: Library listing
 
-    func testOptionsListNotesThenDecksThenDocumentsThenSlidesAndSkipTrashedItems() {
+    func testOptionsListNotesThenDecksThenDocumentsAndSkipTrashedItems() {
         let kept = notebook(title: "ノートA", typedPages: [["本文"]])
         let trashed = notebook(title: "捨てたノート", typedPages: [["本文"]], trashed: true)
         let deck = FlashcardDeck(title: "単語帳")
         let trashedDeck = FlashcardDeck(title: "捨てた単語帳"); trashedDeck.isTrashed = true
         let document = TextDocument(title: "レポート")
-        let slides = SlideDeck(title: "発表")
 
         let options = AIAppAttachmentCatalog.options(
             notebooks: [kept, trashed],
             flashcardDecks: [deck, trashedDeck],
-            textDocuments: [document],
-            slideDecks: [slides]
+            textDocuments: [document]
         )
 
-        XCTAssertEqual(options.map(\.title), ["ノートA", "単語帳", "レポート", "発表"])
-        XCTAssertEqual(options.map(\.attachment.kind), [.notebook, .flashcards, .document, .slideDeck])
+        XCTAssertEqual(options.map(\.title), ["ノートA", "単語帳", "レポート"])
+        XCTAssertEqual(options.map(\.attachment.kind), [.notebook, .flashcards, .document])
         XCTAssertTrue(options[0].id.hasPrefix("notebook:"))
         XCTAssertTrue(options[1].id.hasPrefix("deck:"))
         XCTAssertTrue(options[2].id.hasPrefix("document:"))
-        XCTAssertTrue(options[3].id.hasPrefix("slide:"))
         XCTAssertEqual(Set(options.map(\.id)).count, options.count, "選択肢のIDは重複しないこと")
     }
 

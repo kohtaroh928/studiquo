@@ -18,8 +18,8 @@ final class HomeSelectionTests: XCTestCase {
         var selection = HomeSelection()
         selection.begin()
         selection.toggle("deck:1")
-        selection.select(["deck:1", "folder:2", "slide:3"])
-        XCTAssertEqual(selection.tokens, ["deck:1", "folder:2", "slide:3"])
+        selection.select(["deck:1", "folder:2", "document:3"])
+        XCTAssertEqual(selection.tokens, ["deck:1", "folder:2", "document:3"])
     }
 
     func testClearKeepsSelectionModeButEndForgetsEverything() {

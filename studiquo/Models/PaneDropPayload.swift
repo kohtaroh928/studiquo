@@ -13,7 +13,7 @@ enum PaneDropPayload: Transferable {
     /// How every tab in the top tab bar starts its drag payload. One list, so a pane
     /// cannot quietly stop recognising a kind of tab (the friend chat once did not
     /// know documents, slides or groups, and ignored them).
-    static let tabPrefixes = ["notebook:", "deck:", "flashcards:", "document:", "slide:", "web:", "ai:", "friend:", "group:"]
+    static let tabPrefixes = ["notebook:", "deck:", "flashcards:", "document:", "web:", "ai:", "friend:", "group:"]
 
     static func isTab(_ value: String) -> Bool {
         tabPrefixes.contains { value.hasPrefix($0) }

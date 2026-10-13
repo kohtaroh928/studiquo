@@ -2,48 +2,40 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// The system file picker, placed inside a pane.
+/// The Files browser, placed inside a pane.
 ///
-/// The document browser (`UIDocumentBrowserViewController`) is meant for
-/// document-based apps and only showed this app's own folder here. The picker
-/// shows everything the Files app does — iCloud Drive, On My iPad, other
-/// providers, Downloads. `asCopy: false` hands back the file in place.
+/// `UIDocumentBrowserViewController` is used rather than the document picker
+/// (`UIDocumentPickerViewController`): embedded in a pane the picker browses
+/// fine but never calls its delegate when a file is tapped, so nothing opens.
+/// The browser reports the pick, and its "Browse" tab reaches iCloud Drive,
+/// On My iPad and other providers; only its default "Recents" tab is limited
+/// to files this app opened. The file is handed back in place, not copied.
 struct ExternalFileBrowserRepresentable: UIViewControllerRepresentable {
     let onPick: (URL) -> Void
-    let onCancel: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick, onCancel: onCancel) }
+    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
 
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let controller = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: false)
-        controller.allowsMultipleSelection = false
-        controller.shouldShowFileExtensions = true
+    func makeUIViewController(context: Context) -> UIDocumentBrowserViewController {
+        let controller = UIDocumentBrowserViewController(forOpening: [.item])
+        controller.allowsDocumentCreation = false
+        controller.allowsPickingMultipleItems = false
         controller.delegate = context.coordinator
         return controller
     }
 
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {
+    func updateUIViewController(_ uiViewController: UIDocumentBrowserViewController, context: Context) {
         context.coordinator.onPick = onPick
-        context.coordinator.onCancel = onCancel
     }
 
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+    final class Coordinator: NSObject, UIDocumentBrowserViewControllerDelegate {
         var onPick: (URL) -> Void
-        var onCancel: () -> Void
 
-        init(onPick: @escaping (URL) -> Void, onCancel: @escaping () -> Void) {
+        init(onPick: @escaping (URL) -> Void) {
             self.onPick = onPick
-            self.onCancel = onCancel
         }
 
-        /// The picker's own close button. Embedded in a pane there is nothing
-        /// for it to dismiss, so it closes the pane instead.
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            onCancel()
-        }
-
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            guard let url = urls.first else { return }
+        func documentBrowser(_ controller: UIDocumentBrowserViewController, didPickDocumentsAt documentURLs: [URL]) {
+            guard let url = documentURLs.first else { return }
             onPick(url)
         }
     }
@@ -52,8 +44,6 @@ struct ExternalFileBrowserRepresentable: UIViewControllerRepresentable {
 /// A pane that browses the Files app and shows the chosen file in place.
 struct ExternalFilePaneView: View {
     @ObservedObject var session: ExternalFileSession
-    /// Closes the whole pane (the picker's own close button asks for this).
-    let onClose: () -> Void
     @State private var showsImporter = false
 
     var body: some View {
@@ -116,7 +106,7 @@ struct ExternalFilePaneView: View {
         switch session.state {
         case .browsing:
             if ExternalFilePanePolicy.usesEmbeddedBrowser(paneWidth: width) {
-                ExternalFileBrowserRepresentable(onPick: { session.open(pickedURL: $0) }, onCancel: onClose)
+                ExternalFileBrowserRepresentable(onPick: { session.open(pickedURL: $0) })
                     .accessibilityIdentifier("external-file-pane-browser")
             } else {
                 message(icon: "folder", text: "ファイルアプリから資料を選びます。") {

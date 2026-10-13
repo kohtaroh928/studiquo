@@ -30,7 +30,7 @@
 | 区分 | 例 | 取り扱い |
 | --- | --- | --- |
 | Restricted | パスワード、Bearer token、OAuth token、Passkey情報、AI/API secret、APNs鍵、Webhook secret、暗号鍵 | 生の秘密値はKeychainまたはWorker secretsへ保存する。パスワード・tokenの検証用hashやPasskey公開鍵は認証用ストレージに限定する。平文ログ・Git・分析基盤へ出さない |
-| Confidential | ノート、OCR、答案画像、文書、スライド、チャット、添付、カレンダー予定、AI会話、問題報告の画像 | 利用者または明示的に許可された相手だけがアクセスする。外部送信前に目的を表示する |
+| Confidential | ノート、OCR、答案画像、文書、チャット、添付、カレンダー予定、AI会話、問題報告の画像 | 利用者または明示的に許可された相手だけがアクセスする。外部送信前に目的を表示する |
 | Personal | メールアドレス、外部ID、表示名、友達関係、端末token、購読状態、利用履歴、IPに由来する制限キー、ログイン元の国・ASNの履歴 | 目的を限定し、識別子は可能な範囲でハッシュ化する。削除経路を持つ |
 | Internal | エラーfingerprint、集計済み件数、アプリ・OSバージョン、管理メモ | 運営者だけがアクセスする。本文やアカウント情報を混ぜない |
 | Public | 公開お知らせ、法務ページ、公開ドキュメント | 公開前に機密情報と個人情報が含まれないことを確認する |
@@ -62,7 +62,7 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 
 | データ | 主な保存先 | 外部送信 | 現在の削除・保持 |
 | --- | --- | --- | --- |
-| ノート、カード、文書、スライド、予定、学習履歴、AI会話 | SwiftData、CloudKit | 選択したAI機能、MCP同期、共有機能で必要部分を送信 | SwiftDataの削除対象。CloudKit構成では同期削除を意図する |
+| ノート、カード、文書、予定、学習履歴、AI会話 | SwiftData、CloudKit | 選択したAI機能、MCP同期、共有機能で必要部分を送信 | SwiftDataの削除対象。CloudKit構成では同期削除を意図する |
 | 自動ノートバックアップ | Application Supportの`studiquo/AutoBackups` | 通常は送信しない | ノートごとに最大5件。アカウント削除時に一括消去 |
 | 保護ノートの暗号文 | SwiftData / CloudKit | 通常は送信しない | ノートとともに削除。AES-GCM鍵はiCloud Keychain同期 |
 | Workerセッション | 端末Keychain、KVにはtoken hashとsession | Worker API | 90日。ログアウト時に端末から削除し、サーバー失効をbest effortで要求 |

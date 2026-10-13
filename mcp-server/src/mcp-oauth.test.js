@@ -78,7 +78,6 @@ test("MCP connector pairs through the logged-in iPad, imports by account, and ca
   assert.equal(snapshot.status, 200);
   for (const [name, args] of [
     ["create_flashcards", { deckTitle: "公式", folderPath: "数学", cards: [{ question: "1+1", answer: "2" }] }],
-    ["create_slides", { title: "発表", folderPath: "数学", slides: [{ title: "導入", bullets: ["概要"], notes: "話す" }] }],
     ["create_notebook", { title: "まとめ", folderPath: "数学", pages: [{ title: "1", text: "内容" }] }],
   ]) {
     const created = await fetch(env, "/mcp", { method: "POST", headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args } }) });
@@ -89,14 +88,14 @@ test("MCP connector pairs through the logged-in iPad, imports by account, and ca
   assert.equal((await invalidFolder.json()).result.isError, true);
   const inbox = await fetch(env, "/api/mcp/inbox", { headers: { authorization: `Bearer ${deviceToken}` } });
   const inboxItems = await inbox.json();
-  assert.equal(inboxItems.length, 4);
+  assert.equal(inboxItems.length, 3);
   assert.equal(inboxItems[0].payload.body, "平均と分散");
   const sameAccountToken = `${Math.floor(Date.now() / 1000)}.${"b".repeat(64)}`;
   const otherAccountToken = `${Math.floor(Date.now() / 1000)}.${"c".repeat(64)}`;
   await env.STUDIQUO_DATA.put(`session:${hash(sameAccountToken)}`, JSON.stringify({ sub: "student-A" }));
   await env.STUDIQUO_DATA.put(`session:${hash(otherAccountToken)}`, JSON.stringify({ sub: "student-B" }));
   const sameInbox = await fetch(env, "/api/mcp/inbox", { headers: { authorization: `Bearer ${sameAccountToken}` } });
-  assert.equal((await sameInbox.json()).length, 4);
+  assert.equal((await sameInbox.json()).length, 3);
   const otherInbox = await fetch(env, "/api/mcp/inbox", { headers: { authorization: `Bearer ${otherAccountToken}` } });
   assert.deepEqual(await otherInbox.json(), []);
   const ack = await fetch(env, `/api/mcp/inbox/${itemId}`, { method: "POST", headers: { authorization: `Bearer ${deviceToken}` } });
@@ -104,7 +103,7 @@ test("MCP connector pairs through the logged-in iPad, imports by account, and ca
   const importedStatus = await fetch(env, "/mcp", { method: "POST", headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "get_import_status", arguments: { id: itemId } } }) });
   assert.equal((await importedStatus.json()).result.structuredContent.result.status, "imported");
   const emptyInbox = await fetch(env, "/api/mcp/inbox", { headers: { authorization: `Bearer ${deviceToken}` } });
-  assert.equal((await emptyInbox.json()).length, 3);
+  assert.equal((await emptyInbox.json()).length, 2);
   const revoke = await fetch(env, `/api/mcp/connections/${hash(clientId)}`, { method: "DELETE", headers: { authorization: `Bearer ${deviceToken}` } });
   assert.equal((await revoke.json()).revoked, true);
   const after = await fetch(env, "/mcp", { method: "POST", headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" }, body: "{}" });

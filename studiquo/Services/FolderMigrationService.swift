@@ -30,8 +30,7 @@ enum FolderMigrationService {
         favoriteFolderPathsStorage: String,
         notebooks: [Notebook],
         flashcardDecks: [FlashcardDeck],
-        textDocuments: [TextDocument],
-        slideDecks: [SlideDeck]
+        textDocuments: [TextDocument]
     ) async {
         guard !UserDefaults.standard.bool(forKey: didMigrateKey) else { return }
 
@@ -47,7 +46,6 @@ enum FolderMigrationService {
         let referencedPaths = notebooks.map(\.folderName)
             + flashcardDecks.map(\.folderName)
             + textDocuments.map(\.folderName)
-            + slideDecks.map(\.folderName)
         for path in referencedPaths where !path.isEmpty {
             allPaths.insert(path)
         }
@@ -109,10 +107,6 @@ enum FolderMigrationService {
         }
         for document in textDocuments where !document.folderName.isEmpty {
             document.folder = foldersByPath[document.folderName]
-            await checkpoint()
-        }
-        for deck in slideDecks where !deck.folderName.isEmpty {
-            deck.folder = foldersByPath[deck.folderName]
             await checkpoint()
         }
 

@@ -3,7 +3,7 @@ import Foundation
 /// State of the home screen's multi-select mode.
 ///
 /// An item is identified by the same "type:id" string the drag-and-drop code
-/// already uses (`notebook:`, `deck:`, `document:`, `slide:`, `folder:`), so a
+/// already uses (`notebook:`, `deck:`, `document:`, `folder:`), so a
 /// selection can be handed straight to the existing move code and survives the
 /// student navigating from one folder into another while selecting.
 struct HomeSelection: Equatable {

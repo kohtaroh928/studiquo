@@ -60,6 +60,18 @@ struct PDFPasswordVerifiedEvent {
     let password: String
 }
 
+/// Notebooks whose PDF password was just typed during import. Consumed by
+/// the first `NotebookLockGate` that shows the notebook, so the student isn't
+/// asked for the same password twice in a row.
+@MainActor
+enum ImportedPDFPasswordSession {
+    private static var verified: Set<PersistentIdentifier> = []
+
+    static func markVerified(_ id: PersistentIdentifier) { verified.insert(id) }
+
+    static func consume(_ id: PersistentIdentifier) -> Bool { verified.remove(id) != nil }
+}
+
 /// No gate of its own: `NoteEditorView`'s primary pane wraps its own content
 /// in `NotebookLockGate` (see NoteEditorView.swift), so the toolbar, tab
 /// bar, and every other piece of chrome around the pane always renders
@@ -128,9 +140,13 @@ struct NotebookLockGate<Content: View>: View {
                 content()
             }
         }
-        .onAppear { requestUnlockIfNeeded() }
+        .onAppear {
+            consumeImportVerification()
+            requestUnlockIfNeeded()
+        }
         .onChange(of: notebook.persistentModelID) { _, _ in
             lockState.notebookDidChange()
+            consumeImportVerification()
             requestUnlockIfNeeded()
         }
         .alert("PDFのパスワード", isPresented: $isShowingPDFPasswordPrompt) {
@@ -152,6 +168,12 @@ struct NotebookLockGate<Content: View>: View {
                 requestUnlockIfNeeded()
             }
             .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private func consumeImportVerification() {
+        if ImportedPDFPasswordSession.consume(notebook.persistentModelID) {
+            lockState.recordPDFPasswordVerified()
         }
     }
 

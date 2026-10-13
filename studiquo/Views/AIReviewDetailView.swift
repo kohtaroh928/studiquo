@@ -5,13 +5,12 @@ import UniformTypeIdentifiers
 /// explanation the AI researched the day the question was asked, with a way
 /// to save/share it as a PDF and, only if the student chooses, a short quiz.
 ///
-/// The explanation itself already lives as a `TextDocument` in the student's
-/// own 文書 library (`AIReviewService` files it under "AI復習") — this screen
-/// is a convenient way to read it right after the notification, not the only
-/// place it can be opened from.
+/// Whether to keep the explanation as a 文書 (filed under "AI復習") is the
+/// student's choice, made here or with the notification's action buttons.
 struct AIReviewDetailView: View {
     let item: AIReviewItem
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @State private var showsQuiz = false
     @State private var pdfDocument: PDFExportDocument?
     @State private var showsPDFExporter = false
@@ -68,7 +67,8 @@ struct AIReviewDetailView: View {
                             .padding(.vertical, 10)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(item.explanationDocument == nil)
+
+                    documentChoice
                 }
                 .padding(20)
             }
@@ -83,16 +83,55 @@ struct AIReviewDetailView: View {
         .modifier(PDFSaveModifier(
             isPresented: $showsPDFExporter,
             document: $pdfDocument,
-            filename: item.explanationDocument?.title ?? L("復習")
+            filename: item.explanationDocument?.title ?? AIReviewService.reviewDocumentTitle(for: item.questionText)
         ))
         .fullScreenCover(isPresented: $showsQuiz) {
             AIReviewQuizView(questions: item.quiz)
         }
     }
 
+    @ViewBuilder
+    private var documentChoice: some View {
+        if item.explanationDocument != nil {
+            Label(L("文書「\(AIReviewService.reviewFolderName)」に保存済み"), systemImage: "checkmark.circle.fill")
+                .font(.subheadline)
+                .foregroundStyle(.green)
+        } else if item.needsDocumentDecision {
+            VStack(spacing: 8) {
+                Text(L("この解説を文書として残しますか？"))
+                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 12) {
+                    Button {
+                        AIReviewService.keepAsDocument(item, modelContext: modelContext)
+                    } label: {
+                        Label(L("文書として残す"), systemImage: "doc.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("ai-review-keep-document")
+                    Button {
+                        AIReviewService.declineDocument(item, modelContext: modelContext)
+                    } label: {
+                        Text(L("残さない")).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("ai-review-decline-document")
+                }
+            }
+        } else {
+            Button {
+                AIReviewService.keepAsDocument(item, modelContext: modelContext)
+            } label: {
+                Label(L("文書として残す"), systemImage: "doc.badge.plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
     private func exportPDF() {
-        guard let document = item.explanationDocument,
-              let data = ExportService.pdfData(from: document) else { return }
+        let document = item.explanationDocument ?? AIReviewService.makeDocument(for: item)
+        guard let data = ExportService.pdfData(from: document) else { return }
         pdfDocument = PDFExportDocument(data: data)
         showsPDFExporter = true
     }

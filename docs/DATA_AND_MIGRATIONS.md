@@ -22,7 +22,7 @@
 
 | 保存先 | 現在の内容・役割 | 変更の正本 |
 | --- | --- | --- |
-| SwiftData | ノート、カード、文書、スライド、予定、学習記録、AI会話・復習、Folder、MCP取り込み記録 | `studiquo/StudiquoApp.swift`の`studiquoSchema`と各モデル |
+| SwiftData | ノート、カード、文書、予定、学習記録、AI会話・復習、Folder、MCP取り込み記録 | `studiquo/StudiquoApp.swift`の`studiquoSchema`と各モデル |
 | CloudKit | 同期を有効にした端末のSwiftDataをApple IDの端末間で同期 | モデル、entitlements、`project.yml` |
 | Keychain | 認証情報、Worker token、ノート暗号鍵、旧direct AIキー | 各認証・暗号化サービス |
 | UserDefaults | 言語、端末設定、同意バージョン、移行マーカー、未送信診断など | 各設定・サービスのキー定義 |
@@ -38,7 +38,7 @@
 
 ## 3. SwiftDataモデルと所有関係
 
-`studiquoSchema`は現在26モデルを列挙する。
+`studiquoSchema`は現在20モデルを列挙する。スライド関連の6モデルは、リリース前に取り除いた（保管場所は[SLIDES.md](archive/SLIDES.md)）。
 
 | データのまとまり | モデル | 変更時の重点確認 |
 | --- | --- | --- |
@@ -48,7 +48,6 @@
 | 予定・学習履歴 | `CalendarEvent`、`StudyActivity` | 日時、時間帯、予定の取得元 |
 | AI会話・復習 | `AIChatThread`、`AIChatMessage`、`AIReviewItem` | メッセージ順、添付、生成した文書とのinverse |
 | 文書 | `TextDocument`、`DocumentBlock`、`DocumentTableRow`、`DocumentTableCell`、`DocumentHeaderFooter`、`DocumentComment`、`DocumentChangeRecord`、`DocumentFootnote` | 旧本文の保持、ブロック・表・脚注・コメントの参照 |
-| スライド | `SlideDeck`、`Slide`、`SlideMaster`、`SlideLayoutTemplate`、`SlidePlaceholder`、`SlideElement` | master/layout、要素グループ、位置・サイズ、旧表示形式 |
 | MCP取り込み | `MCPImportReceipt` | 受信IDと取り込み済み判定。再試行で二重作成しない |
 
 モデル内の関係・削除規則を正本とする。画面から消えただけでは子データ・バイナリ・CloudKitの削除まで確認したことにならない。
@@ -168,7 +167,7 @@ class名・namespace・ルーム名の生成方法を変えると既存オブジ
 
 `NotebookBackupService`はノートのJSON exportと自動backupを提供する。自動backupはApplication Supportの`studiquo/AutoBackups`にノートごと最大5件を保持する。保護中ノートの平文自動backupは作成せず、保護設定時に既存backupを削除する。
 
-このbackupはノートの描画・画像・本文等を復元するもので、全アカウントのカード、文書、スライド、認証・購読・チャットを丸ごと復元するものではない。Archiveには明示的なformat versionがないため、必須field追加・型変更時には旧JSON fixtureで読取互換を確認する。
+このbackupはノートの描画・画像・本文等を復元するもので、全アカウントのカード、文書、認証・購読・チャットを丸ごと復元するものではない。Archiveには明示的なformat versionがないため、必須field追加・型変更時には旧JSON fixtureで読取互換を確認する。
 
 ### 7.2 運用上の必須確認
 

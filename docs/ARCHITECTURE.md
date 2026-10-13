@@ -91,7 +91,6 @@ MCPへ公開される学習データは、アプリが明示的にWorkerへ同�
 | カレンダー・学習履歴 | `CalendarEvent`、`StudyActivity` | 独立した時系列データ |
 | AI会話・復習 | `AIChatThread`、`AIChatMessage`、`AIReviewItem` | Thread削除でMessageをcascade削除 |
 | 文書 | `TextDocument`、`DocumentBlock`、表、コメント、脚注、変更履歴 | Documentをルートとする編集モデル |
-| スライド | `SlideDeck`、`Slide`、`SlideMaster`、Layout、Placeholder、Element | Deckをルートとする編集モデル |
 | MCP取り込み | `MCPImportReceipt` | Workerの受信項目を重複取り込みしないための記録 |
 
 画像、描画、暗号化データなどの大きなバイナリは、必要に応じてSwiftDataの`externalStorage`属性を使う。
@@ -101,7 +100,7 @@ CloudKit互換性を壊しやすいため、モデル追加・必須属性・関
 
 | 保存先 | 内容 |
 | --- | --- |
-| SwiftData | ノート、カード、文書、スライド、予定、AI会話、取り込み履歴 |
+| SwiftData | ノート、カード、文書、予定、AI会話、取り込み履歴 |
 | CloudKit | SwiftDataのAppleデバイス間同期。コンテナは`iCloud.com.yabuko.studiquo` |
 | Keychain | Workerセッショントークン、ノート暗号鍵、任意の直接接続AIキー |
 | UserDefaults / AppStorage | 言語、プロフィール、UI設定、Worker endpointなどの軽量設定 |
@@ -192,7 +191,7 @@ Workerはこの同期経路に参加しない。CloudKit障害とWorker障害は
 
 ### 6.4 MCP連携
 
-1. iOSがノートのOCR、カード、予定、文書、スライド、フォルダ情報をスナップショットとしてWorkerへ送る。
+1. iOSがノートのOCR、カード、予定、文書、フォルダ情報をスナップショットとしてWorkerへ送る。
 2. 外部MCPクライアントがOAuth Authorization Code + PKCEで接続し、read/write scopeを得る。
 3. 読み取りツールは認証ユーザーのスナップショットだけを参照する。
 4. 書き込みツールは`MCP_INBOX`へ項目をキューし、直接SwiftDataを変更しない。

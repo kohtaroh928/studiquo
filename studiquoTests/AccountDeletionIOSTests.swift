@@ -301,16 +301,10 @@ final class AccountDeletionIOSTests: XCTestCase {
         let comment = DocumentComment(author: "a", text: "c", anchorBlock: block)
         let change = DocumentChangeRecord(author: "a", kind: .edit, previousText: "a", newText: "b", anchorBlock: block)
         let footnote = DocumentFootnote(text: "f", anchorBlock: block)
-        let slideDeck = SlideDeck(title: "slides")
-        let slide = Slide(order: 0)
-        let master = SlideMaster()
-        let layout = SlideLayoutTemplate(name: "layout", order: 0)
-        let placeholder = SlidePlaceholder(role: .body, kind: .text, order: 0, centerX: 0.5, centerY: 0.5, width: 0.5, height: 0.2)
-        let slideElement = SlideElement(kind: .text)
         let review = AIReviewItem(questionText: "q", threadTitle: "t", createdAt: .now, reviewDate: .now, explanationMarkdown: "e", quiz: [])
         let folder = Folder(name: "folder")
         let receipt = MCPImportReceipt(id: "id", title: "title", kind: "document", source: "test")
-        for model in [notebook, page, pageElement, deck, card, event, activity, thread, message, document, block, row, cell, header, comment, change, footnote, slideDeck, slide, master, layout, placeholder, slideElement, review, folder, receipt] as [any PersistentModel] {
+        for model in [notebook, page, pageElement, deck, card, event, activity, thread, message, document, block, row, cell, header, comment, change, footnote, review, folder, receipt] as [any PersistentModel] {
             context.insert(model)
         }
     }
@@ -333,12 +327,6 @@ final class AccountDeletionIOSTests: XCTestCase {
         XCTAssertEqual(try context.fetch(FetchDescriptor<DocumentComment>()).count, 0)
         XCTAssertEqual(try context.fetch(FetchDescriptor<DocumentChangeRecord>()).count, 0)
         XCTAssertEqual(try context.fetch(FetchDescriptor<DocumentFootnote>()).count, 0)
-        XCTAssertEqual(try context.fetch(FetchDescriptor<SlideDeck>()).count, 0)
-        XCTAssertEqual(try context.fetch(FetchDescriptor<Slide>()).count, 0)
-        XCTAssertEqual(try context.fetch(FetchDescriptor<SlideMaster>()).count, 0)
-        XCTAssertEqual(try context.fetch(FetchDescriptor<SlideLayoutTemplate>()).count, 0)
-        XCTAssertEqual(try context.fetch(FetchDescriptor<SlidePlaceholder>()).count, 0)
-        XCTAssertEqual(try context.fetch(FetchDescriptor<SlideElement>()).count, 0)
         XCTAssertEqual(try context.fetch(FetchDescriptor<AIReviewItem>()).count, 0)
         XCTAssertEqual(try context.fetch(FetchDescriptor<Folder>()).count, 0)
         XCTAssertEqual(try context.fetch(FetchDescriptor<MCPImportReceipt>()).count, 0)

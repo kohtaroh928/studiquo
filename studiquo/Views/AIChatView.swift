@@ -21,8 +21,16 @@ private struct AIChatPaneWidthKey: PreferenceKey {
 /// pane-switching and paste-onto-page behaviour; the home screen adds none of
 /// that and none of those menu items appear.
 /// Recognises a dragged tab's id that a text field swallowed as plain text.
+/// Where the AIチャット message list rests when it is shown. A conversation
+/// opens on its newest message; only the empty-state greeting starts at the top.
+enum AIChatScrollPolicy {
+    static func anchor(messageCount: Int) -> UnitPoint {
+        messageCount == 0 ? .top : .bottom
+    }
+}
+
 enum DroppedTabText {
-    static let prefixes = ["notebook:", "deck:", "web:", "ai:", "friend:", "group:", "document:", "slide:"]
+    static let prefixes = ["notebook:", "deck:", "web:", "ai:", "friend:", "group:", "document:"]
 
     /// The tab id inserted by the change from `old` to `new`, or nil when the
     /// change is ordinary typing, a deletion, or text that is not a tab id.
@@ -53,6 +61,9 @@ struct AIChatPanel: View {
     /// Identifies this on-screen instance to the store's "is anyone looking"
     /// tracking. One per instance, so two panels cannot cancel each other.
     @State private var surfaceID = UUID()
+    /// The age band picked on the consent card (nothing preselected).
+    @State private var consentAge: AIAgeBand?
+    @State private var consentUnder13 = false
 
     var body: some View {
         AIChatPane(
@@ -63,6 +74,7 @@ struct AIChatPanel: View {
             onSelectThread: { store.select($0) },
             onNewThread: { store.startNewThread() },
             onDeleteThread: { store.delete($0) },
+            onRenameThread: { store.rename($0, to: $1) },
             onSend: { store.send(noteContext: noteContext()) },
             respondingThreadIDs: store.respondingThreadIDs,
             onCancel: { store.cancelResponse() },
@@ -73,8 +85,88 @@ struct AIChatPanel: View {
             onOpenAttachment: onOpenAttachment,
             onPaneDrop: onPaneDrop
         )
+        .overlay {
+            if store.pendingConsentSend != nil {
+                consentCard
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: store.pendingConsentSend != nil)
         .onAppear { store.surfaceDidAppear(surfaceID) }
         .onDisappear { store.surfaceDidDisappear(surfaceID) }
+    }
+
+    private var consentCard: some View {
+        ZStack {
+            Color.black.opacity(0.18).ignoresSafeArea()
+            VStack(spacing: 14) {
+                Image(systemName: "hand.raised")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                VStack(spacing: 6) {
+                    Text(L("AIへの送信を許可しますか？"))
+                        .font(.headline)
+                    Text(L("質問・会話履歴と、送信対象として選んだ資料・画像がOpenAI(ChatGPTのモデル)へ送信されます。許可はいつでも設定 → プライバシーから取り消せます。"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L("年齢の確認(13〜17歳は保護者の同意が必要です)"))
+                        .font(.caption.weight(.semibold))
+                    consentAgeOption(L("18歳以上です"), selected: consentAge == .adult && !consentUnder13) {
+                        consentAge = .adult; consentUnder13 = false
+                    }
+                    consentAgeOption(L("13〜17歳で、保護者の同意を得ています"), selected: consentAge == .teen && !consentUnder13) {
+                        consentAge = .teen; consentUnder13 = false
+                    }
+                    consentAgeOption(L("13歳未満です"), selected: consentUnder13) {
+                        consentAge = nil; consentUnder13 = true
+                    }
+                    if consentUnder13 {
+                        Text(L("13歳未満の方はAI機能を利用できません。"))
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 10) {
+                    Button { store.declinePendingSend() } label: {
+                        Text(L("許可しない")).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("ai-chat-consent-decline")
+                    Button {
+                        if let consentAge { store.allowPendingSend(ageBand: consentAge) }
+                    } label: {
+                        Text(L("許可して送信")).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(consentAge == nil)
+                    .accessibilityIdentifier("ai-chat-consent-allow")
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: 340)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+            .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+            .padding(24)
+        }
+        .transition(.opacity)
+        .zIndex(30)
+    }
+}
+
+extension AIChatPanel {
+    fileprivate func consentAgeOption(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                Text(title).font(.caption).foregroundStyle(.primary)
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -145,6 +237,7 @@ struct AIChatPane: View {
     let onSelectThread: (AIChatThread) -> Void
     let onNewThread: () -> Void
     let onDeleteThread: (AIChatThread) -> Void
+    let onRenameThread: (AIChatThread, String) -> Void
     let onSend: () -> Void
     let respondingThreadIDs: Set<String>
     let onCancel: () -> Void
@@ -168,6 +261,7 @@ struct AIChatPane: View {
         onSelectThread: @escaping (AIChatThread) -> Void,
         onNewThread: @escaping () -> Void,
         onDeleteThread: @escaping (AIChatThread) -> Void,
+        onRenameThread: @escaping (AIChatThread, String) -> Void,
         onSend: @escaping () -> Void,
         respondingThreadIDs: Set<String>,
         onCancel: @escaping () -> Void,
@@ -185,6 +279,7 @@ struct AIChatPane: View {
         self.onSelectThread = onSelectThread
         self.onNewThread = onNewThread
         self.onDeleteThread = onDeleteThread
+        self.onRenameThread = onRenameThread
         self.onSend = onSend
         self.respondingThreadIDs = respondingThreadIDs
         self.onCancel = onCancel
@@ -221,6 +316,8 @@ struct AIChatPane: View {
         width >= historySidebarMinimumWidth
     }
     @State private var pendingDeleteThread: AIChatThread?
+    @State private var renamingThread: AIChatThread?
+    @State private var renameDraft = ""
     @State private var attachmentPickerMode: AttachmentPickerMode?
     @State private var isDropTargeted = false
     @State private var isComposerDropTargeted = false
@@ -363,6 +460,12 @@ struct AIChatPane: View {
                             }
                             .padding(18)
                         }
+                        .defaultScrollAnchor(AIChatScrollPolicy.anchor(messageCount: messages.count))
+                        .onAppear {
+                            if let last = messages.last {
+                                proxy.scrollTo(last.persistentModelID, anchor: .bottom)
+                            }
+                        }
                         .onChange(of: messages.count) { _, _ in
                             if let last = messages.last {
                                 withAnimation(.easeOut(duration: 0.2)) {
@@ -504,6 +607,22 @@ struct AIChatPane: View {
             if let pendingDeleteThread {
                 deleteConfirmationCard(for: pendingDeleteThread)
             }
+        }
+        .alert(L("名前を変更"), isPresented: Binding(
+            get: { renamingThread != nil },
+            set: { if !$0 { renamingThread = nil } }
+        )) {
+            TextField(L("トークの名前"), text: $renameDraft)
+                .onChange(of: renameDraft) { _, value in
+                    if value.count > AIChatStore.maxTitleLength {
+                        renameDraft = String(value.prefix(AIChatStore.maxTitleLength))
+                    }
+                }
+            Button(L("キャンセル"), role: .cancel) {}
+            Button(L("保存")) {
+                if let renamingThread { onRenameThread(renamingThread, renameDraft) }
+            }
+            .disabled(renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .background(Color(uiColor: .systemBackground))
         .background(
@@ -653,6 +772,19 @@ struct AIChatPane: View {
                     .accessibilityIdentifier("ai-chat-thread-\(thread.title)")
                     .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
                     .listRowBackground(Color.clear)
+                    .contextMenu {
+                        Button {
+                            renameDraft = thread.title
+                            renamingThread = thread
+                        } label: {
+                            Label(L("名前を変更"), systemImage: "pencil")
+                        }
+                        Button(role: .destructive) {
+                            pendingDeleteThread = thread
+                        } label: {
+                            Label(L("削除"), systemImage: "trash")
+                        }
+                    }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {
                             pendingDeleteThread = thread

@@ -8,7 +8,7 @@ import XCTest
 ///
 /// Reported failure: with a split screen whose other half is the AI chat, dropping a
 /// tab anywhere but the prompt field did not switch that half. The group chat and the
-/// Web pane had the same fault, and the friend chat ignored document and slide tabs.
+/// Web pane had the same fault, and the friend chat ignored document tabs.
 final class TabDropOntoSplitPaneTests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -173,7 +173,7 @@ final class TabDropOntoSplitPaneTests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["friend-chat-draft"].exists)
     }
 
-    /// The friend chat once recognised only some kinds of tab: a document or a slide
+    /// The friend chat once recognised only some kinds of tab: a document
     /// dropped on it was ignored although a notebook switched it.
     func testFriendChatPaneSwitchesToADroppedDocument() throws {
         try launch(["--note-snippet-friend-ui-test", "--ui-test-tab-drag-sources"])

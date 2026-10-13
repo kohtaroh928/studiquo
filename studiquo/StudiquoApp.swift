@@ -72,8 +72,7 @@ let studiquoSchema = Schema([
     Notebook.self, NotePage.self, PageElement.self,
     FlashcardDeck.self, Flashcard.self, CalendarEvent.self, StudyActivity.self,
     AIChatThread.self, AIChatMessage.self,
-    TextDocument.self, SlideDeck.self, Slide.self,
-    SlideMaster.self, SlideLayoutTemplate.self, SlidePlaceholder.self, SlideElement.self,
+    TextDocument.self,
     DocumentBlock.self, DocumentTableRow.self, DocumentTableCell.self,
     DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
     AIReviewItem.self,
@@ -129,6 +128,16 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         let content = response.notification.request.content
         if response.actionIdentifier == FlashcardReviewNotifications.snoozeActionIdentifier {
             await FlashcardReviewNotifications.snooze(content)
+            return
+        }
+        if response.actionIdentifier == AIReviewNotifications.keepActionIdentifier
+            || response.actionIdentifier == AIReviewNotifications.declineActionIdentifier {
+            if let raw = content.userInfo["reviewID"] as? String, let id = UUID(uuidString: raw) {
+                AIReviewDecisionQueue.enqueue(
+                    reviewID: id,
+                    keep: response.actionIdentifier == AIReviewNotifications.keepActionIdentifier
+                )
+            }
             return
         }
         await MainActor.run {
@@ -559,6 +568,20 @@ private struct NoteAIChatUITestRoot: View {
     init() {
         AIDataDisclosure.acknowledge(ageBand: .adult)
         AI.provider = UITestAIProvider()
+        // Stored settings (toolbar layout, tool choice, ...) would carry one
+        // UI test's state into the next, so start from nothing. The floating
+        // chat's frame is the one thing kept: a test that checks it survives
+        // a relaunch needs it, and `--note-ai-chat-reset-frame` drops it for
+        // a test that checks the first-launch placement.
+        let defaults = UserDefaults.standard
+        let frameKeys = ["centerX", "centerY", "width", "height"].map { "temporaryAIChat.\($0)" }
+        let keptFrame = ProcessInfo.processInfo.arguments.contains("--note-ai-chat-reset-frame")
+            ? [:]
+            : frameKeys.reduce(into: [String: Any]()) { result, key in
+                if let value = defaults.object(forKey: key) { result[key] = value }
+            }
+        if let domain = Bundle.main.bundleIdentifier { defaults.removePersistentDomain(forName: domain) }
+        for (key, value) in keptFrame { defaults.set(value, forKey: key) }
         let store = FriendStore(
             defaults: UserDefaults(suiteName: "NoteAIChatUITest-\(UUID().uuidString)")!,
             autoRefresh: false
@@ -788,6 +811,43 @@ private struct LibraryDropUITestRoot: View {
             }
         }
         _ = LibraryDropUITestStore.container
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-ai-review-notification") {
+            // A review awaiting the keep/decline choice, and the real
+            // notification for it a few seconds from now.
+            let context = LibraryDropUITestStore.container.mainContext
+            let item = AIReviewItem(
+                questionText: "通知ボタンの確認", threadTitle: "テスト", createdAt: .now,
+                reviewDate: .now, explanationMarkdown: "確認用の解説", quiz: []
+            )
+            context.insert(item)
+            try? context.save()
+            let content = UNMutableNotificationContent()
+            content.title = "復習の時間です"
+            content.body = "昨日の質問「通知ボタンの確認」を復習できます"
+            content.categoryIdentifier = AppNotificationKind.aiReview.categoryIdentifier
+            content.userInfo = ["route": AppNotificationKind.aiReview.rawValue, "reviewID": item.id.uuidString]
+            AppNotificationPreferences.registerCategories()
+            // Scheduling before the permission is granted drops the request.
+            Task {
+                _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+                try? await UNUserNotificationCenter.current().add(UNNotificationRequest(
+                    identifier: "ui-test-ai-review",
+                    content: content,
+                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 15, repeats: false)
+                ))
+                // A later one, to open the review by tapping after a button decided it.
+                let reopen = UNMutableNotificationContent()
+                reopen.title = "復習をもう一度開く"
+                reopen.body = "確認用"
+                reopen.categoryIdentifier = content.categoryIdentifier
+                reopen.userInfo = content.userInfo
+                try? await UNUserNotificationCenter.current().add(UNNotificationRequest(
+                    identifier: "ui-test-ai-review-reopen",
+                    content: reopen,
+                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 50, repeats: false)
+                ))
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--ui-test-ai-notification-route") {
             let context = LibraryDropUITestStore.container.mainContext
             let thread = AIChatThread(title: "通知から")
@@ -930,9 +990,25 @@ private enum LibraryDropUITestStore {
         container.mainContext.insert(target)
         if compact {
             container.mainContext.insert(Notebook(title: "Drag me"))
+            if arguments.contains("--home-pdf-cover") {
+                // A PDF with a real first page, and a protected one whose
+                // first page must not be shown as its icon.
+                let firstPage = UIGraphicsImageRenderer(size: CGSize(width: 60, height: 80)).pngData { context in
+                    UIColor.systemRed.setFill()
+                    context.fill(CGRect(x: 0, y: 0, width: 60, height: 80))
+                }
+                for (title, locked) in [("表紙つきPDF", false), ("保護されたPDF", true)] {
+                    let pdf = Notebook(title: title)
+                    let page = NotePage(order: 0, backgroundImageData: firstPage)
+                    page.notebook = pdf
+                    pdf.addPage(page)
+                    pdf.refreshLibraryMetadata()
+                    pdf.isLocked = locked
+                    container.mainContext.insert(pdf)
+                }
+            }
             container.mainContext.insert(FlashcardDeck(title: "Cards"))
             container.mainContext.insert(TextDocument(title: "Document"))
-            container.mainContext.insert(SlideDeck(title: "Y"))
             try! container.mainContext.save()
             return container
         }
@@ -952,7 +1028,6 @@ private enum LibraryDropUITestStore {
         container.mainContext.insert(Notebook(title: "Other two"))
         container.mainContext.insert(FlashcardDeck(title: "Cards"))
         container.mainContext.insert(TextDocument(title: "Document"))
-        container.mainContext.insert(SlideDeck(title: "Y"))
         let nested = Notebook(title: "Source note")
         nested.folder = sourceFolder
         nested.folderName = sourceFolder.legacyPath
@@ -1017,7 +1092,9 @@ private struct SplitSourcePickerUITestRoot: View {
         }
         .modelContainer(library.container)
         // Once, on first appearance: every test launch starts as the list.
-        .task { UserDefaults.standard.removeObject(forKey: "splitSourcePickerLayout") }
+        .task {
+            UserDefaults.standard.removeObject(forKey: "splitSourcePickerLayout")
+        }
     }
 }
 
@@ -1040,12 +1117,27 @@ private enum SplitSourcePickerUITestStore {
         note.addPage(notePage)
 
         let pdf = Notebook(title: "分割PDF")
-        let pdfPage = NotePage(order: 0, backgroundImageData: Data([0]))
+        // A real, decodable first page: the pickers show it as the PDF's icon.
+        let firstPageImage = UIGraphicsImageRenderer(size: CGSize(width: 60, height: 80)).pngData { context in
+            UIColor.systemRed.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 60, height: 80))
+        }
+        let pdfPage = NotePage(order: 0, backgroundImageData: firstPageImage)
         pdfPage.notebook = pdf
         pdf.addPage(pdfPage)
         pdf.refreshLibraryMetadata()
         pdf.folderName = subject.legacyPath
         pdf.folder = subject
+
+        // A protected PDF: its first page must never be shown as the icon.
+        let protectedPDF = Notebook(title: "保護PDF")
+        let protectedPage = NotePage(order: 0, backgroundImageData: firstPageImage)
+        protectedPage.notebook = protectedPDF
+        protectedPDF.addPage(protectedPage)
+        protectedPDF.refreshLibraryMetadata()
+        protectedPDF.isLocked = true
+        protectedPDF.folderName = subject.legacyPath
+        protectedPDF.folder = subject
 
         let deck = FlashcardDeck(title: "分割暗記")
         deck.folderName = math.legacyPath
@@ -1053,9 +1145,10 @@ private enum SplitSourcePickerUITestStore {
 
         context.insert(note)
         context.insert(pdf)
+        context.insert(protectedPDF)
         context.insert(deck)
         try! context.save()
-        return (container, [note, pdf], [deck])
+        return (container, [note, pdf, protectedPDF], [deck])
     }()
 }
 

@@ -1,15 +1,15 @@
 ---
-title: OpenAIへの問い合わせ文(下書き)Sign in with ChatGPT
+title: OpenAIへの問い合わせ文(送信済み)Sign in with ChatGPT
 date: 2026-10-09
 revised: 2026-10-09
-tags: [draft, ai, openai]
+tags: [sent, ai, openai]
 ---
 
-# OpenAIへの問い合わせ文(下書き)
+# OpenAIへの問い合わせ文(送信済み)
 
-- 状態: 下書き。**未送信**。送信は本人が行う。
+- 状態: **送信済み(2026-10-09、本人がinterest formから送信)**。返事待ち。下の「英文」は元の長い版で、フォームには字数を考えて短くまとめた版を貼った(次の節)。
 - 送り先: [Sign in with ChatGPT interest form](https://openai.com/form/sign-in-with-chatgpt-interest/)。公式の[Request a client ID](https://developers.openai.com/siwc/request-client-id)ページからもリンクされている。フォームの入力欄は公開されていないので、欄に合わせて下の文を切り貼りする。
-- 送る前に埋める: `【 】`の箇所(運営者名、連絡先、公開予定時期など)。実際の事実だけを書く。
+- `【 】`は埋め済み(運営者名、公開予定時期=2027-01-01、連絡先)。送る前に、フォームの欄に合わせて確認する。
 - 背景: [ADR-0002](decisions/adr-0002-ai-provider-google-only-and-consent-gate.md)の改定(持ち込み利用枠)
 
 ## 公式資料で分かったこと(2026-10-09調べ。問い合わせの対象から外した)
@@ -21,13 +21,26 @@ tags: [draft, ai, openai]
 - 枠の利用は、利用者がChatGPT側で週ごとの上限を決められ、新しい枠が増えるわけではない。対象はPlusとPro。
 - 公開資料にないこと: 承認基準と期間、フォームの入力欄、未成年・学生の扱い、枠で行ったリクエストの保存期間と訓練利用、ネイティブ(モバイル)アプリの扱い、利用規約(Sign in with ChatGPT Terms)の本文。
 
-## 英文(送信用)
+## 実際にフォームへ入れた内容(2026-10-09)
+
+- 機能: サインインとAIリクエストへのChatGPTプランの利用
+- 会社名: Kohtaroh Yabusaki / ウェブサイト: 本番Workerの`/privacy` / 公開予定: 2027-01-01
+- 製品の説明欄(質問を同封):
+
+```
+Studiquo: a study app for iPad (SwiftUI) with an AI chat feature, backend on Cloudflare Workers, own paid subscription plans. We want users with ChatGPT Plus/Pro to optionally use their own plan allowance in the AI chat. Target release January 1, 2027; the ChatGPT plan feature would launch only after OpenAI's approval.
+Questions: (1) Our app is paid and has a hosted backend. Can our backend act as the OAuth client and hold the access/refresh tokens server-side only, never on the device? (2) What are the approval criteria and timeline? Our app is not released yet; can a pre-release app get a test client ID for development, and can you share the applicable terms? (3) Does the plan allowance cover general text/image Responses API requests, such as a study-assistant chat (help center says "Codex/ChatGPT work usage")? Which models, and what signal do we get when a cap is reached? (4) Our users are mainly students, some under 18. Are there conditions? (5) How are requests made with a user's plan retained and used, including for training? Contact: yabukohtaroh@gmail.com
+```
+
+(2)は、公開前のアプリがテスト用のクライアントIDをもらえるかを足した版。以下の英文(元の長い版)の(2)とは文言が違う。
+
+## 英文(元の長い版)
 
 Subject: Inquiry about ChatGPT plan usage for a paid iPad app with a hosted backend
 
 Hello,
 
-I am the developer of Studiquo, a study app for iPad (SwiftUI) with an AI chat feature. The app talks to a backend on Cloudflare Workers, which calls AI providers on behalf of signed-in users. Operator: 【運営者名・所在地】. Planned release: 【公開予定時期】. The app has its own paid subscription plans.
+I am the developer of Studiquo, a study app for iPad (SwiftUI) with an AI chat feature. The app talks to a backend on Cloudflare Workers, which calls AI providers on behalf of signed-in users. Operator: Kohtaroh Yabusaki (individual developer), Japan. Target release of the app: January 1, 2027. The ChatGPT plan usage feature would be released only after your approval. The app has its own paid subscription plans.
 
 We would like to let users who have a ChatGPT Plus or Pro plan use their own plan allowance in our AI chat, as an optional, opt-in feature that is off by default, with a separate consent screen. Our own plans would remain for everyone else.
 
@@ -41,7 +54,7 @@ We read the developer documentation. The plan-usage documentation covers open-so
 
 For reference, we would store tokens only on our backend, let users disconnect at any time, and delete the tokens when an account is deleted.
 
-Contact: 【メールアドレス】
+Contact: yabukohtaroh@gmail.com
 
 Thank you.
 
@@ -55,7 +68,7 @@ Studiquo(有料プランのあるiPad向け学習アプリ、バックエンド�
 4. 未成年・学生: 条件の有無。ChatGPTのティーン保護が掛かったアカウントの扱い。
 5. データの扱い: 枠で行ったリクエストの保存期間と訓練利用。
 
-## 返事が来たら
+## 返事が来たら(返事がなければ、数週間後に様子を見て、再送などを検討する)
 
 - 回答をADR-0002の前提条件1に反映する。
 - Notionのカード「AIチャットでChatGPT/Claudeの利用枠を共有して使えるようにする」の「次の一手」を更新する。

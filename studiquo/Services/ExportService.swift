@@ -3,14 +3,14 @@ import UIKit
 import SwiftUI
 
 enum ExportService {
-    /// A flattened, read-only rendering of an in-app note/deck/document/slide,
+    /// A flattened, read-only rendering of an in-app note/deck/document,
     /// suitable for sending to a friend in chat. The recipient's device has no
     /// access to the sender's local SwiftData store, so a live editable object
     /// can never be handed over directly — a PDF is the shared, self-contained
     /// stand-in both sides can open the same way an uploaded photo or file
     /// already is.
     @MainActor
-    static func chatAttachmentPDFData(sourceKind: String, sourceID: String, notebooks: [Notebook], flashcardDecks: [FlashcardDeck], textDocuments: [TextDocument], slideDecks: [SlideDeck]) -> Data? {
+    static func chatAttachmentPDFData(sourceKind: String, sourceID: String, notebooks: [Notebook], flashcardDecks: [FlashcardDeck], textDocuments: [TextDocument]) -> Data? {
         switch sourceKind {
         case "notebook":
             guard let notebook = notebooks.first(where: { String(describing: $0.persistentModelID) == sourceID && !$0.isTrashed }) else { return nil }
@@ -21,9 +21,6 @@ enum ExportService {
         case "document":
             guard let document = textDocuments.first(where: { String(describing: $0.persistentModelID) == sourceID && !$0.isTrashed }) else { return nil }
             return pdfData(from: document)
-        case "slide":
-            guard let deck = slideDecks.first(where: { String(describing: $0.persistentModelID) == sourceID && !$0.isTrashed }) else { return nil }
-            return pdfData(from: deck)
         default:
             return nil
         }
@@ -139,26 +136,6 @@ enum ExportService {
             withAttributes: [.font: UIFont.systemFont(ofSize: 9), .foregroundColor: UIColor.secondaryLabel]
         )
         cgContext.restoreGState()
-    }
-
-    @MainActor
-    static func pdfData(from deck: SlideDeck) -> Data? {
-        let size = deck.aspect.size
-        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: size))
-        let ordered = deck.sortedSlides
-        return renderer.pdfData { context in
-            for slide in ordered {
-                context.beginPage()
-                let view = SlideElementsLayer(slide: slide, slideSize: size, isEditable: false, onChange: {})
-                    .frame(width: size.width, height: size.height)
-                let imageRenderer = ImageRenderer(content: view)
-                imageRenderer.scale = 2
-                if let image = imageRenderer.uiImage {
-                    image.draw(in: CGRect(origin: .zero, size: size))
-                }
-            }
-            if ordered.isEmpty { context.beginPage() }
-        }
     }
 
     /// Flashcards have no existing PDF export to reuse — this renders a

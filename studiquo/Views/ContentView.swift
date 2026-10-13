@@ -13,14 +13,11 @@ private struct MCPSnapshot: Codable {
     let studyActivities: [MCPStudyActivity]
     let calendarEvents: [MCPCalendarEvent]
     let textDocuments: [MCPTextDocument]
-    let slideDecks: [MCPSlideDeck]
     let folders: [MCPFolder]
 }
 private struct MCPFolder: Codable { let path: String }
 
 private struct MCPTextDocument: Codable { let id: String; let title: String; let text: String }
-private struct MCPSlideDeck: Codable { let id: String; let title: String; let slides: [MCPSlideSummary] }
-private struct MCPSlideSummary: Codable { let title: String; let bullets: [String]; let notes: String }
 
 private struct MCPNotebook: Codable { let id: String; let title: String; let pages: [MCPPage] }
 private struct MCPPage: Codable { let id: String; let title: String; let recognizedText: String }
@@ -58,9 +55,6 @@ private struct MCPPendingAction: Codable {
     /// `create_document`: the body, as lines. A line beginning with `# `,
     /// `## ` or `### ` becomes a heading; `- ` becomes a bullet.
     let body: String?
-    /// `create_slides`
-    let slides: [MCPSlide]?
-    let theme: String?
     let folderPath: String?
     let pages: [MCPIncomingPage]?
 }
@@ -77,13 +71,6 @@ private struct MCPConnection: Decodable, Identifiable {
 }
 private struct MCPPairingInfo: Decodable { let clientName: String?; let scope: String?; let error: String? }
 private struct MCPApprovalResult: Decodable { let approved: Bool }
-
-private struct MCPSlide: Codable {
-    let layout: String?
-    let title: String?
-    let bullets: [String]?
-    let notes: String?
-}
 
 /// Not `private`: `aiReviewStudyNotifications(from:now:)` below builds these
 /// from `AIReviewItem`s and is exercised directly by `AIReviewNotificationFeedTests`.
@@ -332,6 +319,7 @@ private struct StudyNotificationList: View {
     let onSelect: (StudyNotification) -> Void
     let onMarkAllRead: () -> Void
     let onMarkRead: (StudyNotification) -> Void
+    let onDelete: (StudyNotification) -> Void
     let onOpenSettings: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -362,14 +350,22 @@ private struct StudyNotificationList: View {
                     )
                     .frame(maxHeight: .infinity)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(visibleNotifications) { notification in
-                                row(for: notification)
-                                Divider()
-                            }
+                    List {
+                        ForEach(visibleNotifications) { notification in
+                            row(for: notification)
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.visible)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) {
+                                        onDelete(notification)
+                                    } label: {
+                                        Label(L("削除"), systemImage: "trash")
+                                    }
+                                    .tint(.red)
+                                }
                         }
                     }
+                    .listStyle(.plain)
 
                     if notifications.count > Self.previewCount {
                         Divider()
@@ -470,7 +466,7 @@ private struct StudyNotificationList: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
             .contentShape(Rectangle())
             .background(readIDs.contains(notification.id) ? Color.clear : Color.accentColor.opacity(0.06))
         }
@@ -620,175 +616,11 @@ private struct PDFPasswordRemovalOfferSheet: View {
     }
 }
 
-/// Which of `TabPickerView`'s own "+" buttons was tapped — read back by
+/// Which "新規作成" entry of the tab picker was chosen — read back by
 /// `ContentView` once the picker sheet has actually finished dismissing,
 /// so it knows which "new item" alert/sheet to present next.
 private enum TabPickerCreationKind {
-    case notebook, deck, document, slideDeck
-}
-
-private struct TabPickerView: View {
-    let notebooks: [Notebook]
-    let decks: [FlashcardDeck]
-    let documents: [TextDocument]
-    let slideDecks: [SlideDeck]
-    let onSelectNotebook: (Notebook) -> Void
-    let onSelectDeck: (FlashcardDeck) -> Void
-    let onSelectDocument: (TextDocument) -> Void
-    let onSelectSlideDeck: (SlideDeck) -> Void
-    let onCreateNotebook: () -> Void
-    let onCreateDeck: () -> Void
-    let onCreateDocument: () -> Void
-    let onCreateSlideDeck: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-
-    private var filteredNotebooks: [Notebook] {
-        guard !searchText.isEmpty else { return notebooks }
-        return notebooks.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    private var filteredDecks: [FlashcardDeck] {
-        guard !searchText.isEmpty else { return decks }
-        return decks.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    private var filteredDocuments: [TextDocument] {
-        guard !searchText.isEmpty else { return documents }
-        return documents.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    private var filteredSlideDecks: [SlideDeck] {
-        guard !searchText.isEmpty else { return slideDecks }
-        return slideDecks.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    /// A section header with a trailing "+" for creating a brand-new item of
-    /// that section's kind, right from this picker, instead of only being
-    /// able to pick from what already exists below it.
-    private func sectionHeader(_ title: String, identifier: String, onCreate: @escaping () -> Void) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Button(action: onCreate) {
-                Image(systemName: "plus.circle.fill")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier(identifier)
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    if filteredNotebooks.isEmpty {
-                        Text("ノートはありません").foregroundStyle(.secondary)
-                    }
-                    ForEach(filteredNotebooks) { notebook in
-                        Button {
-                            onSelectNotebook(notebook)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
-                                    .foregroundStyle(notebook.containsPDF ? .red : .blue)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(notebook.title).lineLimit(1)
-                                    Text("\(notebook.sortedPages.count)ページ")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    sectionHeader("ノート・PDF", identifier: "tab-picker-create-notebook", onCreate: onCreateNotebook)
-                }
-
-                Section {
-                    if filteredDecks.isEmpty {
-                        Text("暗記帳はありません").foregroundStyle(.secondary)
-                    }
-                    ForEach(filteredDecks) { deck in
-                        Button {
-                            onSelectDeck(deck)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "rectangle.on.rectangle.angled")
-                                    .foregroundStyle(.indigo)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(deck.title).lineLimit(1)
-                                    Text("\(deck.sortedCards.count)枚")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    sectionHeader("暗記帳", identifier: "tab-picker-create-deck", onCreate: onCreateDeck)
-                }
-
-                Section {
-                    if filteredDocuments.isEmpty {
-                        Text("文書はありません").foregroundStyle(.secondary)
-                    }
-                    ForEach(filteredDocuments) { document in
-                        Button { onSelectDocument(document) } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "doc.text").foregroundStyle(.teal)
-                                Text(document.title).lineLimit(1)
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    sectionHeader("文書", identifier: "tab-picker-create-document", onCreate: onCreateDocument)
-                }
-
-                Section {
-                    if filteredSlideDecks.isEmpty {
-                        Text("スライドはありません").foregroundStyle(.secondary)
-                    }
-                    ForEach(filteredSlideDecks) { deck in
-                        Button { onSelectSlideDeck(deck) } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "rectangle.on.rectangle").foregroundStyle(.orange)
-                                Text(deck.title).lineLimit(1)
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    sectionHeader("スライド", identifier: "tab-picker-create-slideDeck", onCreate: onCreateSlideDeck)
-                }
-            }
-            .searchable(text: $searchText, prompt: "名前で検索")
-            .navigationTitle("タブを追加")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("キャンセル") { dismiss() }
-                }
-            }
-        }
-        // A fixed portrait sheet. It used to offer both a large and a medium
-        // detent, so the list could be dragged into a half-height panel that
-        // showed two or three notes at a time.
-        .modifier(FixedSheetSize(shape: .portrait))
-        .presentationDragIndicator(.hidden)
-    }
+    case notebook, deck, document
 }
 
 private enum AppLanguage: String, CaseIterable, Identifiable {
@@ -835,8 +667,15 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.system.rawValue
     @AppStorage("studyTimeTrackingEnabled") private var studyTimeTrackingEnabled = true
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
+    @AppStorage("lineCorrectionEnabled") private var isLineCorrectionEnabled = true
+    @AppStorage("ellipseCorrectionEnabled") private var isEllipseCorrectionEnabled = true
+    @AppStorage("rectangleCorrectionEnabled") private var isRectangleCorrectionEnabled = true
+    @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
+    @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
+    @AppStorage("curveCorrectionEnabled") private var isCurveCorrectionEnabled = true
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = false
     @AppStorage(ErrorReportSettings.enabledKey) private var autoErrorReportingEnabled = false
+    @AppStorage("pdfPasswordRemovalOfferDisabled") private var pdfPasswordRemovalOfferDisabled = false
     @State private var showsAIDataDisclosure = false
     @State private var showsPrivacyPolicy = false
     @State private var showsTermsOfUse = false
@@ -897,7 +736,7 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
             } header: {
                 Text("学習記録")
             } footer: {
-                Text("ノート・暗記帳・文書・スライドを開いている間の時間だけを記録します。オフにすると勉強時間と連続学習日数の記録を止めます。")
+                Text("ノート・暗記帳・文書を開いている間の時間だけを記録します。オフにすると勉強時間と連続学習日数の記録を止めます。")
             }
 
             Section {
@@ -914,6 +753,30 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
                 Text("描画")
             } footer: {
                 Text("描画バーの並びを左利き向けに反転します。")
+            }
+
+            Section {
+                Toggle("直線補正", isOn: $isLineCorrectionEnabled)
+                Toggle("円・楕円補正", isOn: $isEllipseCorrectionEnabled)
+                Toggle("正方形・長方形補正", isOn: $isRectangleCorrectionEnabled)
+                Toggle("三角形補正", isOn: $isTriangleCorrectionEnabled)
+                Toggle("二次関数補正", isOn: $isParabolaCorrectionEnabled)
+                Toggle("曲線補正", isOn: $isCurveCorrectionEnabled)
+            } header: {
+                Text("ペンの補正")
+            } footer: {
+                Text("ペンで描いたあと、少し止めると線や図形を整えます。種類ごとにオン・オフできます。")
+            }
+
+            Section {
+                Toggle("パスワード削除の確認を表示する", isOn: Binding(
+                    get: { !pdfPasswordRemovalOfferDisabled },
+                    set: { pdfPasswordRemovalOfferDisabled = !$0 }
+                ))
+            } header: {
+                Text("PDF")
+            } footer: {
+                Text("パスワード付きPDFを開いたあとに「パスワードを削除しますか？」と確認します。確認カードで「次回から確認しない」を選んだ場合は、ここでオンに戻せます。")
             }
 
             Section {
@@ -1390,7 +1253,7 @@ struct DeleteAccountView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("この操作は元に戻せません。ノート、暗記帳、文書、スライド、学習履歴、フレンド、グループ、チャット、プロフィール、すべてのログイン方法を削除します。")
+                    Text("この操作は元に戻せません。ノート、暗記帳、文書、学習履歴、フレンド、グループ、チャット、プロフィール、すべてのログイン方法を削除します。")
                         .foregroundStyle(.red)
                 }
                 Section("確認") {
@@ -1587,10 +1450,14 @@ private struct AIReviewIntegration: ViewModifier {
     let count: Int
     @Binding var presentedItem: AIReviewItem?
     let onCountChange: () -> Void
+    @Environment(\.modelContext) private var modelContext
 
     func body(content: Content) -> some View {
         content
             .onChange(of: count) { _, _ in onCountChange() }
+            .onReceive(NotificationCenter.default.publisher(for: AIReviewDecisionQueue.didChange)) { _ in
+                AIReviewService.reconcile(modelContext: modelContext)
+            }
             .sheet(item: $presentedItem) { item in
                 AIReviewDetailView(item: item)
             }
@@ -1631,6 +1498,7 @@ enum AIDataDisclosure {
     static let acknowledgedDefaultsKey = "hasAcknowledgedAIDataDisclosure"
     static let consentVersionDefaultsKey = "aiDataConsentVersion"
     static let decisionVersionDefaultsKey = "aiDataDecisionVersion"
+    static let chatDeclinedVersionDefaultsKey = "aiChatConsentDeclinedVersion"
     static let currentVersion = "openai-v1"
     static let allowsDirectProviders = false
 
@@ -1655,13 +1523,28 @@ enum AIDataDisclosure {
         defaults.string(forKey: decisionVersionDefaultsKey) == currentVersion
     }
 
+    /// True once the student has said no on the card shown when sending an
+    /// AI chat message. From then on sending shows the "not allowed" error
+    /// in the chat instead of asking again; allowing or revoking from
+    /// settings resets it.
+    static var hasDeclinedInChat: Bool {
+        defaults.string(forKey: chatDeclinedVersionDefaultsKey) == currentVersion
+    }
+
     static func acknowledge(ageBand: AIAgeBand) {
         defaults.set(ageBand.rawValue, forKey: ageBandDefaultsKey)
         defaults.set(currentVersion, forKey: consentVersionDefaultsKey)
         defaults.set(currentVersion, forKey: decisionVersionDefaultsKey)
+        defaults.removeObject(forKey: chatDeclinedVersionDefaultsKey)
+    }
+
+    static func declineInChat() {
+        revoke()
+        defaults.set(currentVersion, forKey: chatDeclinedVersionDefaultsKey)
     }
 
     static func revoke() {
+        defaults.removeObject(forKey: chatDeclinedVersionDefaultsKey)
         defaults.removeObject(forKey: consentVersionDefaultsKey)
         defaults.removeObject(forKey: ageBandDefaultsKey)
         defaults.set(currentVersion, forKey: decisionVersionDefaultsKey)
@@ -1840,7 +1723,7 @@ struct TermsOfUseView: View {
                     }
 
                     policySection(title: "3. 利用者が作成するコンテンツ") {
-                        Text("ノート、暗記帳、文書、スライドなど、利用者が本アプリ内で作成するコンテンツの権利は利用者に帰属します。運営は、保存・同期・共有・AI機能への送信など、利用者自身が指示した処理を提供するために必要な範囲でのみ、これらのコンテンツを取り扱います。")
+                        Text("ノート、暗記帳、文書など、利用者が本アプリ内で作成するコンテンツの権利は利用者に帰属します。運営は、保存・同期・共有・AI機能への送信など、利用者自身が指示した処理を提供するために必要な範囲でのみ、これらのコンテンツを取り扱います。")
                             .font(.subheadline)
                     }
 
@@ -1932,7 +1815,7 @@ struct PrivacyPolicyView: View {
                     policySection(title: "収集する情報とその利用目的") {
                         bullet("アカウント情報", "サインイン方法に応じて、メールアドレス、Apple IDまたはGoogleアカウントの識別子、氏名の一部を取得します。本アプリの利用を可能にするために使用します。")
                         bullet("プロフィール情報", "設定した表示名。友達機能・共同編集機能で他の利用者に表示するために使用します。")
-                        bullet("学習コンテンツ", "ノート、暗記帳、文書、スライドなど、利用者が作成したコンテンツ。本アプリの基本機能を提供するために保存します。")
+                        bullet("学習コンテンツ", "ノート、暗記帳、文書など、利用者が作成したコンテンツ。本アプリの基本機能を提供するために保存します。")
                         bullet("友達・チャット機能に関する情報", "友達コード、友達関係、チャットメッセージ、送信した添付ファイル。友達同士のコミュニケーション機能を提供するために保存します。")
                         bullet("利用状況", "学習時間の記録、各機能の利用回数。学習記録機能・利用制限の管理のために使用します。")
                         bullet("Googleカレンダー情報", "Googleカレンダー連携を選択した場合、カレンダー名、予定のタイトル、開始・終了日時、説明を読み取り、学習予定と一緒に表示するために端末内へ保存します。Googleカレンダーへの書き込みは行いません。")
@@ -1948,7 +1831,7 @@ struct PrivacyPolicyView: View {
                         bullet("年齢の確認", "AI機能は13歳以上の方のみご利用いただけます。13歳以上18歳未満の方は、保護者の同意を得たうえでご利用ください。初回送信前に年齢区分の確認を行い、13歳未満の方にはAI機能を提供しません。")
                         bullet("AI送信の許可", "初回送信前に内容と送信先を確認し、許可した場合のみ利用できます。現在の送信先はOpenAIのみです。資料は送信対象として選択したものだけが送信されます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。許可は設定から取り消せます。")
                         bullet("Cloudflare", "本アプリのサーバーインフラとして使用しており、アカウント情報・学習コンテンツ・チャット内容の保管場所です。")
-                        bullet("Apple iCloud", "「iCloudで同期する」をオンにした端末では、ノート・暗記帳・文書・スライド・フォルダ・カレンダーの予定(連携して取得した予定を含む)・AIトークの履歴・学習記録など、アプリ内に保存されるデータが、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。この設定は端末ごとの任意の設定で、新しくインストールした場合は初期状態でオフです(以前のバージョンから引き続き利用している場合は、これまでどおりオンです)。同期されたデータは利用者ご自身のiCloudに保存され、iCloudの保存容量を使用します。")
+                        bullet("Apple iCloud", "「iCloudで同期する」をオンにした端末では、ノート・暗記帳・文書・フォルダ・カレンダーの予定(連携して取得した予定を含む)・AIトークの履歴・学習記録など、アプリ内に保存されるデータが、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。この設定は端末ごとの任意の設定で、新しくインストールした場合は初期状態でオフです(以前のバージョンから引き続き利用している場合は、これまでどおりオンです)。同期されたデータは利用者ご自身のiCloudに保存され、iCloudの保存容量を使用します。")
                         bullet("Slack", "問題報告・診断の通知に使用します。問題報告の本文・画像は送らず、報告ID・端末情報と管理画面へのリンクだけを送ります。本文・画像の閲覧には管理者ログインが必要です。")
                         bullet("RevenueCat", "App Storeの購読状態を確認するために使用します。アカウント削除時に顧客情報の削除を要求します。購読自体はApp Storeで別途解約してください。")
                     }
@@ -2016,12 +1899,14 @@ struct PrivacyPolicyView: View {
 }
 
 struct ContentView: View {
+    /// ホームの「単語帳を読み込む（Quizlet・CSV）」メニュー項目を出すか。今は非表示。取り込み処理（importFlashcards）は残してあり、将来のアップデートで再び出す。
+    private static let showsVocabularyImportMenu = false
+
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var allNotebooks: [Notebook]
     @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
     @Query(sort: \TextDocument.updatedAt, order: .reverse) private var textDocuments: [TextDocument]
-    @Query(sort: \SlideDeck.updatedAt, order: .reverse) private var slideDecks: [SlideDeck]
     @Query private var allFolders: [Folder]
     @Query(sort: \MCPImportReceipt.importedAt, order: .reverse) private var mcpImportReceipts: [MCPImportReceipt]
     @Query(sort: \CalendarEvent.startDate) private var calendarEvents: [CalendarEvent]
@@ -2036,14 +1921,12 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var libraryMode: LibraryMode = .documents
     @State private var selectedFolder: String?
-    @State private var sortOption: NotebookSortOption = .updatedNewest
+    @AppStorage("librarySortOption") private var sortOption: NotebookSortOption = .updatedNewest
     @AppStorage("homeViewMode") private var viewMode: HomeViewMode = .list
     @State private var searchText = ""
     @State private var isImportingFiles = false
     @State private var docxImportFailed = false
     @State private var docxImportReport: String?
-    @State private var pptxImportFailed = false
-    @State private var pptxImportReport: String?
     @State private var isImportingBackup = false
     /// A locked PDF waiting for its password before it can be imported.
     @State private var pdfPendingImport: URL?
@@ -2097,12 +1980,11 @@ struct ContentView: View {
     @State private var newNotebookTemplate: PageTemplate = .ruled
     @State private var notebookToRename: Notebook?
     @State private var renameText = ""
-    /// Rename target for flashcard decks/documents/slide decks — kept
+    /// Rename target for flashcard decks/documents — kept
     /// separate from `notebookToRename` rather than generalizing that one,
     /// since `renameNotebook()`'s wiring is otherwise untouched; the two
     /// are never open at the same time, so sharing `renameText` is safe.
     @State private var entryToRename: HomeEntry?
-    @State private var showsEmptyTrashConfirmation = false
     @State private var isShowingNewFolderAlert = false
     @State private var newFolderName = ""
     @State private var notebookToEditTags: Notebook?
@@ -2130,13 +2012,9 @@ struct ContentView: View {
     /// missed-card review, set by a notification tap or the library banner.
     @State private var mistakeReviewRequest: (deckKey: String, token: UUID)?
     @State private var selectedTextDocument: TextDocument?
-    @State private var selectedSlideDeck: SlideDeck?
     @State private var openTextDocuments: [TextDocument] = []
-    @State private var openSlideDecks: [SlideDeck] = []
     @State private var isShowingNewDocumentAlert = false
     @State private var newDocumentName = ""
-    @State private var isShowingNewSlideDeckAlert = false
-    @State private var newSlideDeckName = ""
     @State private var isShowingNewFlashcardDeckAlert = false
     @State private var newFlashcardDeckName = ""
     @State private var homeSection: HomeSection = .notes
@@ -2173,6 +2051,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("readStudyNotificationIDs") private var readStudyNotificationIDsStorage = ""
+    @AppStorage("deletedStudyNotificationIDs") private var deletedStudyNotificationIDsStorage = ""
 
     private enum HomeSection: String, CaseIterable, Identifiable {
         case notes = "ノート"
@@ -2276,7 +2155,6 @@ struct ContentView: View {
                 case .pdfs: belongsToMode = !notebook.isTrashed && notebook.containsPDF
                 case .studyCards: belongsToMode = false
                 case .textDocuments: belongsToMode = false
-                case .slides: belongsToMode = false
                 case .trash: belongsToMode = notebook.isTrashed
                 }
             }
@@ -2384,7 +2262,7 @@ struct ContentView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             List {
                 if selectedNotebook != nil || selectedFlashcardDeck != nil
-                    || selectedTextDocument != nil || selectedSlideDeck != nil {
+                    || selectedTextDocument != nil {
                     Section {
                         Button {
                             returnToHome()
@@ -2399,18 +2277,14 @@ struct ContentView: View {
                             sidebarFolderRow(folder)
                         }
                         let sidebarDocuments = textDocumentsInFolder("")
-                        let sidebarSlides = slideDecksInFolder("")
                         ForEach(homeNotebooks) { notebook in
                             sidebarNotebookButton(notebook)
                         }
-                        ForEach(flashcardDecks.filter { $0.folderName.isEmpty }) { deck in
+                        ForEach(flashcardDecks.filter { $0.folderName.isEmpty }.sorted(by: sortOption.areInOrder)) { deck in
                             sidebarFlashcardDeckButton(deck)
                         }
                         ForEach(sidebarDocuments) { document in
                             sidebarTextDocumentButton(document)
-                        }
-                        ForEach(sidebarSlides) { deck in
-                            sidebarSlideDeckButton(deck)
                         }
                     }
                 } else {
@@ -2504,13 +2378,6 @@ struct ContentView: View {
                         .id(selectedTextDocument.persistentModelID)
                         .environmentObject(friendStore)
                 }
-            } else if let selectedSlideDeck {
-                VStack(spacing: 0) {
-                    notebookTabBar
-                    Divider()
-                    SlideDeckView(deck: selectedSlideDeck, onHome: returnToHome)
-                        .id(selectedSlideDeck.persistentModelID)
-                }
             } else {
                 homeDashboard
             }
@@ -2562,13 +2429,6 @@ struct ContentView: View {
             Button("作成") { createTextDocument() }
         } message: {
             Text("見出しや箇条書きを使って、レポートや下書きを書けます。")
-        }
-        .alert("新規スライド", isPresented: $isShowingNewSlideDeckAlert) {
-            TextField("スライド名", text: $newSlideDeckName)
-            Button("キャンセル", role: .cancel) { newSlideDeckName = "" }
-            Button("作成") { createSlideDeck() }
-        } message: {
-            Text("レイアウトを選んでスライドを作り、そのまま発表できます。")
         }
         .alert("新規暗記帳", isPresented: $isShowingNewFlashcardDeckAlert) {
             TextField("暗記帳の名前", text: $newFlashcardDeckName)
@@ -2630,7 +2490,6 @@ struct ContentView: View {
         } message: {
             Text((docxImportReport ?? "") + "\nこれらは今のところ非対応のため、文書には含まれていません。")
         }
-        .modifier(PptxImportAlerts(importFailed: $pptxImportFailed, importReport: $pptxImportReport))
         .modifier(SharedImportHost(
             coordinator: sharedImport,
             summary: $sharedImportSummary,
@@ -2855,11 +2714,11 @@ struct ContentView: View {
             ReportIssueSheet(capturedScreenshot: pending.screenshot)
         }
         .sheet(isPresented: $showsTabPicker, onDismiss: presentPendingTabPickerCreation) {
-            TabPickerView(
+            SplitSourcePicker(
                 notebooks: allNotebooks.filter { !$0.isTrashed },
-                decks: flashcardDecks.filter { !$0.isTrashed },
-                documents: textDocuments.filter { !$0.isTrashed },
-                slideDecks: slideDecks.filter { !$0.isTrashed },
+                flashcardDecks: flashcardDecks.filter { !$0.isTrashed },
+                textDocuments: textDocuments.filter { !$0.isTrashed },
+                title: "タブを追加",
                 onSelectNotebook: { notebook in
                     showsTabPicker = false
                     selectNotebookTab(notebook)
@@ -2872,14 +2731,14 @@ struct ContentView: View {
                     showsTabPicker = false
                     openTextDocument(document)
                 },
-                onSelectSlideDeck: { deck in
+                onCreate: { kind in
+                    switch kind {
+                    case .note, .pdf: pendingTabPickerCreation = .notebook
+                    case .deck: pendingTabPickerCreation = .deck
+                    case .document: pendingTabPickerCreation = .document
+                    }
                     showsTabPicker = false
-                    openSlideDeck(deck)
-                },
-                onCreateNotebook: { pendingTabPickerCreation = .notebook; showsTabPicker = false },
-                onCreateDeck: { pendingTabPickerCreation = .deck; showsTabPicker = false },
-                onCreateDocument: { pendingTabPickerCreation = .document; showsTabPicker = false },
-                onCreateSlideDeck: { pendingTabPickerCreation = .slideDeck; showsTabPicker = false }
+                }
             )
         }
         .onChange(of: libraryMode) { _, _ in
@@ -2918,6 +2777,7 @@ struct ContentView: View {
             }
             selectedAIChatTabID = tab.id
         }
+        .modifier(AIChatTabRenameModifier(tabs: $openAIChatTabs))
         .onReceive(NotificationCenter.default.publisher(for: .studiquoCloseAIChatTab)) { notification in
             guard let id = notification.object as? PersistentIdentifier else { return }
             closeAIChatTab(id)
@@ -2937,10 +2797,6 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenTextDocumentTab"))) { notification in
             guard let document = notification.object as? TextDocument else { return }
             openTextDocument(document)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenSlideDeckTab"))) { notification in
-            guard let deck = notification.object as? SlideDeck else { return }
-            openSlideDeck(deck)
         }
         .onAppear {
             if selectedNotebook == nil { columnVisibility = .detailOnly }
@@ -3039,8 +2895,7 @@ struct ContentView: View {
                 AIAppAttachmentCatalog.options(
                     notebooks: allNotebooks,
                     flashcardDecks: flashcardDecks,
-                    textDocuments: textDocuments,
-                    slideDecks: slideDecks
+                    textDocuments: textDocuments
                 )
             },
             onOpenAttachment: openAIAttachmentFromHome
@@ -3050,7 +2905,7 @@ struct ContentView: View {
     }
 
     /// Opens what an attachment chip points at, from the home AI screen:
-    /// back to the library with that notebook, deck, document or slide deck
+    /// back to the library with that notebook, deck, or document
     /// opened.
     private func openAIAttachmentFromHome(_ attachment: AIChatAttachment) {
         guard let sourceID = attachment.sourceID else { return }
@@ -3071,10 +2926,6 @@ struct ContentView: View {
             guard let document = textDocuments.first(where: { !$0.isTrashed && textDocumentID($0) == id }) else { return }
             homeSection = .notes
             openTextDocument(document)
-        case "slide":
-            guard let deck = slideDecks.first(where: { !$0.isTrashed && String(describing: $0.persistentModelID) == id }) else { return }
-            homeSection = .notes
-            openSlideDeck(deck)
         default:
             return
         }
@@ -3300,31 +3151,6 @@ struct ContentView: View {
                     .accessibilityIdentifier("tab-document-\(document.title)")
                     .tabDraggable("document:\(textDocumentID(document))")
                 }
-                ForEach(openSlideDecks.filter { !$0.isTrashed }) { deck in
-                    HStack(spacing: 5) {
-                        Button { selectSlideDeckTab(deck) } label: {
-                            Label(deck.title, systemImage: "rectangle.on.rectangle").lineLimit(1)
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            openSlideDecks.removeAll { $0 === deck }
-                            if selectedSlideDeck === deck {
-                                selectedSlideDeck = openSlideDecks.last
-                            }
-                        } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 11)
-                    .frame(height: 34)
-                    .background(
-                        selectedSlideDeck === deck ? Color.orange.opacity(0.24) : Color.orange.opacity(0.12),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
-                    .accessibilityIdentifier("tab-slide-\(deck.title)")
-                    .tabDraggable("slide:\(slideDeckID(deck))")
-                }
 
                 ForEach(openAIChatTabs) { tab in
                     HStack(spacing: 5) {
@@ -3445,20 +3271,6 @@ struct ContentView: View {
         )
     }
 
-    private func selectSlideDeckTab(_ deck: SlideDeck) {
-        if !openSlideDecks.contains(where: { $0.persistentModelID == deck.persistentModelID }) {
-            openSlideDecks.append(deck)
-        }
-        guard editorSplitState.isSplit, selectedNotebook != nil else {
-            openSlideDeck(deck)
-            return
-        }
-        NotificationCenter.default.post(
-            name: Notification.Name("StudiquoSwitchPaneTarget"),
-            object: PaneSwitchTarget.slideDeck(deck)
-        )
-    }
-
     private func selectWebTab(_ tab: WebTabInfo) {
         guard selectedNotebook != nil else { return }
         NotificationCenter.default.post(
@@ -3520,22 +3332,12 @@ struct ContentView: View {
         columnVisibility = .detailOnly
     }
 
-    private func openSlideDeck(_ deck: SlideDeck) {
-        clearOpenSelection()
-        selectedSlideDeck = deck
-        if !openSlideDecks.contains(where: { $0.persistentModelID == deck.persistentModelID }) {
-            openSlideDecks.append(deck)
-        }
-        columnVisibility = .detailOnly
-    }
-
-    /// The detail pane shows exactly one thing, so opening any of the four
-    /// kinds has to clear the other three.
+    /// The detail pane shows exactly one thing, so opening any of the three
+    /// kinds has to clear the other two.
     private func clearOpenSelection() {
         selectedNotebook = nil
         selectedFlashcardDeck = nil
         selectedTextDocument = nil
-        selectedSlideDeck = nil
     }
 
     private func closeFlashcardTab(_ deck: FlashcardDeck) {
@@ -3552,7 +3354,6 @@ struct ContentView: View {
         selectedNotebook = nil
         selectedFlashcardDeck = nil
         selectedTextDocument = nil
-        selectedSlideDeck = nil
         selectedFolder = nil
         libraryMode = .documents
         searchText = ""
@@ -3614,10 +3415,6 @@ struct ContentView: View {
         String(describing: document.persistentModelID)
     }
 
-    private func slideDeckID(_ deck: SlideDeck) -> String {
-        String(describing: deck.persistentModelID)
-    }
-
     private func folderID(_ folder: Folder) -> String {
         String(describing: folder.persistentModelID)
     }
@@ -3649,8 +3446,6 @@ struct ContentView: View {
             openFlashcardDeck(deck)
         case .textDocument(let document):
             openTextDocument(document)
-        case .slideDeck(let deck):
-            openSlideDeck(deck)
         }
     }
 
@@ -3662,7 +3457,6 @@ struct ContentView: View {
         case .notebook(let notebook): "notebook:\(notebookID(notebook))"
         case .flashcardDeck(let deck): "deck:\(deckID(deck))"
         case .textDocument(let document): "document:\(textDocumentID(document))"
-        case .slideDeck(let deck): "slide:\(slideDeckID(deck))"
         }
     }
 
@@ -3676,9 +3470,6 @@ struct ContentView: View {
         case .textDocument(let document):
             document.isFavorite.toggle()
             document.updatedAt = .now
-        case .slideDeck(let deck):
-            deck.isFavorite.toggle()
-            deck.updatedAt = .now
         }
     }
 
@@ -3687,7 +3478,6 @@ struct ContentView: View {
         case .notebook(let notebook): moveToTrash(notebook)
         case .flashcardDeck(let deck): trashDeck(deck)
         case .textDocument(let document): trashDocument(document)
-        case .slideDeck(let deck): trashSlideDeck(deck)
         }
     }
 
@@ -3696,7 +3486,6 @@ struct ContentView: View {
         case .notebook(let notebook): restore(notebook)
         case .flashcardDeck(let deck): restoreDeck(deck)
         case .textDocument(let document): restoreDocument(document)
-        case .slideDeck(let deck): restoreSlideDeck(deck)
         }
     }
 
@@ -3705,7 +3494,6 @@ struct ContentView: View {
         case .notebook(let notebook): permanentlyDelete(notebook)
         case .flashcardDeck(let deck): permanentlyDeleteDeck(deck)
         case .textDocument(let document): permanentlyDeleteDocument(document)
-        case .slideDeck(let deck): permanentlyDeleteSlideDeck(deck)
         }
     }
 
@@ -3724,14 +3512,14 @@ struct ContentView: View {
         self.entryToRename = nil
     }
 
-    /// The long-press menu for flashcard decks, text documents and slide
-    /// decks — these three had no `.contextMenu` anywhere (list, icon, or
+    /// The long-press menu for flashcard decks, text documents —
+    /// these two had no `.contextMenu` anywhere (list, icon, or
     /// column view) before this. Scoped to what `HomeItem` already supports
     /// generically (favorite, rename, folder move, trash/restore/delete);
     /// deliberately leaves out "複製" and the notebook-only items
     /// (tags/protection/PDF password/backup export) — a correct whole-
     /// document/deck duplicator for these types' nested structures (table
-    /// rows, slide elements, …) doesn't exist yet anywhere in the app, and
+    /// rows, …) doesn't exist yet anywhere in the app, and
     /// inventing one here risked a subtly-incomplete clone.
     @ViewBuilder
     private func entryActions(_ entry: HomeEntry) -> some View {
@@ -3777,9 +3565,6 @@ struct ContentView: View {
         case "document":
             guard let document = textDocuments.first(where: { textDocumentID($0) == sourceID && !$0.isTrashed }) else { return }
             openTextDocument(document)
-        case "slide":
-            guard let deck = slideDecks.first(where: { slideDeckID($0) == sourceID && !$0.isTrashed }) else { return }
-            openSlideDeck(deck)
         case "photo", "pdf", "file":
             // No local copy on this device (e.g. this is the recipient, who
             // never had the file locally) — fetch it from the room.
@@ -3866,16 +3651,6 @@ struct ContentView: View {
                 sourceID: String(describing: $0.persistentModelID)
             )
         })
-        options.append(contentsOf: slideDecks.filter { !$0.isTrashed }.map {
-            FriendMessageAttachment(
-                id: "slide-\(String(describing: $0.persistentModelID))",
-                title: $0.title,
-                kind: "スライド",
-                icon: "rectangle.on.rectangle",
-                sourceKind: "slide",
-                sourceID: String(describing: $0.persistentModelID)
-            )
-        })
         return options
     }
 
@@ -3897,8 +3672,7 @@ struct ContentView: View {
                 sourceID: sourceID,
                 notebooks: allNotebooks,
                 flashcardDecks: flashcardDecks,
-                textDocuments: textDocuments,
-                slideDecks: slideDecks
+                textDocuments: textDocuments
               ) else { return attachment }
 
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -4043,7 +3817,6 @@ struct ContentView: View {
         allNotebooks.map { $0 as any HomeItem }
             + flashcardDecks.map { $0 as any HomeItem }
             + textDocuments.map { $0 as any HomeItem }
-            + slideDecks.map { $0 as any HomeItem }
     }
 
     private func canMoveFolder(_ source: Folder, into destination: Folder?) -> Bool {
@@ -4132,19 +3905,13 @@ struct ContentView: View {
     private func decksInFolder(_ folder: String) -> [FlashcardDeck] {
         flashcardDecks
             .filter { $0.folderName == folder }
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted(by: sortOption.areInOrder)
     }
 
     private func textDocumentsInFolder(_ folder: String) -> [TextDocument] {
         textDocuments
             .filter { !$0.isTrashed && $0.folderName == folder }
-            .sorted { $0.updatedAt > $1.updatedAt }
-    }
-
-    private func slideDecksInFolder(_ folder: String) -> [SlideDeck] {
-        slideDecks
-            .filter { !$0.isTrashed && $0.folderName == folder }
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted(by: sortOption.areInOrder)
     }
 
     private func sidebarFolderBinding(_ folder: String) -> Binding<Bool> {
@@ -4170,9 +3937,6 @@ struct ContentView: View {
                 ForEach(textDocumentsInFolder(folder)) { document in
                     sidebarTextDocumentButton(document)
                 }
-                ForEach(slideDecksInFolder(folder)) { deck in
-                    sidebarSlideDeckButton(deck)
-                }
             },
             label: {
                 HStack {
@@ -4197,8 +3961,7 @@ struct ContentView: View {
         _ folder: String,
         notebookCount: Int,
         deckCount: Int,
-        documentCount: Int,
-        slideCount: Int
+        documentCount: Int
     ) -> some View {
         HStack(spacing: 10) {
             LibraryFolderDropSurface(
@@ -4217,7 +3980,7 @@ struct ContentView: View {
                         .frame(width: 34)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(folderDisplayName(folder)).font(.headline)
-                        Text("\(notebookCount)冊のノート・\(deckCount)個の暗記帳・\(documentCount)個の文書・\(slideCount)個のスライド")
+                        Text("\(notebookCount)冊のノート・\(deckCount)個の暗記帳・\(documentCount)個の文書")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -4243,6 +4006,10 @@ struct ContentView: View {
                     folderToRename = target
                 } label: {
                     Label("名前を変更", systemImage: "pencil")
+                }
+                Divider()
+                Button(role: .destructive) { trashFolder(target) } label: {
+                    Label("ゴミ箱に移動", systemImage: "trash")
                 }
             }
         }
@@ -4302,8 +4069,6 @@ struct ContentView: View {
             return flashcardDecks.first { deckID($0) == parts[1] }.map(HomeEntry.flashcardDeck)
         case "document":
             return textDocuments.first { textDocumentID($0) == parts[1] && !$0.isTrashed }.map(HomeEntry.textDocument)
-        case "slide":
-            return slideDecks.first { slideDeckID($0) == parts[1] && !$0.isTrashed }.map(HomeEntry.slideDeck)
         default:
             return nil
         }
@@ -4426,9 +4191,6 @@ struct ContentView: View {
         for document in textDocuments {
             if let mapped = remap(document.folderName) { document.folderName = mapped }
         }
-        for deck in slideDecks {
-            if let mapped = remap(deck.folderName) { deck.folderName = mapped }
-        }
 
         if let selectedFolder, let mapped = remap(selectedFolder) {
             self.selectedFolder = mapped
@@ -4480,18 +4242,6 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .draggable("document:\(textDocumentID(document))")
-    }
-
-    private func sidebarSlideDeckButton(_ deck: SlideDeck) -> some View {
-        Button {
-            openSlideDeck(deck)
-            columnVisibility = .detailOnly
-        } label: {
-            Label(deck.title, systemImage: "rectangle.on.rectangle")
-                .lineLimit(1)
-        }
-        .buttonStyle(.plain)
-        .draggable("slide:\(slideDeckID(deck))")
     }
 
     private var fullScreenHome: some View {
@@ -4556,9 +4306,15 @@ struct ContentView: View {
                         }
                     }
                     Menu {
-                        Picker("並べ替え", selection: $sortOption) {
-                            ForEach(NotebookSortOption.allCases) { option in
-                                Text(option.title).tag(option)
+                        ForEach(NotebookSortKey.allCases) { key in
+                            Button {
+                                sortOption = sortOption.selecting(key)
+                            } label: {
+                                if sortOption.key == key {
+                                    Label(key.title, systemImage: sortOption.isAscending ? "chevron.up" : "chevron.down")
+                                } else {
+                                    Text(key.title)
+                                }
                             }
                         }
                     } label: {
@@ -4600,12 +4356,6 @@ struct ContentView: View {
             if selectedFolder == nil { homeSelection.end() }
         }
         .onChange(of: selectionDataFingerprint) { _, _ in pruneSelection() }
-        .confirmationDialog("ゴミ箱を空にしますか？", isPresented: $showsEmptyTrashConfirmation, titleVisibility: .visible) {
-            Button("完全に削除", role: .destructive) { emptyTrash() }
-            Button("キャンセル", role: .cancel) {}
-        } message: {
-            Text("この操作は取り消せません。")
-        }
         .alert(
             "フォルダ名",
             isPresented: Binding(get: { folderToRename != nil }, set: { if !$0 { folderToRename = nil } })
@@ -4625,20 +4375,18 @@ struct ContentView: View {
                         && searchText.isEmpty
                         && visibleNotebooks.isEmpty
                         && displayedFlashcardDecks.isEmpty
-                        && displayedTextDocuments.isEmpty
-                        && displayedSlideDecks.isEmpty {
+                        && displayedTextDocuments.isEmpty {
                 // The home screen used to show nothing at all when empty.
                 ContentUnavailableView {
                     Label("まだ何もありません", systemImage: "square.and.pencil")
                 } description: {
-                    Text("右上の＋から、ノート・暗記帳・文書・スライドを作成できます。")
+                    Text("右上の＋から、ノート・暗記帳・文書を作成できます。")
                 }
             } else if selectedFolder == nil
                         && !isHomeScreen
                         && visibleNotebooks.isEmpty
                         && displayedFlashcardDecks.isEmpty
                         && displayedTextDocuments.isEmpty
-                        && displayedSlideDecks.isEmpty
                         && !(libraryMode == .favorites && hasFavoriteNonNotebookItems)
                         && !(libraryMode == .trash && !isTrashEmpty) {
                 ContentUnavailableView(
@@ -4720,7 +4468,7 @@ struct ContentView: View {
         }
             .disabled(
                 allNotebooks.isEmpty && flashcardDecks.isEmpty
-                    && textDocuments.isEmpty && slideDecks.isEmpty && folderNames.isEmpty
+                    && textDocuments.isEmpty && folderNames.isEmpty
             )
             .accessibilityIdentifier("library-selection-begin")
     }
@@ -4734,8 +4482,12 @@ struct ContentView: View {
                 Label("新規暗記カードを作成", systemImage: "plus")
             }
         } else if libraryMode == .trash && selectedFolder == nil {
-            Button("空にする", role: .destructive) {
-                showsEmptyTrashConfirmation = true
+            // A `Menu`, not a `.confirmationDialog`/`.popover`: those need the
+            // button on screen as their anchor, and when the toolbar is too
+            // narrow this button folds into the "…" overflow menu, so the
+            // dialog appeared beside the sidebar. A menu works in both places.
+            Menu("空にする") {
+                Button("ゴミ箱を空にする(取り消せません)", role: .destructive) { emptyTrash() }
             }
             .disabled(isTrashEmpty)
         } else {
@@ -4792,7 +4544,6 @@ struct ContentView: View {
         ).mapValues(\.count)
         let deckCounts = Dictionary(grouping: flashcardDecks, by: \.folderName).mapValues(\.count)
         let documentCounts = Dictionary(grouping: textDocuments.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
-        let slideCounts = Dictionary(grouping: slideDecks.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
 
         return Group {
             if libraryMode == .documents {
@@ -4802,23 +4553,20 @@ struct ContentView: View {
                 // each folder owns its actual drop area.
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(visibleFolderPaths, id: \.self) { folder in
-                            folderRow(
-                                folder,
-                                notebookCount: notebookCounts[folder, default: 0],
-                                deckCount: deckCounts[folder, default: 0],
-                                documentCount: documentCounts[folder, default: 0],
-                                slideCount: slideCounts[folder, default: 0]
-                            )
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            Divider()
+                        mistakeReviewBanner
+                        ForEach(sortedHomeItems) { item in
+                            switch item {
+                            case .folder(let folder):
+                                listFolderRow(
+                                    folder,
+                                    notebookCount: notebookCounts[folder, default: 0],
+                                    deckCount: deckCounts[folder, default: 0],
+                                    documentCount: documentCounts[folder, default: 0]
+                                )
+                            case .entry(let entry):
+                                entryListRow(entry)
+                            }
                         }
-                        let displayedNotebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
-                        notebookRows(displayedNotebooks)
-                        studyCardRows
-                        documentRows
-                        slideRows
                     }
                     .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 24))
                     .padding()
@@ -4829,8 +4577,6 @@ struct ContentView: View {
                         studyCardRows
                     } else if libraryMode == .textDocuments && selectedFolder == nil {
                         documentRows
-                    } else if libraryMode == .slides && selectedFolder == nil {
-                        slideRows
                     } else if libraryMode == .favorites && selectedFolder == nil {
                         favoriteRows
                     } else {
@@ -4856,92 +4602,20 @@ struct ContentView: View {
         ).mapValues(\.count)
         let deckCounts = Dictionary(grouping: flashcardDecks, by: \.folderName).mapValues(\.count)
         let documentCounts = Dictionary(grouping: textDocuments.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
-        let slideCounts = Dictionary(grouping: slideDecks.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
-        let displayedNotebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
-        let entries: [HomeEntry] =
-            displayedNotebooks.map(HomeEntry.notebook)
-            + displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
-            + displayedTextDocuments.map(HomeEntry.textDocument)
-            + displayedSlideDecks.map(HomeEntry.slideDeck)
-
         return ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: 18)], spacing: 24) {
-                ForEach(visibleFolderPaths, id: \.self) { folder in
-                    // A plain SwiftUI `.onDrag`/`.dropDestination` pair on a
-                    // `LazyVGrid` cell doesn't reliably deliver drops on
-                    // iPad — the same iPad-only gap `folderRow`'s list-mode
-                    // row hit here first, fixed there by routing the drop
-                    // through a real `UIDropInteraction` instead (see
-                    // `LibraryFolderDropSurface`). The tile stays the visual
-                    // layer (non-interactive); the drop surface underneath
-                    // it is what actually receives taps and drops.
-                    ZStack {
-                        HomeFolderTile(
-                            name: folderDisplayName(folder),
-                            isFavorite: favoriteFolderPaths.contains(folder),
+                ForEach(sortedHomeItems) { item in
+                    switch item {
+                    case .folder(let folder):
+                        iconFolderTile(
+                            folder,
                             itemCount: notebookCounts[folder, default: 0]
                                 + deckCounts[folder, default: 0]
                                 + documentCounts[folder, default: 0]
-                                + slideCounts[folder, default: 0]
-                        ) {}
-                        .allowsHitTesting(false)
-                        LibraryFolderDropSurface(
-                            identifier: "library-folder-\(folder)",
-                            onTap: { selectedFolder = folder },
-                            onDrop: { values in handleFolderDrop(values, into: folder) },
-                            onTargeted: { isTargeted in
-                                setFolderDropTarget(folder, isTargeted: isTargeted)
-                            }
                         )
+                    case .entry(let entry):
+                        iconEntryTile(entry)
                     }
-                    .onDrag { folderDragProvider(for: folder) }
-                    .overlay(alignment: .bottomTrailing) { folderDropBadge(folder) }
-                    .contextMenu {
-                        Button {
-                            toggleFolderFavorite(folder)
-                        } label: {
-                            Label(
-                                favoriteFolderPaths.contains(folder) ? "お気に入り解除" : "お気に入り",
-                                systemImage: favoriteFolderPaths.contains(folder) ? "star.slash" : "star"
-                            )
-                        }
-                        if let target = folderObject(forLegacyPath: folder) {
-                            Button {
-                                folderRenameText = target.name
-                                folderToRename = target
-                            } label: {
-                                Label("名前を変更", systemImage: "pencil")
-                            }
-                        }
-                    }
-                    .modifier(selectable(folderPath: folder, layout: .tile))
-                }
-                ForEach(entries) { entry in
-                    HomeEntryTile(entry: entry) {
-                        open(entry)
-                    }
-                    .accessibilityIdentifier("library-entry-\(entry.title)")
-                    .draggable(dragPayload(for: entry))
-                    .overlay(alignment: .topTrailing) { entryDropBadge(entry.id) }
-                    .dropDestination(
-                        for: String.self,
-                        action: { items, _ in handleEntryDrop(items, onto: entry) },
-                        isTargeted: { isTargeted in setEntryDropTarget(isTargeted, entry.id) }
-                    )
-                    .contextMenu {
-                        // Notebooks get the exact same long-press menu here
-                        // as in list view (`notebookRows`'s own
-                        // `.contextMenu { notebookActions(notebook) }`) —
-                        // rename, tags, protection, folder move, duplicate,
-                        // etc. — instead of the pared-down favorite/trash
-                        // pair this used to show only in icon view.
-                        if case .notebook(let notebook) = entry {
-                            notebookActions(notebook)
-                        } else {
-                            entryActions(entry)
-                        }
-                    }
-                    .modifier(selectable(entry: entry, layout: .tile))
                 }
             }
             .padding()
@@ -4966,6 +4640,7 @@ struct ContentView: View {
             let columnWidth: CGFloat = horizontalSizeClass == .compact
                 ? max(geometry.size.width - 56, 220)
                 : 280
+            let contentFitsWidth = CGFloat(chain.count + 1) * (columnWidth + 1) <= geometry.size.width
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
@@ -4982,6 +4657,13 @@ struct ContentView: View {
                         }
                     }
                 }
+                // A horizontal ScrollView claims every sideways drag, so rows
+                // could never be swiped left to reveal the trash button. While
+                // the columns all fit on screen there is nothing to scroll to,
+                // so it steps aside; once the chain outgrows the screen
+                // (a deep chain, or iPhone) scrolling to the hidden columns
+                // wins and the row swipe is unavailable.
+                .scrollDisabled(contentFitsWidth)
                 .onChange(of: chain.count) { _, newCount in
                     withAnimation { proxy.scrollTo(newCount, anchor: .trailing) }
                 }
@@ -4997,71 +4679,22 @@ struct ContentView: View {
     private func columnPane(parentPath: String?, highlightedPath: String?) -> some View {
         ScrollView(.vertical) {
             LazyVStack(spacing: 0) {
-            ForEach(subfolderPaths(of: parentPath), id: \.self) { path in
-                Button { selectedFolder = path } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "folder.fill").foregroundStyle(.tint)
-                        Text(folderDisplayName(path)).lineLimit(1)
-                        if favoriteFolderPaths.contains(path) {
-                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 45)
-                    .contentShape(Rectangle())
+            ForEach(columnItems(parentPath: parentPath)) { item in
+                switch item {
+                case .folder(let path):
+                    columnFolderRow(path, highlightedPath: highlightedPath)
+                        .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: path) != nil, identifier: "library-folder-trash-\(path)") {
+                            if let target = folderObject(forLegacyPath: path) {
+                                trashFolder(target)
+                            }
+                        })
+                case .entry(let entry):
+                    columnEntryRow(entry)
+                        .modifier(SwipeToTrashRow(enabled: !entry.isTrashed, identifier: "library-entry-trash-\(entry.title)") {
+                            trash(entry)
+                            try? modelContext.save()
+                        })
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .background(path == highlightedPath ? Color.accentColor.opacity(0.15) : Color.clear)
-                .accessibilityIdentifier("library-folder-\(path)")
-                .onDrag { folderDragProvider(for: path) }
-                .overlay(alignment: .trailing) { folderDropBadge(path).padding(.trailing, 28) }
-                .dropDestination(for: String.self) { items, _ in
-                    handleFolderDrop(items, into: path)
-                } isTargeted: { isTargeted in
-                    setFolderDropTarget(path, isTargeted: isTargeted)
-                }
-                .contextMenu {
-                    if let folder = folderObject(forLegacyPath: path) {
-                        Button {
-                            folderRenameText = folder.name
-                            folderToRename = folder
-                        } label: {
-                            Label("名前を変更", systemImage: "pencil")
-                        }
-                    }
-                }
-                .modifier(selectable(folderPath: path, layout: .row, open: { selectedFolder = path }))
-            }
-            ForEach(entries(inLegacyPath: parentPath)) { entry in
-                Button { open(entry) } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: entry.iconName).foregroundStyle(entry.tintColor)
-                        Text(entry.title).lineLimit(1)
-                        if entry.isFavorite {
-                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
-                        }
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 45)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .accessibilityIdentifier("library-entry-\(entry.title)")
-                .draggable(dragPayload(for: entry))
-                // Column view had no long-press menu for entries at all
-                // (only the folder rows above do) — notebooks now get the
-                // same menu list/icon view already show.
-                .contextMenu {
-                    if case .notebook(let notebook) = entry {
-                        notebookActions(notebook)
-                    } else {
-                        entryActions(entry)
-                    }
-                }
-                .modifier(selectable(entry: entry, layout: .row))
             }
             Rectangle()
                 .fill(Color.clear)
@@ -5092,6 +4725,7 @@ struct ContentView: View {
             onSelect: openNotification,
             onMarkAllRead: markAllNotificationsRead,
             onMarkRead: markNotificationRead,
+            onDelete: deleteNotification,
             onOpenSettings: {
                 showsNotifications = false
                 showsAppSettings = true
@@ -5150,8 +4784,18 @@ struct ContentView: View {
         }
     }
 
+    /// Swiped-away notifications are generated from app data, so removing one
+    /// means remembering its id and filtering it out on every refresh.
+    private func deleteNotification(_ notification: StudyNotification) {
+        var ids = Set(deletedStudyNotificationIDsStorage.split(separator: "\n").map(String.init))
+        ids.insert(notification.id)
+        deletedStudyNotificationIDsStorage = ids.joined(separator: "\n")
+        cachedStudyNotifications.removeAll { $0.id == notification.id }
+    }
+
     private func refreshStudyNotifications() {
-        cachedStudyNotifications = makeStudyNotifications()
+        let deleted = Set(deletedStudyNotificationIDsStorage.split(separator: "\n").map(String.init))
+        cachedStudyNotifications = makeStudyNotifications().filter { !deleted.contains($0.id) }
     }
 
     private var studyCardCount: Int {
@@ -5161,13 +4805,21 @@ struct ContentView: View {
     private var displayedFlashcardDecks: [FlashcardDeck] {
         let visible = flashcardDecks.filter { !$0.isTrashed }
         if libraryMode == .documents {
-            return visible.filter { $0.folderName == (selectedFolder ?? "") }
+            return visible.filter { $0.folderName == (selectedFolder ?? "") }.sorted(by: sortOption.areInOrder)
         }
-        return visible
+        return visible.sorted(by: sortOption.areInOrder)
     }
 
     @ViewBuilder
     private var studyCardRows: some View {
+        mistakeReviewBanner
+        ForEach(displayedFlashcardDecks) { deck in
+            deckRow(deck)
+        }
+    }
+
+    @ViewBuilder
+    private var mistakeReviewBanner: some View {
         let dueDecks = dueMistakeDecks
         if let top = dueDecks.first {
             Button { startMistakeReview(in: top.deck) } label: {
@@ -5179,7 +4831,9 @@ struct ContentView: View {
             }
             .accessibilityIdentifier("library-mistake-review-banner")
         }
-        ForEach(displayedFlashcardDecks) { deck in
+    }
+
+    private func deckRow(_ deck: FlashcardDeck) -> some View {
             HStack(spacing: 10) {
                 Button { openFlashcardDeck(deck) } label: {
                     HStack(spacing: 12) {
@@ -5220,28 +4874,255 @@ struct ContentView: View {
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.flashcardDeck(deck).id) }
             )
             .modifier(selectable(entry: .flashcardDeck(deck), layout: .row))
+    }
+
+    /// Folders and files shown together so the sort choice orders them as
+    /// one list (a new note sorts above older folders, not below them).
+    private enum LibraryRowItem: Identifiable {
+        case folder(String)
+        case entry(HomeEntry)
+
+        var id: AnyHashable {
+            switch self {
+            case .folder(let path): AnyHashable("folder:" + path)
+            case .entry(let entry): AnyHashable(entry.id)
+            }
         }
+    }
+
+    private func sortedItems(folders: [String], entries: [HomeEntry]) -> [LibraryRowItem] {
+        func fields(_ item: LibraryRowItem) -> (title: String, created: Date, updated: Date) {
+            switch item {
+            case .entry(let entry):
+                return (entry.title, entry.createdAt, entry.updatedAt)
+            case .folder(let path):
+                let object = folderObject(forLegacyPath: path)
+                let stored = folderCreatedAt[path].map { Date(timeIntervalSince1970: $0) }
+                let created = object?.createdAt ?? stored ?? .distantPast
+                return (folderDisplayName(path), created, object?.updatedAt ?? created)
+            }
+        }
+        let items = folders.map(LibraryRowItem.folder) + entries.map(LibraryRowItem.entry)
+        return items.sorted { sortOption.areInOrder(fields($0), fields($1)) }
+    }
+
+    private var sortedHomeItems: [LibraryRowItem] {
+        sortedItems(folders: visibleFolderPaths, entries: sortedHomeEntries)
+    }
+
+    private func columnItems(parentPath: String?) -> [LibraryRowItem] {
+        sortedItems(folders: subfolderPaths(of: parentPath), entries: entries(inLegacyPath: parentPath))
+    }
+
+    /// Everything shown on the all-files screen in the current folder, sorted.
+    private var sortedHomeEntries: [HomeEntry] {
+        let notebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
+        var result = notebooks.map(HomeEntry.notebook)
+        result += displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
+        result += displayedTextDocuments.map(HomeEntry.textDocument)
+        return result.sorted(by: sortOption.areInOrder)
+    }
+
+    @ViewBuilder
+    private func entryListRow(_ entry: HomeEntry) -> some View {
+        switch entry {
+        case .notebook(let notebook): notebookRow(notebook)
+        case .flashcardDeck(let deck): deckRow(deck)
+        case .textDocument(let document): documentRow(document)
+        }
+    }
+
+    private func listFolderRow(_ folder: String, notebookCount: Int, deckCount: Int, documentCount: Int) -> some View {
+                            VStack(spacing: 0) {
+                            folderRow(
+                                folder,
+                                notebookCount: notebookCount,
+                                deckCount: deckCount,
+                                documentCount: documentCount
+                            )
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            Divider()
+                            }
+                            .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: folder) != nil, identifier: "library-folder-trash-\(folder)") {
+                                if let target = folderObject(forLegacyPath: folder) {
+                                    trashFolder(target)
+                                }
+                            })
+    }
+
+    private func iconFolderTile(_ folder: String, itemCount: Int) -> some View {
+                    // A plain SwiftUI `.onDrag`/`.dropDestination` pair on a
+                    // `LazyVGrid` cell doesn't reliably deliver drops on
+                    // iPad — the same iPad-only gap `folderRow`'s list-mode
+                    // row hit here first, fixed there by routing the drop
+                    // through a real `UIDropInteraction` instead (see
+                    // `LibraryFolderDropSurface`). The tile stays the visual
+                    // layer (non-interactive); the drop surface underneath
+                    // it is what actually receives taps and drops.
+                    ZStack {
+                        HomeFolderTile(
+                            name: folderDisplayName(folder),
+                            isFavorite: favoriteFolderPaths.contains(folder),
+                            itemCount: itemCount
+                        ) {}
+                        .allowsHitTesting(false)
+                        LibraryFolderDropSurface(
+                            identifier: "library-folder-\(folder)",
+                            onTap: { selectedFolder = folder },
+                            onDrop: { values in handleFolderDrop(values, into: folder) },
+                            onTargeted: { isTargeted in
+                                setFolderDropTarget(folder, isTargeted: isTargeted)
+                            }
+                        )
+                    }
+                    .onDrag { folderDragProvider(for: folder) }
+                    .overlay(alignment: .bottomTrailing) { folderDropBadge(folder) }
+                    .contextMenu {
+                        Button {
+                            toggleFolderFavorite(folder)
+                        } label: {
+                            Label(
+                                favoriteFolderPaths.contains(folder) ? "お気に入り解除" : "お気に入り",
+                                systemImage: favoriteFolderPaths.contains(folder) ? "star.slash" : "star"
+                            )
+                        }
+                        if let target = folderObject(forLegacyPath: folder) {
+                            Button {
+                                folderRenameText = target.name
+                                folderToRename = target
+                            } label: {
+                                Label("名前を変更", systemImage: "pencil")
+                            }
+                            Divider()
+                            Button(role: .destructive) { trashFolder(target) } label: {
+                                Label("ゴミ箱に移動", systemImage: "trash")
+                            }
+                        }
+                    }
+                    .modifier(selectable(folderPath: folder, layout: .tile))
+    }
+
+    private func iconEntryTile(_ entry: HomeEntry) -> some View {
+                    HomeEntryTile(entry: entry) {
+                        open(entry)
+                    }
+                    .accessibilityIdentifier("library-entry-\(entry.title)")
+                    .draggable(dragPayload(for: entry))
+                    .overlay(alignment: .topTrailing) { entryDropBadge(entry.id) }
+                    .dropDestination(
+                        for: String.self,
+                        action: { items, _ in handleEntryDrop(items, onto: entry) },
+                        isTargeted: { isTargeted in setEntryDropTarget(isTargeted, entry.id) }
+                    )
+                    .contextMenu {
+                        // Notebooks get the exact same long-press menu here
+                        // as in list view (`notebookRows`'s own
+                        // `.contextMenu { notebookActions(notebook) }`) —
+                        // rename, tags, protection, folder move, duplicate,
+                        // etc. — instead of the pared-down favorite/trash
+                        // pair this used to show only in icon view.
+                        if case .notebook(let notebook) = entry {
+                            notebookActions(notebook)
+                        } else {
+                            entryActions(entry)
+                        }
+                    }
+                    .modifier(selectable(entry: entry, layout: .tile))
+    }
+
+    private func columnFolderRow(_ path: String, highlightedPath: String?) -> some View {
+                Button { if !SwipeToTrashRow.justSwiped { selectedFolder = path } } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "folder.fill").foregroundStyle(.tint)
+                        Text(folderDisplayName(path)).lineLimit(1)
+                        if favoriteFolderPaths.contains(path) {
+                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 45)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .background(path == highlightedPath ? Color.accentColor.opacity(0.15) : Color.clear)
+                .accessibilityIdentifier("library-folder-\(path)")
+                .onDrag { folderDragProvider(for: path) }
+                .overlay(alignment: .trailing) { folderDropBadge(path).padding(.trailing, 28) }
+                .dropDestination(for: String.self) { items, _ in
+                    handleFolderDrop(items, into: path)
+                } isTargeted: { isTargeted in
+                    setFolderDropTarget(path, isTargeted: isTargeted)
+                }
+                .contextMenu {
+                    if let folder = folderObject(forLegacyPath: path) {
+                        Button {
+                            folderRenameText = folder.name
+                            folderToRename = folder
+                        } label: {
+                            Label("名前を変更", systemImage: "pencil")
+                        }
+                        Divider()
+                        Button(role: .destructive) { trashFolder(folder) } label: {
+                            Label("ゴミ箱に移動", systemImage: "trash")
+                        }
+                    }
+                }
+                .modifier(selectable(folderPath: path, layout: .row, open: { selectedFolder = path }))
+    }
+
+    private func columnEntryRow(_ entry: HomeEntry) -> some View {
+                Button { if !SwipeToTrashRow.justSwiped { open(entry) } } label: {
+                    HStack(spacing: 10) {
+                        if case .notebook(let notebook) = entry, notebook.containsPDF {
+                            NotebookCoverView(notebook: notebook, size: CGSize(width: 28, height: 36))
+                        } else {
+                            Image(systemName: entry.iconName).foregroundStyle(entry.tintColor)
+                        }
+                        Text(entry.title).lineLimit(1)
+                        if entry.isFavorite {
+                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                        }
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 45)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .accessibilityIdentifier("library-entry-\(entry.title)")
+                .draggable(dragPayload(for: entry))
+                // Column view had no long-press menu for entries at all
+                // (only the folder rows above do) — notebooks now get the
+                // same menu list/icon view already show.
+                .contextMenu {
+                    if case .notebook(let notebook) = entry {
+                        notebookActions(notebook)
+                    } else {
+                        entryActions(entry)
+                    }
+                }
+                .modifier(selectable(entry: entry, layout: .row))
     }
 
     private var displayedTextDocuments: [TextDocument] {
         let visible = textDocuments.filter { !$0.isTrashed }
         if libraryMode == .documents {
-            return visible.filter { $0.folderName == (selectedFolder ?? "") }
+            return visible.filter { $0.folderName == (selectedFolder ?? "") }.sorted(by: sortOption.areInOrder)
         }
-        return visible
-    }
-
-    private var displayedSlideDecks: [SlideDeck] {
-        let visible = slideDecks.filter { !$0.isTrashed }
-        if libraryMode == .documents {
-            return visible.filter { $0.folderName == (selectedFolder ?? "") }
-        }
-        return visible
+        return visible.sorted(by: sortOption.areInOrder)
     }
 
     @ViewBuilder
     private var documentRows: some View {
         ForEach(displayedTextDocuments) { document in
+            documentRow(document)
+        }
+    }
+
+    private func documentRow(_ document: TextDocument) -> some View {
             HStack(spacing: 10) {
                 Button { openTextDocument(document) } label: {
                     HStack(spacing: 12) {
@@ -5282,62 +5163,14 @@ struct ContentView: View {
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.textDocument(document).id) }
             )
             .modifier(selectable(entry: .textDocument(document), layout: .row))
-        }
     }
 
-    @ViewBuilder
-    private var slideRows: some View {
-        ForEach(displayedSlideDecks) { deck in
-            HStack(spacing: 10) {
-                Button { openSlideDeck(deck) } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "rectangle.on.rectangle")
-                            .font(.title2)
-                            .foregroundStyle(.orange)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(deck.title).font(.headline).lineLimit(1)
-                            Text("\(deck.sortedSlides.count)枚 ・ \(deck.theme.title)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("library-entry-\(deck.title)")
-                Button { deck.isFavorite.toggle(); deck.updatedAt = .now } label: {
-                    Image(systemName: deck.isFavorite ? "star.fill" : "star")
-                        .foregroundStyle(deck.isFavorite ? .yellow : .secondary)
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("library-favorite-\(deck.title)")
-                .accessibilityValue(deck.isFavorite ? "on" : "off")
-            }
-            .swipeActions {
-                Button("ゴミ箱", role: .destructive) { trashSlideDeck(deck) }
-            }
-            .contextMenu { entryActions(.slideDeck(deck)) }
-            .modifier(DocumentLibraryRowStyle(enabled: libraryMode == .documents))
-            .draggable("slide:\(slideDeckID(deck))")
-            .overlay(alignment: .trailing) { entryDropBadge(HomeEntry.slideDeck(deck).id).padding(.trailing, 40) }
-            .dropDestination(
-                for: String.self,
-                action: { items, _ in handleEntryDrop(items, onto: .slideDeck(deck)) },
-                isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.slideDeck(deck).id) }
-            )
-            .modifier(selectable(entry: .slideDeck(deck), layout: .row))
-        }
-    }
-
-    /// Trashed decks, documents and slides — shown in the trash alongside
+    /// Trashed decks and documents — shown in the trash alongside
     /// trashed notes, each restorable or removable for good.
     @ViewBuilder
     private var trashedItemRows: some View {
         let decks = flashcardDecks.filter { $0.isTrashed }
         let documents = textDocuments.filter { $0.isTrashed }
-        let slides = slideDecks.filter { $0.isTrashed }
         ForEach(decks) { deck in
             trashedRow(title: deck.title, subtitle: "\(deck.sortedCards.count)枚の暗記カード",
                        icon: "rectangle.on.rectangle.angled", tint: .indigo, entry: .flashcardDeck(deck),
@@ -5347,11 +5180,6 @@ struct ContentView: View {
             trashedRow(title: document.title, subtitle: "\(document.wordCount)語の文書",
                        icon: "doc.text", tint: .teal, entry: .textDocument(document),
                        restore: { restoreDocument(document) }, delete: { permanentlyDeleteDocument(document) })
-        }
-        ForEach(slides) { deck in
-            trashedRow(title: deck.title, subtitle: "\(deck.sortedSlides.count)枚のスライド",
-                       icon: "rectangle.on.rectangle", tint: .orange, entry: .slideDeck(deck),
-                       restore: { restoreSlideDeck(deck) }, delete: { permanentlyDeleteSlideDeck(deck) })
         }
     }
 
@@ -5378,7 +5206,6 @@ struct ContentView: View {
 
     private func restoreDeck(_ deck: FlashcardDeck) { deck.isTrashed = false; deck.trashedAt = nil }
     private func restoreDocument(_ document: TextDocument) { document.isTrashed = false; document.trashedAt = nil }
-    private func restoreSlideDeck(_ deck: SlideDeck) { deck.isTrashed = false; deck.trashedAt = nil }
 
     private func permanentlyDeleteDeck(_ deck: FlashcardDeck) {
         performLibraryRemoval {
@@ -5394,18 +5221,10 @@ struct ContentView: View {
         }
     }
 
-    private func permanentlyDeleteSlideDeck(_ deck: SlideDeck) {
-        performLibraryRemoval {
-            closeSlideDeckTabs(deck)
-            modelContext.delete(deck)
-        }
-    }
-
     private var hasFavoriteNonNotebookItems: Bool {
         !favoriteFolderPaths.isEmpty
             || flashcardDecks.contains { !$0.isTrashed && $0.isFavorite }
             || textDocuments.contains { !$0.isTrashed && $0.isFavorite }
-            || slideDecks.contains { !$0.isTrashed && $0.isFavorite }
     }
 
     @ViewBuilder
@@ -5489,10 +5308,16 @@ struct ContentView: View {
     /// relationship must not make an item appear in a different column.
     private func entries(inLegacyPath path: String?) -> [HomeEntry] {
         let path = path ?? ""
-        return allNotebooks.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.notebook)
-            + flashcardDecks.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.flashcardDeck)
-            + textDocuments.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.textDocument)
-            + slideDecks.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.slideDeck)
+        var result: [HomeEntry] = allNotebooks
+            .filter { !$0.isTrashed && $0.folderName == path }
+            .map(HomeEntry.notebook)
+        result += flashcardDecks
+            .filter { !$0.isTrashed && $0.folderName == path }
+            .map(HomeEntry.flashcardDeck)
+        result += textDocuments
+            .filter { !$0.isTrashed && $0.folderName == path }
+            .map(HomeEntry.textDocument)
+        return result.sorted(by: sortOption.areInOrder)
     }
 
     private func subfolderPaths(of parentPath: String?) -> [String] {
@@ -5517,7 +5342,6 @@ struct ContentView: View {
         case .notebook: isShowingNewNotebookAlert = true
         case .deck: isShowingNewFlashcardDeckAlert = true
         case .document: isShowingNewDocumentAlert = true
-        case .slideDeck: isShowingNewSlideDeckAlert = true
         }
     }
 
@@ -5529,16 +5353,6 @@ struct ContentView: View {
         try? modelContext.save()
         newDocumentName = ""
         openTextDocument(document)
-    }
-
-    private func createSlideDeck() {
-        let title = newSlideDeckName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let deck = SlideDeck(title: title.isEmpty ? L("無題のスライド") : title)
-        assignToCurrentFolder(deck)
-        modelContext.insert(deck)
-        try? modelContext.save()
-        newSlideDeckName = ""
-        openSlideDeck(deck)
     }
 
     private func createFlashcardDeck() {
@@ -5573,19 +5387,16 @@ struct ContentView: View {
                 Label("新規文書", systemImage: "doc.text")
             }
             Button {
-                isShowingNewSlideDeckAlert = true
-            } label: {
-                Label("新規スライド", systemImage: "rectangle.on.rectangle")
-            }
-            Button {
                 presentFileImporter()
             } label: {
                 Label("ファイルから読み込む", systemImage: "folder.badge.plus")
             }
-            Button {
-                presentFileImporter()
-            } label: {
-                Label("単語帳を読み込む（Quizlet・CSV）", systemImage: "rectangle.stack.badge.plus")
+            if Self.showsVocabularyImportMenu {
+                Button {
+                    presentFileImporter()
+                } label: {
+                    Label("単語帳を読み込む（Quizlet・CSV）", systemImage: "rectangle.stack.badge.plus")
+                }
             }
             Divider()
             Button {
@@ -5742,6 +5553,9 @@ struct ContentView: View {
         guard !notebook.sortedPages.isEmpty else { return nil }
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
+        // The password was just verified for this import; don't ask again
+        // when the gate sees the notebook open for the first time.
+        if password != nil { ImportedPDFPasswordSession.markVerified(notebook.persistentModelID) }
         openNotebookTab(notebook)
         selectedNotebook = notebook
         libraryMode = .documents
@@ -5787,6 +5601,9 @@ struct ContentView: View {
                 // long-press menu if the student says no here — or if this
                 // offer is skipped entirely because they already turned it off.
                 if !pdfPasswordRemovalOfferDisabled, let notebook {
+                    // Wait for the password alert / picker sheet to finish
+                    // dismissing; SwiftUI drops a sheet requested mid-dismissal.
+                    try? await Task.sleep(for: .milliseconds(500))
                     pdfRemovalOffer = PendingRemoval(url: url, password: password, notebook: notebook)
                 }
             }
@@ -5925,10 +5742,6 @@ struct ContentView: View {
             importDocx(from: url)
             return
         }
-        if fileExtension == "pptx" {
-            importPptx(from: url)
-            return
-        }
         if ["txt", "tsv", "csv"].contains(fileExtension), importFlashcards(from: url) {
             return
         }
@@ -5986,39 +5799,6 @@ struct ContentView: View {
             docxImportReport = counts.sorted(by: { $0.key < $1.key }).map { "\($0.key) \($0.value)件" }.joined(separator: "、")
         }
         openTextDocument(document)
-    }
-
-    /// Imports a `.pptx` file as a `SlideDeck` — the same design decision
-    /// `importDocx` makes for Word files, just for the slide-deck feature.
-    /// `PptxReader` returns slides whose elements already have fully
-    /// resolved absolute geometry (design step 8's own scope: it doesn't
-    /// try to reconstruct the source file's master/layout hierarchy into
-    /// this app's placeholder-inheritance system), so — like `importDocx` —
-    /// this skips `SlideBlockMigration` entirely rather than needing it.
-    private func importPptx(from url: URL) {
-        guard let data = try? Data(contentsOf: url),
-              let result = try? PptxReader.read(from: data) else {
-            pptxImportFailed = true
-            return
-        }
-        let deck = SlideDeck(title: url.deletingPathExtension().lastPathComponent)
-        assignToCurrentFolder(deck)
-        deck.aspectRawValue = result.aspect.rawValue
-        deck.master = SlideMaster.makeDefault()
-        deck.isMigratedToElements = true
-        for slide in result.slides {
-            slide.deck = deck
-            deck.addSlide(slide)
-        }
-        deck.renumberSlides()
-        modelContext.insert(deck)
-        try? modelContext.save()
-
-        if !result.droppedElementKinds.isEmpty {
-            let counts = Dictionary(grouping: result.droppedElementKinds, by: { $0 }).mapValues(\.count)
-            pptxImportReport = counts.sorted(by: { $0.key < $1.key }).map { "\($0.key) \($0.value)件" }.joined(separator: "、")
-        }
-        openSlideDeck(deck)
     }
 
     private func exportMCPSnapshot() -> URL? {
@@ -6081,15 +5861,6 @@ struct ContentView: View {
                     text: $0.plainText
                 )
             },
-            slideDecks: slideDecks.filter { !$0.isTrashed }.map { deck in
-                MCPSlideDeck(
-                    id: String(describing: deck.persistentModelID),
-                    title: deck.title,
-                    slides: deck.sortedSlides.map {
-                        MCPSlideSummary(title: $0.titleText, bullets: $0.bullets, notes: $0.notes)
-                    }
-                )
-            },
             folders: allFolders.map { MCPFolder(path: $0.legacyPath) }
         )
         let encoder = JSONEncoder()
@@ -6136,29 +5907,6 @@ struct ContentView: View {
                 document.plainText = body.string
                 modelContext.insert(document)
                 if openAfterImport { openTextDocument(document) }
-
-            case "create_slides":
-                guard let title = action.title, let requested = action.slides, !requested.isEmpty else { continue }
-                let deck = SlideDeck(title: title)
-                assignMCPDestination(deck, path: action.folderPath)
-                if let theme = action.theme, let parsed = SlideTheme(rawValue: theme) {
-                    deck.theme = parsed
-                }
-                for (index, source) in requested.enumerated() {
-                    let layout = source.layout.flatMap(SlideLayout.init(rawValue:))
-                        // A first slide with no bullets reads as a title
-                        // slide; everything else defaults to title + content.
-                        ?? ((index == 0 && (source.bullets ?? []).isEmpty) ? .titleSlide : .titleAndBody)
-                    let slide = Slide(order: index, layout: layout)
-                    slide.titleText = source.title ?? ""
-                    slide.bodyText = (source.bullets ?? []).joined(separator: "\n")
-                    slide.notes = source.notes ?? ""
-                    slide.deck = deck
-                    deck.addSlide(slide)
-                    modelContext.insert(slide)
-                }
-                modelContext.insert(deck)
-                if openAfterImport { openSlideDeck(deck) }
 
             case "create_notebook":
                 guard let title = action.title, let pages = action.pages, !pages.isEmpty else { continue }
@@ -6337,8 +6085,6 @@ struct ContentView: View {
         switch item.kind {
         case "create_document":
             if let document = textDocuments.first(where: { $0.title == item.title && !$0.isTrashed }) { openTextDocument(document) }
-        case "create_slides":
-            if let deck = slideDecks.first(where: { $0.title == item.title && !$0.isTrashed }) { openSlideDeck(deck) }
         case "create_notebook":
             if let notebook = allNotebooks.first(where: { $0.title == item.title && !$0.isTrashed }) { openNotebookTab(notebook) }
         case "create_flashcards":
@@ -6587,12 +6333,7 @@ struct ContentView: View {
         if selectedTextDocument === document { selectedTextDocument = openTextDocuments.last }
     }
 
-    private func closeSlideDeckTabs(_ deck: SlideDeck) {
-        openSlideDecks.removeAll { $0 === deck }
-        if selectedSlideDeck === deck { selectedSlideDeck = openSlideDecks.last }
-    }
-
-    /// Soft-deletes a deck/document/slide, matching notes: it goes to the
+    /// Soft-deletes a deck/document, matching notes: it goes to the
     /// trash (recoverable) and its tab is closed, rather than being erased.
     private func trashDeck(_ deck: FlashcardDeck) {
         performLibraryRemoval {
@@ -6610,18 +6351,10 @@ struct ContentView: View {
         }
     }
 
-    private func trashSlideDeck(_ deck: SlideDeck) {
-        performLibraryRemoval {
-            closeSlideDeckTabs(deck)
-            deck.isTrashed = true
-            deck.trashedAt = .now
-        }
-    }
-
-    /// True while a note, deck, document or slide is open for study.
+    /// True while a note, deck or document is open for study.
     private var isStudySurfaceOpen: Bool {
         selectedNotebook != nil || selectedFlashcardDeck != nil
-            || selectedTextDocument != nil || selectedSlideDeck != nil
+            || selectedTextDocument != nil
             || studyNotebook != nil
     }
 
@@ -6631,7 +6364,6 @@ struct ContentView: View {
         [selectedNotebook?.persistentModelID.hashValue,
          selectedFlashcardDeck?.persistentModelID.hashValue,
          selectedTextDocument?.persistentModelID.hashValue,
-         selectedSlideDeck?.persistentModelID.hashValue,
          studyNotebook?.persistentModelID.hashValue]
             .map { $0.map(String.init) ?? "-" }
             .joined(separator: ":")
@@ -6701,7 +6433,6 @@ struct ContentView: View {
         }
         for deck in flashcardDecks where deck.isTrashed { permanentlyDeleteDeck(deck) }
         for document in textDocuments where document.isTrashed { permanentlyDeleteDocument(document) }
-        for deck in slideDecks where deck.isTrashed { permanentlyDeleteSlideDeck(deck) }
     }
 
     /// Whether the trash holds anything at all — notes or any other item.
@@ -6709,7 +6440,6 @@ struct ContentView: View {
         visibleNotebooks.isEmpty
             && !flashcardDecks.contains(where: \.isTrashed)
             && !textDocuments.contains(where: \.isTrashed)
-            && !slideDecks.contains(where: \.isTrashed)
     }
 
     @MainActor
@@ -6757,9 +6487,9 @@ struct ContentView: View {
             favoriteFolderPathsStorage: favoriteFolderPathsStorage,
             notebooks: allNotebooks,
             flashcardDecks: flashcardDecks,
-            textDocuments: textDocuments,
-            slideDecks: slideDecks
+            textDocuments: textDocuments
         )
+        AIReviewService.reconcile(modelContext: modelContext)
     }
 
     private func cloneElement(_ source: PageElement) -> PageElement {
@@ -6782,6 +6512,12 @@ struct ContentView: View {
     @ViewBuilder
     private func notebookRows(_ notebooks: [Notebook]) -> some View {
         ForEach(notebooks) { notebook in
+            notebookRow(notebook)
+        }
+    }
+
+    @ViewBuilder
+    private func notebookRow(_ notebook: Notebook) -> some View {
             Group {
                 // The all-files screen uses ScrollView, not List(selection:), so a
                 // NavigationLink(value:) row has no selection binding or
@@ -6791,13 +6527,13 @@ struct ContentView: View {
                     Button {
                         open(.notebook(notebook))
                     } label: {
-                        NotebookRow(notebook: notebook)
+                        NotebookRow(notebook: notebook, showsCover: libraryMode == .pdfs)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 } else {
                     NavigationLink(value: notebook) {
-                        NotebookRow(notebook: notebook)
+                        NotebookRow(notebook: notebook, showsCover: libraryMode == .pdfs)
                     }
                 }
             }
@@ -6839,12 +6575,87 @@ struct ContentView: View {
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.notebook(notebook).id) }
             )
             .modifier(selectable(entry: .notebook(notebook), layout: .row))
-        }
     }
 }
 
 /// The all-files screen uses ScrollView so folder rows can receive drops.
 /// List used to supply these insets and separators automatically.
+/// `swipeActions` only works on `List` rows, but the folder-organized home
+/// screen lays its rows out in a `ScrollView` (so each folder owns its drop
+/// area). This gives those rows the same swipe-left-to-trash gesture.
+struct SwipeToTrashRow: ViewModifier {
+    static let revealWidth: CGFloat = 88
+
+    /// When a row last saw sideways movement. A Button inside a swiped row
+    /// still gets its tap when the finger lifts, so rows built on a Button
+    /// check `justSwiped` before acting (a swipe used to open the note).
+    @MainActor static var lastSwipeActivity = Date.distantPast
+    @MainActor static var justSwiped: Bool { Date().timeIntervalSince(lastSwipeActivity) < 0.4 }
+
+    /// Row offset while dragging: continues from where the drag began, so a
+    /// row left open does not jump back to the closed position.
+    static func offset(start: CGFloat, translation: CGFloat) -> CGFloat {
+        min(0, max(-revealWidth, start + translation))
+    }
+
+    /// Where the row comes to rest when the finger is lifted.
+    static func settledOffset(_ offset: CGFloat) -> CGFloat {
+        offset < -revealWidth / 2 ? -revealWidth : 0
+    }
+
+    let enabled: Bool
+    let identifier: String
+    let action: () -> Void
+
+    @State private var offset: CGFloat = 0
+    @State private var dragStartOffset: CGFloat?
+    private var revealWidth: CGFloat { Self.revealWidth }
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled {
+            content
+                .background(Color(.systemBackground))
+                .offset(x: offset)
+                .background(alignment: .trailing) {
+                    if offset < 0 {
+                        Button(role: .destructive) {
+                            withAnimation { offset = 0 }
+                            action()
+                        } label: {
+                            Text("ゴミ箱")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: revealWidth)
+                                .frame(maxHeight: .infinity)
+                                .background(Color.red)
+                        }
+                        .accessibilityIdentifier(identifier)
+                    }
+                }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 20)
+                        .onChanged { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            let start = dragStartOffset ?? offset
+                            dragStartOffset = start
+                            Self.lastSwipeActivity = Date()
+                            offset = Self.offset(start: start, translation: value.translation.width)
+                        }
+                        .onEnded { _ in
+                            dragStartOffset = nil
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                offset = Self.settledOffset(offset)
+                            }
+                            Self.lastSwipeActivity = Date()
+                        }
+                )
+                .clipped()
+        } else {
+            content
+        }
+    }
+}
+
 private struct DocumentLibraryRowStyle: ViewModifier {
     let enabled: Bool
 
@@ -6932,38 +6743,10 @@ private struct LibraryFolderDropSurface: UIViewRepresentable {
     }
 }
 
-/// Bundles both pptx-import alerts into one `.modifier(...)` call rather
-/// than two separate `.alert(...)`s on `ContentView`'s already very long
-/// top-level modifier chain — that chain hit Swift's type-checker
-/// complexity limit ("unable to type-check this expression in reasonable
-/// time") the moment these two were added directly, the same way the
-/// existing docx-import alerts already sit right below the chain's limit.
-private struct PptxImportAlerts: ViewModifier {
-    @Binding var importFailed: Bool
-    @Binding var importReport: String?
-
-    func body(content: Content) -> some View {
-        content
-            .alert("読み込めませんでした", isPresented: $importFailed) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("このファイルは開けませんでした。壊れているか、対応していない形式の可能性があります。")
-            }
-            .alert("一部の要素は変換できませんでした", isPresented: Binding(
-                get: { importReport != nil },
-                set: { if !$0 { importReport = nil } }
-            )) {
-                Button("OK", role: .cancel) { importReport = nil }
-            } message: {
-                Text((importReport ?? "") + "\nこれらは今のところ非対応のため、スライドには含まれていません。")
-            }
-    }
-}
-
 /// Bundles the post-import/post-unlock "パスワードを削除しますか？" sheet
 /// and the notification that can also trigger it from `NotebookLockGate`
-/// into one `.modifier(...)` call — same reason as `PptxImportAlerts`
-/// above: added directly to `ContentView`'s top-level chain, this pushed it
+/// into one `.modifier(...)` call — same reason as the docx-import
+/// alerts: added directly to `ContentView`'s top-level chain, this pushed it
 /// over Swift's type-checker complexity limit.
 private struct PDFPasswordRemovalOfferModifier: ViewModifier {
     @Binding var pdfRemovalOffer: PendingRemoval?
@@ -7003,7 +6786,11 @@ private struct PDFPasswordRemovalOfferModifier: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .studiquoPDFPasswordVerified)) { notification in
                 guard !pdfPasswordRemovalOfferDisabled,
                       let event = notification.object as? PDFPasswordVerifiedEvent else { return }
-                pdfRemovalOffer = PendingRemoval(url: event.sourceURL, password: event.password, notebook: event.notebook)
+                // The gate's alert is still dismissing when this fires.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    pdfRemovalOffer = PendingRemoval(url: event.sourceURL, password: event.password, notebook: event.notebook)
+                }
             }
     }
 }
@@ -7082,7 +6869,7 @@ private struct HomeFolderTile: View {
     }
 }
 
-/// One notebook/deck/document/slide tile in `ContentView.homeIconGrid`. Takes
+/// One notebook/deck/document tile in `ContentView.homeIconGrid`. Takes
 /// a `HomeEntry` rather than one of the four concrete model types so the grid
 /// can render all of them with a single `ForEach`.
 private struct HomeEntryTile: View {
@@ -7093,9 +6880,13 @@ private struct HomeEntryTile: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: entry.iconName)
-                        .font(.system(size: 40))
-                        .foregroundStyle(entry.tintColor)
+                    if case .notebook(let notebook) = entry, notebook.containsPDF {
+                        NotebookCoverView(notebook: notebook, size: CGSize(width: 84, height: 84))
+                    } else {
+                        Image(systemName: entry.iconName)
+                            .font(.system(size: 40))
+                            .foregroundStyle(entry.tintColor)
+                    }
                     if entry.isFavorite {
                         Image(systemName: "star.fill")
                             .font(.caption2)
@@ -7116,13 +6907,19 @@ private struct HomeEntryTile: View {
 
 private struct NotebookRow: View {
     @Bindable var notebook: Notebook
+    /// A PDF's icon is its first page (the "PDF" filter); elsewhere the symbol.
+    var showsCover = false
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
-                .font(.title2)
-                .foregroundStyle(notebook.containsPDF ? .red : .blue)
-                .frame(width: 34)
+            if showsCover, notebook.containsPDF {
+                NotebookCoverView(notebook: notebook, size: CGSize(width: 34, height: 44))
+            } else {
+                Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
+                    .font(.title2)
+                    .foregroundStyle(notebook.containsPDF ? .red : .blue)
+                    .frame(width: 34)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(notebook.title).font(.headline).lineLimit(1)
@@ -7157,9 +6954,56 @@ private struct NotebookRow: View {
     }
 }
 
+private enum NotebookSortKey: CaseIterable, Identifiable {
+    case name, updated, created
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .name: L("名前")
+        case .updated: L("更新日")
+        case .created: L("作成日")
+        }
+    }
+}
+
 private enum NotebookSortOption: String, CaseIterable, Identifiable {
-    case updatedNewest, updatedOldest, createdNewest, createdOldest, nameAscending, nameDescending, pageCount
+    case updatedNewest, updatedOldest, createdNewest, createdOldest, nameAscending, nameDescending
     var id: String { rawValue }
+
+    var key: NotebookSortKey {
+        switch self {
+        case .updatedNewest, .updatedOldest: .updated
+        case .createdNewest, .createdOldest: .created
+        case .nameAscending, .nameDescending: .name
+        }
+    }
+
+    var isAscending: Bool {
+        switch self {
+        case .updatedOldest, .createdOldest, .nameAscending: true
+        default: false
+        }
+    }
+
+    /// Tapping the active key flips its direction; tapping another key
+    /// selects it with its natural default (newest first, A–Z).
+    func selecting(_ newKey: NotebookSortKey) -> NotebookSortOption {
+        if newKey == key {
+            switch self {
+            case .updatedNewest: return .updatedOldest
+            case .updatedOldest: return .updatedNewest
+            case .createdNewest: return .createdOldest
+            case .createdOldest: return .createdNewest
+            case .nameAscending: return .nameDescending
+            case .nameDescending: return .nameAscending
+            }
+        }
+        switch newKey {
+        case .updated: return .updatedNewest
+        case .created: return .createdNewest
+        case .name: return .nameAscending
+        }
+    }
 
     var title: String {
         switch self {
@@ -7169,7 +7013,6 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
         case .createdOldest: L("作成日が古い順")
         case .nameAscending: L("名前 A–Z")
         case .nameDescending: L("名前 Z–A")
-        case .pageCount: L("ページ数が多い順")
         }
     }
 
@@ -7181,13 +7024,33 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
         case .createdOldest: { $0.createdAt < $1.createdAt }
         case .nameAscending: { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         case .nameDescending: { $0.title.localizedStandardCompare($1.title) == .orderedDescending }
-        case .pageCount: { $0.pageCountForLibrary > $1.pageCountForLibrary }
+        }
+    }
+
+    /// Same ordering for any home item kind (notes, decks, documents), so a
+    /// sort choice applies to everything on screen, not only notes.
+    func areInOrder(_ a: some HomeItem, _ b: some HomeItem) -> Bool {
+        areInOrder((a.title, a.createdAt, a.updatedAt), (b.title, b.createdAt, b.updatedAt))
+    }
+
+    func areInOrder(_ a: HomeEntry, _ b: HomeEntry) -> Bool {
+        areInOrder((a.title, a.createdAt, a.updatedAt), (b.title, b.createdAt, b.updatedAt))
+    }
+
+    func areInOrder(_ a: (title: String, created: Date, updated: Date), _ b: (title: String, created: Date, updated: Date)) -> Bool {
+        switch self {
+        case .updatedNewest: a.updated > b.updated
+        case .updatedOldest: a.updated < b.updated
+        case .createdNewest: a.created > b.created
+        case .createdOldest: a.created < b.created
+        case .nameAscending: a.title.localizedStandardCompare(b.title) == .orderedAscending
+        case .nameDescending: a.title.localizedStandardCompare(b.title) == .orderedDescending
         }
     }
 }
 
 private enum LibraryMode: String, CaseIterable, Identifiable {
-    case documents, favorites, pdfs, studyCards, textDocuments, slides, trash
+    case documents, favorites, pdfs, studyCards, textDocuments, trash
     var id: String { rawValue }
 
     var title: String {
@@ -7197,7 +7060,6 @@ private enum LibraryMode: String, CaseIterable, Identifiable {
         case .pdfs: "PDF"
         case .studyCards: L("暗記カード")
         case .textDocuments: L("文書")
-        case .slides: L("スライド")
         case .trash: L("ゴミ箱")
         }
     }
@@ -7209,7 +7071,6 @@ private enum LibraryMode: String, CaseIterable, Identifiable {
         case .pdfs: "doc.richtext"
         case .studyCards: "rectangle.on.rectangle.angled"
         case .textDocuments: "doc.text"
-        case .slides: "rectangle.on.rectangle"
         case .trash: "trash"
         }
     }
@@ -7221,7 +7082,6 @@ private enum LibraryMode: String, CaseIterable, Identifiable {
         case .pdfs: L("PDFはありません")
         case .studyCards: L("暗記カードはありません")
         case .textDocuments: L("文書はありません")
-        case .slides: L("スライドはありません")
         case .trash: L("ゴミ箱は空です")
         }
     }
@@ -7233,7 +7093,6 @@ private enum LibraryMode: String, CaseIterable, Identifiable {
         case .pdfs: L("＋からPDFを読み込んでください")
         case .studyCards: L("＋からノートを選んで暗記カードを作成してください")
         case .textDocuments: L("＋から文書を作成してください")
-        case .slides: L("＋からスライドを作成してください")
         case .trash: L("削除したノートがここに表示されます")
         }
     }
@@ -7348,14 +7207,11 @@ extension ContentView {
                 notebooks.map(HomeEntry.notebook)
                     + displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
                     + displayedTextDocuments.map(HomeEntry.textDocument)
-                    + displayedSlideDecks.map(HomeEntry.slideDeck)
             )
         } else if libraryMode == .studyCards && selectedFolder == nil {
             addEntries(displayedFlashcardDecks.map(HomeEntry.flashcardDeck))
         } else if libraryMode == .textDocuments && selectedFolder == nil {
             addEntries(displayedTextDocuments.map(HomeEntry.textDocument))
-        } else if libraryMode == .slides && selectedFolder == nil {
-            addEntries(displayedSlideDecks.map(HomeEntry.slideDeck))
         } else if libraryMode == .favorites && selectedFolder == nil {
             addFolders(sortedFolderNames.filter { favoriteFolderPaths.contains($0) })
             addEntries(
@@ -7367,7 +7223,6 @@ extension ContentView {
             if libraryMode == .trash && selectedFolder == nil {
                 entries += flashcardDecks.filter(\.isTrashed).map(HomeEntry.flashcardDeck)
                 entries += textDocuments.filter(\.isTrashed).map(HomeEntry.textDocument)
-                entries += slideDecks.filter(\.isTrashed).map(HomeEntry.slideDeck)
             }
             addEntries(entries)
         }
@@ -7378,7 +7233,7 @@ extension ContentView {
     /// that disappears (deleted on another device) leaves the selection.
     fileprivate var selectionDataFingerprint: [Int] {
         guard homeSelection.isActive else { return [] }
-        return [allNotebooks.count, flashcardDecks.count, textDocuments.count, slideDecks.count, allFolders.count]
+        return [allNotebooks.count, flashcardDecks.count, textDocuments.count, allFolders.count]
     }
 
     fileprivate func pruneSelection() {
@@ -7387,7 +7242,6 @@ extension ContentView {
         for notebook in allNotebooks { valid.insert(dragPayload(for: .notebook(notebook))) }
         for deck in flashcardDecks { valid.insert(dragPayload(for: .flashcardDeck(deck))) }
         for document in textDocuments { valid.insert(dragPayload(for: .textDocument(document))) }
-        for deck in slideDecks { valid.insert(dragPayload(for: .slideDeck(deck))) }
         for folder in allFolders { valid.insert("folder:\(folderID(folder))") }
         homeSelection.prune(keeping: valid)
     }
@@ -7404,9 +7258,6 @@ extension ContentView {
         }
         for document in textDocuments where tokens.contains(dragPayload(for: .textDocument(document))) {
             targets.entries.append(.textDocument(document))
-        }
-        for deck in slideDecks where tokens.contains(dragPayload(for: .slideDeck(deck))) {
-            targets.entries.append(.slideDeck(deck))
         }
         for folder in allFolders where tokens.contains("folder:\(folderID(folder))") {
             targets.folders.append(folder)
@@ -7480,6 +7331,15 @@ extension ContentView {
         try? modelContext.save()
     }
 
+    /// Long-press menu and swipe action for a single folder: same result as
+    /// deleting it from the selection bar.
+    private func trashFolder(_ folder: Folder) {
+        performLibraryRemoval {
+            removeFolderMovingContentsToTrash(folder)
+            try? modelContext.save()
+        }
+    }
+
     /// Folders have no trash of their own: deleting one sends everything
     /// inside it (at any depth) to the trash and removes the folder. Items
     /// are detached first, so restoring one later puts it on the top level.
@@ -7518,7 +7378,6 @@ extension ContentView {
         case let notebook as Notebook: .notebook(notebook)
         case let deck as FlashcardDeck: .flashcardDeck(deck)
         case let document as TextDocument: .textDocument(document)
-        case let deck as SlideDeck: .slideDeck(deck)
         default: nil
         }
     }
@@ -7541,7 +7400,6 @@ extension ContentView {
             notebook.trashedAt = nil
         case .flashcardDeck(let deck): restoreDeck(deck)
         case .textDocument(let document): restoreDocument(document)
-        case .slideDeck(let deck): restoreSlideDeck(deck)
         }
         let item = entry.underlying
         let path = item.folderName
@@ -7622,5 +7480,19 @@ extension ContentView {
                 )
             }
         )
+    }
+}
+
+/// Retitles an open AI chat tab when its conversation is renamed. Kept out of
+/// `ContentView.body`, which is already at the type-checker's limit.
+private struct AIChatTabRenameModifier: ViewModifier {
+    @Binding var tabs: [AIChatTabInfo]
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .studiquoRenameAIChatTab)) { notification in
+            guard let tab = notification.object as? AIChatTabInfo,
+                  let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+            tabs[index] = tab
+        }
     }
 }
