@@ -343,6 +343,77 @@ final class FriendStoreTests: XCTestCase {
         XCTAssertEqual(store.archivedFriends.map(\.code), [friend.code])
     }
 
+    func testAFriendListFetchedWhileTheRemovalIsInFlightCannotBringTheFriendBack() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let client = MockFriendChatClient(friends: [.init(code: friend.code, name: friend.name, roomID: "room-a")])
+        await client.holdRemoveFriend()
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+
+        let removing = Task { await store.removeFriend(friend) }
+        for _ in 0..<1000 {
+            if store.friends.isEmpty { break }
+            await Task.yield()
+        }
+        await store.refreshFriends() // the server still lists them: the removal has not landed yet
+
+        XCTAssertTrue(store.friends.isEmpty)
+        await client.releaseRemoveFriend()
+        _ = await removing.value
+        XCTAssertTrue(store.friends.isEmpty)
+    }
+
+    func testTheRemovalTombstoneSurvivesRelaunchSoAStaleListStillCannotBringTheFriendBack() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let client = MockFriendChatClient(friends: [.init(code: friend.code, name: friend.name, roomID: "room-a")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        _ = await store.removeFriend(friend)
+        await client.setFriends([.init(code: friend.code, name: friend.name, roomID: "room-a")]) // a stale edge copy
+
+        let relaunched = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        await relaunched.refreshFriends()
+
+        XCTAssertTrue(relaunched.friends.isEmpty)
+        XCTAssertEqual(relaunched.archivedFriends.map(\.code), [friend.code])
+    }
+
+    func testAcceptingARequestFromARemovedFriendMakesThemAFriendAgain() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let client = MockFriendChatClient(friends: [.init(code: friend.code, name: friend.name, roomID: "room-a")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        _ = await store.removeFriend(friend)
+        await client.setFriends([.init(code: "ALICE1", name: "Alice", roomID: "room-a2")])
+        await client.setPendingRequests([.init(code: "ALICE1", name: "Alice", requestedAt: 1_700_000_000_000)])
+        await store.refreshIncomingRequests()
+
+        store.accept(store.incomingRequests[0])
+        await waitUntil { store.friends.contains { $0.code == "ALICE1" } }
+        await store.refreshFriends()
+
+        XCTAssertEqual(store.friends.map(\.code), ["ALICE1"], "the removal tombstone must not hide a friend added again")
+        XCTAssertTrue(store.archivedFriends.isEmpty)
+    }
+
+    func testConfirmingAnInviteLinkFromARemovedFriendMakesThemAFriendAgain() async {
+        let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
+        let client = MockFriendChatClient(friends: [.init(code: friend.code, name: friend.name, roomID: "room-a")])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+        store.friends = [friend]
+        _ = await store.removeFriend(friend)
+        await client.setFriends([.init(code: "ALICE1", name: "Alice", roomID: "room-a2")])
+        await client.setLinkTokenOwner(.init(code: "ALICE1", name: "Alice", roomID: "room-a2"), token: "LINKTOKEN1")
+        store.add(url: URL(string: "studiquo://friend/add?token=LINKTOKEN1")!)
+
+        store.confirmPendingLinkAdd()
+        await waitUntil { store.friends.contains { $0.code == "ALICE1" } }
+        await store.refreshFriends()
+
+        XCTAssertEqual(store.friends.map(\.code), ["ALICE1"])
+        XCTAssertTrue(store.archivedFriends.isEmpty)
+    }
+
     func testRemovalTombstoneExpiresOnceServerStaysConsistentPastTheGracePeriod() async {
         let friend = FriendRecord(id: UUID(), name: "Alice", code: "ALICE1", todayStudySeconds: 0, roomID: "room-a", isDemo: false)
         let client = MockFriendChatClient(friends: [.init(code: friend.code, name: friend.name, roomID: "room-a")])
