@@ -253,6 +253,7 @@ struct NoteEditorView: View {
     @State private var splitRatio: CGFloat = 0.5
     @State private var isDraggingSplitDivider = false
     @State private var isPortraitLayout = false
+    @State private var allowsWindowSplit = false
     /// Orientation at the previous layout pass; `nil` until the first one.
     /// Lets `updateOrientation` tell a genuine rotation apart from a plain
     /// re-layout — see the collapse rule there.
@@ -437,6 +438,9 @@ struct NoteEditorView: View {
                 }
             }
             .clipped()
+            .background {
+                WindowSplitAvailabilityReader(onChange: updateWindowSplitAvailability)
+            }
             .onAppear { updateOrientation(for: geometry.size) }
             .onChange(of: geometry.size) { _, newSize in
                 updateOrientation(for: newSize)
@@ -445,6 +449,9 @@ struct NoteEditorView: View {
         .navigationTitle(primaryFlashcardDeck?.title ?? displayedPrimaryNotebook.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
+        .onChange(of: splitMode) { _, mode in
+            if !allowsWindowSplit, mode != .single { collapseSplit() }
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             if !isFocusMode { editorToolStrip }
         }
@@ -638,6 +645,7 @@ struct NoteEditorView: View {
             snippets: $snippetTray,
             pendingQuestion: $pendingProofQuestionSnippet,
             pendingAnswer: $pendingProofAnswerSnippet,
+            allowsChatSplit: allowsWindowSplit,
             onAskAI: askAIAboutSnippet,
             onProofRoleSelected: handleProofSnippet,
             onAddToChat: addSnippetToChat,
@@ -1810,6 +1818,7 @@ struct NoteEditorView: View {
             } label: {
                 Label("画面分割", systemImage: splitMode.icon)
             }
+            .disabled(!allowsWindowSplit)
 
             if splitMode != .single {
                 Menu {
@@ -1915,6 +1924,7 @@ struct NoteEditorView: View {
                 } label: {
                     toolStripLabel("チャット", icon: "message.fill", isActive: isChatVisibleInSplit)
                 }
+                .disabled(!allowsWindowSplit)
                 .popover(isPresented: $showsChatPicker, arrowEdge: .top) {
                     NoteChatPickerPopover(
                         store: friendStore,
@@ -1999,6 +2009,8 @@ struct NoteEditorView: View {
                     }
                     .accessibilityIdentifier("note-split-photo-study-button")
                 } label: { toolStripLabel("画面分割", icon: splitMode.icon, isActive: splitMode != .single) }
+                .disabled(!allowsWindowSplit)
+                .accessibilityIdentifier("note-split-toolbar-button")
 
                 if splitMode != .single {
                     Menu {
@@ -2114,6 +2126,7 @@ struct NoteEditorView: View {
     }
 
     private func openWebSplit(title: String, homeURL: String) {
+        guard allowsWindowSplit else { return }
         dismissPhotoStudy(restorePreviousLayout: false)
         webBrowser.openHomeIfNeeded(homeURL)
         secondaryNotebook = nil
@@ -2140,6 +2153,7 @@ struct NoteEditorView: View {
     }
 
     private func openExternalFileSplit() {
+        guard allowsWindowSplit else { return }
         dismissPhotoStudy(restorePreviousLayout: false)
         secondaryNotebook = nil
         secondaryFlashcardDeck = nil
@@ -2155,6 +2169,7 @@ struct NoteEditorView: View {
     }
 
     private func presentChatPicker() {
+        guard allowsWindowSplit else { return }
         snippetAwaitingChatPicker = nil
         showsChatPicker = true
     }
@@ -2208,6 +2223,7 @@ struct NoteEditorView: View {
     }
 
     private func openChat(_ target: NoteChatTarget, attaching snippet: PageSnippet) {
+        guard allowsWindowSplit else { return }
         dismissPhotoStudy(restorePreviousLayout: false)
         let source = snippetOriginPanes[snippet.id] ?? activePane
         let sourcePane: NoteChatPane = source == .primary ? .primary : .secondary
@@ -2246,6 +2262,7 @@ struct NoteEditorView: View {
     }
 
     private func openChat(_ target: NoteChatTarget) {
+        guard allowsWindowSplit else { return }
         dismissPhotoStudy(restorePreviousLayout: false)
         switch NoteChatSplitPolicy.action(
             forTapping: target,
@@ -2347,6 +2364,10 @@ struct NoteEditorView: View {
     }
 
     private func openAIChatSplit() {
+        guard allowsWindowSplit else {
+            presentTemporaryAIChat()
+            return
+        }
         aiChat.loadThreads()
         aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
         if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
@@ -3118,6 +3139,7 @@ struct NoteEditorView: View {
     /// the last editable note. This is what lets a Web/AI/second-note split
     /// return exactly as it was when the library closes.
     private func togglePhotoStudy() {
+        guard allowsWindowSplit else { return }
         if photoStudyPane != nil {
             dismissPhotoStudy(restorePreviousLayout: true)
             return
@@ -3184,9 +3206,18 @@ struct NoteEditorView: View {
     }
 
     private func prepareSplit(_ mode: SplitMode) {
+        guard allowsWindowSplit else { return }
         dismissPhotoStudy(restorePreviousLayout: false)
         pendingSplitMode = isPortraitLayout ? .vertical : mode
         showsSplitSourcePicker = true
+    }
+
+    private func updateWindowSplitAvailability(_ allowed: Bool) {
+        allowsWindowSplit = allowed
+        guard !allowed else { return }
+        showsSplitSourcePicker = false
+        showsChatPicker = false
+        collapseSplit()
     }
 
     private func updateOrientation(for size: CGSize) {
@@ -3195,6 +3226,9 @@ struct NoteEditorView: View {
         isPortraitLayout = portrait
         let wasPortrait = lastKnownPortrait
         lastKnownPortrait = portrait
+        // Window resizing must also close photo/chat companion splits, which
+        // the rotation-only rule below intentionally keeps open.
+        guard allowsWindowSplit else { return }
 
         // Turning the iPad upright used to fold a side-by-side split into a
         // stacked one, which squeezed both notes into half-height strips
@@ -3269,6 +3303,7 @@ struct NoteEditorView: View {
     }
 
     private func handlePaneDrop(_ value: String, target: PaneDropTarget) -> Bool {
+        guard allowsWindowSplit else { return false }
         let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return false }
         let pane: ActivePane = target == .primary ? .primary : .secondary
@@ -3329,6 +3364,11 @@ struct NoteEditorView: View {
     }
 
     private func completeSplitSelection(object: Any) {
+        guard allowsWindowSplit else {
+            showsSplitSourcePicker = false
+            collapseSplit()
+            return
+        }
         splitMode = isPortraitLayout ? .vertical : (pendingSplitMode ?? .horizontal)
         splitRatio = 0.5
         activePane = .secondary
@@ -5107,6 +5147,7 @@ private struct SnippetTrayModifier: ViewModifier {
     @Binding var snippets: [PageSnippet]
     @Binding var pendingQuestion: PageSnippet?
     @Binding var pendingAnswer: PageSnippet?
+    let allowsChatSplit: Bool
     let onAskAI: (PageSnippet) -> Void
     let onProofRoleSelected: (PageSnippet, AIChatAttachment.ProofRole) -> Void
     let onAddToChat: (PageSnippet) -> Void
@@ -5208,6 +5249,7 @@ private struct SnippetTrayModifier: ViewModifier {
                     .buttonStyle(.bordered)
                     .font(.caption.weight(.semibold))
                     .accessibilityIdentifier("snippet-add-to-chat")
+                    .disabled(!allowsChatSplit)
 
                 }
             }
@@ -5314,6 +5356,7 @@ private struct SnippetTrayModifier: ViewModifier {
     }
 
     private func addToChatAndDismiss(_ snippet: PageSnippet) {
+        guard allowsChatSplit else { return }
         // Route first while the source-pane metadata is still available. Keep
         // this one entry until the picker/composer consumes or cancels it, but
         // remove every visible tray item immediately so the action panel does
