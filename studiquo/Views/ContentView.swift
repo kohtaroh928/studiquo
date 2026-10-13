@@ -6056,6 +6056,7 @@ struct ContentView: View {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard 200..<300 ~= http.statusCode else {
+            if PasskeyReauth.isRequired(status: http.statusCode, body: data) { throw PasskeyError.reauthRequired }
             throw Self.mcpCloudServerError(status: http.statusCode, body: data)
         }
         return data
@@ -6083,8 +6084,16 @@ struct ContentView: View {
         guard !mcpPairClientName.isEmpty else { return }
         let code = mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         do {
-            let data = try await mcpRequest(path: "api/mcp/pair", method: "POST",
-                                            body: try JSONEncoder().encode(["code": code]))
+            let approval = try JSONEncoder().encode(["code": code])
+            let data: Data
+            do {
+                data = try await mcpRequest(path: "api/mcp/pair", method: "POST", body: approval)
+            } catch PasskeyError.reauthRequired {
+                // Letting an app into the account is a step a stolen session
+                // must not be able to take alone.
+                try await PasskeyService.shared.reauthenticate(token: MCPCloudCredentials.loadOrCreateToken(), action: "approve-app")
+                data = try await mcpRequest(path: "api/mcp/pair", method: "POST", body: approval)
+            }
             let result = try JSONDecoder().decode(MCPApprovalResult.self, from: data)
             guard result.approved else { mcpCloudStatus = L("接続コードの期限が切れました。"); return }
             mcpCloudStatus = L("接続を許可しました。")

@@ -42,6 +42,16 @@ final class AuthenticationStore: ObservableObject {
     @Published private(set) var isEmailVerifyBusy = false
     @Published private(set) var isLoginBusy = false
     @Published private(set) var isAccountDeletionBusy = false
+    /// True while the signed-in account has no passkey: the app asks for one
+    /// before anything else (see PasskeyEnrollmentView). A passkey is what a
+    /// look-alike site relaying a password or code cannot imitate, and once an
+    /// account has one the server stops accepting those.
+    @Published private(set) var needsPasskeyEnrollment = false
+    /// Set once setting up a passkey has failed in this run, which is when the
+    /// request offers "skip for now": a person whose device cannot make one
+    /// (iCloud Keychain off, a managed device) must not be locked out of their
+    /// own notes. It comes back at the next launch.
+    @Published private(set) var passkeyEnrollmentFailed = false
 
     private let sessionAccount = "session"
     private let service: String
@@ -54,6 +64,7 @@ final class AuthenticationStore: ObservableObject {
     private let revokeCloudCredentials: () async -> Void
     private let deleteAccountOnServer: () async throws -> Void
     private let authenticationSession: URLSession
+    private let passkeyRegistered: () async -> Bool?
     private var authenticationEndpoint: URL {
         MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)!
     }
@@ -83,7 +94,11 @@ final class AuthenticationStore: ObservableObject {
         unregisterPushDevice: @escaping () async -> Void = { await PushNotificationRegistration.unregisterCurrentDevice() },
         revokeCloudCredentials: @escaping () async -> Void = { await MCPCloudCredentials.revoke() },
         deleteAccountOnServer: @escaping () async throws -> Void = { try await AccountDeletionService.deleteAccount() },
-        authenticationSession: URLSession = .shared
+        authenticationSession: URLSession = .shared,
+        passkeyRegistered: @escaping () async -> Bool? = {
+            guard let token = MCPCloudCredentials.currentToken(), let endpoint = MCPCloudCredentials.configuredEndpoint() else { return nil }
+            return await PasskeyService.hasPasskey(token: token, endpoint: endpoint)
+        }
     ) {
         self.service = service
         self.now = now
@@ -92,6 +107,7 @@ final class AuthenticationStore: ObservableObject {
         self.revokeCloudCredentials = revokeCloudCredentials
         self.deleteAccountOnServer = deleteAccountOnServer
         self.authenticationSession = authenticationSession
+        self.passkeyRegistered = passkeyRegistered
         restore()
         authFailureSubscription = NotificationCenter.default.publisher(for: .studiquoAuthFailed)
             .receive(on: DispatchQueue.main)
@@ -165,7 +181,7 @@ final class AuthenticationStore: ObservableObject {
             // A wait or a busy server says nothing about the password, so it
             // must not read as "wrong password".
             switch error {
-            case .tooManyAttempts, .serverBusy: errorMessage = error.localizedDescription
+            case .tooManyAttempts, .serverBusy, .passkeyRequired: errorMessage = error.localizedDescription
             case .rejected: errorMessage = "メールアドレスまたはパスワードが違います。"
             }
             return false
@@ -210,6 +226,8 @@ final class AuthenticationStore: ObservableObject {
     func logout() {
         AIDataDisclosure.revoke()
         delete(account: sessionAccount)
+        needsPasskeyEnrollment = false
+        passkeyEnrollmentFailed = false
         state = .needsLogin
         // Best-effort and non-blocking: remove this device while the bearer
         // token is still available, then revoke that token. Local sign-out
@@ -379,12 +397,62 @@ final class AuthenticationStore: ObservableObject {
         isPasskeyBusy = true
         defer { isPasskeyBusy = false }
         do {
-            try await PasskeyService.shared.register(
-                email: email,
-                token: MCPCloudCredentials.loadOrCreateToken()
-            )
+            let token = MCPCloudCredentials.loadOrCreateToken()
+            do {
+                try await PasskeyService.shared.register(email: email, token: token)
+            } catch PasskeyError.reauthRequired {
+                // An account that already has a passkey proves it with one
+                // before getting another.
+                try await PasskeyService.shared.reauthenticate(token: token, action: "add-passkey")
+                try await PasskeyService.shared.register(email: email, token: token)
+            }
+            needsPasskeyEnrollment = false
+            passkeyEnrollmentFailed = false
             errorMessage = ""
             return true
+        } catch let error as ASAuthorizationError where error.code == .canceled {
+            return false
+        } catch PasskeyError.cancelled {
+            return false
+        } catch {
+            passkeyEnrollmentFailed = true
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Looks up whether the signed-in account has a passkey and, if it
+    /// definitely has none, asks for one. A lookup that fails (offline, an
+    /// older server) or an account without an e-mail address (which a passkey
+    /// is tied to) never blocks anyone.
+    func checkPasskeyRequirement() async {
+        guard state == .authenticated || state == .onboarding, !email.isEmpty else {
+            needsPasskeyEnrollment = false
+            return
+        }
+        guard let registered = await passkeyRegistered() else { return }
+        needsPasskeyEnrollment = !registered
+    }
+
+    /// Hides the request until the next launch; only offered after a failure.
+    func skipPasskeyEnrollmentForNow() {
+        guard passkeyEnrollmentFailed else { return }
+        needsPasskeyEnrollment = false
+    }
+
+    /// Deletes every passkey of the account, for someone who did not add the
+    /// ones it has (or who wants to start over), then asks for a new one.
+    func removeAllPasskeys() async -> Bool {
+        isPasskeyBusy = true
+        defer { isPasskeyBusy = false }
+        do {
+            try await PasskeyService.shared.removeAllPasskeys(token: MCPCloudCredentials.loadOrCreateToken())
+            errorMessage = ""
+            passkeyEnrollmentFailed = false
+            await checkPasskeyRequirement()
+            return true
+        } catch PasskeyError.cancelled {
+            return false
         } catch {
             errorMessage = error.localizedDescription
             return false
@@ -583,7 +651,12 @@ enum AccountDeletionService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["confirmation": "DELETE"])
-        let (_, response) = try await URLSession.shared.data(for: request)
+        var (data, response) = try await URLSession.shared.data(for: request)
+        // An account with a passkey proves it with one first, then asks again.
+        if PasskeyReauth.isRequired(status: (response as? HTTPURLResponse)?.statusCode, body: data) {
+            try await PasskeyService.shared.reauthenticate(token: token, action: "delete-account")
+            (data, response) = try await URLSession.shared.data(for: request)
+        }
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw AccountDeletionError.rejected
         }

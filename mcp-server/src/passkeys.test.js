@@ -302,3 +302,182 @@ test("the e-mail check happens before anything is stored for the attempt", async
   await handlePasskeys(new URL(request.url), request, env);
   assert.deepEqual(stored.filter(key => key.startsWith("passkeys:")), [], "no challenge or credential is left behind");
 });
+
+// --- reauthentication with a passkey -------------------------------------
+import { generateKeyPairSync, createSign } from "node:crypto";
+import { indexAccountPasskey, requireRecentPasskey } from "./passkey-policy.js";
+
+const RP_ID = "studiquo-mcp.studiquo-mcp-server.workers.dev";
+const b64url = buffer => Buffer.from(buffer).toString("base64url");
+
+function newPasskey() {
+  const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const jwk = publicKey.export({ format: "jwk" });
+  const x = Buffer.from(jwk.x, "base64url");
+  const y = Buffer.from(jwk.y, "base64url");
+  // COSE_Key (EC2, ES256, P-256) as the CBOR bytes the server stores.
+  const cose = Buffer.concat([
+    Buffer.from([0xa5, 0x01, 0x02, 0x03, 0x26, 0x20, 0x01, 0x21, 0x58, 0x20]), x,
+    Buffer.from([0x22, 0x58, 0x20]), y,
+  ]);
+  return { privateKey, cose };
+}
+
+function assertionFor({ privateKey }, challenge, id) {
+  const clientDataJSON = Buffer.from(JSON.stringify({
+    type: "webauthn.get", challenge, origin: `https://${RP_ID}`, crossOrigin: false,
+  }));
+  const counter = Buffer.alloc(4); counter.writeUInt32BE(5);
+  const authenticatorData = Buffer.concat([createHash("sha256").update(RP_ID).digest(), Buffer.from([0x05]), counter]);
+  const signer = createSign("SHA256");
+  signer.update(Buffer.concat([authenticatorData, createHash("sha256").update(clientDataJSON).digest()]));
+  return {
+    id, rawId: id, type: "public-key", clientExtensionResults: {}, authenticatorAttachment: "platform",
+    response: {
+      clientDataJSON: b64url(clientDataJSON),
+      authenticatorData: b64url(authenticatorData),
+      signature: b64url(signer.sign(privateKey)),
+      userHandle: b64url("user"),
+    },
+  };
+}
+
+async function reauthOptions(env, token) {
+  const request = new Request("https://example.test/api/passkeys/reauth/options", {
+    method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ action: "delete-account" }),
+  });
+  return handlePasskeys(new URL(request.url), request, env);
+}
+
+async function reauthVerify(env, token, transaction, credential) {
+  const request = new Request("https://example.test/api/passkeys/reauth/verify", {
+    method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ transaction, credential }),
+  });
+  return handlePasskeys(new URL(request.url), request, env);
+}
+
+async function seedPasskey(env, passkey, id, account = "test") {
+  await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify({
+    id, publicKey: Array.from(passkey.cose), counter: 0, transports: ["internal"], email: "student@example.com",
+  }));
+  await indexAccountPasskey(env, account, null, id);
+}
+
+test("reauth: using the account's own passkey marks this session as freshly verified", async () => {
+  const env = environment();
+  const token = freshToken("a");
+  const passkey = newPasskey();
+  await seedPasskey(env, passkey, "cred-own");
+  assert.equal((await requireRecentPasskey(env, token, { sub: "test" }, "delete-account")).status, 403);
+
+  const options = await (await reauthOptions(env, token)).json();
+  assert.deepEqual(options.options.allowCredentials.map(item => item.id), ["cred-own"]);
+  const response = await reauthVerify(env, token, options.transaction, assertionFor(passkey, options.options.challenge, "cred-own"));
+  assert.equal(response.status, 200);
+  assert.equal(await requireRecentPasskey(env, token, { sub: "test" }, "delete-account"), null);
+});
+
+test("reauth: another account's passkey, a wrong signature and another session's challenge do not count", async () => {
+  const env = environment();
+  const token = freshToken("b");
+  const other = freshToken("c");
+  const mine = newPasskey();
+  const theirs = newPasskey();
+  await seedPasskey(env, mine, "cred-mine");
+  await seedPasskey(env, theirs, "cred-theirs", "another-account");
+
+  // A valid assertion from a passkey that belongs to someone else.
+  let options = await (await reauthOptions(env, token)).json();
+  let response = await reauthVerify(env, token, options.transaction, assertionFor(theirs, options.options.challenge, "cred-theirs"));
+  assert.equal(response.status, 401);
+
+  // Signed by the wrong key.
+  options = await (await reauthOptions(env, token)).json();
+  response = await reauthVerify(env, token, options.transaction, assertionFor(theirs, options.options.challenge, "cred-mine"));
+  assert.equal(response.status, 401);
+
+  // A challenge issued to one session cannot be answered by another.
+  options = await (await reauthOptions(env, token)).json();
+  response = await reauthVerify(env, other, options.transaction, assertionFor(mine, options.options.challenge, "cred-mine"));
+  assert.equal(response.status, 400);
+
+  assert.equal((await requireRecentPasskey(env, token, { sub: "test" }, "delete-account")).status, 403);
+});
+
+test("reauth: an account with no passkey gets 404 for options, and a missing token 401", async () => {
+  const env = environment();
+  assert.equal((await reauthOptions(env, freshToken("d"))).status, 404);
+  const request = new Request("https://example.test/api/passkeys/reauth/options", { method: "POST", body: "{}" });
+  assert.equal((await handlePasskeys(new URL(request.url), request, env)).status, 401);
+});
+
+test("status: reports whether the signed-in account has a passkey", async () => {
+  const env = environment();
+  const token = freshToken("e");
+  const ask = () => handlePasskeys(new URL("https://example.test/api/passkeys/status"), new Request("https://example.test/api/passkeys/status", { headers: { authorization: `Bearer ${token}` } }), env);
+  assert.deepEqual(await (await ask()).json(), { registered: false, count: 0 });
+  await seedPasskey(env, newPasskey(), "cred-status");
+  assert.deepEqual(await (await ask()).json(), { registered: true, count: 1 });
+});
+
+test("adding another passkey needs a recent passkey check once the account has one", async () => {
+  const env = environment();
+  const token = freshToken("f");
+  await env.STUDIQUO_DATA.put("email-account-owner:student@example.com", "test");
+  // The first passkey needs nothing.
+  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env)).status, 200);
+
+  await seedPasskey(env, newPasskey(), "cred-first");
+  const refused = await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env);
+  assert.equal(refused.status, 403);
+  assert.equal((await refused.json()).code, "reauth_required");
+
+  const { markRecentPasskey } = await import("./passkey-policy.js");
+  await markRecentPasskey(env, sha256Hex(token));
+  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env)).status, 200);
+});
+
+test("remove-all: needs the passkey's check when one is established, but not while every passkey is still new", async () => {
+  const env = environment();
+  const token = freshToken("g");
+  const removeAll = () => handlePasskeys(
+    new URL("https://example.test/api/passkeys/remove-all"),
+    new Request("https://example.test/api/passkeys/remove-all", { method: "POST", headers: { authorization: `Bearer ${token}` } }),
+    env
+  );
+  // Only a passkey added a moment ago (say, by a thief with a stolen session): the owner can undo it.
+  await seedPasskey(env, newPasskey(), "cred-new");
+  const record = await env.STUDIQUO_DATA.get("passkeys:credential:cred-new", "json");
+  await env.STUDIQUO_DATA.put("passkeys:credential:cred-new", JSON.stringify({ ...record, createdAt: Date.now() }));
+  assert.equal((await removeAll()).status, 200);
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:cred-new"), null);
+
+  // An established one has to be used first.
+  await seedPasskey(env, newPasskey(), "cred-old");
+  const refused = await removeAll();
+  assert.equal(refused.status, 403);
+  assert.equal((await refused.json()).action, "remove-passkeys");
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:cred-old"), null);
+});
+
+test("reauth: a passkey that is still new cannot vouch for the session", async () => {
+  const env = environment();
+  const token = freshToken("h");
+  const passkey = newPasskey();
+  await seedPasskey(env, passkey, "cred-fresh");
+  const record = await env.STUDIQUO_DATA.get("passkeys:credential:cred-fresh", "json");
+  await env.STUDIQUO_DATA.put("passkeys:credential:cred-fresh", JSON.stringify({ ...record, createdAt: Date.now() }));
+  assert.equal((await reauthOptions(env, token)).status, 404, "no established passkey to ask for");
+});
+
+test("reauth: an unknown action is refused", async () => {
+  const env = environment();
+  const token = freshToken("i");
+  await seedPasskey(env, newPasskey(), "cred-x");
+  const request = new Request("https://example.test/api/passkeys/reauth/options", {
+    method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ action: "anything" }),
+  });
+  assert.equal((await handlePasskeys(new URL(request.url), request, env)).status, 400);
+});

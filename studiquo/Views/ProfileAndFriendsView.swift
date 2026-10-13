@@ -38,6 +38,7 @@ struct UserProfileView: View {
     @AppStorage("profileImage") private var imageData = Data()
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var passkeyAdded = false
+    @State private var confirmsPasskeyRemoval = false
     /// A multiline `TextField(_:text:axis:.vertical)` bound straight to an
     /// `@AppStorage` value re-triggers this `Form`'s layout (the field's own
     /// height depends on its text) on every keystroke as the write-through to
@@ -74,6 +75,8 @@ struct UserProfileView: View {
                         )
                     }
                     .disabled(authentication.isPasskeyBusy || passkeyAdded)
+                    Button("パスキーをすべて削除", role: .destructive) { confirmsPasskeyRemoval = true }
+                        .disabled(authentication.isPasskeyBusy)
                     if !authentication.errorMessage.isEmpty {
                         Text(authentication.errorMessage)
                             .font(.footnote)
@@ -87,6 +90,16 @@ struct UserProfileView: View {
                 Section {
                     Button("ログアウト", role: .destructive) { authentication.logout(); dismiss() }
                 }
+            }
+            .confirmationDialog(
+                "パスキーをすべて削除しますか?",
+                isPresented: $confirmsPasskeyRemoval, titleVisibility: .visible
+            ) {
+                Button("削除して設定し直す", role: .destructive) {
+                    Task { passkeyAdded = false; _ = await authentication.removeAllPasskeys() }
+                }
+            } message: {
+                Text("心当たりのないパスキーが追加されたときに使います。削除後、新しいパスキーの設定をお願いします。")
             }
             .navigationTitle("プロフィール")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { dismiss() } } }

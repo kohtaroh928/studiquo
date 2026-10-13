@@ -244,6 +244,23 @@ private final class RefreshStubProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+final class PasskeyReauthDetectionTests: XCTestCase {
+    private func body(_ code: String) -> Data { try! JSONSerialization.data(withJSONObject: ["error": "x", "code": code]) }
+
+    func testOnlyA403WithTheReauthCodeCountsAsNeedingAPasskeyCheck() {
+        XCTAssertTrue(PasskeyReauth.isRequired(status: 403, body: body("reauth_required")))
+        XCTAssertFalse(PasskeyReauth.isRequired(status: 403, body: body("passkey_required")))
+        XCTAssertFalse(PasskeyReauth.isRequired(status: 401, body: body("reauth_required")))
+        XCTAssertFalse(PasskeyReauth.isRequired(status: 403, body: Data("not json".utf8)))
+        XCTAssertFalse(PasskeyReauth.isRequired(status: nil, body: Data()))
+    }
+
+    func testThePasskeyRequiredAnswerIsRecognised() {
+        XCTAssertTrue(PasskeyRequired.isIn(body: body("passkey_required")))
+        XCTAssertFalse(PasskeyRequired.isIn(body: body("reauth_required")))
+    }
+}
+
 final class MCPImportReceiptTests: XCTestCase {
     @MainActor
     func testImportedDocumentAndReceiptSurviveReloadTogether() throws {

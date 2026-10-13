@@ -52,11 +52,23 @@ struct AccountGateView: View {
             }
             }
         }
+        .overlay {
+            // Covers everything until the account has a passkey.
+            if authentication.needsPasskeyEnrollment && !cleanupPending
+                && (authentication.state == .authenticated || authentication.state == .onboarding) {
+                PasskeyEnrollmentView()
+                    .transition(.opacity)
+            }
+        }
         .environmentObject(authentication)
         .animation(.easeInOut(duration: 0.2), value: authentication.state)
         .task(id: authentication.state) {
             guard !cleanupPending, authentication.state == .authenticated else { return }
             await PushNotificationRegistration.refreshIfAuthorized()
+        }
+        .task(id: authentication.state) {
+            guard !cleanupPending else { return }
+            await authentication.checkPasskeyRequirement()
         }
         .task(id: cleanupPending) {
             if cleanupPending { await finishLocalCleanup() }
@@ -333,6 +345,60 @@ private struct OnboardingView: View {
             step = next
         } else {
             authentication.finishOnboarding()
+        }
+    }
+}
+
+
+/// Asked of every signed-in account that has no passkey yet. A password or an
+/// e-mailed code can be handed over to a look-alike site that relays it; a
+/// passkey is checked by the device against the real site's domain and cannot.
+/// Face ID / Touch ID is what confirms it is the owner.
+struct PasskeyEnrollmentView: View {
+    @EnvironmentObject private var authentication: AuthenticationStore
+
+    var body: some View {
+        ZStack {
+            Color(.systemBackground).ignoresSafeArea()
+            VStack(spacing: 20) {
+                Image(systemName: "person.badge.key.fill")
+                    .font(.system(size: 56))
+                    .foregroundStyle(.tint)
+                Text("パスキーを設定してください")
+                    .font(.title2.bold())
+                Text("偽のログイン画面にパスワードやコードを入力させて、アカウントを乗っ取る手口があります。パスキーなら、Face IDまたはTouch IDだけでログインでき、偽のサイトでは使えません。")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: 480)
+                Text("設定の24時間後から、パスワードやメールのコードではログインできなくなります。iCloudキーチェーンがオンになっている必要があります。")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: 480)
+                if !authentication.errorMessage.isEmpty {
+                    Text(authentication.errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                }
+                Button {
+                    Task { _ = await authentication.addPasskey() }
+                } label: {
+                    Label("パスキーを設定する", systemImage: "faceid")
+                        .frame(maxWidth: 320)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(authentication.isPasskeyBusy)
+                .accessibilityIdentifier("passkey-enroll")
+                if authentication.passkeyEnrollmentFailed {
+                    Button("今回はスキップ") { authentication.skipPasskeyEnrollmentForNow() }
+                        .accessibilityIdentifier("passkey-skip")
+                }
+                Button("ログアウト", role: .destructive) { authentication.logout() }
+            }
+            .padding(32)
+            .onAppear { authentication.errorMessage = "" }
         }
     }
 }
