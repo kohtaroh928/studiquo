@@ -1330,9 +1330,115 @@ enum MCPCloudCredentials {
     /// actual sign-in prompt, and the server's own `isExpired` check never
     /// even got a chance to fire (see .studiquoAuthFailed in
     /// AuthenticationStore.swift for what now happens on that real 401).
+    ///
+    /// "None stored" means the Keychain said so (`errSecItemNotFound`). A read
+    /// that failed for any other reason — the device is locked and the item is
+    /// not available yet — says nothing about whether a token exists, so no
+    /// replacement is minted and saved over the real one; an empty token is
+    /// returned, which the server refuses without signing anyone out (see
+    /// `isStorageUnavailable`).
     static func loadOrCreateToken() -> String {
-        if let value = currentToken(), value.count >= 32 { return value }
-        return generateAndSaveNewToken()
+        let read = readToken()
+        switch tokenDecision(token: read.token, status: read.status) {
+        case .use(let value): return value
+        case .createNew: return generateAndSaveNewToken()
+        case .unavailable:
+            lastWithoutTokenLock.lock(); lastWithoutToken = Date(); lastWithoutTokenLock.unlock()
+            return ""
+        }
+    }
+
+    private static let lastWithoutTokenLock = NSLock()
+    nonisolated(unsafe) private static var lastWithoutToken: Date?
+
+    /// True shortly after a request went out without a token because the
+    /// Keychain was locked. Its 401 can arrive after the person unlocked the
+    /// device, when the Keychain reads fine again, so the lock itself is no
+    /// longer visible; it must still not count as a rejected login.
+    static func sentWithoutTokenRecently(now: Date = Date(), within seconds: TimeInterval = 120) -> Bool {
+        lastWithoutTokenLock.lock(); defer { lastWithoutTokenLock.unlock() }
+        guard let last = lastWithoutToken else { return false }
+        return now.timeIntervalSince(last) < seconds
+    }
+
+    enum TokenDecision: Equatable {
+        case use(String)
+        case createNew
+        case unavailable
+    }
+
+    /// What `loadOrCreateToken` does with a Keychain read. Only the Keychain
+    /// saying outright that nothing is stored allows a new token; a locked
+    /// device (`errSecInteractionNotAllowed`) says nothing about whether one
+    /// exists.
+    static func tokenDecision(token: String?, status: OSStatus) -> TokenDecision {
+        if status == errSecInteractionNotAllowed { return .unavailable }
+        if let token, token.count >= 32 { return .use(token) }
+        return .createNew
+    }
+
+    /// True when the Keychain cannot be read because the device is locked, as
+    /// opposed to simply holding no token. A 401 seen in that state is not
+    /// evidence the login is bad.
+    static var isStorageUnavailable: Bool { isLocked(status: readToken().status) }
+
+    static func isLocked(status: OSStatus) -> Bool { status == errSecInteractionNotAllowed }
+
+    /// Tokens older than this are exchanged for a new one (see
+    /// `refreshIfNeeded`), well before the 90 days run out. The server only
+    /// exchanges tokens older than 7 days.
+    static let refreshAfter: TimeInterval = 30 * 24 * 60 * 60
+
+    /// Keeps a person who uses the app from being signed out when the token's
+    /// 90 days end: a token older than `refreshAfter` is exchanged with the
+    /// server for a new one carrying the same login. Best-effort — any failure
+    /// leaves the stored token untouched, and the old token keeps working until
+    /// its own expiry. A server without the endpoint answers 404 and nothing
+    /// changes.
+    static func refreshIfNeeded(session: URLSession = .shared, now: Date = Date()) async {
+        // Both activation hooks can fire together; one exchange is enough.
+        guard refreshGate.begin() else { return }
+        defer { refreshGate.end() }
+        guard let token = currentToken(),
+              let issued = issuedAt(of: token),
+              now.timeIntervalSince(issued) > refreshAfter,
+              now.timeIntervalSince(issued) <= validityPeriod,
+              let endpoint = configuredEndpoint() else { return }
+        var request = URLRequest(url: endpoint.appending(path: "api/session/refresh"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["randomValue": makeRandomValue()])
+        guard let (data, response) = try? await session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let body = try? JSONDecoder().decode(RefreshResponse.self, from: data),
+              body.refreshed, let replacement = body.token,
+              replacement.count >= 32, !isExpired(replacement) else { return }
+        // Signing out while the request was in flight cleared the token; it
+        // must not come back, nor may a newer sign-in's token be overwritten.
+        guard currentToken() == token else { return }
+        save(replacement)
+    }
+
+    private final class RefreshGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var running = false
+        func begin() -> Bool { lock.lock(); defer { lock.unlock() }; if running { return false }; running = true; return true }
+        func end() { lock.lock(); running = false; lock.unlock() }
+    }
+    private static let refreshGate = RefreshGate()
+
+    private struct RefreshResponse: Decodable {
+        let refreshed: Bool
+        let token: String?
+    }
+
+    /// Items saved by earlier versions can only be read while the device is
+    /// unlocked; this lets them be read after the first unlock, like the ones
+    /// saved now. Call it once a read has just succeeded.
+    static func relaxAccessibility() {
+        relaxKeychainAccessibility(service: service, account: account)
     }
 
     /// True once the token's embedded issue date is older than `validityPeriod`,
@@ -1375,7 +1481,9 @@ enum MCPCloudCredentials {
     }
 
     /// Reads the token without generating a new one; nil if none exists yet.
-    static func currentToken() -> String? {
+    static func currentToken() -> String? { readToken().token }
+
+    private static func readToken() -> (token: String?, status: OSStatus) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -1384,22 +1492,26 @@ enum MCPCloudCredentials {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return (nil, status) }
+        return (String(data: data, encoding: .utf8), status)
     }
 
+    /// Updates in place when a token is already stored, so a failure never
+    /// leaves the Keychain with the old token deleted and no new one added.
     static func save(_ value: String) {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        SecItemDelete(base as CFDictionary)
-        var item = base
-        item[kSecValueData as String] = Data(value.utf8)
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        SecItemAdd(item as CFDictionary, nil)
+        let attributes: [String: Any] = [
+            kSecValueData as String: Data(value.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        if SecItemUpdate(base as CFDictionary, attributes as CFDictionary) == errSecItemNotFound {
+            SecItemAdd(base.merging(attributes) { $1 } as CFDictionary, nil)
+        }
     }
 
     /// Deletes the local token without telling the server. Prefer `revoke()`,
@@ -1436,6 +1548,13 @@ enum MCPCloudCredentials {
               url.host?.isEmpty == false, url.user == nil, url.password == nil else { return nil }
         return url
     }
+}
+
+/// Moves one existing generic-password item to "readable after the first
+/// unlock". A failure (item missing, device locked) changes nothing.
+func relaxKeychainAccessibility(service: String, account: String) {
+    let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+    SecItemUpdate(query as CFDictionary, [kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly] as CFDictionary)
 }
 
 /// Wraps the AI復習 bell-feed wiring (`onChange`/`sheet`) in its own
@@ -2623,11 +2742,17 @@ struct ContentView: View {
                     }
                 }
                 .navigationTitle("MCPクラウド連携")
-                .task { await loadMCPConnections() }
+                .task {
+                    // The token may have been exchanged for a newer one (or the
+                    // screen built while the Keychain was unreadable) since this
+                    // state was created; show what is actually stored.
+                    if let stored = MCPCloudCredentials.currentToken(), stored.count >= 32 { mcpCloudToken = stored }
+                    await loadMCPConnections()
+                }
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("完了") {
-                            MCPCloudCredentials.save(mcpCloudToken)
+                            if mcpCloudToken.count >= 32 { MCPCloudCredentials.save(mcpCloudToken) }
                             showsMCPCloudSettings = false
                         }
                     }
@@ -2764,6 +2889,7 @@ struct ContentView: View {
             friendStore.handle(scenePhase: scenePhase)
             if scenePhase == .active {
                 sharedImport.refresh()
+                Task { await MCPCloudCredentials.refreshIfNeeded() }
                 Task { await UsageEventService.ping() }
                 Task { await ErrorReportService.flush() }
                 Task { await announcementStore.refresh() }
@@ -2778,6 +2904,7 @@ struct ContentView: View {
             friendStore.handle(scenePhase: phase)
             if phase == .active {
                 sharedImport.refresh()
+                Task { await MCPCloudCredentials.refreshIfNeeded() }
                 Task { await pullMCPInbox() }
                 Task { await UsageEventService.ping() }
                 Task { await ErrorReportService.flush() }
