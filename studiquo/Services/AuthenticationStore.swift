@@ -277,6 +277,10 @@ final class AuthenticationStore: ObservableObject {
     private func handleAuthFailure() {
         guard !ignoresAuthFailures else { return }
         guard state == .authenticated || state == .onboarding else { return }
+        // A locked device cannot read its Keychain, so a request made then goes
+        // out without the real token and is refused. That says nothing about
+        // the login itself; signing out here would erase a good session.
+        guard !MCPCloudCredentials.isStorageUnavailable, !MCPCloudCredentials.sentWithoutTokenRecently() else { return }
         let reallyExpired = MCPCloudCredentials.currentToken().map(MCPCloudCredentials.isExpired) ?? true
         errorMessage = reallyExpired
             ? "ログインの有効期限が切れました。もう一度サインインしてください。"
@@ -478,6 +482,10 @@ final class AuthenticationStore: ObservableObject {
         }
         // Active use renews the six-month session.
         createSession()
+        for account in [sessionAccount, passkeyIdentityAccount, oauthIdentityAccount] {
+            relaxKeychainAccessibility(service: service, account: account)
+        }
+        MCPCloudCredentials.relaxAccessibility()
         state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
     }
 
@@ -525,7 +533,7 @@ final class AuthenticationStore: ObservableObject {
         SecItemDelete(query as CFDictionary)
         var item = query
         item[kSecValueData as String] = data
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 

@@ -66,7 +66,9 @@ function fakeRateCounterBinding(getData) {
 
 function environment({ strictSessions = false } = {}) {
   const values = new Map();
+  const ttls = new Map();
   const env = {
+    _ttls: ttls,
     STUDIQUO_DATA: {
       async get(key, type) {
         let value = values.get(key) ?? null;
@@ -80,7 +82,7 @@ function environment({ strictSessions = false } = {}) {
         }
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
+      async put(key, value, options) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
       async delete(key) { values.delete(key); },
       async list({ prefix }) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
@@ -2350,4 +2352,83 @@ test("POST /api/auth/email/confirm-code: a failure to store the new password is 
 
   assert.equal(failed.status, 503);
   assert.equal(await env.STUDIQUO_DATA.get("account:local:busy@example.com"), stored, "the old password is untouched");
+});
+
+function tokenIssuedDaysAgo(days, suffix) {
+  return `${Math.floor(Date.now() / 1000) - days * 86_400}.${suffix.repeat(40)}`;
+}
+
+test("POST /api/session/refresh gives a token that is old enough a fresh one for the same account", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(30, "r");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:refresh@example.com" }));
+
+  await env.STUDIQUO_DATA.put(`snapshot:${sha256Hex(token)}`, '{"notes":1}');
+  await env.STUDIQUO_DATA.put(`actions:${sha256Hex(token)}`, '[{"id":"a"}]');
+
+  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: "x".repeat(32) } }), env, noopCtx);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.refreshed, true);
+  assert.equal(await env.STUDIQUO_DATA.get(`snapshot:${sha256Hex(body.token)}`), '{"notes":1}', "the synced data follows the new token");
+  assert.equal(await env.STUDIQUO_DATA.get(`actions:${sha256Hex(body.token)}`), '[{"id":"a"}]');
+  assert.notEqual(body.token, token);
+
+  const next = await realSession(env, body.token);
+  assert.equal(next.sub, "email:refresh@example.com");
+  assert.equal((await worker.fetch(request("/api/actions", { token: body.token }), env, noopCtx)).status, 200);
+  // The old token is left to expire by itself, so a lost response can't sign the person out.
+  assert.equal((await worker.fetch(request("/api/actions", { token }), env, noopCtx)).status, 200);
+});
+
+test("POST /api/session/refresh exchanges a token only once and shortens the old one's life", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(30, "o");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:once@example.com" }));
+  const body = { randomValue: "x".repeat(32) };
+
+  const first = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body }), env, noopCtx);
+  assert.equal((await first.json()).refreshed, true);
+  const second = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: "y".repeat(32) } }), env, noopCtx);
+  assert.deepEqual(await second.json(), { refreshed: false });
+  assert.equal(env._ttls.get(`session:${sha256Hex(token)}`), 14 * 86_400, "the replaced token stops working after the grace period");
+});
+
+test("POST /api/session/refresh refuses a randomValue with unexpected characters", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(30, "p");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:chars@example.com" }));
+  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: "has space and \u00e9 chars!!" } }), env, noopCtx);
+  assert.equal(response.status, 400);
+});
+
+test("POST /api/session/refresh leaves a recent token alone", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(1, "s");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:recent@example.com" }));
+
+  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: "x".repeat(32) } }), env, noopCtx);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { refreshed: false });
+});
+
+test("POST /api/session/refresh refuses expired, unknown, revoked and malformed requests", async () => {
+  const env = environment({ strictSessions: true });
+  const body = { randomValue: "x".repeat(32) };
+  const expired = tokenIssuedDaysAgo(91, "e");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(expired)}`, JSON.stringify({ sub: "email:old@example.com" }));
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: expired, body }), env, noopCtx)).status, 401);
+
+  const unknown = tokenIssuedDaysAgo(30, "u");
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: unknown, body }), env, noopCtx)).status, 401);
+
+  const revoked = tokenIssuedDaysAgo(30, "v");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(revoked)}`, JSON.stringify({ sub: "email:revoked@example.com" }));
+  await revokeToken(env, revoked);
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: revoked, body }), env, noopCtx)).status, 401);
+
+  const valid = tokenIssuedDaysAgo(30, "w");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(valid)}`, JSON.stringify({ sub: "email:valid@example.com" }));
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: valid, body: { randomValue: "short" } }), env, noopCtx)).status, 400);
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", body }), env, noopCtx)).status, 401);
 });
