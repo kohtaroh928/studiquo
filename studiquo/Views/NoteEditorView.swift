@@ -27,6 +27,9 @@ extension Notification.Name {
     static let studiquoSelectPageElement = Notification.Name("StudiquoSelectPageElement")
     /// Editor → ContentView: this conversation is open, give it a tab.
     static let studiquoOpenAIChatTab = Notification.Name("StudiquoOpenAIChatTab")
+    /// Editor → ContentView: this conversation was renamed; retitle its tab
+    /// if it has one.
+    static let studiquoRenameAIChatTab = Notification.Name("StudiquoRenameAIChatTab")
     /// Editor → ContentView: this conversation is gone, drop its tab.
     static let studiquoCloseAIChatTab = Notification.Name("StudiquoCloseAIChatTab")
     /// ContentView → editor: bring this conversation to the front.
@@ -133,7 +136,6 @@ enum PaneSwitchTarget {
     case notebook(Notebook)
     case flashcardDeck(FlashcardDeck)
     case document(TextDocument)
-    case slideDeck(SlideDeck)
     case web(title: String, homeURL: String)
     case ai(PersistentIdentifier)
     case friend(UUID)
@@ -146,7 +148,6 @@ private enum TemporaryChatMaterial: Identifiable {
     case notebook(Notebook)
     case flashcardDeck(FlashcardDeck)
     case document(TextDocument)
-    case slideDeck(SlideDeck)
     case externalFile(ExternalFileSession)
 
     var id: String {
@@ -156,7 +157,6 @@ private enum TemporaryChatMaterial: Identifiable {
         case .notebook(let notebook): return "notebook-\(notebook.persistentModelID)"
         case .flashcardDeck(let deck): return "deck-\(deck.persistentModelID)"
         case .document(let document): return "document-\(document.persistentModelID)"
-        case .slideDeck(let deck): return "slide-\(deck.persistentModelID)"
         // Not the file's path: the id is the pane's identity, and the path of a
         // file opened in place is the user's data about their own storage.
         case .externalFile(let session): return "external-file-\(session.id)"
@@ -170,7 +170,6 @@ private enum TemporaryChatMaterial: Identifiable {
         case .notebook(let notebook): return notebook.title
         case .flashcardDeck(let deck): return deck.title
         case .document(let document): return document.title
-        case .slideDeck(let deck): return deck.title
         case .externalFile: return String(localized: "ファイル")
         }
     }
@@ -190,7 +189,6 @@ private enum TemporaryChatMaterial: Identifiable {
         case .notebook: return "notebook"
         case .flashcardDeck: return "deck"
         case .document: return "document"
-        case .slideDeck: return "slide"
         case .externalFile: return "external-file"
         }
     }
@@ -227,13 +225,15 @@ final class EditorSplitState: ObservableObject {
 }
 
 struct NoteEditorView: View {
+    /// 明暗表示ボタンをツールバーに出すか。今は非表示。将来、ユーザーがツールバーに追加できるオプションにする。
+    private static let showsDarkPageToggle = false
+
     @Bindable var notebook: Notebook
     @Binding var columnVisibility: NavigationSplitViewVisibility
     var onHome: () -> Void
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var notebooks: [Notebook]
     @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
     @Query(sort: \TextDocument.updatedAt, order: .reverse) private var textDocuments: [TextDocument]
-    @Query(sort: \SlideDeck.updatedAt, order: .reverse) private var slideDecks: [SlideDeck]
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var splitState: EditorSplitState
@@ -284,6 +284,18 @@ struct NoteEditorView: View {
     @State private var primaryTemporaryChatMaterialPageIndex = 0
     @State private var secondaryTemporaryChatMaterialPageIndex = 0
     @State private var showsTemporaryAIChat = false
+    /// The pane the AI chat currently stands in for. Like Photo Study, the
+    /// pane's own content stays in state underneath, so closing the chat
+    /// brings it back untouched. Floating `showsTemporaryAIChat` is the opt-in
+    /// alternative; the two are never shown together.
+    @State private var aiSwapPane: ActivePane?
+    /// Last floating-panel frame as fractions of the editor, so the panel
+    /// reopens where it was left, also after the editor is closed and reopened.
+    /// Negative means nothing saved yet.
+    @AppStorage("temporaryAIChat.centerX") private var savedAIChatCenterX = -1.0
+    @AppStorage("temporaryAIChat.centerY") private var savedAIChatCenterY = -1.0
+    @AppStorage("temporaryAIChat.width") private var savedAIChatWidth = -1.0
+    @AppStorage("temporaryAIChat.height") private var savedAIChatHeight = -1.0
     /// Regions cut out with the snip tool, waiting to be dragged into a chat.
     @State private var snippetTray: [PageSnippet] = []
     @State private var snippetOriginPanes: [UUID: ActivePane] = [:]
@@ -298,7 +310,6 @@ struct NoteEditorView: View {
     @State private var pdfExportDocument: PDFExportDocument?
     @State private var pdfExportFilename = "ノート.pdf"
     @State private var showsPDFExporter = false
-    @State private var showsPageSidebar = false
     @State private var usesDarkPageDisplay = false
     @State private var isShowingTextAlert = false
     @State private var textToInsert = ""
@@ -349,12 +360,6 @@ struct NoteEditorView: View {
     @AppStorage("drawingColor") private var drawingColorHex = "#1C1C1E"
     @AppStorage("drawingWidth") private var drawingWidth = 4.0
     @AppStorage("eraserWidth") private var eraserWidth = 24.0
-    @AppStorage("lineCorrectionEnabled") private var isLineCorrectionEnabled = true
-    @AppStorage("ellipseCorrectionEnabled") private var isEllipseCorrectionEnabled = true
-    @AppStorage("rectangleCorrectionEnabled") private var isRectangleCorrectionEnabled = true
-    @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
-    @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
-    @AppStorage("curveCorrectionEnabled") private var isCurveCorrectionEnabled = true
     /// Armed shape kind ("" for none) for the drag-to-create shape tool.
     /// Shared via the same `@AppStorage` key with `PageCanvasContainer`, the
     /// same pattern `drawingToolRaw` already uses to reach the active page's
@@ -367,16 +372,7 @@ struct NoteEditorView: View {
             let editorFrame = geometry.frame(in: .global)
             ZStack {
                 HStack(spacing: 0) {
-                    if showsPageSidebar {
-                        PageSidebar(
-                            notebook: notebook,
-                            currentPageIndex: $primaryPageIndex,
-                            onRequestAddPage: { requestPageAddition(to: notebook) }
-                        )
-                            .frame(width: min(260, geometry.size.width * 0.28))
-                        Divider()
-                    }
-                    workspace(in: workspaceSize(in: geometry.size))
+                    workspace(in: geometry.size)
                         .environment(\.allowsInkSelectionTransfer, !panesShowSameNotebook)
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
@@ -701,6 +697,19 @@ struct NoteEditorView: View {
                     }
                     .contentShape(Rectangle())
                     .gesture(temporaryAIChatDragGesture(in: size, panelSize: panelSize))
+                    if splitMode != .single {
+                        Button {
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                swapInAIChat()
+                            }
+                        } label: {
+                            Image(systemName: "rectangle.lefthalf.inset.filled.arrow.left")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("ペインに入れ替え")
+                        .accessibilityIdentifier("note-ai-floating-to-pane")
+                    }
                     Button {
                         withAnimation(.easeOut(duration: 0.18)) {
                             showsTemporaryAIChat = false
@@ -733,6 +742,8 @@ struct NoteEditorView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
         .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("note-ai-floating-panel")
         .position(resolvedTemporaryAIChatCenter(in: size, panelSize: panelSize))
         .transaction { transaction in
             if temporaryAIChatDragOrigin != nil || temporaryAIChatResizeOrigin != nil {
@@ -741,6 +752,7 @@ struct NoteEditorView: View {
         }
         .transition(.move(edge: .trailing).combined(with: .opacity))
         .onAppear {
+            restoreTemporaryAIChatFrame(in: size)
             if temporaryAIChatCenter == nil {
                 temporaryAIChatCenter = clampedTemporaryAIChatCenter(
                     CGPoint(x: size.width - panelSize.width / 2 - 18, y: size.height - panelSize.height / 2 - 18),
@@ -749,6 +761,36 @@ struct NoteEditorView: View {
                 )
             }
         }
+    }
+
+    /// Fills in the frame left by the previous session. Only runs while this
+    /// editor has not placed the panel yet, so a position set in this session
+    /// always wins over the stored one.
+    private func restoreTemporaryAIChatFrame(in containerSize: CGSize) {
+        guard temporaryAIChatCenter == nil,
+              containerSize.width > 0, containerSize.height > 0,
+              savedAIChatCenterX >= 0, savedAIChatCenterY >= 0,
+              savedAIChatWidth > 0, savedAIChatHeight > 0 else { return }
+        let restoredSize = clampedTemporaryAIChatSize(
+            CGSize(width: savedAIChatWidth * containerSize.width, height: savedAIChatHeight * containerSize.height),
+            in: containerSize
+        )
+        temporaryAIChatSize = restoredSize
+        temporaryAIChatCenter = clampedTemporaryAIChatCenter(
+            CGPoint(x: savedAIChatCenterX * containerSize.width, y: savedAIChatCenterY * containerSize.height),
+            in: containerSize,
+            panelSize: restoredSize
+        )
+    }
+
+    private func saveTemporaryAIChatFrame(in containerSize: CGSize) {
+        guard containerSize.width > 0, containerSize.height > 0,
+              let center = temporaryAIChatCenter else { return }
+        let panelSize = resolvedTemporaryAIChatSize(in: containerSize)
+        savedAIChatCenterX = Double(center.x / containerSize.width)
+        savedAIChatCenterY = Double(center.y / containerSize.height)
+        savedAIChatWidth = Double(panelSize.width / containerSize.width)
+        savedAIChatHeight = Double(panelSize.height / containerSize.height)
     }
 
     private func temporaryAIChatResizeHandles(in containerSize: CGSize, panelSize: CGSize) -> some View {
@@ -804,7 +846,10 @@ struct NoteEditorView: View {
                     panelSize: resized
                 )
             }
-            .onEnded { _ in temporaryAIChatResizeOrigin = nil }
+            .onEnded { _ in
+                temporaryAIChatResizeOrigin = nil
+                saveTemporaryAIChatFrame(in: containerSize)
+            }
     }
 
     private func temporaryAIChatDragGesture(in containerSize: CGSize, panelSize: CGSize) -> some Gesture {
@@ -832,6 +877,7 @@ struct NoteEditorView: View {
                     )
                 }
                 temporaryAIChatDragOrigin = nil
+                saveTemporaryAIChatFrame(in: containerSize)
             }
     }
 
@@ -937,6 +983,7 @@ struct NoteEditorView: View {
         !isReadOnlyMode
             && showsDrawingToolbar
             && photoStudyPane != .primary
+            && aiSwapPane != .primary
             && primaryFlashcardDeck == nil
             && !primaryShowsWeb
             && !primaryShowsAIChat
@@ -949,6 +996,7 @@ struct NoteEditorView: View {
             && !isReadOnlyMode
             && showsDrawingToolbar
             && photoStudyPane != .secondary
+            && aiSwapPane != .secondary
             && secondaryNotebook != nil
             && secondaryFlashcardDeck == nil
             && !secondaryShowsWeb
@@ -1101,6 +1149,7 @@ struct NoteEditorView: View {
     private var panesShowSameNotebook: Bool {
         splitMode != .single
             && photoStudyPane == nil
+            && aiSwapPane == nil
             && primaryFlashcardDeck == nil
             && secondaryFlashcardDeck == nil
             && !primaryShowsWeb
@@ -1111,19 +1160,11 @@ struct NoteEditorView: View {
             && secondaryNotebook === displayedPrimaryNotebook
     }
 
-    private func sidebarWidth(in size: CGSize) -> CGFloat {
-        showsPageSidebar ? min(260, size.width * 0.28) : 0
-    }
-
-    private func workspaceSize(in size: CGSize) -> CGSize {
-        CGSize(width: size.width - sidebarWidth(in: size), height: size.height)
-    }
-
     /// primaryPane is always the leading (horizontal split) or top
     /// (vertical split) slice of `workspace` — matching the sizing done
     /// there keeps the drawing toolbar's confinement in step with it.
     private func primaryPaneSize(in size: CGSize) -> CGSize {
-        let workspace = workspaceSize(in: size)
+        let workspace = size
         switch splitMode {
         case .single:
             return workspace
@@ -1204,6 +1245,7 @@ struct NoteEditorView: View {
 
     private func splitDragPlaceholderLabel(for pane: ActivePane) -> (title: String, icon: String) {
         if photoStudyPane == pane { return ("写真資料", "photo.stack") }
+        if aiSwapPane == pane { return ("AIトーク", "sparkles") }
         if pane == .primary {
             if let material = primaryTemporaryChatMaterial { return (material.title, material.placeholderSymbol) }
             if primaryShowsWeb { return ("Web", "globe") }
@@ -1224,11 +1266,57 @@ struct NoteEditorView: View {
         return ("未選択", "rectangle.dashed")
     }
 
+    /// The chat standing in for `pane`. Attachments open in the other pane,
+    /// since anything opened in this one would sit hidden behind the chat.
+    private func swappedAIChatPane(in pane: ActivePane) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Label("AIトーク", systemImage: "sparkles")
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 0)
+                Button {
+                    floatSwappedAIChat()
+                } label: {
+                    Image(systemName: "macwindow.on.rectangle")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("臨時画面で開く")
+                .accessibilityIdentifier("note-ai-pane-to-floating")
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { aiSwapPane = nil }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("AIトークを閉じる")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(.regularMaterial)
+
+            AIChatPanel(
+                store: aiChat,
+                noteContext: aiChatNoteContext,
+                onInsertAssistantMessage: insertAIResponseOnPage,
+                onAttachDroppedTab: attachmentForDroppedTab,
+                onSelectAppAttachment: appAttachmentOptions,
+                onOpenAttachment: { openAIChatAttachment($0, target: pane == .primary ? .secondary : .primary) },
+                onPaneDrop: { handlePaneDrop($0, target: pane == .primary ? .primary : .secondary) }
+            )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("note-ai-swapped-pane")
+    }
+
     @ViewBuilder
     private var primaryPane: some View {
         Group {
             if photoStudyPane == .primary {
                 photoStudyLibraryPane
+            } else if aiSwapPane == .primary {
+                swappedAIChatPane(in: .primary)
             } else if let material = primaryTemporaryChatMaterial {
                 temporaryChatMaterialView(material, pane: .primary)
             } else if primaryShowsWeb {
@@ -1298,10 +1386,10 @@ struct NoteEditorView: View {
         .contentShape(Rectangle())
         .accessibilityIdentifier("split-pane-primary")
         .simultaneousGesture(TapGesture().onEnded {
-            if photoStudyPane != .primary { activePane = .primary }
+            if photoStudyPane != .primary, aiSwapPane != .primary { activePane = .primary }
         })
         .dropDestination(for: String.self) { items, _ in
-            guard photoStudyPane != .primary else { return false }
+            guard photoStudyPane != .primary, aiSwapPane != .primary else { return false }
             guard let value = items.first else { return false }
             guard splitMode != .single || value.hasPrefix("ai:") || value.hasPrefix("friend:") || value.hasPrefix("group:") else { return false }
             return handlePaneDrop(value, target: .primary)
@@ -1312,6 +1400,8 @@ struct NoteEditorView: View {
     private var secondaryPane: some View {
         if photoStudyPane == .secondary {
             photoStudyLibraryPane
+        } else if aiSwapPane == .secondary {
+            swappedAIChatPane(in: .secondary)
         } else if let material = secondaryTemporaryChatMaterial {
             temporaryChatMaterialView(material, pane: .secondary)
                 .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
@@ -1382,6 +1472,7 @@ struct NoteEditorView: View {
                                 notebook: secondaryNotebook,
                                 currentPageIndex: $secondaryPageIndex,
                                 showsTitle: true,
+                                pageListEdge: splitMode == .horizontal ? .trailing : .leading,
                                 onRequestAddPage: { requestPageAddition(to: secondaryNotebook) },
                                 onSummarizeCurrentPDFPage: {
                                     summarizePDFPage(in: secondaryNotebook, pageIndex: secondaryPageIndex)
@@ -1451,7 +1542,14 @@ struct NoteEditorView: View {
                     .lineLimit(1)
                 Spacer()
                 Button {
-                    closeTemporaryChatMaterial(in: pane)
+                    if case .externalFile = material, pane == .secondary {
+                        // The file was the only thing in the right pane, so
+                        // closing it returns to one screen rather than leaving
+                        // an empty "select a note" pane.
+                        collapseSplit()
+                    } else {
+                        closeTemporaryChatMaterial(in: pane)
+                    }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
@@ -1499,10 +1597,8 @@ struct NoteEditorView: View {
                 FlashcardPaneView(deck: deck, onHome: {})
             case .document(let document):
                 TextDocumentView(document: document)
-            case .slideDeck(let deck):
-                SlideDeckView(deck: deck)
             case .externalFile(let session):
-                ExternalFilePaneView(session: session, onClose: { closeTemporaryChatMaterial(in: pane) })
+                ExternalFilePaneView(session: session)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1602,16 +1698,12 @@ struct NoteEditorView: View {
                 Label("学習モード", systemImage: "graduationcap")
             }
 
-            Button {
-                showsPageSidebar.toggle()
-            } label: {
-                Label("ページ一覧", systemImage: "sidebar.left")
-            }
-
-            Button {
-                usesDarkPageDisplay.toggle()
-            } label: {
-                Label("ページダーク表示", systemImage: usesDarkPageDisplay ? "sun.max" : "moon")
+            if Self.showsDarkPageToggle {
+                Button {
+                    usesDarkPageDisplay.toggle()
+                } label: {
+                    Label("ページダーク表示", systemImage: usesDarkPageDisplay ? "sun.max" : "moon")
+                }
             }
 
             Button {
@@ -1799,10 +1891,25 @@ struct NoteEditorView: View {
                 toolStripButton("やり直す", icon: "arrow.uturn.forward") {
                     postDrawingHistoryRequest(.studiquoRedoDrawing)
                 }
-                toolStripButton("AIトーク", icon: "sparkles", isActive: primaryShowsAIChat || secondaryShowsAIChat || showsTemporaryAIChat) {
+                toolStripButton("AIトーク", icon: "sparkles", isActive: primaryShowsAIChat || secondaryShowsAIChat || showsTemporaryAIChat || aiSwapPane != nil) {
                     presentAIChat()
                 }
                 .accessibilityIdentifier("note-ai-toolbar-button")
+                .contextMenu {
+                    if splitMode != .single, !isAIChatVisibleInSplit, aiSwapPane == nil {
+                        Button {
+                            swapInAIChat()
+                        } label: {
+                            Label("ペインに入れ替え", systemImage: "rectangle.lefthalf.inset.filled.arrow.left")
+                        }
+                        Button {
+                            aiSwapPane = nil
+                            presentTemporaryAIChat()
+                        } label: {
+                            Label("臨時画面で開く", systemImage: "macwindow.on.rectangle")
+                        }
+                    }
+                }
                 Button {
                     presentChatPicker()
                 } label: {
@@ -1861,32 +1968,9 @@ struct NoteEditorView: View {
 
                 toolStripButton("テキスト", icon: "textformat", action: addTextElement)
                 toolStripButton("写真", icon: "photo") { showsImagePicker = true }
-                toolStripButton(
-                    "写真資料",
-                    icon: "photo.stack",
-                    isActive: photoStudyPane != nil,
-                    action: togglePhotoStudy
-                )
-                .accessibilityIdentifier("photo-study-toolbar-button")
-                toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
-                Menu {
-                    Toggle("直線補正", isOn: $isLineCorrectionEnabled)
-                    Toggle("円・楕円補正", isOn: $isEllipseCorrectionEnabled)
-                    Toggle("正方形・長方形補正", isOn: $isRectangleCorrectionEnabled)
-                    Toggle("三角形補正", isOn: $isTriangleCorrectionEnabled)
-                    Toggle("二次関数補正", isOn: $isParabolaCorrectionEnabled)
-                    Toggle("曲線補正", isOn: $isCurveCorrectionEnabled)
-                } label: {
-                    toolStripLabel(
-                        "補正設定",
-                        icon: "wand.and.stars",
-                        isActive: isLineCorrectionEnabled || isEllipseCorrectionEnabled
-                            || isRectangleCorrectionEnabled || isTriangleCorrectionEnabled
-                            || isParabolaCorrectionEnabled || isCurveCorrectionEnabled
-                    )
+                if Self.showsDarkPageToggle {
+                    toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
                 }
-                toolStripButton("ページ一覧", icon: "rectangle.split.1x2", isActive: showsPageSidebar) { showsPageSidebar.toggle() }
-
                 toolStripButton(
                     "用紙",
                     icon: "doc.text.image",
@@ -1910,6 +1994,10 @@ struct NoteEditorView: View {
                         openExternalFileSplit()
                     }
                     .accessibilityIdentifier("note-split-external-file-button")
+                    Button("写真アプリと2分割", systemImage: "photo.stack") {
+                        openPhotoStudySplit()
+                    }
+                    .accessibilityIdentifier("note-split-photo-study-button")
                 } label: { toolStripLabel("画面分割", icon: splitMode.icon, isActive: splitMode != .single) }
 
                 if splitMode != .single {
@@ -2044,6 +2132,13 @@ struct NoteEditorView: View {
 
     /// Splits the screen and shows the Files browser in the secondary pane, for
     /// opening a PDF or other material from where it is stored.
+    /// Already open means nothing to do: "1画面" is the one way to close it,
+    /// the same as for the Files app split.
+    private func openPhotoStudySplit() {
+        guard photoStudyPane == nil else { return }
+        togglePhotoStudy()
+    }
+
     private func openExternalFileSplit() {
         dismissPhotoStudy(restorePreviousLayout: false)
         secondaryNotebook = nil
@@ -2180,26 +2275,62 @@ struct NoteEditorView: View {
         aiChat.loadThreads()
         guard let thread = aiChat.threads.first(where: { $0.persistentModelID == id }) else { return }
         aiChat.selectedThread = thread
-        if isAIChatVisibleInSplit {
+        if isAIChatVisibleInSplit || aiSwapPane != nil {
             showsTemporaryAIChat = false
+            aiChat.announceThread(thread)
+        } else if showsTemporaryAIChat {
             aiChat.announceThread(thread)
         } else if splitMode == .single {
             openAIChatSplit()
         } else {
-            presentTemporaryAIChat()
+            swapInAIChat()
         }
     }
 
+    /// With two panes the chat takes over the pane that is not being worked
+    /// in, and pressing the button again hands that pane back. The floating
+    /// panel is opt-in, from the chat's own header or the button's long press.
     private func presentAIChat() {
+        if aiSwapPane != nil {
+            withAnimation(.easeOut(duration: 0.18)) { aiSwapPane = nil }
+            return
+        }
+        if showsTemporaryAIChat {
+            withAnimation(.easeOut(duration: 0.18)) { showsTemporaryAIChat = false }
+            return
+        }
         dismissPhotoStudy(restorePreviousLayout: false)
         if isAIChatVisibleInSplit {
-            showsTemporaryAIChat = false
             collapseSplit()
             return
         }
         if splitMode == .single && !secondaryShowsAIChat {
             openAIChatSplit()
         } else {
+            swapInAIChat()
+        }
+    }
+
+    /// Shows the chat in the pane opposite `activePane`, leaving that pane's
+    /// own content in state so it returns when the chat is closed.
+    private func swapInAIChat() {
+        guard splitMode != .single else {
+            presentTemporaryAIChat()
+            return
+        }
+        aiChat.loadThreads()
+        aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
+        if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
+        dismissPhotoStudy(restorePreviousLayout: false)
+        showsTemporaryAIChat = false
+        aiSwapPane = activePane == .primary ? .secondary : .primary
+    }
+
+    /// Moves a swapped-in chat out into the floating panel; the pane it
+    /// covered shows its own content again.
+    private func floatSwappedAIChat() {
+        withAnimation(.easeOut(duration: 0.18)) {
+            aiSwapPane = nil
             presentTemporaryAIChat()
         }
     }
@@ -2290,16 +2421,6 @@ struct NoteEditorView: View {
                 sourceID: String(describing: $0.persistentModelID)
             )
         })
-        options.append(contentsOf: slideDecks.filter { !$0.isTrashed }.map {
-            FriendMessageAttachment(
-                id: "slide-\(String(describing: $0.persistentModelID))",
-                title: $0.title,
-                kind: "スライド",
-                icon: "rectangle.on.rectangle",
-                sourceKind: "slide",
-                sourceID: String(describing: $0.persistentModelID)
-            )
-        })
         return options
     }
 
@@ -2320,8 +2441,7 @@ struct NoteEditorView: View {
                 sourceID: sourceID,
                 notebooks: notebooks,
                 flashcardDecks: flashcardDecks,
-                textDocuments: textDocuments,
-                slideDecks: slideDecks
+                textDocuments: textDocuments
               ) else { return attachment }
 
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -2389,18 +2509,6 @@ struct NoteEditorView: View {
                 icon: "doc.text",
                 sourceKind: "document",
                 sourceID: String(describing: document.persistentModelID)
-            )
-        case "slide":
-            guard let deck = slideDecks.first(where: {
-                String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
-            }) else { return nil }
-            return FriendMessageAttachment(
-                id: "slide-\(String(describing: deck.persistentModelID))",
-                title: deck.title,
-                kind: "スライド",
-                icon: "rectangle.on.rectangle",
-                sourceKind: "slide",
-                sourceID: String(describing: deck.persistentModelID)
             )
         default:
             return nil
@@ -2559,11 +2667,6 @@ struct NoteEditorView: View {
                 String(describing: $0.persistentModelID) == rawID && !$0.isTrashed
             }) else { return nil }
             return .document(document)
-        case "slide":
-            guard let deck = slideDecks.first(where: {
-                String(describing: $0.persistentModelID) == rawID && !$0.isTrashed
-            }) else { return nil }
-            return .slideDeck(deck)
         default:
             return nil
         }
@@ -2699,8 +2802,7 @@ struct NoteEditorView: View {
         AIAppAttachmentCatalog.options(
             notebooks: notebooks,
             flashcardDecks: flashcardDecks,
-            textDocuments: textDocuments,
-            slideDecks: slideDecks
+            textDocuments: textDocuments
         )
     }
 
@@ -2809,9 +2911,6 @@ struct NoteEditorView: View {
         case .document(let document):
             setTemporaryChatMaterial(.document(document), in: pane)
             return
-        case .slideDeck(let deck):
-            setTemporaryChatMaterial(.slideDeck(deck), in: pane)
-            return
         case .web(_, let homeURL):
             webBrowser.openHomeIfNeeded(homeURL)
             if pane == .primary {
@@ -2836,6 +2935,7 @@ struct NoteEditorView: View {
             aiChat.selectedThread = thread
             aiChat.announceThread(thread)
             showsTemporaryAIChat = false
+            aiSwapPane = nil
             if isAIChatVisibleInSplit {
                 activePane = primaryShowsAIChat ? .primary : .secondary
                 return
@@ -2938,6 +3038,7 @@ struct NoteEditorView: View {
         secondaryTemporaryChatMaterialPageIndex = oldPrimaryTemporaryPageIndex
 
         activePane = activePane == .primary ? .secondary : .primary
+        if let swapped = aiSwapPane { aiSwapPane = swapped == .primary ? .secondary : .primary }
     }
 
     private var drawingTool: DrawingToolKind {
@@ -2995,6 +3096,7 @@ struct NoteEditorView: View {
 
     private var primaryPaneCanEditNote: Bool {
         primaryTemporaryChatMaterial == nil
+            && aiSwapPane != .primary
             && !primaryShowsWeb
             && !primaryShowsAIChat
             && primaryChatTarget == nil
@@ -3003,6 +3105,7 @@ struct NoteEditorView: View {
 
     private var secondaryPaneCanEditNote: Bool {
         secondaryTemporaryChatMaterial == nil
+            && aiSwapPane != .secondary
             && !secondaryShowsWeb
             && !secondaryShowsAIChat
             && secondaryChatTarget == nil
@@ -3020,6 +3123,7 @@ struct NoteEditorView: View {
             return
         }
 
+        aiSwapPane = nil
         photoStudyPreviousSplitMode = splitMode
         photoStudyPreviousSplitRatio = splitRatio
         photoStudyPreviousActivePane = activePane
@@ -3046,6 +3150,10 @@ struct NoteEditorView: View {
     /// different tool. In that case their new choice wins and the current
     /// two-pane layout remains available for the incoming tool.
     private func dismissPhotoStudy(restorePreviousLayout: Bool) {
+        // Every path that passes `false` is about to put other content in a
+        // pane (or collapse the split), which the chat standing in for a pane
+        // would otherwise hide. Restoring Photo Study's own layout is not one.
+        if !restorePreviousLayout { aiSwapPane = nil }
         guard photoStudyPane != nil
                 || photoStudyPreviousSplitMode != nil
                 || selectedPhotoStudyAssetID != nil else { return }
@@ -3147,6 +3255,7 @@ struct NoteEditorView: View {
             currentPageIndex: $primaryPageIndex,
             showsTitle: splitMode != .single || displayedPrimaryNotebook.containsPDF,
             usesDarkPageDisplay: usesDarkPageDisplay,
+            pageListEdge: .leading,
             onRequestAddPage: { requestPageAddition(to: displayedPrimaryNotebook) },
             onSummarizeCurrentPDFPage: {
                 summarizePDFPage(in: displayedPrimaryNotebook, pageIndex: primaryPageIndex)
@@ -3207,14 +3316,6 @@ struct NoteEditorView: View {
                String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
            }) {
             applyPaneTarget(.document(document), to: pane)
-            return true
-        }
-
-        if parts[0] == "slide",
-           let deck = slideDecks.first(where: {
-               String(describing: $0.persistentModelID) == parts[1] && !$0.isTrashed
-           }) {
-            applyPaneTarget(.slideDeck(deck), to: pane)
             return true
         }
 
@@ -3622,6 +3723,12 @@ struct NoteEditorView: View {
         page.addElement(element)
         recordElementAddition(element, on: page)
         notebook.updatedAt = .now
+        if kind == .studyTape {
+            NotificationCenter.default.post(
+                name: .studiquoSelectPageElement,
+                object: element.persistentModelID
+            )
+        }
     }
 
     private func addPageLink(to pageIndex: Int, title: String) {
@@ -5385,17 +5492,73 @@ private struct NotebookPaneView: View {
     @Binding var currentPageIndex: Int
     var showsTitle = false
     var usesDarkPageDisplay = false
+    /// Which side the page list opens from. `nil` hides the page list and its
+    /// toggle (used by the read-only chat material preview).
+    var pageListEdge: HorizontalEdge?
     let onRequestAddPage: () -> Void
     var onSummarizeCurrentPDFPage: () -> Void = {}
     var onSummarizeAllPDFPages: () -> Void = {}
     var onQuickAddPage: () -> Void = {}
     var onQuickAddPageAtTop: () -> Void = {}
     @State private var pageViewMode: PageViewMode = .continuous
+    /// Always starts closed; deliberately not persisted.
+    @State private var showsPageList = false
 
     var body: some View {
+        GeometryReader { geometry in
+            let listWidth = min(220, geometry.size.width * 0.4)
+            let isListOpen = showsPageList && pageListEdge != nil
+            HStack(spacing: 0) {
+                if isListOpen, pageListEdge == .leading {
+                    pageList.frame(width: listWidth)
+                    Divider()
+                }
+                paneColumn
+                    .overlay(alignment: pageListEdge == .trailing ? .topTrailing : .topLeading) {
+                        pageListToggle
+                    }
+                if isListOpen, pageListEdge == .trailing {
+                    Divider()
+                    pageList.frame(width: listWidth)
+                }
+            }
+        }
+    }
+
+    private var pageList: some View {
+        PageSidebar(
+            notebook: notebook,
+            currentPageIndex: $currentPageIndex,
+            onRequestAddPage: onRequestAddPage
+        )
+    }
+
+    @ViewBuilder
+    private var pageListToggle: some View {
+        if let edge = pageListEdge {
+            let pointsOutward = (edge == .leading) == showsPageList
+            Button {
+                showsPageList.toggle()
+            } label: {
+                Image(systemName: pointsOutward ? "chevron.left" : "chevron.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .frame(width: 32, height: 32)
+                    .background(.regularMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.primary.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
+            .opacity(0.85)
+            .padding(8)
+            .padding(.top, showsTitle ? 38 : 0)
+            .accessibilityLabel(showsPageList ? L("ページ一覧を閉じる") : L("ページ一覧を開く"))
+            .accessibilityIdentifier("pane-page-list-toggle")
+        }
+    }
+
+    private var paneColumn: some View {
         let pages = notebook.sortedPages
 
-        VStack(spacing: 0) {
+        return VStack(spacing: 0) {
             if showsTitle {
                 HStack {
                     Image(systemName: notebook.sortedPages.contains(where: { $0.backgroundImageData != nil }) ? "doc.richtext" : "note.text")
@@ -7391,9 +7554,10 @@ private struct EditablePageElement: View {
         selectedElementID == element.persistentModelID
     }
 
-    /// Study tape and page links answer a tap with their own behaviour
-    /// (reveal, navigate), so they keep it rather than trading it for a
-    /// selection box.
+    /// Page links answer a tap with their own behaviour (navigate), so they
+    /// keep it rather than trading it for a selection box. Study tape reveals
+    /// on tap too, but is selected from the context menu (or on placement) so
+    /// it can be moved and resized like any other element.
     private var supportsSelection: Bool {
         element.kind != .studyTape && element.kind != .pageLink
     }
@@ -7431,6 +7595,13 @@ private struct EditablePageElement: View {
                         isEditingText = true
                     } label: {
                         Label("テキストを編集", systemImage: "pencil")
+                    }
+                }
+                if element.kind == .studyTape {
+                    Button {
+                        selectedElementID = element.persistentModelID
+                    } label: {
+                        Label("移動・サイズ調整", systemImage: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left")
                     }
                 }
                 Menu {
@@ -7525,7 +7696,15 @@ private struct EditablePageElement: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(isStudyTapeRevealed ? color : .white)
                 }
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.18)) { isStudyTapeRevealed.toggle() } }
+                .onTapGesture {
+                    // While selected for moving/resizing, a tap puts it down
+                    // instead of flipping the reveal.
+                    if isSelected {
+                        selectedElementID = nil
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.18)) { isStudyTapeRevealed.toggle() }
+                    }
+                }
         case .pageLink:
             let link = pageLinkDetails
             Label(link.title, systemImage: "link")

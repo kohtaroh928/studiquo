@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 /// A user-created folder for organizing notebooks, flashcard decks, text
-/// documents and slide decks. Folders nest inside one another via
+/// documents. Folders nest inside one another via
 /// `parent`/`children`, replacing the older scheme where a folder was just a
 /// "/"-joined path string stored on each item's now-legacy `folderName` (see
 /// `FolderMigrationService`, which converts existing data into this shape).
@@ -27,8 +27,6 @@ final class Folder {
     var flashcardDecks: [FlashcardDeck]?
     @Relationship(deleteRule: .nullify, inverse: \TextDocument.folder)
     var textDocuments: [TextDocument]?
-    @Relationship(deleteRule: .nullify, inverse: \SlideDeck.folder)
-    var slideDecks: [SlideDeck]?
 
     init(name: String, parent: Folder? = nil) {
         self.name = name

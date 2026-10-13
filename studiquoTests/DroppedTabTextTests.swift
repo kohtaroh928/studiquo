@@ -13,11 +13,11 @@ final class DroppedTabTextTests: XCTestCase {
     }
 
     func testDetectsTabIDInsertedInTheMiddle() {
-        XCTAssertEqual(DroppedTabText.tabID(old: "前後", new: "前slide:42後"), "slide:42")
+        XCTAssertEqual(DroppedTabText.tabID(old: "前後", new: "前document:42後"), "document:42")
     }
 
     func testEveryDraggableKindIsRecognised() {
-        for kind in ["notebook", "deck", "web", "ai", "friend", "group", "document", "slide"] {
+        for kind in ["notebook", "deck", "web", "ai", "friend", "group", "document"] {
             XCTAssertEqual(DroppedTabText.tabID(old: "", new: "\(kind):id"), "\(kind):id", kind)
         }
     }

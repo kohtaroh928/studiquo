@@ -53,10 +53,10 @@ enum PDFImportService {
             // long PDF does not pile them all up before the loop ends.
             autoreleasepool {
                 guard let page = document.page(at: index) else { return }
-                let bounds = page.bounds(for: .mediaBox)
-                guard bounds.width > 0, bounds.height > 0 else { return }
-                let pageScale = effectiveScale(for: bounds.size, requested: scale)
-                let pixelSize = CGSize(width: bounds.width * pageScale, height: bounds.height * pageScale)
+                let pageSize = displaySize(of: page)
+                guard pageSize.width > 0, pageSize.height > 0 else { return }
+                let pageScale = effectiveScale(for: pageSize, requested: scale)
+                let pixelSize = CGSize(width: pageSize.width * pageScale, height: pageSize.height * pageScale)
 
                 // The default format multiplies the size by the screen scale
                 // (2 on iPad), which silently made every page 4× the intended
@@ -73,7 +73,7 @@ enum PDFImportService {
                     page.draw(with: .mediaBox, to: ctx.cgContext)
                 }
                 if let data = encodedPageData(image) {
-                    results.append((data, bounds.width, bounds.height, page.string ?? ""))
+                    results.append((data, pageSize.width, pageSize.height, page.string ?? ""))
                 }
             }
             onPage?(index + 1, total)
@@ -97,6 +97,17 @@ enum PDFImportService {
         }
         // A detached task does not inherit its caller's cancellation, so pass it on.
         return await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+    }
+
+    /// The size the page appears at once its `/Rotate` is applied. `bounds(for:)`
+    /// is the box as stored, so a landscape slide saved as a portrait page with
+    /// `/Rotate 90` reports 595×842 while `draw(with:to:)` paints it 842×595.
+    /// Sizing the bitmap from the stored box clipped such a page on the right
+    /// and left blank space above it.
+    static func displaySize(of page: PDFPage) -> CGSize {
+        let box = page.bounds(for: .mediaBox)
+        let quarterTurns = ((page.rotation / 90) % 4 + 4) % 4
+        return quarterTurns % 2 == 1 ? CGSize(width: box.height, height: box.width) : box.size
     }
 
     /// `requested`, lowered when the page would exceed `maxPixelEdge`.

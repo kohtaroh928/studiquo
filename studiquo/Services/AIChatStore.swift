@@ -100,6 +100,14 @@ final class AIChatStore: ObservableObject {
             object: AIChatTabInfo(id: thread.persistentModelID, title: thread.title)
         )
     }
+    /// Tells the tab bar a conversation was renamed. Unlike `announceThread`
+    /// it never opens a tab or switches to one.
+    var renameThreadTab: (AIChatThread) -> Void = { thread in
+        NotificationCenter.default.post(
+            name: .studiquoRenameAIChatTab,
+            object: AIChatTabInfo(id: thread.persistentModelID, title: thread.title)
+        )
+    }
     /// Tells the tab bar a conversation is gone.
     var closeThreadTab: (AIChatThread) -> Void = { thread in
         NotificationCenter.default.post(name: .studiquoCloseAIChatTab, object: thread.persistentModelID)
@@ -307,6 +315,27 @@ final class AIChatStore: ObservableObject {
         return thread
     }
 
+    // MARK: Consent
+
+    /// Set while the consent card is up; holds the send to run on "allow".
+    @Published var pendingConsentSend: (() -> Void)?
+
+    func allowPendingSend(ageBand: AIAgeBand) {
+        let resume = pendingConsentSend
+        pendingConsentSend = nil
+        AIDataDisclosure.acknowledge(ageBand: ageBand)
+        resume?()
+    }
+
+    /// Declining still sends the message, so the chat shows the
+    /// "not allowed" error where the answer would have been.
+    func declinePendingSend() {
+        let resume = pendingConsentSend
+        pendingConsentSend = nil
+        AIDataDisclosure.declineInChat()
+        resume?()
+    }
+
     // MARK: Sending
 
     /// Sends the draft (or `text`) to the selected conversation, creating one
@@ -323,6 +352,15 @@ final class AIChatStore: ObservableObject {
         let draftKey = overrideDraftKey ?? activeDraftKey
         let trimmed = (overrideText ?? drafts[draftKey] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // Not yet allowed: ask first, and send once they allow. A student who
+        // already said no here skips the card and gets the error in the chat
+        // (the provider refuses without consent).
+        if !AIDataDisclosure.hasBeenAcknowledged, !AIDataDisclosure.hasDeclinedInChat {
+            pendingConsentSend = { [weak self] in
+                self?.send(draftKey: overrideDraftKey, text: overrideText, attachments: overrideAttachments, noteContext: noteContext)
+            }
+            return
+        }
         let sentAttachments = overrideAttachments ?? attachments[draftKey] ?? []
         let thread = threadForSending()
         let threadKey = Self.threadKey(thread)
@@ -430,6 +468,10 @@ final class AIChatStore: ObservableObject {
     /// same page agree.
     func submitProof(_ submission: ProofSubmission) {
         guard submission.hasQuestion, submission.hasAnswer else { return }
+        if !AIDataDisclosure.hasBeenAcknowledged, !AIDataDisclosure.hasDeclinedInChat {
+            pendingConsentSend = { [weak self] in self?.submitProof(submission) }
+            return
+        }
         let thread = threadForSending()
         let threadKey = Self.threadKey(thread)
         guard !respondingThreadIDs.contains(threadKey) else { return }
@@ -484,6 +526,21 @@ final class AIChatStore: ObservableObject {
         tasks[threadKey]?.cancel()
         tasks[threadKey] = nil
         respondingThreadIDs.remove(threadKey)
+    }
+
+    static let maxTitleLength = 50
+
+    /// Renames a conversation. A blank name is ignored; `updatedAt` is left
+    /// alone so the history order does not change.
+    func rename(_ thread: AIChatThread, to newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let title = String(trimmed.prefix(Self.maxTitleLength))
+        guard title != thread.title else { return }
+        thread.title = title
+        try? modelContext.save()
+        loadThreads()
+        renameThreadTab(thread)
     }
 
     func delete(_ thread: AIChatThread) {

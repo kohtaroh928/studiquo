@@ -181,11 +181,11 @@ final class LibraryDropInteractionTests: XCTestCase {
         app.launchArguments = ["--library-drop-ui-test"]
         app.launch()
         let notebook = app.descendants(matching: .any)["library-entry-Drag me"]
-        let slideTitle = app.staticTexts["Y"]
+        let cardsTitle = app.staticTexts["Cards"]
         XCTAssertTrue(notebook.waitForExistence(timeout: 15))
-        XCTAssertTrue(slideTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(cardsTitle.waitForExistence(timeout: 5))
         XCTAssertGreaterThanOrEqual(notebook.frame.height, 58)
-        XCTAssertGreaterThan(slideTitle.frame.minY, notebook.frame.maxY)
+        XCTAssertGreaterThan(cardsTitle.frame.minY, notebook.frame.maxY)
     }
 
     func testColumnRowDropsIntoFolder() {
@@ -413,7 +413,7 @@ final class LibraryDropInteractionTests: XCTestCase {
 
     /// Side by side. Needs a landscape window: skipped, not failed, where the simulator will
     /// not rotate (the portrait test below covers the same behaviour in every environment).
-    func testDocumentAndSlideTabsDropIntoSplitPane() throws {
+    func testDocumentTabsDropIntoSplitPane() throws {
         let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
         XCUIDevice.shared.orientation = .landscapeLeft
         app.launchArguments = ["--library-drop-ui-test", "--resource-types-fixture"]
@@ -427,25 +427,21 @@ final class LibraryDropInteractionTests: XCTestCase {
         }
         try XCTSkipUnless(window.frame.width > window.frame.height,
                           "This simulator would not rotate to landscape (window \(window.frame)).")
-        exerciseDocumentAndSlideTabDrops(in: app, openSplit: openHorizontalSplit)
+        exerciseDocumentTabDrops(in: app, openSplit: openHorizontalSplit)
     }
 
     /// The same drops into a top/bottom split, which needs no rotation.
-    func testDocumentAndSlideTabsDropIntoVerticalSplitPane() {
+    func testDocumentTabsDropIntoVerticalSplitPane() {
         let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
         XCUIDevice.shared.orientation = .portrait
         app.launchArguments = ["--library-drop-ui-test", "--resource-types-fixture"]
         app.launch()
-        exerciseDocumentAndSlideTabDrops(in: app, openSplit: openVerticalSplit)
+        exerciseDocumentTabDrops(in: app, openSplit: openVerticalSplit)
     }
 
-    private func exerciseDocumentAndSlideTabDrops(in app: XCUIApplication, openSplit: (XCUIApplication) -> Void) {
+    private func exerciseDocumentTabDrops(in app: XCUIApplication, openSplit: (XCUIApplication) -> Void) {
         openLibraryEntry(titled: "Document", in: app)
         XCTAssertTrue(app.descendants(matching: .any)["tab-document-Document"].waitForExistence(timeout: 5))
-        app.buttons["ホームへ戻る"].tap()
-
-        openLibraryEntry(titled: "Y", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["tab-slide-Y"].waitForExistence(timeout: 5))
         app.buttons["ホームへ戻る"].tap()
 
         openNotebookRow(titled: "Drag me", in: app)
@@ -461,17 +457,7 @@ final class LibraryDropInteractionTests: XCTestCase {
 
         let documentPane = app.descendants(matching: .any)["split-pane-secondary-document-Document"].firstMatch
         XCTAssertTrue(documentPane.waitForExistence(timeout: 5), "Dropping a document tab did not switch the secondary pane")
-
-        let slideTab = app.descendants(matching: .any)["tab-slide-Y"].firstMatch
-        XCTAssertTrue(slideTab.waitForExistence(timeout: 5))
-        drag(slideTab, to: documentPane)
-
-        XCTAssertTrue(
-            app.descendants(matching: .any)["split-pane-secondary-slide-Y"].waitForExistence(timeout: 5),
-            "Dropping a slide tab onto an existing document pane did not switch the secondary pane"
-        )
     }
-
 
     private func exerciseFolderMoveWithContents(arguments: [String], viewMode: String? = nil) {
         let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")
@@ -616,7 +602,7 @@ final class LibraryDropInteractionTests: XCTestCase {
         XCTAssertTrue(rename.waitForExistence(timeout: 5), "長押しメニューに「名前を変更」が見つかりません(\(arguments))")
     }
 
-    // MARK: - Flashcard decks / documents / slide decks now have a long-press menu
+    // MARK: - Flashcard decks / documents now have a long-press menu
 
     func testFlashcardDeckLongPressShowsAContextMenu() {
         exerciseEntryContextMenuIncludesRename(identifier: "library-entry-Cards")
@@ -626,13 +612,9 @@ final class LibraryDropInteractionTests: XCTestCase {
         exerciseEntryContextMenuIncludesRename(identifier: "library-entry-Document")
     }
 
-    func testSlideDeckLongPressShowsAContextMenu() {
-        exerciseEntryContextMenuIncludesRename(identifier: "library-entry-Y")
-    }
-
-    /// Regression: flashcard decks, text documents and slide decks had no
+    /// Regression: flashcard decks and text documents had no
     /// `.contextMenu` anywhere (list, icon, or column view) before this —
-    /// only notebooks did. "名前を変更" is new for these three kinds, added
+    /// only notebooks did. "名前を変更" is new for these two kinds, added
     /// via the shared `entryActions(_:)`.
     private func exerciseEntryContextMenuIncludesRename(identifier: String) {
         let app = XCUIApplication(bundleIdentifier: "com.yabuko.studiquo")

@@ -93,6 +93,34 @@ final class HomeAIChatTests: XCTestCase {
         )
     }
 
+    func testLongPressingAHistoryRowRenamesTheConversationEverywhere() {
+        openHomeAI()
+        send("ホームから")
+        XCTAssertTrue(app.staticTexts["テスト返答: ホームから"].waitForExistence(timeout: 10))
+        let row = app.buttons["ai-chat-thread-ホームから"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+
+        row.press(forDuration: 1)
+        let rename = app.buttons["名前を変更"]
+        XCTAssertTrue(rename.waitForExistence(timeout: 5), "長押しメニューに「名前を変更」がありません。")
+        rename.tap()
+
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "名前の入力欄が出ません。")
+        field.tap()
+        field.clearAndType("復習用")
+        app.alerts.buttons["保存"].tap()
+
+        XCTAssertTrue(app.buttons["ai-chat-thread-復習用"].waitForExistence(timeout: 5), "履歴の名前が変わりません。")
+        XCTAssertFalse(app.buttons["ai-chat-thread-ホームから"].exists, "古い名前が残っています。")
+
+        // The editor's AI pane shows the same conversation under the new name.
+        app.buttons["home-tab-notes"].tap()
+        openNotebookFromLibrary()
+        openEditorAI()
+        XCTAssertTrue(app.buttons["ai-chat-thread-復習用"].waitForExistence(timeout: 10), "エディタ側の履歴に新しい名前が反映されません。")
+    }
+
     func testAConversationStartedAtHomeIsTheOneOpenInTheEditorToolbarAI() {
         openHomeAI()
         send("ホームから")
@@ -177,5 +205,15 @@ final class HomeAIChatTests: XCTestCase {
         // Closing the chat pane (the tool toggles it) removes the screen again.
         app.buttons["note-ai-toolbar-button"].tap()
         waitForProbe("screens=0;viewing=-")
+    }
+}
+
+private extension XCUIElement {
+    /// Replaces whatever the field holds with `text`.
+    func clearAndType(_ text: String) {
+        if let current = value as? String, !current.isEmpty {
+            typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
+        }
+        typeText(text)
     }
 }
