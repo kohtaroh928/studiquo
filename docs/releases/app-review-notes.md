@@ -19,6 +19,10 @@ Studiquo is an iPad app for handwritten notes and PDFs, with AI help for studyin
 Studiquoは、手書きノートとPDF、学習のためのAI、友達との共有を備えたiPadアプリです。日本のみで配信し、画面は日本語です。
 
 [SUBSCRIPTIONS / サブスクリプション]
+The app requires a subscription. After signing in with the demo account, the subscription screen appears: choose Standard (yearly, 7-day free trial) and complete the purchase with your sandbox account. After that, all features, including the AI chat, are available. Plus and Pro can be bought from "その他" (Settings) tab > "プランとお支払い" (Plans & Payment).
+アプリの利用には、サブスクリプションが必要です。デモアカウントでログインすると、購読の画面が出ます。Standard(年額、7日間無料)を選び、Sandboxのアカウントで購入してください。購入後は、AIチャットを含む、すべての機能が使えます。Plus・Proは、「その他」→「プランとお支払い」から購入できます。
+
+[SUBSCRIPTIONS (DETAILS) / サブスクリプションの詳細]
 Open the "その他" (Settings) tab, then "プランとお支払い" (Plans & Payment). Standard (yearly, with a 7-day free trial for new subscribers), Plus (monthly / yearly) and Pro (monthly / yearly) are auto-renewable subscriptions in one group, "Studiquo Plans". Restore purchases, Terms of Use and Privacy Policy are on the same screen. Please test with your sandbox account.
 「その他」タブ →「プランとお支払い」を開きます。Standard(年額、新規は7日間無料)、Plus(月額・年額)、Pro(月額・年額)は、グループ「Studiquo Plans」の自動更新サブスクです。購入の復元、利用規約、プライバシーポリシーも、同じ画面にあります。Sandboxのアカウントでお試しください。
 
@@ -40,5 +44,5 @@ Contact / 連絡先: yabukohtaroh@gmail.com
 ## 提出前に確認すること
 
 - 審査で、AIを動かすには、提出前に、本番の`AI_PROVIDER_APPROVED`を`true`にしておく(1.0は未公開で、旧版アプリはないので、先に有効にして問題ない)。
-- ペイウォールの状態(有効にして提出するか)で、「プランとお支払い」の表示が変わる。メモの説明と合わせる。
+- ペイウォールは、有効にして提出する(2026-10-13決定)。Releaseビルドでは常に有効。
 - ログイン画面のボタン名(「メールでサインイン」など)が、実際の画面と一致しているか確認する。

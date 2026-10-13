@@ -63,6 +63,9 @@ targets:
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "2"
+        # iPad-only: the app is not offered on Apple silicon Macs ("Designed
+        # for iPad"). Also untick the Mac availability in App Store Connect.
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SWIFT_VERSION: "5.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.yabuko.studiquo
         # Neither key existed anywhere in the project before (not here, not
