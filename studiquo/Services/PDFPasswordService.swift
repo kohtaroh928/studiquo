@@ -109,8 +109,15 @@ enum PDFPasswordService {
         }
         for index in 1...max(document.numberOfPages, 1) {
             guard let page = document.page(at: index) else { continue }
-            var box = page.getBoxRect(.mediaBox)
+            // `drawPDFPage` ignores the page's /Rotate entry, so a page that
+            // is stored sideways and shown upright would come out sideways.
+            // Size the new page for the rotated view and let the page's own
+            // drawing transform turn the content to match.
+            let mediaBox = page.getBoxRect(.mediaBox)
+            let turned = page.rotationAngle % 180 != 0
+            var box = CGRect(x: 0, y: 0, width: turned ? mediaBox.height : mediaBox.width, height: turned ? mediaBox.width : mediaBox.height)
             context.beginPage(mediaBox: &box)
+            context.concatenate(page.getDrawingTransform(.mediaBox, rect: box, rotate: 0, preserveAspectRatio: true))
             context.drawPDFPage(page)
             context.endPage()
         }

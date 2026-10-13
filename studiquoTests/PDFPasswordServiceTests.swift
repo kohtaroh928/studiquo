@@ -312,4 +312,34 @@ final class PDFPasswordServiceTests: XCTestCase {
         XCTAssertEqual(destination.lastPathComponent, "handout 3.pdf")
         try? FileManager.default.removeItem(at: destination)
     }
+
+    func testRemovePassword_keepsARotatedPagesOrientation() throws {
+        // A 200x100 page stored with /Rotate 90 is shown as 100x200.
+        let plain = workDir.appendingPathComponent("wide.pdf")
+        var box = CGRect(x: 0, y: 0, width: 200, height: 100)
+        let context = try XCTUnwrap(CGContext(plain as CFURL, mediaBox: &box, nil))
+        context.beginPage(mediaBox: &box)
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(box)
+        context.endPage()
+        context.closePDF()
+
+        let rotated = workDir.appendingPathComponent("rotated-locked.pdf")
+        let document = try XCTUnwrap(PDFDocument(url: plain))
+        document.page(at: 0)?.rotation = 90
+        XCTAssertTrue(document.write(to: rotated, withOptions: [
+            .userPasswordOption: "s3cret",
+            .ownerPasswordOption: "owner-pw",
+        ]))
+
+        let output = workDir.appendingPathComponent("rotated-open.pdf")
+        try PDFPasswordService.removePassword(from: rotated, password: "s3cret", to: output)
+
+        let copy = try XCTUnwrap(PDFDocument(url: output))
+        let page = try XCTUnwrap(copy.page(at: 0))
+        let size = page.bounds(for: .mediaBox).size
+        XCTAssertEqual(page.rotation, 0, "the copy bakes the turn into the page")
+        XCTAssertEqual(size.width, 100, accuracy: 0.5)
+        XCTAssertEqual(size.height, 200, accuracy: 0.5)
+    }
 }
