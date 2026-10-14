@@ -7,10 +7,11 @@ import XCTest
 /// server-side now (see local-auth.js / mcp-server), so there is no local
 /// credential record left to seed — a signed-in device is just an
 /// "oauth-identity" record (the same one login()/loginWithApple()/etc. all
-/// write) plus a live "session" record, both under account "credentials" in
-/// AuthenticationStore's private Keychain shape.
+/// write), a live local "session" record, and an unexpired server-issued
+/// cloud token. The token is a separate Keychain item because the Worker,
+/// rather than the local session record, is authoritative for cloud access.
 enum KeychainCredentialFixtures {
-    /// Writes the two Keychain items `AuthenticationStore.restore()` checks
+    /// Writes the local Keychain items `AuthenticationStore.restore()` checks
     /// for, so a freshly constructed store for `service` starts out signed
     /// in (state `.authenticated` or `.onboarding`) exactly as if `email` had
     /// just logged in via email/password.
@@ -23,6 +24,7 @@ enum KeychainCredentialFixtures {
             json: ["provider": "email", "subject": email, "email": email],
             file: file, line: line
         )
+        MCPCloudCredentials.save("\(Int(Date().timeIntervalSince1970)).\(String(repeating: "t", count: 64))")
         let expiresAt = Date().addingTimeInterval(6 * 30 * 24 * 60 * 60)
         writeJSONItem(
             service: service, account: "session",
