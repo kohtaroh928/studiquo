@@ -466,6 +466,25 @@ final class AuthenticationStoreTests: XCTestCase {
         XCTAssertEqual(store.state, .needsLogin)
     }
 
+    func testRestoreDoesNotTrustOnlyTheLongerLivedLocalSession() {
+        KeychainCredentialFixtures.seedSignedInDevice(service: storeService, email: "student@example.com")
+        MCPCloudCredentials.clear()
+
+        let store = makeStore()
+
+        XCTAssertEqual(store.state, .needsLogin)
+    }
+
+    func testRestoreRejectsAnExpiredServerTokenEvenWhenTheLocalSessionIsLive() {
+        KeychainCredentialFixtures.seedSignedInDevice(service: storeService, email: "student@example.com")
+        let expired = "\(Int(Date().timeIntervalSince1970 - MCPCloudCredentials.validityPeriod - 1)).\(String(repeating: "e", count: 64))"
+        MCPCloudCredentials.save(expired)
+
+        let store = makeStore()
+
+        XCTAssertEqual(store.state, .needsLogin)
+    }
+
     // MARK: - confirmEmailVerification(): signup and password reset
 
     func testBeginAccountCreationThenConfirmWithTheRightCodeSignsIn() async {

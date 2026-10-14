@@ -544,7 +544,9 @@ final class AuthenticationStore: ObservableObject {
 
     private func restore() {
         guard (passkeyIdentity() != nil || oauthIdentity() != nil),
-              let session: SessionRecord = load(account: sessionAccount), session.expiresAt > Date() else {
+              let session: SessionRecord = load(account: sessionAccount), session.expiresAt > Date(),
+              let cloudToken = MCPCloudCredentials.currentToken(),
+              !MCPCloudCredentials.isExpired(cloudToken) else {
             state = .needsLogin
             return
         }
