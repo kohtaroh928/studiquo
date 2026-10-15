@@ -2860,6 +2860,11 @@ struct ContentView: View {
             guard let request = notification.object as? FriendAttachmentOpenRequest else { return }
             openFriendAttachment(request.attachment)
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoAddTextDocumentTab"))) { notification in
+            guard let document = notification.object as? TextDocument,
+                  !openTextDocuments.contains(where: { $0.persistentModelID == document.persistentModelID }) else { return }
+            openTextDocuments.append(document)
+        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenTextDocumentTab"))) { notification in
             guard let document = notification.object as? TextDocument else { return }
             openTextDocument(document)
@@ -3121,7 +3126,7 @@ struct ContentView: View {
 
     private var notebookTabBar: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 ForEach(openNotebooks.filter { !$0.isTrashed }) { notebook in
                     HStack(spacing: 5) {
                         Button {
@@ -3141,7 +3146,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(selectedNotebook === notebook ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                    .tabBlock(tint: .accentColor, selected: selectedNotebook === notebook)
                     .tabDraggable("notebook:\(notebookID(notebook))")
                 }
                 ForEach(openStudyNotebooks.filter { !$0.isTrashed }) { notebook in
@@ -3162,7 +3167,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .tabBlock(tint: .indigo, selected: false)
                     .tabDraggable("flashcards:\(notebookID(notebook))")
                 }
                 ForEach(openFlashcardDecks) { deck in
@@ -3178,7 +3183,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(selectedFlashcardDeck === deck ? Color.indigo.opacity(0.22) : Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .tabBlock(tint: .indigo, selected: selectedFlashcardDeck === deck)
                     .tabDraggable("deck:\(deckID(deck))")
                 }
                 ForEach(openWebTabs) { tab in
@@ -3194,7 +3199,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(Color.teal.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+                    .tabBlock(tint: .teal, selected: false)
                     .tabDraggable("web:\(tab.title)|\(tab.homeURL)")
                 }
 
@@ -3216,10 +3221,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(
-                        selectedTextDocument === document ? Color.teal.opacity(0.22) : Color.teal.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
+                    .tabBlock(tint: .teal, selected: selectedTextDocument === document)
                     .accessibilityIdentifier("tab-document-\(document.title)")
                     .tabDraggable("document:\(textDocumentID(document))")
                 }
@@ -3239,10 +3241,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(
-                        selectedAIChatTabID == tab.id ? Color.purple.opacity(0.22) : Color.purple.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
+                    .tabBlock(tint: .purple, selected: selectedAIChatTabID == tab.id)
                     .tabDraggable("ai:\(String(describing: tab.id))")
                 }
 
@@ -3255,14 +3254,14 @@ struct ContentView: View {
                     Image(systemName: "plus")
                         .font(.subheadline.weight(.semibold))
                         .frame(width: 30, height: 30)
-                        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                        .tabBlock(tint: .secondary, selected: false)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("新しいタブを追加")
                 .accessibilityIdentifier("tab-picker-add-tab")
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 6)
         }
         .scrollIndicators(.hidden)
         .background(.bar)
@@ -7610,5 +7609,17 @@ private struct AIChatTabRenameModifier: ViewModifier {
                   let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
             tabs[index] = tab
         }
+    }
+}
+
+private extension View {
+    /// Draws a tab as a self-contained block: a filled rounded rectangle with
+    /// an outline, so neighbouring tabs read as separate items. The selected
+    /// tab gets a tinted fill and a heavier tinted outline.
+    func tabBlock(tint: Color, selected: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+        return self
+            .background(selected ? tint.opacity(0.20) : Color.primary.opacity(0.06), in: shape)
+            .overlay(shape.strokeBorder(selected ? tint : Color.primary.opacity(0.22), lineWidth: selected ? 1.5 : 1))
     }
 }
