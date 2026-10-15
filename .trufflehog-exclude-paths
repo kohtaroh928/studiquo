@@ -1,0 +1,3 @@
+# trufflehog が検査しないファイル(正規表現、1行1つ)。
+# 架空のURL(user:password@example.edu)を使うテスト。
+^studiquoTests/UniversityCalendarTests\.swift$
