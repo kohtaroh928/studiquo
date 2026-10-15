@@ -250,6 +250,8 @@ struct NoteEditorView: View {
     @State private var primaryFlashcardDeck: FlashcardDeck?
     @State private var secondaryNotebook: Notebook?
     @State private var splitMode: SplitMode = .single
+    /// The layout as of the last recorded step; see `recordPaneLayoutChange`.
+    @State private var lastPaneLayout: PaneLayout?
     @State private var splitRatio: CGFloat = 0.5
     @State private var isDraggingSplitDivider = false
     @State private var isPortraitLayout = false
@@ -604,8 +606,10 @@ struct NoteEditorView: View {
         .onAppear {
             splitState.isSplit = splitMode != .single
             aiChat.loadThreads()
+            lastPaneLayout = currentPaneLayout
         }
         .onChange(of: splitMode) { _, mode in splitState.isSplit = mode != .single }
+        .onChange(of: currentPaneLayout.key) { _, _ in recordPaneLayoutChange() }
         // A file opened in place is closed when the secondary pane is switched
         // to another kind of content; only a switch *to* something counts, so
         // clearing these while opening the file pane does not close it.
@@ -1304,6 +1308,7 @@ struct NoteEditorView: View {
         // One pane: the home screen owns what is open, so let it switch the
         // material (and add its tab) the way a tab tap does.
         if splitMode == .single {
+            recordSingleMaterialReplacement(to: target)
             NotificationCenter.default.post(name: Notification.Name("StudiquoReplaceSingleMaterial"), object: target)
             return
         }
@@ -1319,6 +1324,18 @@ struct NoteEditorView: View {
         default:
             break
         }
+    }
+
+    /// With one pane the home screen swaps the whole editor, so there is no
+    /// layout state here to restore; undo asks it to switch back instead.
+    private func recordSingleMaterialReplacement(to target: PaneSwitchTarget) {
+        let previous: PaneSwitchTarget = primaryFlashcardDeck.map { .flashcardDeck($0) }
+            ?? .notebook(displayedPrimaryNotebook)
+        let name = Notification.Name("StudiquoReplaceSingleMaterial")
+        NoteActionHistory.shared.record(
+            undo: { NotificationCenter.default.post(name: name, object: previous) },
+            redo: { NotificationCenter.default.post(name: name, object: target) }
+        )
     }
 
     private func splitDragPlaceholder(for pane: ActivePane) -> some View {
@@ -2480,6 +2497,88 @@ struct NoteEditorView: View {
         splitMode = isPortraitLayout ? .vertical : .horizontal
         splitRatio = 0.5
         activePane = .primary
+    }
+
+    private var currentPaneLayout: PaneLayout {
+        PaneLayout(
+            splitMode: splitMode,
+            splitRatio: splitRatio,
+            activePane: activePane,
+            primaryPageIndex: primaryPageIndex,
+            secondaryPageIndex: secondaryPageIndex,
+            primaryNotebook: primaryOverrideNotebook,
+            primaryDeck: primaryFlashcardDeck,
+            secondaryNotebook: secondaryNotebook,
+            secondaryDeck: secondaryFlashcardDeck,
+            primaryShowsWeb: primaryShowsWeb,
+            secondaryShowsWeb: secondaryShowsWeb,
+            primaryShowsAIChat: primaryShowsAIChat,
+            secondaryShowsAIChat: secondaryShowsAIChat,
+            primaryChatTarget: primaryChatTarget,
+            secondaryChatTarget: secondaryChatTarget,
+            primaryMaterial: primaryTemporaryChatMaterial,
+            secondaryMaterial: secondaryTemporaryChatMaterial,
+            aiSwapPane: aiSwapPane
+        )
+    }
+
+    /// Puts the undo button in charge of the screen layout too: every change
+    /// to what the panes show, however it came about, becomes a step.
+    private func recordPaneLayoutChange() {
+        let current = currentPaneLayout
+        guard let previous = lastPaneLayout else {
+            lastPaneLayout = current
+            return
+        }
+        // Restoring sets `lastPaneLayout` first, so its own change lands here
+        // as no change and is not recorded a second time.
+        guard previous.key != current.key else { return }
+        lastPaneLayout = current
+        NoteActionHistory.shared.record(
+            undo: { restorePaneLayout(previous) },
+            redo: { restorePaneLayout(current) }
+        )
+    }
+
+    private func restorePaneLayout(_ layout: PaneLayout) {
+        // A file opened in place is released when its pane is left and cannot
+        // be reopened from the snapshot, so it comes back as the file browser
+        // with nothing chosen yet.
+        func restorable(_ material: TemporaryChatMaterial?) -> TemporaryChatMaterial? {
+            if case .externalFile = material { return .externalFile(ExternalFileSession()) }
+            return material
+        }
+        var layout = layout
+        layout.primaryMaterial = restorable(layout.primaryMaterial)
+        layout.secondaryMaterial = restorable(layout.secondaryMaterial)
+        lastPaneLayout = layout
+        dismissPhotoStudy(restorePreviousLayout: false)
+        pendingPaneTarget = nil
+        pendingSplitMode = nil
+        showsTemporaryAIChat = false
+        // One transaction without animation, so the panes swap in a single frame.
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            splitMode = layout.splitMode
+            splitRatio = layout.splitRatio
+            activePane = layout.activePane
+            primaryPageIndex = layout.primaryPageIndex
+            secondaryPageIndex = layout.secondaryPageIndex
+            primaryOverrideNotebook = layout.primaryNotebook
+            primaryFlashcardDeck = layout.primaryDeck
+            secondaryNotebook = layout.secondaryNotebook
+            secondaryFlashcardDeck = layout.secondaryDeck
+            primaryShowsWeb = layout.primaryShowsWeb
+            secondaryShowsWeb = layout.secondaryShowsWeb
+            primaryShowsAIChat = layout.primaryShowsAIChat
+            secondaryShowsAIChat = layout.secondaryShowsAIChat
+            primaryChatTarget = layout.primaryChatTarget
+            secondaryChatTarget = layout.secondaryChatTarget
+            primaryTemporaryChatMaterial = layout.primaryMaterial
+            secondaryTemporaryChatMaterial = layout.secondaryMaterial
+            aiSwapPane = layout.aiSwapPane
+        }
     }
 
     private var isAIChatVisibleInSplit: Bool {
@@ -5535,6 +5634,68 @@ private enum SplitMode: Equatable {
         case .horizontal: "rectangle.split.2x1"
         case .vertical: "rectangle.split.1x2"
         }
+    }
+}
+
+/// Which material each pane shows and how the screen is split. Undo and redo
+/// move between these, so splitting, closing a split and swapping a pane's
+/// material are steps in the same history as drawing.
+private struct PaneLayout {
+    var splitMode: SplitMode
+    var splitRatio: CGFloat
+    var activePane: ActivePane
+    var primaryPageIndex: Int
+    var secondaryPageIndex: Int
+    var primaryNotebook: Notebook?
+    var primaryDeck: FlashcardDeck?
+    var secondaryNotebook: Notebook?
+    var secondaryDeck: FlashcardDeck?
+    var primaryShowsWeb: Bool
+    var secondaryShowsWeb: Bool
+    var primaryShowsAIChat: Bool
+    var secondaryShowsAIChat: Bool
+    var primaryChatTarget: NoteChatTarget?
+    var secondaryChatTarget: NoteChatTarget?
+    var primaryMaterial: TemporaryChatMaterial?
+    var secondaryMaterial: TemporaryChatMaterial?
+    var aiSwapPane: ActivePane?
+
+    /// What counts as a different layout. Dragging the divider or turning a
+    /// page changes the snapshot but is not a step of its own.
+    struct Key: Equatable {
+        var splitMode: SplitMode
+        var primaryNotebook: PersistentIdentifier?
+        var primaryDeck: PersistentIdentifier?
+        var secondaryNotebook: PersistentIdentifier?
+        var secondaryDeck: PersistentIdentifier?
+        var primaryShowsWeb: Bool
+        var secondaryShowsWeb: Bool
+        var primaryShowsAIChat: Bool
+        var secondaryShowsAIChat: Bool
+        var primaryChatTarget: NoteChatTarget?
+        var secondaryChatTarget: NoteChatTarget?
+        var primaryMaterial: String?
+        var secondaryMaterial: String?
+        var aiSwapPane: Bool?
+    }
+
+    var key: Key {
+        Key(
+            splitMode: splitMode,
+            primaryNotebook: primaryNotebook?.persistentModelID,
+            primaryDeck: primaryDeck?.persistentModelID,
+            secondaryNotebook: secondaryNotebook?.persistentModelID,
+            secondaryDeck: secondaryDeck?.persistentModelID,
+            primaryShowsWeb: primaryShowsWeb,
+            secondaryShowsWeb: secondaryShowsWeb,
+            primaryShowsAIChat: primaryShowsAIChat,
+            secondaryShowsAIChat: secondaryShowsAIChat,
+            primaryChatTarget: primaryChatTarget,
+            secondaryChatTarget: secondaryChatTarget,
+            primaryMaterial: primaryMaterial?.id,
+            secondaryMaterial: secondaryMaterial?.id,
+            aiSwapPane: aiSwapPane.map { $0 == .primary }
+        )
     }
 }
 
