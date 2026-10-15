@@ -1,5 +1,5 @@
 import { checkRateLimit } from "./rate-limit.js";
-import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { json, binaryHeaders, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { sendPush } from "./push.js";
 
 /**
@@ -365,7 +365,7 @@ export async function handleGroupRoutes(url, request, env, key, ctx) {
     const bytes = Uint8Array.from(atob(avatar.data), c => c.charCodeAt(0));
     return new Response(bytes, {
       status: 200,
-      headers: { "content-type": avatar.contentType, "cache-control": "private, max-age=60" },
+      headers: binaryHeaders(avatar.contentType, "private, max-age=60"),
     });
   }
 

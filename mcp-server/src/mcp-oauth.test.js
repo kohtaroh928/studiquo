@@ -51,6 +51,9 @@ test("MCP connector pairs through the logged-in iPad, imports by account, and ca
   const challenge = createHash("sha256").update(verifier).digest("base64url");
   const authorize = await fetch(env, `/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&code_challenge_method=S256&code_challenge=${challenge}&state=abc`);
   assert.equal(authorize.status, 200);
+  // The page that shows the pairing code must not be embeddable in another site.
+  assert.match(authorize.headers.get("content-security-policy"), /frame-ancestors 'none'/);
+  assert.equal(authorize.headers.get("x-content-type-options"), "nosniff");
   const page = await authorize.text();
   const pairingCode = page.match(/<code>([A-Z2-9]{12})<\/code>/)?.[1];
   const requestId = page.match(/\/oauth\/status\?id=([a-f0-9]{64})/)?.[1];

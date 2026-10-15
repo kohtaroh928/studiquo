@@ -2235,6 +2235,9 @@ test("a friend can download an uploaded avatar, and sees it reflected in friends
   const downloadResponse = await downloadAvatar(env, bobToken, alice.code);
   assert.equal(downloadResponse.status, 200);
   assert.equal(downloadResponse.headers.get("content-type"), "image/jpeg");
+  // Stored bytes must not be sniffed into another type or run as a page.
+  assert.equal(downloadResponse.headers.get("x-content-type-options"), "nosniff");
+  assert.match(downloadResponse.headers.get("content-security-policy"), /sandbox/);
   assert.equal(Buffer.from(await downloadResponse.arrayBuffer()).toString(), "fake jpeg bytes");
 });
 
@@ -2871,12 +2874,33 @@ test("an attachment uploaded by one friend can be downloaded by the other, with 
   const downloadResponse = await downloadAttachment(env, bobToken, roomID, id);
   assert.equal(downloadResponse.status, 200);
   assert.equal(downloadResponse.headers.get("content-type"), "image/jpeg");
+  assert.equal(downloadResponse.headers.get("x-content-type-options"), "nosniff");
+  assert.match(downloadResponse.headers.get("content-security-policy"), /sandbox/);
+  assert.equal(downloadResponse.headers.get("content-disposition"), "attachment");
   const downloaded = Buffer.from(await downloadResponse.arrayBuffer());
   assert.ok(downloaded.equals(original), "the recipient must get back the exact bytes the sender uploaded");
 
   // The sender can also fetch their own upload back (e.g. after reinstalling).
   const selfDownload = await downloadAttachment(env, aliceToken, roomID, id);
   assert.equal(selfDownload.status, 200);
+});
+
+test("an attachment that claims to be a web page is served as a sandboxed download, not something a browser would run", async () => {
+  const env = environment();
+  const aliceToken = freshToken("z12");
+  const bobToken = freshToken("z13");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const { roomID } = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const upload = await uploadAttachment(env, aliceToken, roomID, "text/html", Buffer.from("<script>alert(1)</script>").toString("base64"));
+  assert.equal(upload.status, 201);
+  const { id } = await upload.json();
+
+  const response = await downloadAttachment(env, bobToken, roomID, id);
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.match(response.headers.get("content-security-policy"), /default-src 'none'; sandbox/);
+  assert.equal(response.headers.get("content-disposition"), "attachment");
 });
 
 test("someone outside the friendship cannot upload to or download from the room", async () => {
