@@ -36,9 +36,11 @@ final class ErrorReportingSettingTests: XCTestCase {
         XCTAssertTrue(gear.waitForExistence(timeout: 10), "ノート画面に設定(歯車)ボタンがありません。")
         gear.tap()
         XCTAssertTrue(app.navigationBars["設定"].waitForExistence(timeout: 10), "設定シートが開きません。")
+        app.openSettingsCategory("privacy")
     }
 
     private func closeGear() {
+        app.leaveSettingsCategory("privacy")
         app.navigationBars["設定"].buttons["完了"].tap()
         XCTAssertFalse(app.navigationBars["設定"].waitForExistence(timeout: 3), "「完了」で設定シートが閉じません。")
     }
