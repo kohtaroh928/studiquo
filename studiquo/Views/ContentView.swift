@@ -2860,6 +2860,14 @@ struct ContentView: View {
             guard let request = notification.object as? FriendAttachmentOpenRequest else { return }
             openFriendAttachment(request.attachment)
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoReplaceSingleMaterial"))) { notification in
+            switch notification.object as? PaneSwitchTarget {
+            case .notebook(let notebook): selectNotebookTab(notebook)
+            case .flashcardDeck(let deck): selectFlashcardTab(deck)
+            case .document(let document): selectTextDocumentTab(document)
+            default: break
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoAddTextDocumentTab"))) { notification in
             guard let document = notification.object as? TextDocument,
                   !openTextDocuments.contains(where: { $0.persistentModelID == document.persistentModelID }) else { return }

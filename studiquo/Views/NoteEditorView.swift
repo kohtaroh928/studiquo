@@ -1204,6 +1204,7 @@ struct NoteEditorView: View {
         switch splitMode {
         case .single:
             primaryPane
+                .overlay(alignment: .topTrailing) { paneReplaceButton(for: .primary) }
 
         case .horizontal, .vertical:
             let isHorizontal = splitMode == .horizontal
@@ -1300,6 +1301,12 @@ struct NoteEditorView: View {
     /// top bar, the same as opening it from the tab picker.
     private func replacePaneMaterial(_ target: PaneSwitchTarget, in pane: ActivePane) {
         paneReplaceTarget = nil
+        // One pane: the home screen owns what is open, so let it switch the
+        // material (and add its tab) the way a tab tap does.
+        if splitMode == .single {
+            NotificationCenter.default.post(name: Notification.Name("StudiquoReplaceSingleMaterial"), object: target)
+            return
+        }
         applyPaneTarget(target, to: pane)
         activePane = pane
         switch target {

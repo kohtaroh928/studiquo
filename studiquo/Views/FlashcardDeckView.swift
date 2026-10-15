@@ -127,7 +127,12 @@ struct FlashcardDeckView: View {
     }
 
     private var study: some View {
-        FlashcardStudyContent(deck: deck, onHome: onHome, startsWithMistakeReview: startsWithMistakeReview)
+        FlashcardStudyContent(
+            deck: deck,
+            onHome: onHome,
+            onExit: { mode = .edit },
+            startsWithMistakeReview: startsWithMistakeReview
+        )
     }
 }
 
@@ -136,6 +141,10 @@ struct FlashcardStudyContent: View {
     @Bindable var deck: FlashcardDeck
     @Query private var allDecks: [FlashcardDeck]
     var onHome: () -> Void = {}
+    /// Called after the results' 終了 button returns to the setup screen, so
+    /// a host with its own first screen (the full-screen deck opens on card
+    /// creation) can go back to it.
+    var onExit: () -> Void = {}
     var startsWithMistakeReview = false
     @State private var phase: Phase = .setup
     @State private var cards: [Flashcard] = []
@@ -405,7 +414,10 @@ struct FlashcardStudyContent: View {
                 }
 
                 VStack(spacing: 12) {
-                    Button("ホームに戻る", systemImage: "house.fill", action: onHome)
+                    Button("終了", systemImage: "xmark.circle.fill") {
+                        phase = .setup
+                        onExit()
+                    }
                         .buttonStyle(.borderedProminent)
                         .tint(.indigo)
                     HStack(spacing: 12) {
