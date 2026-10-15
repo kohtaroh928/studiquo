@@ -479,7 +479,7 @@ test("a token's remaining validity is what is left of its 90 days, never less th
   assert.equal(remainingValiditySeconds(`${Math.floor(now / 1000) + 30 * DAY}.secret`, now), VALIDITY_SECONDS, "a clock running ahead cannot extend it");
 });
 
-test("the snapshot kept under a session expires with that session; the account copy does not", async () => {
+test("the snapshot kept under a session expires with that session; the account copy lasts 90 days after the last sync", async () => {
   const env = environment();
   const session = await signIn(env, "apple:alice", { ageSeconds: 80 * DAY });
 
@@ -493,5 +493,5 @@ test("the snapshot kept under a session expires with that session; the account c
   const accountKey = await sha256Hex("mcp-account:apple:alice");
   const accountCopy = env._puts.find(put => put.key === `snapshot:${accountKey}`);
   assert.ok(accountCopy, "the account-level copy is written");
-  assert.equal(accountCopy.options, undefined, "and lives until the account is deleted");
+  assert.equal(accountCopy.options?.expirationTtl, 90 * DAY, "and is let go 90 days after the last sync");
 });

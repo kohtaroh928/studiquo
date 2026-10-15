@@ -33,6 +33,7 @@ import { isBreachedPassword } from "./pwned-passwords.js";
 import { recordLoginOutcome, noteSignInContext } from "./login-monitor.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readTextLimited, readJSONLimited, securityHeaders } from "./http.js";
+import { sealSnapshot, openSnapshot } from "./snapshot-crypto.js";
 
 function toolResult(value) {
   return {
@@ -41,10 +42,15 @@ function toolResult(value) {
   };
 }
 
+// The account-level snapshot copy (read by connected MCP apps) outlives any
+// session, so it is given its own lifetime: 90 days after the last sync.
+const ACCOUNT_SNAPSHOT_TTL_SECONDS = 90 * 24 * 60 * 60;
+
 async function loadSnapshot(env, key) {
-  const value = await env.STUDIQUO_DATA.get(`snapshot:${key}`, "json");
-  if (!value) throw new Error("No Studiquo data has been synced for this account yet.");
-  return value;
+  const storageKey = `snapshot:${key}`;
+  const text = await openSnapshot(env, storageKey, await env.STUDIQUO_DATA.get(storageKey));
+  if (!text) throw new Error("No Studiquo data has been synced for this account yet.");
+  return JSON.parse(text);
 }
 
 async function queueAction(env, key, action, ttlSeconds = null) {
@@ -413,10 +419,19 @@ export default {
           return json({ error: "Invalid Studiquo snapshot." }, 400);
         }
         // Under the token's hash, so it expires with the token's session. The
-        // account-level copy below has no expiry: it lives until the account
-        // is deleted.
-        await env.STUDIQUO_DATA.put(`snapshot:${key}`, body, { expirationTtl: remainingValiditySeconds(token) });
-        if (accountHash) await env.STUDIQUO_DATA.put(`snapshot:${accountHash}`, body);
+        // account-level copy below lives 90 days past the last sync (or until
+        // the account is deleted).
+        // Each copy is sealed under its own key name, so one cannot be moved
+        // to another key and still open (see snapshot-crypto.js).
+        try {
+          await env.STUDIQUO_DATA.put(`snapshot:${key}`, await sealSnapshot(env, `snapshot:${key}`, body), { expirationTtl: remainingValiditySeconds(token) });
+          // Re-written on every sync, so this only lets go of the copy of an
+          // account that has stopped syncing.
+          if (accountHash) await env.STUDIQUO_DATA.put(`snapshot:${accountHash}`, await sealSnapshot(env, `snapshot:${accountHash}`, body), { expirationTtl: ACCOUNT_SNAPSHOT_TTL_SECONDS });
+        } catch (error) {
+          console.error(JSON.stringify({ message: "snapshot could not be stored", error: error instanceof Error ? error.message : String(error) }));
+          return json({ error: "The snapshot could not be stored." }, 503);
+        }
         return json({ synced: true, exportedAt: parsed.exportedAt });
       }
 
