@@ -176,7 +176,7 @@ export async function handleMCPOAuth(url, request, env) {
     }), { expirationTtl: AUTH_TTL });
     await env.STUDIQUO_DATA.put(`mcp:pair:${code}`, id, { expirationTtl: AUTH_TTL });
     const page = `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>studiquoに接続</title><style>body{font:18px system-ui;max-width:32rem;margin:3rem auto;padding:1rem;line-height:1.6}code{font-size:2rem;letter-spacing:.2em}small{color:#555}</style><h1>studiquoに接続</h1><p>${htmlEscape(client.clientName)}が資料の参照と作成を求めています。</p><p>studiquoアプリの「MCPクラウド連携」で次のコードを入力し、接続を許可してください。</p><p><code>${code}</code></p><small>この画面を開いたままにしてください。コードは10分で期限切れになります。</small><p id="status"></p><script>setInterval(async()=>{try{let r=await fetch('/oauth/status?id=${id}',{cache:'no-store'});let x=await r.json();if(x.redirect){location.assign(x.redirect)}else if(x.status==='expired'){document.getElementById('status').textContent='期限が切れました。接続をやり直してください。'}}catch{}},2000)</script></html>`;
-    return new Response(page, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; style-src 'unsafe-inline'" } });
+    return new Response(page, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });
   }
   if (url.pathname === "/oauth/status" && request.method === "GET") {
     const id = url.searchParams.get("id") ?? "";
