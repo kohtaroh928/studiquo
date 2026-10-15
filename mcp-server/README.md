@@ -110,6 +110,16 @@ Bundle IDに対応する`APNS_TOPIC`は`wrangler.jsonc`で
 `com.yabuko.studiquo`に設定済みです。秘密鍵はコードや設定ファイルへ
 直接書き込まないでください。
 
+### スナップショットの暗号化
+
+MCPが読む同期データ(ノートのOCR文字、暗記カード、予定)をKVに保存する前にAES-256-GCMで暗号化します。鍵を設定してからデプロイしてください。鍵が無いと平文のまま保存されます(`SNAPSHOT_ENCRYPTION_REQUIRED=true`にすると、鍵が無い間は同期を拒否します)。
+
+```bash
+openssl rand -base64 32 | npx wrangler secret put SNAPSHOT_ENCRYPTION_KEY
+```
+
+鍵を失うと保存済みの写しは読めなくなりますが、アプリで再同期すれば復旧します。鍵を替えるときは、現在の鍵を`SNAPSHOT_ENCRYPTION_KEY_OLD`(`SNAPSHOT_ENCRYPTION_KEY_OLD_ID`に旧ID)へ移し、新しい鍵を`SNAPSHOT_ENCRYPTION_KEY`(`SNAPSHOT_ENCRYPTION_KEY_ID`に新ID)へ入れます。
+
 ## 開発
 
 ```bash
