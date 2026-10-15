@@ -46,34 +46,35 @@ final class HomeMoreTabTests: XCTestCase {
 
     func testEverySettingsAreaIsReachableFromMore() {
         openMore()
-        let labels = [
-            "ログアウト",
-            "プランとお支払い",
-            "勉強時間を記録する",
-            "通知",
-            "左利きモード",
-            "翌日復習を作成する",
-            "エラー情報を自動送信",
-            "プライバシーポリシーを見る",
-            "カレンダー連携(Google・大学)",
-            "MCPクラウド連携(Claude・ChatGPT)",
-            "ゴミ箱",
-            "バックアップを復元",
-            "自動バックアップを復元",
-            "MCP連携データを書き出す",
-            "MCPの変更を読み込む",
-            "フレンド設定",
-            "問題を報告",
-            "バージョン",
+        let categories: [(id: String, labels: [String])] = [
+            ("account", ["ログアウト", "プランとお支払い"]),
+            ("study", ["勉強時間を記録する", "左利きモード", "翌日復習を作成する"]),
+            ("notifications", ["通知"]),
+            ("data", [
+                "カレンダー連携(Google・大学)",
+                "MCPクラウド連携(Claude・ChatGPT)",
+                "ゴミ箱",
+                "バックアップを復元",
+                "自動バックアップを復元",
+                "MCP連携データを書き出す",
+                "MCPの変更を読み込む",
+            ]),
+            ("privacy", ["エラー情報を自動送信", "プライバシーポリシーを見る", "フレンド設定"]),
+            ("app", ["問題を報告", "バージョン"]),
         ]
-        for label in labels {
-            let element = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
-            scrollTo(element)
+        for category in categories {
+            app.openSettingsCategory(category.id)
+            for label in category.labels {
+                let element = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
+                scrollTo(element)
+            }
+            app.leaveSettingsCategory(category.id)
         }
     }
 
     func testCalendarConnectionRowOpensTheCalendarConnectionSheet() {
         openMore()
+        app.openSettingsCategory("data")
         scrollTo(app.buttons["カレンダー連携(Google・大学)"]).tap()
         XCTAssertTrue(
             app.navigationBars["カレンダー連携"].waitForExistence(timeout: 10),
@@ -83,13 +84,15 @@ final class HomeMoreTabTests: XCTestCase {
 
     func testTrashRowLeavesTheMoreTab() {
         openMore()
+        app.openSettingsCategory("data")
         scrollTo(app.buttons["ゴミ箱"]).tap()
-        XCTAssertFalse(app.navigationBars["その他"].waitForExistence(timeout: 3), "ゴミ箱を押したらノート画面(ゴミ箱)へ移動する必要があります。")
+        XCTAssertFalse(app.navigationBars[SettingsCategoryUI.titles["data"]!].waitForExistence(timeout: 3), "ゴミ箱を押したらノート画面(ゴミ箱)へ移動する必要があります。")
     }
 
     /// The row has to land on the trash itself, not just anywhere outside その他.
     func testTrashRowShowsTheTrash() {
         openMore()
+        app.openSettingsCategory("data")
         scrollTo(app.buttons["ゴミ箱"]).tap()
         XCTAssertTrue(
             app.navigationBars["ゴミ箱"].waitForExistence(timeout: 10),
@@ -109,6 +112,7 @@ final class HomeMoreTabTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Target"].waitForExistence(timeout: 10), "フォルダを開けません。")
 
         openMore()
+        app.openSettingsCategory("data")
         scrollTo(app.buttons["ゴミ箱"]).tap()
         XCTAssertTrue(app.navigationBars["ゴミ箱"].waitForExistence(timeout: 10), "ゴミ箱の表示になりません。")
         XCTAssertFalse(
@@ -121,12 +125,14 @@ final class HomeMoreTabTests: XCTestCase {
     /// and coming back to the calendar later must not reopen it.
     func testCalendarConnectionSheetDoesNotReopenAfterBeingClosed() {
         openMore()
+        app.openSettingsCategory("data")
         scrollTo(app.buttons["カレンダー連携(Google・大学)"]).tap()
         let sheetBar = app.navigationBars["カレンダー連携"]
         XCTAssertTrue(sheetBar.waitForExistence(timeout: 10), "連携設定が開きません。")
 
         sheetBar.buttons["完了"].tap()
         XCTAssertTrue(sheetBar.waitForNonExistence(timeout: 10), "完了を押しても連携設定が閉じません。")
+        app.leaveSettingsCategory("data")
 
         app.buttons["home-tab-notes"].tap()
         app.buttons["home-tab-calendar"].tap()
@@ -143,6 +149,7 @@ final class HomeMoreTabTests: XCTestCase {
         XCTAssertFalse(app.navigationBars["カレンダー連携"].waitForExistence(timeout: 2), "カレンダータブを開いただけで連携設定が開いています。")
 
         openMore()
+        app.openSettingsCategory("data")
         scrollTo(app.buttons["カレンダー連携(Google・大学)"]).tap()
         XCTAssertTrue(
             app.navigationBars["カレンダー連携"].waitForExistence(timeout: 10),

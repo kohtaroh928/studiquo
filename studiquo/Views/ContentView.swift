@@ -657,13 +657,63 @@ private struct AppSettingsView: View {
     }
 }
 
-/// The settings form itself, shared by the gear's sheet (`AppSettingsView`)
-/// and the その他 tab (`MoreHomeView`) so the two can never drift apart.
-/// `leading`/`trailing` let the tab add its own sections around the shared
-/// ones; account deletion always stays last.
-private struct AppSettingsForm<Leading: View, Trailing: View>: View {
-    private let leading: Leading
-    private let trailing: Trailing
+/// What the その他 tab adds to the shared settings, grouped by the category
+/// it belongs to. Each category's own settings come first, then these rows.
+struct SettingsExtras {
+    var account = AnyView(EmptyView())
+    var notifications = AnyView(EmptyView())
+    var data = AnyView(EmptyView())
+    var privacy = AnyView(EmptyView())
+    var app = AnyView(EmptyView())
+}
+
+/// The coarse groups the settings list shows first; each opens its own form.
+private enum SettingsCategory: String, CaseIterable, Identifiable {
+    case account, study, notifications, data, privacy, app
+
+    var id: String { rawValue }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .account: "アカウント"
+        case .study: "学習・ノート"
+        case .notifications: "通知・お知らせ"
+        case .data: "データ・連携"
+        case .privacy: "フレンド・プライバシー"
+        case .app: "言語・サポート"
+        }
+    }
+
+    var summary: LocalizedStringKey {
+        switch self {
+        case .account: "プロフィール・プラン・ログアウト・アカウント削除"
+        case .study: "勉強時間・左利きモード・ペンの補正・PDF・AIトーク"
+        case .notifications: "お知らせ・通知の設定"
+        case .data: "iCloud同期・バックアップ・ゴミ箱・外部サービス連携"
+        case .privacy: "フレンド設定・データ送信・規約・診断"
+        case .app: "言語・問題の報告・バージョン"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .account: "person.crop.circle"
+        case .study: "pencil.and.outline"
+        case .notifications: "bell"
+        case .data: "externaldrive"
+        case .privacy: "lock.shield"
+        case .app: "globe"
+        }
+    }
+}
+
+/// The settings list shared by the gear's sheet (`AppSettingsView`) and the
+/// その他 tab (`MoreHomeView`) so the two can never drift apart. It shows
+/// the categories only; each opens a form with that category's settings.
+/// `extras` lets the tab add its own rows inside the matching categories;
+/// account deletion always stays last in アカウント.
+private struct AppSettingsForm: View {
+    private let extras: SettingsExtras
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.system.rawValue
     @AppStorage("studyTimeTrackingEnabled") private var studyTimeTrackingEnabled = true
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
@@ -683,15 +733,53 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
     @State private var showsAccountDeletion = false
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
 
-    init(@ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
-        self.leading = leading()
-        self.trailing = trailing()
+    init(extras: SettingsExtras = SettingsExtras()) {
+        self.extras = extras
     }
 
     var body: some View {
-        Form {
-            leading
+        List {
+            Section {
+                ForEach(SettingsCategory.allCases) { category in
+                    NavigationLink {
+                        categoryForm(category)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(category.title)
+                                Text(category.summary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: category.icon)
+                        }
+                    }
+                    .accessibilityIdentifier("settings-category-\(category.rawValue)")
+                }
+            }
+        }
+    }
 
+    private func categoryForm(_ category: SettingsCategory) -> some View {
+        Form {
+            switch category {
+            case .account: accountSections
+            case .study: studySections
+            case .notifications: notificationSections
+            case .data: dataSections
+            case .privacy: privacySections
+            case .app: appSections
+            }
+        }
+        .navigationTitle(category.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .modifier(settingsSheets)
+    }
+
+    @ViewBuilder
+    private var accountSections: some View {
+        extras.account
             Section {
                 Button {
                     showsSubscriptionPlans = true
@@ -709,38 +797,24 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
                 Text("Plus・Proへの変更や購入履歴の復元ができます。")
             }
 
+
             Section {
-                Picker("言語", selection: $appLanguage) {
-                    ForEach(AppLanguage.allCases) { language in
-                        Text(language.title).tag(language.rawValue)
-                    }
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-                // Push broadcasts are written in the language registered here.
-                .onChange(of: appLanguage) { _, _ in AppNotificationPreferences.synchronizeRemoteDevice() }
+                Button(AccountDeletionUI.accountButtonTitle, role: .destructive) { showsAccountDeletion = true }
             } header: {
-                Text("言語")
+                Text("アカウント")
             } footer: {
-                Text("選んだ言語はすぐに反映されます。")
+                Text("すべての資料、フレンド、グループ、チャット履歴、ログイン情報が完全に削除されます。")
             }
+    }
 
-            ICloudSyncSettingsSection()
-
+    @ViewBuilder
+    private var studySections: some View {
             Section {
                 Toggle("勉強時間を記録する", isOn: $studyTimeTrackingEnabled)
             } header: {
                 Text("学習記録")
             } footer: {
                 Text("ノート・暗記帳・文書を開いている間の時間だけを記録します。オフにすると勉強時間と連続学習日数の記録を止めます。")
-            }
-
-            Section {
-                NotificationSettingsLink()
-            } header: {
-                Text("通知")
-            } footer: {
-                Text("予定、チャット、招待、復習、AI処理などの通知を個別に設定できます。")
             }
 
             Section {
@@ -782,7 +856,29 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
             } footer: {
                 Text("オンにすると、AIトークで質問するたびに復習する価値があるか判定し、翌日に読める解説と確認クイズを自動で作成して通知します。オフにするとこの自動判定・作成は行われません。")
             }
+    }
 
+    @ViewBuilder
+    private var notificationSections: some View {
+        extras.notifications
+            Section {
+                NotificationSettingsLink()
+            } header: {
+                Text("通知")
+            } footer: {
+                Text("予定、チャット、招待、復習、AI処理などの通知を個別に設定できます。")
+            }
+    }
+
+    @ViewBuilder
+    private var dataSections: some View {
+        ICloudSyncSettingsSection()
+        extras.data
+    }
+
+    @ViewBuilder
+    private var privacySections: some View {
+        extras.privacy
             Section {
                 Button("AI機能とデータ送信について") { showsAIDataDisclosure = true }
                 Button("プライバシーポリシーを見る") { showsPrivacyPolicy = true }
@@ -800,49 +896,76 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
             } footer: {
                 Text("アプリが止まったときや不具合が起きたときに、エラーの種類・発生した箇所・アプリや端末のバージョンを開発者へ自動で送信します。ノートやチャットの内容は含まれません。")
             }
+    }
 
-            trailing
-
+    @ViewBuilder
+    private var appSections: some View {
             Section {
-                Button(AccountDeletionUI.accountButtonTitle, role: .destructive) { showsAccountDeletion = true }
+                Picker("言語", selection: $appLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.title).tag(language.rawValue)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+                // Push broadcasts are written in the language registered here.
+                .onChange(of: appLanguage) { _, _ in AppNotificationPreferences.synchronizeRemoteDevice() }
             } header: {
-                Text("アカウント")
+                Text("言語")
             } footer: {
-                Text("すべての資料、フレンド、グループ、チャット履歴、ログイン情報が完全に削除されます。")
+                Text("選んだ言語はすぐに反映されます。")
             }
-        }
-        .sheet(isPresented: $showsAIDataDisclosure) {
-            AIDataDisclosureView(onAcknowledge: {
-                AIDataDisclosure.acknowledge()
-                showsAIDataDisclosure = false
-            }, onDecline: {
-                AIDataDisclosure.revoke()
-                showsAIDataDisclosure = false
-            })
-        }
-        .sheet(isPresented: $showsPrivacyPolicy) {
-            PrivacyPolicyView()
-        }
-        .sheet(isPresented: $showsTermsOfUse) {
-            TermsOfUseView()
-        }
-        .sheet(isPresented: $showsSubscriptionPlans) {
-            SubscriptionPlansView()
-        }
-        .sheet(isPresented: $showsAccountDeletion) {
-            DeleteAccountView()
-        }
+        extras.app
+    }
+
+    private var settingsSheets: some ViewModifier {
+        SettingsSheets(
+            showsAIDataDisclosure: $showsAIDataDisclosure,
+            showsPrivacyPolicy: $showsPrivacyPolicy,
+            showsTermsOfUse: $showsTermsOfUse,
+            showsSubscriptionPlans: $showsSubscriptionPlans,
+            showsAccountDeletion: $showsAccountDeletion
+        )
     }
 }
 
-extension AppSettingsForm where Leading == EmptyView, Trailing == EmptyView {
-    init() {
-        self.init(leading: { EmptyView() }, trailing: { EmptyView() })
+/// The sheets the settings rows open, kept out of the form so they are
+/// attached to whichever category form is on screen.
+private struct SettingsSheets: ViewModifier {
+    @Binding var showsAIDataDisclosure: Bool
+    @Binding var showsPrivacyPolicy: Bool
+    @Binding var showsTermsOfUse: Bool
+    @Binding var showsSubscriptionPlans: Bool
+    @Binding var showsAccountDeletion: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $showsAIDataDisclosure) {
+                AIDataDisclosureView(onAcknowledge: {
+                    AIDataDisclosure.acknowledge()
+                    showsAIDataDisclosure = false
+                }, onDecline: {
+                    AIDataDisclosure.revoke()
+                    showsAIDataDisclosure = false
+                })
+            }
+            .sheet(isPresented: $showsPrivacyPolicy) {
+                PrivacyPolicyView()
+            }
+            .sheet(isPresented: $showsTermsOfUse) {
+                TermsOfUseView()
+            }
+            .sheet(isPresented: $showsSubscriptionPlans) {
+                SubscriptionPlansView()
+            }
+            .sheet(isPresented: $showsAccountDeletion) {
+                DeleteAccountView()
+            }
     }
 }
 
-/// The その他 tab. Everything the app lets the student configure, in one
-/// scrolling list: the shared settings (`AppSettingsForm`) plus the things
+/// The その他 tab. Everything the app lets the student configure, grouped by
+/// category: the shared settings (`AppSettingsForm`) plus the things
 /// that used to be scattered — profile/logout, calendar and MCP
 /// connections, backups and trash (previously the "+" menu's lower half),
 /// friend privacy, and support. It sits inside `ContentView`'s own
@@ -874,18 +997,16 @@ private struct MoreHomeView: View {
     }
 
     var body: some View {
-        AppSettingsForm(
-            leading: {
-                announcementSection
-                accountSection
-            },
-            trailing: {
+        AppSettingsForm(extras: SettingsExtras(
+            account: AnyView(accountSection),
+            notifications: AnyView(announcementSection),
+            data: AnyView(Group {
                 integrationSection
                 dataSection
-                friendSection
-                supportSection
-            }
-        )
+            }),
+            privacy: AnyView(friendSection),
+            app: AnyView(supportSection)
+        ))
         .navigationTitle(Text("home.more.title"))
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showsAnnouncements) {
