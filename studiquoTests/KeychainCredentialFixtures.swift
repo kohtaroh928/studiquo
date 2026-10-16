@@ -1,5 +1,6 @@
 import Security
 import XCTest
+@testable import studiquo
 
 /// Shared Keychain test fixture for tests that need an `AuthenticationStore`
 /// that's already signed in, without driving a real (network-dependent)

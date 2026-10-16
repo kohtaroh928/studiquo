@@ -231,6 +231,10 @@ struct NoteEditorView: View {
     @Bindable var notebook: Notebook
     @Binding var columnVisibility: NavigationSplitViewVisibility
     var onHome: () -> Void
+    /// Set when a deck, not a note, was opened from Home: the editor starts
+    /// with the deck in its primary pane so the note toolbar sits above it.
+    var initialFlashcardDeck: FlashcardDeck?
+    var initialFlashcardStartsWithMistakeReview = false
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var notebooks: [Notebook]
     @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
     @Query(sort: \TextDocument.updatedAt, order: .reverse) private var textDocuments: [TextDocument]
@@ -297,6 +301,11 @@ struct NoteEditorView: View {
     /// brings it back untouched. Floating `showsTemporaryAIChat` is the opt-in
     /// alternative; the two are never shown together.
     @State private var aiSwapPane: ActivePane?
+    /// In a two-pane layout, opening a chat must not silently evict the pane
+    /// the student was using. Keep the choice explicit for both AI and
+    /// friend/group chats.
+    @State private var showsAIChatPanePicker = false
+    @State private var pendingChatPaneTarget: NoteChatTarget?
     /// Last floating-panel frame as fractions of the editor, so the panel
     /// reopens where it was left, also after the editor is closed and reopened.
     /// Negative means nothing saved yet.
@@ -529,6 +538,13 @@ struct NoteEditorView: View {
         } message: {
             Text("ホーム画面のゴミ箱から復元できます。")
         }
+        .modifier(PaneChoiceDialogModifier(
+            showsAIChatPicker: $showsAIChatPanePicker,
+            pendingChatTarget: $pendingChatPaneTarget,
+            titleForPane: splitPaneTitle,
+            showAIChat: swapInAIChat(in:),
+            showChat: openChat(_:in:)
+        ))
         .sheet(
             isPresented: Binding(
                 get: { notebookPendingNewPage != nil },
@@ -564,21 +580,19 @@ struct NoteEditorView: View {
                 }
             )
         }
-        .fullScreenCover(isPresented: $showsImagePicker) {
-            FullScreenPhotoPicker { data in
+        .sheet(isPresented: $showsImagePicker) {
+            PhotoPickerSheet { data in
                 showsImagePicker = false
                 guard let data else { return }
                 Task { await addImageElement(from: data) }
             }
-            .ignoresSafeArea()
         }
-        .fullScreenCover(isPresented: $showsBackgroundImagePicker) {
-            FullScreenPhotoPicker { data in
+        .sheet(isPresented: $showsBackgroundImagePicker) {
+            PhotoPickerSheet { data in
                 showsBackgroundImagePicker = false
                 guard let data else { return }
                 Task { await applyBackgroundImage(from: data) }
             }
-            .ignoresSafeArea()
         }
         .onChange(of: notebook.sortedPages.count) { _, count in
             primaryPageIndex = clamped(primaryPageIndex, pageCount: count)
@@ -607,6 +621,9 @@ struct NoteEditorView: View {
             splitState.isSplit = splitMode != .single
             aiChat.loadThreads()
             lastPaneLayout = currentPaneLayout
+            if primaryFlashcardDeck == nil, let initialFlashcardDeck {
+                primaryFlashcardDeck = initialFlashcardDeck
+            }
         }
         .onChange(of: splitMode) { _, mode in splitState.isSplit = mode != .single }
         .onChange(of: currentPaneLayout.key) { _, _ in recordPaneLayoutChange() }
@@ -1473,7 +1490,12 @@ struct NoteEditorView: View {
                 )
                 .id("note-group-\(primaryGroup.roomID)")
             } else if let primaryFlashcardDeck {
-                FlashcardPaneView(deck: primaryFlashcardDeck, onHome: onHome)
+                FlashcardPaneView(
+                    deck: primaryFlashcardDeck,
+                    onHome: onHome,
+                    startsWithMistakeReview: primaryFlashcardDeck === initialFlashcardDeck && initialFlashcardStartsWithMistakeReview
+                )
+                .simultaneousGesture(TapGesture().onEnded { activePane = .primary })
             } else {
                 GeometryReader { geometry in
                     ZStack {
@@ -2005,9 +2027,11 @@ struct NoteEditorView: View {
                 toolStripButton("元に戻す", icon: "arrow.uturn.backward") {
                     postDrawingHistoryRequest(.studiquoUndoDrawing)
                 }
+                .disabled(!activePaneShowsNote)
                 toolStripButton("やり直す", icon: "arrow.uturn.forward") {
                     postDrawingHistoryRequest(.studiquoRedoDrawing)
                 }
+                .disabled(!activePaneShowsNote)
                 toolStripButton("AIトーク", icon: "sparkles", isActive: primaryShowsAIChat || secondaryShowsAIChat || showsTemporaryAIChat || aiSwapPane != nil) {
                     presentAIChat()
                 }
@@ -2044,14 +2068,14 @@ struct NoteEditorView: View {
                         }
                     )
                 }
-                toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode, action: selectPen)
-                    .disabled(primaryFlashcardDeck != nil)
-                toolStripButton("消しゴム", icon: "eraser", isActive: drawingTool == .eraser && !isReadOnlyMode, action: selectEraser)
-                    .disabled(primaryFlashcardDeck != nil)
-                toolStripButton("選択", icon: "lasso", isActive: drawingTool == .lasso && !isReadOnlyMode, action: selectLasso)
-                    .disabled(primaryFlashcardDeck != nil)
-                toolStripButton("切り抜き", icon: "rectangle.dashed", isActive: drawingTool == .snip && !isReadOnlyMode, action: selectSnip)
-                    .disabled(primaryFlashcardDeck != nil)
+                toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode && activePaneShowsNote, action: selectPen)
+                    .disabled(!activePaneShowsNote)
+                toolStripButton("消しゴム", icon: "eraser", isActive: drawingTool == .eraser && !isReadOnlyMode && activePaneShowsNote, action: selectEraser)
+                    .disabled(!activePaneShowsNote)
+                toolStripButton("選択", icon: "lasso", isActive: drawingTool == .lasso && !isReadOnlyMode && activePaneShowsNote, action: selectLasso)
+                    .disabled(!activePaneShowsNote)
+                toolStripButton("切り抜き", icon: "rectangle.dashed", isActive: drawingTool == .snip && !isReadOnlyMode && activePaneShowsNote, action: selectSnip)
+                    .disabled(!activePaneShowsNote)
                     .accessibilityIdentifier("note-snip-toolbar-button")
                 toolStripButton("時間", icon: "timer") {
                     showsTimeTool = true
@@ -2082,18 +2106,24 @@ struct NoteEditorView: View {
                         Button { addShapeElement(kind) } label: { Label(kind.title, systemImage: kind.icon) }
                     }
                     Button { addShapeElement(.studyTape) } label: { Label("暗記テープ", systemImage: "rectangle.fill") }
-                } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "") }
+                } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "" && activePaneShowsNote) }
+                .disabled(!activePaneShowsNote)
 
                 toolStripButton("テキスト", icon: "textformat", action: addTextElement)
+                    .disabled(!activePaneShowsNote)
                 toolStripButton("写真", icon: "photo") { showsImagePicker = true }
+                    .disabled(!activePaneShowsNote)
                 if Self.showsDarkPageToggle {
                     toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
+                        .disabled(!activePaneShowsNote)
                 }
                 toolStripButton(
                     "用紙",
                     icon: "doc.text.image",
-                    isActive: currentPrimaryPage?.pageTemplate != .blank || currentPrimaryPage?.paperColorHex != "#FFFFFF"
+                    isActive: activePaneShowsNote
+                        && (currentPrimaryPage?.pageTemplate != .blank || currentPrimaryPage?.paperColorHex != "#FFFFFF")
                 ) { showsPageTemplatePicker = true }
+                .disabled(!activePaneShowsNote)
 
                 Menu {
                     Button("1画面", systemImage: "rectangle") { collapseSplit() }
@@ -2170,10 +2200,7 @@ struct NoteEditorView: View {
                         notebookPendingTrash = activeNotebook
                     }
                 } label: { toolStripLabel("削除", icon: "trash") }
-                .disabled(
-                    (activePane == .primary && primaryFlashcardDeck != nil)
-                        || (activePane == .secondary && secondaryFlashcardDeck != nil)
-                )
+                .disabled(!activePaneShowsNote)
 
                 // Targets whichever pane was last touched, so in a split the
                 // page lands in the note the user was actually working in
@@ -2181,13 +2208,14 @@ struct NoteEditorView: View {
                 toolStripButton("ページ追加", icon: "plus.rectangle.on.rectangle") {
                     requestPageAddition(to: activeNotebook)
                 }
-                    .disabled(activePaneShowsFlashcards)
+                    .disabled(!activePaneShowsNote)
 
                 Menu {
                     Button("全ページ", systemImage: "doc.on.doc") { exportAllPagesAsPDF() }
                     Button("このページ", systemImage: "doc") { exportCurrentPageAsPDF() }
                         .disabled(activePage == nil)
                 } label: { toolStripLabel("PDF出力", icon: "square.and.arrow.down.on.square") }
+                .disabled(!activePaneShowsNote)
             }
             .padding(.horizontal, 14)
             .frame(height: 52)
@@ -2229,6 +2257,7 @@ struct NoteEditorView: View {
             .frame(width: 34, height: 34)
             .background(toolChipBackground(cornerRadius: 8, isActive: isActive))
             .contentShape(Rectangle())
+            .modifier(DimsWhenDisabled())
             .accessibilityLabel(title)
             .accessibilityAddTraits(isActive ? .isSelected : [])
     }
@@ -2381,26 +2410,58 @@ struct NoteEditorView: View {
     private func openChat(_ target: NoteChatTarget) {
         guard allowsWindowSplit else { return }
         dismissPhotoStudy(restorePreviousLayout: false)
-        switch NoteChatSplitPolicy.action(
+        if splitMode != .single,
+           primaryChatTarget != target,
+           secondaryChatTarget != target {
+            pendingChatPaneTarget = target
+            return
+        }
+        let action = NoteChatSplitPolicy.action(
             forTapping: target,
             primaryTarget: primaryChatTarget,
             secondaryTarget: secondaryChatTarget
-        ) {
+        )
+        switch action {
         case .collapse:
             collapseSplit()
             return
         case .openInPrimary:
-            primaryChatTarget = target
+            performPaneTransition {
+                primaryChatTarget = target
+                splitMode = isPortraitLayout ? .vertical : .horizontal
+                splitRatio = 0.5
+                activePane = .primary
+            }
         case .openInSecondary:
-            secondaryNotebook = nil
-            secondaryFlashcardDeck = nil
-            secondaryShowsWeb = false
-            secondaryShowsAIChat = false
-            secondaryChatTarget = target
+            performPaneTransition {
+                secondaryNotebook = nil
+                secondaryFlashcardDeck = nil
+                secondaryShowsWeb = false
+                secondaryShowsAIChat = false
+                secondaryChatTarget = target
+                splitMode = isPortraitLayout ? .vertical : .horizontal
+                splitRatio = 0.5
+                activePane = .primary
+            }
         }
-        splitMode = isPortraitLayout ? .vertical : .horizontal
-        splitRatio = 0.5
-        activePane = .primary
+    }
+
+    private func openChat(_ target: NoteChatTarget, in pane: ActivePane) {
+        pendingChatPaneTarget = nil
+        dismissPhotoStudy(restorePreviousLayout: false)
+        performPaneTransition {
+            applyPaneTarget(chatPaneSwitchTarget(for: target), to: pane)
+            splitMode = isPortraitLayout ? .vertical : .horizontal
+            splitRatio = 0.5
+            activePane = pane
+        }
+    }
+
+    private func chatPaneSwitchTarget(for target: NoteChatTarget) -> PaneSwitchTarget {
+        switch target {
+        case .friend(let id): return .friend(id)
+        case .group(let roomID): return .group(roomID)
+        }
     }
 
     /// Brings a conversation to the front, opening the chat pane if the
@@ -2445,19 +2506,26 @@ struct NoteEditorView: View {
         }
     }
 
-    /// Shows the chat in the pane opposite `activePane`, leaving that pane's
-    /// own content in state so it returns when the chat is closed.
+    /// In a split layout, asks which pane may be temporarily replaced. Its
+    /// original content remains in state and returns when the chat closes.
     private func swapInAIChat() {
         guard splitMode != .single else {
             presentTemporaryAIChat()
             return
         }
+        showsAIChatPanePicker = true
+    }
+
+    private func swapInAIChat(in pane: ActivePane) {
+        showsAIChatPanePicker = false
         aiChat.loadThreads()
         aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
         if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
-        dismissPhotoStudy(restorePreviousLayout: false)
-        showsTemporaryAIChat = false
-        aiSwapPane = activePane == .primary ? .secondary : .primary
+        performPaneTransition {
+            dismissPhotoStudy(restorePreviousLayout: false)
+            showsTemporaryAIChat = false
+            aiSwapPane = pane
+        }
     }
 
     /// Moves a swapped-in chat out into the floating panel; the pane it
@@ -2487,16 +2555,18 @@ struct NoteEditorView: View {
         }
         aiChat.loadThreads()
         aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
+        performPaneTransition {
+            showsTemporaryAIChat = false
+            secondaryNotebook = nil
+            secondaryFlashcardDeck = nil
+            secondaryShowsWeb = false
+            secondaryShowsAIChat = true
+            secondaryChatTarget = nil
+            splitMode = isPortraitLayout ? .vertical : .horizontal
+            splitRatio = 0.5
+            activePane = .primary
+        }
         if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
-        showsTemporaryAIChat = false
-        secondaryNotebook = nil
-        secondaryFlashcardDeck = nil
-        secondaryShowsWeb = false
-        secondaryShowsAIChat = true
-        secondaryChatTarget = nil
-        splitMode = isPortraitLayout ? .vertical : .horizontal
-        splitRatio = 0.5
-        activePane = .primary
     }
 
     private var currentPaneLayout: PaneLayout {
@@ -2579,6 +2649,15 @@ struct NoteEditorView: View {
             secondaryTemporaryChatMaterial = layout.secondaryMaterial
             aiSwapPane = layout.aiSwapPane
         }
+    }
+
+    /// A pane change replaces several independent view states. Applying them
+    /// in one non-animated transaction prevents an intermediate frame where
+    /// the drawing tools from the old pane and the new chat tools overlap.
+    private func performPaneTransition(_ changes: () -> Void) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction, changes)
     }
 
     private var isAIChatVisibleInSplit: Bool {
@@ -3607,6 +3686,28 @@ struct NoteEditorView: View {
         activePane == .secondary ? secondaryFlashcardDeck != nil : primaryFlashcardDeck != nil
     }
 
+    /// True when the pane the user last touched is a note or PDF. The page
+    /// tools (pen, shapes, paper, add/delete page, PDF export...) act on that
+    /// note's page, so they stay disabled over a deck, the web, a chat, and so on.
+    private var activePaneShowsNote: Bool {
+        if activePane == .secondary {
+            return splitMode != .single
+                && secondaryNotebook != nil
+                && secondaryFlashcardDeck == nil
+                && !secondaryShowsWeb
+                && !secondaryShowsAIChat
+                && photoStudyPane != .secondary
+                && aiSwapPane != .secondary
+        }
+        return primaryFlashcardDeck == nil
+            && !primaryShowsWeb
+            && !primaryShowsAIChat
+            && primaryChatTarget == nil
+            && primaryTemporaryChatMaterial == nil
+            && photoStudyPane != .primary
+            && aiSwapPane != .primary
+    }
+
     private var activePageIndexBinding: Binding<Int> {
         activePane == .secondary ? $secondaryPageIndex : $primaryPageIndex
     }
@@ -3844,6 +3945,12 @@ struct NoteEditorView: View {
     }
 
     private var currentPrimaryPage: NotePage? {
+        // A deck in the primary pane has no pages; the tools act on the note
+        // in the other pane instead.
+        if primaryFlashcardDeck != nil {
+            let pages = secondaryNotebook?.sortedPages ?? []
+            return pages.indices.contains(secondaryPageIndex) ? pages[secondaryPageIndex] : nil
+        }
         let pages = displayedPrimaryNotebook.sortedPages
         guard pages.indices.contains(primaryPageIndex) else { return nil }
         return pages[primaryPageIndex]
@@ -4124,15 +4231,13 @@ struct PDFSaveModifier: ViewModifier {
     }
 }
 
-// MARK: - Full-screen photo picker
+// MARK: - Photo picker sheet
 //
-// `PhotosPicker` presents its system picker as an iPad "page sheet" — a
-// card that leaves the presenting note page visible (and dimmed) around
-// its edges, which reads as a blurry backdrop. Wrapping `PHPickerViewController`
-// directly and presenting it with `.fullScreenCover` instead covers the
-// whole screen with nothing left showing behind it, so there's no dimmed
-// page to see, while still picking from the photo library the same way.
-private struct FullScreenPhotoPicker: UIViewControllerRepresentable {
+// A note's photo tools use a sheet so the editor remains a visible context
+// behind the picker instead of being replaced by a full-screen flow. Wrapping
+// `PHPickerViewController` directly still keeps its access-management UI out
+// of the compact editor toolbar.
+private struct PhotoPickerSheet: UIViewControllerRepresentable {
     /// Called with the picked image's data, or nil if the user picked
     /// nothing (cancelled, or the picked item wasn't loadable as an image).
     let onPick: (Data?) -> Void
@@ -4155,7 +4260,7 @@ private struct FullScreenPhotoPicker: UIViewControllerRepresentable {
         init(onPick: @escaping (Data?) -> Void) { self.onPick = onPick }
 
         /// Called both when the user picks something and when they cancel —
-        /// dismissal itself is left to the SwiftUI `.fullScreenCover` binding
+        /// dismissal itself is left to the SwiftUI `.sheet` binding
         /// the caller controls, not done here.
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             guard let provider = results.first?.itemProvider, provider.canLoadObject(ofClass: UIImage.self) else {
@@ -5702,12 +5807,14 @@ private struct PaneLayout {
 private struct FlashcardPaneView: View {
     @Bindable var deck: FlashcardDeck
     let onHome: () -> Void
+    var startsWithMistakeReview = false
     @State private var mode: FlashcardPaneMode
 
-    init(deck: FlashcardDeck, onHome: @escaping () -> Void) {
+    init(deck: FlashcardDeck, onHome: @escaping () -> Void, startsWithMistakeReview: Bool = false) {
         self.deck = deck
         self.onHome = onHome
-        _mode = State(initialValue: deck.sortedCards.isEmpty ? .create : .study)
+        self.startsWithMistakeReview = startsWithMistakeReview
+        _mode = State(initialValue: deck.sortedCards.isEmpty && !startsWithMistakeReview ? .create : .study)
     }
 
     var body: some View {
@@ -5735,7 +5842,7 @@ private struct FlashcardPaneView: View {
             if mode == .create {
                 creator
             } else {
-                FlashcardStudyContent(deck: deck, onHome: onHome)
+                FlashcardStudyContent(deck: deck, onHome: onHome, startsWithMistakeReview: startsWithMistakeReview)
             }
         }
         .background(Color(.secondarySystemBackground))
@@ -6807,6 +6914,7 @@ struct PageCanvasContainer: View {
     @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
     @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
     @AppStorage("curveCorrectionEnabled") private var isCurveCorrectionEnabled = true
+    @AppStorage("polylineCorrectionEnabled") private var isPolylineCorrectionEnabled = true
     /// Shares the armed shape kind with the toolbar in `NoteEditorView` via
     /// the same `@AppStorage` key — see the property there for why.
     @AppStorage("pendingShapeKind") private var pendingShapeKindRaw = ""
@@ -6853,6 +6961,7 @@ struct PageCanvasContainer: View {
                             isTriangleCorrectionEnabled: isTriangleCorrectionEnabled,
                             isParabolaCorrectionEnabled: isParabolaCorrectionEnabled,
                             isCurveCorrectionEnabled: isCurveCorrectionEnabled,
+                            isPolylineCorrectionEnabled: isPolylineCorrectionEnabled,
                             pendingShapeKind: pendingShapeKind,
                             onActivate: {
                                 NotificationCenter.default.post(
@@ -7911,7 +8020,6 @@ private struct EditablePageElement: View {
                       page === element.page else { return }
                 selectedElementID = nil
             }
-            .gesture(isSelected ? moveGesture : nil)
             .simultaneousGesture(isSelected ? resizeGesture : nil)
             .simultaneousGesture(isSelected ? rotationGesture : nil)
             .contextMenu {
@@ -8069,6 +8177,15 @@ private struct EditablePageElement: View {
             Rectangle()
                 .strokeBorder(Color.accentColor, lineWidth: 1.5)
                 .frame(width: elementSize.width, height: elementSize.height)
+                // Moving is limited to the area inside the blue frame — the
+                // whole interior, not just the outline. This used to be a
+                // 20pt band along the border (`Rectangle().stroke`), so a
+                // drag started in the middle of a photo or text box hit
+                // nothing and the element never moved. Outside the frame
+                // (page, other elements) is unaffected. Taps still reach the
+                // element's own tap handlers: only a drag is claimed here.
+                .contentShape(Rectangle())
+                .gesture(moveGesture)
 
             ForEach(ResizeAnchor.allCases) { anchor in
                 Circle()
@@ -8121,17 +8238,17 @@ private struct EditablePageElement: View {
                 deleteElement()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 24, height: 24)
                     .background(Color.red, in: Circle())
-                    .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+                    .overlay(Circle().strokeBorder(.white, lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .contentShape(Circle().inset(by: -6))
+            .contentShape(Circle())
             .offset(
-                x: elementSize.width / 2 - 17,
-                y: -elementSize.height / 2 + 17
+                x: elementSize.width / 2 - 12,
+                y: -elementSize.height / 2 + 12
             )
             .accessibilityLabel("この要素を削除")
         }
@@ -9196,7 +9313,50 @@ private struct NoteChatPickerPopover: View {
     }
 }
 
+/// Kept outside `NoteEditorView` so its two confirmation dialogs do not make
+/// the already large editor body exceed SwiftUI's type-checking budget.
+private struct PaneChoiceDialogModifier: ViewModifier {
+    @Binding var showsAIChatPicker: Bool
+    @Binding var pendingChatTarget: NoteChatTarget?
+    let titleForPane: (ActivePane) -> String
+    let showAIChat: (ActivePane) -> Void
+    let showChat: (NoteChatTarget, ActivePane) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog("AIトークを表示する場所", isPresented: $showsAIChatPicker, titleVisibility: .visible) {
+                Button(titleForPane(.primary)) { showAIChat(.primary) }
+                Button(titleForPane(.secondary)) { showAIChat(.secondary) }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("入れ替えるペインを選んでください。")
+            }
+            .confirmationDialog("チャットを表示する場所", isPresented: Binding(
+                get: { pendingChatTarget != nil },
+                set: { if !$0 { pendingChatTarget = nil } }
+            ), titleVisibility: .visible) {
+                if let target = pendingChatTarget {
+                    Button(titleForPane(.primary)) { showChat(target, .primary) }
+                    Button(titleForPane(.secondary)) { showChat(target, .secondary) }
+                }
+                Button("キャンセル", role: .cancel) { pendingChatTarget = nil }
+            } message: {
+                Text("入れ替えるペインを選んでください。")
+            }
+    }
+}
+
 struct IdentifiableURL: Identifiable {
     let id = UUID()
     let url: URL
+}
+
+/// Plain-style tool buttons keep their full colour when disabled; this dims
+/// them so a tool that can't be used right now reads as unavailable.
+private struct DimsWhenDisabled: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        content.opacity(isEnabled ? 1 : 0.3)
+    }
 }

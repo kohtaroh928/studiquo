@@ -320,6 +320,7 @@ private struct StudyNotificationList: View {
     let onMarkAllRead: () -> Void
     let onMarkRead: (StudyNotification) -> Void
     let onDelete: (StudyNotification) -> Void
+    let onDeleteMany: ([StudyNotification]) -> Void
     let onOpenSettings: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -327,6 +328,8 @@ private struct StudyNotificationList: View {
     private static let previewCount = 8
 
     @State private var showsAll = false
+    @State private var isSelectionMode = false
+    @State private var selectedIDs: Set<String> = []
 
     private var visibleNotifications: [StudyNotification] {
         showsAll ? notifications : Array(notifications.prefix(Self.previewCount))
@@ -334,6 +337,10 @@ private struct StudyNotificationList: View {
 
     private var hasUnread: Bool {
         notifications.contains { !readIDs.contains($0.id) }
+    }
+
+    private var selectedNotifications: [StudyNotification] {
+        notifications.filter { selectedIDs.contains($0.id) }
     }
 
     var body: some View {
@@ -352,16 +359,18 @@ private struct StudyNotificationList: View {
                 } else {
                     List {
                         ForEach(visibleNotifications) { notification in
-                            row(for: notification)
+                            notificationRow(for: notification)
                                 .listRowInsets(EdgeInsets())
                                 .listRowSeparator(.visible)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button(role: .destructive) {
-                                        onDelete(notification)
-                                    } label: {
-                                        Label(L("削除"), systemImage: "trash")
+                                    if !isSelectionMode {
+                                        Button(role: .destructive) {
+                                            onDelete(notification)
+                                        } label: {
+                                            Label(L("削除"), systemImage: "trash")
+                                        }
+                                        .tint(.red)
                                     }
-                                    .tint(.red)
                                 }
                         }
                     }
@@ -394,6 +403,30 @@ private struct StudyNotificationList: View {
                 .font(.subheadline.weight(.semibold))
             Spacer()
             HStack(spacing: 16) {
+                Button {
+                    isSelectionMode.toggle()
+                    if isSelectionMode {
+                        showsAll = true
+                    } else {
+                        selectedIDs.removeAll()
+                    }
+                } label: {
+                    Image(systemName: isSelectionMode ? "checkmark.circle.fill" : "checkmark.circle")
+                }
+                .accessibilityLabel(isSelectionMode ? "選択を完了" : "通知を選択")
+
+                if isSelectionMode {
+                    Button(role: .destructive) {
+                        onDeleteMany(selectedNotifications)
+                        selectedIDs.removeAll()
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .accessibilityLabel("選択した通知を削除")
+                    .accessibilityValue("\(selectedIDs.count)件")
+                    .disabled(selectedIDs.isEmpty)
+                }
+
                 Button(action: onMarkAllRead) {
                     Image(systemName: "checkmark")
                 }
@@ -417,6 +450,32 @@ private struct StudyNotificationList: View {
         .padding(.horizontal, 16)
         .frame(height: 44)
         .background(.bar)
+    }
+
+    @ViewBuilder
+    private func notificationRow(for notification: StudyNotification) -> some View {
+        if isSelectionMode {
+            HStack(spacing: 0) {
+                Button {
+                    if selectedIDs.contains(notification.id) {
+                        selectedIDs.remove(notification.id)
+                    } else {
+                        selectedIDs.insert(notification.id)
+                    }
+                } label: {
+                    Image(systemName: selectedIDs.contains(notification.id) ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(selectedIDs.contains(notification.id) ? Color.accentColor : .secondary)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("notification-select-\(notification.id)")
+                .accessibilityLabel(notification.title)
+                .accessibilityValue(selectedIDs.contains(notification.id) ? "選択中" : "未選択")
+                row(for: notification)
+            }
+        } else {
+            row(for: notification)
+        }
     }
 
     /// Subject on top, then the age on the left and the link into the body on
@@ -723,6 +782,7 @@ private struct AppSettingsForm: View {
     @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
     @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
     @AppStorage("curveCorrectionEnabled") private var isCurveCorrectionEnabled = true
+    @AppStorage("polylineCorrectionEnabled") private var isPolylineCorrectionEnabled = true
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = false
     @AppStorage(ErrorReportSettings.enabledKey) private var autoErrorReportingEnabled = false
     @AppStorage("pdfPasswordRemovalOfferDisabled") private var pdfPasswordRemovalOfferDisabled = false
@@ -832,6 +892,7 @@ private struct AppSettingsForm: View {
                 Toggle("三角形補正", isOn: $isTriangleCorrectionEnabled)
                 Toggle("二次関数補正", isOn: $isParabolaCorrectionEnabled)
                 Toggle("曲線補正", isOn: $isCurveCorrectionEnabled)
+                Toggle("折線補正", isOn: $isPolylineCorrectionEnabled)
             } header: {
                 Text("ペンの補正")
             } footer: {
@@ -2096,6 +2157,7 @@ struct ContentView: View {
     @State private var libraryMode: LibraryMode = .documents
     @State private var selectedFolder: String?
     @AppStorage("librarySortOption") private var sortOption: NotebookSortOption = .updatedNewest
+    @AppStorage("librarySortByMaterialType") private var sortByMaterialType = false
     @AppStorage("homeViewMode") private var viewMode: HomeViewMode = .list
     @State private var searchText = ""
     @State private var isImportingFiles = false
@@ -2182,6 +2244,7 @@ struct ContentView: View {
     @State private var folderRenameText = ""
     @State private var studyNotebook: Notebook?
     @State private var selectedFlashcardDeck: FlashcardDeck?
+    @State private var deckHostNotebook = Notebook(title: "")
     /// Deck (and a token that forces a fresh view) to open straight into a
     /// missed-card review, set by a notification tap or the library banner.
     @State private var mistakeReviewRequest: (deckKey: String, token: UUID)?
@@ -2537,11 +2600,18 @@ struct ContentView: View {
                     notebookTabBar
                     Divider()
                     let reviewRequest = mistakeReviewRequest.flatMap { $0.deckKey == deckID(selectedFlashcardDeck) ? $0 : nil }
-                    FlashcardDeckView(
-                        deck: selectedFlashcardDeck,
+                    // The deck opens inside the note editor so it gets the same
+                    // toolbar; `deckHostNotebook` is only a stand-in the editor
+                    // needs and is never saved or shown.
+                    ProtectedNotebookView(
+                        notebook: deckHostNotebook,
+                        columnVisibility: $columnVisibility,
                         onHome: returnToLibrary,
-                        startsWithMistakeReview: reviewRequest != nil
+                        initialFlashcardDeck: selectedFlashcardDeck,
+                        initialFlashcardStartsWithMistakeReview: reviewRequest != nil
                     )
+                        .environmentObject(editorSplitState)
+                        .environmentObject(friendStore)
                         .id("\(String(describing: selectedFlashcardDeck.persistentModelID))-\(reviewRequest?.token.uuidString ?? "")")
                 }
             } else if let selectedTextDocument {
@@ -4533,6 +4603,9 @@ struct ContentView: View {
                         }
                     }
                     Menu {
+                        Toggle("資料の種類ごとに並べる", isOn: $sortByMaterialType)
+                            .accessibilityIdentifier("library-sort-by-material-type")
+                        Divider()
                         ForEach(NotebookSortKey.allCases) { key in
                             Button {
                                 sortOption = sortOption.selecting(key)
@@ -4961,6 +5034,7 @@ struct ContentView: View {
             onMarkAllRead: markAllNotificationsRead,
             onMarkRead: markNotificationRead,
             onDelete: deleteNotification,
+            onDeleteMany: deleteNotifications,
             onOpenSettings: {
                 showsNotifications = false
                 showsAppSettings = true
@@ -5022,10 +5096,15 @@ struct ContentView: View {
     /// Swiped-away notifications are generated from app data, so removing one
     /// means remembering its id and filtering it out on every refresh.
     private func deleteNotification(_ notification: StudyNotification) {
+        deleteNotifications([notification])
+    }
+
+    private func deleteNotifications(_ notifications: [StudyNotification]) {
+        guard !notifications.isEmpty else { return }
         var ids = Set(deletedStudyNotificationIDsStorage.split(separator: "\n").map(String.init))
-        ids.insert(notification.id)
+        ids.formUnion(notifications.map(\.id))
         deletedStudyNotificationIDsStorage = ids.joined(separator: "\n")
-        cachedStudyNotifications.removeAll { $0.id == notification.id }
+        cachedStudyNotifications.removeAll { ids.contains($0.id) }
     }
 
     private func refreshStudyNotifications() {
@@ -5138,7 +5217,29 @@ struct ContentView: View {
             }
         }
         let items = folders.map(LibraryRowItem.folder) + entries.map(LibraryRowItem.entry)
-        return items.sorted { sortOption.areInOrder(fields($0), fields($1)) }
+        return items.sorted { first, second in
+            if sortByMaterialType {
+                let firstKind = materialSortRank(for: first)
+                let secondKind = materialSortRank(for: second)
+                if firstKind != secondKind { return firstKind < secondKind }
+            }
+            return sortOption.areInOrder(fields(first), fields(second))
+        }
+    }
+
+    /// The optional type grouping keeps folders together first, followed by
+    /// notes, study-card decks and text documents. Within every group the
+    /// sort chosen in the same menu still decides the order.
+    private func materialSortRank(for item: LibraryRowItem) -> Int {
+        switch item {
+        case .folder: return 0
+        case .entry(let entry):
+            switch entry.itemKind {
+            case .notebook: return 1
+            case .flashcardDeck: return 2
+            case .textDocument: return 3
+            }
+        }
     }
 
     private var sortedHomeItems: [LibraryRowItem] {
@@ -5161,9 +5262,29 @@ struct ContentView: View {
     @ViewBuilder
     private func entryListRow(_ entry: HomeEntry) -> some View {
         switch entry {
-        case .notebook(let notebook): notebookRow(notebook)
-        case .flashcardDeck(let deck): deckRow(deck)
-        case .textDocument(let document): documentRow(document)
+        case .notebook(let notebook):
+            notebookRow(notebook)
+                // The all-files view is a ScrollView so its folder rows can
+                // accept drops. Native swipeActions only shifts the inner
+                // row there; use the same wrapper as folders so the entire
+                // material card slides as one surface.
+                .modifier(entryTrashSwipe(entry))
+        case .flashcardDeck(let deck):
+            deckRow(deck)
+                .modifier(entryTrashSwipe(entry))
+        case .textDocument(let document):
+            documentRow(document)
+                .modifier(entryTrashSwipe(entry))
+        }
+    }
+
+    private func entryTrashSwipe(_ entry: HomeEntry) -> SwipeToTrashRow {
+        SwipeToTrashRow(
+            enabled: !entry.isTrashed,
+            identifier: "library-entry-trash-\(entry.title)"
+        ) {
+            trash(entry)
+            try? modelContext.save()
         }
     }
 
@@ -6771,29 +6892,19 @@ struct ContentView: View {
                     Button {
                         open(.notebook(notebook))
                     } label: {
-                        NotebookRow(notebook: notebook, showsCover: libraryMode == .pdfs)
+                        NotebookRow(notebook: notebook)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 } else {
                     NavigationLink(value: notebook) {
-                        NotebookRow(notebook: notebook, showsCover: libraryMode == .pdfs)
+                        NotebookRow(notebook: notebook)
                     }
                 }
             }
             .accessibilityIdentifier("library-entry-\(notebook.title)")
             .contextMenu {
                 notebookActions(notebook)
-            }
-            .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                if !notebook.isTrashed {
-                    Button {
-                        notebook.isFavorite.toggle()
-                    } label: {
-                        Label(notebook.isFavorite ? L("解除") : L("お気に入り"), systemImage: notebook.isFavorite ? "star.slash" : "star")
-                    }
-                    .tint(.yellow)
-                }
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if notebook.isTrashed {
@@ -7079,6 +7190,8 @@ private struct FileImportPicker: UIViewControllerRepresentable {
 /// One folder tile in `ContentView.homeIconGrid`. Visually mirrors
 /// `folderRow`'s list row (same folder glyph, same favorite star, same drop
 /// badge) but laid out as an icon-and-label tile instead of a horizontal row.
+/// The name always reserves two lines, so a one-line and a two-line name give
+/// tiles of the same height and the icons stay level across a grid row.
 private struct HomeFolderTile: View {
     let name: String
     let isFavorite: Bool
@@ -7100,7 +7213,7 @@ private struct HomeFolderTile: View {
                 }
                 Text(name)
                     .font(.caption)
-                    .lineLimit(2)
+                    .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                 Text("\(itemCount)項目")
@@ -7139,7 +7252,7 @@ private struct HomeEntryTile: View {
                 }
                 Text(entry.title)
                     .font(.caption)
-                    .lineLimit(2)
+                    .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
             }
@@ -7151,12 +7264,11 @@ private struct HomeEntryTile: View {
 
 private struct NotebookRow: View {
     @Bindable var notebook: Notebook
-    /// A PDF's icon is its first page (the "PDF" filter); elsewhere the symbol.
-    var showsCover = false
 
     var body: some View {
         HStack(spacing: 12) {
-            if showsCover, notebook.containsPDF {
+            // A PDF's icon is its first page, as in the icon and column views.
+            if notebook.containsPDF {
                 NotebookCoverView(notebook: notebook, size: CGSize(width: 34, height: 44))
             } else {
                 Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
@@ -7333,7 +7445,7 @@ private enum LibraryMode: String, CaseIterable, Identifiable {
     var emptyMessage: String {
         switch self {
         case .documents: L("＋からノートを作るかPDFを読み込んでください")
-        case .favorites: L("ノートを左へスワイプして登録できます")
+        case .favorites: L("ノートのメニューから登録できます")
         case .pdfs: L("＋からPDFを読み込んでください")
         case .studyCards: L("＋からノートを選んで暗記カードを作成してください")
         case .textDocuments: L("＋から文書を作成してください")

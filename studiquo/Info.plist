@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -25,18 +23,6 @@
 			</array>
 		</dict>
 	</array>
-	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -56,18 +42,10 @@
 			</array>
 		</dict>
 	</array>
-	<key>CFBundleVersion</key>
-	<string>1</string>
 	<key>GIDClientID</key>
 	<string>812858933445-5edfqlngkoakh9n22p16qhb2f9u9t6hd.apps.googleusercontent.com</string>
 	<key>GIDServerClientID</key>
 	<string>812858933445-q6j9uih0o702884hemnk2okiet26gv1j.apps.googleusercontent.com</string>
-	<key>NSCameraUsageDescription</key>
-	<string>授業資料やQRコードを読み取るためにカメラを使用します。</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>ロックしたノートを安全に開くためにFace IDを使用します。</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>ノートを見ながら資料写真を表示するために写真ライブラリを使用します。</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

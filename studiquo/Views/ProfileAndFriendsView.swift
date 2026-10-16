@@ -2326,18 +2326,25 @@ struct FriendsHomeView: View {
             friendDetail
                 .navigationBarBackButtonHidden()
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            if !isSidebarVisible {
+                    // This is the compact-window escape hatch. On a regular
+                    // width it duplicated the app's normal split-view
+                    // navigation, so it must not appear in the full layout.
+                    // When the compact sidebar itself is on screen it owns
+                    // the closing control above. Keeping this detail-column
+                    // opener visible at the same time produced two sidebar
+                    // buttons after opening the list. It remains available
+                    // only from the detail screen, where it is needed to
+                    // reopen the list in a half-width app window.
+                    if horizontalSizeClass == .compact && !isSidebarVisible {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
                                 columnVisibility = .all
                                 preferredCompactColumn = .sidebar
-                            } else {
-                                closeSidebar()
+                            } label: {
+                                Label("フレンド一覧", systemImage: "sidebar.left")
                             }
-                        } label: {
-                            Label(isSidebarVisible ? "サイドバーを閉じる" : "フレンド一覧", systemImage: "sidebar.left")
+                            .accessibilityIdentifier("friends-sidebar-toggle")
                         }
-                        .accessibilityIdentifier("friends-sidebar-toggle")
                     }
                 }
         }

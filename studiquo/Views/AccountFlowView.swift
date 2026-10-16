@@ -110,28 +110,30 @@ struct LoginView: View {
                 }
                 VStack(spacing: 14) {
                     TextField("メールアドレス", text: $email)
-                        .textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never)
+                        // Lets iOS offer saved credentials in the keyboard's
+                        // AutoFill area while this field is being edited.
+                        .textContentType(.username).keyboardType(.emailAddress).textInputAutocapitalization(.never)
                         .accountFieldStyle()
                     SecureField("パスワード", text: $password)
                         .textContentType(.password)
                         .accountFieldStyle()
+                    if !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Button {
+                            Task { _ = await authentication.loginWithPasskey() }
+                        } label: {
+                            Label("パスキーを使用", systemImage: "key.fill")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .disabled(authentication.isSignInBusy)
+                    }
                     if !authentication.errorMessage.isEmpty {
                         Text(authentication.errorMessage).font(.footnote).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     Button("ログイン") { Task { _ = await authentication.login(email: email, password: password) } }
                         .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
                         .disabled(!AccountFlowLogic.canSubmitCredentials(
-                            email: email, password: password, isBusy: authentication.isLoginBusy
+                            email: email, password: password, isBusy: authentication.isSignInBusy
                         ))
-                    Button {
-                        Task { await authentication.loginWithPasskey() }
-                    } label: {
-                        Label("パスキーでログイン", systemImage: "person.badge.key.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .disabled(authentication.isPasskeyBusy)
                     SignInWithAppleButton(.signIn) { request in
                         request.requestedScopes = [.email]
                     } onCompletion: { result in
@@ -140,12 +142,12 @@ struct LoginView: View {
                     .signInWithAppleButtonStyle(.black)
                     .frame(maxWidth: .infinity, minHeight: 50, maxHeight: 50)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .disabled(authentication.isAppleSignInBusy)
+                    .disabled(authentication.isSignInBusy)
                     GoogleSignInButton {
                         Task { await authentication.loginWithGoogle() }
                     }
                     .frame(maxWidth: .infinity, minHeight: 50, maxHeight: 50)
-                    .disabled(authentication.isGoogleSignInBusy)
+                    .disabled(authentication.isSignInBusy)
                     Button("パスワードを忘れた場合") { showsReset = true }.font(.subheadline)
                     Button("アカウントをお持ちでない方はこちら") { showsCreateAccount = true }.font(.subheadline)
                 }
@@ -161,7 +163,6 @@ struct LoginView: View {
 
 private struct CreateAccountView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
-    @Environment(\.dismiss) private var dismiss
     var isPasswordReset = false
     @State private var email = ""
     @State private var password = ""
@@ -198,7 +199,6 @@ private struct CreateAccountView: View {
             Spacer()
         }
         .padding(32)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } } }
     }
 }
 
