@@ -41,6 +41,16 @@ export class RateCounter extends DurableObject {
     return true;
   }
 
+  // Reads a quota without incrementing it. The AI header uses the exact same
+  // per-device counter enforced by bump(), rather than a client-side estimate.
+  async usage(limit, windowSeconds) {
+    const now = Date.now();
+    const stored = await this.ctx.storage.get("state");
+    const state = stored && now < stored.windowEndsAt ? stored : null;
+    const used = state?.count ?? 0;
+    return { limit, remaining: Math.max(0, limit - used), resetsAt: state?.windowEndsAt ?? null };
+  }
+
   // Failed-login backoff (login-throttle.js owns the policy and the state
   // transitions; this object serialises access to them, which is what makes
   // "check the wait, then count the attempt" one atomic step). A name is

@@ -19,10 +19,41 @@ function fakeRateCounterBinding() {
           counts.set(name, used);
           return true;
         },
+        async usage(limit) {
+          const used = counts.get(name) ?? 0;
+          return { limit, remaining: Math.max(0, limit - used), resetsAt: null };
+        },
       };
     },
   };
 }
+
+test("usage reports remaining chat credits without spending one", async () => {
+  const env = environment();
+  const ctx = executionContext();
+  const usageRequest = () => new Request("https://example.test/api/ai/usage");
+
+  let response = await handleAI(new URL(usageRequest().url), usageRequest(), env, "device", ctx, undefined, "standard");
+  assert.deepEqual(await response.json(), { limit: 30, remaining: 30, resetsAt: null });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("data: {\"text\":\"ok\"}\\n\\n", {
+    headers: { "content-type": "text/event-stream" },
+  });
+  try {
+    const chat = new Request("https://example.test/api/ai/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", text: "こんにちは" }] }),
+    });
+    await handleAI(new URL(chat.url), chat, env, "device", ctx, undefined, "standard");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  response = await handleAI(new URL(usageRequest().url), usageRequest(), env, "device", ctx, undefined, "standard");
+  assert.equal((await response.json()).remaining, 29);
+});
 
 function environment() {
   const values = new Map();

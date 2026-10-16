@@ -399,8 +399,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 
 5. 端末管理ファイルの消去と再試行を実装。CloudKit同期削除・App Group共有Inboxは実機でも確認する。
 6. 旧Slack投稿と所有者を復元できない旧問題報告の処理は別途運営対応が必要。
-7. `StudiquoApp.swift`の一部起動ログは`String(describing: error)`をpublic privacyで記録する。pathや利用者由来文字列が混ざらない形式へ限定する。
-8. `PrivacyPolicyView`と`mcp-server/src/legal.js`は手作業で重複管理されている。単一sourceから生成するか、同一性testを強化する。
+7. `PrivacyPolicyView`と`mcp-server/src/legal.js`は手作業で重複管理されている。単一sourceから生成するか、同一性testを強化する。
 
 ### P1(追加): パスワード認証まわり
 

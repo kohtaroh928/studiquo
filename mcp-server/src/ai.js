@@ -208,6 +208,11 @@ async function withinQuota(env, key, bucket, limit, globalLimit) {
   return env.RATE_COUNTER.getByName(`ai:${bucket}:${key}`).bump(limit, DAY_SECONDS);
 }
 
+async function usageForChat(env, key, plan) {
+  const limit = planLimit(env, plan, "CHAT_DAILY_LIMIT");
+  return env.RATE_COUNTER.getByName(`ai:chat:${key}`).usage(limit, DAY_SECONDS);
+}
+
 async function callGemini(env, { kind, systemInstruction, contents, responseSchema, stream }) {
   const key = env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY is not configured on this Worker.");
@@ -904,8 +909,11 @@ async function handleReview(request, env, key, ctx, plan) {
  * identity directly rather than just its resolved plan.
  */
 export async function handleAI(url, request, env, key, ctx, session, plan) {
-  if (request.method !== "POST") return null;
   const effectivePlan = plan ?? "standard";
+  if (url.pathname === "/api/ai/usage" && request.method === "GET") {
+    return json(await usageForChat(env, key, effectivePlan));
+  }
+  if (request.method !== "POST") return null;
   let handler;
   switch (url.pathname) {
     case "/api/ai/chat": handler = handleChat; break;
