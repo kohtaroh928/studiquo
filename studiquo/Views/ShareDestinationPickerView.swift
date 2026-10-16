@@ -102,6 +102,7 @@ struct ShareDestinationPickerView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("保存先を選択")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

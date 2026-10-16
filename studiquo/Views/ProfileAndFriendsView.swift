@@ -91,6 +91,7 @@ struct UserProfileView: View {
                     Button("ログアウト", role: .destructive) { authentication.logout(); dismiss() }
                 }
             }
+                .themeScreenBackground()
             .confirmationDialog(
                 "パスキーをすべて削除しますか?",
                 isPresented: $confirmsPasskeyRemoval, titleVisibility: .visible
@@ -2606,6 +2607,7 @@ struct FriendsHomeView: View {
             }
 
         }
+            .themeScreenBackground()
     }
 
     private var isSidebarVisible: Bool {
@@ -2760,6 +2762,7 @@ private struct MyFriendCardPopover: View {
                     .textSelection(.enabled)
             }
         }
+            .themeScreenBackground()
         .navigationTitle("自分のカード")
     }
 }
@@ -2802,6 +2805,7 @@ private struct FriendRequestsPopover: View {
             }
             groupInvites
         }
+            .themeScreenBackground()
         .navigationTitle("申請・招待")
         .task {
             await store.refreshIncomingRequests()
@@ -2901,6 +2905,7 @@ private struct FriendChatListView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle("メッセージ")
         .overlay {
             if summaries.isEmpty && groupSummaries.isEmpty {
@@ -3079,6 +3084,7 @@ private struct FriendProfileView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle(profile.name)
         .confirmationDialog(
             "\(profile.name)さんをブロックしますか?",
@@ -3162,6 +3168,7 @@ private struct GroupProfileView: View {
                 .disabled(store.pendingGroupActions.contains(group.roomID))
             }
         }
+            .themeScreenBackground()
         .navigationTitle(group.name)
         .sheet(isPresented: $showsInvite) {
             InviteToGroupView(
@@ -3221,6 +3228,7 @@ struct FriendPrivacySettingsView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle("フレンド設定")
     }
 }
@@ -3252,6 +3260,7 @@ private struct BlockedContactsView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle("ブロック一覧")
         .overlay {
             if store.blockedContacts.isEmpty {
@@ -3341,6 +3350,7 @@ private struct AddFriendView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("フレンドを追加")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .task {
@@ -3450,6 +3460,7 @@ private struct CreateGroupView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("グループを作成")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .alert("エラー", isPresented: Binding(
@@ -4064,6 +4075,7 @@ private struct GroupMembersView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("メンバー")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .sheet(isPresented: $showsInvite) {
@@ -4098,6 +4110,7 @@ private struct InviteToGroupView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("友達を招待")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .alert("エラー", isPresented: Binding(
@@ -4922,6 +4935,7 @@ private struct ReportMessageSheet: View {
                     Text("通報の内容は運営側の確認用に記録されます。相手には通知されません。")
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("通報する")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -1865,6 +1865,7 @@ private struct LinkEditSheet: View {
                     Button("リンクを削除", role: .destructive, action: onRemove)
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("リンク")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -2358,6 +2359,7 @@ private struct CommentThreadSheet: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .overlay {
                 if allComments.isEmpty {
                     ContentUnavailableView("コメントはまだありません", systemImage: "bubble.left")
@@ -2500,6 +2502,7 @@ private struct FootnoteEditSheet: View {
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("脚注")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -2585,6 +2588,7 @@ private struct ChangeHistorySheet: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .overlay {
                 if sortedRecords.isEmpty {
                     ContentUnavailableView("変更履歴はまだありません", systemImage: "clock.arrow.circlepath")
@@ -2773,6 +2777,7 @@ private struct CollabSheet: View {
                 }
             }
         }
+            .themeScreenBackground()
     }
 
     private func roleLabel(_ role: String) -> String {

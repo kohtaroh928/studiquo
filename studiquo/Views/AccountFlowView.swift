@@ -336,6 +336,7 @@ private struct OnboardingView: View {
                     calendarURLSection(title: "Googleカレンダーを連携", detail: "Googleカレンダーの非公開iCal URLを入力してください。", text: $googleURL)
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("はじめの設定")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

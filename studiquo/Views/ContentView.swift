@@ -374,6 +374,7 @@ private struct StudyNotificationList: View {
                                 }
                         }
                     }
+                        .themeScreenBackground()
                     .listStyle(.plain)
 
                     if notifications.count > Self.previewCount {
@@ -819,6 +820,7 @@ private struct AppSettingsForm: View {
                 }
             }
         }
+            .themeScreenBackground()
     }
 
     private func categoryForm(_ category: SettingsCategory) -> some View {
@@ -832,6 +834,7 @@ private struct AppSettingsForm: View {
             case .app: appSections
             }
         }
+            .themeScreenBackground()
         .navigationTitle(category.title)
         .navigationBarTitleDisplayMode(.inline)
         .modifier(settingsSheets)
@@ -1284,6 +1287,7 @@ private struct NotificationSettingsView: View {
                 NotificationPreferenceToggle(kind: .newDeviceLogin, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
             }
         }
+            .themeScreenBackground()
         .navigationTitle("通知")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -1461,6 +1465,7 @@ struct DeleteAccountView: View {
                     .disabled(!AccountDeletionUI.canSubmit(confirmation: confirmation, isBusy: authentication.isAccountDeletionBusy))
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("アカウントを削除")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(!AccountDeletionUI.canDismiss(isBusy: authentication.isAccountDeletionBusy))
@@ -3006,6 +3011,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                    .themeScreenBackground()
                 .navigationTitle("MCPクラウド連携")
                 .task {
                     // The token may have been exchanged for a newer one (or the
@@ -4940,6 +4946,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                    .themeScreenBackground()
             }
         }
     }

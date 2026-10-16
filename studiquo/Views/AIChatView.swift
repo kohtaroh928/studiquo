@@ -209,6 +209,7 @@ struct AppAttachmentPicker: View {
                 }
                 .buttonStyle(.plain)
             }
+                .themeScreenBackground()
             .overlay {
                 if options.isEmpty {
                     ContentUnavailableView(

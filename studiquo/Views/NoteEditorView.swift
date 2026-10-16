@@ -5886,6 +5886,7 @@ private struct PageDeletionPicker: View {
                 }
                 .buttonStyle(.plain)
             }
+                .themeScreenBackground()
             .navigationTitle("削除するページを選択")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
@@ -8664,6 +8665,7 @@ private struct NotebookOutlineView: View {
                 }
                 .buttonStyle(.plain)
             }
+                .themeScreenBackground()
             .navigationTitle("目次")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } }
@@ -8782,6 +8784,7 @@ private struct PageSidebar: View {
                 }
                 .onMove(perform: movePages)
             }
+                .themeScreenBackground()
             .listStyle(.plain)
         }
         .background(.bar)
@@ -9267,6 +9270,7 @@ private struct NoteChatPickerPopover: View {
                         }
                     }
                 }
+                    .themeScreenBackground()
                 .listStyle(.insetGrouped)
             }
             .navigationBarHidden(true)
