@@ -114,6 +114,8 @@
     "PRIVACY_RETENTION_ENABLED": "false",
     // Approve the provider's audience/contract before enabling AI requests.
     "AI_PROVIDER_APPROVED": "false",
+    // RevenueCat sandbox purchases are free; only staging may grant a plan from one.
+    "ALLOW_SANDBOX_PURCHASES": "false",
     "APNS_TOPIC": "com.yabuko.studiquo",
     // Two-step rollout of the PBKDF2 -> Argon2id password-hash move (see
     // src/local-auth.js). Argon2id records are always readable; this only
@@ -214,6 +216,7 @@
         "OPENAI_ASTRA_MODEL": "gpt-6-astra",
         "PRIVACY_RETENTION_ENABLED": "false",
         "AI_PROVIDER_APPROVED": "false",
+        "ALLOW_SANDBOX_PURCHASES": "true",
         "APNS_TOPIC": "com.yabuko.studiquo",
         "ARGON2_WRITE": "false",
         // Mail from staging says so, and uses Resend's shared test sender.
