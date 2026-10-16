@@ -112,7 +112,7 @@ struct FlashcardDeckView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color(uiColor: .secondarySystemBackground))
+            .background(Theme.Palette.canvas)
 
             if mode == .edit { editor }
             else { study }

@@ -3509,7 +3509,7 @@ private struct ChatComposerAttachmentChip: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -3645,7 +3645,7 @@ struct GroupChatView: View {
                         Button { isImportingFiles = true } label: { Label("ファイルから追加", systemImage: "doc.badge.plus") }
                     } label: {
                         Image(systemName: "plus").frame(width: 32, height: 34)
-                            .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                            .background(Theme.Palette.surface, in: Circle())
                     }
                     .accessibilityLabel("追加")
                     Button { showsCameraScanner = true } label: {
@@ -3662,7 +3662,7 @@ struct GroupChatView: View {
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 11)
-                    .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                    .background(Theme.Palette.surface, in: Capsule())
                     .submitLabel(.send)
                     .onSubmit(send)
                     .frame(minWidth: 0, maxWidth: .infinity)
@@ -3679,7 +3679,7 @@ struct GroupChatView: View {
                 }
             }
             .padding(12)
-            .background(Color(uiColor: .systemBackground))
+            .background(Theme.Palette.canvas)
             .scaleEffect(isComposerDropTargeted ? 1.01 : 1)
             .dropDestination(for: PageSnippet.self) { snippets, _ in
                 guard !snippets.isEmpty else { return false }
@@ -3991,7 +3991,7 @@ private struct GroupMessageBubble: View {
                                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
                             }
                             .padding(10).frame(maxWidth: 260)
-                            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                            .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
@@ -4246,7 +4246,7 @@ struct FriendChatView: View {
                         Image(systemName: "plus")
                             .font(.system(size: 17, weight: .semibold))
                             .frame(width: 32, height: 34)
-                            .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                            .background(Theme.Palette.surface, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .fixedSize()
@@ -4258,7 +4258,7 @@ struct FriendChatView: View {
                         Image(systemName: "camera")
                             .font(.system(size: 17, weight: .semibold))
                             .frame(width: 32, height: 34)
-                            .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                            .background(Theme.Palette.surface, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .fixedSize()
@@ -4279,7 +4279,7 @@ struct FriendChatView: View {
                         .textFieldStyle(.plain)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
-                        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                        .background(Theme.Palette.surface, in: Capsule())
                         .submitLabel(.send)
                         .onSubmit(send)
                         .frame(minWidth: 0, maxWidth: .infinity)
@@ -4298,7 +4298,7 @@ struct FriendChatView: View {
                 }
             }
             .padding(12)
-            .background(Color(uiColor: .systemBackground))
+            .background(Theme.Palette.canvas)
             .scaleEffect(isComposerDropTargeted ? 1.01 : 1)
             .dropDestination(for: String.self) { items, _ in
                 guard let value = items.first else { return false }
@@ -4771,7 +4771,7 @@ struct FriendChatView: View {
                             }
                             .padding(10)
                             .frame(maxWidth: 260)
-                            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                            .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
