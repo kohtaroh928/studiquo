@@ -206,7 +206,7 @@ private struct CodeBlockView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
     }
 }
 
@@ -237,8 +237,8 @@ private struct TableBlockView: View {
                     }
                 }
             }
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous).stroke(Color.secondary.opacity(0.3)))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
         }
     }
 }

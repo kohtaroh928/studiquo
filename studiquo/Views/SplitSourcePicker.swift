@@ -303,7 +303,7 @@ struct SplitSourcePicker: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(
-                            layout == option ? Color.accentColor.opacity(0.18) : Color.clear,
+                            layout == option ? Theme.Palette.accent.opacity(0.18) : Color.clear,
                             in: Capsule()
                         )
                 }
@@ -562,7 +562,7 @@ struct SplitSourcePicker: View {
                     .font(.system(size: 38))
                     .foregroundStyle(tint)
                     .frame(width: 84, height: 84)
-                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
             }
             Text(title)
                 .font(.footnote.weight(.medium))
@@ -647,7 +647,7 @@ struct SplitSourcePicker: View {
                             }
                             .frame(maxWidth: .infinity, minHeight: 52)
                             .padding(.horizontal, 16)
-                            .background(path == highlighted ? Color.accentColor.opacity(0.15) : Color.clear)
+                            .background(path == highlighted ? Theme.Palette.accent.opacity(0.15) : Color.clear)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)

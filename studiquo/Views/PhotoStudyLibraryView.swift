@@ -364,7 +364,7 @@ struct PhotoStudyLibraryView: View {
             Text("ノートを見ながら資料写真を表示するため、写真ライブラリへのアクセスを許可してください。")
         } actions: {
             Button("アクセスを許可") { model.requestAccess() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.themePrimary)
                 .disabled(model.isLoading)
             if model.isLoading { ProgressView() }
         }
@@ -377,7 +377,7 @@ struct PhotoStudyLibraryView: View {
             Text("設定でStudiquoに写真へのアクセスを許可してください。")
         } actions: {
             Button("設定を開く") { model.openSettings() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.themePrimary)
         }
     }
 
@@ -620,7 +620,7 @@ struct PhotoStudyPaneViewer: View {
                     Text(errorMessage)
                 } actions: {
                     Button("再試行", action: load)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.themePrimary)
                 }
                 .foregroundStyle(.white)
             } else {
