@@ -35,6 +35,60 @@ function transactionID() {
   return crypto.randomUUID();
 }
 
+async function keysWithPrefix(env, prefix) {
+  const names = [];
+  let cursor;
+  do {
+    const page = await env.STUDIQUO_DATA.list({ prefix, cursor });
+    for (const item of page.keys ?? []) names.push(item.name);
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return names;
+}
+
+// Removes every passkey that signs in as this account, so none can sign in
+// again. Used when a password is reset: a passkey counts as proof of its
+// e-mail address (mintPasskeySession), so one registered by whoever held the
+// old password would otherwise keep working after the owner took the account
+// back. The owner can register new ones once signed in.
+//
+// A passkey belongs to the account when its address is one of `emails`, or when
+// that address is recorded as owned by `accountKey`: an account can own several
+// addresses (the registration check is `email-account-owner:<address>` equals
+// the session's account), and the reset is for one of them.
+//
+// Throws when it cannot finish, leaving the caller to stop the reset rather
+// than carry on with a passkey that still works. The scan reads every passkey
+// record, so its cost grows with the number of passkeys in the service.
+export async function revokePasskeysForAccount(env, { accountKey, emails = [] }) {
+  const wanted = new Set(emails.map(email => String(email).trim().toLowerCase()).filter(Boolean));
+  const owners = new Map();
+  const belongs = async item => {
+    const email = String(item?.email ?? "").trim().toLowerCase();
+    if (!email) return false;
+    if (wanted.has(email)) return true;
+    if (!accountKey) return false;
+    if (!owners.has(email)) owners.set(email, await env.STUDIQUO_DATA.get(`email-account-owner:${email}`));
+    return owners.get(email) === accountKey;
+  };
+  let removed = 0;
+  for (const key of await keysWithPrefix(env, "passkeys:credential:")) {
+    if (await belongs(await env.STUDIQUO_DATA.get(key, "json"))) {
+      await env.STUDIQUO_DATA.delete(key);
+      removed += 1;
+    }
+  }
+  for (const key of await keysWithPrefix(env, "passkeys:user:")) {
+    const list = await env.STUDIQUO_DATA.get(key, "json") ?? [];
+    const kept = [];
+    for (const item of list) if (!(await belongs(item))) kept.push(item);
+    if (kept.length === list.length) continue;
+    if (kept.length === 0) await env.STUDIQUO_DATA.delete(key);
+    else await env.STUDIQUO_DATA.put(key, JSON.stringify(kept));
+  }
+  return { removed };
+}
+
 export function associationFile() {
   return json({
     webcredentials: { apps: [APP_ID] },

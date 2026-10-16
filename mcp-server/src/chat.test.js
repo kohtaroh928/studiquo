@@ -532,6 +532,9 @@ function fakeUserRegistryBinding(studiquoData) {
         ensureUser(k, name, studyStats, bio) {
           return enqueue(key, () => ensureUserAtomic(k, name, studyStats, bio));
         },
+        getUser(k) {
+          return enqueue(key, () => studiquoData.get(`chat:user:${k}`, "json"));
+        },
         addIncomingRequest(k, requesterCode, requesterName) {
           return enqueue(key, () => addIncomingRequestAtomic(k, requesterCode, requesterName));
         },
@@ -3640,6 +3643,35 @@ function interleaveAfterNextUserRead(env, after) {
     return value;
   };
 }
+
+test("the friends list is read through the user's own object, so a stale KV read cannot bring a removed friend back", async () => {
+  const env = environment();
+  const aliceToken = freshToken("st1");
+  const bobToken = freshToken("st2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  await acceptRequest(env, bobToken, alice.code);
+  assert.equal((await friends(env, aliceToken)).length, 1);
+
+  // From here on, plain KV reads of Alice's record return what it held before
+  // the removal (as a read served from another location can for about a
+  // minute). The registry object reads the up-to-date copy.
+  const aliceKey = await env.STUDIQUO_DATA.get(`chat:code:${alice.code}`);
+  const beforeRemoval = await env.STUDIQUO_DATA.get(`chat:user:${aliceKey}`);
+  assert.ok(beforeRemoval, "Alice's record is stored under her key");
+  const fresh = env.STUDIQUO_DATA;
+  const removed = await worker.fetch(request(`/api/chat/friends/${bob.code}`, { method: "DELETE", token: aliceToken }), env, noopCtx);
+  assert.equal(removed.status, 200);
+  env.STUDIQUO_DATA = {
+    ...fresh,
+    get: async (key, type) => (key === `chat:user:${aliceKey}`
+      ? (type === "json" ? JSON.parse(beforeRemoval) : beforeRemoval)
+      : fresh.get(key, type)),
+  };
+
+  assert.equal((await friends(env, aliceToken)).length, 0, "the removal shows at once");
+});
 
 test("a profile photo upload racing a friend removal cannot bring the removed friend back", async () => {
   const env = environment();
