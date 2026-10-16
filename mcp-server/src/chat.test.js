@@ -3736,3 +3736,39 @@ test("accepting a request cannot overwrite a removal made on the requester's own
   assert.equal(accepted.status, 200);
   assert.deepEqual((await friends(env, carolToken)).map(item => item.code), [bob.code]);
 });
+
+test("a profile photo that is not valid base64 is refused, so a friend's download can never fail on it", async () => {
+  const env = environment();
+  const aliceToken = freshToken("b1");
+  await registerUser(env, aliceToken, "Alice");
+  for (const data of ["!!!not base64!!!", "aGVsbG8", "aGV sbG8=", "a===", "é"]) {
+    assert.equal((await uploadAvatar(env, aliceToken, "image/jpeg", data)).status, 400, JSON.stringify(data));
+  }
+  assert.equal((await uploadAvatar(env, aliceToken, "image/jpeg", "aGVsbG8=")).status, 200);
+});
+
+test("a group icon that is not valid base64 is refused", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "gb1");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  assert.equal((await uploadGroupAvatar(env, alice.token, created.roomID, "image/png", "%%%%")).status, 400);
+  assert.equal((await uploadGroupAvatar(env, alice.token, created.roomID, "image/png", "aGVsbG8=")).status, 200);
+});
+
+test("a chat report is stored with a 90-day expiry", async () => {
+  const env = environment();
+  const aliceToken = freshToken("t1");
+  const bobToken = freshToken("t2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const sent = await (await sendMessage(env, bobToken, accepted.roomID, "hi")).json();
+  const ttls = new Map();
+  const put = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (key, value, options) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
+  assert.equal((await reportMessage(env, aliceToken, accepted.roomID, sent.id, "spam")).status, 200);
+  const reportKeys = [...ttls.keys()].filter(key => key.startsWith("report:chat:"));
+  assert.equal(reportKeys.length, 1);
+  assert.equal(ttls.get(reportKeys[0]), 90 * 24 * 60 * 60);
+});
