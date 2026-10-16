@@ -3,7 +3,7 @@ import { resolveChatUserKey } from "./chat-identity.js";
 import { isExpired } from "./token.js";
 import { checkRateLimit } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
-import { json, binaryHeaders, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { realSession } from "./session.js";
 import { handleGroupRoutes } from "./groups.js";
 import { sendPush } from "./push.js";
@@ -28,6 +28,9 @@ const MAX_FRIENDS = 500;
 // A report's free-text reason — generous for context, but bounded so a
 // report can't be used to smuggle an oversized payload into storage.
 const MAX_REPORT_REASON_LENGTH = 1_000;
+// Kept as long as an in-app problem report is (issue-reports.js), then dropped:
+// without an expiry every report stayed in KV for good.
+const REPORT_TTL_SECONDS = 90 * 24 * 60 * 60;
 // Matches the format the client itself generates and validates (see
 // FriendStore.codePattern in ProfileAndFriendsView.swift). Rejecting anything
 // else here — rather than only trimming/uppercasing — keeps a malformed
@@ -240,7 +243,7 @@ export async function handleChat(url, request, env, ctx) {
     const body = await readBody(request, MAX_AVATAR_UPLOAD_BODY);
     const contentType = String(body?.contentType ?? "");
     const data = String(body?.data ?? "");
-    if (!ALLOWED_AVATAR_CONTENT_TYPES.has(contentType) || !data) {
+    if (!ALLOWED_AVATAR_CONTENT_TYPES.has(contentType) || !data || !isWellFormedBase64(data)) {
       return json({ error: "Invalid avatar." }, 400);
     }
     if (Math.floor(data.length * 3 / 4) > MAX_AVATAR_BYTES) {
@@ -685,7 +688,7 @@ export async function handleChat(url, request, env, ctx) {
     const reportKey = `report:chat:${Date.now()}:${crypto.randomUUID()}`;
     await env.STUDIQUO_DATA.put(reportKey, JSON.stringify({
       roomID: reportMatch[1], messageID, reporterKey: key, reason, createdAt: Date.now(),
-    }));
+    }), { expirationTtl: REPORT_TTL_SECONDS });
     return json({ status: "reported" });
   }
 
