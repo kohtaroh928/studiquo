@@ -1,6 +1,9 @@
 name: studiquo
 options:
   bundleIdPrefix: com.yabuko
+  # xcuserdata内のユーザースキームは共有スキームより優先される。LaunchActionが空のものが
+  # 残るとXcodeのRunが実機に転送・起動しなくなる(2026-10)ので、再生成のたびに消す。
+  postGenCommand: rm -f studiquo.xcodeproj/xcuserdata/*/xcschemes/studiquo.xcscheme
   deploymentTarget:
     iOS: "17.0"
 packages:
