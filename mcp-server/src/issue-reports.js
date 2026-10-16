@@ -14,7 +14,7 @@ import { isRevoked } from "./revocation.js";
 import { isExpired } from "./token.js";
 import { checkRateLimit } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
-import { json, readJSONLimited } from "./http.js";
+import { json, binaryHeaders, readJSONLimited } from "./http.js";
 import { realSession } from "./session.js";
 import { postSlackBlocks } from "./slack.js";
 
@@ -87,7 +87,7 @@ export async function handleIssueReports(url, request, env) {
     const bytes = Uint8Array.from(atob(screenshot.data), c => c.charCodeAt(0));
     return new Response(bytes, {
       status: 200,
-      headers: { "content-type": screenshot.contentType, "cache-control": "private, max-age=300" },
+      headers: binaryHeaders(screenshot.contentType, "private, max-age=300"),
     });
   }
 

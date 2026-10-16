@@ -10,7 +10,7 @@
 // issue-reports.js's unauthenticated screenshot GET.
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { json, readJSONLimited } from "./http.js";
-import { bearerToken, sha256Hex } from "./auth.js";
+import { bearerToken, secretsEqual, sha256Hex } from "./auth.js";
 import { isExpired } from "./token.js";
 import { isRevoked } from "./revocation.js";
 import { realSession } from "./session.js";
@@ -88,7 +88,7 @@ export async function handleAdminWebhook(url, request, env) {
   if (!allowed) return json({ error: "Too many requests." }, 429);
 
   const authorization = request.headers.get("authorization") ?? "";
-  if (!env.REVENUECAT_WEBHOOK_SECRET || authorization !== env.REVENUECAT_WEBHOOK_SECRET) {
+  if (!env.REVENUECAT_WEBHOOK_SECRET || !(await secretsEqual(authorization, env.REVENUECAT_WEBHOOK_SECRET))) {
     return json({ error: "Unauthorized." }, 401);
   }
 
