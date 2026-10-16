@@ -158,6 +158,35 @@ test("an INITIAL_PURCHASE webhook is logged and makes the subscriber active", as
   assert.equal(data.monthToDate.revenue, 9.99);
 });
 
+test("a SANDBOX purchase is logged but does not make the subscriber active", async () => {
+  const env = environment();
+  const response = await sendWebhook(env, purchaseEvent({ app_user_id: "sandbox-user", environment: "SANDBOX" }));
+  assert.equal(response.status, 200);
+  assert.equal((await stats(env)).activeSubscribers, 0);
+  const logged = await env.ADMIN_DB.prepare("SELECT environment FROM revenuecat_events WHERE app_user_id = ?").bind("sandbox-user").first();
+  assert.equal(logged.environment, "SANDBOX");
+  const row = await env.ADMIN_DB.prepare("SELECT 1 AS found FROM subscribers WHERE app_user_id = ?").bind("sandbox-user").first();
+  assert.equal(row, null);
+});
+
+test("a SANDBOX purchase grants a plan when ALLOW_SANDBOX_PURCHASES is true", async () => {
+  const env = { ...environment(), ALLOW_SANDBOX_PURCHASES: "true" };
+  await sendWebhook(env, purchaseEvent({ app_user_id: "sandbox-user", environment: "SANDBOX" }));
+  assert.equal((await stats(env)).activeSubscribers, 1);
+});
+
+test("an older event delivered late does not overwrite a newer one", async () => {
+  const env = environment();
+  const now = Date.now();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "late-user", event_timestamp_ms: now }));
+  // An EXPIRATION that RevenueCat generated before the purchase above arrives afterwards.
+  await sendWebhook(env, purchaseEvent({ app_user_id: "late-user", type: "EXPIRATION", event_timestamp_ms: now - 60_000 }));
+  assert.equal((await stats(env)).activeSubscribers, 1);
+  // A newer EXPIRATION still applies.
+  await sendWebhook(env, purchaseEvent({ app_user_id: "late-user", type: "EXPIRATION", event_timestamp_ms: now + 60_000 }));
+  assert.equal((await stats(env)).activeSubscribers, 0);
+});
+
 test("the same event id delivered twice is only recorded once", async () => {
   const env = environment();
   const event = purchaseEvent();

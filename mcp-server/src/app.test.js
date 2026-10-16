@@ -2199,6 +2199,23 @@ test("POST /api/auth/email/confirm-code: resetting the password signs out the se
   assert.ok(await realSession(env, afterReset), "the session minted by the reset does");
 });
 
+test("POST /api/auth/email/confirm-code: an account whose deletion is running is refused before anything is stored", async () => {
+  const env = environment({ strictSessions: true });
+  await env.STUDIQUO_DATA.put(`account-deletion:${await sha256Hex("email:deleting@example.com")}`, JSON.stringify({ status: "deleting" }));
+  const stub = stubResendCapturingCode();
+  const send = await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "deleting@example.com" } }), env, noopCtx);
+  stub.restore();
+  assert.equal(send.status, 200);
+  const response = await worker.fetch(
+    request("/api/auth/email/confirm-code", { method: "POST", body: { email: "deleting@example.com", code: stub.code(), password: "correct-horse-battery", randomValue: "d".repeat(40) } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).code, "account_deleting");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:deleting@example.com"), null, "no password was saved");
+});
+
 test("POST /api/auth/email/confirm-code: adding a first password does not sign out the account's other sessions", async t => {
   t.after(() => mock.timers.reset());
   mock.timers.enable({ apis: ["Date"], now: Date.now() });

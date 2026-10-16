@@ -70,15 +70,19 @@ async function countDistinctUsers(env) {
   return groups.size;
 }
 
-async function upsertSubscriber(env, appUserId, status, productId, expiresAt, identityHashes) {
+// `updated_at` holds the time of the RevenueCat event that wrote the row, not
+// the time it arrived: webhooks are delivered out of order and retried, and an
+// older event must never overwrite the state a newer one already set.
+async function upsertSubscriber(env, appUserId, status, productId, expiresAt, identityHashes, occurredAt) {
   await env.ADMIN_DB.prepare(
     `INSERT INTO subscribers (app_user_id, status, product_id, expires_at, updated_at)
      SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS
        (SELECT 1 FROM privacy_deleted_customers WHERE customer_hash IN (SELECT value FROM json_each(?)))
      ON CONFLICT(app_user_id) DO UPDATE SET
        status = excluded.status, product_id = excluded.product_id,
-       expires_at = excluded.expires_at, updated_at = excluded.updated_at`
-  ).bind(appUserId, status, productId, expiresAt, Date.now(), JSON.stringify(identityHashes)).run();
+       expires_at = excluded.expires_at, updated_at = excluded.updated_at
+     WHERE excluded.updated_at >= subscribers.updated_at`
+  ).bind(appUserId, status, productId, expiresAt, occurredAt, JSON.stringify(identityHashes)).run();
 }
 
 export async function handleAdminWebhook(url, request, env) {
@@ -118,16 +122,24 @@ export async function handleAdminWebhook(url, request, env) {
     price, event.currency ?? null, event.environment ?? "PRODUCTION", occurredAt, JSON.stringify(identityHashes)
   ).run();
 
+  // Sandbox (TestFlight, App Review, test Apple IDs) purchases cost nothing,
+  // so they are logged above but must not change who is entitled — unless
+  // this deployment opts in (staging does, to test purchases end to end).
+  // An event without an `environment` is treated as PRODUCTION, as above.
+  if ((event.environment ?? "PRODUCTION") !== "PRODUCTION" && env.ALLOW_SANDBOX_PURCHASES !== "true") {
+    return json({ received: true, ignored: true });
+  }
+
   const expiresAt = Number(event.expiration_at_ms) || null;
   if (ACTIVATING_EVENT_TYPES.has(event.type)) {
     const productId = event.type === "PRODUCT_CHANGE"
       ? productForPlanChange(event.product_id, event.new_product_id)
       : event.product_id ?? null;
-    await upsertSubscriber(env, event.app_user_id, "active", productId, expiresAt, identityHashes);
+    await upsertSubscriber(env, event.app_user_id, "active", productId, expiresAt, identityHashes, occurredAt);
   } else if (event.type === "BILLING_ISSUE") {
-    await upsertSubscriber(env, event.app_user_id, "billing_issue", event.product_id ?? null, expiresAt, identityHashes);
+    await upsertSubscriber(env, event.app_user_id, "billing_issue", event.product_id ?? null, expiresAt, identityHashes, occurredAt);
   } else if (DEACTIVATING_EVENT_TYPES.has(event.type)) {
-    await upsertSubscriber(env, event.app_user_id, "expired", event.product_id ?? null, expiresAt, identityHashes);
+    await upsertSubscriber(env, event.app_user_id, "expired", event.product_id ?? null, expiresAt, identityHashes, occurredAt);
   }
   // TRANSFER, TEST, SUBSCRIPTION_PAUSED and anything else are recorded in
   // the log above but don't change subscribers — a transferred entitlement

@@ -112,3 +112,37 @@ test("MCP connector pairs through the logged-in iPad, imports by account, and ca
   const after = await fetch(env, "/mcp", { method: "POST", headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" }, body: "{}" });
   assert.equal(after.status, 401);
 });
+
+test("a refresh token from before a revocation stays dead when the same app is approved again", async () => {
+  const { approvePairing, revokeConnection } = await import("./mcp-oauth.js");
+  const env = environment();
+  const sub = "apple:owner";
+  const clientId = "studiquo_" + "a".repeat(32);
+  const redirectUri = "https://client.example/callback";
+  await env.STUDIQUO_DATA.put(`mcp:client:${clientId}`, JSON.stringify({ clientName: "App", redirectUris: [redirectUri] }));
+  const refresh = token => fetch(env, "/oauth/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "refresh_token", client_id: clientId, refresh_token: token }).toString(),
+  });
+
+  // Approve once and take the refresh token the app now holds.
+  const approve = async (id, code) => {
+    await env.STUDIQUO_DATA.put(`mcp:auth:${id}`, JSON.stringify({ status: "pending", clientId, clientName: "App", redirectUri, codeChallenge: "c".repeat(43), scope: "studiquo.read" }));
+    await env.STUDIQUO_DATA.put(`mcp:pair:${code}`, id);
+    assert.equal(await approvePairing(env, code, sub), true);
+  };
+  await approve("1".repeat(64), "ABCDEFGHJKMN");
+  const grant = JSON.parse(await env.STUDIQUO_DATA.get(`mcp:grant:${hash(sub)}:${hash(clientId)}`));
+  const stolen = "mcp_refresh_" + "s".repeat(40);
+  await env.STUDIQUO_DATA.put(`mcp:refresh:${hash(stolen)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read", grantId: grant.nonce }));
+  const legitimate = "mcp_refresh_" + "l".repeat(40);
+  await env.STUDIQUO_DATA.put(`mcp:refresh:${hash(legitimate)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read", grantId: grant.nonce }));
+  assert.equal((await refresh(legitimate)).status, 200, "valid while the connection exists");
+
+  // The owner disconnects the app, then approves it again.
+  await revokeConnection(env, sub, hash(clientId));
+  assert.equal((await refresh(stolen)).status, 400, "dead once revoked");
+  await approve("2".repeat(64), "QRSTUVWXYZ23");
+  assert.equal((await refresh(stolen)).status, 400, "and not revived by approving the app again");
+});
