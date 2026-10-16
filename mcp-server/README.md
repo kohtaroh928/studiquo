@@ -81,7 +81,7 @@ npx wrangler deploy
 ### 動作確認
 
 ```bash
-curl -s https://studiquo-mcp.studiquo-mcp-server.workers.dev/health
+curl -s https://api.studiquo.app/health
 ```
 
 ## APNsプッシュ通知

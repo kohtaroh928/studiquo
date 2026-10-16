@@ -6,8 +6,11 @@ import UIKit
 final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     static let shared = PasskeyService()
 
-    private let relyingPartyIdentifier = "studiquo-mcp.studiquo-mcp-server.workers.dev"
-    private let endpoint = URL(string: "https://studiquo-mcp.studiquo-mcp-server.workers.dev")!
+    // The Worker has one address (WorkerAIProvider.defaultEndpoint). The relying party
+    // identifier is its host: it must match both the associated domain in the
+    // entitlements and what the Worker checks (passkeys.js).
+    private let endpoint = URL(string: WorkerAIProvider.defaultEndpoint)!
+    private var relyingPartyIdentifier: String { endpoint.host ?? "api.studiquo.app" }
     private var continuation: CheckedContinuation<ASAuthorization, Error>?
 
     func register(email: String, token: String) async throws {
