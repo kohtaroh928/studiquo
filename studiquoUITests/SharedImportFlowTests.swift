@@ -24,6 +24,13 @@ final class SharedImportFlowTests: XCTestCase {
 
     override func tearDown() {
         XCUIDevice.shared.orientation = .portrait
+        // The seeded files stay in the shared container after the app closes,
+        // and the next test would start with them (a held-files banner on the
+        // home screen). Launch once more only to empty the inbox.
+        app.terminate()
+        app.launchArguments = ["--library-drop-ui-test", "--ui-test-clear-shared-inbox"]
+        app.launch()
+        app.terminate()
     }
 
     // MARK: Helpers
