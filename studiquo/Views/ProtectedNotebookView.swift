@@ -83,13 +83,17 @@ struct ProtectedNotebookView: View {
     @Bindable var notebook: Notebook
     @Binding var columnVisibility: NavigationSplitViewVisibility
     var onHome: () -> Void
+    var initialFlashcardDeck: FlashcardDeck?
+    var initialFlashcardStartsWithMistakeReview = false
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         NoteEditorView(
             notebook: notebook,
             columnVisibility: $columnVisibility,
-            onHome: onHome
+            onHome: onHome,
+            initialFlashcardDeck: initialFlashcardDeck,
+            initialFlashcardStartsWithMistakeReview: initialFlashcardStartsWithMistakeReview
         )
         .environmentObject(AIChatStore.shared(for: modelContext))
     }

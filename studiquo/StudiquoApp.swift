@@ -105,7 +105,7 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        startupLogger.error("APNs registration failed: \(String(describing: error), privacy: .public)")
+        startupLogger.error("APNs registration failed")
     }
 
     func userNotificationCenter(
@@ -169,14 +169,14 @@ private func makeStudiquoModelContainer() throws -> ModelContainer {
         startupLogger.info("Persistent store ready (CloudKit)")
         return container
     } catch {
-        startupLogger.error("CloudKit store open failed: \(String(describing: error), privacy: .public)")
+        startupLogger.error("CloudKit store open failed")
         do {
             let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .none)
             let container = try ModelContainer(for: studiquoSchema, configurations: configuration)
             startupLogger.info("Persistent store ready (local)")
             return container
         } catch {
-            startupLogger.error("Local store open failed: \(String(describing: error), privacy: .public)")
+            startupLogger.error("Local store open failed")
             // Never silently substitute an empty, unsaved in-memory library.
             throw error
         }

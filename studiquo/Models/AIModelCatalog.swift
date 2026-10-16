@@ -79,27 +79,3 @@ enum AIModelCatalog {
         return info.requiredPlan <= plan
     }
 }
-
-/// The model AIトーク (and marking/review) currently asks for — persisted
-/// across launches via `UserDefaults`, the same lightweight pattern
-/// `AIReviewService.isEnabled` uses for its own toggle rather than a full
-/// `@AppStorage`-backed model, since this is read from plain Swift code
-/// (`WorkerAIProvider`) with no SwiftUI environment to pull from.
-///
-/// This only remembers the student's *choice* — it never grants anything by
-/// itself. The Worker is the real gate: it rejects a `model` outside the
-/// caller's plan with 403 regardless of what's stored here. The model
-/// picker UI is expected to only ever write a model `AIModelCatalog
-/// .isAvailable` already says the current plan allows.
-enum AIModelSelection {
-    static let defaultsKey = "selectedAIModelID"
-
-    static var current: AIModelID {
-        get {
-            AIModelCatalog.defaultModel
-        }
-        set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey)
-        }
-    }
-}

@@ -42,6 +42,13 @@ final class AuthenticationStore: ObservableObject {
     @Published private(set) var isEmailVerifyBusy = false
     @Published private(set) var isLoginBusy = false
     @Published private(set) var isAccountDeletionBusy = false
+
+    /// Every login method writes the same local session. Keeping them mutually
+    /// exclusive prevents a slower sheet from replacing a session that has
+    /// already completed with another account.
+    var isSignInBusy: Bool {
+        isLoginBusy || isPasskeyBusy || isAppleSignInBusy || isGoogleSignInBusy
+    }
     /// True while the signed-in account has no passkey: the app asks for one
     /// before anything else (see PasskeyEnrollmentView). A passkey is what a
     /// look-alike site relaying a password or code cannot imitate, and once an
@@ -161,6 +168,7 @@ final class AuthenticationStore: ObservableObject {
     /// recognize this device on the next cold launch, same as every other
     /// sign-in method.
     func login(email: String, password: String) async -> Bool {
+        guard !isSignInBusy else { return false }
         let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty, !password.isEmpty else {
             errorMessage = "メールアドレスとパスワードを入力してください。"
@@ -460,6 +468,7 @@ final class AuthenticationStore: ObservableObject {
     }
 
     func loginWithPasskey() async -> Bool {
+        guard !isSignInBusy else { return false }
         isPasskeyBusy = true
         defer { isPasskeyBusy = false }
         do {
@@ -492,6 +501,7 @@ final class AuthenticationStore: ObservableObject {
             errorMessage = error.localizedDescription
             return false
         case .success(let authorization):
+            guard !isSignInBusy else { return false }
             isAppleSignInBusy = true
             defer { isAppleSignInBusy = false }
             do {
@@ -520,6 +530,7 @@ final class AuthenticationStore: ObservableObject {
     /// finishes the whole native Google sign-in flow itself, same as
     /// AppleSignInService.signIn().
     func loginWithGoogle() async -> Bool {
+        guard !isSignInBusy else { return false }
         isGoogleSignInBusy = true
         defer { isGoogleSignInBusy = false }
         do {

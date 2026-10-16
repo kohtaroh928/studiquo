@@ -1,7 +1,7 @@
 import XCTest
 
 final class FriendsSidebarDefaultTests: XCTestCase {
-    func testFullWindowStartsWithChatHistoryAndCanToggleSidebarRepeatedly() {
+    func testFullWindowDoesNotShowTheCompactOnlySidebarButton() {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
@@ -12,16 +12,7 @@ final class FriendsSidebarDefaultTests: XCTestCase {
         app.buttons["home-tab-friends"].tap()
         XCTAssertTrue(app.navigationBars["メッセージ"].waitForExistence(timeout: 10))
         if app.alerts["エラー"].waitForExistence(timeout: 2) { app.alerts["エラー"].buttons["OK"].tap() }
-        XCTAssertFalse(app.buttons["申請・招待"].isHittable)
-        let toggle = app.buttons["friends-sidebar-toggle"]
-        for _ in 0..<2 {
-            toggle.tap()
-            XCTAssertTrue(app.buttons["申請・招待"].waitForExistence(timeout: 5))
-            XCTAssertTrue(app.buttons["申請・招待"].isHittable)
-            app.buttons["friends-sidebar-close"].tap()
-            XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-            XCTAssertFalse(app.buttons["申請・招待"].isHittable)
-            XCTAssertTrue(app.navigationBars["メッセージ"].exists)
-        }
+        XCTAssertFalse(app.buttons["friends-sidebar-toggle"].exists)
+        XCTAssertTrue(app.navigationBars["メッセージ"].exists)
     }
 }

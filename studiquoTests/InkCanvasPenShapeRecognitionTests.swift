@@ -277,4 +277,99 @@ final class InkCanvasPenShapeRecognitionTests: XCTestCase {
         let corrected = InkCanvasView.correctedRectangleBounds(bounds)
         XCTAssertEqual(corrected, bounds, "はっきり長方形の比率のものは、正方形に補正されず元の形のままである必要があります。")
     }
+
+    // MARK: - polylineIfRecognized
+
+    /// Points along the given corners, `step` apart, with a small repeatable
+    /// wobble so the strokes look hand-drawn rather than ruler-straight.
+    private func polylinePoints(_ corners: [CGPoint], step: CGFloat = 4, wobble: CGFloat = 1.2) -> [CGPoint] {
+        var result: [CGPoint] = []
+        var n = 0
+        for (a, b) in zip(corners, corners.dropFirst()) {
+            let length = hypot(b.x - a.x, b.y - a.y)
+            let count = max(1, Int(length / step))
+            for i in 0..<count {
+                let t = CGFloat(i) / CGFloat(count)
+                let offset = wobble * sin(CGFloat(n) * 1.7)
+                n += 1
+                result.append(CGPoint(x: a.x + (b.x - a.x) * t + offset, y: a.y + (b.y - a.y) * t - offset))
+            }
+        }
+        if let last = corners.last { result.append(last) }
+        return result
+    }
+
+    private func recognizedCorners(_ corners: [CGPoint], wobble: CGFloat = 1.2) -> [CGPoint]? {
+        InkCanvasView.polylineIfRecognized(stroke(polylinePoints(corners, wobble: wobble)))?.points.map(\.location)
+    }
+
+    func testVShapeBecomesTwoSegments() throws {
+        let result = try XCTUnwrap(recognizedCorners([CGPoint(x: 0, y: 0), CGPoint(x: 60, y: 90), CGPoint(x: 120, y: 0)]))
+        XCTAssertEqual(result.count, 3, "「V」の字は頂点3つ(線分2本)の折線になる必要があります。")
+        XCTAssertEqual(result[1].x, 60, accuracy: 6)
+        XCTAssertEqual(result[1].y, 90, accuracy: 6)
+    }
+
+    func testZShapeBecomesThreeSegments() throws {
+        let result = try XCTUnwrap(recognizedCorners([
+            CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0), CGPoint(x: 0, y: 100), CGPoint(x: 100, y: 100),
+        ]))
+        XCTAssertEqual(result.count, 4, "「Z」の字は頂点4つ(線分3本)の折線になる必要があります。")
+    }
+
+    func testStaircaseBecomesFiveSegments() throws {
+        let result = try XCTUnwrap(recognizedCorners([
+            CGPoint(x: 0, y: 100), CGPoint(x: 0, y: 70), CGPoint(x: 40, y: 70), CGPoint(x: 40, y: 40),
+            CGPoint(x: 80, y: 40), CGPoint(x: 80, y: 10),
+        ]))
+        XCTAssertEqual(result.count, 6, "階段は頂点6つ(線分5本)の折線になる必要があります。")
+    }
+
+    func testNearHorizontalAndVerticalRunsAreSnapped() throws {
+        // Slightly tilted: the first run drifts 3° off horizontal, the second 3° off vertical.
+        let corners = [CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 5), CGPoint(x: 105, y: 105)]
+        let result = try XCTUnwrap(recognizedCorners(corners, wobble: 0))
+        XCTAssertEqual(result[0].y, result[1].y, accuracy: 0.001, "水平に近い線分は水平に合わせる必要があります。")
+        XCTAssertEqual(result[1].x, result[2].x, accuracy: 0.001, "垂直に近い線分は垂直に合わせる必要があります。")
+    }
+
+    func testStraightLineIsNotAPolyline() {
+        XCTAssertNil(
+            recognizedCorners([CGPoint(x: 0, y: 0), CGPoint(x: 150, y: 60)]),
+            "角のない直線は折線ではなく、従来の直線補正に任せる必要があります。"
+        )
+    }
+
+    func testArcIsNotAPolyline() {
+        let arc = (0...40).map { i -> CGPoint in
+            let angle = CGFloat(i) / 40 * .pi / 2
+            return CGPoint(x: 100 * sin(angle), y: 100 - 100 * cos(angle))
+        }
+        XCTAssertNil(InkCanvasView.polylineIfRecognized(stroke(arc)), "なめらかな弧を折線にしてはいけません。")
+    }
+
+    func testSineWaveIsNotAPolyline() {
+        let wave = (0...60).map { i in CGPoint(x: CGFloat(i) * 3, y: 30 * sin(CGFloat(i) / 60 * 4 * .pi)) }
+        XCTAssertNil(InkCanvasView.polylineIfRecognized(stroke(wave)), "サイン波を折線にしてはいけません。")
+    }
+
+    func testClosedShapesAreNotPolylines() {
+        let triangle = polylinePoints([CGPoint(x: 0, y: 100), CGPoint(x: 60, y: 0), CGPoint(x: 120, y: 100), CGPoint(x: 0, y: 100)])
+        XCTAssertNil(InkCanvasView.polylineIfRecognized(stroke(triangle)), "閉じた形は折線でなく、三角形などの補正に任せます。")
+        let circle = circlePoints(center: CGPoint(x: 50, y: 50), radius: 40, count: 40)
+        XCTAssertNil(InkCanvasView.polylineIfRecognized(stroke(circle)))
+    }
+
+    func testTinyStrokeIsNotAPolyline() {
+        XCTAssertNil(
+            recognizedCorners([CGPoint(x: 0, y: 0), CGPoint(x: 12, y: 18), CGPoint(x: 24, y: 0)], wobble: 0),
+            "小さすぎる線は折線にしてはいけません(手書きの文字を壊さないため)。"
+        )
+    }
+
+    func testTooManyCornersIsNotAPolyline() {
+        let zigzag = (0..<11).map { CGPoint(x: CGFloat($0) * 20, y: $0 % 2 == 0 ? 0 : 60) }
+        XCTAssertNil(InkCanvasView.polylineIfRecognized(stroke(polylinePoints(zigzag))), "線分が9本以上の線は折線にしません。")
+    }
 }
+

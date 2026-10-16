@@ -36,6 +36,13 @@ protocol AIProvider {
     /// Judges whether an AIトーク question is worth reviewing tomorrow and,
     /// if so, researches it into an explanation and a short quiz.
     func researchReview(question: String, context: String) async throws -> AIReviewResult
+
+    /// The remaining per-device daily chat allowance, if this provider has one.
+    func usage() async -> AIUsage?
+}
+
+extension AIProvider {
+    func usage() async -> AIUsage? { nil }
 }
 
 /// The Worker's `/api/ai/review` result: whether the question was worth
@@ -44,6 +51,13 @@ struct AIReviewResult: Decodable {
     let isStudyRelevant: Bool
     let explanationMarkdown: String
     let quiz: [AIQuizQuestion]
+}
+
+/// Remaining daily chat credits as enforced by the server for this device.
+struct AIUsage: Decodable, Equatable {
+    let limit: Int
+    let remaining: Int
+    let resetsAt: Date?
 }
 
 /// One thing to mark.
@@ -106,6 +120,21 @@ final class WorkerAIProvider: AIProvider {
     var isConfigured: Bool { baseURL != nil }
 
     var displayName: String { L("Studiquo AI") }
+
+    func usage() async -> AIUsage? {
+        guard AIDataDisclosure.hasBeenAcknowledged, let baseURL else { return nil }
+        var request = URLRequest(url: baseURL.appending(path: "api/ai/usage"))
+        request.httpMethod = "GET"
+        request.setValue(AIDataDisclosure.currentVersion, forHTTPHeaderField: "X-Studiquo-AI-Consent")
+        request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { return nil }
+            return try? JSONDecoder().decode(AIUsage.self, from: data)
+        } catch {
+            return nil
+        }
+    }
 
     enum ProviderError: LocalizedError {
         case notConfigured
@@ -187,7 +216,7 @@ final class WorkerAIProvider: AIProvider {
             "noteContext": noteContext,
             "images": encodedImages,
             "requiresImage": expectsImages,
-            "model": AIModelSelection.current.rawValue,
+            "model": AIModelCatalog.defaultModel.rawValue,
         ]
         let request = try request(path: "api/ai/chat", body: payload)
 
@@ -231,7 +260,7 @@ final class WorkerAIProvider: AIProvider {
         var body: [String: Any] = [
             "question": submission.questionText,
             "modelAnswer": submission.modelAnswer,
-            "model": AIModelSelection.current.rawValue,
+            "model": AIModelCatalog.defaultModel.rawValue,
         ]
         if let png = Self.encoded(submission.questionImage) {
             body["questionImageBase64"] = png
@@ -246,7 +275,7 @@ final class WorkerAIProvider: AIProvider {
             "criteria": rubric.criteria.map {
                 ["name": $0.name, "maxPoints": $0.maxPoints, "requirement": $0.requirement]
             },
-            "model": AIModelSelection.current.rawValue,
+            "model": AIModelCatalog.defaultModel.rawValue,
         ]
         if let png = Self.encoded(submission.answerImage) { body["imageBase64"] = png }
         if let png = Self.encoded(submission.questionImage) { body["questionImageBase64"] = png }
@@ -259,7 +288,7 @@ final class WorkerAIProvider: AIProvider {
         try await streamedResult(path: "api/ai/review", body: [
             "question": question,
             "context": context,
-            "model": AIModelSelection.current.rawValue,
+            "model": AIModelCatalog.defaultModel.rawValue,
         ])
     }
 

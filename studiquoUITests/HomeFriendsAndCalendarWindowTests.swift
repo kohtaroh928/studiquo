@@ -16,9 +16,7 @@ final class HomeFriendsAndCalendarWindowTests: XCTestCase {
         app.buttons["home-tab-friends"].tap()
         XCTAssertTrue(app.navigationBars["メッセージ"].waitForExistence(timeout: 10))
         if app.alerts["エラー"].exists { app.alerts["エラー"].buttons["OK"].tap() }
-        XCTAssertTrue(app.buttons["friends-sidebar-toggle"].waitForExistence(timeout: 5))
-        app.buttons["friends-sidebar-toggle"].tap()
-        XCTAssertTrue(app.buttons["申請・招待"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["friends-sidebar-toggle"].exists)
         // This in-memory library fixture has no authenticated friend session.
         // Its background refresh may present an error; dismiss that expected
         // fixture-only dialog before exercising the bottom-tab navigation.
@@ -37,6 +35,10 @@ final class HomeFriendsAndCalendarWindowTests: XCTestCase {
         if app.alerts["エラー"].exists { app.alerts["エラー"].buttons["OK"].tap() }
         app.buttons["friends-sidebar-toggle"].tap()
         XCTAssertTrue(app.buttons["申請・招待"].waitForExistence(timeout: 5))
+        XCTAssertFalse(
+            app.buttons["friends-sidebar-toggle"].exists,
+            "一覧を開いている間は、開くためのボタンと閉じるためのボタンを重複表示しません"
+        )
         app.buttons["friends-sidebar-close"].tap()
         XCTAssertTrue(app.navigationBars["メッセージ"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["friends-sidebar-toggle"].isHittable)
