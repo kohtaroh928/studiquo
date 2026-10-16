@@ -12,7 +12,7 @@ import Foundation
 /// edits to an existing paragraph's text. See `CollabSheet`'s doc comment in
 /// TextDocumentView.swift for how the editor surfaces that boundary.
 enum DocumentCollabService {
-    private static let endpoint = URL(string: "https://studiquo-mcp.studiquo-mcp-server.workers.dev")!
+    private static let endpoint = URL(string: WorkerAIProvider.defaultEndpoint)!
 
     struct Block: Codable {
         var order: Int

@@ -7,6 +7,9 @@ const AUTH_TTL = 600;
 const CODE_TTL = 300;
 const ACCESS_TTL = 3600;
 const REFRESH_TTL = 90 * 24 * 3600;
+// A registration nobody uses again goes away; one in use is needed again only
+// when the app is connected anew.
+const CLIENT_TTL = 365 * 24 * 3600;
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function randomToken(bytes = 32) {
@@ -107,10 +110,12 @@ export async function listConnections(env, sub) {
     names.push(...page.keys.map(key => key.name));
     cursor = page.list_complete === false ? page.cursor : undefined;
   } while (cursor);
-  return Promise.all(names.map(async name => ({
-    id: name.slice(prefix.length),
-    ...(await env.STUDIQUO_DATA.get(name, "json")),
-  })));
+  // Only what the app lists: the grant's `nonce` is what ties issued tokens to
+  // it, so it stays server-side.
+  return Promise.all(names.map(async name => {
+    const grant = await env.STUDIQUO_DATA.get(name, "json");
+    return { id: name.slice(prefix.length), clientName: grant?.clientName ?? null, createdAt: grant?.createdAt ?? null };
+  }));
 }
 
 /**
@@ -158,7 +163,7 @@ export async function handleMCPOAuth(url, request, env) {
     }
     const clientId = `studiquo_${randomToken(16)}`;
     const clientName = String(body.client_name ?? "MCP client").slice(0, 100);
-    await env.STUDIQUO_DATA.put(`mcp:client:${clientId}`, JSON.stringify({ clientName, redirectUris: uris }));
+    await env.STUDIQUO_DATA.put(`mcp:client:${clientId}`, JSON.stringify({ clientName, redirectUris: uris }), { expirationTtl: CLIENT_TTL });
     return json({ client_id: clientId, client_name: clientName, redirect_uris: uris,
       token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"] }, 201);

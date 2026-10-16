@@ -1,7 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import * as z from "zod/v4";
-import { handleAI } from "./ai.js";
+import { handleAI, subscriptionRequiredResponse } from "./ai.js";
+import { accountCounterKey } from "./ai-credits.js";
 import { aiPrivacyRejection } from "./ai-privacy.js";
 import { getPlan, paywallEnabled } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
@@ -261,6 +262,25 @@ function createServer(env, key, accountHash = null, source = "MCP", canWrite = t
  */
 const MAX_MCP_BODY = 8_000_000;
 
+// Every call to /mcp builds a server and runs a tool, and nothing else limited
+// how often a connected client (or a stolen token) could do that. Counted per
+// credential: the account for an app connected through OAuth, the token for one
+// connected by hand.
+const MCP_CALLS_PER_MINUTE = 120;
+
+// The synced snapshot is up to 8MB and each upload writes it to KV twice; the
+// app only uploads when the person taps the sync button.
+const SNAPSHOT_UPLOADS_PER_HOUR = 30;
+
+// Every AI request is refused or let through by the credit windows in
+// ai-credits.js, but only after its body (up to 20MB) has been read. This
+// bounds how many bodies one account can make the Worker read.
+const AI_REQUESTS_PER_MINUTE = 60;
+
+function tooManyRequests(seconds = 60) {
+  return Response.json({ error: "Too many requests. Please slow down." }, { status: 429, headers: securityHeaders({ "retry-after": String(seconds) }) });
+}
+
 async function handleMCP(request, env) {
   const token = bearerToken(request);
   const external = token ? await externalSession(env, request) : null;
@@ -271,6 +291,7 @@ async function handleMCP(request, env) {
   if (!external && await isRevoked(env, deviceKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
   const accountHash = external ? await sha256Hex(`mcp-account:${external.sub}`) : null;
   const key = accountHash ?? deviceKey;
+  if (!(await env.RATE_COUNTER.getByName(`mcp-call:${key}`).bump(MCP_CALLS_PER_MINUTE, 60))) return tooManyRequests();
   if (!external && !(await env.STUDIQUO_DATA.get(`snapshot:${key}`))) {
     return json({ error: "Run sync in Studiquo before connecting an AI client." }, 401);
   }
@@ -413,6 +434,7 @@ export default {
       }
 
       if (url.pathname === "/api/snapshot" && request.method === "PUT") {
+        if (!(await env.RATE_COUNTER.getByName(`snapshot-upload:${key}`).bump(SNAPSHOT_UPLOADS_PER_HOUR, 3_600))) return tooManyRequests(600);
         const declaredSize = Number(request.headers.get("content-length") ?? 0);
         if (declaredSize > 8_000_000) return json({ error: "Snapshot is too large." }, 413);
         const body = await readTextLimited(request, 8_000_000);
@@ -468,9 +490,17 @@ export default {
       // a D1 read (entitlements.js's getPlan) that every other route here
       // has no use for.
       if (url.pathname.startsWith("/api/ai/")) {
+        // Cheapest refusals first, so that none of them costs a body read: the
+        // per-account request budget, then an account with no plan to spend.
+        if (request.method === "POST") {
+          const account = await accountCounterKey(session?.sub, key);
+          if (!(await env.RATE_COUNTER.getByName(`ai-request:${account}`).bump(AI_REQUESTS_PER_MINUTE, 60))) return tooManyRequests();
+        }
+        const plan = session ? await getPlan(env, [session.sub, session.originalSub]) : "standard";
+        const subscriptionRequired = subscriptionRequiredResponse(plan, url, request);
+        if (subscriptionRequired) return subscriptionRequired;
         const privacyFailure = await aiPrivacyRejection(request, env);
         if (privacyFailure) return privacyFailure;
-        const plan = session ? await getPlan(env, [session.sub, session.originalSub]) : "standard";
         const ai = await handleAI(url, request, env, key, ctx, session, plan);
         if (ai) return ai;
       }

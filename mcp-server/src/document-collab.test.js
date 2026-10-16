@@ -139,6 +139,17 @@ function environment() {
     STUDIQUO_DATA: studiquoData,
     DOCUMENT_ROOM: fakeDocumentRoomBinding(),
     RATE_COUNTER: fakeRateCounterBinding(),
+    CHAT_ROOM: fakeChatRoomBinding(),
+  };
+}
+
+// Stands in for ChatRoom's blockStatus (chat-room.js): nothing is blocked
+// unless a test lists the room id.
+function fakeChatRoomBinding(blockedRooms = new Set()) {
+  return {
+    getByName(id) {
+      return { async blockStatus() { return { blockedByMe: blockedRooms.has(id), blockedByOther: false }; } };
+    },
   };
 }
 
@@ -175,19 +186,30 @@ let nextTestCode = 1;
 // would create for a real account, so invite() below can resolve a friend
 // code to a userKey exactly the way the live handler does. Returns the
 // minted code.
-async function registerFriend(env, token, name) {
+async function registerFriend(env, token, name, { befriendedBy } = {}) {
   const userKey = await sha256Hex(token);
   const code = `TESTCODE${String(nextTestCode++).padStart(4, "0")}`;
   await env.STUDIQUO_DATA.put(`chat:user:${userKey}`, JSON.stringify({ key: userKey, name, code, friends: [] }));
   await env.STUDIQUO_DATA.put(`chat:code:${code}`, userKey);
+  if (befriendedBy) await befriend(env, befriendedBy, { code, name, roomID: `room-${code}` });
   return code;
+}
+
+// Adds `friend` to the friends list of the account that owns `token`, creating
+// that account's record first if it has none.
+async function befriend(env, token, friend) {
+  const userKey = await sha256Hex(token);
+  const existing = await env.STUDIQUO_DATA.get(`chat:user:${userKey}`, "json")
+    ?? { key: userKey, name: "owner", code: `OWNER${userKey.slice(0, 6).toUpperCase()}`, friends: [] };
+  existing.friends = [...(existing.friends ?? []), friend];
+  await env.STUDIQUO_DATA.put(`chat:user:${userKey}`, JSON.stringify(existing));
 }
 
 // `inviteeToken` is the token belonging to the person being invited — the
 // route resolves their friend code to a userKey server-side (the same way
 // chat.js resolves one when adding a friend), so this registers them first.
 async function invite(env, ownerToken, inviteeToken, role, { name = "友人" } = {}) {
-  const code = await registerFriend(env, inviteeToken, name);
+  const code = await registerFriend(env, inviteeToken, name, { befriendedBy: ownerToken });
   return worker.fetch(
     request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: ownerToken, body: { code, role } }),
     env,
@@ -430,7 +452,7 @@ test("owner can list participants with their roles and display names", async () 
   assert.ok(participants.some(entry => entry.role === "editor" && entry.name === "田中"));
 });
 
-test("inviting with a code no one is registered under returns 404", async () => {
+test("inviting with a code no one is registered under is refused like any non-friend", async () => {
   const env = environment();
   const owner = freshToken("1");
   await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
@@ -439,7 +461,67 @@ test("inviting with a code no one is registered under returns 404", async () => 
     env,
     noopCtx
   );
+  assert.equal(response.status, 400);
+});
+
+test("a friend whose account has gone is a 404", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  await befriend(env, owner, { code: "GONEFRIEND", name: "消えた人", roomID: "room-gone" });
+  const response = await worker.fetch(
+    request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: owner, body: { code: "GONEFRIEND", role: "editor" } }),
+    env,
+    noopCtx
+  );
   assert.equal(response.status, 404);
+});
+
+test("someone who is not a friend cannot be invited, even with a valid code", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  const stranger = freshToken("2");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  const code = await registerFriend(env, stranger, "他人");
+  const response = await worker.fetch(
+    request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: owner, body: { code, role: "editor" } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 400);
+  assert.equal(await env.DOCUMENT_ROOM.getByName(ROOM_ID).roleOf(await sha256Hex(stranger)), null);
+  assert.equal(await env.STUDIQUO_DATA.get(`doc-room:${await sha256Hex(stranger)}:${ROOM_ID}`), null);
+});
+
+test("a friend the owner has blocked cannot be invited", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  const friend = freshToken("2");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  const code = await registerFriend(env, friend, "友人", { befriendedBy: owner });
+  env.CHAT_ROOM = fakeChatRoomBinding(new Set([`room-${code}`]));
+  const response = await worker.fetch(
+    request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: owner, body: { code, role: "editor" } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 403);
+  assert.equal(await env.DOCUMENT_ROOM.getByName(ROOM_ID).roleOf(await sha256Hex(friend)), null);
+});
+
+test("creating more rooms than the hourly limit is rate limited", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  let lastStatus = 200;
+  for (let i = 0; i < 21; i += 1) {
+    const response = await worker.fetch(
+      request(`/api/document/rooms/${String(i).padStart(64, "0")}/init`, { method: "POST", token: owner, body: { blocks: [] } }),
+      env,
+      noopCtx
+    );
+    lastStatus = response.status;
+  }
+  assert.equal(lastStatus, 429);
 });
 
 test("inviting with a malformed code is rejected", async () => {
@@ -465,7 +547,7 @@ test("an invitee whose account is deleted while the invite is being made is not 
   const owner = freshToken("1");
   const invitee = freshToken("2");
   await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
-  const code = await registerFriend(env, invitee, "友人");
+  const code = await registerFriend(env, invitee, "友人", { befriendedBy: owner });
   const inviteeKey = await sha256Hex(invitee);
   const binding = env.DOCUMENT_ROOM;
   // The deletion lands after the code was resolved and the seat was made.

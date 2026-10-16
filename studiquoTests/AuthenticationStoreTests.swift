@@ -602,7 +602,7 @@ private final class StubAuthNetworkProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        XCTAssertEqual(request.url?.host, "studiquo-mcp.studiquo-mcp-server.workers.dev", "Unexpected test request host")
+        XCTAssertEqual(request.url?.host, "api.studiquo.app", "Unexpected test request host")
         let path = request.url?.path ?? ""
         Self.lock.lock()
         let forbidden = Self.forbidden.first { path.hasSuffix($0) }
