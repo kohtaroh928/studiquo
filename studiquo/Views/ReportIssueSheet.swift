@@ -133,8 +133,8 @@ struct ReportIssueSheet: View {
                                 .resizable()
                                 .scaledToFit()
                                 .frame(maxHeight: 220)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.3)))
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous).strokeBorder(Color.secondary.opacity(0.3)))
                         }
                     } footer: {
                         Text("フレンドとのチャットなど、他の人に関わる内容が写っていないか送る前にご確認ください。")
@@ -143,7 +143,7 @@ struct ReportIssueSheet: View {
 
                 if let errorMessage = state.errorMessage {
                     Section {
-                        Text(errorMessage).foregroundStyle(.red)
+                        Text(errorMessage).foregroundStyle(Theme.Palette.danger)
                     }
                 }
             }

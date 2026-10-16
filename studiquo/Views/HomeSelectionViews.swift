@@ -8,9 +8,9 @@ struct HomeSelectionCircle: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(isSelected ? Color.accentColor : Color.white)
+                .fill(isSelected ? Theme.Palette.accent : Color.white)
             Circle()
-                .strokeBorder(isSelected ? Color.accentColor : Color.gray.opacity(0.6), lineWidth: 1.5)
+                .strokeBorder(isSelected ? Theme.Palette.accent : Color.gray.opacity(0.6), lineWidth: 1.5)
             if isSelected {
                 Image(systemName: "checkmark")
                     .font(.system(size: 12, weight: .bold))
@@ -144,14 +144,14 @@ struct HomeSelectionActionBar: View {
                 Label(isTrash ? "復元" : "移動", systemImage: isTrash ? "arrow.uturn.backward" : "folder")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.themeSecondary)
             .accessibilityIdentifier(isTrash ? "library-selection-restore" : "library-selection-move")
 
             Button(role: .destructive, action: onDelete) {
                 Label(isTrash ? "完全に削除" : "削除", systemImage: "trash")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.themeSecondary)
             .accessibilityIdentifier(isTrash ? "library-selection-permanent-delete" : "library-selection-delete")
         }
         .controlSize(.large)
@@ -303,7 +303,7 @@ private struct HomeMoveDestinationLevel: View {
                 Text(isCurrentLocation ? "現在地です" : "ここに移動")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.themePrimary)
             .controlSize(.large)
             .disabled(isCurrentLocation || isBlocked)
             .padding(.horizontal, 16)
