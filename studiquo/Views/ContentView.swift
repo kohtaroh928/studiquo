@@ -280,7 +280,7 @@ private struct StudyNotificationDetail: View {
                         Label("カレンダーで開く", systemImage: "calendar")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .padding(.top, 4)
                 }
             }
@@ -660,13 +660,13 @@ private struct PDFPasswordRemovalOfferSheet: View {
                     onDecision(false, doNotAskAgain)
                     dismiss()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.themeSecondary)
                 .frame(maxWidth: .infinity)
                 Button("はい") {
                     onDecision(true, doNotAskAgain)
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.themePrimary)
                 .frame(maxWidth: .infinity)
             }
         }
@@ -1918,7 +1918,7 @@ private struct AIDataDisclosureView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(14)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                    .background(Theme.Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 10) {
                         Label("年齢の確認", systemImage: "person.badge.shield.checkmark")
@@ -1951,10 +1951,10 @@ private struct AIDataDisclosureView: View {
                     Button("OpenAIへのAI送信を許可する") {
                         if let band = chosenBand { onAcknowledge(band) }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .disabled(chosenBand == nil)
                     Button("許可しない・許可を取り消す", action: onDecline)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.themeSecondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
@@ -2835,7 +2835,7 @@ struct ContentView: View {
             if isDownloadingFriendAttachment {
                 ProgressView("読み込み中…")
                     .padding(20)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
             }
         }
         .fullScreenCover(item: $previewURL) { wrapped in
@@ -3341,10 +3341,10 @@ struct ContentView: View {
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
-                            .foregroundStyle(homeSection == section ? Color.white : Color.secondary)
+                            .foregroundStyle(homeSection == section ? Theme.Palette.onAccent : Theme.Palette.textSecondary)
                             .background(
-                                homeSection == section ? Color.accentColor : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 12)
+                                homeSection == section ? Theme.Palette.accent : Color.clear,
+                                in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
                             )
                             // The whole pill responds, not just the label glyphs —
                             // an unselected tab's background is clear and would
@@ -4559,7 +4559,7 @@ struct ContentView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
-                    .foregroundStyle(notebook.containsPDF ? .red : .blue)
+                    .foregroundStyle(notebook.containsPDF ? Theme.Palette.danger : Theme.Palette.accent)
                 Text(notebook.title)
                     .lineLimit(1)
                 Spacer()
@@ -4922,7 +4922,7 @@ struct ContentView: View {
                             }
                         }
                     }
-                    .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 24))
+                    .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous))
                     .padding()
                 }
             } else {
@@ -7333,14 +7333,14 @@ private struct NotebookRow: View {
             } else {
                 Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
                     .font(.title2)
-                    .foregroundStyle(notebook.containsPDF ? .red : .blue)
+                    .foregroundStyle(notebook.containsPDF ? Theme.Palette.danger : Theme.Palette.accent)
                     .frame(width: 34)
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(notebook.title).font(.headline).lineLimit(1)
                     if notebook.isFavorite {
-                        Image(systemName: "star.fill").foregroundStyle(.yellow).font(.caption)
+                        Image(systemName: "star.fill").foregroundStyle(Theme.Palette.warning).font(.caption)
                     }
                 }
                 Text("\(notebook.pageCountForLibrary)ページ ・ \(notebook.updatedAt.formatted(date: .abbreviated, time: .shortened))")
@@ -7359,7 +7359,7 @@ private struct NotebookRow: View {
                 notebook.updatedAt = .now
             } label: {
                 Image(systemName: notebook.isFavorite ? "star.fill" : "star")
-                    .foregroundStyle(notebook.isFavorite ? .yellow : .secondary)
+                    .foregroundStyle(notebook.isFavorite ? Theme.Palette.warning : Theme.Palette.textSecondary)
                     .frame(width: 34, height: 34)
             }
             .buttonStyle(.plain)
@@ -7918,7 +7918,7 @@ private extension View {
     /// an outline, so neighbouring tabs read as separate items. The selected
     /// tab gets a tinted fill and a heavier tinted outline.
     func tabBlock(tint: Color, selected: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
         return self
             .background(selected ? tint.opacity(0.20) : Color.primary.opacity(0.06), in: shape)
             .overlay(shape.strokeBorder(selected ? tint : Color.primary.opacity(0.22), lineWidth: selected ? 1.5 : 1))
