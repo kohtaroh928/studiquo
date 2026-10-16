@@ -253,6 +253,9 @@ struct StudiquoApp: App {
                 #endif
             }
             .preferredColorScheme(.light)
+            // On the whole tree (not just normalRoot) so toggles, links and
+            // controls share the accent in every root, including the test fixtures.
+            .tint(Theme.Palette.accent)
             .task {
                 #if DEBUG
                 guard !ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test"),
@@ -280,7 +283,6 @@ struct StudiquoApp: App {
             AccountGateView()
                 .modelContainer(modelContainer)
                 .environmentObject(subscriptionStore)
-                .tint(Theme.Palette.accent)
                 .environment(\.locale, resolvedLocale)
                 .overlay(alignment: .top) {
                     VStack(spacing: 8) {
