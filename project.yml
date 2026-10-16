@@ -49,8 +49,8 @@ targets:
         com.apple.developer.applesignin:
           - Default
         com.apple.developer.associated-domains:
-          - applinks:studiquo-mcp.studiquo-mcp-server.workers.dev
-          - webcredentials:studiquo-mcp.studiquo-mcp-server.workers.dev
+          - applinks:api.studiquo.app
+          - webcredentials:api.studiquo.app
         com.apple.developer.icloud-container-identifiers:
           - iCloud.com.yabuko.studiquo
         com.apple.developer.icloud-services:

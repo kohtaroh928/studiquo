@@ -169,6 +169,10 @@ function fakeRegistry(values) {
           if (!keys.has(hash)) keys.set(hash, values.has(`chat:user:${legacyTokenHash}`) ? legacyTokenHash : hash);
           return keys.get(hash);
         },
+        async getUser(key) {
+          const stored = values.get(`chat:user:${key}`);
+          return stored ? JSON.parse(stored) : null;
+        },
       };
     },
   };
@@ -239,6 +243,9 @@ async function shareWithBob(env) {
   const bob = await signIn(env, "apple:bob");
   assert.equal((await initRoom(env, alice.token)).status, 200);
   const bobKey = await registerFriend(env, bob, "apple:bob", "BOBCODE01");
+  // Only a friend can be invited to a document, so Bob must be on Alice's list.
+  const aliceKey = await registerFriend(env, alice, "apple:alice", "ALICECODE1");
+  env._values.set(`chat:user:${aliceKey}`, JSON.stringify({ key: aliceKey, name: "apple:alice", code: "ALICECODE1", friends: [{ code: "BOBCODE01", name: "apple:bob" }] }));
   const invited = await call(env, `/api/document/rooms/${ROOM}/invite`, { method: "POST", token: alice.token, body: { code: "BOBCODE01", role: "editor" } });
   assert.equal(invited.status, 200);
   return { alice, bob, bobKey };

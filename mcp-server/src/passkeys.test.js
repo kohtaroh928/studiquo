@@ -136,7 +136,7 @@ test("creates bounded, user-verified passkey registration options", async () => 
   const response = await handlePasskeys(new URL(request.url), request, env);
   assert.equal(response.status, 200);
   const payload = await response.json();
-  assert.equal(payload.options.rp.id, "studiquo-mcp.studiquo-mcp-server.workers.dev");
+  assert.equal(payload.options.rp.id, "api.studiquo.app");
   assert.equal(payload.options.authenticatorSelection.userVerification, "required");
   assert.ok(payload.transaction);
   assert.ok(payload.options.challenge);
@@ -307,7 +307,7 @@ test("the e-mail check happens before anything is stored for the attempt", async
 import { generateKeyPairSync, createSign } from "node:crypto";
 import { indexAccountPasskey, requireRecentPasskey } from "./passkey-policy.js";
 
-const RP_ID = "studiquo-mcp.studiquo-mcp-server.workers.dev";
+const RP_ID = "api.studiquo.app";
 const b64url = buffer => Buffer.from(buffer).toString("base64url");
 
 function newPasskey() {

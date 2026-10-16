@@ -2900,7 +2900,7 @@ struct ContentView: View {
                     Section("Cloudflare MCP") {
                         LabeledContent("サーバーURL") {
                             HStack {
-                                TextField("https://studiquo-mcp.example.workers.dev", text: $mcpCloudEndpoint)
+                                TextField("https://api.studiquo.app", text: $mcpCloudEndpoint)
                                     .multilineTextAlignment(.trailing)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()

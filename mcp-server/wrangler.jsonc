@@ -123,7 +123,7 @@
     // Keep "false" for the first deploy, then set "true" in a second deploy
     // once the first is stable. Never roll back to code from before Argon2id
     // support once it has been "true": those accounts would be locked out.
-    "ARGON2_WRITE": "false"
+    "ARGON2_WRITE": "true"
   },
   "observability": {
     "enabled": true,

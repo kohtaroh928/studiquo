@@ -210,7 +210,9 @@ test("a structured call that fails upstream is reported as an error event, not a
   const fetchState = installFetch(() => failed);
   try {
     const { text } = await run("review", { question: "質問" });
-    assert.match(text, /"error":"boom"/);
+    // The provider's own message is not passed on; the feature's own is.
+    assert.match(text, /復習教材を作成できませんでした/);
+    assert.doesNotMatch(text, /boom/);
     assert.doesNotMatch(text, /"result"/);
   } finally {
     fetchState.restore();
@@ -656,6 +658,64 @@ test("rubric accepts a typed question alone (the app has no model-answer field)"
     assert.equal(response.status, 200);
     assert.equal(fetchState.calls.length, 1);
     assert.match(fetchState.calls[0].body.input[0].content.at(-1).text, /模範解答>（なし/);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("moderation is not called for a request the credit windows refuse", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const env = environment();
+    // standard allows 5 calls a minute; every admitted call is screened once.
+    for (let i = 0; i < 5; i += 1) assert.equal((await run("chat", chatBody(), { env })).response.status, 200);
+    assert.equal(fetchState.moderationCalls.length, 5);
+    const refused = await run("chat", chatBody(), { env });
+    assert.equal(refused.response.status, 429);
+    assert.equal(fetchState.moderationCalls.length, 5, "the refused call was not screened");
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("a provider's error text and a refusal of our own key never reach the app", async () => {
+  const secret = "Incorrect API key provided: sk-proj-abc. Organization org-secret is over its limit.";
+  const cases = [[400, 400], [401, 502], [403, 502], [404, 404]];
+  for (const [upstreamStatus, expected] of cases) {
+    const fetchState = installFetch(() => new Response(JSON.stringify({ error: { message: secret } }), { status: upstreamStatus }));
+    try {
+      const { response, text } = await run("chat", chatBody());
+      assert.equal(response.status, expected, `upstream ${upstreamStatus}`);
+      assert.doesNotMatch(text, /sk-proj|org-secret|Incorrect API key/);
+      assert.match(text, /AIとの通信でエラーが発生しました/);
+    } finally {
+      fetchState.restore();
+    }
+  }
+});
+
+test("a structured call whose upstream refuses does not show the provider's text either", async () => {
+  const fetchState = installFetch(() => new Response(JSON.stringify({ error: { message: "org-secret is over its limit" } }), { status: 403 }));
+  try {
+    const { text } = await run("review", { question: "質問" });
+    assert.doesNotMatch(text, /org-secret|\[403\]/);
+    assert.match(text, /復習教材を作成できませんでした/);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("a moderated request gets its credits back, so rejected text cannot use up an allowance", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"), {
+    moderation: () => new Response(JSON.stringify({ results: [{ flagged: true, categories: { violence: true } }] }), { status: 200 }),
+  });
+  try {
+    const env = environment();
+    for (let i = 0; i < 12; i += 1) {
+      const { response, text } = await run("chat", chatBody(), { env });
+      assert.equal(response.status, 400, `call ${i + 1} (would be 429 without the refund)`);
+      assert.equal(JSON.parse(text).code, "content_rejected");
+    }
   } finally {
     fetchState.restore();
   }

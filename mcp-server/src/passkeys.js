@@ -16,7 +16,7 @@ import {
   listEstablishedPasskeys, markRecentPasskey, removeAllPasskeys, requireRecentPasskey, sendPasskeyNotice,
 } from "./passkey-policy.js";
 
-const RP_ID = "studiquo-mcp.studiquo-mcp-server.workers.dev";
+const RP_ID = "api.studiquo.app";
 const ORIGIN = `https://${RP_ID}`;
 const APP_ID = "972G4VGUA6.com.yabuko.studiquo";
 
