@@ -73,4 +73,39 @@ final class ExternalFilePaneTests: XCTestCase {
             "ツールバーに写真資料ボタンが残っています。"
         )
     }
+
+    /// The tool strip scrolls sideways; bring the history buttons back into view.
+    private func tapHistoryButton(_ name: String) {
+        let button = app.buttons[name].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "「\(name)」ボタンが見つかりません。")
+        let window = app.windows.firstMatch
+        var swipes = 0
+        while button.frame.minX < window.frame.minX + 8, swipes < 5 {
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.04))
+                .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.04)))
+            swipes += 1
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+        button.tap()
+    }
+
+    /// Splitting the screen is a step of the same history as drawing: undo
+    /// closes the split, redo opens it again.
+    func testUndoAndRedoCoverOpeningASplit() {
+        openExternalFileSplit()
+        let pane = app.staticTexts["ファイルを選択"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10), "分割が開きません。")
+
+        var presses = 0
+        while pane.exists, presses < 4 {
+            tapHistoryButton("元に戻す")
+            presses += 1
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertFalse(pane.exists, "undo \(presses)回でも分割が閉じません。")
+        XCTAssertEqual(presses, 1, "分割を閉じるのに undo が \(presses) 回必要でした。")
+
+        tapHistoryButton("やり直す")
+        XCTAssertTrue(pane.waitForExistence(timeout: 5), "やり直しで分割が戻りません。")
+    }
 }

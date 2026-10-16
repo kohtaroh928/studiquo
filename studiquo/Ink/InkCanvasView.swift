@@ -92,6 +92,10 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
     /// describe. Convex arcs are caught by the parabola check before this
     /// one runs, so they stay quadratic.
     var isCurveCorrectionEnabled = true
+    /// Redraws a stroke made of a few straight runs joined at corners as
+    /// clean straight segments. Checked before the parabola and curve fits,
+    /// so a sharp "V" is a polyline rather than a quadratic.
+    var isPolylineCorrectionEnabled = true
     var isEraser = false {
         didSet { if !isEraser { hideEraserCursor() } }
     }
@@ -1439,6 +1443,12 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
                 self.prepareLockedNormalizedShape(points: triangle.points, at: current)
                 self.emitNormalizedShapePreview()
                 self.triggerCorrectionFeedback(at: current)
+            } else if self.isPolylineCorrectionEnabled,
+                      let polyline = Self.polylineIfRecognized(self.previewStroke()) {
+                self.isParabolaLocked = true
+                self.prepareLockedNormalizedShape(points: polyline.points, at: current)
+                self.emitNormalizedShapePreview()
+                self.triggerCorrectionFeedback(at: current)
             } else if self.isParabolaCorrectionEnabled,
                       let parabola = Self.parabolaIfRecognized(self.previewStroke()) {
                 self.isParabolaLocked = true
@@ -2234,6 +2244,186 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             InkPoint(location: point, force: 0.5, timeOffset: Double(index) / 3)
         }
         return result
+    }
+
+    // MARK: Polyline recognition
+
+    /// Redraws an open stroke made of 2–8 straight runs joined at clear
+    /// corners as exactly those segments.
+    ///
+    /// Steps: simplify the stroke to candidate corners (Douglas–Peucker),
+    /// merge runs that are too short and drop bends too shallow to be
+    /// corners, refit a line through each run's own points and take the
+    /// corners where neighbouring lines meet, then require every point to
+    /// sit close to the result. The tight fit is what rejects a smooth arc,
+    /// which two segments cannot follow. Runs within 5° of horizontal or
+    /// vertical are snapped to it. Closed strokes are left to the rectangle,
+    /// triangle and ellipse checks; closed polygons are not handled.
+    static func polylineIfRecognized(_ stroke: InkStroke) -> InkStroke? {
+        let points = stroke.points.map(\.location)
+        guard points.count >= 10, let first = points.first, let last = points.last else { return nil }
+        // The points' own extent (`stroke.bounds` is padded by the pen width).
+        let extent = points.dropFirst().reduce(CGRect(origin: first, size: .zero)) {
+            $0.union(CGRect(origin: $1, size: .zero))
+        }
+        let diagonal = hypot(extent.width, extent.height)
+        guard diagonal >= 40 else { return nil }
+        guard hypot(last.x - first.x, last.y - first.y) > diagonal * 0.35 else { return nil }
+
+        // Candidate corners, as indices into `points`.
+        var indices = douglasPeucker(points, from: 0, to: points.count - 1,
+                                     tolerance: max(stroke.width * 1.5, diagonal * 0.02))
+        let minRun = max(20, diagonal * 0.08)
+        let minTurn = CGFloat.pi * 25 / 180
+        func turn(at k: Int) -> CGFloat {
+            let a = points[indices[k - 1]], b = points[indices[k]], c = points[indices[k + 1]]
+            let d1 = atan2(b.y - a.y, b.x - a.x), d2 = atan2(c.y - b.y, c.x - b.x)
+            var delta = abs(d2 - d1)
+            if delta > .pi { delta = 2 * .pi - delta }
+            return delta
+        }
+        // Merge short runs and drop shallow bends until nothing changes.
+        var changed = true
+        while changed, indices.count > 2 {
+            changed = false
+            var shortest: (run: Int, length: CGFloat)?
+            for run in 0..<(indices.count - 1) {
+                let a = points[indices[run]], b = points[indices[run + 1]]
+                let length = hypot(b.x - a.x, b.y - a.y)
+                if length < minRun, length < (shortest?.length ?? .greatestFiniteMagnitude) {
+                    shortest = (run, length)
+                }
+            }
+            if let (run, _) = shortest {
+                // Remove the interior end of the short run; between two
+                // interior ends, the one with the shallower bend.
+                let removeLeft = run >= 1
+                let removeRight = run + 1 <= indices.count - 2
+                if removeLeft, removeRight {
+                    indices.remove(at: turn(at: run) <= turn(at: run + 1) ? run : run + 1)
+                } else if removeRight {
+                    indices.remove(at: run + 1)
+                } else if removeLeft {
+                    indices.remove(at: run)
+                } else {
+                    break
+                }
+                changed = true
+                continue
+            }
+            if indices.count > 2,
+               let shallow = (1..<(indices.count - 1)).min(by: { turn(at: $0) < turn(at: $1) }),
+               turn(at: shallow) < minTurn {
+                indices.remove(at: shallow)
+                changed = true
+            }
+        }
+        let runCount = indices.count - 1
+        guard (2...8).contains(runCount) else { return nil }
+        guard (1..<(indices.count - 1)).contains(where: { turn(at: $0) >= .pi * 35 / 180 }) else { return nil }
+
+        // A line through each run's own points.
+        var lines: [(point: CGPoint, direction: CGPoint)] = []
+        for run in 0..<runCount {
+            let slice = Array(points[indices[run]...indices[run + 1]])
+            guard let line = fittedLine(slice) else { return nil }
+            lines.append(line)
+        }
+        // Corners are where neighbouring lines meet; the ends are the first
+        // and last points projected onto their line.
+        func project(_ p: CGPoint, onto line: (point: CGPoint, direction: CGPoint)) -> CGPoint {
+            let t = (p.x - line.point.x) * line.direction.x + (p.y - line.point.y) * line.direction.y
+            return CGPoint(x: line.point.x + line.direction.x * t, y: line.point.y + line.direction.y * t)
+        }
+        var vertices = [project(first, onto: lines[0])]
+        for k in 1..<runCount {
+            let p = lines[k - 1].point, r = lines[k - 1].direction
+            let q = lines[k].point, s = lines[k].direction
+            let denominator = r.x * s.y - r.y * s.x
+            guard abs(denominator) > 0.2 else { return nil }  // nearly parallel
+            let t = ((q.x - p.x) * s.y - (q.y - p.y) * s.x) / denominator
+            let corner = CGPoint(x: p.x + r.x * t, y: p.y + r.y * t)
+            let original = points[indices[k]]
+            guard hypot(corner.x - original.x, corner.y - original.y) <= diagonal * 0.15 else { return nil }
+            vertices.append(corner)
+        }
+        vertices.append(project(last, onto: lines[runCount - 1]))
+
+        // Snap near-horizontal and near-vertical runs.
+        let snap = tan(CGFloat.pi * 5 / 180)
+        for k in 0..<runCount {
+            let dx = vertices[k + 1].x - vertices[k].x, dy = vertices[k + 1].y - vertices[k].y
+            if abs(dy) <= abs(dx) * snap { vertices[k + 1].y = vertices[k].y }
+            else if abs(dx) <= abs(dy) * snap { vertices[k + 1].x = vertices[k].x }
+        }
+
+        // Every point has to sit close to the result.
+        var total = CGFloat.zero, worst = CGFloat.zero
+        for point in points {
+            var nearest = CGFloat.greatestFiniteMagnitude
+            for k in 0..<runCount { nearest = min(nearest, distanceToSegment(point, vertices[k], vertices[k + 1])) }
+            total += nearest
+            worst = max(worst, nearest)
+        }
+        let slack = stroke.width
+        guard total / CGFloat(points.count) <= max(diagonal * 0.015, slack),
+              worst <= max(diagonal * 0.04, slack * 2.5) else { return nil }
+        // And every run has to be straight for its own length: a wave's
+        // humps bow away from the line through them, a hand-drawn run does
+        // not.
+        for run in 0..<runCount {
+            let a = vertices[run], b = vertices[run + 1]
+            let allowed = max(hypot(b.x - a.x, b.y - a.y) * 0.05, slack * 0.75)
+            for index in indices[run]...indices[run + 1]
+            where distanceToSegment(points[index], a, b) > allowed {
+                return nil
+            }
+        }
+
+        let xs = vertices.map(\.x), ys = vertices.map(\.y)
+        guard let minX = xs.min(), let maxX = xs.max(), let minY = ys.min(), let maxY = ys.max(),
+              maxX - minX >= 4, maxY - minY >= 4 else { return nil }
+
+        var result = stroke
+        result.points = vertices.enumerated().map { index, vertex in
+            InkPoint(location: vertex, force: 0.5, timeOffset: Double(index) / Double(vertices.count - 1))
+        }
+        return result
+    }
+
+    private static func douglasPeucker(_ points: [CGPoint], from start: Int, to end: Int, tolerance: CGFloat) -> [Int] {
+        guard end > start + 1 else { return [start, end] }
+        var farthest = start, farthestDistance = CGFloat.zero
+        for index in (start + 1)..<end {
+            let distance = distanceToSegment(points[index], points[start], points[end])
+            if distance > farthestDistance { farthest = index; farthestDistance = distance }
+        }
+        guard farthestDistance > tolerance else { return [start, end] }
+        let left = douglasPeucker(points, from: start, to: farthest, tolerance: tolerance)
+        let right = douglasPeucker(points, from: farthest, to: end, tolerance: tolerance)
+        return left + right.dropFirst()
+    }
+
+    /// Total-least-squares line through `points`: a point on it and a unit
+    /// direction. `nil` when the points are all in one place.
+    private static func fittedLine(_ points: [CGPoint]) -> (point: CGPoint, direction: CGPoint)? {
+        guard points.count >= 2 else { return nil }
+        let n = CGFloat(points.count)
+        let cx = points.reduce(CGFloat.zero) { $0 + $1.x } / n
+        let cy = points.reduce(CGFloat.zero) { $0 + $1.y } / n
+        var sxx = CGFloat.zero, syy = CGFloat.zero, sxy = CGFloat.zero
+        for p in points {
+            sxx += (p.x - cx) * (p.x - cx); syy += (p.y - cy) * (p.y - cy); sxy += (p.x - cx) * (p.y - cy)
+        }
+        guard sxx + syy > 0.000_001 else { return nil }
+        let angle = 0.5 * atan2(2 * sxy, sxx - syy)
+        var direction = CGPoint(x: cos(angle), y: sin(angle))
+        // Point along the way the run was drawn, so the ends line up.
+        if let a = points.first, let b = points.last,
+           (b.x - a.x) * direction.x + (b.y - a.y) * direction.y < 0 {
+            direction = CGPoint(x: -direction.x, y: -direction.y)
+        }
+        return (CGPoint(x: cx, y: cy), direction)
     }
 
     /// Fits a vertical quadratic using least squares in normalized

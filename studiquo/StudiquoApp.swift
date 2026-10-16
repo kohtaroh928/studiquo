@@ -105,7 +105,7 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        startupLogger.error("APNs registration failed: \(String(describing: error), privacy: .public)")
+        startupLogger.error("APNs registration failed")
     }
 
     func userNotificationCenter(
@@ -169,14 +169,14 @@ private func makeStudiquoModelContainer() throws -> ModelContainer {
         startupLogger.info("Persistent store ready (CloudKit)")
         return container
     } catch {
-        startupLogger.error("CloudKit store open failed: \(String(describing: error), privacy: .public)")
+        startupLogger.error("CloudKit store open failed")
         do {
             let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .none)
             let container = try ModelContainer(for: studiquoSchema, configurations: configuration)
             startupLogger.info("Persistent store ready (local)")
             return container
         } catch {
-            startupLogger.error("Local store open failed: \(String(describing: error), privacy: .public)")
+            startupLogger.error("Local store open failed")
             // Never silently substitute an empty, unsaved in-memory library.
             throw error
         }
@@ -779,6 +779,7 @@ private enum StartupUITestAttempts {
 /// A disposable in-memory library for the drag-and-drop UI regression test.
 /// It is reachable only through the test runner's launch argument.
 private struct LibraryDropUITestRoot: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// Set when the test asks for a notification tap to be simulated.
     @State private var routeThreadKey: String?
     @ObservedObject private var authentication = LibraryDropUITestStore.authentication
@@ -872,6 +873,10 @@ private struct LibraryDropUITestRoot: View {
             }
         }
             .modelContainer(LibraryDropUITestStore.container)
+            // Exercise the real collapsed split-view navigation on a full-screen
+            // simulator without relying on system multitasking gestures.
+            .environment(\.horizontalSizeClass,
+                         ProcessInfo.processInfo.arguments.contains("--compact-library-ui-test") ? .compact : horizontalSizeClass)
             .environmentObject(LibraryDropUITestStore.authentication)
             .environmentObject(LibraryDropUITestStore.subscriptionStore)
             .environment(\.locale, appLanguage == "english" ? Locale(identifier: "en") : Locale(identifier: "ja"))
@@ -950,6 +955,9 @@ private enum LibraryDropUITestStore {
     static let container: ModelContainer = {
         let arguments = ProcessInfo.processInfo.arguments
         let mode = arguments.contains("--column-mode") ? "column" : arguments.contains("--icon-mode") ? "icon" : "list"
+        if arguments.contains("--compact-library-ui-test") {
+            UserDefaults.standard.set("", forKey: "favoriteFolderPaths")
+        }
         let compact = arguments.contains("--resource-types-fixture")
         UserDefaults.standard.set(mode, forKey: "homeViewMode")
         // Settings persist across UI-test launches in the simulator, so a test

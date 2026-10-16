@@ -38,6 +38,7 @@ struct UserProfileView: View {
     @AppStorage("profileImage") private var imageData = Data()
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var passkeyAdded = false
+    @State private var confirmsPasskeyRemoval = false
     /// A multiline `TextField(_:text:axis:.vertical)` bound straight to an
     /// `@AppStorage` value re-triggers this `Form`'s layout (the field's own
     /// height depends on its text) on every keystroke as the write-through to
@@ -74,6 +75,8 @@ struct UserProfileView: View {
                         )
                     }
                     .disabled(authentication.isPasskeyBusy || passkeyAdded)
+                    Button("パスキーをすべて削除", role: .destructive) { confirmsPasskeyRemoval = true }
+                        .disabled(authentication.isPasskeyBusy)
                     if !authentication.errorMessage.isEmpty {
                         Text(authentication.errorMessage)
                             .font(.footnote)
@@ -87,6 +90,16 @@ struct UserProfileView: View {
                 Section {
                     Button("ログアウト", role: .destructive) { authentication.logout(); dismiss() }
                 }
+            }
+            .confirmationDialog(
+                "パスキーをすべて削除しますか?",
+                isPresented: $confirmsPasskeyRemoval, titleVisibility: .visible
+            ) {
+                Button("削除して設定し直す", role: .destructive) {
+                    Task { passkeyAdded = false; _ = await authentication.removeAllPasskeys() }
+                }
+            } message: {
+                Text("心当たりのないパスキーが追加されたときに使います。削除後、新しいパスキーの設定をお願いします。")
             }
             .navigationTitle("プロフィール")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { dismiss() } } }
@@ -2228,6 +2241,7 @@ final class FriendStore: ObservableObject {
 }
 
 struct FriendsHomeView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ObservedObject var store: FriendStore
     let myStudySeconds: TimeInterval
     var appAttachments: [FriendMessageAttachment] = []
@@ -2242,6 +2256,8 @@ struct FriendsHomeView: View {
     @State private var showsAdd = false
     @State private var showsCreateGroup = false
     @State private var selection: FriendsDetailSelection = .chats
+    @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
+    @State private var preferredCompactColumn: NavigationSplitViewColumn = .detail
     @State private var popover: FriendsPopover?
     @State private var pendingReportIssue: PendingIssueReport?
     @State private var friendToRemove: FriendRecord?
@@ -2272,10 +2288,22 @@ struct FriendsHomeView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        // In a collapsed split view, keep both columns available and switch
+        // the preferred column. Changing visibility at the same time causes
+        // UIKit to keep the detail on screen instead of revealing the sidebar.
+        NavigationSplitView(
+            columnVisibility: horizontalSizeClass == .compact ? .constant(.all) : $columnVisibility,
+            preferredCompactColumn: $preferredCompactColumn
+        ) {
             friendSidebar
                 .navigationTitle("フレンド")
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: closeSidebar) {
+                            Label("閉じる", systemImage: "sidebar.left")
+                        }
+                        .accessibilityIdentifier("friends-sidebar-close")
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Menu {
                             Button { showsAdd = true } label: { Label("フレンドを追加", systemImage: "person.badge.plus") }
@@ -2296,7 +2324,32 @@ struct FriendsHomeView: View {
                 }
         } detail: {
             friendDetail
+                .navigationBarBackButtonHidden()
+                .toolbar {
+                    // This is the compact-window escape hatch. On a regular
+                    // width it duplicated the app's normal split-view
+                    // navigation, so it must not appear in the full layout.
+                    // When the compact sidebar itself is on screen it owns
+                    // the closing control above. Keeping this detail-column
+                    // opener visible at the same time produced two sidebar
+                    // buttons after opening the list. It remains available
+                    // only from the detail screen, where it is needed to
+                    // reopen the list in a half-width app window.
+                    if horizontalSizeClass == .compact && !isSidebarVisible {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                columnVisibility = .all
+                                preferredCompactColumn = .sidebar
+                            } label: {
+                                Label("フレンド一覧", systemImage: "sidebar.left")
+                            }
+                            .accessibilityIdentifier("friends-sidebar-toggle")
+                        }
+                    }
+                }
         }
+        .navigationSplitViewStyle(.balanced)
+        .toolbar(removing: .sidebarToggle)
         .sheet(isPresented: $showsAdd) { AddFriendView(store: store) }
         .sheet(isPresented: $showsCreateGroup) { CreateGroupView(store: store) }
         .sheet(item: $pendingReportIssue) { pending in ReportIssueSheet(capturedScreenshot: pending.screenshot) }
@@ -2519,7 +2572,7 @@ struct FriendsHomeView: View {
             if !store.archivedFriends.isEmpty {
                 Section("削除済みのやり取り") {
                     ForEach(store.archivedFriends) { friend in
-                        Button { selection = .chat(friend.id) } label: {
+                        Button { selectDetail(.chat(friend.id)) } label: {
                             FriendSidebarRow(
                                 profile: FriendProfile(friend: friend, blockedByMeRoomIDs: store.blockedByMeRoomIDs),
                                 unreadCount: 0
@@ -2555,6 +2608,22 @@ struct FriendsHomeView: View {
         }
     }
 
+    private var isSidebarVisible: Bool {
+        horizontalSizeClass == .compact
+            ? preferredCompactColumn == .sidebar
+            : columnVisibility != .detailOnly
+    }
+
+    private func closeSidebar() {
+        columnVisibility = .detailOnly
+        preferredCompactColumn = .detail
+    }
+
+    private func selectDetail(_ target: FriendsDetailSelection) {
+        selection = target
+        preferredCompactColumn = .detail
+    }
+
     @ViewBuilder private var friendDetail: some View {
         switch selection {
         case .chats:
@@ -2570,8 +2639,8 @@ struct FriendsHomeView: View {
                     unreadCounts: store.groupUnreadCounts,
                     avatarsByRoomID: store.groupAvatars
                 ),
-                openChat: { selection = .chat($0.id) },
-                openGroup: { selection = .group($0.roomID) }
+                openChat: { selectDetail(.chat($0.id)) },
+                openGroup: { selectDetail(.group($0.roomID)) }
             )
         case .chat(let id):
             if let friend = store.friends.first(where: { $0.id == id }) ?? store.archivedFriends.first(where: { $0.id == id }) {
@@ -2580,7 +2649,7 @@ struct FriendsHomeView: View {
                     store: store,
                     appAttachments: appAttachments,
                     resolveAppAttachment: resolveAppAttachment,
-                    onBack: { selection = .chats }
+                    onBack: { selectDetail(.chats) }
                 )
             } else {
                 ContentUnavailableView("フレンドを選択してください", systemImage: "person.crop.circle")
@@ -2592,7 +2661,7 @@ struct FriendsHomeView: View {
                     store: store,
                     appAttachments: appAttachments,
                     resolveAppAttachment: resolveAppAttachment,
-                    onBack: { selection = .chats }
+                    onBack: { selectDetail(.chats) }
                 )
             } else {
                 ContentUnavailableView("グループを選択してください", systemImage: "person.3")
@@ -2614,7 +2683,7 @@ struct FriendsHomeView: View {
                     store: store,
                     openChat: {
                         popover = nil
-                        selection = .chat(id)
+                        selectDetail(.chat(id))
                     }
                 )
             } else {
@@ -2627,11 +2696,11 @@ struct FriendsHomeView: View {
                     store: store,
                     openChat: {
                         popover = nil
-                        selection = .group(roomID)
+                        selectDetail(.group(roomID))
                     },
                     didLeave: {
                         popover = nil
-                        selection = .chats
+                        selectDetail(.chats)
                     }
                 )
             } else {

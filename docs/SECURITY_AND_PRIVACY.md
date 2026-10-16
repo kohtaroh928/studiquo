@@ -107,6 +107,7 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 - Workerが発行した`<発行時刻>.<乱数>`形式の不透明なBearer tokenだけを受け付ける。
 - token自体の形式と90日期限だけでなく、KVに実在するsession、失効状態、canonical identity、アカウント削除状態を毎回確認する。
 - 端末では`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`のKeychainへ保存する。
+- 起動時に認証済み状態を復元するには、端末内のidentityとローカルsessionだけでなく、未期限のWorker発行tokenも必要とする。tokenが欠落・期限切れなら、利用者をログイン画面へ戻す。
 - サーバーではtokenのSHA-256 hashをキーにし、生tokenを保存しない。
 - ログアウトはローカルtokenを先に削除し、push device登録解除とsession失効をbest effortで行う。
 - 認証エラーを回避するためにtokenをクライアントだけで再発行しない。再認証によってWorkerにsessionを作る。
@@ -371,6 +372,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 変更に応じて、次を自動テストまたは手動検証する。
 
 - 正常なlogin、期限切れ、失効、偽造token、削除中account
+- アプリ再起動時に、ローカルsessionだけが残った場合とWorker tokenが期限切れの場合に認証済み状態を復元しないこと
 - Apple・Google token検証、メールcodeの期限・試行回数、Passkey challenge replay
 - 別account、別room、別document、別MCP clientからのaccess拒否
 - OAuthのPKCE、redirect URI、state、scope、codeとrefresh tokenの一回消費
@@ -397,8 +399,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 
 5. 端末管理ファイルの消去と再試行を実装。CloudKit同期削除・App Group共有Inboxは実機でも確認する。
 6. 旧Slack投稿と所有者を復元できない旧問題報告の処理は別途運営対応が必要。
-7. `StudiquoApp.swift`の一部起動ログは`String(describing: error)`をpublic privacyで記録する。pathや利用者由来文字列が混ざらない形式へ限定する。
-8. `PrivacyPolicyView`と`mcp-server/src/legal.js`は手作業で重複管理されている。単一sourceから生成するか、同一性testを強化する。
+7. `PrivacyPolicyView`と`mcp-server/src/legal.js`は手作業で重複管理されている。単一sourceから生成するか、同一性testを強化する。
 
 ### P1(追加): パスワード認証まわり
 

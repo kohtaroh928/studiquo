@@ -65,6 +65,18 @@ final class SharedImportFlowTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["5件のファイルを、ここに取り込みます。"].exists)
     }
 
+    func testDestinationShowsItsExistingMaterials() {
+        waitForPicker()
+        let target = app.buttons["share-destination-folder-Target"]
+        XCTAssertTrue(target.waitForExistence(timeout: 5))
+        target.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["share-destination-material-Already there"].waitForExistence(timeout: 5),
+            "保存先を選んだ後、そのフォルダ内の既存資料が見えません"
+        )
+    }
+
     func testImportingGoesIntoTheChosenFolderAndLeavesTheLeftoverAlone() {
         importIntoTarget()
         dismissResultAlert()

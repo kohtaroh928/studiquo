@@ -7,6 +7,7 @@ import { getPlan, paywallEnabled } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys } from "./passkeys.js";
+import { gatePasskeyAccount, requireRecentPasskey } from "./passkey-policy.js";
 import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
 import { handleAppErrors } from "./app-errors.js";
@@ -366,9 +367,14 @@ export default {
       }
 
       const session = await realSession(env, token);
+      if (url.pathname === "/api/session/refresh" && request.method === "POST") {
+        return handleSessionRefresh(request, env, token, session);
+      }
       const accountHash = session ? await sha256Hex(`mcp-account:${session.sub}`) : null;
       if (url.pathname === "/api/account" && request.method === "DELETE") {
         if (!session) return json({ error: "Sign in again." }, 401);
+        const needsPasskey = await requireRecentPasskey(env, token, session, "delete-account");
+        if (needsPasskey) return needsPasskey;
         const body = await readJSONLimited(request, 1_000);
         if (body?.confirmation !== "DELETE") return json({ error: "Confirmation is required." }, 400);
         const result = await startAccountDeletion(env, session.sub);
@@ -379,6 +385,8 @@ export default {
       }
       if (url.pathname === "/api/mcp/pair" && request.method === "POST") {
         if (!session) return json({ error: "Sign in again." }, 401);
+        const needsPasskey = await requireRecentPasskey(env, token, session, "approve-app");
+        if (needsPasskey) return needsPasskey;
         if (!(await checkRateLimit(env.RATE_LIMIT_MCP_PAIR, accountHash))) return json({ error: "Too many attempts." }, 429);
         const body = await readJSONLimited(request, 1000);
         return json({ approved: await approvePairing(env, String(body?.code ?? "").trim().toUpperCase(), session.sub) });
@@ -470,6 +478,62 @@ export default {
     }
   }
 };
+
+/**
+ * Exchanges a still-valid token for a new one that starts a fresh 90 days, so
+ * a person who keeps using the app is not signed out on the day the original
+ * token turns 90. The new token belongs to the same identity the old session
+ * was minted for (not the canonical account it resolves to), and the old token
+ * is left to expire on its own: revoking it here would sign the person out if
+ * the response were lost before the app stored the new token.
+ *
+ * The synced snapshot and queued actions are kept under a hash of the token,
+ * so they are copied to the new token; without that, the MCP endpoint would
+ * answer "run sync" until the app next synced. A client that was given the old
+ * token by hand keeps working until that token expires, but sees no newer
+ * syncs, which the app now makes under the new token.
+ *
+ * Each token can be exchanged once, and afterwards it only lives for
+ * REFRESH_OLD_TOKEN_GRACE_SECONDS more: long enough to recover when the
+ * response was lost, short enough that a token the person has since replaced
+ * (and signed out of) does not stay usable for months. Without the one-time
+ * mark a single token could mint tokens without limit, each with its own
+ * per-token AI quota.
+ *
+ * The login is sliding: whoever holds a valid token can keep exchanging it, and
+ * resetting the password or deleting the account ends every session. There is
+ * deliberately no absolute lifetime.
+ */
+const REFRESH_MIN_AGE_SECONDS = 7 * 24 * 60 * 60;
+const REFRESH_OLD_TOKEN_GRACE_SECONDS = 14 * 24 * 60 * 60;
+
+async function handleSessionRefresh(request, env, token, session) {
+  if (!session) return json({ error: "Sign in again." }, 401);
+  const parsed = await readJSONLimited(request, 1_000);
+  const randomValue = parsed?.randomValue;
+  if (typeof randomValue !== "string" || !/^[0-9A-Za-z_-]{16,200}$/.test(randomValue)) {
+    return json({ error: "randomValue is required." }, 400);
+  }
+  const issuedAt = Number(token.slice(0, token.indexOf(".")));
+  if (Date.now() / 1000 - issuedAt < REFRESH_MIN_AGE_SECONDS) return json({ refreshed: false });
+  const oldKey = await sha256Hex(token);
+  if (await env.STUDIQUO_DATA.get(`session-refreshed:${oldKey}`)) return json({ refreshed: false });
+  const refreshed = await mintSession(env, session.originalSub ?? session.sub, randomValue);
+  if (!refreshed) return json({ error: "Invalid randomValue." }, 400);
+  const newKey = await sha256Hex(refreshed);
+  const oldRemaining = remainingValiditySeconds(token);
+  await env.STUDIQUO_DATA.put(`session-refreshed:${oldKey}`, "1", { expirationTtl: oldRemaining });
+  const oldSession = await env.STUDIQUO_DATA.get(`session:${oldKey}`);
+  if (oldSession) {
+    await env.STUDIQUO_DATA.put(`session:${oldKey}`, oldSession, { expirationTtl: Math.min(oldRemaining, REFRESH_OLD_TOKEN_GRACE_SECONDS) });
+  }
+  const ttl = remainingValiditySeconds(refreshed);
+  for (const prefix of ["snapshot", "actions"]) {
+    const value = await env.STUDIQUO_DATA.get(`${prefix}:${oldKey}`);
+    if (value) await env.STUDIQUO_DATA.put(`${prefix}:${newKey}`, value, { expirationTtl: ttl });
+  }
+  return json({ refreshed: true, token: refreshed });
+}
 
 // POST /api/auth/apple: exchanges a Sign in with Apple identityToken for a
 // studiquo bearer token, in the same "<issued-at epoch>.<random>" format
@@ -742,6 +806,11 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     provider: "email", sub: normalizedEmail, email: normalizedEmail, emailVerified: true,
   });
   const accountKey = link.canonicalIdentityKey ?? `email:${normalizedEmail}`;
+  // An account with a passkey does not accept a code that could have been
+  // relayed by a look-alike site, neither to sign in nor to reset the password
+  // (which would sign in): checked before anything is changed.
+  const passkeyGate = await gatePasskeyAccount(env, accountKey, normalizedEmail, { notify: work => inBackground(ctx, work) });
+  if (passkeyGate) return passkeyGate;
   if (replacedPassword) {
     // A reset signs out whoever held the old password — the new session below
     // is minted after the cut-off — and so disconnects the apps (MCP) they
@@ -869,6 +938,10 @@ async function handleLocalLogin(request, env, ctx) {
   const link = await linkVerifiedEmail(env, {
     provider: "email", sub: normalizedEmail, email: normalizedEmail, emailVerified: true,
   });
+  // The password was right, but a password can be relayed by a look-alike
+  // site: an account with a passkey signs in with that instead.
+  const passkeyGate = await gatePasskeyAccount(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, normalizedEmail, { notify: work => inBackground(ctx, work) });
+  if (passkeyGate) return passkeyGate;
   const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, randomValue);
   if (!token) return json({ error: "Invalid randomValue." }, 400);
   // A sign-in from a country+network this account hasn't used lately emails

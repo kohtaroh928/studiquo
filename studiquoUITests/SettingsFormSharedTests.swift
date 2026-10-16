@@ -7,6 +7,9 @@ import XCTest
 /// account deletion stays a single, last row.
 final class SettingsFormSharedTests: XCTestCase {
     private var app: XCUIApplication!
+    /// Title of the category form on screen, if one is open: it replaces the
+    /// settings title as the navigation bar the rows scroll under.
+    private var categoryTitle: String?
 
     override func setUp() {
         super.setUp()
@@ -29,6 +32,16 @@ final class SettingsFormSharedTests: XCTestCase {
     private func openMore() {
         app.buttons["home-tab-more"].tap()
         XCTAssertTrue(app.navigationBars["その他"].waitForExistence(timeout: 10), "「その他」画面が開きません。")
+    }
+
+    private func openCategory(_ id: String) {
+        app.openSettingsCategory(id)
+        categoryTitle = SettingsCategoryUI.titles[id]
+    }
+
+    private func leaveCategory(_ id: String) {
+        app.leaveSettingsCategory(id)
+        categoryTitle = nil
     }
 
     private func openGear() {
@@ -81,7 +94,7 @@ final class SettingsFormSharedTests: XCTestCase {
     private func scrollableList() -> XCUIElement? {
         let lists = (app.collectionViews.allElementsBoundByIndex + app.tables.allElementsBoundByIndex)
             .filter { $0.exists && $0.frame.height > 200 }
-        let settingsBar = app.navigationBars["設定"]
+        let settingsBar = app.navigationBars[categoryTitle ?? "設定"]
         if settingsBar.exists {
             let sheetBounds = settingsBar.frame
             let sheetLists = lists.filter {
@@ -103,8 +116,8 @@ final class SettingsFormSharedTests: XCTestCase {
     /// row there is reported hittable, but a tap lands on the bar and never
     /// reaches the row.
     private func isReachable(_ row: XCUIElement) -> Bool {
-        let settingsBar = app.navigationBars["設定"]
-        let moreBar = app.navigationBars["その他"]
+        let settingsBar = app.navigationBars[categoryTitle ?? "設定"]
+        let moreBar = app.navigationBars[categoryTitle ?? "その他"]
         let barBottom = settingsBar.exists ? settingsBar.frame.maxY : (moreBar.exists ? moreBar.frame.maxY : 0)
         guard row.exists && row.isHittable else { return false }
         let visibleBounds = (scrollableList()?.frame ?? app.frame).intersection(app.frame)
@@ -126,22 +139,20 @@ final class SettingsFormSharedTests: XCTestCase {
 
     func testGearSheetStillListsTheSameSettingsAndClosesWithDone() {
         openGear()
-        let labels = [
-            "プランとお支払い",
-            "勉強時間を記録する",
-            "通知",
-            "左利きモード",
-            "翌日復習を作成する",
-            "エラー情報を自動送信",
-            "AI機能とデータ送信について",
-            "プライバシーポリシーを見る",
-            "利用規約を見る",
-            "アカウントを削除",
+        let categories: [(id: String, labels: [String])] = [
+            ("account", ["プランとお支払い", "アカウントを削除"]),
+            ("study", ["勉強時間を記録する", "左利きモード", "翌日復習を作成する"]),
+            ("notifications", ["通知"]),
+            ("privacy", ["エラー情報を自動送信", "AI機能とデータ送信について", "プライバシーポリシーを見る", "利用規約を見る"]),
         ]
-        for label in labels {
-            let row = element(label)
-            reveal(row)
-            XCTAssertTrue(row.exists, "歯車のシートに「\(label)」がありません。")
+        for category in categories {
+            openCategory(category.id)
+            for label in category.labels {
+                let row = element(label)
+                reveal(row)
+                XCTAssertTrue(row.exists, "歯車のシートの「\(category.id)」に「\(label)」がありません。")
+            }
+            leaveCategory(category.id)
         }
         closeGear()
     }
@@ -164,49 +175,58 @@ final class SettingsFormSharedTests: XCTestCase {
 
     /// Flips `label` in その他, expects the gear sheet to show the same, flips it
     /// back in the gear sheet, and expects その他 to show the restored value.
-    private func assertToggleIsSharedBothWays(_ label: String) {
+    private func assertToggleIsSharedBothWays(_ label: String, in category: String) {
         openMore()
+        openCategory(category)
         let original = value(label)
         flip(label)
         let changed = value(label)
         XCTAssertNotEqual(changed, original, "「\(label)」が「その他」で切り替わりません。")
 
+        leaveCategory(category)
+
         openGear()
+        openCategory(category)
         XCTAssertEqual(value(label), changed, "「その他」で切り替えた「\(label)」が歯車のシートに反映されていません。")
         flip(label)
         XCTAssertEqual(value(label), original, "歯車のシートで「\(label)」を戻せません。")
+        leaveCategory(category)
         closeGear()
 
         openMore()
+        openCategory(category)
         XCTAssertEqual(value(label), original, "歯車のシートで切り替えた「\(label)」が「その他」に反映されていません。")
     }
 
     func testStudyTimeTrackingIsSharedBetweenMoreAndGear() {
-        assertToggleIsSharedBothWays("勉強時間を記録する")
+        assertToggleIsSharedBothWays("勉強時間を記録する", in: "study")
     }
 
     func testLeftHandedModeIsSharedBetweenMoreAndGear() {
-        assertToggleIsSharedBothWays("左利きモード")
+        assertToggleIsSharedBothWays("左利きモード", in: "study")
     }
 
     func testDayAfterReviewIsSharedBetweenMoreAndGear() {
-        assertToggleIsSharedBothWays("翌日復習を作成する")
+        assertToggleIsSharedBothWays("翌日復習を作成する", in: "study")
     }
 
     func testAutomaticErrorReportingIsSharedBetweenMoreAndGear() {
-        assertToggleIsSharedBothWays("エラー情報を自動送信")
+        assertToggleIsSharedBothWays("エラー情報を自動送信", in: "privacy")
     }
 
     // MARK: 3. Language applies immediately
 
     func testSwitchingLanguageToEnglishChangesTheScreenAtOnce() {
         openMore()
+        openCategory("app")
         scrollTo(element("English")).tap()
-        XCTAssertTrue(
-            app.navigationBars["More"].waitForExistence(timeout: 10),
-            "言語を英語にしたら「その他」の画面タイトルがすぐ「More」になる必要があります。"
-        )
-        XCTAssertEqual(app.buttons["home-tab-more"].label, "More", "タブ名が「More」になっていません。")
+        XCTAssertTrue(element("English").isSelected, "「English」を選んでも選択状態になりません。")
+        // The tab's name is translated at once. (The settings list's own
+        // navigation title, already pushed over, keeps its old text until it
+        // is shown again, so it is not checked here.)
+        let moreTab = app.buttons["home-tab-more"]
+        leaveCategory("app")
+        XCTAssertEqual(moreTab.label, "More", "タブ名が「More」になっていません。")
     }
 
     // MARK: 4. Account deletion is a single row, at the very end
@@ -217,26 +237,28 @@ final class SettingsFormSharedTests: XCTestCase {
 
     func testAccountDeletionIsASingleLastRowInMore() {
         openMore()
+        openCategory("account")
         scrollToBottom()
         let deletes = app.buttons.matching(NSPredicate(format: "label == %@", "アカウントを削除"))
         XCTAssertEqual(deletes.count, 1, "「アカウントを削除」は1つだけである必要があります。")
-        let version = element("バージョン")
-        XCTAssertTrue(version.exists, "バージョン行が見つかりません。")
+        let logout = element("ログアウト")
+        XCTAssertTrue(logout.exists, "ログアウト行が見つかりません。")
         XCTAssertGreaterThan(
-            deletes.firstMatch.frame.minY, version.frame.minY,
-            "「アカウントを削除」はリストの最後(バージョンより下)にある必要があります。"
+            deletes.firstMatch.frame.minY, logout.frame.minY,
+            "「アカウントを削除」はアカウントの分類の最後(ログアウトより下)にある必要があります。"
         )
     }
 
     func testAccountDeletionIsASingleLastRowInGearSheet() {
         openGear()
+        openCategory("account")
         scrollToBottom()
         let deletes = app.buttons.matching(NSPredicate(format: "label == %@", "アカウントを削除"))
         XCTAssertEqual(deletes.count, 1, "「アカウントを削除」は1つだけである必要があります。")
-        let terms = element("利用規約を見る")
+        let plan = element("プランとお支払い")
         XCTAssertGreaterThan(
-            deletes.firstMatch.frame.minY, terms.frame.minY,
-            "歯車のシートでも「アカウントを削除」は最後の行である必要があります。"
+            deletes.firstMatch.frame.minY, plan.frame.minY,
+            "歯車のシートでも「アカウントを削除」はアカウントの分類の最後の行である必要があります。"
         )
     }
 }

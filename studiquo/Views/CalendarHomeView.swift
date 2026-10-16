@@ -1023,6 +1023,8 @@ struct CalendarHomeView: View {
     @Query(sort: \StudyActivity.startedAt, order: .reverse) private var studyActivities: [StudyActivity]
     @State private var selectedDate = Date.now
     @State private var displayedMonth = Date.now
+    @State private var isHalfWidthWindow = false
+    @State private var showsDayEvents = true
     @State private var showsNewEvent = false
     @State private var editingEvent: CalendarEvent?
     @State private var showsUniversityConnection = false
@@ -1096,7 +1098,7 @@ struct CalendarHomeView: View {
     var body: some View {
         GeometryReader { geometry in
             Group {
-                if geometry.size.width >= 760 {
+                if !isHalfWidthWindow && geometry.size.width >= 760 {
                     HStack(spacing: 0) {
                         calendarPanel
                             .frame(maxWidth: .infinity)
@@ -1108,8 +1110,34 @@ struct CalendarHomeView: View {
                     VStack(spacing: 0) {
                         calendarPanel
                         Divider()
-                        eventList
+                        if isHalfWidthWindow {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showsDayEvents.toggle()
+                                }
+                            } label: {
+                                HStack {
+                                    Text(showsDayEvents ? "日ごとの予定を閉じる" : "日ごとの予定を表示")
+                                    Spacer()
+                                    Image(systemName: showsDayEvents ? "chevron.down" : "chevron.up")
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .padding(.horizontal)
+                            }
+                            .accessibilityIdentifier("calendar-day-events-toggle")
+                            .accessibilityValue(showsDayEvents ? "表示中" : "閉じています")
+                        }
+                        if !isHalfWidthWindow || showsDayEvents {
+                            eventList
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
                     }
+                }
+            }
+            .background {
+                WindowSplitAvailabilityReader { allowsSplit in
+                    isHalfWidthWindow = !allowsSplit
+                    if allowsSplit { showsDayEvents = true }
                 }
             }
         }
@@ -1493,6 +1521,7 @@ struct CalendarHomeView: View {
                     Image(systemName: "plus.circle.fill").font(.title2)
                 }
                 .accessibilityLabel("予定を追加")
+                .accessibilityIdentifier("calendar-add-day-event")
             }
             .padding()
 

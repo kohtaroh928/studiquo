@@ -59,6 +59,7 @@ struct InkCanvasRepresentable: UIViewRepresentable {
     var isTriangleCorrectionEnabled: Bool = true
     var isParabolaCorrectionEnabled: Bool = true
     var isCurveCorrectionEnabled: Bool = true
+    var isPolylineCorrectionEnabled: Bool = true
     /// When set, a pencil drag on the canvas defines this shape's bounding
     /// box instead of drawing freehand ink; lifting commits it and calls
     /// `onShapeCommitted`.
@@ -184,6 +185,7 @@ struct InkCanvasRepresentable: UIViewRepresentable {
         view.isTriangleCorrectionEnabled = isTriangleCorrectionEnabled
         view.isParabolaCorrectionEnabled = isParabolaCorrectionEnabled
         view.isCurveCorrectionEnabled = isCurveCorrectionEnabled
+        view.isPolylineCorrectionEnabled = isPolylineCorrectionEnabled
         view.isHighlighter = selectedTool == .highlighter
         view.isEraser = selectedTool == .eraser
         view.isLasso = selectedTool == .lasso

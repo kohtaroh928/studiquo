@@ -4,6 +4,7 @@ import test, { mock } from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import worker from "./app.js";
 import { realSession, mintSession } from "./session.js";
+import { indexAccountPasskey, markRecentPasskey } from "./passkey-policy.js";
 import { externalSession } from "./mcp-oauth.js";
 import { reserveAttempt, refundAttempt, trustPair } from "./login-throttle.js";
 import { touchSeenContext } from "./login-monitor.js";
@@ -66,7 +67,9 @@ function fakeRateCounterBinding(getData) {
 
 function environment({ strictSessions = false } = {}) {
   const values = new Map();
+  const ttls = new Map();
   const env = {
+    _ttls: ttls,
     STUDIQUO_DATA: {
       async get(key, type) {
         let value = values.get(key) ?? null;
@@ -80,7 +83,7 @@ function environment({ strictSessions = false } = {}) {
         }
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
+      async put(key, value, options) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
       async delete(key) { values.delete(key); },
       async list({ prefix }) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
@@ -2395,4 +2398,178 @@ test("/api/plan: with the paywall on, an unlisted account is free and a legacy a
 test("/api/plan: a request without a token is rejected", async () => {
   const response = await worker.fetch(request("/api/plan"), planEnvironment(), noopCtx);
   assert.equal(response.status, 401);
+});
+
+function tokenIssuedDaysAgo(days, suffix) {
+  return `${Math.floor(Date.now() / 1000) - days * 86_400}.${suffix.repeat(40)}`;
+}
+
+test("POST /api/session/refresh gives a token that is old enough a fresh one for the same account", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(30, "r");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:refresh@example.com" }));
+
+  await env.STUDIQUO_DATA.put(`snapshot:${sha256Hex(token)}`, '{"notes":1}');
+  await env.STUDIQUO_DATA.put(`actions:${sha256Hex(token)}`, '[{"id":"a"}]');
+
+  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: "x".repeat(32) } }), env, noopCtx);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.refreshed, true);
+  assert.equal(await env.STUDIQUO_DATA.get(`snapshot:${sha256Hex(body.token)}`), '{"notes":1}', "the synced data follows the new token");
+  assert.equal(await env.STUDIQUO_DATA.get(`actions:${sha256Hex(body.token)}`), '[{"id":"a"}]');
+  assert.notEqual(body.token, token);
+
+  const next = await realSession(env, body.token);
+  assert.equal(next.sub, "email:refresh@example.com");
+  assert.equal((await worker.fetch(request("/api/actions", { token: body.token }), env, noopCtx)).status, 200);
+  // The old token is left to expire by itself, so a lost response can't sign the person out.
+  assert.equal((await worker.fetch(request("/api/actions", { token }), env, noopCtx)).status, 200);
+});
+
+test("POST /api/session/refresh exchanges a token only once and shortens the old one's life", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(30, "o");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:once@example.com" }));
+  const body = { randomValue: "x".repeat(32) };
+
+  const first = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body }), env, noopCtx);
+  assert.equal((await first.json()).refreshed, true);
+  const second = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: "y".repeat(32) } }), env, noopCtx);
+  assert.deepEqual(await second.json(), { refreshed: false });
+  assert.equal(env._ttls.get(`session:${sha256Hex(token)}`), 14 * 86_400, "the replaced token stops working after the grace period");
+});
+
+test("POST /api/session/refresh refuses a randomValue with unexpected characters", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(30, "p");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:chars@example.com" }));
+  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: "has space and \u00e9 chars!!" } }), env, noopCtx);
+  assert.equal(response.status, 400);
+});
+
+test("POST /api/session/refresh leaves a recent token alone", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(1, "s");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:recent@example.com" }));
+
+  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: "x".repeat(32) } }), env, noopCtx);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { refreshed: false });
+});
+
+test("POST /api/session/refresh refuses expired, unknown, revoked and malformed requests", async () => {
+  const env = environment({ strictSessions: true });
+  const body = { randomValue: "x".repeat(32) };
+  const expired = tokenIssuedDaysAgo(91, "e");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(expired)}`, JSON.stringify({ sub: "email:old@example.com" }));
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: expired, body }), env, noopCtx)).status, 401);
+
+  const unknown = tokenIssuedDaysAgo(30, "u");
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: unknown, body }), env, noopCtx)).status, 401);
+
+  const revoked = tokenIssuedDaysAgo(30, "v");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(revoked)}`, JSON.stringify({ sub: "email:revoked@example.com" }));
+  await revokeToken(env, revoked);
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: revoked, body }), env, noopCtx)).status, 401);
+
+  const valid = tokenIssuedDaysAgo(30, "w");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(valid)}`, JSON.stringify({ sub: "email:valid@example.com" }));
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: valid, body: { randomValue: "short" } }), env, noopCtx)).status, 400);
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", body }), env, noopCtx)).status, 401);
+});
+
+// An account with a passkey no longer signs in with a password or an emailed
+// code (a look-alike site can relay both), and the actions that would keep or
+// widen a thief's access ask for the passkey again.
+async function withPasskeyAccount(email = "person@example.com") {
+  const env = environment();
+  await createLocalAccount(env, email, "correct-horse-battery");
+  await indexAccountPasskey(env, `email:${email}`, email, "cred-1");
+  await env.STUDIQUO_DATA.put("passkeys:credential:cred-1", JSON.stringify({ id: "cred-1", email }));
+  return env;
+}
+
+function quietMail() {
+  return mock.method(globalThis, "fetch", async () => new Response("{}", { status: 200 }));
+}
+
+test("a password sign-in is refused for an account with a passkey, and no session is minted", async () => {
+  const env = await withPasskeyAccount();
+  const mail = quietMail();
+  try {
+    const response = await worker.fetch(
+      request("/api/auth/local/login", { method: "POST", body: { email: "person@example.com", password: "correct-horse-battery", randomValue: "l".repeat(40) } }),
+      env, noopCtx
+    );
+    assert.equal(response.status, 403);
+    const body = await response.json();
+    assert.equal(body.code, "passkey_required");
+    assert.equal(body.token, undefined);
+  } finally { mail.mock.restore(); }
+});
+
+test("a password sign-in works once the recovery wait is over, and the account then has no passkey left", async () => {
+  const env = await withPasskeyAccount();
+  const mail = quietMail();
+  try {
+    const attempt = () => worker.fetch(
+      request("/api/auth/local/login", { method: "POST", body: { email: "person@example.com", password: "correct-horse-battery", randomValue: "l".repeat(40) } }),
+      env, noopCtx
+    );
+    assert.equal((await attempt()).status, 403);
+    const key = `passkey-recovery:${sha256Hex("email:person@example.com")}`;
+    await env.STUDIQUO_DATA.put(key, JSON.stringify({ requestedAt: Date.now() - 49 * 3_600_000 }));
+    const response = await attempt();
+    assert.equal(response.status, 200);
+    assert.ok((await response.json()).token);
+    assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:cred-1"), null);
+  } finally { mail.mock.restore(); }
+});
+
+test("an emailed code cannot reset the password or sign in for an account with a passkey", async () => {
+  const env = await withPasskeyAccount();
+  const stub = stubResendCapturingCode();
+  await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }), env, noopCtx);
+  stub.restore();
+  const before = await env.STUDIQUO_DATA.get("account:local:person@example.com");
+  const mail = quietMail();
+  try {
+    const response = await worker.fetch(
+      request("/api/auth/email/confirm-code", { method: "POST", body: { email: "person@example.com", code: stub.code(), password: "another-long-password", randomValue: "r".repeat(40) } }),
+      env, noopCtx
+    );
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).code, "passkey_required");
+    assert.equal(await env.STUDIQUO_DATA.get("account:local:person@example.com"), before, "the password was not replaced");
+  } finally { mail.mock.restore(); }
+});
+
+test("deleting the account and approving an app need a recent passkey check when the account has a passkey", async () => {
+  const env = await withPasskeyAccount();
+  const token = freshToken("k");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:person@example.com" }));
+
+  const deleteAccount = () => worker.fetch(request("/api/account", { method: "DELETE", token, body: { confirmation: "DELETE" } }), env, noopCtx);
+  const pair = () => worker.fetch(request("/api/mcp/pair", { method: "POST", token, body: { code: "ABCD1234" } }), env, noopCtx);
+  for (const send of [deleteAccount, pair]) {
+    const refused = await send();
+    assert.equal(refused.status, 403);
+    assert.equal((await refused.json()).code, "reauth_required");
+  }
+  await markRecentPasskey(env, sha256Hex(token), "approve-app");
+  assert.notEqual((await pair()).status, 403);
+  assert.equal((await pair()).status, 403, "the check is used up by the action it was for");
+  await markRecentPasskey(env, sha256Hex(token), "approve-app");
+  assert.equal((await deleteAccount()).status, 403, "and is not good for another action");
+  await markRecentPasskey(env, sha256Hex(token), "delete-account");
+  assert.notEqual((await deleteAccount()).status, 403);
+});
+
+test("an account without a passkey is not asked for one", async () => {
+  const env = environment({ strictSessions: true });
+  const token = freshToken("n");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:nopass@example.com" }));
+  const response = await worker.fetch(request("/api/mcp/pair", { method: "POST", token, body: { code: "ABCD1234" } }), env, noopCtx);
+  assert.notEqual(response.status, 403);
 });
