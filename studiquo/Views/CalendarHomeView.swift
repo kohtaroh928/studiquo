@@ -1422,13 +1422,13 @@ struct CalendarHomeView: View {
                     title: "今日の勉強時間",
                     value: formattedDuration(todayStudySeconds),
                     icon: "clock.fill",
-                    color: .blue
+                    color: Theme.Palette.accent
                 )
                 learningMetric(
                     title: "連続学習日数",
                     value: "\(currentStudyStreak)日",
                     icon: "flame.fill",
-                    color: .orange
+                    color: Theme.Palette.accent
                 )
             }
             .padding(.horizontal)
@@ -1440,8 +1440,11 @@ struct CalendarHomeView: View {
                 colorFor: color(for:)
             )
                 .padding(20)
-                .background(.background, in: RoundedRectangle(cornerRadius: 24))
-                .shadow(color: .indigo.opacity(0.10), radius: 14, y: 5)
+                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous)
+                        .strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline)
+                )
                 .padding()
 
             HStack(spacing: 14) {
@@ -1465,13 +1468,7 @@ struct CalendarHomeView: View {
         }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(
-            LinearGradient(
-                colors: [Color.indigo.opacity(0.10), Color.cyan.opacity(0.07), Color.clear],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background(Theme.Palette.canvas)
     }
 
     private func learningMetric(title: String, value: String, icon: String, color: Color) -> some View {
@@ -1480,7 +1477,7 @@ struct CalendarHomeView: View {
                 .font(.title2)
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background(color.gradient, in: Circle())
+                .background(color, in: Circle())
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.caption).foregroundStyle(.secondary)
                 Text(value).font(.title3.bold()).monospacedDigit()
@@ -1489,8 +1486,11 @@ struct CalendarHomeView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity)
-        .background(.background, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(color.opacity(0.18)))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous)
+                .strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline)
+        )
     }
 
     private func formattedDuration(_ duration: TimeInterval) -> String {
@@ -1576,9 +1576,9 @@ struct CalendarHomeView: View {
 
     private func color(for kind: CalendarEventKind) -> Color {
         switch kind {
-        case .test: .red
-        case .classLesson: .blue
-        case .other: .orange
+        case .test: Theme.Palette.danger
+        case .classLesson: Theme.Palette.accent
+        case .other: Theme.Palette.warning
         }
     }
 
@@ -1590,7 +1590,7 @@ struct CalendarHomeView: View {
                 .font(.footnote)
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
-                .background(Color.blue.gradient, in: Circle())
+                .background(Theme.Palette.accent, in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text("\(selectedDate.formatted(.dateTime.month().day()))の勉強時間")
                     .font(.caption2)
@@ -1604,7 +1604,7 @@ struct CalendarHomeView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .background(Theme.Palette.accentSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
     }
 }
 
@@ -1770,7 +1770,7 @@ private struct StudyTimeBarChart: View {
                         .font(.headline)
                     Text(selectedDetailText ?? averageLabel)
                         .font(.caption)
-                        .foregroundStyle(selectedDetailText != nil ? Color.blue : .secondary)
+                        .foregroundStyle(selectedDetailText != nil ? Theme.Palette.accent : Theme.Palette.textSecondary)
                 }
                 Spacer()
                 Picker("期間", selection: $span) {
@@ -1785,8 +1785,11 @@ private struct StudyTimeBarChart: View {
                 .frame(height: 172)
         }
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 20))
-        .shadow(color: .indigo.opacity(0.08), radius: 10, y: 4)
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous)
+                .strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline)
+        )
     }
 
     private var chart: some View {
@@ -1818,11 +1821,11 @@ private struct StudyTimeBarChart: View {
         return VStack(spacing: dense ? 3 : 5) {
             Spacer(minLength: 0)
             RoundedRectangle(cornerRadius: dense ? 1.5 : 3)
-                .fill(bar.isHighlighted || isSelected ? Color.blue : Color.blue.opacity(0.4))
+                .fill(bar.isHighlighted || isSelected ? Theme.Palette.accent : Theme.Palette.accent.opacity(0.35))
                 .frame(width: width, height: height)
             Text(bar.label)
                 .font(.system(size: dense ? 8 : 9))
-                .foregroundStyle(bar.isHighlighted || isSelected ? Color.blue : .secondary)
+                .foregroundStyle(bar.isHighlighted || isSelected ? Theme.Palette.accent : Theme.Palette.textSecondary)
                 .lineLimit(1)
                 .fixedSize()
                 .frame(width: max(width, dense ? 6 : 14))
@@ -1870,7 +1873,7 @@ private struct MonthCalendarGrid: View {
                     .frame(width: 30, height: 30)
             }
         }
-        .foregroundStyle(.indigo)
+        .foregroundStyle(Theme.Palette.accent)
     }
 
     private var weekdayHeader: some View {
@@ -1910,9 +1913,9 @@ private struct MonthCalendarGrid: View {
                     .frame(width: 30, height: 30)
                     .background {
                         if isSelected {
-                            Circle().fill(Color.indigo)
+                            Circle().fill(Theme.Palette.accent)
                         } else if isToday {
-                            Circle().strokeBorder(Color.indigo, lineWidth: 1.5)
+                            Circle().strokeBorder(Theme.Palette.accent, lineWidth: 1.5)
                         }
                     }
 
