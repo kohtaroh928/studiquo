@@ -127,7 +127,7 @@ struct ShareDestinationPickerView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.themePrimary)
                 .padding()
                 .background(.bar)
                 .accessibilityIdentifier("share-destination-confirm")
@@ -259,7 +259,7 @@ struct SharedImportHost: ViewModifier {
             }
             .padding()
             .frame(maxWidth: 420, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
             .padding(.top, 8)
             .transition(.move(edge: .top).combined(with: .opacity))
         } else if !coordinator.heldItems.isEmpty && !coordinator.isPickingDestination {
@@ -267,10 +267,10 @@ struct SharedImportHost: ViewModifier {
                 Label("取り込めなかったファイルが\(coordinator.heldItems.count)件あります", systemImage: "tray.and.arrow.down")
                     .font(.subheadline.weight(.semibold))
                 Button("再試行", action: coordinator.presentHeldPicker)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .accessibilityIdentifier("shared-import-retry")
                 Button("破棄", role: .destructive) { confirmingDiscard = true }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.themeSecondary)
                     .accessibilityIdentifier("shared-import-discard")
             }
             .padding(.horizontal, 16)

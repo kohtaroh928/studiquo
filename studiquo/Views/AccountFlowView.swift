@@ -33,7 +33,7 @@ struct AccountGateView: View {
                     Text("サーバーが削除依頼を受け付けました。外部サービスの削除は順次処理されます。")
                         .font(.footnote).foregroundStyle(.secondary)
                     if !cleanupError.isEmpty {
-                        Text(cleanupError).foregroundStyle(.red)
+                        Text(cleanupError).foregroundStyle(Theme.Palette.danger)
                         Button("もう一度削除する") { Task { await finishLocalCleanup() } }
                     } else {
                         ProgressView()
@@ -127,10 +127,10 @@ struct LoginView: View {
                         .disabled(authentication.isSignInBusy)
                     }
                     if !authentication.errorMessage.isEmpty {
-                        Text(authentication.errorMessage).font(.footnote).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(authentication.errorMessage).font(.footnote).foregroundStyle(Theme.Palette.danger).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     Button("ログイン") { Task { _ = await authentication.login(email: email, password: password) } }
-                        .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+                        .buttonStyle(.themePrimary).controlSize(.large).frame(maxWidth: .infinity)
                         .disabled(!AccountFlowLogic.canSubmitCredentials(
                             email: email, password: password, isBusy: authentication.isSignInBusy
                         ))
@@ -141,7 +141,7 @@ struct LoginView: View {
                     }
                     .signInWithAppleButtonStyle(.black)
                     .frame(maxWidth: .infinity, minHeight: 50, maxHeight: 50)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
                     .disabled(authentication.isSignInBusy)
                     GoogleSignInButton {
                         Task { await authentication.loginWithGoogle() }
@@ -185,12 +185,12 @@ private struct CreateAccountView: View {
                     .textContentType(.newPassword)
                     .accountFieldStyle()
                 if !authentication.errorMessage.isEmpty {
-                    Text(authentication.errorMessage).font(.footnote).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(authentication.errorMessage).font(.footnote).foregroundStyle(Theme.Palette.danger).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Button("確認コードを送信") {
                     Task { _ = await authentication.beginAccountCreation(email: email, password: password) }
                 }
-                .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+                .buttonStyle(.themePrimary).controlSize(.large).frame(maxWidth: .infinity)
                 .disabled(!AccountFlowLogic.canSubmitCredentials(
                     email: email, password: password, isBusy: authentication.isEmailVerifyBusy
                 ))
@@ -232,7 +232,7 @@ private struct EmailVerificationView: View {
                         code = AccountFlowLogic.verificationCode(from: newValue)
                     }
                 if !authentication.errorMessage.isEmpty {
-                    Text(authentication.errorMessage).font(.footnote).foregroundStyle(.red)
+                    Text(authentication.errorMessage).font(.footnote).foregroundStyle(Theme.Palette.danger)
                 } else if didResend {
                     Text("コードを再送信しました。").font(.footnote).foregroundStyle(.secondary)
                 }
@@ -252,7 +252,7 @@ private struct EmailVerificationView: View {
                             }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .controlSize(.large)
                     .disabled(code.count != 6 || newPassword.count < 8 || authentication.isEmailVerifyBusy)
                 } else {
@@ -262,7 +262,7 @@ private struct EmailVerificationView: View {
                             if await authentication.confirmEmailVerification(code: code) { code = "" }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .controlSize(.large)
                     .disabled(code.count != 6 || authentication.isEmailVerifyBusy)
                 }
@@ -285,7 +285,7 @@ private struct EmailVerificationView: View {
 
 private extension View {
     func accountFieldStyle() -> some View {
-        padding(14).background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 8))
+        padding(14).background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
     }
 }
 
@@ -378,7 +378,7 @@ struct PasskeyEnrollmentView: View {
                 if !authentication.errorMessage.isEmpty {
                     Text(authentication.errorMessage)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.Palette.danger)
                         .multilineTextAlignment(.center)
                 }
                 Button {
@@ -387,7 +387,7 @@ struct PasskeyEnrollmentView: View {
                     Label("パスキーを設定する", systemImage: "faceid")
                         .frame(maxWidth: 320)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.themePrimary)
                 .controlSize(.large)
                 .disabled(authentication.isPasskeyBusy)
                 .accessibilityIdentifier("passkey-enroll")

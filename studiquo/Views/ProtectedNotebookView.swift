@@ -171,7 +171,7 @@ struct NotebookLockGate<Content: View>: View {
             Button(needsFaceID ? "ロックを解除" : "パスワードを入力") {
                 requestUnlockIfNeeded()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.themePrimary)
         }
     }
 

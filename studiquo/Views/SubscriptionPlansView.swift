@@ -50,7 +50,7 @@ struct SubscriptionPlansView: View {
                 if store.isLoading && store.packages.isEmpty {
                     ProgressView("プランを読み込み中…")
                         .padding(24)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
                 }
             }
             .alert("Studiquo", isPresented: messageIsPresented) {
@@ -90,7 +90,7 @@ struct SubscriptionPlansView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(20)
-        .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 18))
+        .background(Theme.Palette.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
     }
 
     // MARK: Feature copy
@@ -124,14 +124,14 @@ struct SubscriptionPlansView: View {
                         .font(.caption.bold())
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(.green.opacity(0.15), in: Capsule())
-                        .foregroundStyle(.green)
+                        .background(Theme.Palette.success.opacity(0.15), in: Capsule())
+                        .foregroundStyle(Theme.Palette.success)
                 }
             }
 
             ForEach(features, id: \.self) { feature in
                 Label(feature, systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.primary, Color.accentColor)
+                    .foregroundStyle(.primary, Theme.Palette.accent)
             }
 
             if plan == .standard {
@@ -149,10 +149,10 @@ struct SubscriptionPlansView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 18))
+        .background(.background, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(store.currentPlan == plan ? Color.accentColor : Color.secondary.opacity(0.2), lineWidth: store.currentPlan == plan ? 2 : 1)
+            RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous)
+                .stroke(store.currentPlan == plan ? Theme.Palette.accent : Color.secondary.opacity(0.2), lineWidth: store.currentPlan == plan ? 2 : 1)
         }
     }
 
@@ -171,7 +171,7 @@ struct SubscriptionPlansView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.themePrimary)
         .disabled(store.isPurchasing || store.currentPlan == plan)
     }
 }
