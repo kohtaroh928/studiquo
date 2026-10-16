@@ -15,6 +15,23 @@ packages:
     # Pinned to a commit on main: the latest release (1.7.2) has neither line
     # wrapping nor $...$ delimiters, and the 1.7.3 tag cannot be fetched.
     revision: 1d2c90827e9c3908269d810d055fb03b7da5fd53
+schemes:
+  studiquo:
+    build:
+      targets:
+        studiquo: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - studiquoTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
 targets:
   studiquo:
     type: application
