@@ -10,6 +10,9 @@ export async function aiPrivacyRejection(request, env) {
   if (request.headers.get("X-Studiquo-AI-Consent") !== AI_CONSENT_VERSION) {
     return json({ error: "設定のプライバシーでAIへのデータ送信を許可してください。" }, 403);
   }
+  // This read contains no study content; it still needs the same consent but
+  // has no JSON body to validate.
+  if (request.method === "GET") return null;
   // Inspect a bounded clone so the existing handler can read its own body.
   const body = await readJSONLimited(request.clone(), 20_000_000);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
