@@ -432,7 +432,7 @@ struct NoteEditorView: View {
                 if isDownloadingFriendAttachment {
                     ProgressView("読み込み中…")
                         .padding(20)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
                         .zIndex(3500)
                 }
 
@@ -672,7 +672,7 @@ struct NoteEditorView: View {
                 } label: {
                     Label("集中モードを終了", systemImage: "arrow.down.right.and.arrow.up.left")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.themePrimary)
                 .padding()
             }
         }
@@ -783,9 +783,9 @@ struct NoteEditorView: View {
             temporaryAIChatResizeHandles(in: size, panelSize: panelSize)
         }
         .frame(width: panelSize.width, height: panelSize.height)
-        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 18))
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous).strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline))
         .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("note-ai-floating-panel")
@@ -998,7 +998,7 @@ struct NoteEditorView: View {
                 Image(systemName: tool.icon)
                     .foregroundStyle(drawingTool == tool ? Color.accentColor : Color.primary)
                     .frame(width: 28, height: 28)
-                    .background(toolChipBackground(cornerRadius: 7, isActive: drawingTool == tool))
+                    .background(toolChipBackground(cornerRadius: Theme.Radius.s, isActive: drawingTool == tool))
             }
         }
 
@@ -1116,7 +1116,7 @@ struct NoteEditorView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(20)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
     }
 
@@ -1128,7 +1128,7 @@ struct NoteEditorView: View {
             } label: {
                 Image(systemName: "lineweight")
                     .frame(width: 28, height: 28)
-                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
             }
             .popover(isPresented: $showsToolSizePopover) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -1160,7 +1160,7 @@ struct NoteEditorView: View {
             }
             .padding(.horizontal, 7)
             .frame(height: 36)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
             .accessibilityElement(children: .combine)
             .accessibilityLabel(currentToolSizeLabel)
             .accessibilityValue("\(currentToolSizePercent)")
@@ -1372,7 +1372,7 @@ struct NoteEditorView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(18)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
         }
     }
 
@@ -2255,7 +2255,7 @@ struct NoteEditorView: View {
             .font(.system(size: 18, weight: .medium))
             .foregroundStyle(isActive ? Color.accentColor : Color.primary)
             .frame(width: 34, height: 34)
-            .background(toolChipBackground(cornerRadius: 8, isActive: isActive))
+            .background(toolChipBackground(cornerRadius: Theme.Radius.s, isActive: isActive))
             .contentShape(Rectangle())
             .modifier(DimsWhenDisabled())
             .accessibilityLabel(title)
@@ -4585,9 +4585,9 @@ private struct ScientificCalculatorPanel: View {
             }
         }
         .frame(width: 380, height: 600)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.indigo.opacity(0.35)))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous).stroke(Theme.Palette.accent.opacity(0.35)))
         .shadow(color: .black.opacity(0.22), radius: 16, y: 7)
         .position(resolvedCenter)
         .onAppear {
@@ -4609,7 +4609,7 @@ private struct ScientificCalculatorPanel: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 44)
-        .background(Color.indigo.opacity(0.16))
+        .background(Theme.Palette.accentSoft)
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 8, coordinateSpace: .global)
@@ -4653,10 +4653,10 @@ private struct ScientificCalculatorPanel: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .frame(maxWidth: .infinity, minHeight: 42)
-                .background(keyColor(id), in: RoundedRectangle(cornerRadius: 10))
+                .background(keyColor(id), in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
                 .foregroundStyle(keyForeground(id))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
                         .stroke(Color.yellow, lineWidth: id == "SHIFT" && shiftActive ? 2 : 0)
                 )
         }
@@ -4874,7 +4874,7 @@ private struct TimeToolView: View {
                     Text(formattedTime(value, showsTenths: model.mode == .stopwatch))
                         .font(.system(size: 52, weight: .bold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(model.mode == .stopwatch ? Color.indigo : Color.orange)
+                        .foregroundStyle(model.mode == .stopwatch ? Theme.Palette.accent : Theme.Palette.warning)
                         .minimumScaleFactor(0.65)
                 }
 
@@ -4885,11 +4885,7 @@ private struct TimeToolView: View {
             }
             .padding(24)
             .background(
-                LinearGradient(
-                    colors: [Color.indigo.opacity(0.10), Color.orange.opacity(0.07), Color.clear],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                Theme.Palette.canvas
             )
             .navigationTitle("時間")
             .toolbar {
@@ -4903,12 +4899,12 @@ private struct TimeToolView: View {
     private var stopwatchControls: some View {
         HStack(spacing: 14) {
             Button("リセット", systemImage: "arrow.counterclockwise", action: resetStopwatch)
-                .buttonStyle(.bordered)
+                .buttonStyle(.themeSecondary)
                 .disabled(model.stopwatchRunning || model.stopwatchAccumulated == 0)
             Button(model.stopwatchRunning ? "一時停止" : "スタート",
                    systemImage: model.stopwatchRunning ? "pause.fill" : "play.fill",
                    action: toggleStopwatch)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.themePrimary)
                 .tint(model.stopwatchRunning ? .orange : .indigo)
         }
         .controlSize(.large)
@@ -4921,11 +4917,11 @@ private struct TimeToolView: View {
             }
             HStack(spacing: 14) {
                 Button("リセット", systemImage: "arrow.counterclockwise", action: resetTimer)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.themeSecondary)
                 Button(model.timerRunning ? "一時停止" : "スタート",
                        systemImage: model.timerRunning ? "pause.fill" : "play.fill",
                        action: toggleTimer)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .tint(model.timerRunning ? .orange : .green)
                     .disabled(!model.timerRunning && model.timerRemaining <= 0)
             }
@@ -5146,9 +5142,9 @@ private struct FloatingDrawingToolbar: View {
         .buttonStyle(.borderless)
         .frame(width: barWidth, height: barHeight)
         .clipped()
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.primary.opacity(0.16), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous).strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
         .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
         .environment(\.layoutDirection, isLeftHanded ? .rightToLeft : .leftToRight)
         .position(resolvedCenter)
@@ -5551,7 +5547,7 @@ private struct SnippetTrayModifier: ViewModifier {
                             Label("AIに質問する", systemImage: "sparkles")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.themePrimary)
 
                         Button {
                             gradeAndDismiss(latest)
@@ -5562,7 +5558,7 @@ private struct SnippetTrayModifier: ViewModifier {
                             )
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.themeSecondary)
                     }
                     .font(.caption.weight(.semibold))
 
@@ -5572,7 +5568,7 @@ private struct SnippetTrayModifier: ViewModifier {
                         Label("チャットに追加", systemImage: "message.badge.plus")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.themeSecondary)
                     .font(.caption.weight(.semibold))
                     .accessibilityIdentifier("snippet-add-to-chat")
                     .disabled(!allowsChatSplit)
@@ -5580,9 +5576,9 @@ private struct SnippetTrayModifier: ViewModifier {
                 }
             }
             .padding(10)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
             }
             .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
@@ -5605,7 +5601,7 @@ private struct SnippetTrayModifier: ViewModifier {
         .frame(width: 92, height: 62)
         .accessibilityIdentifier("snippet-thumbnail-\(snippet.sourceLabel)")
         .background(Theme.Palette.canvas)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
         .overlay(alignment: .bottomTrailing) {
             Text(snippet.sourceLabel)
                 .font(.system(size: 9, weight: .semibold))
@@ -5615,7 +5611,7 @@ private struct SnippetTrayModifier: ViewModifier {
                 .padding(3)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous)
                 .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         }
         .overlay(alignment: .topTrailing) {
@@ -5657,7 +5653,7 @@ private struct SnippetTrayModifier: ViewModifier {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(pendingQuestion?.id == snippet.id ? Color.indigo : Color.teal, in: Capsule())
+                    .background(pendingQuestion?.id == snippet.id ? Theme.Palette.accent : Theme.Palette.textSecondary, in: Capsule())
                     .padding(3)
             }
         }
@@ -6014,7 +6010,7 @@ private struct NotebookPaneView: View {
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Color.accentColor)
                                 .frame(width: 32, height: 32)
-                                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                                .background(Theme.Palette.accentSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
                         }
                         .accessibilityLabel(L("PDF要約"))
                     }
@@ -6654,7 +6650,7 @@ private struct PageOverviewView: View {
                         VStack(spacing: 5) {
                             PageThumbnail(page: page)
                                 .overlay {
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous)
                                         .stroke(index == currentPageIndex ? Color.accentColor : .clear, lineWidth: 3)
                                 }
                             Text("\(index + 1)").font(.caption.monospacedDigit())
@@ -8147,7 +8143,7 @@ private struct EditablePageElement: View {
                 .underline()
                 .padding(6)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 6))
+                .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
                 .onTapGesture {
                     NotificationCenter.default.post(name: .studiquoOpenPageLink, object: link.target)
                 }
@@ -8241,7 +8237,7 @@ private struct EditablePageElement: View {
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 24, height: 24)
-                    .background(Color.red, in: Circle())
+                    .background(Theme.Palette.danger, in: Circle())
                     .overlay(Circle().strokeBorder(.white, lineWidth: 1))
             }
             .buttonStyle(.plain)
@@ -8663,7 +8659,7 @@ private struct NotebookOutlineView: View {
                             }
                         }
                         Spacer()
-                        if page.isBookmarked { Image(systemName: "bookmark.fill").foregroundStyle(.yellow) }
+                        if page.isBookmarked { Image(systemName: "bookmark.fill").foregroundStyle(Theme.Palette.warning) }
                     }
                 }
                 .buttonStyle(.plain)
@@ -8746,7 +8742,7 @@ private struct PageSidebar: View {
                                 ZStack(alignment: .topTrailing) {
                                     PageThumbnail(page: page)
                                         .overlay {
-                                            RoundedRectangle(cornerRadius: 6)
+                                            RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous)
                                                 .stroke(index == currentPageIndex ? Color.accentColor : .clear, lineWidth: 3)
                                         }
                                     if page.isBookmarked {
@@ -8962,7 +8958,7 @@ private struct PageThumbnail: View {
         }
         .aspectRatio(page.pageWidth / page.pageHeight, contentMode: .fit)
         .background(.white)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
         .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
     }
 }
@@ -8975,7 +8971,7 @@ struct PageTemplateBackground: View {
     var body: some View {
         Canvas { context, size in
             let background = isDark ? Color(white: 0.08) : Color(hex: paperColorHex)
-            let line = isDark ? Color.white.opacity(0.18) : Color.blue.opacity(0.18)
+            let line = isDark ? Color.white.opacity(0.18) : Theme.Palette.accent.opacity(0.18)
             context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(background))
 
             switch template {
@@ -9306,7 +9302,7 @@ private struct NoteChatPickerPopover: View {
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.white)
                     .frame(minWidth: 20, minHeight: 20)
-                    .background(.red, in: Circle())
+                    .background(Theme.Palette.danger, in: Circle())
             }
         }
         .contentShape(Rectangle())
