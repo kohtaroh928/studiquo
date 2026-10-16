@@ -12,7 +12,7 @@
  * response schema, and the app only supplies content.
  */
 
-import { consumeCredits, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES } from "./ai-credits.js";
+import { consumeCredits, creditUsage, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES } from "./ai-credits.js";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { sendPush } from "./push.js";
 import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.js";
@@ -821,8 +821,12 @@ const AI_PATHS = new Set(["/api/ai/chat", "/api/ai/rubric", "/api/ai/grade", "/a
  * identity directly rather than just its resolved plan.
  */
 export async function handleAI(url, request, env, key, ctx, session, plan) {
-  if (request.method !== "POST") return null;
   const effectivePlan = plan ?? "standard";
+  // Read-only: what is left of the tightest window, for the usage header. Costs nothing.
+  if (url.pathname === "/api/ai/usage" && request.method === "GET") {
+    return json(await creditUsage(env, { accountKey: await accountCounterKey(session?.sub, key), plan: effectivePlan }));
+  }
+  if (request.method !== "POST") return null;
   // Only reachable with PAYWALL_ENABLED (entitlements.js): an account with no
   // subscription and no legacy grant. 402 so the app can tell "subscribe" apart
   // from the 403 (model not in your plan) and 429 (daily cap) answers.

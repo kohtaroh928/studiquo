@@ -272,6 +272,16 @@ final class HomeMultiSelectUITests: XCTestCase {
         )
     }
 
+    func testSwipingAHomeEntryRowRevealsTheTrashButton() {
+        let app = launch()
+        let entry = app.descendants(matching: .any)["library-entry-Drag me"].firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 15), "資料「Drag me」が表示されません")
+        entry.swipeLeft()
+
+        let trash = app.buttons["library-entry-trash-Drag me"]
+        XCTAssertTrue(trash.waitForExistence(timeout: 3), "ホーム一覧で資料カード全体を左スワイプしてもゴミ箱ボタンが出ません")
+    }
+
     func testLongPressingAFolderOffersMoveToTrash() {
         let app = launch(["--icon-mode"])
         let folder = folderSurface("Sibling", in: app)

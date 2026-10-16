@@ -231,6 +231,10 @@ struct NoteEditorView: View {
     @Bindable var notebook: Notebook
     @Binding var columnVisibility: NavigationSplitViewVisibility
     var onHome: () -> Void
+    /// Set when a deck, not a note, was opened from Home: the editor starts
+    /// with the deck in its primary pane so the note toolbar sits above it.
+    var initialFlashcardDeck: FlashcardDeck?
+    var initialFlashcardStartsWithMistakeReview = false
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var notebooks: [Notebook]
     @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
     @Query(sort: \TextDocument.updatedAt, order: .reverse) private var textDocuments: [TextDocument]
@@ -250,9 +254,12 @@ struct NoteEditorView: View {
     @State private var primaryFlashcardDeck: FlashcardDeck?
     @State private var secondaryNotebook: Notebook?
     @State private var splitMode: SplitMode = .single
+    /// The layout as of the last recorded step; see `recordPaneLayoutChange`.
+    @State private var lastPaneLayout: PaneLayout?
     @State private var splitRatio: CGFloat = 0.5
     @State private var isDraggingSplitDivider = false
     @State private var isPortraitLayout = false
+    @State private var allowsWindowSplit = false
     /// Orientation at the previous layout pass; `nil` until the first one.
     /// Lets `updateOrientation` tell a genuine rotation apart from a plain
     /// re-layout — see the collapse rule there.
@@ -269,6 +276,11 @@ struct NoteEditorView: View {
     @State private var activePane: ActivePane = .primary
     @State private var pendingSplitMode: SplitMode?
     @State private var showsSplitSourcePicker = false
+    /// The pane whose material the pane's replace button is swapping out.
+    @State private var paneReplaceTarget: ActivePane?
+    /// A tab picked in the top bar while split, waiting for the user to tap
+    /// the pane that should show it.
+    @State private var pendingPaneTarget: PaneSwitchTarget?
     @State private var primaryShowsWeb = false
     /// Conversations, drafts and the replying state are shared app-wide, so
     /// the note editor, its floating panel and the home AI screen stay in sync.
@@ -289,6 +301,11 @@ struct NoteEditorView: View {
     /// brings it back untouched. Floating `showsTemporaryAIChat` is the opt-in
     /// alternative; the two are never shown together.
     @State private var aiSwapPane: ActivePane?
+    /// In a two-pane layout, opening a chat must not silently evict the pane
+    /// the student was using. Keep the choice explicit for both AI and
+    /// friend/group chats.
+    @State private var showsAIChatPanePicker = false
+    @State private var pendingChatPaneTarget: NoteChatTarget?
     /// Last floating-panel frame as fractions of the editor, so the panel
     /// reopens where it was left, also after the editor is closed and reopened.
     /// Negative means nothing saved yet.
@@ -367,7 +384,10 @@ struct NoteEditorView: View {
     @AppStorage("pendingShapeKind") private var pendingShapeKindRaw = ""
     @AppStorage("selectedElementColor") private var selectedElementColorHex = "#1C1C1E"
 
-    var body: some View {
+    /// Kept as a separate opaque view so changes to editor overlays and
+    /// dialogs do not force Swift to type-check the whole screen as one
+    /// expression.
+    private var editorCanvas: some View {
         GeometryReader { geometry in
             let editorFrame = geometry.frame(in: .global)
             ZStack {
@@ -437,6 +457,9 @@ struct NoteEditorView: View {
                 }
             }
             .clipped()
+            .background {
+                WindowSplitAvailabilityReader(onChange: updateWindowSplitAvailability)
+            }
             .onAppear { updateOrientation(for: geometry.size) }
             .onChange(of: geometry.size) { _, newSize in
                 updateOrientation(for: newSize)
@@ -445,6 +468,9 @@ struct NoteEditorView: View {
         .navigationTitle(primaryFlashcardDeck?.title ?? displayedPrimaryNotebook.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
+        .onChange(of: splitMode) { _, mode in
+            if !allowsWindowSplit, mode != .single { collapseSplit() }
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             if !isFocusMode { editorToolStrip }
         }
@@ -472,23 +498,29 @@ struct NoteEditorView: View {
         }
         .sheet(isPresented: $showsSplitSourcePicker) {
             SplitSourcePicker(
-                notebooks: notebooks,
-                flashcardDecks: flashcardDecks,
-                primaryNotebook: displayedPrimaryNotebook,
-                onSelectNotebook: { selected in
-                secondaryNotebook = selected
-                secondaryFlashcardDeck = nil
-                secondaryShowsWeb = false
-                secondaryShowsAIChat = false
-                secondaryPageIndex = 0
-                completeSplitSelection(object: selected)
-            }, onSelectDeck: { deck in
-                secondaryNotebook = nil
-                secondaryFlashcardDeck = deck
-                secondaryShowsWeb = false
-                secondaryShowsAIChat = false
-                completeSplitSelection(object: deck)
-            })
+                notebooks: notebooks.filter { !$0.isTrashed },
+                flashcardDecks: flashcardDecks.filter { !$0.isTrashed },
+                textDocuments: textDocuments.filter { !$0.isTrashed },
+                onSelectNotebook: { chooseSplitMaterial(.notebook($0)) },
+                onSelectDeck: { chooseSplitMaterial(.flashcardDeck($0)) },
+                onSelectDocument: { chooseSplitMaterial(.document($0)) }
+            )
+        }
+        .sheet(isPresented: Binding(
+            get: { paneReplaceTarget != nil },
+            set: { if !$0 { paneReplaceTarget = nil } }
+        )) {
+            if let pane = paneReplaceTarget {
+                SplitSourcePicker(
+                    notebooks: notebooks.filter { !$0.isTrashed },
+                    flashcardDecks: flashcardDecks.filter { !$0.isTrashed },
+                    textDocuments: textDocuments.filter { !$0.isTrashed },
+                    title: "資料を入れ替える",
+                    onSelectNotebook: { replacePaneMaterial(.notebook($0), in: pane) },
+                    onSelectDeck: { replacePaneMaterial(.flashcardDeck($0), in: pane) },
+                    onSelectDocument: { replacePaneMaterial(.document($0), in: pane) }
+                )
+            }
         }
         .sheet(isPresented: $showsDeletePagePicker) {
             PageDeletionPicker(notebook: activeNotebook, currentPageIndex: activePageIndexBinding)
@@ -506,6 +538,13 @@ struct NoteEditorView: View {
         } message: {
             Text("ホーム画面のゴミ箱から復元できます。")
         }
+        .modifier(PaneChoiceDialogModifier(
+            showsAIChatPicker: $showsAIChatPanePicker,
+            pendingChatTarget: $pendingChatPaneTarget,
+            titleForPane: splitPaneTitle,
+            showAIChat: swapInAIChat(in:),
+            showChat: openChat(_:in:)
+        ))
         .sheet(
             isPresented: Binding(
                 get: { notebookPendingNewPage != nil },
@@ -541,21 +580,19 @@ struct NoteEditorView: View {
                 }
             )
         }
-        .fullScreenCover(isPresented: $showsImagePicker) {
-            FullScreenPhotoPicker { data in
+        .sheet(isPresented: $showsImagePicker) {
+            PhotoPickerSheet { data in
                 showsImagePicker = false
                 guard let data else { return }
                 Task { await addImageElement(from: data) }
             }
-            .ignoresSafeArea()
         }
-        .fullScreenCover(isPresented: $showsBackgroundImagePicker) {
-            FullScreenPhotoPicker { data in
+        .sheet(isPresented: $showsBackgroundImagePicker) {
+            PhotoPickerSheet { data in
                 showsBackgroundImagePicker = false
                 guard let data else { return }
                 Task { await applyBackgroundImage(from: data) }
             }
-            .ignoresSafeArea()
         }
         .onChange(of: notebook.sortedPages.count) { _, count in
             primaryPageIndex = clamped(primaryPageIndex, pageCount: count)
@@ -583,8 +620,13 @@ struct NoteEditorView: View {
         .onAppear {
             splitState.isSplit = splitMode != .single
             aiChat.loadThreads()
+            lastPaneLayout = currentPaneLayout
+            if primaryFlashcardDeck == nil, let initialFlashcardDeck {
+                primaryFlashcardDeck = initialFlashcardDeck
+            }
         }
         .onChange(of: splitMode) { _, mode in splitState.isSplit = mode != .single }
+        .onChange(of: currentPaneLayout.key) { _, _ in recordPaneLayoutChange() }
         // A file opened in place is closed when the secondary pane is switched
         // to another kind of content; only a switch *to* something counts, so
         // clearing these while opening the file pane does not close it.
@@ -638,6 +680,7 @@ struct NoteEditorView: View {
             snippets: $snippetTray,
             pendingQuestion: $pendingProofQuestionSnippet,
             pendingAnswer: $pendingProofAnswerSnippet,
+            allowsChatSplit: allowsWindowSplit,
             onAskAI: askAIAboutSnippet,
             onProofRoleSelected: handleProofSnippet,
             onAddToChat: addSnippetToChat,
@@ -654,6 +697,8 @@ struct NoteEditorView: View {
             onSelect: openAIChatThread
         ))
     }
+
+    var body: some View { editorCanvas }
 
     /// The floating pen bar, rendered by a child view that owns its own
     /// position state.
@@ -1180,6 +1225,7 @@ struct NoteEditorView: View {
         switch splitMode {
         case .single:
             primaryPane
+                .overlay(alignment: .topTrailing) { paneReplaceButton(for: .primary) }
 
         case .horizontal, .vertical:
             let isHorizontal = splitMode == .horizontal
@@ -1215,11 +1261,98 @@ struct NoteEditorView: View {
     private func splitPaneContent(_ pane: ActivePane) -> some View {
         if SplitPaneResizeRenderPolicy.shouldUseLightweightPlaceholder(isDragging: isDraggingSplitDivider) {
             splitDragPlaceholder(for: pane)
-        } else if pane == .primary {
-            primaryPane
         } else {
-            secondaryPane
+            Group {
+                if pane == .primary { primaryPane } else { secondaryPane }
+            }
+            .overlay(alignment: .topTrailing) { paneReplaceButton(for: pane) }
+            .overlay { panePickOverlay(for: pane) }
         }
+    }
+
+    @ViewBuilder
+    private func panePickOverlay(for pane: ActivePane) -> some View {
+        if let target = pendingPaneTarget {
+            ZStack {
+                Color.black.opacity(0.5)
+                VStack(spacing: 10) {
+                    Image(systemName: "hand.tap.fill").font(.largeTitle)
+                    Text("タップして、ここに表示")
+                        .font(.headline)
+                    Text(splitPaneTitle(pane).replacingOccurrences(of: "に表示", with: "のペイン"))
+                        .font(.caption)
+                        .opacity(0.8)
+                    Button("キャンセル") { pendingPaneTarget = nil }
+                        .buttonStyle(.bordered)
+                        .tint(.white)
+                        .padding(.top, 6)
+                }
+                .foregroundStyle(.white)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                pendingPaneTarget = nil
+                applyPaneTarget(target, to: pane)
+                activePane = pane
+            }
+            .accessibilityIdentifier("pane-pick-\(pane == .primary ? "primary" : "secondary")")
+        }
+    }
+
+    private func paneReplaceButton(for pane: ActivePane) -> some View {
+        Button {
+            paneReplaceTarget = pane
+        } label: {
+            Image(systemName: "arrow.left.arrow.right.square")
+                .font(.body.weight(.semibold))
+                .frame(width: 32, height: 32)
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        // Sits in the 38pt title bar, left of the PDF summary (sparkles) button
+        // that occupies the trailing 12 + 32pt.
+        .padding(.top, 3)
+        .padding(.trailing, 12 + 32 + 6)
+        .accessibilityLabel("このペインの資料を入れ替える")
+        .accessibilityIdentifier("pane-replace-\(pane == .primary ? "primary" : "secondary")")
+    }
+
+    /// Swaps `pane`'s material for the picked one and gives it a tab in the
+    /// top bar, the same as opening it from the tab picker.
+    private func replacePaneMaterial(_ target: PaneSwitchTarget, in pane: ActivePane) {
+        paneReplaceTarget = nil
+        // One pane: the home screen owns what is open, so let it switch the
+        // material (and add its tab) the way a tab tap does.
+        if splitMode == .single {
+            recordSingleMaterialReplacement(to: target)
+            NotificationCenter.default.post(name: Notification.Name("StudiquoReplaceSingleMaterial"), object: target)
+            return
+        }
+        applyPaneTarget(target, to: pane)
+        activePane = pane
+        switch target {
+        case .notebook(let notebook):
+            NotificationCenter.default.post(name: .studiquoOpenNotebookTab, object: notebook)
+        case .flashcardDeck(let deck):
+            NotificationCenter.default.post(name: .studiquoOpenNotebookTab, object: deck)
+        case .document(let document):
+            NotificationCenter.default.post(name: Notification.Name("StudiquoAddTextDocumentTab"), object: document)
+        default:
+            break
+        }
+    }
+
+    /// With one pane the home screen swaps the whole editor, so there is no
+    /// layout state here to restore; undo asks it to switch back instead.
+    private func recordSingleMaterialReplacement(to target: PaneSwitchTarget) {
+        let previous: PaneSwitchTarget = primaryFlashcardDeck.map { .flashcardDeck($0) }
+            ?? .notebook(displayedPrimaryNotebook)
+        let name = Notification.Name("StudiquoReplaceSingleMaterial")
+        NoteActionHistory.shared.record(
+            undo: { NotificationCenter.default.post(name: name, object: previous) },
+            redo: { NotificationCenter.default.post(name: name, object: target) }
+        )
     }
 
     private func splitDragPlaceholder(for pane: ActivePane) -> some View {
@@ -1357,7 +1490,12 @@ struct NoteEditorView: View {
                 )
                 .id("note-group-\(primaryGroup.roomID)")
             } else if let primaryFlashcardDeck {
-                FlashcardPaneView(deck: primaryFlashcardDeck, onHome: onHome)
+                FlashcardPaneView(
+                    deck: primaryFlashcardDeck,
+                    onHome: onHome,
+                    startsWithMistakeReview: primaryFlashcardDeck === initialFlashcardDeck && initialFlashcardStartsWithMistakeReview
+                )
+                .simultaneousGesture(TapGesture().onEnded { activePane = .primary })
             } else {
                 GeometryReader { geometry in
                     ZStack {
@@ -1810,6 +1948,7 @@ struct NoteEditorView: View {
             } label: {
                 Label("画面分割", systemImage: splitMode.icon)
             }
+            .disabled(!allowsWindowSplit)
 
             if splitMode != .single {
                 Menu {
@@ -1888,9 +2027,11 @@ struct NoteEditorView: View {
                 toolStripButton("元に戻す", icon: "arrow.uturn.backward") {
                     postDrawingHistoryRequest(.studiquoUndoDrawing)
                 }
+                .disabled(!activePaneShowsNote)
                 toolStripButton("やり直す", icon: "arrow.uturn.forward") {
                     postDrawingHistoryRequest(.studiquoRedoDrawing)
                 }
+                .disabled(!activePaneShowsNote)
                 toolStripButton("AIトーク", icon: "sparkles", isActive: primaryShowsAIChat || secondaryShowsAIChat || showsTemporaryAIChat || aiSwapPane != nil) {
                     presentAIChat()
                 }
@@ -1915,6 +2056,7 @@ struct NoteEditorView: View {
                 } label: {
                     toolStripLabel("チャット", icon: "message.fill", isActive: isChatVisibleInSplit)
                 }
+                .disabled(!allowsWindowSplit)
                 .popover(isPresented: $showsChatPicker, arrowEdge: .top) {
                     NoteChatPickerPopover(
                         store: friendStore,
@@ -1926,14 +2068,14 @@ struct NoteEditorView: View {
                         }
                     )
                 }
-                toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode, action: selectPen)
-                    .disabled(primaryFlashcardDeck != nil)
-                toolStripButton("消しゴム", icon: "eraser", isActive: drawingTool == .eraser && !isReadOnlyMode, action: selectEraser)
-                    .disabled(primaryFlashcardDeck != nil)
-                toolStripButton("選択", icon: "lasso", isActive: drawingTool == .lasso && !isReadOnlyMode, action: selectLasso)
-                    .disabled(primaryFlashcardDeck != nil)
-                toolStripButton("切り抜き", icon: "rectangle.dashed", isActive: drawingTool == .snip && !isReadOnlyMode, action: selectSnip)
-                    .disabled(primaryFlashcardDeck != nil)
+                toolStripButton("ペン", icon: "pencil.tip", isActive: drawingTool == .pen && !isReadOnlyMode && activePaneShowsNote, action: selectPen)
+                    .disabled(!activePaneShowsNote)
+                toolStripButton("消しゴム", icon: "eraser", isActive: drawingTool == .eraser && !isReadOnlyMode && activePaneShowsNote, action: selectEraser)
+                    .disabled(!activePaneShowsNote)
+                toolStripButton("選択", icon: "lasso", isActive: drawingTool == .lasso && !isReadOnlyMode && activePaneShowsNote, action: selectLasso)
+                    .disabled(!activePaneShowsNote)
+                toolStripButton("切り抜き", icon: "rectangle.dashed", isActive: drawingTool == .snip && !isReadOnlyMode && activePaneShowsNote, action: selectSnip)
+                    .disabled(!activePaneShowsNote)
                     .accessibilityIdentifier("note-snip-toolbar-button")
                 toolStripButton("時間", icon: "timer") {
                     showsTimeTool = true
@@ -1964,18 +2106,24 @@ struct NoteEditorView: View {
                         Button { addShapeElement(kind) } label: { Label(kind.title, systemImage: kind.icon) }
                     }
                     Button { addShapeElement(.studyTape) } label: { Label("暗記テープ", systemImage: "rectangle.fill") }
-                } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "") }
+                } label: { toolStripLabel("図形", icon: "square.on.circle", isActive: pendingShapeKindRaw != "" && activePaneShowsNote) }
+                .disabled(!activePaneShowsNote)
 
                 toolStripButton("テキスト", icon: "textformat", action: addTextElement)
+                    .disabled(!activePaneShowsNote)
                 toolStripButton("写真", icon: "photo") { showsImagePicker = true }
+                    .disabled(!activePaneShowsNote)
                 if Self.showsDarkPageToggle {
                     toolStripButton("明暗表示", icon: usesDarkPageDisplay ? "sun.max" : "moon", isActive: usesDarkPageDisplay) { usesDarkPageDisplay.toggle() }
+                        .disabled(!activePaneShowsNote)
                 }
                 toolStripButton(
                     "用紙",
                     icon: "doc.text.image",
-                    isActive: currentPrimaryPage?.pageTemplate != .blank || currentPrimaryPage?.paperColorHex != "#FFFFFF"
+                    isActive: activePaneShowsNote
+                        && (currentPrimaryPage?.pageTemplate != .blank || currentPrimaryPage?.paperColorHex != "#FFFFFF")
                 ) { showsPageTemplatePicker = true }
+                .disabled(!activePaneShowsNote)
 
                 Menu {
                     Button("1画面", systemImage: "rectangle") { collapseSplit() }
@@ -1999,6 +2147,8 @@ struct NoteEditorView: View {
                     }
                     .accessibilityIdentifier("note-split-photo-study-button")
                 } label: { toolStripLabel("画面分割", icon: splitMode.icon, isActive: splitMode != .single) }
+                .disabled(!allowsWindowSplit)
+                .accessibilityIdentifier("note-split-toolbar-button")
 
                 if splitMode != .single {
                     Menu {
@@ -2050,10 +2200,7 @@ struct NoteEditorView: View {
                         notebookPendingTrash = activeNotebook
                     }
                 } label: { toolStripLabel("削除", icon: "trash") }
-                .disabled(
-                    (activePane == .primary && primaryFlashcardDeck != nil)
-                        || (activePane == .secondary && secondaryFlashcardDeck != nil)
-                )
+                .disabled(!activePaneShowsNote)
 
                 // Targets whichever pane was last touched, so in a split the
                 // page lands in the note the user was actually working in
@@ -2061,13 +2208,14 @@ struct NoteEditorView: View {
                 toolStripButton("ページ追加", icon: "plus.rectangle.on.rectangle") {
                     requestPageAddition(to: activeNotebook)
                 }
-                    .disabled(activePaneShowsFlashcards)
+                    .disabled(!activePaneShowsNote)
 
                 Menu {
                     Button("全ページ", systemImage: "doc.on.doc") { exportAllPagesAsPDF() }
                     Button("このページ", systemImage: "doc") { exportCurrentPageAsPDF() }
                         .disabled(activePage == nil)
                 } label: { toolStripLabel("PDF出力", icon: "square.and.arrow.down.on.square") }
+                .disabled(!activePaneShowsNote)
             }
             .padding(.horizontal, 14)
             .frame(height: 52)
@@ -2109,11 +2257,13 @@ struct NoteEditorView: View {
             .frame(width: 34, height: 34)
             .background(toolChipBackground(cornerRadius: 8, isActive: isActive))
             .contentShape(Rectangle())
+            .modifier(DimsWhenDisabled())
             .accessibilityLabel(title)
             .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     private func openWebSplit(title: String, homeURL: String) {
+        guard allowsWindowSplit else { return }
         dismissPhotoStudy(restorePreviousLayout: false)
         webBrowser.openHomeIfNeeded(homeURL)
         secondaryNotebook = nil
@@ -2140,6 +2290,7 @@ struct NoteEditorView: View {
     }
 
     private func openExternalFileSplit() {
+        guard allowsWindowSplit else { return }
         dismissPhotoStudy(restorePreviousLayout: false)
         secondaryNotebook = nil
         secondaryFlashcardDeck = nil
@@ -2155,6 +2306,7 @@ struct NoteEditorView: View {
     }
 
     private func presentChatPicker() {
+        guard allowsWindowSplit else { return }
         snippetAwaitingChatPicker = nil
         showsChatPicker = true
     }
@@ -2167,6 +2319,15 @@ struct NoteEditorView: View {
             openChat(target, attaching: snippet)
         } else {
             openChat(target)
+        }
+    }
+
+    private func splitPaneTitle(_ pane: ActivePane) -> String {
+        switch (splitMode, pane) {
+        case (.vertical, .primary): return "上のペインに表示"
+        case (.vertical, .secondary): return "下のペインに表示"
+        case (_, .primary): return "左のペインに表示"
+        case (_, .secondary): return "右のペインに表示"
         }
     }
 
@@ -2208,6 +2369,7 @@ struct NoteEditorView: View {
     }
 
     private func openChat(_ target: NoteChatTarget, attaching snippet: PageSnippet) {
+        guard allowsWindowSplit else { return }
         dismissPhotoStudy(restorePreviousLayout: false)
         let source = snippetOriginPanes[snippet.id] ?? activePane
         let sourcePane: NoteChatPane = source == .primary ? .primary : .secondary
@@ -2246,27 +2408,60 @@ struct NoteEditorView: View {
     }
 
     private func openChat(_ target: NoteChatTarget) {
+        guard allowsWindowSplit else { return }
         dismissPhotoStudy(restorePreviousLayout: false)
-        switch NoteChatSplitPolicy.action(
+        if splitMode != .single,
+           primaryChatTarget != target,
+           secondaryChatTarget != target {
+            pendingChatPaneTarget = target
+            return
+        }
+        let action = NoteChatSplitPolicy.action(
             forTapping: target,
             primaryTarget: primaryChatTarget,
             secondaryTarget: secondaryChatTarget
-        ) {
+        )
+        switch action {
         case .collapse:
             collapseSplit()
             return
         case .openInPrimary:
-            primaryChatTarget = target
+            performPaneTransition {
+                primaryChatTarget = target
+                splitMode = isPortraitLayout ? .vertical : .horizontal
+                splitRatio = 0.5
+                activePane = .primary
+            }
         case .openInSecondary:
-            secondaryNotebook = nil
-            secondaryFlashcardDeck = nil
-            secondaryShowsWeb = false
-            secondaryShowsAIChat = false
-            secondaryChatTarget = target
+            performPaneTransition {
+                secondaryNotebook = nil
+                secondaryFlashcardDeck = nil
+                secondaryShowsWeb = false
+                secondaryShowsAIChat = false
+                secondaryChatTarget = target
+                splitMode = isPortraitLayout ? .vertical : .horizontal
+                splitRatio = 0.5
+                activePane = .primary
+            }
         }
-        splitMode = isPortraitLayout ? .vertical : .horizontal
-        splitRatio = 0.5
-        activePane = .primary
+    }
+
+    private func openChat(_ target: NoteChatTarget, in pane: ActivePane) {
+        pendingChatPaneTarget = nil
+        dismissPhotoStudy(restorePreviousLayout: false)
+        performPaneTransition {
+            applyPaneTarget(chatPaneSwitchTarget(for: target), to: pane)
+            splitMode = isPortraitLayout ? .vertical : .horizontal
+            splitRatio = 0.5
+            activePane = pane
+        }
+    }
+
+    private func chatPaneSwitchTarget(for target: NoteChatTarget) -> PaneSwitchTarget {
+        switch target {
+        case .friend(let id): return .friend(id)
+        case .group(let roomID): return .group(roomID)
+        }
     }
 
     /// Brings a conversation to the front, opening the chat pane if the
@@ -2311,19 +2506,26 @@ struct NoteEditorView: View {
         }
     }
 
-    /// Shows the chat in the pane opposite `activePane`, leaving that pane's
-    /// own content in state so it returns when the chat is closed.
+    /// In a split layout, asks which pane may be temporarily replaced. Its
+    /// original content remains in state and returns when the chat closes.
     private func swapInAIChat() {
         guard splitMode != .single else {
             presentTemporaryAIChat()
             return
         }
+        showsAIChatPanePicker = true
+    }
+
+    private func swapInAIChat(in pane: ActivePane) {
+        showsAIChatPanePicker = false
         aiChat.loadThreads()
         aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
         if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
-        dismissPhotoStudy(restorePreviousLayout: false)
-        showsTemporaryAIChat = false
-        aiSwapPane = activePane == .primary ? .secondary : .primary
+        performPaneTransition {
+            dismissPhotoStudy(restorePreviousLayout: false)
+            showsTemporaryAIChat = false
+            aiSwapPane = pane
+        }
     }
 
     /// Moves a swapped-in chat out into the floating panel; the pane it
@@ -2347,18 +2549,115 @@ struct NoteEditorView: View {
     }
 
     private func openAIChatSplit() {
+        guard allowsWindowSplit else {
+            presentTemporaryAIChat()
+            return
+        }
         aiChat.loadThreads()
         aiChat.selectedThread = aiChat.selectedThread ?? aiChat.threads.first
+        performPaneTransition {
+            showsTemporaryAIChat = false
+            secondaryNotebook = nil
+            secondaryFlashcardDeck = nil
+            secondaryShowsWeb = false
+            secondaryShowsAIChat = true
+            secondaryChatTarget = nil
+            splitMode = isPortraitLayout ? .vertical : .horizontal
+            splitRatio = 0.5
+            activePane = .primary
+        }
         if let thread = aiChat.selectedThread { aiChat.announceThread(thread) }
+    }
+
+    private var currentPaneLayout: PaneLayout {
+        PaneLayout(
+            splitMode: splitMode,
+            splitRatio: splitRatio,
+            activePane: activePane,
+            primaryPageIndex: primaryPageIndex,
+            secondaryPageIndex: secondaryPageIndex,
+            primaryNotebook: primaryOverrideNotebook,
+            primaryDeck: primaryFlashcardDeck,
+            secondaryNotebook: secondaryNotebook,
+            secondaryDeck: secondaryFlashcardDeck,
+            primaryShowsWeb: primaryShowsWeb,
+            secondaryShowsWeb: secondaryShowsWeb,
+            primaryShowsAIChat: primaryShowsAIChat,
+            secondaryShowsAIChat: secondaryShowsAIChat,
+            primaryChatTarget: primaryChatTarget,
+            secondaryChatTarget: secondaryChatTarget,
+            primaryMaterial: primaryTemporaryChatMaterial,
+            secondaryMaterial: secondaryTemporaryChatMaterial,
+            aiSwapPane: aiSwapPane
+        )
+    }
+
+    /// Puts the undo button in charge of the screen layout too: every change
+    /// to what the panes show, however it came about, becomes a step.
+    private func recordPaneLayoutChange() {
+        let current = currentPaneLayout
+        guard let previous = lastPaneLayout else {
+            lastPaneLayout = current
+            return
+        }
+        // Restoring sets `lastPaneLayout` first, so its own change lands here
+        // as no change and is not recorded a second time.
+        guard previous.key != current.key else { return }
+        lastPaneLayout = current
+        NoteActionHistory.shared.record(
+            undo: { restorePaneLayout(previous) },
+            redo: { restorePaneLayout(current) }
+        )
+    }
+
+    private func restorePaneLayout(_ layout: PaneLayout) {
+        // A file opened in place is released when its pane is left and cannot
+        // be reopened from the snapshot, so it comes back as the file browser
+        // with nothing chosen yet.
+        func restorable(_ material: TemporaryChatMaterial?) -> TemporaryChatMaterial? {
+            if case .externalFile = material { return .externalFile(ExternalFileSession()) }
+            return material
+        }
+        var layout = layout
+        layout.primaryMaterial = restorable(layout.primaryMaterial)
+        layout.secondaryMaterial = restorable(layout.secondaryMaterial)
+        lastPaneLayout = layout
+        dismissPhotoStudy(restorePreviousLayout: false)
+        pendingPaneTarget = nil
+        pendingSplitMode = nil
         showsTemporaryAIChat = false
-        secondaryNotebook = nil
-        secondaryFlashcardDeck = nil
-        secondaryShowsWeb = false
-        secondaryShowsAIChat = true
-        secondaryChatTarget = nil
-        splitMode = isPortraitLayout ? .vertical : .horizontal
-        splitRatio = 0.5
-        activePane = .primary
+        // One transaction without animation, so the panes swap in a single frame.
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            splitMode = layout.splitMode
+            splitRatio = layout.splitRatio
+            activePane = layout.activePane
+            primaryPageIndex = layout.primaryPageIndex
+            secondaryPageIndex = layout.secondaryPageIndex
+            primaryOverrideNotebook = layout.primaryNotebook
+            primaryFlashcardDeck = layout.primaryDeck
+            secondaryNotebook = layout.secondaryNotebook
+            secondaryFlashcardDeck = layout.secondaryDeck
+            primaryShowsWeb = layout.primaryShowsWeb
+            secondaryShowsWeb = layout.secondaryShowsWeb
+            primaryShowsAIChat = layout.primaryShowsAIChat
+            secondaryShowsAIChat = layout.secondaryShowsAIChat
+            primaryChatTarget = layout.primaryChatTarget
+            secondaryChatTarget = layout.secondaryChatTarget
+            primaryTemporaryChatMaterial = layout.primaryMaterial
+            secondaryTemporaryChatMaterial = layout.secondaryMaterial
+            aiSwapPane = layout.aiSwapPane
+        }
+    }
+
+    /// A pane change replaces several independent view states. Applying them
+    /// in one non-animated transaction prevents an intermediate frame where
+    /// the drawing tools from the old pane and the new chat tools overlap.
+    private func performPaneTransition(_ changes: () -> Void) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction, changes)
     }
 
     private var isAIChatVisibleInSplit: Bool {
@@ -2861,17 +3160,18 @@ struct NoteEditorView: View {
         return parts.joined(separator: "\n")
     }
 
-    /// Routes a top tab-bar selection (or a drag-drop, see `handlePaneDrop`)
-    /// into whichever split pane the user did NOT last touch, so switching
-    /// tabs while split never disturbs the pane they're actively working
-    /// in. With no split active there's only the primary pane to target.
+    /// Routes a top tab-bar selection. While split, the target is held in
+    /// `pendingPaneTarget` and both panes are dimmed until the user taps the
+    /// one that should show it; with no split there's only the primary pane.
     private func routeTabSelection(_ target: PaneSwitchTarget) {
         dismissPhotoStudy(restorePreviousLayout: false)
-        let destination: ActivePane = splitMode == .single
-            ? .primary
-            : (activePane == .primary ? .secondary : .primary)
-        applyPaneTarget(target, to: destination)
-        activePane = destination
+        // Split: the user chooses the pane by tapping it.
+        if splitMode != .single {
+            pendingPaneTarget = target
+            return
+        }
+        applyPaneTarget(target, to: .primary)
+        activePane = .primary
     }
 
     private func applyPaneTarget(_ target: PaneSwitchTarget, to pane: ActivePane) {
@@ -3118,6 +3418,7 @@ struct NoteEditorView: View {
     /// the last editable note. This is what lets a Web/AI/second-note split
     /// return exactly as it was when the library closes.
     private func togglePhotoStudy() {
+        guard allowsWindowSplit else { return }
         if photoStudyPane != nil {
             dismissPhotoStudy(restorePreviousLayout: true)
             return
@@ -3184,9 +3485,18 @@ struct NoteEditorView: View {
     }
 
     private func prepareSplit(_ mode: SplitMode) {
+        guard allowsWindowSplit else { return }
         dismissPhotoStudy(restorePreviousLayout: false)
         pendingSplitMode = isPortraitLayout ? .vertical : mode
         showsSplitSourcePicker = true
+    }
+
+    private func updateWindowSplitAvailability(_ allowed: Bool) {
+        allowsWindowSplit = allowed
+        guard !allowed else { return }
+        showsSplitSourcePicker = false
+        showsChatPicker = false
+        collapseSplit()
     }
 
     private func updateOrientation(for size: CGSize) {
@@ -3195,6 +3505,9 @@ struct NoteEditorView: View {
         isPortraitLayout = portrait
         let wasPortrait = lastKnownPortrait
         lastKnownPortrait = portrait
+        // Window resizing must also close photo/chat companion splits, which
+        // the rotation-only rule below intentionally keeps open.
+        guard allowsWindowSplit else { return }
 
         // Turning the iPad upright used to fold a side-by-side split into a
         // stacked one, which squeezed both notes into half-height strips
@@ -3227,6 +3540,7 @@ struct NoteEditorView: View {
     /// showing, so the closed split leaves nothing half-alive behind it.
     private func collapseSplit() {
         dismissPhotoStudy(restorePreviousLayout: false)
+        pendingPaneTarget = nil
         // A closed split shows no pane, so a file opened in place must not stay
         // open behind it.
         discardExternalFile(in: .primary)
@@ -3269,6 +3583,7 @@ struct NoteEditorView: View {
     }
 
     private func handlePaneDrop(_ value: String, target: PaneDropTarget) -> Bool {
+        guard allowsWindowSplit else { return false }
         let parts = value.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return false }
         let pane: ActivePane = target == .primary ? .primary : .secondary
@@ -3328,12 +3643,37 @@ struct NoteEditorView: View {
         return true
     }
 
-    private func completeSplitSelection(object: Any) {
-        splitMode = isPortraitLayout ? .vertical : (pendingSplitMode ?? .horizontal)
-        splitRatio = 0.5
-        activePane = .secondary
-        NotificationCenter.default.post(name: .studiquoOpenNotebookTab, object: object)
+    /// The split tool's pick. From a single pane it opens the split with the
+    /// pick in the second pane. When already split, it works like a tab tap:
+    /// both panes dim and the user taps the pane to replace (or cancels).
+    /// Either way the material gets a tab.
+    private func chooseSplitMaterial(_ target: PaneSwitchTarget) {
+        guard allowsWindowSplit else {
+            showsSplitSourcePicker = false
+            collapseSplit()
+            return
+        }
+        let wasSplit = splitMode != .single
         showsSplitSourcePicker = false
+        if !isPortraitLayout, let mode = pendingSplitMode { splitMode = mode }
+        else if isPortraitLayout { splitMode = .vertical }
+        if wasSplit {
+            pendingPaneTarget = target
+        } else {
+            splitRatio = 0.5
+            applyPaneTarget(target, to: .secondary)
+            activePane = .secondary
+        }
+        switch target {
+        case .notebook(let notebook):
+            NotificationCenter.default.post(name: .studiquoOpenNotebookTab, object: notebook)
+        case .flashcardDeck(let deck):
+            NotificationCenter.default.post(name: .studiquoOpenNotebookTab, object: deck)
+        case .document(let document):
+            NotificationCenter.default.post(name: Notification.Name("StudiquoAddTextDocumentTab"), object: document)
+        default:
+            break
+        }
     }
 
     private var activeNotebook: Notebook {
@@ -3344,6 +3684,28 @@ struct NoteEditorView: View {
     /// has no pages for the page-level tools to act on.
     private var activePaneShowsFlashcards: Bool {
         activePane == .secondary ? secondaryFlashcardDeck != nil : primaryFlashcardDeck != nil
+    }
+
+    /// True when the pane the user last touched is a note or PDF. The page
+    /// tools (pen, shapes, paper, add/delete page, PDF export...) act on that
+    /// note's page, so they stay disabled over a deck, the web, a chat, and so on.
+    private var activePaneShowsNote: Bool {
+        if activePane == .secondary {
+            return splitMode != .single
+                && secondaryNotebook != nil
+                && secondaryFlashcardDeck == nil
+                && !secondaryShowsWeb
+                && !secondaryShowsAIChat
+                && photoStudyPane != .secondary
+                && aiSwapPane != .secondary
+        }
+        return primaryFlashcardDeck == nil
+            && !primaryShowsWeb
+            && !primaryShowsAIChat
+            && primaryChatTarget == nil
+            && primaryTemporaryChatMaterial == nil
+            && photoStudyPane != .primary
+            && aiSwapPane != .primary
     }
 
     private var activePageIndexBinding: Binding<Int> {
@@ -3583,6 +3945,12 @@ struct NoteEditorView: View {
     }
 
     private var currentPrimaryPage: NotePage? {
+        // A deck in the primary pane has no pages; the tools act on the note
+        // in the other pane instead.
+        if primaryFlashcardDeck != nil {
+            let pages = secondaryNotebook?.sortedPages ?? []
+            return pages.indices.contains(secondaryPageIndex) ? pages[secondaryPageIndex] : nil
+        }
         let pages = displayedPrimaryNotebook.sortedPages
         guard pages.indices.contains(primaryPageIndex) else { return nil }
         return pages[primaryPageIndex]
@@ -3863,15 +4231,13 @@ struct PDFSaveModifier: ViewModifier {
     }
 }
 
-// MARK: - Full-screen photo picker
+// MARK: - Photo picker sheet
 //
-// `PhotosPicker` presents its system picker as an iPad "page sheet" — a
-// card that leaves the presenting note page visible (and dimmed) around
-// its edges, which reads as a blurry backdrop. Wrapping `PHPickerViewController`
-// directly and presenting it with `.fullScreenCover` instead covers the
-// whole screen with nothing left showing behind it, so there's no dimmed
-// page to see, while still picking from the photo library the same way.
-private struct FullScreenPhotoPicker: UIViewControllerRepresentable {
+// A note's photo tools use a sheet so the editor remains a visible context
+// behind the picker instead of being replaced by a full-screen flow. Wrapping
+// `PHPickerViewController` directly still keeps its access-management UI out
+// of the compact editor toolbar.
+private struct PhotoPickerSheet: UIViewControllerRepresentable {
     /// Called with the picked image's data, or nil if the user picked
     /// nothing (cancelled, or the picked item wasn't loadable as an image).
     let onPick: (Data?) -> Void
@@ -3894,7 +4260,7 @@ private struct FullScreenPhotoPicker: UIViewControllerRepresentable {
         init(onPick: @escaping (Data?) -> Void) { self.onPick = onPick }
 
         /// Called both when the user picks something and when they cancel —
-        /// dismissal itself is left to the SwiftUI `.fullScreenCover` binding
+        /// dismissal itself is left to the SwiftUI `.sheet` binding
         /// the caller controls, not done here.
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             guard let provider = results.first?.itemProvider, provider.canLoadObject(ofClass: UIImage.self) else {
@@ -5107,6 +5473,7 @@ private struct SnippetTrayModifier: ViewModifier {
     @Binding var snippets: [PageSnippet]
     @Binding var pendingQuestion: PageSnippet?
     @Binding var pendingAnswer: PageSnippet?
+    let allowsChatSplit: Bool
     let onAskAI: (PageSnippet) -> Void
     let onProofRoleSelected: (PageSnippet, AIChatAttachment.ProofRole) -> Void
     let onAddToChat: (PageSnippet) -> Void
@@ -5208,6 +5575,7 @@ private struct SnippetTrayModifier: ViewModifier {
                     .buttonStyle(.bordered)
                     .font(.caption.weight(.semibold))
                     .accessibilityIdentifier("snippet-add-to-chat")
+                    .disabled(!allowsChatSplit)
 
                 }
             }
@@ -5314,6 +5682,7 @@ private struct SnippetTrayModifier: ViewModifier {
     }
 
     private func addToChatAndDismiss(_ snippet: PageSnippet) {
+        guard allowsChatSplit else { return }
         // Route first while the source-pane metadata is still available. Keep
         // this one entry until the picker/composer consumes or cancels it, but
         // remove every visible tray item immediately so the action panel does
@@ -5373,15 +5742,79 @@ private enum SplitMode: Equatable {
     }
 }
 
+/// Which material each pane shows and how the screen is split. Undo and redo
+/// move between these, so splitting, closing a split and swapping a pane's
+/// material are steps in the same history as drawing.
+private struct PaneLayout {
+    var splitMode: SplitMode
+    var splitRatio: CGFloat
+    var activePane: ActivePane
+    var primaryPageIndex: Int
+    var secondaryPageIndex: Int
+    var primaryNotebook: Notebook?
+    var primaryDeck: FlashcardDeck?
+    var secondaryNotebook: Notebook?
+    var secondaryDeck: FlashcardDeck?
+    var primaryShowsWeb: Bool
+    var secondaryShowsWeb: Bool
+    var primaryShowsAIChat: Bool
+    var secondaryShowsAIChat: Bool
+    var primaryChatTarget: NoteChatTarget?
+    var secondaryChatTarget: NoteChatTarget?
+    var primaryMaterial: TemporaryChatMaterial?
+    var secondaryMaterial: TemporaryChatMaterial?
+    var aiSwapPane: ActivePane?
+
+    /// What counts as a different layout. Dragging the divider or turning a
+    /// page changes the snapshot but is not a step of its own.
+    struct Key: Equatable {
+        var splitMode: SplitMode
+        var primaryNotebook: PersistentIdentifier?
+        var primaryDeck: PersistentIdentifier?
+        var secondaryNotebook: PersistentIdentifier?
+        var secondaryDeck: PersistentIdentifier?
+        var primaryShowsWeb: Bool
+        var secondaryShowsWeb: Bool
+        var primaryShowsAIChat: Bool
+        var secondaryShowsAIChat: Bool
+        var primaryChatTarget: NoteChatTarget?
+        var secondaryChatTarget: NoteChatTarget?
+        var primaryMaterial: String?
+        var secondaryMaterial: String?
+        var aiSwapPane: Bool?
+    }
+
+    var key: Key {
+        Key(
+            splitMode: splitMode,
+            primaryNotebook: primaryNotebook?.persistentModelID,
+            primaryDeck: primaryDeck?.persistentModelID,
+            secondaryNotebook: secondaryNotebook?.persistentModelID,
+            secondaryDeck: secondaryDeck?.persistentModelID,
+            primaryShowsWeb: primaryShowsWeb,
+            secondaryShowsWeb: secondaryShowsWeb,
+            primaryShowsAIChat: primaryShowsAIChat,
+            secondaryShowsAIChat: secondaryShowsAIChat,
+            primaryChatTarget: primaryChatTarget,
+            secondaryChatTarget: secondaryChatTarget,
+            primaryMaterial: primaryMaterial?.id,
+            secondaryMaterial: secondaryMaterial?.id,
+            aiSwapPane: aiSwapPane.map { $0 == .primary }
+        )
+    }
+}
+
 private struct FlashcardPaneView: View {
     @Bindable var deck: FlashcardDeck
     let onHome: () -> Void
+    var startsWithMistakeReview = false
     @State private var mode: FlashcardPaneMode
 
-    init(deck: FlashcardDeck, onHome: @escaping () -> Void) {
+    init(deck: FlashcardDeck, onHome: @escaping () -> Void, startsWithMistakeReview: Bool = false) {
         self.deck = deck
         self.onHome = onHome
-        _mode = State(initialValue: deck.sortedCards.isEmpty ? .create : .study)
+        self.startsWithMistakeReview = startsWithMistakeReview
+        _mode = State(initialValue: deck.sortedCards.isEmpty && !startsWithMistakeReview ? .create : .study)
     }
 
     var body: some View {
@@ -5409,7 +5842,7 @@ private struct FlashcardPaneView: View {
             if mode == .create {
                 creator
             } else {
-                FlashcardStudyContent(deck: deck, onHome: onHome)
+                FlashcardStudyContent(deck: deck, onHome: onHome, startsWithMistakeReview: startsWithMistakeReview)
             }
         }
         .background(Color(.secondarySystemBackground))
@@ -6481,6 +6914,7 @@ struct PageCanvasContainer: View {
     @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
     @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
     @AppStorage("curveCorrectionEnabled") private var isCurveCorrectionEnabled = true
+    @AppStorage("polylineCorrectionEnabled") private var isPolylineCorrectionEnabled = true
     /// Shares the armed shape kind with the toolbar in `NoteEditorView` via
     /// the same `@AppStorage` key — see the property there for why.
     @AppStorage("pendingShapeKind") private var pendingShapeKindRaw = ""
@@ -6527,6 +6961,7 @@ struct PageCanvasContainer: View {
                             isTriangleCorrectionEnabled: isTriangleCorrectionEnabled,
                             isParabolaCorrectionEnabled: isParabolaCorrectionEnabled,
                             isCurveCorrectionEnabled: isCurveCorrectionEnabled,
+                            isPolylineCorrectionEnabled: isPolylineCorrectionEnabled,
                             pendingShapeKind: pendingShapeKind,
                             onActivate: {
                                 NotificationCenter.default.post(
@@ -7585,7 +8020,6 @@ private struct EditablePageElement: View {
                       page === element.page else { return }
                 selectedElementID = nil
             }
-            .gesture(isSelected ? moveGesture : nil)
             .simultaneousGesture(isSelected ? resizeGesture : nil)
             .simultaneousGesture(isSelected ? rotationGesture : nil)
             .contextMenu {
@@ -7743,6 +8177,15 @@ private struct EditablePageElement: View {
             Rectangle()
                 .strokeBorder(Color.accentColor, lineWidth: 1.5)
                 .frame(width: elementSize.width, height: elementSize.height)
+                // Moving is limited to the area inside the blue frame — the
+                // whole interior, not just the outline. This used to be a
+                // 20pt band along the border (`Rectangle().stroke`), so a
+                // drag started in the middle of a photo or text box hit
+                // nothing and the element never moved. Outside the frame
+                // (page, other elements) is unaffected. Taps still reach the
+                // element's own tap handlers: only a drag is claimed here.
+                .contentShape(Rectangle())
+                .gesture(moveGesture)
 
             ForEach(ResizeAnchor.allCases) { anchor in
                 Circle()
@@ -7795,17 +8238,17 @@ private struct EditablePageElement: View {
                 deleteElement()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 24, height: 24)
                     .background(Color.red, in: Circle())
-                    .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+                    .overlay(Circle().strokeBorder(.white, lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .contentShape(Circle().inset(by: -6))
+            .contentShape(Circle())
             .offset(
-                x: elementSize.width / 2 - 17,
-                y: -elementSize.height / 2 + 17
+                x: elementSize.width / 2 - 12,
+                y: -elementSize.height / 2 + 12
             )
             .accessibilityLabel("この要素を削除")
         }
@@ -8870,7 +9313,50 @@ private struct NoteChatPickerPopover: View {
     }
 }
 
+/// Kept outside `NoteEditorView` so its two confirmation dialogs do not make
+/// the already large editor body exceed SwiftUI's type-checking budget.
+private struct PaneChoiceDialogModifier: ViewModifier {
+    @Binding var showsAIChatPicker: Bool
+    @Binding var pendingChatTarget: NoteChatTarget?
+    let titleForPane: (ActivePane) -> String
+    let showAIChat: (ActivePane) -> Void
+    let showChat: (NoteChatTarget, ActivePane) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog("AIトークを表示する場所", isPresented: $showsAIChatPicker, titleVisibility: .visible) {
+                Button(titleForPane(.primary)) { showAIChat(.primary) }
+                Button(titleForPane(.secondary)) { showAIChat(.secondary) }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("入れ替えるペインを選んでください。")
+            }
+            .confirmationDialog("チャットを表示する場所", isPresented: Binding(
+                get: { pendingChatTarget != nil },
+                set: { if !$0 { pendingChatTarget = nil } }
+            ), titleVisibility: .visible) {
+                if let target = pendingChatTarget {
+                    Button(titleForPane(.primary)) { showChat(target, .primary) }
+                    Button(titleForPane(.secondary)) { showChat(target, .secondary) }
+                }
+                Button("キャンセル", role: .cancel) { pendingChatTarget = nil }
+            } message: {
+                Text("入れ替えるペインを選んでください。")
+            }
+    }
+}
+
 struct IdentifiableURL: Identifiable {
     let id = UUID()
     let url: URL
+}
+
+/// Plain-style tool buttons keep their full colour when disabled; this dims
+/// them so a tool that can't be used right now reads as unavailable.
+private struct DimsWhenDisabled: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        content.opacity(isEnabled ? 1 : 0.3)
+    }
 }

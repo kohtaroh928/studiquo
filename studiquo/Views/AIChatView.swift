@@ -294,11 +294,6 @@ struct AIChatPane: View {
     /// Whether the app knows where its AI server is. The API key itself lives
     /// on that server, so there is nothing for the student to enter.
     @State private var hasKey = AI.provider.isConfigured
-    /// Mirrors `AIModelSelection.current` into `@State` so picking a model
-    /// from `modelPickerButton`'s menu redraws the header immediately,
-    /// rather than waiting for the next time this view happens to rebuild.
-    @State private var selectedModel = AIModelSelection.current
-    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     /// What the student chose with the sidebar button; `nil` until they do,
     /// in which case the width decides (a narrow pane starts with the history
     /// folded away so the conversation keeps room).
@@ -329,6 +324,7 @@ struct AIChatPane: View {
     @State private var markingQuestionSnippet: PageSnippet?
     @State private var markingAnswerSnippet: PageSnippet?
     @State private var showsCameraScanner = false
+    @State private var usage: AIUsage?
 
     private enum AttachmentPickerMode: Identifiable {
         case files
@@ -346,39 +342,6 @@ struct AIChatPane: View {
             case .files: return [.item]
             case .folder: return [.folder]
             }
-        }
-    }
-
-    /// Shows the model AIトーク currently talks to, and lets the student
-    /// switch — scoped by `subscriptionStore.currentPlan`: a model the plan
-    /// doesn't unlock yet shows a lock icon and which plan would unlock it,
-    /// and tapping it does nothing (the Worker would reject it with 403
-    /// anyway; this just avoids a round trip to find that out).
-    private var modelPickerButton: some View {
-        Menu {
-            ForEach(AIModelCatalog.offered) { model in
-                let isAvailable = AIModelCatalog.isAvailable(model.id, for: subscriptionStore.currentPlan)
-                Button {
-                    guard isAvailable else { return }
-                    selectedModel = model.id
-                    AIModelSelection.current = model.id
-                } label: {
-                    if isAvailable {
-                        Text(model.displayName)
-                    } else {
-                        Label(L("\(model.displayName)（\(model.requiredPlan.title)で利用可能）"), systemImage: "lock.fill")
-                    }
-                }
-                .disabled(!isAvailable)
-            }
-        } label: {
-            HStack(spacing: 3) {
-                Text(AIModelCatalog.info(for: selectedModel)?.displayName ?? selectedModel.rawValue)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
     }
 
@@ -410,15 +373,20 @@ struct AIChatPane: View {
                             Text(selectedThread?.title ?? L("新しいトーク"))
                                 .font(.headline)
                                 .lineLimit(1)
-                            if hasKey {
-                                modelPickerButton
-                            } else {
+                            if !hasKey {
                                 Text(L("AIサーバー未設定"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
+                        if let usage {
+                            Text("残り\(usage.remaining)回")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("ai-chat-usage")
+                                .accessibilityLabel("AI利用残り\(usage.remaining)回")
+                        }
                         Image(systemName: hasKey ? "sparkles" : "exclamationmark.triangle")
                             .foregroundStyle(hasKey ? Color.accentColor : Color.orange)
                     }
@@ -633,6 +601,10 @@ struct AIChatPane: View {
         .onChange(of: draft) { oldValue, newValue in
             absorbDroppedTabText(old: oldValue, new: newValue)
         }
+        .task { await refreshUsage() }
+        .onChange(of: respondingThreadIDs) { _, responding in
+            if responding.isEmpty { Task { await refreshUsage() } }
+        }
         .onPreferenceChange(AIChatPaneWidthKey.self) { width in
             if width > 0, width != measuredWidth { measuredWidth = width }
         }
@@ -717,6 +689,11 @@ struct AIChatPane: View {
         attachments.append(attachment)
         isComposerDropTargeted = false
         isDropTargeted = false
+    }
+
+    @MainActor
+    private func refreshUsage() async {
+        usage = await AI.provider.usage()
     }
 
     private func isPaneSwitchDrop(_ value: String) -> Bool {

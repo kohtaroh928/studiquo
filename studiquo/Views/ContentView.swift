@@ -320,6 +320,7 @@ private struct StudyNotificationList: View {
     let onMarkAllRead: () -> Void
     let onMarkRead: (StudyNotification) -> Void
     let onDelete: (StudyNotification) -> Void
+    let onDeleteMany: ([StudyNotification]) -> Void
     let onOpenSettings: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -327,6 +328,8 @@ private struct StudyNotificationList: View {
     private static let previewCount = 8
 
     @State private var showsAll = false
+    @State private var isSelectionMode = false
+    @State private var selectedIDs: Set<String> = []
 
     private var visibleNotifications: [StudyNotification] {
         showsAll ? notifications : Array(notifications.prefix(Self.previewCount))
@@ -334,6 +337,10 @@ private struct StudyNotificationList: View {
 
     private var hasUnread: Bool {
         notifications.contains { !readIDs.contains($0.id) }
+    }
+
+    private var selectedNotifications: [StudyNotification] {
+        notifications.filter { selectedIDs.contains($0.id) }
     }
 
     var body: some View {
@@ -352,16 +359,18 @@ private struct StudyNotificationList: View {
                 } else {
                     List {
                         ForEach(visibleNotifications) { notification in
-                            row(for: notification)
+                            notificationRow(for: notification)
                                 .listRowInsets(EdgeInsets())
                                 .listRowSeparator(.visible)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button(role: .destructive) {
-                                        onDelete(notification)
-                                    } label: {
-                                        Label(L("削除"), systemImage: "trash")
+                                    if !isSelectionMode {
+                                        Button(role: .destructive) {
+                                            onDelete(notification)
+                                        } label: {
+                                            Label(L("削除"), systemImage: "trash")
+                                        }
+                                        .tint(.red)
                                     }
-                                    .tint(.red)
                                 }
                         }
                     }
@@ -394,6 +403,30 @@ private struct StudyNotificationList: View {
                 .font(.subheadline.weight(.semibold))
             Spacer()
             HStack(spacing: 16) {
+                Button {
+                    isSelectionMode.toggle()
+                    if isSelectionMode {
+                        showsAll = true
+                    } else {
+                        selectedIDs.removeAll()
+                    }
+                } label: {
+                    Image(systemName: isSelectionMode ? "checkmark.circle.fill" : "checkmark.circle")
+                }
+                .accessibilityLabel(isSelectionMode ? "選択を完了" : "通知を選択")
+
+                if isSelectionMode {
+                    Button(role: .destructive) {
+                        onDeleteMany(selectedNotifications)
+                        selectedIDs.removeAll()
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .accessibilityLabel("選択した通知を削除")
+                    .accessibilityValue("\(selectedIDs.count)件")
+                    .disabled(selectedIDs.isEmpty)
+                }
+
                 Button(action: onMarkAllRead) {
                     Image(systemName: "checkmark")
                 }
@@ -417,6 +450,32 @@ private struct StudyNotificationList: View {
         .padding(.horizontal, 16)
         .frame(height: 44)
         .background(.bar)
+    }
+
+    @ViewBuilder
+    private func notificationRow(for notification: StudyNotification) -> some View {
+        if isSelectionMode {
+            HStack(spacing: 0) {
+                Button {
+                    if selectedIDs.contains(notification.id) {
+                        selectedIDs.remove(notification.id)
+                    } else {
+                        selectedIDs.insert(notification.id)
+                    }
+                } label: {
+                    Image(systemName: selectedIDs.contains(notification.id) ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(selectedIDs.contains(notification.id) ? Color.accentColor : .secondary)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("notification-select-\(notification.id)")
+                .accessibilityLabel(notification.title)
+                .accessibilityValue(selectedIDs.contains(notification.id) ? "選択中" : "未選択")
+                row(for: notification)
+            }
+        } else {
+            row(for: notification)
+        }
     }
 
     /// Subject on top, then the age on the left and the link into the body on
@@ -657,13 +716,63 @@ private struct AppSettingsView: View {
     }
 }
 
-/// The settings form itself, shared by the gear's sheet (`AppSettingsView`)
-/// and the その他 tab (`MoreHomeView`) so the two can never drift apart.
-/// `leading`/`trailing` let the tab add its own sections around the shared
-/// ones; account deletion always stays last.
-private struct AppSettingsForm<Leading: View, Trailing: View>: View {
-    private let leading: Leading
-    private let trailing: Trailing
+/// What the その他 tab adds to the shared settings, grouped by the category
+/// it belongs to. Each category's own settings come first, then these rows.
+struct SettingsExtras {
+    var account = AnyView(EmptyView())
+    var notifications = AnyView(EmptyView())
+    var data = AnyView(EmptyView())
+    var privacy = AnyView(EmptyView())
+    var app = AnyView(EmptyView())
+}
+
+/// The coarse groups the settings list shows first; each opens its own form.
+private enum SettingsCategory: String, CaseIterable, Identifiable {
+    case account, study, notifications, data, privacy, app
+
+    var id: String { rawValue }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .account: "アカウント"
+        case .study: "学習・ノート"
+        case .notifications: "通知・お知らせ"
+        case .data: "データ・連携"
+        case .privacy: "フレンド・プライバシー"
+        case .app: "言語・サポート"
+        }
+    }
+
+    var summary: LocalizedStringKey {
+        switch self {
+        case .account: "プロフィール・プラン・ログアウト・アカウント削除"
+        case .study: "勉強時間・左利きモード・ペンの補正・PDF・AIトーク"
+        case .notifications: "お知らせ・通知の設定"
+        case .data: "iCloud同期・バックアップ・ゴミ箱・外部サービス連携"
+        case .privacy: "フレンド設定・データ送信・規約・診断"
+        case .app: "言語・問題の報告・バージョン"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .account: "person.crop.circle"
+        case .study: "pencil.and.outline"
+        case .notifications: "bell"
+        case .data: "externaldrive"
+        case .privacy: "lock.shield"
+        case .app: "globe"
+        }
+    }
+}
+
+/// The settings list shared by the gear's sheet (`AppSettingsView`) and the
+/// その他 tab (`MoreHomeView`) so the two can never drift apart. It shows
+/// the categories only; each opens a form with that category's settings.
+/// `extras` lets the tab add its own rows inside the matching categories;
+/// account deletion always stays last in アカウント.
+private struct AppSettingsForm: View {
+    private let extras: SettingsExtras
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.system.rawValue
     @AppStorage("studyTimeTrackingEnabled") private var studyTimeTrackingEnabled = true
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
@@ -673,6 +782,7 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
     @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
     @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
     @AppStorage("curveCorrectionEnabled") private var isCurveCorrectionEnabled = true
+    @AppStorage("polylineCorrectionEnabled") private var isPolylineCorrectionEnabled = true
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = false
     @AppStorage(ErrorReportSettings.enabledKey) private var autoErrorReportingEnabled = false
     @AppStorage("pdfPasswordRemovalOfferDisabled") private var pdfPasswordRemovalOfferDisabled = false
@@ -683,15 +793,53 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
     @State private var showsAccountDeletion = false
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
 
-    init(@ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
-        self.leading = leading()
-        self.trailing = trailing()
+    init(extras: SettingsExtras = SettingsExtras()) {
+        self.extras = extras
     }
 
     var body: some View {
-        Form {
-            leading
+        List {
+            Section {
+                ForEach(SettingsCategory.allCases) { category in
+                    NavigationLink {
+                        categoryForm(category)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(category.title)
+                                Text(category.summary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: category.icon)
+                        }
+                    }
+                    .accessibilityIdentifier("settings-category-\(category.rawValue)")
+                }
+            }
+        }
+    }
 
+    private func categoryForm(_ category: SettingsCategory) -> some View {
+        Form {
+            switch category {
+            case .account: accountSections
+            case .study: studySections
+            case .notifications: notificationSections
+            case .data: dataSections
+            case .privacy: privacySections
+            case .app: appSections
+            }
+        }
+        .navigationTitle(category.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .modifier(settingsSheets)
+    }
+
+    @ViewBuilder
+    private var accountSections: some View {
+        extras.account
             Section {
                 Button {
                     showsSubscriptionPlans = true
@@ -714,37 +862,22 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
             #endif
 
             Section {
-                Picker("言語", selection: $appLanguage) {
-                    ForEach(AppLanguage.allCases) { language in
-                        Text(language.title).tag(language.rawValue)
-                    }
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-                // Push broadcasts are written in the language registered here.
-                .onChange(of: appLanguage) { _, _ in AppNotificationPreferences.synchronizeRemoteDevice() }
+                Button(AccountDeletionUI.accountButtonTitle, role: .destructive) { showsAccountDeletion = true }
             } header: {
-                Text("言語")
+                Text("アカウント")
             } footer: {
-                Text("選んだ言語はすぐに反映されます。")
+                Text("すべての資料、フレンド、グループ、チャット履歴、ログイン情報が完全に削除されます。")
             }
+    }
 
-            ICloudSyncSettingsSection()
-
+    @ViewBuilder
+    private var studySections: some View {
             Section {
                 Toggle("勉強時間を記録する", isOn: $studyTimeTrackingEnabled)
             } header: {
                 Text("学習記録")
             } footer: {
                 Text("ノート・暗記帳・文書を開いている間の時間だけを記録します。オフにすると勉強時間と連続学習日数の記録を止めます。")
-            }
-
-            Section {
-                NotificationSettingsLink()
-            } header: {
-                Text("通知")
-            } footer: {
-                Text("予定、チャット、招待、復習、AI処理などの通知を個別に設定できます。")
             }
 
             Section {
@@ -762,6 +895,7 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
                 Toggle("三角形補正", isOn: $isTriangleCorrectionEnabled)
                 Toggle("二次関数補正", isOn: $isParabolaCorrectionEnabled)
                 Toggle("曲線補正", isOn: $isCurveCorrectionEnabled)
+                Toggle("折線補正", isOn: $isPolylineCorrectionEnabled)
             } header: {
                 Text("ペンの補正")
             } footer: {
@@ -786,7 +920,29 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
             } footer: {
                 Text("オンにすると、AIトークで質問するたびに復習する価値があるか判定し、翌日に読める解説と確認クイズを自動で作成して通知します。オフにするとこの自動判定・作成は行われません。")
             }
+    }
 
+    @ViewBuilder
+    private var notificationSections: some View {
+        extras.notifications
+            Section {
+                NotificationSettingsLink()
+            } header: {
+                Text("通知")
+            } footer: {
+                Text("予定、チャット、招待、復習、AI処理などの通知を個別に設定できます。")
+            }
+    }
+
+    @ViewBuilder
+    private var dataSections: some View {
+        ICloudSyncSettingsSection()
+        extras.data
+    }
+
+    @ViewBuilder
+    private var privacySections: some View {
+        extras.privacy
             Section {
                 Button("AI機能とデータ送信について") { showsAIDataDisclosure = true }
                 Button("プライバシーポリシーを見る") { showsPrivacyPolicy = true }
@@ -804,49 +960,76 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
             } footer: {
                 Text("アプリが止まったときや不具合が起きたときに、エラーの種類・発生した箇所・アプリや端末のバージョンを開発者へ自動で送信します。ノートやチャットの内容は含まれません。")
             }
+    }
 
-            trailing
-
+    @ViewBuilder
+    private var appSections: some View {
             Section {
-                Button(AccountDeletionUI.accountButtonTitle, role: .destructive) { showsAccountDeletion = true }
+                Picker("言語", selection: $appLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.title).tag(language.rawValue)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+                // Push broadcasts are written in the language registered here.
+                .onChange(of: appLanguage) { _, _ in AppNotificationPreferences.synchronizeRemoteDevice() }
             } header: {
-                Text("アカウント")
+                Text("言語")
             } footer: {
-                Text("すべての資料、フレンド、グループ、チャット履歴、ログイン情報が完全に削除されます。")
+                Text("選んだ言語はすぐに反映されます。")
             }
-        }
-        .sheet(isPresented: $showsAIDataDisclosure) {
-            AIDataDisclosureView(onAcknowledge: { ageBand in
-                AIDataDisclosure.acknowledge(ageBand: ageBand)
-                showsAIDataDisclosure = false
-            }, onDecline: {
-                AIDataDisclosure.revoke()
-                showsAIDataDisclosure = false
-            })
-        }
-        .sheet(isPresented: $showsPrivacyPolicy) {
-            PrivacyPolicyView()
-        }
-        .sheet(isPresented: $showsTermsOfUse) {
-            TermsOfUseView()
-        }
-        .sheet(isPresented: $showsSubscriptionPlans) {
-            SubscriptionPlansView()
-        }
-        .sheet(isPresented: $showsAccountDeletion) {
-            DeleteAccountView()
-        }
+        extras.app
+    }
+
+    private var settingsSheets: some ViewModifier {
+        SettingsSheets(
+            showsAIDataDisclosure: $showsAIDataDisclosure,
+            showsPrivacyPolicy: $showsPrivacyPolicy,
+            showsTermsOfUse: $showsTermsOfUse,
+            showsSubscriptionPlans: $showsSubscriptionPlans,
+            showsAccountDeletion: $showsAccountDeletion
+        )
     }
 }
 
-extension AppSettingsForm where Leading == EmptyView, Trailing == EmptyView {
-    init() {
-        self.init(leading: { EmptyView() }, trailing: { EmptyView() })
+/// The sheets the settings rows open, kept out of the form so they are
+/// attached to whichever category form is on screen.
+private struct SettingsSheets: ViewModifier {
+    @Binding var showsAIDataDisclosure: Bool
+    @Binding var showsPrivacyPolicy: Bool
+    @Binding var showsTermsOfUse: Bool
+    @Binding var showsSubscriptionPlans: Bool
+    @Binding var showsAccountDeletion: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $showsAIDataDisclosure) {
+                AIDataDisclosureView(onAcknowledge: { ageBand in
+                    AIDataDisclosure.acknowledge(ageBand: ageBand)
+                    showsAIDataDisclosure = false
+                }, onDecline: {
+                    AIDataDisclosure.revoke()
+                    showsAIDataDisclosure = false
+                })
+            }
+            .sheet(isPresented: $showsPrivacyPolicy) {
+                PrivacyPolicyView()
+            }
+            .sheet(isPresented: $showsTermsOfUse) {
+                TermsOfUseView()
+            }
+            .sheet(isPresented: $showsSubscriptionPlans) {
+                SubscriptionPlansView()
+            }
+            .sheet(isPresented: $showsAccountDeletion) {
+                DeleteAccountView()
+            }
     }
 }
 
-/// The その他 tab. Everything the app lets the student configure, in one
-/// scrolling list: the shared settings (`AppSettingsForm`) plus the things
+/// The その他 tab. Everything the app lets the student configure, grouped by
+/// category: the shared settings (`AppSettingsForm`) plus the things
 /// that used to be scattered — profile/logout, calendar and MCP
 /// connections, backups and trash (previously the "+" menu's lower half),
 /// friend privacy, and support. It sits inside `ContentView`'s own
@@ -878,18 +1061,16 @@ private struct MoreHomeView: View {
     }
 
     var body: some View {
-        AppSettingsForm(
-            leading: {
-                announcementSection
-                accountSection
-            },
-            trailing: {
+        AppSettingsForm(extras: SettingsExtras(
+            account: AnyView(accountSection),
+            notifications: AnyView(announcementSection),
+            data: AnyView(Group {
                 integrationSection
                 dataSection
-                friendSection
-                supportSection
-            }
-        )
+            }),
+            privacy: AnyView(friendSection),
+            app: AnyView(supportSection)
+        ))
         .navigationTitle(Text("home.more.title"))
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showsAnnouncements) {
@@ -1334,9 +1515,115 @@ enum MCPCloudCredentials {
     /// actual sign-in prompt, and the server's own `isExpired` check never
     /// even got a chance to fire (see .studiquoAuthFailed in
     /// AuthenticationStore.swift for what now happens on that real 401).
+    ///
+    /// "None stored" means the Keychain said so (`errSecItemNotFound`). A read
+    /// that failed for any other reason — the device is locked and the item is
+    /// not available yet — says nothing about whether a token exists, so no
+    /// replacement is minted and saved over the real one; an empty token is
+    /// returned, which the server refuses without signing anyone out (see
+    /// `isStorageUnavailable`).
     static func loadOrCreateToken() -> String {
-        if let value = currentToken(), value.count >= 32 { return value }
-        return generateAndSaveNewToken()
+        let read = readToken()
+        switch tokenDecision(token: read.token, status: read.status) {
+        case .use(let value): return value
+        case .createNew: return generateAndSaveNewToken()
+        case .unavailable:
+            lastWithoutTokenLock.lock(); lastWithoutToken = Date(); lastWithoutTokenLock.unlock()
+            return ""
+        }
+    }
+
+    private static let lastWithoutTokenLock = NSLock()
+    nonisolated(unsafe) private static var lastWithoutToken: Date?
+
+    /// True shortly after a request went out without a token because the
+    /// Keychain was locked. Its 401 can arrive after the person unlocked the
+    /// device, when the Keychain reads fine again, so the lock itself is no
+    /// longer visible; it must still not count as a rejected login.
+    static func sentWithoutTokenRecently(now: Date = Date(), within seconds: TimeInterval = 120) -> Bool {
+        lastWithoutTokenLock.lock(); defer { lastWithoutTokenLock.unlock() }
+        guard let last = lastWithoutToken else { return false }
+        return now.timeIntervalSince(last) < seconds
+    }
+
+    enum TokenDecision: Equatable {
+        case use(String)
+        case createNew
+        case unavailable
+    }
+
+    /// What `loadOrCreateToken` does with a Keychain read. Only the Keychain
+    /// saying outright that nothing is stored allows a new token; a locked
+    /// device (`errSecInteractionNotAllowed`) says nothing about whether one
+    /// exists.
+    static func tokenDecision(token: String?, status: OSStatus) -> TokenDecision {
+        if status == errSecInteractionNotAllowed { return .unavailable }
+        if let token, token.count >= 32 { return .use(token) }
+        return .createNew
+    }
+
+    /// True when the Keychain cannot be read because the device is locked, as
+    /// opposed to simply holding no token. A 401 seen in that state is not
+    /// evidence the login is bad.
+    static var isStorageUnavailable: Bool { isLocked(status: readToken().status) }
+
+    static func isLocked(status: OSStatus) -> Bool { status == errSecInteractionNotAllowed }
+
+    /// Tokens older than this are exchanged for a new one (see
+    /// `refreshIfNeeded`), well before the 90 days run out. The server only
+    /// exchanges tokens older than 7 days.
+    static let refreshAfter: TimeInterval = 30 * 24 * 60 * 60
+
+    /// Keeps a person who uses the app from being signed out when the token's
+    /// 90 days end: a token older than `refreshAfter` is exchanged with the
+    /// server for a new one carrying the same login. Best-effort — any failure
+    /// leaves the stored token untouched, and the old token keeps working until
+    /// its own expiry. A server without the endpoint answers 404 and nothing
+    /// changes.
+    static func refreshIfNeeded(session: URLSession = .shared, now: Date = Date()) async {
+        // Both activation hooks can fire together; one exchange is enough.
+        guard refreshGate.begin() else { return }
+        defer { refreshGate.end() }
+        guard let token = currentToken(),
+              let issued = issuedAt(of: token),
+              now.timeIntervalSince(issued) > refreshAfter,
+              now.timeIntervalSince(issued) <= validityPeriod,
+              let endpoint = configuredEndpoint() else { return }
+        var request = URLRequest(url: endpoint.appending(path: "api/session/refresh"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["randomValue": makeRandomValue()])
+        guard let (data, response) = try? await session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let body = try? JSONDecoder().decode(RefreshResponse.self, from: data),
+              body.refreshed, let replacement = body.token,
+              replacement.count >= 32, !isExpired(replacement) else { return }
+        // Signing out while the request was in flight cleared the token; it
+        // must not come back, nor may a newer sign-in's token be overwritten.
+        guard currentToken() == token else { return }
+        save(replacement)
+    }
+
+    private final class RefreshGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var running = false
+        func begin() -> Bool { lock.lock(); defer { lock.unlock() }; if running { return false }; running = true; return true }
+        func end() { lock.lock(); running = false; lock.unlock() }
+    }
+    private static let refreshGate = RefreshGate()
+
+    private struct RefreshResponse: Decodable {
+        let refreshed: Bool
+        let token: String?
+    }
+
+    /// Items saved by earlier versions can only be read while the device is
+    /// unlocked; this lets them be read after the first unlock, like the ones
+    /// saved now. Call it once a read has just succeeded.
+    static func relaxAccessibility() {
+        relaxKeychainAccessibility(service: service, account: account)
     }
 
     /// True once the token's embedded issue date is older than `validityPeriod`,
@@ -1379,7 +1666,9 @@ enum MCPCloudCredentials {
     }
 
     /// Reads the token without generating a new one; nil if none exists yet.
-    static func currentToken() -> String? {
+    static func currentToken() -> String? { readToken().token }
+
+    private static func readToken() -> (token: String?, status: OSStatus) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -1388,22 +1677,26 @@ enum MCPCloudCredentials {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return (nil, status) }
+        return (String(data: data, encoding: .utf8), status)
     }
 
+    /// Updates in place when a token is already stored, so a failure never
+    /// leaves the Keychain with the old token deleted and no new one added.
     static func save(_ value: String) {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        SecItemDelete(base as CFDictionary)
-        var item = base
-        item[kSecValueData as String] = Data(value.utf8)
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        SecItemAdd(item as CFDictionary, nil)
+        let attributes: [String: Any] = [
+            kSecValueData as String: Data(value.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        if SecItemUpdate(base as CFDictionary, attributes as CFDictionary) == errSecItemNotFound {
+            SecItemAdd(base.merging(attributes) { $1 } as CFDictionary, nil)
+        }
     }
 
     /// Deletes the local token without telling the server. Prefer `revoke()`,
@@ -1440,6 +1733,13 @@ enum MCPCloudCredentials {
               url.host?.isEmpty == false, url.user == nil, url.password == nil else { return nil }
         return url
     }
+}
+
+/// Moves one existing generic-password item to "readable after the first
+/// unlock". A failure (item missing, device locked) changes nothing.
+func relaxKeychainAccessibility(service: String, account: String) {
+    let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+    SecItemUpdate(query as CFDictionary, [kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly] as CFDictionary)
 }
 
 /// Wraps the AI復習 bell-feed wiring (`onChange`/`sheet`) in its own
@@ -1919,9 +2219,11 @@ struct ContentView: View {
 
     @State private var selectedNotebook: Notebook?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var preferredCompactColumn: NavigationSplitViewColumn = .detail
     @State private var libraryMode: LibraryMode = .documents
     @State private var selectedFolder: String?
     @AppStorage("librarySortOption") private var sortOption: NotebookSortOption = .updatedNewest
+    @AppStorage("librarySortByMaterialType") private var sortByMaterialType = false
     @AppStorage("homeViewMode") private var viewMode: HomeViewMode = .list
     @State private var searchText = ""
     @State private var isImportingFiles = false
@@ -2008,6 +2310,7 @@ struct ContentView: View {
     @State private var folderRenameText = ""
     @State private var studyNotebook: Notebook?
     @State private var selectedFlashcardDeck: FlashcardDeck?
+    @State private var deckHostNotebook = Notebook(title: "")
     /// Deck (and a token that forces a fresh view) to open straight into a
     /// missed-card review, set by a notification tap or the library banner.
     @State private var mistakeReviewRequest: (deckKey: String, token: UUID)?
@@ -2259,7 +2562,7 @@ struct ContentView: View {
     /// removes its reveal toggle (see `CalendarHomeView`), so the “すべて・
     /// お気に入り” list is gone there rather than one tap away.
     private var librarySplitView: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $preferredCompactColumn) {
             List {
                 if selectedNotebook != nil || selectedFlashcardDeck != nil
                     || selectedTextDocument != nil {
@@ -2291,8 +2594,7 @@ struct ContentView: View {
                     Section("ライブラリ") {
                         ForEach(LibraryMode.allCases) { mode in
                             Button {
-                                libraryMode = mode
-                                selectedFolder = nil
+                                selectLibraryLocation(mode: mode)
                             } label: {
                                 HStack {
                                     Label(mode.title, systemImage: mode.icon)
@@ -2304,13 +2606,13 @@ struct ContentView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("library-category-\(mode.rawValue)")
                         }
                     }
                     Section {
-                        ForEach(visibleFolderPaths, id: \.self) { folder in
+                        ForEach(sortedFolderNames.filter { parentFolder(of: $0) == nil }, id: \.self) { folder in
                             Button {
-                                selectedFolder = folder
-                                libraryMode = .documents
+                                selectLibraryLocation(mode: .documents, folder: folder)
                             } label: {
                                 HStack {
                                     Label(folderDisplayName(folder), systemImage: "folder")
@@ -2322,6 +2624,7 @@ struct ContentView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("library-sidebar-folder-\(folder)")
                             .dropDestination(for: String.self) { items, _ in
                                 handleFolderDrop(items, into: folder)
                             }
@@ -2336,7 +2639,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("ノート")
+            .navigationTitle("ライブラリ")
             .scrollContentBackground(.hidden)
             .background(Color(red: 0.86, green: 0.93, blue: 1.0))
         } detail: {
@@ -2347,7 +2650,7 @@ struct ContentView: View {
                     ProtectedNotebookView(
                         notebook: selectedNotebook,
                         columnVisibility: $columnVisibility,
-                        onHome: returnToHome
+                        onHome: returnToLibrary
                     )
                         .id(selectedNotebook.persistentModelID)
                         .environmentObject(editorSplitState)
@@ -2363,24 +2666,34 @@ struct ContentView: View {
                     notebookTabBar
                     Divider()
                     let reviewRequest = mistakeReviewRequest.flatMap { $0.deckKey == deckID(selectedFlashcardDeck) ? $0 : nil }
-                    FlashcardDeckView(
-                        deck: selectedFlashcardDeck,
-                        onHome: returnToHome,
-                        startsWithMistakeReview: reviewRequest != nil
+                    // The deck opens inside the note editor so it gets the same
+                    // toolbar; `deckHostNotebook` is only a stand-in the editor
+                    // needs and is never saved or shown.
+                    ProtectedNotebookView(
+                        notebook: deckHostNotebook,
+                        columnVisibility: $columnVisibility,
+                        onHome: returnToLibrary,
+                        initialFlashcardDeck: selectedFlashcardDeck,
+                        initialFlashcardStartsWithMistakeReview: reviewRequest != nil
                     )
+                        .environmentObject(editorSplitState)
+                        .environmentObject(friendStore)
                         .id("\(String(describing: selectedFlashcardDeck.persistentModelID))-\(reviewRequest?.token.uuidString ?? "")")
                 }
             } else if let selectedTextDocument {
                 VStack(spacing: 0) {
                     notebookTabBar
                     Divider()
-                    TextDocumentView(document: selectedTextDocument, onHome: returnToHome)
+                    TextDocumentView(document: selectedTextDocument, onHome: returnToLibrary)
                         .id(selectedTextDocument.persistentModelID)
                         .environmentObject(friendStore)
                 }
             } else {
                 homeDashboard
             }
+        }
+        .onChange(of: horizontalSizeClass) { _, sizeClass in
+            if sizeClass == .compact { preferredCompactColumn = .detail }
         }
     }
 
@@ -2392,7 +2705,11 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if isAuxiliaryHomeFullScreen {
+            if homeSection == .friends {
+                // FriendsHomeView owns its NavigationSplitView. An outer
+                // NavigationStack prevents its columns from presenting correctly.
+                LibraryViewSection { AnyView(homeDashboard) }
+            } else if isAuxiliaryHomeFullScreen {
                 // A plain navigation stack keeps auxiliary home screens out
                 // of the notebook split view while still providing a toolbar.
                 NavigationStack {
@@ -2690,11 +3007,17 @@ struct ContentView: View {
                     }
                 }
                 .navigationTitle("MCPクラウド連携")
-                .task { await loadMCPConnections() }
+                .task {
+                    // The token may have been exchanged for a newer one (or the
+                    // screen built while the Keychain was unreadable) since this
+                    // state was created; show what is actually stored.
+                    if let stored = MCPCloudCredentials.currentToken(), stored.count >= 32 { mcpCloudToken = stored }
+                    await loadMCPConnections()
+                }
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("完了") {
-                            MCPCloudCredentials.save(mcpCloudToken)
+                            if mcpCloudToken.count >= 32 { MCPCloudCredentials.save(mcpCloudToken) }
                             showsMCPCloudSettings = false
                         }
                     }
@@ -2794,6 +3117,19 @@ struct ContentView: View {
             guard let request = notification.object as? FriendAttachmentOpenRequest else { return }
             openFriendAttachment(request.attachment)
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoReplaceSingleMaterial"))) { notification in
+            switch notification.object as? PaneSwitchTarget {
+            case .notebook(let notebook): selectNotebookTab(notebook)
+            case .flashcardDeck(let deck): selectFlashcardTab(deck)
+            case .document(let document): selectTextDocumentTab(document)
+            default: break
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoAddTextDocumentTab"))) { notification in
+            guard let document = notification.object as? TextDocument,
+                  !openTextDocuments.contains(where: { $0.persistentModelID == document.persistentModelID }) else { return }
+            openTextDocuments.append(document)
+        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenTextDocumentTab"))) { notification in
             guard let document = notification.object as? TextDocument else { return }
             openTextDocument(document)
@@ -2831,6 +3167,7 @@ struct ContentView: View {
             friendStore.handle(scenePhase: scenePhase)
             if scenePhase == .active {
                 sharedImport.refresh()
+                Task { await MCPCloudCredentials.refreshIfNeeded() }
                 Task { await UsageEventService.ping() }
                 Task { await ErrorReportService.flush() }
                 Task { await announcementStore.refresh() }
@@ -2845,6 +3182,7 @@ struct ContentView: View {
             friendStore.handle(scenePhase: phase)
             if phase == .active {
                 sharedImport.refresh()
+                Task { await MCPCloudCredentials.refreshIfNeeded() }
                 Task { await pullMCPInbox() }
                 Task { await UsageEventService.ping() }
                 Task { await ErrorReportService.flush() }
@@ -2976,14 +3314,18 @@ struct ContentView: View {
             } else if homeSection == .more {
                 homeMore
             } else {
-                FriendsHomeView(
-                    store: friendStore,
-                    myStudySeconds: studyActivities
-                        .filter { Calendar.current.isDateInToday($0.startedAt) }
-                        .reduce(0) { $0 + $1.duration },
-                    appAttachments: friendMessageAttachmentOptions(),
-                    resolveAppAttachment: resolvedAppMessageAttachment
-                )
+                GeometryReader { geometry in
+                    FriendsHomeView(
+                        store: friendStore,
+                        myStudySeconds: studyActivities
+                            .filter { Calendar.current.isDateInToday($0.startedAt) }
+                            .reduce(0) { $0 + $1.duration },
+                        appAttachments: friendMessageAttachmentOptions(),
+                        resolveAppAttachment: resolvedAppMessageAttachment
+                    )
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+                }
             }
             Divider()
             HStack(spacing: 12) {
@@ -3049,7 +3391,7 @@ struct ContentView: View {
 
     private var notebookTabBar: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 ForEach(openNotebooks.filter { !$0.isTrashed }) { notebook in
                     HStack(spacing: 5) {
                         Button {
@@ -3069,7 +3411,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(selectedNotebook === notebook ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                    .tabBlock(tint: .accentColor, selected: selectedNotebook === notebook)
                     .tabDraggable("notebook:\(notebookID(notebook))")
                 }
                 ForEach(openStudyNotebooks.filter { !$0.isTrashed }) { notebook in
@@ -3090,7 +3432,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .tabBlock(tint: .indigo, selected: false)
                     .tabDraggable("flashcards:\(notebookID(notebook))")
                 }
                 ForEach(openFlashcardDecks) { deck in
@@ -3106,7 +3448,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(selectedFlashcardDeck === deck ? Color.indigo.opacity(0.22) : Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .tabBlock(tint: .indigo, selected: selectedFlashcardDeck === deck)
                     .tabDraggable("deck:\(deckID(deck))")
                 }
                 ForEach(openWebTabs) { tab in
@@ -3122,7 +3464,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(Color.teal.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+                    .tabBlock(tint: .teal, selected: false)
                     .tabDraggable("web:\(tab.title)|\(tab.homeURL)")
                 }
 
@@ -3144,10 +3486,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(
-                        selectedTextDocument === document ? Color.teal.opacity(0.22) : Color.teal.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
+                    .tabBlock(tint: .teal, selected: selectedTextDocument === document)
                     .accessibilityIdentifier("tab-document-\(document.title)")
                     .tabDraggable("document:\(textDocumentID(document))")
                 }
@@ -3167,10 +3506,7 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(
-                        selectedAIChatTabID == tab.id ? Color.purple.opacity(0.22) : Color.purple.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
+                    .tabBlock(tint: .purple, selected: selectedAIChatTabID == tab.id)
                     .tabDraggable("ai:\(String(describing: tab.id))")
                 }
 
@@ -3183,14 +3519,14 @@ struct ContentView: View {
                     Image(systemName: "plus")
                         .font(.subheadline.weight(.semibold))
                         .frame(width: 30, height: 30)
-                        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                        .tabBlock(tint: .secondary, selected: false)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("新しいタブを追加")
                 .accessibilityIdentifier("tab-picker-add-tab")
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 6)
         }
         .scrollIndicators(.hidden)
         .background(.bar)
@@ -3358,6 +3694,24 @@ struct ContentView: View {
         libraryMode = .documents
         searchText = ""
         columnVisibility = .detailOnly
+        preferredCompactColumn = .detail
+    }
+
+    /// A sidebar button changes both the filter and the visible compact column,
+    /// even when the user taps the already-selected category or folder again.
+    private func selectLibraryLocation(mode: LibraryMode, folder: String? = nil) {
+        clearOpenSelection()
+        selectedFolder = folder
+        libraryMode = mode
+        searchText = ""
+        homeSelection.end()
+        preferredCompactColumn = .detail
+    }
+
+    private func returnToLibrary() {
+        mistakeReviewRequest = nil
+        clearOpenSelection()
+        preferredCompactColumn = .detail
     }
 
     private func routeNotification(_ userInfo: [AnyHashable: Any]?) {
@@ -4260,6 +4614,7 @@ struct ContentView: View {
                 : (selectedFolder.map(folderDisplayName) ?? (isHomeScreen ? L("ホーム") : libraryMode.title))
         )
         .searchable(text: $searchText, prompt: "ノートを検索")
+        .navigationBarBackButtonHidden(horizontalSizeClass == .compact)
         .scrollContentBackground(.hidden)
         .background(
             LinearGradient(
@@ -4270,6 +4625,14 @@ struct ContentView: View {
         )
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarLeading) {
+                if horizontalSizeClass == .compact {
+                    Button {
+                        preferredCompactColumn = .sidebar
+                    } label: {
+                        Label("ライブラリ", systemImage: "sidebar.left")
+                    }
+                    .accessibilityIdentifier("library-location-picker")
+                }
                 if selectedFolder != nil {
                     Button {
                         goBackOneFolder()
@@ -4306,6 +4669,9 @@ struct ContentView: View {
                         }
                     }
                     Menu {
+                        Toggle("資料の種類ごとに並べる", isOn: $sortByMaterialType)
+                            .accessibilityIdentifier("library-sort-by-material-type")
+                        Divider()
                         ForEach(NotebookSortKey.allCases) { key in
                             Button {
                                 sortOption = sortOption.selecting(key)
@@ -4382,13 +4748,7 @@ struct ContentView: View {
                 } description: {
                     Text("右上の＋から、ノート・暗記帳・文書を作成できます。")
                 }
-            } else if selectedFolder == nil
-                        && !isHomeScreen
-                        && visibleNotebooks.isEmpty
-                        && displayedFlashcardDecks.isEmpty
-                        && displayedTextDocuments.isEmpty
-                        && !(libraryMode == .favorites && hasFavoriteNonNotebookItems)
-                        && !(libraryMode == .trash && !isTrashEmpty) {
+            } else if !isHomeScreen && isCurrentLibraryLocationEmpty {
                 ContentUnavailableView(
                     searchText.isEmpty ? (selectedFolder == nil ? libraryMode.emptyTitle : "このフォルダは空です") : "見つかりません",
                     systemImage: searchText.isEmpty ? (selectedFolder == nil ? libraryMode.icon : "folder") : "magnifyingglass",
@@ -4590,6 +4950,20 @@ struct ContentView: View {
         }
     }
 
+    /// Empty-state decisions must count the items in this category, not other
+    /// kinds of materials that happen to exist elsewhere in the library.
+    private var isCurrentLibraryLocationEmpty: Bool {
+        if selectedFolder != nil { return sortedHomeItems.isEmpty }
+        switch libraryMode {
+        case .documents: return sortedHomeItems.isEmpty
+        case .favorites: return visibleNotebooks.isEmpty && !hasFavoriteNonNotebookItems
+        case .pdfs: return visibleNotebooks.isEmpty
+        case .studyCards: return displayedFlashcardDecks.isEmpty
+        case .textDocuments: return displayedTextDocuments.isEmpty
+        case .trash: return isTrashEmpty
+        }
+    }
+
     /// The Finder-icon-view equivalent of `homeList`, shown only for
     /// `libraryMode == .documents` (the folder-organized "all files" browsing
     /// screen) — the other tabs (favorites, trash, study-cards-only, …) are
@@ -4726,6 +5100,7 @@ struct ContentView: View {
             onMarkAllRead: markAllNotificationsRead,
             onMarkRead: markNotificationRead,
             onDelete: deleteNotification,
+            onDeleteMany: deleteNotifications,
             onOpenSettings: {
                 showsNotifications = false
                 showsAppSettings = true
@@ -4787,10 +5162,15 @@ struct ContentView: View {
     /// Swiped-away notifications are generated from app data, so removing one
     /// means remembering its id and filtering it out on every refresh.
     private func deleteNotification(_ notification: StudyNotification) {
+        deleteNotifications([notification])
+    }
+
+    private func deleteNotifications(_ notifications: [StudyNotification]) {
+        guard !notifications.isEmpty else { return }
         var ids = Set(deletedStudyNotificationIDsStorage.split(separator: "\n").map(String.init))
-        ids.insert(notification.id)
+        ids.formUnion(notifications.map(\.id))
         deletedStudyNotificationIDsStorage = ids.joined(separator: "\n")
-        cachedStudyNotifications.removeAll { $0.id == notification.id }
+        cachedStudyNotifications.removeAll { ids.contains($0.id) }
     }
 
     private func refreshStudyNotifications() {
@@ -4903,7 +5283,29 @@ struct ContentView: View {
             }
         }
         let items = folders.map(LibraryRowItem.folder) + entries.map(LibraryRowItem.entry)
-        return items.sorted { sortOption.areInOrder(fields($0), fields($1)) }
+        return items.sorted { first, second in
+            if sortByMaterialType {
+                let firstKind = materialSortRank(for: first)
+                let secondKind = materialSortRank(for: second)
+                if firstKind != secondKind { return firstKind < secondKind }
+            }
+            return sortOption.areInOrder(fields(first), fields(second))
+        }
+    }
+
+    /// The optional type grouping keeps folders together first, followed by
+    /// notes, study-card decks and text documents. Within every group the
+    /// sort chosen in the same menu still decides the order.
+    private func materialSortRank(for item: LibraryRowItem) -> Int {
+        switch item {
+        case .folder: return 0
+        case .entry(let entry):
+            switch entry.itemKind {
+            case .notebook: return 1
+            case .flashcardDeck: return 2
+            case .textDocument: return 3
+            }
+        }
     }
 
     private var sortedHomeItems: [LibraryRowItem] {
@@ -4926,9 +5328,29 @@ struct ContentView: View {
     @ViewBuilder
     private func entryListRow(_ entry: HomeEntry) -> some View {
         switch entry {
-        case .notebook(let notebook): notebookRow(notebook)
-        case .flashcardDeck(let deck): deckRow(deck)
-        case .textDocument(let document): documentRow(document)
+        case .notebook(let notebook):
+            notebookRow(notebook)
+                // The all-files view is a ScrollView so its folder rows can
+                // accept drops. Native swipeActions only shifts the inner
+                // row there; use the same wrapper as folders so the entire
+                // material card slides as one surface.
+                .modifier(entryTrashSwipe(entry))
+        case .flashcardDeck(let deck):
+            deckRow(deck)
+                .modifier(entryTrashSwipe(entry))
+        case .textDocument(let document):
+            documentRow(document)
+                .modifier(entryTrashSwipe(entry))
+        }
+    }
+
+    private func entryTrashSwipe(_ entry: HomeEntry) -> SwipeToTrashRow {
+        SwipeToTrashRow(
+            enabled: !entry.isTrashed,
+            identifier: "library-entry-trash-\(entry.title)"
+        ) {
+            trash(entry)
+            try? modelContext.save()
         }
     }
 
@@ -5996,6 +6418,7 @@ struct ContentView: View {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard 200..<300 ~= http.statusCode else {
+            if PasskeyReauth.isRequired(status: http.statusCode, body: data) { throw PasskeyError.reauthRequired }
             throw Self.mcpCloudServerError(status: http.statusCode, body: data)
         }
         return data
@@ -6023,8 +6446,16 @@ struct ContentView: View {
         guard !mcpPairClientName.isEmpty else { return }
         let code = mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         do {
-            let data = try await mcpRequest(path: "api/mcp/pair", method: "POST",
-                                            body: try JSONEncoder().encode(["code": code]))
+            let approval = try JSONEncoder().encode(["code": code])
+            let data: Data
+            do {
+                data = try await mcpRequest(path: "api/mcp/pair", method: "POST", body: approval)
+            } catch PasskeyError.reauthRequired {
+                // Letting an app into the account is a step a stolen session
+                // must not be able to take alone.
+                try await PasskeyService.shared.reauthenticate(token: MCPCloudCredentials.loadOrCreateToken(), action: "approve-app")
+                data = try await mcpRequest(path: "api/mcp/pair", method: "POST", body: approval)
+            }
             let result = try JSONDecoder().decode(MCPApprovalResult.self, from: data)
             guard result.approved else { mcpCloudStatus = L("接続コードの期限が切れました。"); return }
             mcpCloudStatus = L("接続を許可しました。")
@@ -6527,29 +6958,19 @@ struct ContentView: View {
                     Button {
                         open(.notebook(notebook))
                     } label: {
-                        NotebookRow(notebook: notebook, showsCover: libraryMode == .pdfs)
+                        NotebookRow(notebook: notebook)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 } else {
                     NavigationLink(value: notebook) {
-                        NotebookRow(notebook: notebook, showsCover: libraryMode == .pdfs)
+                        NotebookRow(notebook: notebook)
                     }
                 }
             }
             .accessibilityIdentifier("library-entry-\(notebook.title)")
             .contextMenu {
                 notebookActions(notebook)
-            }
-            .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                if !notebook.isTrashed {
-                    Button {
-                        notebook.isFavorite.toggle()
-                    } label: {
-                        Label(notebook.isFavorite ? L("解除") : L("お気に入り"), systemImage: notebook.isFavorite ? "star.slash" : "star")
-                    }
-                    .tint(.yellow)
-                }
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if notebook.isTrashed {
@@ -6835,6 +7256,8 @@ private struct FileImportPicker: UIViewControllerRepresentable {
 /// One folder tile in `ContentView.homeIconGrid`. Visually mirrors
 /// `folderRow`'s list row (same folder glyph, same favorite star, same drop
 /// badge) but laid out as an icon-and-label tile instead of a horizontal row.
+/// The name always reserves two lines, so a one-line and a two-line name give
+/// tiles of the same height and the icons stay level across a grid row.
 private struct HomeFolderTile: View {
     let name: String
     let isFavorite: Bool
@@ -6856,7 +7279,7 @@ private struct HomeFolderTile: View {
                 }
                 Text(name)
                     .font(.caption)
-                    .lineLimit(2)
+                    .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                 Text("\(itemCount)項目")
@@ -6895,7 +7318,7 @@ private struct HomeEntryTile: View {
                 }
                 Text(entry.title)
                     .font(.caption)
-                    .lineLimit(2)
+                    .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
             }
@@ -6907,12 +7330,11 @@ private struct HomeEntryTile: View {
 
 private struct NotebookRow: View {
     @Bindable var notebook: Notebook
-    /// A PDF's icon is its first page (the "PDF" filter); elsewhere the symbol.
-    var showsCover = false
 
     var body: some View {
         HStack(spacing: 12) {
-            if showsCover, notebook.containsPDF {
+            // A PDF's icon is its first page, as in the icon and column views.
+            if notebook.containsPDF {
                 NotebookCoverView(notebook: notebook, size: CGSize(width: 34, height: 44))
             } else {
                 Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
@@ -7089,7 +7511,7 @@ private enum LibraryMode: String, CaseIterable, Identifiable {
     var emptyMessage: String {
         switch self {
         case .documents: L("＋からノートを作るかPDFを読み込んでください")
-        case .favorites: L("ノートを左へスワイプして登録できます")
+        case .favorites: L("ノートのメニューから登録できます")
         case .pdfs: L("＋からPDFを読み込んでください")
         case .studyCards: L("＋からノートを選んで暗記カードを作成してください")
         case .textDocuments: L("＋から文書を作成してください")
@@ -7494,5 +7916,17 @@ private struct AIChatTabRenameModifier: ViewModifier {
                   let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
             tabs[index] = tab
         }
+    }
+}
+
+private extension View {
+    /// Draws a tab as a self-contained block: a filled rounded rectangle with
+    /// an outline, so neighbouring tabs read as separate items. The selected
+    /// tab gets a tinted fill and a heavier tinted outline.
+    func tabBlock(tint: Color, selected: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+        return self
+            .background(selected ? tint.opacity(0.20) : Color.primary.opacity(0.06), in: shape)
+            .overlay(shape.strokeBorder(selected ? tint : Color.primary.opacity(0.22), lineWidth: selected ? 1.5 : 1))
     }
 }

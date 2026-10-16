@@ -119,3 +119,20 @@ export async function consumeCredits(env, { accountKey, plan, kind, model, globa
   }
   return { ok: true, refund };
 }
+
+/**
+ * What is left of the plan's tightest credit window (day, five hours or
+ * month), without spending anything — the figure the app shows as "remaining".
+ * The per-minute window is a burst guard, not an allowance, so it is skipped.
+ */
+export async function creditUsage(env, { accountKey, plan, now = Date.now() }) {
+  const budget = PLAN_BUDGETS[plan] ?? PLAN_BUDGETS.free;
+  let tightest = null;
+  for (const window of windowsFor(accountKey, now)) {
+    if (window.perCall) continue;
+    const limit = budget[window.limitKey];
+    const usage = await env.RATE_COUNTER.getByName(window.name).usage(limit, window.seconds);
+    if (!tightest || usage.remaining < tightest.remaining) tightest = usage;
+  }
+  return tightest;
+}

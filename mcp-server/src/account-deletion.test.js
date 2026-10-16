@@ -1004,3 +1004,21 @@ test("H-3c. 退会済みのアカウントには、認可コードの交換も�
   assert.equal(refused.status, 400);
   assert.equal((await refused.json()).error, "invalid_grant");
 });
+
+test("退会するとパスキーの索引と復旧手続きも消え、同じメールで再登録しても強制の名残が残らない", async () => {
+  const { sha256Hex: hash } = await import("./auth.js");
+  const { indexAccountPasskey, accountHasPasskey } = await import("./passkey-policy.js");
+  const env = environment();
+  await seedLinked(env, "apple-pk", "pk@example.com", [{ provider: "apple", sub: "apple-pk" }, { provider: "email", sub: "pk@example.com" }]);
+  await env.STUDIQUO_DATA.put("account:local:pk@example.com", "{}");
+  await env.STUDIQUO_DATA.put("passkeys:credential:pk-1", JSON.stringify({ id: "pk-1", email: "pk@example.com" }));
+  await indexAccountPasskey(env, "apple-pk", "pk@example.com", "pk-1");
+  await env.STUDIQUO_DATA.put(`passkey-recovery:${await hash("apple-pk")}`, JSON.stringify({ requestedAt: Date.now() }));
+
+  await deleteAccount(env, "apple-pk");
+
+  assert.equal(await env.STUDIQUO_DATA.get(`passkey-account:${await hash("apple-pk")}`), null);
+  assert.equal(await env.STUDIQUO_DATA.get(`passkey-account:${await hash("email:pk@example.com")}`), null);
+  assert.equal(await env.STUDIQUO_DATA.get(`passkey-recovery:${await hash("apple-pk")}`), null);
+  assert.equal(await accountHasPasskey(env, "apple-pk", "pk@example.com"), false);
+});

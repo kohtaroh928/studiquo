@@ -18,6 +18,9 @@ export async function aiPrivacyRejection(request, env) {
   if (!AI_AGE_BANDS.has(request.headers.get("X-Studiquo-Age") ?? "")) {
     return json({ error: "AIをご利用になるには、年齢の確認(13歳以上・18歳未満は保護者の同意)が必要です。" }, 403);
   }
+  // This read contains no study content; it still needs the same consent but
+  // has no JSON body to validate.
+  if (request.method === "GET") return null;
   // Inspect a bounded clone so the existing handler can read its own body.
   const body = await readJSONLimited(request.clone(), 20_000_000);
   if (!body || typeof body !== "object" || Array.isArray(body)) {

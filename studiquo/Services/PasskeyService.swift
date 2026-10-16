@@ -81,6 +81,80 @@ final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAutho
         return (result.email, result.token)
     }
 
+    /// Asks for one of this account's passkeys right now, which the server then
+    /// remembers for a few minutes for this session. Actions that would let a
+    /// thief keep or widen access (deleting the account, approving an app,
+    /// adding a passkey) require it, so a stolen session alone is not enough.
+    /// `action` names what the check is for ("delete-account", "approve-app",
+    /// "add-passkey", "remove-passkeys"); the server only accepts the check for
+    /// that action, once.
+    func reauthenticate(token: String, action: String) async throws {
+        let envelope: ReauthOptionsEnvelope = try await post(
+            path: "api/passkeys/reauth/options", body: ReauthOptionsBody(action: action), bearer: token
+        )
+        let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: relyingPartyIdentifier)
+        let request = provider.createCredentialAssertionRequest(challenge: try envelope.options.challenge.base64URLData())
+        request.userVerificationPreference = .required
+        request.allowedCredentials = try (envelope.options.allowCredentials ?? []).map {
+            ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: try $0.id.base64URLData())
+        }
+        let authorization: ASAuthorization
+        do {
+            authorization = try await perform(request)
+        } catch let error as ASAuthorizationError where error.code == .canceled {
+            throw PasskeyError.cancelled
+        }
+        guard let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion else {
+            throw PasskeyError.invalidResponse
+        }
+        let id = credential.credentialID.base64URLEncodedString()
+        let response = AuthenticationCredential(
+            id: id,
+            rawId: id,
+            response: .init(
+                clientDataJSON: credential.rawClientDataJSON.base64URLEncodedString(),
+                authenticatorData: credential.rawAuthenticatorData.base64URLEncodedString(),
+                signature: credential.signature.base64URLEncodedString(),
+                userHandle: credential.userID.base64URLEncodedString()
+            ),
+            type: "public-key",
+            authenticatorAttachment: "platform",
+            clientExtensionResults: [:]
+        )
+        let result: ReauthResult = try await post(
+            path: "api/passkeys/reauth/verify",
+            body: ReauthVerification(transaction: envelope.transaction, credential: response),
+            bearer: token
+        )
+        guard result.verified else { throw PasskeyError.notVerified }
+    }
+
+    /// Removes every passkey of the account. With an established passkey it
+    /// has to be used first (`reauthenticate`, action "remove-passkeys"); while
+    /// all of them are still new it is allowed without, so the owner can undo
+    /// one that a thief added with a stolen session.
+    func removeAllPasskeys(token: String) async throws {
+        do {
+            let _: RemovedResult = try await post(path: "api/passkeys/remove-all", body: EmptyBody(), bearer: token)
+        } catch PasskeyError.reauthRequired {
+            try await reauthenticate(token: token, action: "remove-passkeys")
+            let _: RemovedResult = try await post(path: "api/passkeys/remove-all", body: EmptyBody(), bearer: token)
+        }
+    }
+
+    /// Whether the signed-in account has a passkey; nil when that could not
+    /// be found out (no connection, an older server), which must never be
+    /// taken to mean "no".
+    static func hasPasskey(token: String, endpoint: URL, session: URLSession = .shared) async -> Bool? {
+        var request = URLRequest(url: endpoint.appending(path: "api/passkeys/status"))
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard let (data, response) = try? await session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let status = try? JSONDecoder().decode(PasskeyStatus.self, from: data) else { return nil }
+        return status.registered
+    }
+
     private func perform(_ request: ASAuthorizationRequest) async throws -> ASAuthorization {
         try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
@@ -137,16 +211,34 @@ enum PasskeyHTTPClient {
         request.httpBody = try JSONEncoder().encode(body)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+            if PasskeyReauth.isRequired(status: (response as? HTTPURLResponse)?.statusCode, body: data) {
+                throw PasskeyError.reauthRequired
+            }
             throw PasskeyError.serverRejected
         }
         return try JSONDecoder().decode(Response.self, from: data)
     }
 }
 
+/// The server answers 403 with `code: "reauth_required"` when an action needs
+/// a passkey check first.
+enum PasskeyReauth {
+    static func isRequired(status: Int?, body: Data) -> Bool {
+        struct Body: Decodable { let code: String? }
+        return status == 403 && (try? JSONDecoder().decode(Body.self, from: body))?.code == "reauth_required"
+    }
+}
+
 enum PasskeyError: LocalizedError {
     case invalidResponse, notVerified, serverRejected
+    /// The action needs a passkey check first; see `PasskeyService.reauthenticate`.
+    case reauthRequired
+    /// The person dismissed the Face ID / passkey sheet.
+    case cancelled
     var errorDescription: String? {
         switch self {
+        case .cancelled: "パスキーの確認をキャンセルしました。"
+        case .reauthRequired: "パスキーでの確認が必要です。"
         case .invalidResponse: "パスキーの応答を読み取れませんでした。"
         case .notVerified: "パスキーを確認できませんでした。"
         case .serverRejected: "パスキーサーバーに接続できませんでした。"
@@ -160,6 +252,14 @@ private struct PublicKeyOptions: Codable { let challenge: String; let user: Publ
 private struct AuthenticationPublicKeyOptions: Codable { let challenge: String }
 private struct RegistrationOptionsEnvelope: Codable { let transaction: String; let options: PublicKeyOptions }
 private struct AuthenticationOptionsEnvelope: Codable { let transaction: String; let options: AuthenticationPublicKeyOptions }
+private struct AllowedCredential: Codable { let id: String }
+private struct ReauthPublicKeyOptions: Codable { let challenge: String; let allowCredentials: [AllowedCredential]? }
+private struct ReauthOptionsEnvelope: Codable { let transaction: String; let options: ReauthPublicKeyOptions }
+private struct ReauthVerification: Codable { let transaction: String; let credential: AuthenticationCredential }
+private struct ReauthResult: Codable { let verified: Bool }
+private struct ReauthOptionsBody: Codable { let action: String }
+private struct RemovedResult: Codable { let removed: Bool }
+private struct PasskeyStatus: Codable { let registered: Bool }
 private struct RegistrationResult: Codable { let registered: Bool }
 private struct AuthenticationResult: Codable { let authenticated: Bool; let email: String; let token: String }
 

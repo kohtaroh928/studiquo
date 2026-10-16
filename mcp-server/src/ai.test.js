@@ -22,6 +22,10 @@ function fakeRateCounterBinding() {
         async give(amount = 1) {
           counts.set(name, Math.max(0, (counts.get(name) ?? 0) - amount));
         },
+        async usage(limit) {
+          const used = counts.get(name) ?? 0;
+          return { limit, remaining: Math.max(0, limit - used), resetsAt: null };
+        },
       };
     },
   };
@@ -44,6 +48,25 @@ function environment(extra = {}) {
     ...extra,
   };
 }
+
+test("usage reports the tightest remaining allowance without spending any", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const env = environment();
+    const ctx = executionContext();
+    const usageRequest = () => new Request("https://example.test/api/ai/usage");
+    const usage = async () => (await handleAI(new URL(usageRequest().url), usageRequest(), env, "device", ctx, { sub: "user-1" }, "standard")).json();
+
+    // standard: 40 credits per 5 hours is the tightest window (day 60, month 120).
+    assert.deepEqual(await usage(), { limit: 40, remaining: 40, resetsAt: null });
+    assert.deepEqual(await usage(), { limit: 40, remaining: 40, resetsAt: null }, "reading costs nothing");
+
+    assert.equal((await run("chat", chatBody(), { env })).response.status, 200);
+    assert.equal((await usage()).remaining, 39);
+  } finally {
+    fetchState.restore();
+  }
+});
 
 function executionContext() {
   const promises = [];

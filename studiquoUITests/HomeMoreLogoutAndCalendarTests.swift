@@ -82,6 +82,23 @@ final class HomeMoreLogoutAndCalendarTests: XCTestCase {
         XCTAssertFalse(app.buttons["home-tab-more"].exists, "ログアウト後もホームが残っています。")
     }
 
+    /// iPad縦向きのログイン画面で、Appleのサインインボタンが縦に伸びない(高さに上限がなく、余白を使い切っていた不具合の回帰)
+    func testLoginScreenAppleButtonKeepsAButtonHeightInPortrait() {
+        openMore()
+        scrollTo(app.buttons["more-logout"]).tap()
+        XCTAssertTrue(app.staticTexts["ログアウトしますか？"].waitForExistence(timeout: 5), "ログアウトの確認が出ません。")
+        let confirm = app.buttons.matching(NSPredicate(format: "label == %@", "ログアウト")).allElementsBoundByIndex
+            .last(where: { $0.isHittable && $0.identifier != "more-logout" })
+        XCTAssertNotNil(confirm, "確認ダイアログに「ログアウト」ボタンがありません。")
+        confirm?.tap()
+        XCTAssertTrue(app.staticTexts["おかえりなさい"].waitForExistence(timeout: 10), "ログアウト後にログイン画面へ戻りません。")
+
+        let apple = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Apple")).firstMatch
+        XCTAssertTrue(apple.waitForExistence(timeout: 5), "ログイン画面にAppleのサインインボタンがありません。")
+        XCTAssertGreaterThanOrEqual(apple.frame.height, 40, "Appleのボタンが潰れています(\(apple.frame.height)pt)。")
+        XCTAssertLessThanOrEqual(apple.frame.height, 60, "Appleのボタンが縦に伸びています(\(apple.frame.height)pt)。")
+    }
+
     // MARK: カレンダー連携の引き継ぎ
 
     /// 7. 連携設定を閉じて別タブへ→カレンダーに戻っても、設定が勝手に再度開かない
