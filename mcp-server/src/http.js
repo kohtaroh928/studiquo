@@ -12,6 +12,24 @@ export function securityHeaders(extra = {}) {
   };
 }
 
+/**
+ * Headers for a response that is just stored bytes (a profile photo, a chat
+ * attachment, a report screenshot). The content type was chosen by whoever
+ * uploaded it, so the browser is told not to guess a different one and the
+ * body is sandboxed: even if it is really HTML, it cannot run script.
+ * `download` also marks it as a file to save rather than a page to show.
+ */
+export function binaryHeaders(contentType, cacheControl, { download = false } = {}) {
+  return {
+    "content-type": contentType,
+    "cache-control": cacheControl,
+    "content-security-policy": "default-src 'none'; sandbox",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+    ...(download ? { "content-disposition": "attachment" } : {}),
+  };
+}
+
 export function json(value, status = 200) {
   return Response.json(value, { status, headers: securityHeaders() });
 }
