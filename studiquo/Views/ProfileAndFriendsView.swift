@@ -3770,7 +3770,7 @@ struct GroupChatView: View {
         } message: {
             Text(store.errorMessage)
         }
-        .background(Color(red: 0.84, green: 0.94, blue: 1.0))
+        .background(Theme.Palette.canvas)
         .dropDestination(for: String.self) { items, _ in
             guard let value = items.first, PaneDropPayload.isTab(value) else { return false }
             return onPaneDrop(value)
@@ -4373,7 +4373,7 @@ struct FriendChatView: View {
                 reportingMessage = nil
             }, onCancel: { reportingMessage = nil })
         }
-        .background(Color(red: 0.84, green: 0.94, blue: 1.0))
+        .background(Theme.Palette.canvas)
         .dropDestination(for: String.self) { items, _ in
             guard let value = items.first, isPaneSwitchDrop(value) else { return false }
             return onPaneDrop(value)
