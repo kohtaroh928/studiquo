@@ -21,6 +21,7 @@ const MAX_BODY = 200_000;
 const MAX_ERRORS_PER_REQUEST = 20;
 const MAX_SLACK_POSTS_PER_REQUEST = 5;
 const MAX_COUNT = 1_000;
+const MAX_NEW_PROBLEMS_PER_DAY = 20;
 const KINDS = new Set(["crash", "hang", "cpu", "disk", "error"]);
 const KIND_LABELS = { crash: "クラッシュ", hang: "フリーズ", cpu: "CPU過負荷", disk: "ディスク書き込み過多", error: "エラー" };
 
@@ -74,6 +75,10 @@ async function recordOccurrence(env, fingerprint, error, userKey, now) {
   ).bind(fingerprint).first();
 
   if (!existing) {
+    // A problem's signature comes from the device, so without a cap one
+    // account could open as many dashboard rows as it liked. Only a NEW row
+    // counts; more occurrences of a known problem always do.
+    if (!(await env.RATE_COUNTER.getByName(`app-error-new:${userKey}`).bump(MAX_NEW_PROBLEMS_PER_DAY, 86_400))) return "skipped";
     await env.ADMIN_DB.prepare(
       `INSERT INTO app_errors
          (fingerprint, kind, title, detail, first_seen_at, last_seen_at, occurrences,
@@ -175,6 +180,7 @@ export async function handleAppErrors(url, request, env) {
   for (const error of errors) {
     const fingerprint = await sha256Hex(`${error.kind}\n${error.signature}`);
     const outcome = await recordOccurrence(env, fingerprint, error, userKey, now);
+    if (outcome === "skipped") continue;
     accepted += 1;
     if (outcome && slackPosts < MAX_SLACK_POSTS_PER_REQUEST) {
       slackPosts += 1;

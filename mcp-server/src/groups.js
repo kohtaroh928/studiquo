@@ -1,5 +1,5 @@
 import { checkRateLimit } from "./rate-limit.js";
-import { json, binaryHeaders, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { sendPush } from "./push.js";
 
 /**
@@ -333,7 +333,7 @@ export async function handleGroupRoutes(url, request, env, key, ctx) {
     const body = await readBody(request, MAX_AVATAR_UPLOAD_BODY);
     const contentType = String(body?.contentType ?? "");
     const data = String(body?.data ?? "");
-    if (!["image/jpeg", "image/png"].includes(contentType) || !data) {
+    if (!["image/jpeg", "image/png"].includes(contentType) || !data || !isWellFormedBase64(data)) {
       return json({ error: "Invalid avatar." }, 400);
     }
     // 300KB raw, same cap as a profile photo (chat.js's MAX_AVATAR_BYTES) —

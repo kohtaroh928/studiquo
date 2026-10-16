@@ -88,6 +88,7 @@ function environment(extra = {}) {
       async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
     },
     raw: values,
+    RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
     ...extra,
   };
 }

@@ -30,6 +30,7 @@ function environment() {
       async status(id) { return items.get(`${account}:${id}`) ?? null; },
       async acknowledge(id) { const item = items.get(`${account}:${id}`); if (item) item.status = "imported"; return item ?? null; },
     }; } },
+    RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
     RATE_LIMIT_MCP_REGISTER: { async limit() { return { success: true }; } },
     RATE_LIMIT_MCP_AUTHORIZE: { async limit() { return { success: true }; } },
     RATE_LIMIT_MCP_TOKEN: { async limit() { return { success: true }; } },
@@ -145,4 +146,18 @@ test("a refresh token from before a revocation stays dead when the same app is a
   assert.equal((await refresh(stolen)).status, 400, "dead once revoked");
   await approve("2".repeat(64), "QRSTUVWXYZ23");
   assert.equal((await refresh(stolen)).status, 400, "and not revived by approving the app again");
+});
+
+test("a registered client expires after a year instead of staying forever", async () => {
+  const env = environment();
+  const ttls = new Map();
+  const put = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (key, value, options) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
+  const response = await fetch(env, "/oauth/register", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client_name: "Claude", redirect_uris: ["https://claude.ai/callback"] }),
+  });
+  assert.equal(response.status, 201);
+  const { client_id } = await response.json();
+  assert.equal(ttls.get(`mcp:client:${client_id}`), 365 * 24 * 3600);
 });
