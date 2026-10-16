@@ -40,6 +40,16 @@ function fakeCloudflareLimiter(limit = 1000) {
   };
 }
 
+// RateCounter.bump's contract: true while under `limit`, per name.
+function countingCounter() {
+  const counts = new Map();
+  return {
+    getByName(name) {
+      return { async bump(limit) { const used = (counts.get(name) ?? 0) + 1; if (used > limit) return false; counts.set(name, used); return true; } };
+    },
+  };
+}
+
 function environment({ appErrorLimit = 1000 } = {}) {
   const values = new Map();
   return {
@@ -60,6 +70,7 @@ function environment({ appErrorLimit = 1000 } = {}) {
     },
     ADMIN_DB: fakeD1(),
     RATE_LIMIT_APP_ERROR: fakeCloudflareLimiter(appErrorLimit),
+    RATE_COUNTER: countingCounter(),
     RATE_LIMIT_ISSUE_REPORT: fakeCloudflareLimiter(),
     SLACK_ISSUE_REPORT_WEBHOOK_URL: "https://hooks.slack.test/services/xyz",
     ...ACCESS_ENV,
@@ -460,4 +471,27 @@ test("the inbox script never writes outside text into the page as markup", () =>
   // A report's text and a crash's symbols are untrusted: they may only reach
   // the page through textContent / .value, never innerHTML.
   assert.doesNotMatch(INBOX_SCRIPT, /innerHTML|insertAdjacentHTML|document\.write|outerHTML/);
+});
+
+test("one account can open only 20 new problems a day, but can keep reporting known ones", async () => {
+  const env = environment();
+  const token = await signedInUser(env, "flooder");
+  const distinct = (from, to) => Array.from({ length: to - from }, (_, i) => crash({ signature: `made-up-${from + i}`, title: `made up ${from + i}` }));
+  const first = await (await sendErrors(env, token, distinct(0, 20))).json();
+  assert.equal(first.accepted, 20);
+  const second = await (await sendErrors(env, token, distinct(20, 25))).json();
+  assert.equal(second.accepted, 0, "no new rows once the daily cap is spent");
+  assert.equal((await listErrors(env)).length, 20);
+  const again = await (await sendErrors(env, token, distinct(0, 3))).json();
+  assert.equal(again.accepted, 3, "occurrences of an existing problem still count");
+});
+
+test("the new-problem cap is per account", async () => {
+  const env = environment();
+  const first = await signedInUser(env, "one");
+  const second = await signedInUser(env, "two");
+  const batch = Array.from({ length: 20 }, (_, i) => crash({ signature: `shared-${i}`, title: `shared ${i}` }));
+  await sendErrors(env, first, batch);
+  const other = await (await sendErrors(env, second, [crash({ signature: "someone-elses", title: "someone else" })])).json();
+  assert.equal(other.accepted, 1);
 });

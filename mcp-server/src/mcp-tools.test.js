@@ -65,6 +65,7 @@ function environment() {
       async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
     },
     MCP_INBOX: fakeMCPInboxBinding(),
+    RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
     RATE_LIMIT_MCP_REGISTER: { async limit() { return { success: true }; } },
     RATE_LIMIT_MCP_AUTHORIZE: { async limit() { return { success: true }; } },
     RATE_LIMIT_MCP_TOKEN: { async limit() { return { success: true }; } },

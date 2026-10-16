@@ -9,7 +9,7 @@
 // "authenticated a different way than the rest of the API" shape as
 // issue-reports.js's unauthenticated screenshot GET.
 import { checkRateLimit, clientKey } from "./rate-limit.js";
-import { json, readJSONLimited } from "./http.js";
+import { json, readJSONLimited, htmlHeaders } from "./http.js";
 import { bearerToken, secretsEqual, sha256Hex } from "./auth.js";
 import { isExpired } from "./token.js";
 import { isRevoked } from "./revocation.js";
@@ -412,7 +412,5 @@ fetch('/api/admin/stats').then(r => {
 
 export function handleAdminPage(url) {
   if (url.pathname !== "/admin" && url.pathname !== "/admin/") return null;
-  return new Response(DASHBOARD_HTML, {
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-  });
+  return new Response(DASHBOARD_HTML, { headers: htmlHeaders({ connect: true }) });
 }

@@ -14,6 +14,7 @@
 
 import { consumeCredits, creditUsage, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES } from "./ai-credits.js";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { takeParsedBody } from "./ai-body.js";
 import { sendPush } from "./push.js";
 import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.js";
 import { callOpenAIChat, callOpenAIStructured, moderationRejection, extractDeltaText as openaiDeltaText } from "./openai.js";
@@ -90,6 +91,7 @@ function isUpstreamOverloaded(status) {
   return RETRYABLE.has(status) || status === 529;
 }
 
+const AI_UPSTREAM_ERROR_MESSAGE = "AIとの通信でエラーが発生しました。しばらくしてから、もう一度お試しください。";
 const AI_BUSY_MESSAGE = "AIが混み合っています。少し待ってから、もう一度送信してください。";
 
 /**
@@ -100,11 +102,14 @@ const AI_BUSY_MESSAGE = "AIが混み合っています。少し待ってから�
  * (ours, "今日のAI利用回数の上限…"). Anything else keeps the upstream text.
  */
 async function upstreamFailureResponse(upstream) {
-  if (isUpstreamOverloaded(upstream.status)) {
-    await upstream.body?.cancel().catch(() => {});
-    return json({ error: AI_BUSY_MESSAGE }, 503);
-  }
-  return json({ error: await readError(upstream) }, upstream.status || 502);
+  await upstream.body?.cancel().catch(() => {});
+  if (isUpstreamOverloaded(upstream.status)) return json({ error: AI_BUSY_MESSAGE }, 503);
+  // The provider's own text can name the organization, the key's state or its
+  // limits; it is in the Worker's log (the callers log it) and not in the
+  // answer. A refusal of our own key is not the app's sign-in failing either,
+  // so it must not reach the app as a 401/403.
+  const status = upstream.status === 401 || upstream.status === 403 || !upstream.status ? 502 : upstream.status;
+  return json({ error: AI_UPSTREAM_ERROR_MESSAGE }, status);
 }
 
 /**
@@ -124,6 +129,8 @@ const DEFAULT_GLOBAL_GRADING_LIMIT = 150;
 const DEFAULT_GLOBAL_REVIEW_LIMIT = 500;
 
 async function readJSONLimited(request, maximumBytes = 20_000_000) {
+  const parsed = takeParsedBody(request);
+  if (parsed !== undefined) return parsed;
   return readJSONLimitedShared(request, maximumBytes);
 }
 
@@ -144,13 +151,16 @@ async function creditGate(env, { account, plan, kind, model, globalBucket, globa
   return { response, refund: async () => {} };
 }
 
-async function readError(response) {
-  const text = await response.text();
-  try {
-    return JSON.parse(text)?.error?.message ?? text.slice(0, 300);
-  } catch {
-    return text.slice(0, 300);
-  }
+/**
+ * Screens the request's text once the credits are taken (never before: the
+ * screening is a call to the provider, and an account that is over its limits
+ * must be refused without costing one). A rejection hands the credits back.
+ */
+async function moderateOrRefund(env, gate, texts) {
+  const blocked = await moderationRejection(env, texts);
+  if (!blocked) return null;
+  await gate.refund();
+  return json({ error: blocked, code: "content_rejected" }, 400);
 }
 
 // MARK: Math notation
@@ -211,19 +221,19 @@ async function handleChat(request, env, key, ctx, plan, account) {
     return json({ error: "このプランでは選択できないモデルです。" }, 403);
   }
 
-  // Every user-written turn and the attached note text are screened, not just
-  // the latest message (images are not screened).
-  const blocked = await moderationRejection(env, [
-    ...turns.slice(-20).filter(turn => turn?.role !== "assistant").map(turn => turn?.text),
-    payload?.noteContext,
-  ]);
-  if (blocked) return json({ error: blocked, code: "content_rejected" }, 400);
-
   const gate = await creditGate(env, {
     account, plan, kind: "chat", model: requestedModel || DEFAULT_MODEL,
     globalBucket: "chat", globalLimit: Number(env.GLOBAL_CHAT_DAILY_LIMIT) || DEFAULT_GLOBAL_CHAT_LIMIT,
   });
   if (gate.response) return gate.response;
+
+  // Every user-written turn and the attached note text are screened, not just
+  // the latest message (images are not screened).
+  const rejected = await moderateOrRefund(env, gate, [
+    ...turns.slice(-20).filter(turn => turn?.role !== "assistant").map(turn => turn?.text),
+    payload?.noteContext,
+  ]);
+  if (rejected) return rejected;
 
   console.log(JSON.stringify({
     message: "AI chat request accepted",
@@ -371,7 +381,8 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
         await refund();
       }
     } catch (error) {
-      await send(`\n\n（通信が中断しました: ${error?.message ?? "unknown"}）`);
+      console.error(JSON.stringify({ message: "AI stream interrupted", error: error instanceof Error ? error.message : String(error) }));
+      await send("\n\n（通信が中断しました。もう一度お試しください）");
     } finally {
       // Never allowed to reject: an unsettled close is exactly what hung the
       // request before.
@@ -520,8 +531,6 @@ async function handleRubric(request, env, key, ctx, plan, account) {
   if ((questionImage && !isPNGBase64(questionImage)) || (!questionImage && !modelAnswer && !question)) {
     return json({ error: "question, questionImageBase64 or modelAnswer is required." }, 400);
   }
-  const blocked = await moderationRejection(env, [question, modelAnswer]);
-  if (blocked) return json({ error: blocked, code: "content_rejected" }, 400);
   const baseModel = resolveOpenAIModel(env, DEFAULT_MODEL);
   if (!baseModel) return json({ error: "このモデルは現在このWorkerで設定されていません。" }, 503);
 
@@ -530,6 +539,8 @@ async function handleRubric(request, env, key, ctx, plan, account) {
     globalBucket: "grade", globalLimit: Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT,
   });
   if (gate.response) return gate.response;
+  const rejected = await moderateOrRefund(env, gate, [question, modelAnswer]);
+  if (rejected) return rejected;
 
   const parts = [];
   if (questionImage) parts.push({ image: questionImage });
@@ -603,11 +614,7 @@ function streamJSON(env, { refund = async () => {}, model, account, systemInstru
       if (!upstream.ok) {
         await refund();
         console.error(JSON.stringify({ message: "AI structured upstream refused", status: upstream.status, error: await upstream.clone().text().then(text => text.slice(0, 300)).catch(() => "") }));
-        await emit({
-          error: isUpstreamOverloaded(upstream.status)
-            ? AI_BUSY_MESSAGE
-            : `[${upstream.status}] ${await readError(upstream)}`,
-        });
+        await emit({ error: isUpstreamOverloaded(upstream.status) ? AI_BUSY_MESSAGE : failureMessage });
       } else {
         let buffer = "";
         let assembled = "";
@@ -623,7 +630,7 @@ function streamJSON(env, { refund = async () => {}, model, account, systemInstru
             try {
               const event = JSON.parse(raw);
               if (event?.type === "response.failed" || event?.type === "error") {
-                upstreamError = event?.response?.error?.message ?? event?.message ?? failureMessage;
+                upstreamError = failureMessage;
                 console.error(JSON.stringify({ message: "AI structured call failed", type: event.type, error: event?.response?.error ?? event?.error ?? null }));
               }
               assembled += openaiDeltaText(event);
@@ -655,7 +662,8 @@ function streamJSON(env, { refund = async () => {}, model, account, systemInstru
       }
     } catch (error) {
       if (!delivered) await refund();
-      await emit({ error: error?.message ?? failureMessage });
+      console.error(JSON.stringify({ message: "AI structured call threw", error: error instanceof Error ? error.message : String(error) }));
+      await emit({ error: failureMessage });
     } finally {
       try {
         await writer.close();
@@ -686,8 +694,6 @@ async function handleGrade(request, env, key, ctx, plan, account) {
     return json({ error: "imageBase64 or answerText is required." }, 400);
   }
   if (criteria.length === 0) return json({ error: "criteria is required." }, 400);
-  const blocked = await moderationRejection(env, [question, answerText]);
-  if (blocked) return json({ error: blocked, code: "content_rejected" }, 400);
   const baseModel = resolveOpenAIModel(env, DEFAULT_MODEL);
   if (!baseModel) return json({ error: "このモデルは現在このWorkerで設定されていません。" }, 503);
 
@@ -702,6 +708,8 @@ async function handleGrade(request, env, key, ctx, plan, account) {
     globalBucket: "grade", globalLimit: Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT,
   });
   if (gate.response) return gate.response;
+  const rejected = await moderateOrRefund(env, gate, [question, answerText]);
+  if (rejected) return rejected;
 
   const parts = [];
   if (questionImage) {
@@ -774,8 +782,6 @@ async function handleReview(request, env, key, ctx, plan, account) {
   const question = String(payload?.question ?? "").trim().slice(0, 4_000);
   if (!question) return json({ error: "question is required." }, 400);
   const context = String(payload?.context ?? "").trim().slice(0, 4_000);
-  const blocked = await moderationRejection(env, [question, context]);
-  if (blocked) return json({ error: blocked, code: "content_rejected" }, 400);
   const baseModel = resolveOpenAIModel(env, DEFAULT_MODEL);
   if (!baseModel) return json({ error: "このモデルは現在このWorkerで設定されていません。" }, 503);
 
@@ -784,6 +790,8 @@ async function handleReview(request, env, key, ctx, plan, account) {
     globalBucket: "review", globalLimit: Number(env.GLOBAL_REVIEW_DAILY_LIMIT) || DEFAULT_GLOBAL_REVIEW_LIMIT,
   });
   if (gate.response) return gate.response;
+  const rejected = await moderateOrRefund(env, gate, [question, context]);
+  if (rejected) return rejected;
 
   const parts = [{
     text: [
@@ -820,6 +828,17 @@ const AI_PATHS = new Set(["/api/ai/chat", "/api/ai/rubric", "/api/ai/grade", "/a
  * need to change shape again if a future endpoint here needs the account
  * identity directly rather than just its resolved plan.
  */
+/**
+ * Only reachable with PAYWALL_ENABLED (entitlements.js): an account with no
+ * subscription and no legacy grant. 402 so the app can tell "subscribe" apart
+ * from the 403 (model not in your plan) and 429 (daily cap) answers. Exported
+ * so app.js can refuse such an account before it reads a request body.
+ */
+export function subscriptionRequiredResponse(plan, url, request) {
+  if (request.method !== "POST" || plan !== "free" || !AI_PATHS.has(url.pathname)) return null;
+  return json({ error: "AI機能のご利用にはStandard以上のプランが必要です。", code: "subscription_required" }, 402);
+}
+
 export async function handleAI(url, request, env, key, ctx, session, plan) {
   const effectivePlan = plan ?? "standard";
   // Read-only: what is left of the tightest window, for the usage header. Costs nothing.
@@ -827,12 +846,8 @@ export async function handleAI(url, request, env, key, ctx, session, plan) {
     return json(await creditUsage(env, { accountKey: await accountCounterKey(session?.sub, key), plan: effectivePlan }));
   }
   if (request.method !== "POST") return null;
-  // Only reachable with PAYWALL_ENABLED (entitlements.js): an account with no
-  // subscription and no legacy grant. 402 so the app can tell "subscribe" apart
-  // from the 403 (model not in your plan) and 429 (daily cap) answers.
-  if (effectivePlan === "free" && AI_PATHS.has(url.pathname)) {
-    return json({ error: "AI機能のご利用にはStandard以上のプランが必要です。", code: "subscription_required" }, 402);
-  }
+  const refused = subscriptionRequiredResponse(effectivePlan, url, request);
+  if (refused) return refused;
   let handler;
   switch (url.pathname) {
     case "/api/ai/chat": handler = handleChat; break;

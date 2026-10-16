@@ -1,5 +1,6 @@
 import { json, readJSONLimited } from "./http.js";
 import { allowedModelIds } from "./ai.js";
+import { rememberParsedBody } from "./ai-body.js";
 
 // The base provider is OpenAI. Its terms forbid directing the service at, or
 // knowingly serving, children under 13, and teens need a guardian's consent,
@@ -21,8 +22,8 @@ export async function aiPrivacyRejection(request, env) {
   // This read contains no study content; it still needs the same consent but
   // has no JSON body to validate.
   if (request.method === "GET") return null;
-  // Inspect a bounded clone so the existing handler can read its own body.
-  const body = await readJSONLimited(request.clone(), 20_000_000);
+  // The body is read once, here, and handed to the handler through ai-body.js.
+  const body = await readJSONLimited(request, 20_000_000);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return json({ error: "Invalid AI request." }, 400);
   }
@@ -30,5 +31,6 @@ export async function aiPrivacyRejection(request, env) {
   if (requested != null && requested !== "" && !allowedModelIds().includes(requested)) {
     return json({ error: "現在利用できるAIの送信先はOpenAIのみです。" }, 403);
   }
+  rememberParsedBody(request, body);
   return null;
 }

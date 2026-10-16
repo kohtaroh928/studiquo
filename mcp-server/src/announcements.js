@@ -14,7 +14,7 @@
 // language codes, not by a fixed pair.
 import { accessAllowed } from "./access.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
-import { json, readJSONLimited, securityHeaders } from "./http.js";
+import { json, readJSONLimited, securityHeaders, htmlHeaders } from "./http.js";
 import { deviceStorageKey, loadDevices } from "./devices.js";
 import { sendPush } from "./push.js";
 
@@ -600,7 +600,5 @@ load().catch(() => { $('error').textContent = '読み込みに失敗しました
 
 export function handleAnnouncementsPage(url) {
   if (url.pathname !== "/admin/announcements") return null;
-  return new Response(ADMIN_PAGE_HTML, {
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-  });
+  return new Response(ADMIN_PAGE_HTML, { headers: htmlHeaders({ connect: true }) });
 }
