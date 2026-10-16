@@ -120,18 +120,18 @@ struct StudySessionView: View {
                             .multilineTextAlignment(.center)
                     } else {
                         Button("答えを見る") { withAnimation { showsAnswer = true } }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.themePrimary)
                     }
                 }
                 .padding(30)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
 
                 if showsAnswer {
                     HStack {
-                        scoreButton("もう一度", mastery: 0, color: .red)
-                        scoreButton("難しい", mastery: 1, color: .orange)
-                        scoreButton("覚えた", mastery: 2, color: .green)
+                        scoreButton("もう一度", mastery: 0, color: Theme.Palette.danger)
+                        scoreButton("難しい", mastery: 1, color: Theme.Palette.warning)
+                        scoreButton("覚えた", mastery: 2, color: Theme.Palette.success)
                     }
                 }
             } else {

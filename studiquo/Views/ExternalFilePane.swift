@@ -111,7 +111,7 @@ struct ExternalFilePaneView: View {
             } else {
                 message(icon: "folder", text: "ファイルアプリから資料を選びます。") {
                     Button("ファイルを選ぶ") { showsImporter = true }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.themePrimary)
                         .accessibilityIdentifier("external-file-pane-choose")
                 }
             }
@@ -144,7 +144,7 @@ struct ExternalFilePaneView: View {
 
     private var reselectButton: some View {
         Button("ファイルを選び直す") { session.backToBrowser() }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.themePrimary)
             .accessibilityIdentifier("external-file-pane-reselect")
     }
 
