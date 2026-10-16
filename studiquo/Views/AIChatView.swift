@@ -101,7 +101,7 @@ struct AIChatPanel: View {
             VStack(spacing: 14) {
                 Image(systemName: "hand.raised")
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Theme.Palette.accent)
                 VStack(spacing: 6) {
                     Text(L("AIへの送信を許可しますか？"))
                         .font(.headline)
@@ -133,22 +133,22 @@ struct AIChatPanel: View {
                     Button { store.declinePendingSend() } label: {
                         Text(L("許可しない")).frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.themeSecondary)
                     .accessibilityIdentifier("ai-chat-consent-decline")
                     Button {
                         if let consentAge { store.allowPendingSend(ageBand: consentAge) }
                     } label: {
                         Text(L("許可して送信")).frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .disabled(consentAge == nil)
                     .accessibilityIdentifier("ai-chat-consent-allow")
                 }
             }
             .padding(18)
             .frame(maxWidth: 340)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous).strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline))
             .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
             .padding(24)
         }
@@ -194,7 +194,7 @@ struct AppAttachmentPicker: View {
                     HStack(spacing: 12) {
                         Image(systemName: option.icon)
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Theme.Palette.accent)
                             .frame(width: 28)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(option.title)
@@ -388,7 +388,7 @@ struct AIChatPane: View {
                                 .accessibilityLabel("AI利用残り\(usage.remaining)回")
                         }
                         Image(systemName: hasKey ? "sparkles" : "exclamationmark.triangle")
-                            .foregroundStyle(hasKey ? Color.accentColor : Color.orange)
+                            .foregroundStyle(hasKey ? Theme.Palette.accent : Theme.Palette.warning)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -401,7 +401,7 @@ struct AIChatPane: View {
                                     VStack(spacing: 12) {
                                         Image(systemName: "sparkles")
                                             .font(.system(size: 34))
-                                            .foregroundStyle(Color.accentColor)
+                                            .foregroundStyle(Theme.Palette.accent)
                                         Text("何を手伝いましょうか？")
                                             .font(.title3.weight(.semibold))
                                         Text(hasKey
@@ -508,7 +508,7 @@ struct AIChatPane: View {
                                 .textFieldStyle(.plain)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 11)
-                                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 18))
+                                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
                                 .submitLabel(.send)
                                 .onSubmit(onSend)
                                 .accessibilityIdentifier("ai-chat-draft")
@@ -550,12 +550,12 @@ struct AIChatPane: View {
                     .overlay {
                         if isComposerDropTargeted {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 22)
-                                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2.5, dash: [7, 5]))
-                                    .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 22))
+                                RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous)
+                                    .strokeBorder(Theme.Palette.accent, style: StrokeStyle(lineWidth: 2.5, dash: [7, 5]))
+                                    .background(Theme.Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous))
                                 Image(systemName: "plus")
                                     .font(.system(size: 26, weight: .bold))
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(Theme.Palette.accent)
                             }
                             .allowsHitTesting(false)
                         }
@@ -634,8 +634,8 @@ struct AIChatPane: View {
         }
         .overlay {
             if isDropTargeted {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
+                    .strokeBorder(Theme.Palette.accent, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
                     .padding(4)
                     .allowsHitTesting(false)
             }
@@ -711,7 +711,7 @@ struct AIChatPane: View {
                 Label("新しいトーク", systemImage: "square.and.pencil")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.themeSecondary)
             .accessibilityIdentifier("ai-chat-new-thread")
 
             Text("履歴")
@@ -740,9 +740,9 @@ struct AIChatPane: View {
                         .padding(.vertical, 9)
                         .background(
                             isSelected(thread)
-                            ? Color.accentColor.opacity(0.14)
+                            ? Theme.Palette.accent.opacity(0.14)
                             : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 10)
+                            in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
                         )
                     }
                     .buttonStyle(.plain)
@@ -807,7 +807,7 @@ struct AIChatPane: View {
             VStack(spacing: 14) {
                 Image(systemName: "trash")
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.Palette.danger)
 
                 VStack(spacing: 6) {
                     Text(L("このトークを削除しますか？"))
@@ -825,7 +825,7 @@ struct AIChatPane: View {
                         Text(L("いいえ"))
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.themeSecondary)
 
                     Button(role: .destructive) {
                         onDeleteThread(thread)
@@ -834,17 +834,16 @@ struct AIChatPane: View {
                         Text(L("はい"))
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
+                    .buttonStyle(.themeDanger)
                     .accessibilityIdentifier("ai-chat-delete-confirm")
                 }
             }
             .padding(18)
             .frame(maxWidth: 320)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous)
+                    .strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline)
             )
             .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
             .padding(24)
@@ -907,7 +906,7 @@ struct AIChatPane: View {
                 }
             }
             .frame(width: 104, height: 66)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
 
             Menu {
                 Picker(L("役割"), selection: roleBinding(for: attachment)) {
@@ -925,9 +924,9 @@ struct AIChatPane: View {
             }
         }
         .padding(6)
-        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 11))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 11)
+            RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
                 .stroke(attachment.proofRole == .none ? .clear : attachment.proofRole.tint, lineWidth: 1.5)
         }
         .overlay(alignment: .topTrailing) {
@@ -1023,7 +1022,7 @@ struct AIChatPane: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.seal.fill")
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Theme.Palette.accent)
                 Text("AI採点")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
@@ -1060,18 +1059,18 @@ struct AIChatPane: View {
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
-                    .background(canMark ? Color.accentColor : Color.secondary.opacity(0.3),
-                                in: RoundedRectangle(cornerRadius: 11))
+                    .background(canMark ? Theme.Palette.accent : Color.secondary.opacity(0.3),
+                                in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
                     .foregroundStyle(canMark ? .white : .secondary)
             }
             .buttonStyle(.plain)
             .disabled(!canMark)
         }
         .padding(12)
-        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 14))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
+                .stroke(Theme.Palette.accent.opacity(0.35), lineWidth: 1)
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
@@ -1106,8 +1105,8 @@ struct AIChatPane: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 90)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(tint.opacity(0.35), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous).stroke(tint.opacity(0.35), lineWidth: 1))
 
                     Button {
                         snippet.wrappedValue = nil
@@ -1131,11 +1130,11 @@ struct AIChatPane: View {
                 .textFieldStyle(.plain)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 9))
+                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(9)
-        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 11))
+        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
         .dropDestination(for: PageSnippet.self) { items, _ in
             guard let dropped = items.first else { return false }
             snippet.wrappedValue = dropped
@@ -1181,10 +1180,10 @@ struct AIChatBubble: View {
 
                 Text(message.text)
                     .font(.body)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.Palette.onAccent)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 18))
+                    .background(Theme.Palette.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
                     .frame(maxWidth: 520, alignment: .trailing)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)

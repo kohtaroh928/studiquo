@@ -43,6 +43,24 @@ struct SecondaryButtonStyle: ButtonStyle {
     }
 }
 
+/// Filled button for destructive confirmations (delete, discard).
+struct DangerButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Theme.Typography.bodyStrong)
+            .foregroundStyle(Theme.Palette.onAccent)
+            .padding(.horizontal, Theme.Spacing.lg)
+            .frame(minHeight: 44)
+            .background(
+                Theme.Palette.danger.opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4),
+                in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
+    }
+}
+
 /// Text-only button for low-emphasis actions.
 struct QuietButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
@@ -62,6 +80,10 @@ extension ButtonStyle where Self == PrimaryButtonStyle {
 
 extension ButtonStyle where Self == SecondaryButtonStyle {
     static var themeSecondary: SecondaryButtonStyle { SecondaryButtonStyle() }
+}
+
+extension ButtonStyle where Self == DangerButtonStyle {
+    static var themeDanger: DangerButtonStyle { DangerButtonStyle() }
 }
 
 extension ButtonStyle where Self == QuietButtonStyle {
