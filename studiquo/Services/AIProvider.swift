@@ -103,7 +103,7 @@ final class WorkerAIProvider: AIProvider {
     /// back nil — which is why the chat reported "未設定" even though the
     /// endpoint was right there in settings. The default is repeated here so
     /// both paths agree.
-    static let defaultEndpoint = "https://studiquo-mcp.studiquo-mcp-server.workers.dev"
+    static let defaultEndpoint = "https://api.studiquo.app"
 
     /// Read fresh each call so changing the endpoint in settings takes effect
     /// without restarting.
