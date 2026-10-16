@@ -3,7 +3,7 @@ import XCTest
 
 final class QRScanRoutingPolicyTests: XCTestCase {
     func testAcceptsTheCurrentHTTPSUniversalLinkFormat() {
-        XCTAssertTrue(QRScanRoutingPolicy.isInviteLink("https://studiquo-mcp.studiquo-mcp-server.workers.dev/invite?token=LINKTOKEN1"))
+        XCTAssertTrue(QRScanRoutingPolicy.isInviteLink("https://api.studiquo.app/invite?token=LINKTOKEN1"))
     }
 
     func testAcceptsTheOlderCustomSchemeFormat() {
