@@ -2641,7 +2641,7 @@ struct ContentView: View {
             }
             .navigationTitle("ライブラリ")
             .scrollContentBackground(.hidden)
-            .background(Color(red: 0.86, green: 0.93, blue: 1.0))
+            .background(Theme.Palette.surfaceSunken)
         } detail: {
             if let selectedNotebook, !selectedNotebook.isTrashed {
                 VStack(spacing: 0) {
@@ -4616,13 +4616,7 @@ struct ContentView: View {
         .searchable(text: $searchText, prompt: "ノートを検索")
         .navigationBarBackButtonHidden(horizontalSizeClass == .compact)
         .scrollContentBackground(.hidden)
-        .background(
-            LinearGradient(
-                colors: [Color(red: 0.94, green: 0.97, blue: 1.0), Color(red: 0.98, green: 0.95, blue: 0.91)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background(Theme.Palette.canvas)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarLeading) {
                 if horizontalSizeClass == .compact {
