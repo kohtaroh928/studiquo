@@ -51,7 +51,7 @@ struct PageTemplatePickerSheet: View {
                 .padding(.horizontal, 26)
                 .padding(.vertical, 20)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.Palette.canvas)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -141,7 +141,7 @@ struct NewNotebookSheet: View {
                 }
                 .padding(22)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.Palette.canvas)
             .navigationTitle("新規ノート")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

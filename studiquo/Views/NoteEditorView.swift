@@ -783,7 +783,7 @@ struct NoteEditorView: View {
             temporaryAIChatResizeHandles(in: size, panelSize: panelSize)
         }
         .frame(width: panelSize.width, height: panelSize.height)
-        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 18))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 18))
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
         .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
@@ -1358,7 +1358,7 @@ struct NoteEditorView: View {
     private func splitDragPlaceholder(for pane: ActivePane) -> some View {
         let label = splitDragPlaceholderLabel(for: pane)
         return ZStack {
-            Color(uiColor: .systemBackground)
+            Theme.Palette.canvas
             VStack(spacing: 10) {
                 Image(systemName: label.icon)
                     .font(.title2)
@@ -1715,7 +1715,7 @@ struct NoteEditorView: View {
                             )
                             .frame(width: geometry.size.width, height: geometry.size.height)
                     }
-                    .background(Color(uiColor: .systemBackground))
+                    .background(Theme.Palette.canvas)
                 }
             case .notebook(let notebook):
                 NotebookPaneView(
@@ -1740,7 +1740,7 @@ struct NoteEditorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemBackground))
+        .background(Theme.Palette.canvas)
         .accessibilityIdentifier("split-pane-\(pane == .primary ? "primary" : "secondary")-\(material.accessibilityKind)-\(material.title)")
     }
 
@@ -4643,7 +4643,7 @@ private struct ScientificCalculatorPanel: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(14)
-        .background(Color(.secondarySystemBackground))
+        .background(Theme.Palette.canvas)
     }
 
     private func keyButton(_ id: String, label: String) -> some View {
@@ -4683,7 +4683,7 @@ private struct ScientificCalculatorPanel: View {
         if id == "AC" || id == "⌫" { return .red.opacity(0.16) }
         if ["DRG", "MC", "M+", "Ran#"].contains(id) { return .purple.opacity(0.16) }
         if Self.functionLikeKeys.contains(id) { return .teal.opacity(0.18) }
-        return Color(.tertiarySystemFill)
+        return Theme.Palette.surfaceSunken
     }
 
     private func keyForeground(_ id: String) -> Color {
@@ -5437,7 +5437,7 @@ private struct WebSearchPane: View {
                     if let onTabDrop { TabDropShield(onTab: onTabDrop) }
                 }
         }
-        .background(Color(uiColor: .systemBackground))
+        .background(Theme.Palette.canvas)
     }
 }
 
@@ -5604,7 +5604,7 @@ private struct SnippetTrayModifier: ViewModifier {
         }
         .frame(width: 92, height: 62)
         .accessibilityIdentifier("snippet-thumbnail-\(snippet.sourceLabel)")
-        .background(Color(uiColor: .systemBackground))
+        .background(Theme.Palette.canvas)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(alignment: .bottomTrailing) {
             Text(snippet.sourceLabel)
@@ -5845,7 +5845,7 @@ private struct FlashcardPaneView: View {
                 FlashcardStudyContent(deck: deck, onHome: onHome, startsWithMistakeReview: startsWithMistakeReview)
             }
         }
-        .background(Color(.secondarySystemBackground))
+        .background(Theme.Palette.canvas)
     }
 
     private var creator: some View {
@@ -6032,7 +6032,7 @@ private struct NotebookPaneView: View {
 
             pageNavigator(pages: pages)
         }
-        .background(Color(.secondarySystemBackground))
+        .background(Theme.Palette.canvas)
     }
 
     private var notebookHasReadablePDFText: Bool {
@@ -6459,7 +6459,7 @@ private struct ContinuousPagesView: View {
                 }
             }
         }
-        .background(Color(.secondarySystemBackground))
+        .background(Theme.Palette.canvas)
     }
 
     private func updateTopPull(overscroll: CGFloat) {
@@ -6603,7 +6603,7 @@ private struct HorizontalPagesView: View {
                 withAnimation { scrollTarget = value }
             }
         }
-        .background(Color(.secondarySystemBackground))
+        .background(Theme.Palette.canvas)
     }
 }
 
@@ -6631,7 +6631,7 @@ private struct SpreadPagesView: View {
             .padding(10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color(.secondarySystemBackground))
+        .background(Theme.Palette.canvas)
     }
 
     private func halfSize(_ size: CGSize) -> CGSize {
@@ -6665,7 +6665,7 @@ private struct PageOverviewView: View {
             }
             .padding(18)
         }
-        .background(Color(.secondarySystemBackground))
+        .background(Theme.Palette.canvas)
     }
 }
 
@@ -6936,7 +6936,7 @@ struct PageCanvasContainer: View {
             let displaySize = fitSize(container: geometry.size, aspect: aspect)
 
             ZStack {
-                Color(.secondarySystemBackground)
+                Theme.Palette.canvas
                 ZStack {
                     ZStack {
                         if let backgroundImage {
