@@ -4928,7 +4928,7 @@ struct ContentView: View {
                             }
                         }
                     }
-                    .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 24))
+                    .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 24))
                     .padding()
                 }
             } else {
@@ -7035,7 +7035,7 @@ struct SwipeToTrashRow: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         if enabled {
             content
-                .background(Color(.systemBackground))
+                .background(Theme.Palette.canvas)
                 .offset(x: offset)
                 .background(alignment: .trailing) {
                     if offset < 0 {

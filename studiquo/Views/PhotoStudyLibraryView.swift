@@ -352,7 +352,7 @@ struct PhotoStudyLibraryView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color(uiColor: .systemBackground))
+        .background(Theme.Palette.canvas)
         .onAppear { model.reloadIfAllowed() }
         .accessibilityIdentifier("photo-study-library")
     }
@@ -432,7 +432,7 @@ struct PhotoStudySquareCell: View {
     let image: UIImage?
 
     var body: some View {
-        Color(uiColor: .secondarySystemBackground)
+        Theme.Palette.canvas
             .aspectRatio(1, contentMode: .fit)
             .overlay {
                 if let image {

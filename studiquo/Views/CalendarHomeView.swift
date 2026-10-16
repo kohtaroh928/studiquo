@@ -1571,7 +1571,7 @@ struct CalendarHomeView: View {
                 .listStyle(.plain)
             }
         }
-        .background(Color(.secondarySystemBackground))
+        .background(Theme.Palette.canvas)
     }
 
     private func color(for kind: CalendarEventKind) -> Color {

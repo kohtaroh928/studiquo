@@ -305,7 +305,7 @@ private struct EmailVerificationView: View {
 
 private extension View {
     func accountFieldStyle() -> some View {
-        padding(14).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+        padding(14).background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -379,7 +379,7 @@ struct PasskeyEnrollmentView: View {
 
     var body: some View {
         ZStack {
-            Color(.systemBackground).ignoresSafeArea()
+            Theme.Palette.canvas.ignoresSafeArea()
             VStack(spacing: 20) {
                 Image(systemName: "person.badge.key.fill")
                     .font(.system(size: 56))
