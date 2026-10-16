@@ -149,7 +149,7 @@ struct RichInlineText: View {
         case .code(let code):
             var attributed = AttributedString(code)
             attributed.font = .system(size: style.fontSize * 0.9, design: .monospaced)
-            attributed.backgroundColor = Color(.secondarySystemBackground)
+            attributed.backgroundColor = Theme.Palette.canvas
             result = Text(attributed)
         case .math(let latex):
             // `MainActor.assumeIsolated`: a view's body always runs on the main actor
@@ -206,7 +206,7 @@ private struct CodeBlockView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -223,7 +223,7 @@ private struct TableBlockView: View {
                         RichInlineText(spans: cell, style: style, bold: true)
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(.secondarySystemBackground))
+                            .background(Theme.Palette.canvas)
                     }
                 }
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in

@@ -461,7 +461,7 @@ struct AIChatPane: View {
                                     .font(.system(size: 17, weight: .semibold))
                                     .foregroundStyle(.primary)
                                     .frame(width: 34, height: 34)
-                                    .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                                    .background(Theme.Palette.surface, in: Circle())
                             }
                             .accessibilityLabel(L("ファイルやフォルダーを追加"))
 
@@ -470,7 +470,7 @@ struct AIChatPane: View {
                                 .textFieldStyle(.plain)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 11)
-                                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 18))
                                 .submitLabel(.send)
                                 .onSubmit(onSend)
                                 .accessibilityIdentifier("ai-chat-draft")
@@ -554,7 +554,7 @@ struct AIChatPane: View {
             }
             .disabled(renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .background(Color(uiColor: .systemBackground))
+        .background(Theme.Palette.canvas)
         .background(
             GeometryReader { proxy in
                 Color.clear.preference(key: AIChatPaneWidthKey.self, value: proxy.size.width.rounded())
@@ -738,7 +738,7 @@ struct AIChatPane: View {
         }
         .padding(12)
         .frame(width: 210)
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(Theme.Palette.canvas)
     }
 
     private var messages: [AIChatMessage] {
@@ -851,7 +851,7 @@ struct AIChatPane: View {
                 .font(.caption)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                .background(Theme.Palette.surface, in: Capsule())
             }
             .buttonStyle(.plain)
         }
@@ -887,7 +887,7 @@ struct AIChatPane: View {
             }
         }
         .padding(6)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 11))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 11))
         .overlay {
             RoundedRectangle(cornerRadius: 11)
                 .stroke(attachment.proofRole == .none ? .clear : attachment.proofRole.tint, lineWidth: 1.5)
@@ -899,7 +899,7 @@ struct AIChatPane: View {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
-                    .background(Circle().fill(Color(uiColor: .systemBackground)))
+                    .background(Circle().fill(Theme.Palette.surface))
             }
             .buttonStyle(.plain)
             .offset(x: 4, y: -4)
@@ -1030,7 +1030,7 @@ struct AIChatPane: View {
             .disabled(!canMark)
         }
         .padding(12)
-        .background(Color(uiColor: .tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 14))
         .overlay {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
@@ -1093,7 +1093,7 @@ struct AIChatPane: View {
                 .textFieldStyle(.plain)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 9))
+                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 9))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(9)

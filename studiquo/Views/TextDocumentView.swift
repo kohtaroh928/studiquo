@@ -207,7 +207,7 @@ struct TextDocumentView: View {
             Divider()
             page
         }
-        .background(Color(.secondarySystemBackground))
+        .background(Theme.Palette.canvas)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear(perform: load)
         .onDisappear { flushSave() }
@@ -1812,7 +1812,7 @@ private struct InsertTableSheet: View {
                         RoundedRectangle(cornerRadius: 3)
                             .fill(isHighlighted(row: row, column: column)
                                   ? Color.accentColor
-                                  : Color(.tertiarySystemFill))
+                                  : Theme.Palette.surfaceSunken)
                             .frame(width: cellSize, height: cellSize)
                     }
                 }
@@ -1919,7 +1919,7 @@ private struct DocumentTableOfContentsBlockView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -1954,7 +1954,7 @@ private struct EquationEditSheet: View {
                         .padding(18)
                 }
                 .frame(maxWidth: .infinity, minHeight: 100)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal)
                 keypad
                 Spacer(minLength: 0)
@@ -2024,7 +2024,7 @@ private struct EquationEditSheet: View {
                 Text(title).font(.caption2)
             }
             .frame(width: 60, height: 52)
-            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+            .background(Theme.Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
     }
@@ -2178,7 +2178,7 @@ private struct DocumentEquationBlockView: View {
         MathExpressionView(expression: MathExpressionParser.parse(block.equationSource), fontSize: 20)
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+            .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: 8))
             .contentShape(Rectangle())
             .onTapGesture {
                 draft = block.equationSource
@@ -2246,7 +2246,7 @@ private struct DocumentTableBlockView: View {
                                     width: cellWidth * CGFloat(cell.columnSpan) + CGFloat(cell.columnSpan - 1),
                                     alignment: .topLeading
                                 )
-                                .background(Color(.secondarySystemBackground))
+                                .background(Theme.Palette.canvas)
                                 .contextMenu {
                                     if cellIndex < cellCountInRow - 1 {
                                         Button("右のセルと結合") {
@@ -2340,7 +2340,7 @@ private struct CommentThreadSheet: View {
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(Capsule().fill(Color(.tertiarySystemFill)))
+                                    .background(Capsule().fill(Theme.Palette.surfaceSunken))
                             }
                             Spacer()
                             Text(comment.createdAt, style: .relative).font(.caption).foregroundStyle(.secondary)

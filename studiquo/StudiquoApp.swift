@@ -277,7 +277,7 @@ struct StudiquoApp: App {
             AccountGateView()
                 .modelContainer(modelContainer)
                 .environmentObject(subscriptionStore)
-                .tint(Color(red: 0.16, green: 0.33, blue: 0.63))
+                .tint(Theme.Palette.accent)
                 .environment(\.locale, resolvedLocale)
                 .overlay(alignment: .top) {
                     VStack(spacing: 8) {
@@ -426,7 +426,7 @@ private struct NoteSnippetFriendUITestRoot: View {
                     Spacer()
                 }
                 .padding(8)
-                .background(Color(.secondarySystemBackground))
+                .background(Theme.Palette.canvas)
             }
             NoteEditorView(
                 notebook: NoteSnippetFriendUITestStore.notebook,
@@ -1207,7 +1207,7 @@ private struct LaunchLoadingView: View {
         .padding(24)
         .frame(maxWidth: 520)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
+        .background(Theme.Palette.canvas)
     }
 }
 
