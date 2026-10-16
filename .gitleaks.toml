@@ -1,0 +1,11 @@
+# gitleaks の設定。標準ルールに、誤検知と確認済みのものだけを除外する。
+# 新しい除外を足すときは、なぜ秘密ではないかをここにコメントで残す。
+[extend]
+useDefault = true
+
+[allowlist]
+description = "秘密ではないと確認済みのもの"
+regexes = [
+  # 友達コードに使う文字の一覧(紛らわしい 0/O/1/I を除いた定数)。鍵ではない。
+  '''^ABCDEFGHJKLMNPQRSTUVWXYZ23456789$''',
+]
