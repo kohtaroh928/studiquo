@@ -4,11 +4,11 @@
 
 ## 今回の作業終了時点（2026-10-17）
 
-- 今回の依頼: ユーザーがRAG開発成果のcommit/pushを明示承認。既存のGitHub `codex/rag-wip`へ保存する。mainへのmerge、deploy、remote migrationは行わない。
+- 今回の依頼: ユーザーがRAG開発成果のcommit/pushを明示承認。既存のGitHub `codex/rag-wip`へ保存した。mainへのmerge、deploy、remote migrationは行わない。
 - 保存対象: RAG本体、OpenAI統合と必要なiPad依存、Doclingのローカル実装・private Worker・Linux recipe、合成評価fixture、テスト、設計・検証記録、引き継ぎ。ページ編集のRAG失効処理が使うNotePageHistoryと対応テストも依存として含める。
 - 除外: 生成cache・評価の生出力・エディタ設定・無関係な画面/navigation/folder rename変更。残るローカル変更は保持。部分stageしたContentView/StudiquoAppではworking treeとcommitの差を確認する。
-- 検証とpushの最終結果はgit logと既存Notionカードを確認する。この文書はcommit直前に更新するため、push成功の証明はremote branchのSHA一致とする。
-- 今回の再検証: mcp-server 1,723件、private Worker 28件、Python processor 60件、Docling tools 49件が成功。Swiftはstageしたソースの構文確認を実施。iOS実行テストは今回再実行しておらず、第5節の過去結果と区別する。有料API評価は実行していない。秘密情報検査・最終stageの独立レビュー後にpushする。
+- 保存結果: 実装commit `9ed298d` をGitHubの `codex/rag-wip`へpushし、remote SHA一致を確認。現在の引き継ぎ文書はその確認後の追記。最新tipはgit log/remote branchを確認する。
+- 今回の再検証: mcp-server 1,723件、private Worker 28件、Python processor 60件、Docling tools 49件が成功。Swiftはstageしたソースの構文確認を実施。iOS実行テストは今回再実行しておらず、第5節の過去結果と区別する。有料API評価は実行していない。秘密情報検査と601ファイルの独立レビューでpush阻害所見なし。検出8件は監査用SHA256ハッシュ6件と明示的な合成テストplaceholder2件の偽陽性。
 - 次の一手: 第6節のLinux実行確認と原PDF別同意/認可/admission/取消削除の呼出元。実Linux/Cloudflare、MCP/iPad自動処理接続は引き続き未完。既存評価の成功を回答精度改善や配備完了と混同しない。
 - 自動スケジュールはPAUSEDを維持。Codex/Claudeの同時編集を避ける。
 
