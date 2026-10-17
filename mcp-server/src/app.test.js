@@ -2770,6 +2770,41 @@ test("an account without a passkey is not asked for one", async () => {
   assert.notEqual(response.status, 403);
 });
 
+// ---- Library id: one opaque id per account, for the app's per-account library ----
+
+async function libraryID(env, token) {
+  const response = await worker.fetch(request("/api/account/library-id", { token }), env, noopCtx);
+  return { status: response.status, body: await response.json() };
+}
+
+test("the library id is an opaque hash, the same for every sign-in method of one account and different for another account", async () => {
+  const env = environment({ strictSessions: true });
+  const apple = freshToken("a");
+  const google = freshToken("b");
+  const other = freshToken("c");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(apple)}`, JSON.stringify({ sub: "apple:alice" }));
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(google)}`, JSON.stringify({ sub: "google:alice-g" }));
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(other)}`, JSON.stringify({ sub: "apple:bob" }));
+  // Google was linked to the Apple account: both resolve to the same account.
+  await env.STUDIQUO_DATA.put("identity-canonical:google:alice-g", "apple:alice");
+
+  const first = await libraryID(env, apple);
+  assert.equal(first.status, 200);
+  assert.match(first.body.libraryID, /^[a-f0-9]{64}$/);
+  assert.ok(!JSON.stringify(first.body).includes("alice"), "the identity itself is not in the answer");
+  assert.equal((await libraryID(env, google)).body.libraryID, first.body.libraryID, "the same person, whichever way they signed in");
+  assert.notEqual((await libraryID(env, other)).body.libraryID, first.body.libraryID);
+  assert.equal((await libraryID(env, apple)).body.libraryID, first.body.libraryID, "and stable");
+});
+
+test("the library id needs a signed-in session", async () => {
+  const env = environment({ strictSessions: true });
+  const nobody = await worker.fetch(request("/api/account/library-id"), env, noopCtx);
+  assert.equal(nobody.status, 401);
+  const forged = await worker.fetch(request("/api/account/library-id", { token: freshToken("z") }), env, noopCtx);
+  assert.equal(forged.status, 401);
+});
+
 // ---- ID token nonce: the token must have been made for THIS sign-in ---------------
 
 const nonceHash = nonce => createHash("sha256").update(nonce).digest("hex");

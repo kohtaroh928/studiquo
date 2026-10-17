@@ -8,7 +8,7 @@ import { getPlan, paywallEnabled } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys, revokePasskeysForAccount } from "./passkeys.js";
-import { gatePasskeyAccount, requireRecentPasskey } from "./passkey-policy.js";
+import { gatePasskeyAccount, requireRecentPasskey, resolveAccountKey } from "./passkey-policy.js";
 import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
 import { handleAppErrors } from "./app-errors.js";
@@ -405,6 +405,15 @@ export default {
         return handleSessionRefresh(request, env, token, session);
       }
       const accountHash = session ? await sha256Hex(`mcp-account:${session.sub}`) : null;
+      // A stable, opaque id for the person's account, so the app can keep one
+      // library per account on a device (it is the same whichever sign-in
+      // method is used, because it follows the account's canonical identity).
+      // Only a hash is returned: the identity itself never leaves the server.
+      if (url.pathname === "/api/account/library-id" && request.method === "GET") {
+        if (!session) return json({ error: "Sign in again." }, 401);
+        const canonical = await resolveAccountKey(env, session.sub);
+        return json({ libraryID: await sha256Hex(`library-account:${canonical}`) });
+      }
       if (url.pathname === "/api/account" && request.method === "DELETE") {
         if (!session) return json({ error: "Sign in again." }, 401);
         const needsPasskey = await requireRecentPasskey(env, token, session, "delete-account");
