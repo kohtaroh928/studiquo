@@ -248,6 +248,9 @@ async function shareWithBob(env) {
   env._values.set(`chat:user:${aliceKey}`, JSON.stringify({ key: aliceKey, name: "apple:alice", code: "ALICECODE1", friends: [{ code: "BOBCODE01", name: "apple:bob" }] }));
   const invited = await call(env, `/api/document/rooms/${ROOM}/invite`, { method: "POST", token: alice.token, body: { code: "BOBCODE01", role: "editor" } });
   assert.equal(invited.status, 200);
+  // The invitation seats Bob only once he accepts it.
+  const accepted = await call(env, `/api/document/rooms/${ROOM}/invite/accept`, { method: "POST", token: bob.token, body: {} });
+  assert.equal(accepted.status, 200);
   return { alice, bob, bobKey };
 }
 
@@ -305,6 +308,14 @@ test("deleting an invited friend removes them and their open proposals, not the 
   assert.equal((await roomState(env, bob.token)).status, 401, "the deleted account's own session is gone");
   assert.equal(env._values.has(roomMembershipKey(bobKey, ROOM)), false);
   assert.ok(env._values.has(roomMembershipKey(aliceKey, ROOM)), "the owner's entry stays");
+});
+
+test("deleting an account removes the invitations still waiting for its answer", async () => {
+  const env = environment();
+  const { bobKey } = await shareWithBob(env);
+  env._values.set(`doc-invite:${bobKey}:${"7".repeat(64)}`, JSON.stringify({ inviterKey: "x", role: "editor", createdAt: 1 }));
+  await deleteAccount(env, "apple:bob");
+  assert.equal([...env._values.keys()].some(key => key.startsWith(`doc-invite:${bobKey}:`)), false);
 });
 
 test("deletion that failed part-way finishes when it is run again", async () => {
