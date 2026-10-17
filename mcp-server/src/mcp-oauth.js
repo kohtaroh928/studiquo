@@ -103,6 +103,25 @@ function sameGeneration(grant, token) {
   return (grant?.nonce ?? null) === (token?.grantId ?? null);
 }
 
+// Tokens are listed per account (mcp:token-index:<account>:...) so deleting an
+// account does not have to read every token there is. Tokens issued before
+// this list existed are in no list; they all expire within REFRESH_TTL, so the
+// first time one was issued under the list is remembered, and only once that
+// is longer ago than REFRESH_TTL do account deletions stop scanning for them.
+export const TOKEN_INDEX_STARTED_KEY = "mcp:token-index-since";
+export const TOKEN_INDEX_COVERS_AFTER_MS = (REFRESH_TTL + 24 * 3600) * 1000;
+
+async function markTokenIndexStarted(env) {
+  if (!(await env.STUDIQUO_DATA.get(TOKEN_INDEX_STARTED_KEY))) {
+    await env.STUDIQUO_DATA.put(TOKEN_INDEX_STARTED_KEY, String(Date.now()));
+  }
+}
+
+export async function tokenIndexCoversEverything(env, now = Date.now()) {
+  const since = Number(await env.STUDIQUO_DATA.get(TOKEN_INDEX_STARTED_KEY));
+  return Number.isFinite(since) && since > 0 && now > since + TOKEN_INDEX_COVERS_AFTER_MS;
+}
+
 async function issueTokens(env, sub, clientId, scope, grantId) {
   const generation = grantId ? { grantId } : {};
   // Signed when a key is configured, so a made-up access token is refused before
@@ -110,9 +129,14 @@ async function issueTokens(env, sub, clientId, scope, grantId) {
   const accessToken = await signAccessToken(env, `mcp_${randomToken()}`);
   const accessHash = await sha256Hex(accessToken);
   await env.STUDIQUO_DATA.put(`mcp:access:${accessHash}`, JSON.stringify({ sub, clientId, scope, ...generation }), { expirationTtl: ACCESS_TTL });
+  const subHash = await sha256Hex(sub);
+  await env.STUDIQUO_DATA.put(`mcp:token-index:${subHash}:access:${accessHash}`, "1", { expirationTtl: ACCESS_TTL });
   const result = { access_token: accessToken, token_type: "Bearer", expires_in: ACCESS_TTL, scope };
   const refreshToken = `mcp_refresh_${randomToken()}`;
-  await env.STUDIQUO_DATA.put(`mcp:refresh:${await sha256Hex(refreshToken)}`, JSON.stringify({ sub, clientId, scope, ...generation }), { expirationTtl: REFRESH_TTL });
+  const refreshHash = await sha256Hex(refreshToken);
+  await env.STUDIQUO_DATA.put(`mcp:refresh:${refreshHash}`, JSON.stringify({ sub, clientId, scope, ...generation }), { expirationTtl: REFRESH_TTL });
+  await env.STUDIQUO_DATA.put(`mcp:token-index:${subHash}:refresh:${refreshHash}`, "1", { expirationTtl: REFRESH_TTL });
+  await markTokenIndexStarted(env);
   result.refresh_token = refreshToken;
   return result;
 }
