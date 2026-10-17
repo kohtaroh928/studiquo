@@ -68,6 +68,22 @@ final class GoogleSignInServiceTests: XCTestCase {
         XCTAssertEqual(token, "cloud-token")
     }
 
+    func testExchangeSendsTheRawNonceWhenThereIsOne() async throws {
+        URLProtocolStub.handler = { request in
+            let body = try Self.bodyData(from: request)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
+            XCTAssertEqual(json["idToken"], "google-id-token")
+            XCTAssertEqual(json["nonce"], "raw-nonce-value")
+            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil))
+            return (response, Data(#"{"token":"cloud-token"}"#.utf8))
+        }
+        let token = try await GoogleSignInService.shared.exchange(
+            idToken: "google-id-token", randomValue: "random-part", nonce: "raw-nonce-value",
+            endpoint: URL(string: "https://example.test/base")!, session: session()
+        )
+        XCTAssertEqual(token, "cloud-token")
+    }
+
     func testExchangeRejectsUnsuccessfulHTTPStatus() async {
         URLProtocolStub.handler = { request in
             let response = try XCTUnwrap(HTTPURLResponse(

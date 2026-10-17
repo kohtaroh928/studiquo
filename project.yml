@@ -9,7 +9,7 @@ options:
 packages:
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS
-    from: 7.1.0
+    from: 9.0.0
   RevenueCat:
     url: https://github.com/RevenueCat/purchases-ios
     from: 5.0.0
