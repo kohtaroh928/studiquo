@@ -235,7 +235,10 @@ AI機能では、操作に応じて次の情報が端末外へ出る。
 
 - 外部clientはOAuth 2.0 Authorization Code + PKCEで接続する。
 - redirect URIは事前登録値と完全一致させる。HTTPSを原則とし、HTTPはlocalhostだけに限定する。
-- pairing codeは12文字、認可待ちは10分、authorization codeは5分、access tokenは1時間、refresh tokenは90日とする。
+- 接続コードはアプリ(所有者の認証済みセッション+Passkey再認証)が発行し、AIアプリの認可画面に所有者が入力する。12文字、5分、1回だけ有効、アカウントごとに有効なのは最新の1つ。
+- コードは接続先の種類(claude/chatgpt/codex/other)に結びつく。種類はクライアントが登録したredirect URIのホストで判定し、名前は信用しない。種類が違うコードは受け付けず、消費もしない。
+- 認可画面の誤入力は画面ごとに5回、IPごとに10分で20回まで。超えた画面は閉じる。接続が完了したら所有者の端末へ通知する。
+- 認可待ちは10分、authorization codeは5分、access tokenは1時間、refresh tokenは90日とする。
 - scopeは`studiquo.read`と`studiquo.write`を分け、各toolで必要scopeを検証する。
 - iOSが明示的に同期したsnapshotだけをread対象とし、CloudKitや端末DBへ直接アクセスさせない。
 - writeは`MCP_INBOX`へ入れ、iOSが検証・取り込みする。外部clientからSwiftDataへ直接書かない。

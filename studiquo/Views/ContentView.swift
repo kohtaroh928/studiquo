@@ -68,9 +68,18 @@ private struct MCPInboxItem: Decodable, Identifiable {
 private struct MCPConnection: Decodable, Identifiable {
     let id: String
     let clientName: String
+    let kind: MCPConnectionKind?
+
+    private enum CodingKeys: String, CodingKey { case id, clientName, kind }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        clientName = try container.decode(String.self, forKey: .clientName)
+        // A connection made before kinds existed, or one of a kind this build
+        // does not know, simply has none.
+        kind = (try? container.decodeIfPresent(String.self, forKey: .kind)).flatMap(MCPConnectionKind.init(rawValue:))
+    }
 }
-private struct MCPPairingInfo: Decodable { let clientName: String?; let scope: String?; let error: String? }
-private struct MCPApprovalResult: Decodable { let approved: Bool }
 
 /// Not `private`: `aiReviewStudyNotifications(from:now:)` below builds these
 /// from `AIReviewItem`s and is exercised directly by `AIReviewNotificationFeedTests`.
@@ -2332,9 +2341,9 @@ struct ContentView: View {
     @State private var mcpCloudStatus = ""
     @State private var isMCPCloudSyncing = false
     @State private var isMCPCloudTokenVisible = false
-    @State private var mcpPairCode = ""
-    @State private var mcpPairClientName = ""
-    @State private var mcpPairScope = ""
+    @State private var mcpPairKind: MCPConnectionKind = .claude
+    @State private var mcpIssuedCode: MCPPairingCode?
+    @State private var mcpCodeExpiresAt: Date?
     @State private var mcpConnections: [MCPConnection] = []
     @State private var mcpInboxCount = 0
     @State private var mcpInboxError = ""
@@ -2968,28 +2977,46 @@ struct ContentView: View {
                         if isMCPCloudSyncing { ProgressView() }
                         if !mcpCloudStatus.isEmpty { Text(mcpCloudStatus).foregroundStyle(.secondary) }
                     } footer: {
-                        Text("資料の参照には先に同期が必要です。Claude・ChatGPTにはMCP URLを登録し、表示された接続コードを下で承認してください。接続トークンは他人へ共有しないでください。")
+                        Text("資料の参照には先に同期が必要です。Claude・ChatGPTなどにはMCP URLを登録し、下の「AIアプリを接続する」で発行したコードをAIアプリの画面に入力してください。接続トークンは他人へ共有しないでください。")
                     }
-                    Section("Claude・ChatGPTから接続") {
-                        TextField("接続コード", text: $mcpPairCode)
-                            .textInputAutocapitalization(.characters)
-                            .autocorrectionDisabled()
-                        Button("接続先を確認") { Task { await inspectMCPPairing() } }
-                            .disabled(mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        if !mcpPairClientName.isEmpty {
-                            Text("接続先：\(mcpPairClientName)")
-                            Text(mcpPairScope.contains("studiquo.write")
-                                 ? "このアプリに資料の参照と作成を許可します。"
-                                 : "このアプリに資料の参照を許可します。")
-                                .font(.footnote).foregroundStyle(.secondary)
-                            Button("この接続を許可") { Task { await approveMCPPairing() } }
+                    Section {
+                        Picker("接続するAIアプリ", selection: $mcpPairKind) {
+                            ForEach(MCPConnectionKind.allCases) { kind in Text(kind.displayName).tag(kind) }
                         }
+                        Button("コードを発行") { Task { await issueMCPPairingCode() } }
+                        if let issued = mcpIssuedCode, let expiresAt = mcpCodeExpiresAt {
+                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                                if context.date < expiresAt {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(issued.groupedCode)
+                                            .font(.system(.title, design: .monospaced).weight(.semibold))
+                                            .textSelection(.enabled)
+                                        Text("\(issued.kind.displayName)用・あと\(Int(expiresAt.timeIntervalSince(context.date)) / 60)分\(Int(expiresAt.timeIntervalSince(context.date)) % 60)秒")
+                                            .font(.footnote).foregroundStyle(.secondary)
+                                        Button("コードをコピー", systemImage: "doc.on.doc") {
+                                            UIPasteboard.general.string = issued.code
+                                        }
+                                    }
+                                } else {
+                                    Text("コードの期限が切れました。必要なら発行し直してください。").foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("AIアプリを接続する")
+                    } footer: {
+                        Text("発行したコードは、接続したいAIアプリの画面にご自身で入力してください。他の人から頼まれても、コードを教えたり入力したりしないでください。コードは5分間、1回だけ使えます。")
                     }
                     Section("接続済みのアプリ") {
                         if mcpConnections.isEmpty { Text("接続はありません").foregroundStyle(.secondary) }
                         ForEach(mcpConnections) { connection in
                             HStack {
-                                Text(connection.clientName)
+                                VStack(alignment: .leading) {
+                                    Text(connection.clientName)
+                                    if let kind = connection.kind {
+                                        Text(kind.displayName).font(.footnote).foregroundStyle(.secondary)
+                                    }
+                                }
                                 Spacer()
                                 Button("解除", role: .destructive) {
                                     Task { await disconnectMCP(connection) }
@@ -6426,44 +6453,24 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func inspectMCPPairing() async {
-        let code = mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !code.isEmpty else { return }
+    private func issueMCPPairingCode() async {
+        mcpIssuedCode = nil
+        mcpCodeExpiresAt = nil
         do {
-            let data = try await mcpRequest(path: "api/mcp/pair?code=\(code)")
-            let info = try JSONDecoder().decode(MCPPairingInfo.self, from: data)
-            mcpPairClientName = info.clientName ?? ""
-            mcpPairScope = info.scope ?? ""
-            mcpCloudStatus = info.clientName == nil ? L("接続コードを確認してください。") : ""
-        } catch {
-            mcpPairClientName = ""
-            mcpPairScope = ""
-            mcpCloudStatus = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func approveMCPPairing() async {
-        guard !mcpPairClientName.isEmpty else { return }
-        let code = mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        do {
-            let approval = try JSONEncoder().encode(["code": code])
+            let request = try JSONEncoder().encode(["kind": mcpPairKind.rawValue])
             let data: Data
             do {
-                data = try await mcpRequest(path: "api/mcp/pair", method: "POST", body: approval)
+                data = try await mcpRequest(path: "api/mcp/pairing-code", method: "POST", body: request)
             } catch PasskeyError.reauthRequired {
                 // Letting an app into the account is a step a stolen session
                 // must not be able to take alone.
                 try await PasskeyService.shared.reauthenticate(token: MCPCloudCredentials.loadOrCreateToken(), action: "approve-app")
-                data = try await mcpRequest(path: "api/mcp/pair", method: "POST", body: approval)
+                data = try await mcpRequest(path: "api/mcp/pairing-code", method: "POST", body: request)
             }
-            let result = try JSONDecoder().decode(MCPApprovalResult.self, from: data)
-            guard result.approved else { mcpCloudStatus = L("接続コードの期限が切れました。"); return }
-            mcpCloudStatus = L("接続を許可しました。")
-            mcpPairCode = ""
-            mcpPairClientName = ""
-            mcpPairScope = ""
-            await loadMCPConnections()
+            let issued = try JSONDecoder().decode(MCPPairingCode.self, from: data)
+            mcpIssuedCode = issued
+            mcpCodeExpiresAt = Date().addingTimeInterval(TimeInterval(issued.expiresInSeconds))
+            mcpCloudStatus = ""
         } catch { mcpCloudStatus = error.localizedDescription }
     }
 
