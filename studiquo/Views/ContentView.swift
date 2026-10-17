@@ -1739,13 +1739,8 @@ enum MCPCloudCredentials {
     /// should target: the user's custom endpoint from settings if they've set
     /// one and it's a valid https URL, otherwise the built-in default.
     static func configuredEndpoint() -> URL? {
-        var raw = (UserDefaults.standard.string(forKey: "mcpCloudEndpoint") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if raw.isEmpty { raw = WorkerAIProvider.defaultEndpoint }
-        raw = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: raw), url.scheme?.lowercased() == "https",
-              url.host?.isEmpty == false, url.user == nil, url.password == nil else { return nil }
-        return url
+        // A released build only talks to the production Worker (WorkerEndpointPolicy).
+        WorkerEndpointPolicy.resolve(UserDefaults.standard.string(forKey: "mcpCloudEndpoint"))
     }
 }
 
@@ -2913,9 +2908,13 @@ struct ContentView: View {
                                     .multilineTextAlignment(.trailing)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
+                                    // A released build always uses the production Worker.
+                                    .disabled(!WorkerEndpointPolicy.allowsCustomHosts)
+                                    .onAppear {
+                                        if !WorkerEndpointPolicy.allowsCustomHosts { mcpCloudEndpoint = WorkerAIProvider.defaultEndpoint }
+                                    }
                                 Button {
-                                    let endpoint = mcpCloudEndpoint
-                                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let endpoint = (WorkerEndpointPolicy.resolve(mcpCloudEndpoint)?.absoluteString ?? WorkerAIProvider.defaultEndpoint)
                                         .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                                     UIPasteboard.general.string = endpoint.hasSuffix("/mcp")
                                         ? endpoint
@@ -6536,12 +6535,7 @@ struct ContentView: View {
 
     @MainActor
     private func syncMCPCloud() async {
-        let rawEndpoint = mcpCloudEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let baseURL = URL(string: rawEndpoint),
-              baseURL.scheme?.lowercased() == "https",
-              baseURL.host?.isEmpty == false,
-              baseURL.user == nil, baseURL.password == nil,
+        guard let baseURL = WorkerEndpointPolicy.resolve(mcpCloudEndpoint),
               let snapshotData = makeMCPSnapshotData(),
               mcpCloudToken.count >= 32 else {
             mcpCloudStatus = L("URLまたはトークンを確認してください。")

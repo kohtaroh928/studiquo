@@ -108,13 +108,7 @@ final class WorkerAIProvider: AIProvider {
     /// Read fresh each call so changing the endpoint in settings takes effect
     /// without restarting.
     var baseURL: URL? {
-        var raw = (UserDefaults.standard.string(forKey: "mcpCloudEndpoint") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if raw.isEmpty { raw = Self.defaultEndpoint }
-        raw = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: raw), url.scheme?.lowercased() == "https",
-              url.host?.isEmpty == false, url.user == nil, url.password == nil else { return nil }
-        return url
+        WorkerEndpointPolicy.resolve(UserDefaults.standard.string(forKey: "mcpCloudEndpoint"))
     }
 
     var isConfigured: Bool { baseURL != nil }
