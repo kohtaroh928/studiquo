@@ -18,6 +18,18 @@ final class FriendProfileInteractionTests: XCTestCase {
 import UIKit
 
 final class LibraryDropInteractionTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        continueAfterFailure = false
+    }
+
+    override func tearDown() {
+        XCUIApplication(bundleIdentifier: "com.yabuko.studiquo").terminate()
+        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.appearance = .light
+        super.tearDown()
+    }
+
     func testFriendChatRemainsLightAndReadableWhenDeviceUsesDarkAppearance() {
         XCUIDevice.shared.appearance = .dark
         defer { XCUIDevice.shared.appearance = .light }
@@ -197,7 +209,7 @@ final class LibraryDropInteractionTests: XCTestCase {
             for title in ["Drag me", "Cards", "Document", "Y"] {
                 let source = app.descendants(matching: .any)["library-entry-\(title)"]
                 XCTAssertTrue(source.waitForExistence(timeout: 5), "\(title) is missing in \(mode)")
-                drag(source, to: folder)
+                drag(source, to: folder, pressDuration: mode == "column" ? 0.5 : 1)
                 XCTAssertFalse(source.waitForExistence(timeout: 2), "\(title) did not leave the root in \(mode)")
             }
 
@@ -223,7 +235,7 @@ final class LibraryDropInteractionTests: XCTestCase {
             XCTAssertEqual(hover.label, "hidden")
             XCTAssertTrue(source.exists)
             XCTAssertTrue(folder.exists)
-            drag(source, to: folder)
+            drag(source, to: folder, pressDuration: mode == "column" ? 0.5 : 1)
             XCTAssertEqual(hover.label, "shown", "The add cue never appeared in \(mode) view")
             app.terminate()
         }
@@ -394,26 +406,26 @@ final class LibraryDropInteractionTests: XCTestCase {
         app.launch()
 
         openLibraryEntry(titled: "Document", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["tab-document-Document"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons.matching(identifier: "tab-document-Document").matching(NSPredicate(format: "label == %@", "Document")).firstMatch.waitForExistence(timeout: 5))
         app.buttons["ホームへ戻る"].tap()
 
         openLibraryEntry(titled: "Y", in: app)
-        XCTAssertTrue(app.descendants(matching: .any)["tab-slide-Y"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons.matching(identifier: "tab-slide-Y").matching(NSPredicate(format: "label == %@", "Y")).firstMatch.waitForExistence(timeout: 5))
         app.buttons["ホームへ戻る"].tap()
 
         openNotebookRow(titled: "Drag me", in: app)
         openHorizontalSplit(in: app)
 
-        let documentTab = app.descendants(matching: .any)["tab-document-Document"]
-        let secondaryPane = app.descendants(matching: .any)["split-pane-secondary"]
+        let documentTab = app.buttons.matching(identifier: "tab-document-Document").matching(NSPredicate(format: "label == %@", "Document")).firstMatch
+        let secondaryPane = app.scrollViews["split-pane-secondary"].firstMatch
         XCTAssertTrue(documentTab.waitForExistence(timeout: 5))
         XCTAssertTrue(secondaryPane.waitForExistence(timeout: 5))
         drag(documentTab, to: secondaryPane)
 
-        let documentPane = app.descendants(matching: .any)["split-pane-secondary-document-Document"]
+        let documentPane = app.scrollViews["split-pane-secondary-document-Document"].firstMatch
         XCTAssertTrue(documentPane.waitForExistence(timeout: 5), "Dropping a document tab did not switch the secondary pane")
 
-        let slideTab = app.descendants(matching: .any)["tab-slide-Y"]
+        let slideTab = app.buttons.matching(identifier: "tab-slide-Y").matching(NSPredicate(format: "label == %@", "Y")).firstMatch
         XCTAssertTrue(slideTab.waitForExistence(timeout: 5))
         drag(slideTab, to: documentPane)
 
@@ -480,15 +492,16 @@ final class LibraryDropInteractionTests: XCTestCase {
         let horizontal = app.buttons["左右に2分割"]
         XCTAssertTrue(horizontal.waitForExistence(timeout: 5), "Horizontal split option did not appear")
         horizontal.tap()
-        let source = app.buttons["Drag me"]
+        XCTAssertTrue(app.navigationBars["分割して開くものを選択"].waitForExistence(timeout: 5))
+        let source = app.buttons["Drag me、表示中"]
         XCTAssertTrue(source.waitForExistence(timeout: 5), "Split source picker did not appear")
         source.tap()
     }
 
-    private func drag(_ source: XCUIElement, to target: XCUIElement) {
+    private func drag(_ source: XCUIElement, to target: XCUIElement, pressDuration: TimeInterval = 1) {
         let start = source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: 1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 1)
+        start.press(forDuration: pressDuration, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 1)
     }
 
     private func exerciseDrop(mode: String) {
@@ -740,7 +753,14 @@ private extension XCUIElement {
 }
 
 private func darkPixelCount(in elementFrame: CGRect, of image: UIImage, appFrame: CGRect) -> Int {
-    guard let cgImage = image.cgImage, appFrame.width > 0, appFrame.height > 0 else { return 0 }
+    // XCTest screenshots may retain UIImage orientation after rotation;
+    // draw first so the pixel coordinates match the accessibility frames.
+    let format = UIGraphicsImageRendererFormat.default()
+    format.scale = image.scale
+    let normalized = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+        image.draw(in: CGRect(origin: .zero, size: image.size))
+    }
+    guard let cgImage = normalized.cgImage, appFrame.width > 0, appFrame.height > 0 else { return 0 }
     let scaleX = CGFloat(cgImage.width) / appFrame.width
     let scaleY = CGFloat(cgImage.height) / appFrame.height
     let crop = CGRect(

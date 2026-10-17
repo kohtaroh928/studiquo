@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-17",
+  "scope": "optional structured chunk ingest, D1 metadata storage and authorized citation projection; local verification only",
+  "sourceHashes": {
+    "mcp-server/src/rag/structured-input.js": "146562f215b1277144d01c308672bc34b052a9c5c91344977d1b4319741139eb",
+    "mcp-server/src/rag/storage.js": "5cacc16e39671b31a8dfea2fa0cdf1698642d3472de48cd26f8690f8b2ce26ac",
+    "mcp-server/src/rag/retrieval.js": "06af72f4af143fbeb67f9e385c214b09e6a59398757c943bfb97d54d46b4a278",
+    "mcp-server/src/rag/index.js": "ec8bce52c3007567dadd480b6d2599b4609e4b43399145e11abb618fb92cd2f5",
+    "mcp-server/migrations/0009_rag_metadata.sql": "a0088de81ac16adc659d93ce488f5d5a209b870c8ddee3af8532f0fb18510f74",
+    "mcp-server/src/rag-metadata.test.js": "cfc9dc821baf5604386842a8ab243963aa41f1ba1958e480e2ce82dfff1d786e",
+    "mcp-server/src/rag-metadata-citations.test.js": "b8684e3f4737899e5ef731db88de392293d5ff81fe2463a4bcd4f96589dc8708",
+    "tools/docling/index_payload.py": "528ef1e790d4daac114edfc071301bb9499a42e43ca1cb8e7c6a87e273fe8737",
+    "tools/docling/test_index_payload.py": "4103e8e397ca6344c561465d0dfa8f79210588fb25e48e0bc1496af5a444dac1"
+  },
+  "tests": {
+    "workerAllPass": 1722,
+    "workerNewPass": 15,
+    "pythonPass": 49,
+    "fail": 0,
+    "skip": 0,
+    "independentPlanner": {
+      "workerPass": 13,
+      "pythonPass": 49
+    },
+    "independentSafetyFinal": {
+      "workerPass": 15,
+      "pythonPass": 49
+    },
+    "unresolvedHighMedium": 0
+  },
+  "localPipeline": {
+    "realDoclingSyntheticPages": 2,
+    "storedRecords": 8,
+    "tables": 2,
+    "citationMetadata": true,
+    "embeddingAndReranking": "local fixtures only"
+  },
+  "reviewFixes": [
+    "exporter and Worker token/heading bounds aligned",
+    "citation ranges explicitly describe stored chunks, not excerpts"
+  ],
+  "frozenEvaluatorSourceHashesUnchanged": 7,
+  "completedLiveManifestUnchanged": true,
+  "migrationRemoteApplied": false,
+  "deployed": false,
+  "ipadConnected": false,
+  "openaiAPICalls": 0,
+  "modelDownloads": 0,
+  "automation": "PAUSED",
+  "answerQualityImprovement": "not established",
+  "projectCopiesNeedingUpdate": [
+    "ARCHITECTURE.md",
+    "DATA_AND_MIGRATIONS.md",
+    "HYBRID_RAG.md"
+  ]
+}

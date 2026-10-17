@@ -50,7 +50,7 @@ enum HandwritingRecognitionService {
         return await recognizer(cgImage)
     }
 
-    private static func recognizeText(in cgImage: CGImage) async -> String {
+    static func recognizeText(in cgImage: CGImage) async -> String {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let request = VNRecognizeTextRequest { request, _ in

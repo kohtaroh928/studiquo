@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-16",
+  "scope": "offline stage0 original review grading and private control persistence",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/subject-role-review-artifact.mjs": "681af4a51b0f2f71b5a860743eb0a634736d751b0e7370fa6a70ae0231f516ab",
+    "mcp-server/scripts/rag-quality/subject-role-review-control.mjs": "e24c23144128b1cffcd7ab67d3fd0bdc2d089dcf9fb7548f546e52cc12c3f4bc",
+    "mcp-server/src/rag-subject-role-artifact.test.js": "6b01c6563b62ae27216133b343f4f1e0628cffdde8a73cfe6ec0e722a799b001",
+    "mcp-server/src/rag-subject-role-control.test.js": "d17a2086600b1a256920524a49c892ff256d561fc4f0a7eb96170969e33625d3",
+    "mcp-server/src/test-support/rag-subject-role-review.mjs": "b6561e1506ecce42c09b764992af0d5fe947e83178de17f54ef15e7715d44df7"
+  },
+  "stage": 0,
+  "arms": 2,
+  "stage1Authorized": false,
+  "transportAttached": false,
+  "reviewPersistenceAttached": true,
+  "tests": {
+    "target": {
+      "pass": 25,
+      "fail": 0
+    },
+    "allWorker": {
+      "pass": 1615,
+      "fail": 0,
+      "skip": 0
+    },
+    "independentCode": {
+      "pass": 25,
+      "fail": 0
+    },
+    "independentSafety": {
+      "pass": 23,
+      "fail": 0,
+      "note": "last two regression tests independently rechecked by code reviewer; implementation unchanged"
+    }
+  },
+  "resolvedDesignMedium": "inode replacement rejection is scoped to retained handle/read interval, not byte-identical private replacement between opens",
+  "unresolvedHighMedium": 0,
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "priorSourceSnapshotsUnchanged": true,
+  "priorFiveLocksRetained": true,
+  "priorStopJournalHashUnchanged": true,
+  "modelQualityImprovement": "not evaluated",
+  "humanGoldReview": "pending",
+  "releaseAccepted": false,
+  "limits": [
+    "offline stage0 only; comparison continue does not authorize stage1",
+    "no reviewer authentication or strict blindness",
+    "same-byte valid inode replacement between opens is outside guarantee",
+    "stop marker restoration on OS sync fault is best effort",
+    "no transport or three-point secret guard connected"
+  ],
+  "next": "new full four-stage 24-job offline journal with original-review revalidation and prefix counts, then new bounded-transport manifest and safety gates"
+}

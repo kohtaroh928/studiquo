@@ -1,0 +1,35 @@
+{
+  "syntheticOnly": true,
+  "method": "production handleAI + fixed local synthetic retrieval + real Gemini",
+  "model": "gemini-3.5-flash",
+  "caseIds": [
+    "learning-reservation-transfer",
+    "learning-circuit"
+  ],
+  "styleOrder": "explain_first",
+  "requested": 4,
+  "attempted": 1,
+  "dispatches": 1,
+  "stopped": true,
+  "calls": [
+    {
+      "httpStatus": 503,
+      "elapsedMs": 2248,
+      "model": "gemini-3.5-flash",
+      "modelVersion": null,
+      "usage": null,
+      "finishReasons": [],
+      "error": "upstream_http"
+    }
+  ],
+  "date": "2026-10-12",
+  "completedAnswers": 0,
+  "completedPairs": 0,
+  "manualReview": "not_evaluable",
+  "networkPreflight": {
+    "sandboxDNS": "failed",
+    "networkEnabledReachability": "confirmed",
+    "sandboxAttemptArtifact": "03",
+    "liveAttemptArtifact": "04"
+  }
+}

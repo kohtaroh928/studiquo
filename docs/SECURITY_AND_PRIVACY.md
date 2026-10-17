@@ -206,7 +206,7 @@ AI機能では、操作に応じて次の情報が端末外へ出る。
 - 翌日復習の元になった質問と文脈
 - 選択した添付資料の内容
 
-初期提供先はGoogleのみとする。旧モデル定義は内部に残るが、アプリの選択肢と公開API境界で制限し、direct Anthropic経路は拒否する。開いているノートは自動添付しない。
+回答生成の提供先はOpenAIのみとする。アプリと公開APIでLuna/Terra/Sol/Astraに制限し、旧Google同意では送信しない。openai-v1と13歳以上の年齢区分確認（teenは保護者同意）が必要。開いているノートは自動添付しない。
 
 ### 10.2 必須要件
 
@@ -473,3 +473,39 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 - `mcp-server/src/app-errors.js`: 自動診断の集約
 - `mcp-server/src/http.js`: body上限readerとsecurity headers
 - `mcp-server/src/legal.js`: 公開privacy policy
+
+## RAG自動登録のサーバー安全基盤（2026-10-11・ローカルのみ）
+
+新同意・資料資格・世代を`rag/control.js`、本文取得・送信の資格検証を`rag/authorization.js`に分離した。既存realSessionのcanonical userからaccountKeyを生成する。bodyのaccount IDやfolder IDを権限と扱わず、Vectorize account事前filterとD1 owner条件を維持する。
+
+同意epochとdocument generationはCASで更新する。locked/excluded/trashed/deletedは通常uploadでは解除できない。source IDを変えるだけでも管理情報なしでは登録できない。document IDそのものの所有権を証明する機能ではなく、本人のローカルPDFの申告管理に限定する。共有資料のサーバーACLは別途必要。
+
+D1の全登録guard、Embedding直前、検索・neighbor・rerank直前、context最終組立、OpenAIの各再試行直前で資格を確認する。出典と使用neighbor全体は単一SQL snapshotで照合し、失効・障害時は本文・出典を捨てて通常チャットへ戻る。本文・質問・title・Embedding入力・promptを新しいログへ出さない。
+
+物理削除失敗時は検索を先に拒否し、jobを残して既存の毎時cronとowner用cleanup APIで再試行する。旧writerのvector補償はID単位であり、成功した新writerの資料を失効させない。Worker強制終了の未確定writeは自動解決しないため、account削除完了と扱わない。本番前に監視・運用手順と実Vectorize mutationの順序を確認する。外部送信開始後の撤回で送信済み本文を回収できるとは約束しない。厳密な同時送信・撤回の直列化も今回の保証外。
+
+まだiPad自動送信は有効でない。公開前に、新しい包括同意UI、既存/将来PDFの対象範囲、保存と外部送信、停止と検索撤回と物理削除の違い、未確定削除の表示をプライバシーポリシーとアプリで説明する。既存rag-v1同意を包括同意として読み替えない。オフライン未同期ロック、複数端末、共有資料の保証は別段階。
+
+## 自動PDF索引の同意と停止（ローカル実装、未公開）
+
+従来の手動RAG consentから自動許可を推定しない。対象は現端末のPDF全体またはフォルダ、将来追加PDFは既定対象外。新UIで本文/OCR/タイトル/ページ番号のCloudflare保存と関連抜粋のOpenAI送信、以前のaccountで保存した資料の混在可能性、初回managed移行時の旧手動index失効を示す。locked/暗号化/ゴミ箱を抽出前と各await後に再検査し、通常の手書きNotebookは自動対象外。
+
+ロック・除外・削除・同意撤回は同期的に端末の資格を失効させ、別制御taskでサーバーへ反映する。通信不能中は検索を止める。別端末のlock/trashを古い未ロック端末が自動解除することを防ぎ、個別明示再許可だけ復元する。owner/Worker endpoint変更後の応答を採用しない。serverはBearer realSessionによるcanonical ownerで認可する。保存queueは本文なしmetadataのみ。
+
+公開プライバシーポリシー、ストア申告、実機同意画面とデータ削除運用の確認は公開前の残件。送信済みcontextは回収不可、オフライン別端末の操作はサーバーへ到達するまで即時失効できない。共有資料ACL、multi-device競合、未確定Vectorize writer journal解消は本番有効化前の別工程。
+
+### OpenAI/RAG統合の安全境界（2026-10-13、未公開）
+
+RAGの旧rag-v1はGemini送信の説明だったため、新しいrag-openai-v1を要求する。自動索引stateにprovider同意版を保存し、旧stateの自動再開を防ぐ。Cloudflare保存・OpenAI回答用抜粋送信の双方を明示する。OpenAI Responsesのinstructionsは各attempt直前のD1再認可結果から作る。store:falseは応答の後日取得用保存を無効にする設定であり、すべての保持や訓練利用の契約保証と同一視しない。本文、AI prompt、embedding入力、provider error本文はログへ出さない。AI同意・年齢確認・canonicalユーザー境界は公開APIで確認する。RAG disabled時は通常OpenAI経路を維持する。flagsはfalse、既存RAG migrationの改名・適用はしない。
+
+独立レビューとローカル回帰検証は完了（Worker1,184・iOS unit1,624・RAG UI3件成功）。旧提供先同意の新提供先への流用を拒否する。hashed利用量counterの40日窓は40日以内の物理削除保証ではなく、窓終了後同長のalarmで回収予定（初回takeから約80日後）。保持説明と即時削除対象の確認は公開前に残る。
+
+
+## iPadの構造索引・出典接続（2026-10-17、ローカル実装）
+
+原PDFのbytes hashでprepared Docling packageを検証し、新Notebookへ取り込む経路を実装。packageはNotebookのoptional属性に保持し、既存ロック暗号化に含める。編集時は失効し、manual/managed索引は現在の内容を使用する。Worker capabilityを確認し、構造batchを再分割せず送信する。出典metadataは会話保存と安全な補助表示へ接続し、source/page認可を維持する。精密bboxジャンプと原PDFの自動サーバー解析は未接続。iOS関連98成功・最終関連36成功（重複）、Worker1723成功。実機・iCloud移行・実資料精度の証明ではない。詳細: [RAG_IPAD_STRUCTURED_INTEGRATION.md](RAG_IPAD_STRUCTURED_INTEGRATION.md)。公開操作なし、自動スケジュールPAUSED。
+
+
+## Doclingのprivate Container実行境界（2026-10-17、未配備）
+
+独立services/docling-workerにprivate RPC/default flag false、単発jobの期限・取消・非本文状態・destroy後返却を実装。Container専用Python入口、ready前版/model検証、有限no-follow orphan cleanup、offline/nonroot Docker recipeとsample configを追加。既存MCP/iPadは未接続。JS28・Python関連60/既存49成功、型生成/bundleと合成2pageの実Nodefetch→Docling接続を確認（VMlifecycleはmock）。Docker不在でLinux build/実Cloudflare起動・隔離・停止は未検証。原PDF別同意/認可/admission・削除/予算・運用監視と依存監査を満たす前に有効化しない。DO stateはopaque ID/status/deadline/cleanup回数のみで本文なし、tombstone retentionは未設計。storage障害でpoison/alarm保存できない場合は運用停止確認が必要。詳細 [RAG_DOCLING_CONTAINER_BOUNDARY_REPORT.md](RAG_DOCLING_CONTAINER_BOUNDARY_REPORT.md)。公開操作・追加購入なし、自動スケジュールPAUSED。

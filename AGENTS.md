@@ -49,3 +49,11 @@
 - `mcp-server/`: Cloudflare Workers上のAPI・MCP・認証・AIプロキシ。
 - `project.yml`: XcodeGenの正本。変更後は再生成し、Apple Sign InとCloudKitのCapabilitiesを確認する。
 - アプリとサーバーは独立して更新されるため、API変更では新旧バージョン間の互換性を検討する。
+
+
+## RAG担当の交代
+
+- RAGをCodex/Claudeなど別担当から引き継ぐ際は、`docs/RAG_CLAUDE_HANDOFF.md`を最初に読み、実ファイル・ブランチ・作業中processと照合する。再開promptは`docs/RAG_RESUME_PROMPT.md`。
+- CodexはRAG関連の作業を終えて最終応答を返す前に、毎回`docs/RAG_CLAUDE_HANDOFF.md`を更新する。実装・調査・テスト・文書修正・途中中断も対象とし、更新のための確認は不要。重要な区切り、担当交代前、使用量制限が近いときにも更新する。
+- 更新内容は、最終更新・今回行ったこと・現在地・次の一手・今回の検証と未実施項目・未解決/実行中process・Notion記録。進捗がなければその事実と理由を記録する。古い成功結果を再実行済みと書かず、現在地の要約を最新に保つ。
+- 同じworktreeで複数担当を同時に編集させない。交代は自動スケジュール再開や公開操作の許可にはならない。

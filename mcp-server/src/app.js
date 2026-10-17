@@ -1,8 +1,9 @@
+import { handleRAG } from "./rag/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import * as z from "zod/v4";
 import { handleAI } from "./ai.js";
-import { aiPrivacyRejection } from "./ai-privacy.js";
+import { aiPrivacyRejection, ragPrivacyRejection } from "./ai-privacy.js";
 import { getPlan } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
@@ -430,7 +431,14 @@ export default {
         return json({ cleared: true });
       }
 
-      // AI proxy (Gemini/Anthropic/OpenAI, gated and rate-limited by plan).
+      if (url.pathname.startsWith("/api/rag/")) {
+        if (!session) return json({ error: "Sign in again." }, 401);
+        const privacyFailure = await ragPrivacyRejection(request, env, url.pathname);
+        if (privacyFailure) return privacyFailure;
+        return await handleRAG(url, request, env, session);
+      }
+
+      // OpenAI proxy, gated by consent/age and plan credits.
       // Deliberately not gated on a synced snapshot the way /mcp is — the AI
       // features work on a fresh install, before the user has ever run a
       // sync. The plan is resolved here, once, right before the one route

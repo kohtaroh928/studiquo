@@ -1,0 +1,313 @@
+{
+  "firstRun": {
+    "run": "461ee747a8bc",
+    "elapsedMs": 160030,
+    "results": [
+      {
+        "name": "invalid-token",
+        "ok": true
+      },
+      {
+        "name": "owner-index",
+        "ok": true,
+        "calls": [
+          {
+            "model": "@cf/baai/bge-m3",
+            "elapsedMs": 650,
+            "ok": true,
+            "dimensions": 1024
+          },
+          {
+            "model": "@cf/baai/bge-m3",
+            "elapsedMs": 223,
+            "ok": true,
+            "dimensions": 1024
+          }
+        ],
+        "result": {
+          "embedded": 2,
+          "skipped": 0,
+          "sourceId": "ev-461ee747a8bc-notes"
+        }
+      },
+      {
+        "name": "other-index",
+        "ok": true,
+        "calls": [
+          {
+            "model": "@cf/baai/bge-m3",
+            "elapsedMs": 226,
+            "ok": true,
+            "dimensions": 1024
+          }
+        ]
+      },
+      {
+        "name": "idempotency",
+        "ok": true,
+        "result": {
+          "embedded": 0,
+          "skipped": 2,
+          "sourceId": "ev-461ee747a8bc-notes"
+        }
+      },
+      {
+        "name": "indexed-rows",
+        "ok": true,
+        "vectorCount": 0
+      },
+      {
+        "name": "vector-query-ready",
+        "ok": true,
+        "calls": [
+          {
+            "model": "@cf/baai/bge-m3",
+            "elapsedMs": 301,
+            "ok": true,
+            "dimensions": 1024
+          },
+          {
+            "model": "@cf/baai/bge-reranker-base",
+            "elapsedMs": 307,
+            "ok": true
+          }
+        ],
+        "vectorCalls": [
+          {
+            "operation": "query",
+            "ownerFilter": true,
+            "scopeKeys": [
+              "accountKey"
+            ],
+            "matches": 1,
+            "elapsedMs": 500
+          }
+        ]
+      },
+      {
+        "name": "library",
+        "ok": false,
+        "elapsedMs": 1272,
+        "status": "grounded",
+        "citations": [
+          {
+            "sourceId": "ev-461ee747a8bc-notes",
+            "title": "Synthetic quality notebook",
+            "pageNumber": 1,
+            "chunkId": "6137ebdfb35cdb50062b3b04f8958769fea1250dd8c4c55fc707cbc88dbc3901"
+          },
+          {
+            "sourceId": "ev-461ee747a8bc-notes",
+            "title": "Synthetic quality notebook",
+            "pageNumber": 2,
+            "chunkId": "ca31cf67bc0f81551972c9af561da1223ff12412b606769c2dd966c8dcb6238b"
+          }
+        ],
+        "contextPresent": true,
+        "calls": [
+          {
+            "model": "@cf/baai/bge-m3",
+            "elapsedMs": 422,
+            "ok": true,
+            "dimensions": 1024
+          },
+          {
+            "model": "@cf/baai/bge-reranker-base",
+            "elapsedMs": 267,
+            "ok": true
+          }
+        ],
+        "vectorCalls": [
+          {
+            "operation": "query",
+            "ownerFilter": true,
+            "scopeKeys": [
+              "accountKey"
+            ],
+            "matches": 1,
+            "elapsedMs": 235
+          }
+        ]
+      },
+      {
+        "name": "cleanup-owner",
+        "ok": false,
+        "remainingRows": 0,
+        "remainingVectors": 2
+      },
+      {
+        "name": "cleanup-other",
+        "ok": true,
+        "remainingRows": 0,
+        "remainingVectors": 0
+      }
+    ]
+  },
+  "firstCleanupRecheck": [
+    {
+      "name": "owner",
+      "remainingRows": 0,
+      "remainingVectors": 0,
+      "ok": true
+    },
+    {
+      "name": "other",
+      "remainingRows": 0,
+      "remainingVectors": 0,
+      "ok": true
+    }
+  ],
+  "method": "local loopback Worker with remote staging D1/Vectorize/AI and local KV; no public deployment",
+  "limits": [
+    "No private customer PDF sent",
+    "No app.js consent/approval/expiry gates end-to-end",
+    "No iPad or 100-page live load validation"
+  ],
+  "productionChanged": false,
+  "secondRun": {
+    "run": "11180786ab05",
+    "elapsedMs": 182858,
+    "results": [
+      {
+        "name": "invalid-token",
+        "ok": true,
+        "infrastructureOK": true
+      },
+      {
+        "name": "owner-index",
+        "ok": true,
+        "infrastructureOK": true,
+        "calls": [
+          {
+            "model": "@cf/baai/bge-m3",
+            "elapsedMs": 828,
+            "ok": true,
+            "dimensions": 1024
+          },
+          {
+            "model": "@cf/baai/bge-m3",
+            "elapsedMs": 192,
+            "ok": true,
+            "dimensions": 1024
+          }
+        ],
+        "result": {
+          "embedded": 2,
+          "skipped": 0,
+          "sourceId": "ev-11180786ab05-notes"
+        }
+      },
+      {
+        "name": "other-index",
+        "ok": true,
+        "infrastructureOK": true,
+        "calls": [
+          {
+            "model": "@cf/baai/bge-m3",
+            "elapsedMs": 307,
+            "ok": true,
+            "dimensions": 1024
+          }
+        ]
+      },
+      {
+        "name": "idempotency",
+        "ok": true,
+        "infrastructureOK": true,
+        "result": {
+          "embedded": 0,
+          "skipped": 2,
+          "sourceId": "ev-11180786ab05-notes"
+        }
+      },
+      {
+        "name": "indexed-rows",
+        "ok": true,
+        "infrastructureOK": true,
+        "vectorCount": 0
+      },
+      {
+        "name": "vector-query-ready",
+        "ok": false,
+        "infrastructureOK": false,
+        "calls": [
+          {
+            "model": "@cf/baai/bge-m3",
+            "elapsedMs": 448,
+            "ok": true,
+            "dimensions": 1024
+          },
+          {
+            "model": "@cf/baai/bge-reranker-base",
+            "elapsedMs": 1348,
+            "ok": true
+          }
+        ],
+        "vectorCalls": [
+          {
+            "operation": "query",
+            "ownerFilter": true,
+            "scopeKeys": [
+              "accountKey"
+            ],
+            "matches": 0,
+            "elapsedMs": 203
+          }
+        ]
+      },
+      {
+        "name": "cleanup-owner",
+        "ok": false,
+        "remainingRows": 0,
+        "remainingVectors": 2
+      },
+      {
+        "name": "cleanup-other",
+        "ok": true,
+        "remainingRows": 0,
+        "remainingVectors": 0
+      }
+    ]
+  },
+  "step1": "complete",
+  "step2": "failed/incomplete",
+  "step3": "limited remeasurement; unresolved",
+  "secondCleanupRecheck": [
+    {
+      "name": "owner",
+      "remainingRows": 0,
+      "remainingVectors": 0,
+      "ok": true
+    },
+    {
+      "name": "other",
+      "remainingRows": 0,
+      "remainingVectors": 0,
+      "ok": true
+    }
+  ],
+  "finalD1Counts": [
+    [
+      {
+        "chunks": 0
+      }
+    ],
+    [
+      {
+        "fts": 0
+      }
+    ],
+    [
+      {
+        "pages": 0
+      }
+    ],
+    [
+      {
+        "sources": 0
+      }
+    ]
+  ],
+  "localSecretsAndSessionStateRemoved": true,
+  "finalVectorizeCount": 0
+}

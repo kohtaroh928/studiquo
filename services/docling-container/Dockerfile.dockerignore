@@ -1,0 +1,24 @@
+# Deny all other source, .git, .env, credentials, documents and learning content.
+**
+!services/
+!services/docling-container/
+!services/docling-container/Dockerfile
+!services/docling-container/Dockerfile.dockerignore
+!services/docling-container/provisioned/
+!services/docling-container/provisioned/requirements-linux.lock.txt
+!services/docling-container/provisioned/wheels/
+!services/docling-container/provisioned/wheels/*.whl
+!services/docling-container/provisioned/models/
+!services/docling-container/provisioned/models/**
+!services/docling-processor/
+!services/docling-processor/runner.py
+!services/docling-processor/validation.py
+!services/docling-processor/child_entry.py
+!services/docling-processor/private_http.py
+!services/docling-processor/container_entry.py
+!tools/
+!tools/docling/
+!tools/docling/extract_pdf.py
+!tools/docling/index_payload.py
+!tools/docling/structured_chunking.py
+!tools/docling/metadata.py

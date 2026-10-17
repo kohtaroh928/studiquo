@@ -19,6 +19,7 @@ final class SettingsFormSharedTests: XCTestCase {
     }
 
     override func tearDown() {
+        app?.terminate()
         XCUIDevice.shared.orientation = .portrait
         super.tearDown()
     }
@@ -53,7 +54,7 @@ final class SettingsFormSharedTests: XCTestCase {
     }
 
     private func element(_ label: String) -> XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
+        (scrollableList() ?? app).descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
     }
 
     /// Brings a row into view. Rows are built lazily — a row exists only while
@@ -80,6 +81,14 @@ final class SettingsFormSharedTests: XCTestCase {
     private func scrollableList() -> XCUIElement? {
         let lists = (app.collectionViews.allElementsBoundByIndex + app.tables.allElementsBoundByIndex)
             .filter { $0.exists && $0.frame.height > 200 }
+        let settingsBar = app.navigationBars["設定"]
+        if settingsBar.exists {
+            let sheetBounds = settingsBar.frame
+            let sheetLists = lists.filter {
+                $0.frame.minX >= sheetBounds.minX - 20 && $0.frame.maxX <= sheetBounds.maxX + 20
+            }
+            if let sheet = sheetLists.min(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) { return sheet }
+        }
         return lists.min { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
     }
 
@@ -94,8 +103,15 @@ final class SettingsFormSharedTests: XCTestCase {
     /// row there is reported hittable, but a tap lands on the bar and never
     /// reaches the row.
     private func isReachable(_ row: XCUIElement) -> Bool {
-        let barBottom = app.navigationBars.allElementsBoundByIndex.map { $0.frame.maxY }.max() ?? 0
-        return row.exists && row.isHittable && row.frame.minY >= barBottom + 4
+        let settingsBar = app.navigationBars["設定"]
+        let moreBar = app.navigationBars["その他"]
+        let barBottom = settingsBar.exists ? settingsBar.frame.maxY : (moreBar.exists ? moreBar.frame.maxY : 0)
+        guard row.exists && row.isHittable else { return false }
+        let visibleBounds = (scrollableList()?.frame ?? app.frame).intersection(app.frame)
+        // A partially clipped switch can report hittable even when its
+        // center lies below the sheet and a tap dismisses the sheet.
+        return row.frame.minY >= max(barBottom, visibleBounds.minY) + 4
+            && row.frame.maxY <= visibleBounds.maxY - 4
     }
 
     /// Settings rows are built lazily, so a lower one has to be scrolled to.
@@ -133,12 +149,12 @@ final class SettingsFormSharedTests: XCTestCase {
     // MARK: 2. Settings changed in one place show in the other (both ways)
 
     private func toggle(_ label: String) -> XCUIElement {
-        app.switches[label]
+        (scrollableList() ?? app).switches[label]
     }
 
     private func flip(_ label: String) {
         let sw = scrollTo(toggle(label))
-        sw.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        sw.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
     }
 
     private func value(_ label: String) -> String {

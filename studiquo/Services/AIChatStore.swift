@@ -307,6 +307,8 @@ final class AIChatStore: ObservableObject {
         return thread
     }
 
+    @Published var ragScope: RAGSearchScope?
+
     // MARK: Sending
 
     /// Sends the draft (or `text`) to the selected conversation, creating one
@@ -375,6 +377,8 @@ final class AIChatStore: ObservableObject {
         let images = sentAttachments.compactMap(\.image)
         let expectsImages = sentAttachments.contains { $0.kind == .snippet || $0.kind == .camera }
 
+        let ragOwner = RAGLibrarySyncService.defaultPartition()
+        let explicitScope = ragScope
         respondingThreadIDs.insert(threadKey)
         tasks[threadKey] = Task { @MainActor in
             defer {
@@ -382,12 +386,38 @@ final class AIChatStore: ObservableObject {
                 tasks[threadKey] = nil
             }
             do {
+                let allNotebooks = (try? modelContext.fetch(FetchDescriptor<Notebook>())) ?? []
+                let service = RAGLibrarySyncService.shared
+                var safeScope: RAGSearchScope? = nil
+                // Server state is checked before choosing manual versus managed
+                // search. A different account's local consent is never inferred.
+                let locallyEnabled = service.canSearch // Refresh account/endpoint partition without a network request.
+                if explicitScope != nil || locallyEnabled || service.isManaged {
+                    await service.refreshAvailability()
+                    guard ragOwner == RAGLibrarySyncService.defaultPartition() else { throw RAGIndexingService.IndexError.accountChanged }
+                    let requestedScope = RAGConsent.isGranted ? (explicitScope ?? (service.enabled ? RAGSearchScope(kind: .library) : nil)) : nil
+                    if service.controlChecked && service.isManaged {
+                        safeScope = await RAGLibrarySyncService.shared.safeScope(requestedScope, notebooks: allNotebooks)
+                    } else if service.controlChecked { safeScope = await RAGDeletionQueue.safeScope(requestedScope) }
+                }
+                guard ragOwner == RAGLibrarySyncService.defaultPartition() else { throw RAGIndexingService.IndexError.accountChanged }
                 try await AI.provider.streamChat(
                     turns: history,
                     noteContext: context,
                     images: images,
-                    expectsImages: expectsImages
+                    expectsImages: expectsImages,
+                    ragScope: safeScope,
+                    onCitations: { if RAGConsent.isGranted && ragOwner == RAGLibrarySyncService.defaultPartition() {
+                        if RAGLibrarySyncService.shared.isManaged {
+                            if RAGLibrarySyncService.shared.canSearch {
+                                let currentNotebooks = (try? self.modelContext.fetch(FetchDescriptor<Notebook>())) ?? []
+                                reply.ragCitations = $0.filter { RAGLibrarySyncService.shared.resolve($0, notebooks: currentNotebooks) != nil }
+                            }
+                        } else { reply.ragCitations = $0 }
+                    } },
+                    onRAGStatus: { if RAGConsent.isGranted && ragOwner == RAGLibrarySyncService.defaultPartition() && (!RAGLibrarySyncService.shared.isManaged || RAGLibrarySyncService.shared.canSearch) { reply.ragStatus = $0 } }
                 ) { delta in
+                    guard ragOwner == RAGLibrarySyncService.defaultPartition() else { return }
                     reply.text += delta
                 }
                 if reply.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

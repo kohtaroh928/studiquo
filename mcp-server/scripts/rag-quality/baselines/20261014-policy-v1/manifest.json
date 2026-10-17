@@ -1,0 +1,195 @@
+{
+  "version": 1,
+  "id": "20261014-policy-v1",
+  "date": "2026-10-14",
+  "syntheticOnly": true,
+  "externalCaptureCalls": 0,
+  "method": "real handleAI with local synthetic D1/vector/AI and mocked OpenAI; snapshot is not live Cloudflare or model quality evidence",
+  "frozenPolicyHash": "dcefcc9016025af1d994bbd496952fad94da1f80ccf3cba58995be7accc94ec4",
+  "contextsHash": "911b5a1952ef7b0f930dda210fe94e19506783c94cb792a0a928e9d24dd2223e",
+  "rubric": {
+    "path": "docs/RAG_EVALUATION_RUBRIC_V2.md",
+    "hash": "661f4ec7e9666a957cde224974bd4f657c3dfc07413f5b433a5d7d0ce7fcdcd9",
+    "humanGoldReview": "pending"
+  },
+  "evaluation": {
+    "model": "gpt-6-luna",
+    "reasoning": "medium",
+    "serviceTier": "default",
+    "store": false,
+    "stream": true,
+    "productionOutputTokens": 8192,
+    "answerLayerOutputTokens": 2048,
+    "developmentQuestions": 30,
+    "reservedQuestions": 20,
+    "reservedSentByThisCapture": 0
+  },
+  "sources": [
+    {
+      "path": "src/rag/answer-policy.js",
+      "hash": "dcefcc9016025af1d994bbd496952fad94da1f80ccf3cba58995be7accc94ec4"
+    },
+    {
+      "path": "src/ai.js",
+      "hash": "41ed1ef598f0e1e17b3ac0c0f9004c94a3997e5f91a93d79ebc413fd4c288d1a"
+    },
+    {
+      "path": "src/openai.js",
+      "hash": "fa8039983b57f32a5987eeb1a5c17b77525dfa29448dc9b2e000b45cb3023457"
+    },
+    {
+      "path": "src/rag/retrieval.js",
+      "hash": "ed8a8e848d6f319d2fa6e6c3a130789f764de5a322bbe1eff2db4900d44353a7"
+    },
+    {
+      "path": "src/rag/answerability.js",
+      "hash": "dabc97f3e3edfba5fe746d2818e8ee7e55b90c2ef149b0ad041b7bf7a40e63dc"
+    },
+    {
+      "path": "src/rag/query.js",
+      "hash": "7c65c6be824584c5f0822fd895e3b1a928e7b73f3f938baa305b9ed04037047a"
+    },
+    {
+      "path": "src/rag/comparison-evidence.js",
+      "hash": "69166d44e6da6e09c83e4f47419ce6710780dc414350a340f716df8d8748dbbb"
+    },
+    {
+      "path": "scripts/rag-quality/evaluation-50.json",
+      "hash": "684b71c0905d4d16f54b5308bc955c0014c9a4ab8cab170508663fca744743e3"
+    },
+    {
+      "path": "scripts/rag-quality/evaluation-50.mjs",
+      "hash": "48a4d812eaaec88f331ad0f75a8d126d6fd16946f30a3f003e772bbec6652a54"
+    },
+    {
+      "path": "scripts/rag-quality/evaluation-50-live.mjs",
+      "hash": "9874d86d4c93d0e858e326676eb15aa1c7f25a8deded661c83c604a86a20b4a9"
+    },
+    {
+      "path": "scripts/rag-quality/evaluation-50-production.mjs",
+      "hash": "6e564a4fdddfaf029b3c723e09b1106794cc33d5520c39e1543b3a6dfac8cf75"
+    },
+    {
+      "path": "scripts/rag-quality/comparison-boundary-fixture.mjs",
+      "hash": "7a31f41d9b623eefad82e0f57e41ea07494359e97bd9a02f6015837f61a6a39f"
+    }
+  ],
+  "policies": [
+    {
+      "status": "grounded",
+      "style": "source_only",
+      "hash": "48b08ff89e95c004ba2dc86fc0e672b1aeb445078e4fe187674225dc749f75ea",
+      "bytes": 14258
+    },
+    {
+      "status": "grounded",
+      "style": "explain",
+      "hash": "d39c0647a3255d907847bcaab795c64d3626aa568eff0602534b318527920684",
+      "bytes": 14910
+    },
+    {
+      "status": "partial",
+      "style": "source_only",
+      "hash": "6ced18e91217066e031456bb7a2b748478be56393f355da39e11b68fb01d9f92",
+      "bytes": 15378
+    },
+    {
+      "status": "partial",
+      "style": "explain",
+      "hash": "e5b28a6dfe92f7a6ed056c366581bd99d53259274d1b3ab0135e9348ecb6cd93",
+      "bytes": 16030
+    },
+    {
+      "status": "insufficient",
+      "style": "source_only",
+      "hash": "ccda9dc9605e53e214d0411c2884a377e72a2b7df9f857e054bb65529a0ae841",
+      "bytes": 1422
+    },
+    {
+      "status": "insufficient",
+      "style": "explain",
+      "hash": "ccda9dc9605e53e214d0411c2884a377e72a2b7df9f857e054bb65529a0ae841",
+      "bytes": 1422
+    },
+    {
+      "status": "clarification",
+      "style": "source_only",
+      "hash": "4224f013c30997800d84739f441eeb1b944fdfe84c54f7b30a97dbedad880e3b",
+      "bytes": 263
+    },
+    {
+      "status": "clarification",
+      "style": "explain",
+      "hash": "4224f013c30997800d84739f441eeb1b944fdfe84c54f7b30a97dbedad880e3b",
+      "bytes": 263
+    },
+    {
+      "status": "disabled",
+      "style": "source_only",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "status": "disabled",
+      "style": "explain",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "status": "fallback",
+      "style": "source_only",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "status": "fallback",
+      "style": "explain",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "status": "no_hits",
+      "style": "source_only",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "status": "no_hits",
+      "style": "explain",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "status": "unknown",
+      "style": "source_only",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "status": "unknown",
+      "style": "explain",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  ],
+  "priorResults": [
+    {
+      "path": "docs/RAG_COMPARISON_STAGES_RESULTS.json",
+      "hash": "cef27dfe6c7697729477f3c4b1265df75eb58a25ec8bd6e477b269569b4037e2"
+    },
+    {
+      "path": "docs/RAG_COMPARISON_BOUNDARY_RESULTS.json",
+      "hash": "cfbf8054e7e4abd01f6521b41394143a79ab1bd889ea2ee1671efaf6abcc6307"
+    },
+    {
+      "path": "docs/RAG_PRODUCTION_API_RECHECK_RESULTS.json",
+      "hash": "c5e38ace2d4226a61bbca02709ad2a27145a502889f5d679af7f75734fce0bb1"
+    }
+  ],
+  "notes": [
+    "Hashes detect accidental changes; not a tamper-proof signature.",
+    "No keys, gold, rubric text or actual learning material in request snapshots.",
+    "Frozen citations identify the synthetic snapshot only; never use these IDs to bypass production authorization.",
+    "Do not overwrite this baseline when changing candidate policy; create a separately named baseline after review."
+  ]
+}

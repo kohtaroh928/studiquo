@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-16",
+  "scope": "offline clarification-decision design only",
+  "designFile": "docs/RAG_CLARIFICATION_DECISION_DESIGN.md",
+  "designHash": "2f8fae220e0039c67c7d3ea4b64391cb95c854abf49d6a3927efc20013e8dfee",
+  "plannedMatrixRows": 22,
+  "matrixTestsExecuted": 0,
+  "codeChanges": 0,
+  "apiCalls": 0,
+  "keyReads": 0,
+  "testsRerun": false,
+  "priorWorkerTests": {
+    "pass": 1659,
+    "fail": 0,
+    "skip": 0
+  },
+  "independentPlannerReview": "complete",
+  "resolvedMedium": "separate resolved page-wide target from content-inspection action; preserve unresolved singular referent as a different target state",
+  "unresolvedHighMedium": 0,
+  "frozenSourcesAndCompletedRunUnchanged": true,
+  "humanGoldReview": "pending",
+  "modelQualityImprovement": "not evaluated",
+  "releaseAccepted": false,
+  "next": "fix minimal field enums, phase/target/evidence/action combinations and task-level partial handling; then separate synthetic fixtures/oracle and independent annotation review before pure evaluator or new model request"
+}

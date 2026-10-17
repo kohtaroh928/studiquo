@@ -113,6 +113,9 @@ Folder移行と一覧metadata再構築には`try? context.save()`があり、保
 | 0003 | `0003_announcements.sql` | `announcements`、`announcement_translations` |
 | 0004 | `0004_announcement_push.sql` | お知らせのpush状態・cursor・集計・日時の列追加 |
 | 0005 | `0005_privacy_retention.sql` | 報告の`account_key`、診断関連の`last_seen_at`、削除済み顧客hashテーブルとindex |
+| 0006 | `0006_rag.sql` | RAGのaccount/source/page/chunk、FTS5と同期trigger |
+| 0007 | `0007_rag_context.sql` | 構造・見出しcontext、Embedding hashと索引version |
+| 0008 | `0008_rag_control.sql` | 永続同意epoch、安定document資格・generation、削除job・未確定vector書込journal。2026-10-11ローカル検証のみ、remote未適用 |
 
 D1の主要な日時列はUnix epochの**ミリ秒**。一方、Worker tokenの発行時刻は秒、Swiftの標準Codable `Date`は別の基準である。境界で明示的に変換し、数字だけを無条件にコピーしない。
 
@@ -238,3 +241,36 @@ backup場所・復元試験・RPO／RTO:
 6. CloudKit Productionスキーマ変更の運用記録と、新旧実機の同期確認。
 
 未整備事項を、実装済み・公開済みとして扱わない。対応時は関連テストとこの文書を同じ変更で更新する。
+
+## RAG自動索引の安全基盤（2026-10-11）
+
+0008は0006/0007の後に追加する。既存migrationの書き換えは行わない。適用前の旧資料は旧経路で扱えるが、管理APIは503で閉じる。一部管理tableだけ欠ける場合は未管理へ降格せず閉じる。remote適用、Worker更新、iPad更新は別工程。
+
+`rag_controls`の存在するaccountは永続的にmanagedとなり、旧manual uploadへ戻らない。epoch/generationの期待値を条件に更新し、世代ごとにWorkerがsource IDを発行する。物理source IDと端末の安定document IDは異なる。iPad側は対応表を保持して出典を開く必要がある。hashは同一性、generationは更新順序を表す。
+
+削除は資格失効→Vectorize削除受付→chunks/FTS/pagesの順。外部upsert前にIDとwriter leaseをjournalへ記録する。強制終了で`settled=0`が残ればjournalを自動破棄せず、削除再試行とaccount削除待ちを継続する。運用解消・監視と実Vectorize mutation順序の確認は有効化前の必須残件。
+
+rollbackでは0008を残し、資格guardを持つWorkerへ戻す。管理導入前の任意の旧Workerやtable削除へのrollbackは禁止。`RAG_AUTO_INDEX_ENABLED=false`は新しい同意付与・登録受付を止めるが、資格失効・削除・定期cleanupを止めない。
+
+## iPad自動索引の保存形式（未公開）
+
+Notebookにdefault空文字のragDocumentIDを追加し、既存資料は使用前にUUIDを割り当てModelContext.saveする。従来ragIDの削除時ローテーションから独立する。CloudKit Production schema更新と旧永続storeの実機移行は未検証で、有効化前に必要。
+
+UserDefaultsのragManaged-<account hash + Worker endpoint hash>に同意epoch、許可範囲、資料ID、fingerprint/hash、sourceId/generation、登録cursor、資格失効待ち、検索反映待ちと再試行deadlineを保存する。本文、OCR、画像、タイトル、tokenは保存しない。OCR結果は再開時に再抽出し同一hashだけ続きを送信する。初回managed同意は従来手動indexを失効させるため取り消しで旧方式へ戻らない。端末ストアに別account由来資料がある可能性は選択同意UIで開示する。
+
+この工程で新しいD1 migrationは追加しない。既存0006/0007/0008を前提とする。失効pendingは再許可前に反映し、サーバーlocked/trashed/excludedを解除するには利用者の個別再許可を必要とする。rollbackはflags OFFで登録停止し、失効・削除APIを保持する。
+
+
+### RAG構造metadata用追加migration（2026-10-17、未配備）
+
+`mcp-server/migrations/0009_rag_metadata.sql`はrag_chunks.metadata_json TEXTを追加する。既存行はNULLで読み取り可能。新形式登録のみ列を必須とし、未適用DBへのlegacy入力は継続する。共通文書情報もchunk列内に保持し、既存source/account削除と共に除去する。位置情報だけの変更でも新lease chunkIDを発行、folder cloneはmetadataも複製する。source共通行へ新たな本文/metadataを残さない。remote migrationは未適用。公開順・停止・旧Workerへの切戻し条件は [RAG_STRUCTURED_INGESTION.md](RAG_STRUCTURED_INGESTION.md)。
+
+
+## iPadの構造索引・出典接続（2026-10-17、ローカル実装）
+
+原PDFのbytes hashでprepared Docling packageを検証し、新Notebookへ取り込む経路を実装。packageはNotebookのoptional属性に保持し、既存ロック暗号化に含める。編集時は失効し、manual/managed索引は現在の内容を使用する。Worker capabilityを確認し、構造batchを再分割せず送信する。出典metadataは会話保存と安全な補助表示へ接続し、source/page認可を維持する。精密bboxジャンプと原PDFの自動サーバー解析は未接続。iOS関連98成功・最終関連36成功（重複）、Worker1723成功。実機・iCloud移行・実資料精度の証明ではない。詳細: [RAG_IPAD_STRUCTURED_INTEGRATION.md](RAG_IPAD_STRUCTURED_INTEGRATION.md)。公開操作なし、自動スケジュールPAUSED。
+
+
+## Doclingのprivate Container実行境界（2026-10-17、未配備）
+
+独立services/docling-workerにprivate RPC/default flag false、単発jobの期限・取消・非本文状態・destroy後返却を実装。Container専用Python入口、ready前版/model検証、有限no-follow orphan cleanup、offline/nonroot Docker recipeとsample configを追加。既存MCP/iPadは未接続。JS28・Python関連60/既存49成功、型生成/bundleと合成2pageの実Nodefetch→Docling接続を確認（VMlifecycleはmock）。Docker不在でLinux build/実Cloudflare起動・隔離・停止は未検証。原PDF別同意/認可/admission・削除/予算・運用監視と依存監査を満たす前に有効化しない。DO stateはopaque ID/status/deadline/cleanup回数のみで本文なし、tombstone retentionは未設計。storage障害でpoison/alarm保存できない場合は運用停止確認が必要。詳細 [RAG_DOCLING_CONTAINER_BOUNDARY_REPORT.md](RAG_DOCLING_CONTAINER_BOUNDARY_REPORT.md)。公開操作・追加購入なし、自動スケジュールPAUSED。

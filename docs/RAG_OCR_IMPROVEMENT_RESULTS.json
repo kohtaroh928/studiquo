@@ -1,0 +1,5853 @@
+{
+  "date": "2026-10-09",
+  "scope": "local_document_OCR_supplement_and_review",
+  "backend": "Workers AI REST + local SQLite FTS5 + exact cosine; not deployed D1/Vectorize or Gemini answers",
+  "tests": {
+    "iosFullUnit": 1581,
+    "iosFinalTarget": 26,
+    "workerFull": 749,
+    "ragCitationUI": 3
+  },
+  "extraction": {
+    "synthetic100": {
+      "pages": 100,
+      "ocrChecked": 100,
+      "reviewPages": 26,
+      "nativeSupplementPages": 0,
+      "scannedTextPages": 20,
+      "blankPages": 0,
+      "elapsedMs": 19901,
+      "pagesHash": "351fc971628a1c5d6d6ea50f1a8cf1ec2b235f64a9a2ba4962a7cba0e70bf1dd",
+      "perPage": [
+        {
+          "pageNumber": 1,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 304
+        },
+        {
+          "pageNumber": 2,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 3,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 199
+        },
+        {
+          "pageNumber": 4,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 200
+        },
+        {
+          "pageNumber": 5,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 199
+        },
+        {
+          "pageNumber": 6,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 7,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 8,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 199
+        },
+        {
+          "pageNumber": 9,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 200
+        },
+        {
+          "pageNumber": 10,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 11,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 12,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 1,
+          "needsReview": true,
+          "elapsedMs": 193
+        },
+        {
+          "pageNumber": 13,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 193
+        },
+        {
+          "pageNumber": 14,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 1,
+          "needsReview": true,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 15,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 16,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 194
+        },
+        {
+          "pageNumber": 17,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 18,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 192
+        },
+        {
+          "pageNumber": 19,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 20,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 21,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 22,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 23,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 195
+        },
+        {
+          "pageNumber": 24,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 216
+        },
+        {
+          "pageNumber": 25,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 205
+        },
+        {
+          "pageNumber": 26,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 27,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 195
+        },
+        {
+          "pageNumber": 28,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 254
+        },
+        {
+          "pageNumber": 29,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 202
+        },
+        {
+          "pageNumber": 30,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 31,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 200
+        },
+        {
+          "pageNumber": 32,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 192
+        },
+        {
+          "pageNumber": 33,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 34,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 194
+        },
+        {
+          "pageNumber": 35,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 36,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 202
+        },
+        {
+          "pageNumber": 37,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 194
+        },
+        {
+          "pageNumber": 38,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 199
+        },
+        {
+          "pageNumber": 39,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 40,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 202
+        },
+        {
+          "pageNumber": 41,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 42,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 202
+        },
+        {
+          "pageNumber": 43,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 204
+        },
+        {
+          "pageNumber": 44,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 199
+        },
+        {
+          "pageNumber": 45,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 46,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 195
+        },
+        {
+          "pageNumber": 47,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 195
+        },
+        {
+          "pageNumber": 48,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 193
+        },
+        {
+          "pageNumber": 49,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 50,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 51,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 52,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 53,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 54,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 193
+        },
+        {
+          "pageNumber": 55,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 56,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 195
+        },
+        {
+          "pageNumber": 57,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 1,
+          "needsReview": true,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 58,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 192
+        },
+        {
+          "pageNumber": 59,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 1,
+          "needsReview": true,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 60,
+          "nativePresent": false,
+          "supplementedLines": 18,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 61,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 192
+        },
+        {
+          "pageNumber": 62,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 189
+        },
+        {
+          "pageNumber": 63,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 64,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 65,
+          "nativePresent": false,
+          "supplementedLines": 18,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 66,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 67,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 68,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 69,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 70,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 71,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 1,
+          "needsReview": true,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 72,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 203
+        },
+        {
+          "pageNumber": 73,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 226
+        },
+        {
+          "pageNumber": 74,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 200
+        },
+        {
+          "pageNumber": 75,
+          "nativePresent": false,
+          "supplementedLines": 18,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 201
+        },
+        {
+          "pageNumber": 76,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 195
+        },
+        {
+          "pageNumber": 77,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 78,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 79,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 1,
+          "needsReview": true,
+          "elapsedMs": 203
+        },
+        {
+          "pageNumber": 80,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 81,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 82,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 83,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 84,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 85,
+          "nativePresent": false,
+          "supplementedLines": 18,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 86,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 201
+        },
+        {
+          "pageNumber": 87,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 88,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 193
+        },
+        {
+          "pageNumber": 89,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 193
+        },
+        {
+          "pageNumber": 90,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 199
+        },
+        {
+          "pageNumber": 91,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 92,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 93,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 194
+        },
+        {
+          "pageNumber": 94,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 95,
+          "nativePresent": false,
+          "supplementedLines": 17,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 96,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 199
+        },
+        {
+          "pageNumber": 97,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 191
+        },
+        {
+          "pageNumber": 98,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 99,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": false,
+          "elapsedMs": 193
+        },
+        {
+          "pageNumber": 100,
+          "nativePresent": false,
+          "supplementedLines": 18,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 201
+        }
+      ],
+      "textIdenticalToRetrievalInput": true,
+      "fixedOCRAnchors": 20,
+      "ocrQuestions": 20
+    },
+    "public348": {
+      "pages": 348,
+      "ocrChecked": 348,
+      "reviewPages": 348,
+      "nativeSupplementPages": 31,
+      "scannedTextPages": 0,
+      "blankPages": 2,
+      "elapsedMs": 108778,
+      "pagesHash": "ab77d6062edd7127850781f461287a83baea8b7441b8306407dd5dd7f585af15",
+      "perPage": [
+        {
+          "pageNumber": 1,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 1,
+          "needsReview": true,
+          "elapsedMs": 417
+        },
+        {
+          "pageNumber": 2,
+          "nativePresent": false,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 23
+        },
+        {
+          "pageNumber": 3,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 6,
+          "needsReview": true,
+          "elapsedMs": 507
+        },
+        {
+          "pageNumber": 4,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 10,
+          "needsReview": true,
+          "elapsedMs": 460
+        },
+        {
+          "pageNumber": 5,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 4,
+          "needsReview": true,
+          "elapsedMs": 277
+        },
+        {
+          "pageNumber": 6,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 6,
+          "needsReview": true,
+          "elapsedMs": 305
+        },
+        {
+          "pageNumber": 7,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 379
+        },
+        {
+          "pageNumber": 8,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 29,
+          "needsReview": true,
+          "elapsedMs": 347
+        },
+        {
+          "pageNumber": 9,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 5,
+          "needsReview": true,
+          "elapsedMs": 343
+        },
+        {
+          "pageNumber": 10,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 6,
+          "needsReview": true,
+          "elapsedMs": 183
+        },
+        {
+          "pageNumber": 11,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 405
+        },
+        {
+          "pageNumber": 12,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 8,
+          "needsReview": true,
+          "elapsedMs": 230
+        },
+        {
+          "pageNumber": 13,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 242
+        },
+        {
+          "pageNumber": 14,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 262
+        },
+        {
+          "pageNumber": 15,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 5,
+          "needsReview": true,
+          "elapsedMs": 155
+        },
+        {
+          "pageNumber": 16,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 200
+        },
+        {
+          "pageNumber": 17,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 8,
+          "needsReview": true,
+          "elapsedMs": 155
+        },
+        {
+          "pageNumber": 18,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 42,
+          "needsReview": true,
+          "elapsedMs": 322
+        },
+        {
+          "pageNumber": 19,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 64,
+          "needsReview": true,
+          "elapsedMs": 397
+        },
+        {
+          "pageNumber": 20,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 10,
+          "needsReview": true,
+          "elapsedMs": 188
+        },
+        {
+          "pageNumber": 21,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 23,
+          "needsReview": true,
+          "elapsedMs": 274
+        },
+        {
+          "pageNumber": 22,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 28,
+          "needsReview": true,
+          "elapsedMs": 252
+        },
+        {
+          "pageNumber": 23,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 322
+        },
+        {
+          "pageNumber": 24,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 14,
+          "needsReview": true,
+          "elapsedMs": 226
+        },
+        {
+          "pageNumber": 25,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 27,
+          "needsReview": true,
+          "elapsedMs": 307
+        },
+        {
+          "pageNumber": 26,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 49,
+          "needsReview": true,
+          "elapsedMs": 398
+        },
+        {
+          "pageNumber": 27,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 53,
+          "needsReview": true,
+          "elapsedMs": 312
+        },
+        {
+          "pageNumber": 28,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 286
+        },
+        {
+          "pageNumber": 29,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 8,
+          "needsReview": true,
+          "elapsedMs": 364
+        },
+        {
+          "pageNumber": 30,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 18,
+          "needsReview": true,
+          "elapsedMs": 364
+        },
+        {
+          "pageNumber": 31,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 247
+        },
+        {
+          "pageNumber": 32,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 35,
+          "needsReview": true,
+          "elapsedMs": 517
+        },
+        {
+          "pageNumber": 33,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 30,
+          "needsReview": true,
+          "elapsedMs": 355
+        },
+        {
+          "pageNumber": 34,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 34,
+          "needsReview": true,
+          "elapsedMs": 371
+        },
+        {
+          "pageNumber": 35,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 27,
+          "needsReview": true,
+          "elapsedMs": 371
+        },
+        {
+          "pageNumber": 36,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 28,
+          "needsReview": true,
+          "elapsedMs": 312
+        },
+        {
+          "pageNumber": 37,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 368
+        },
+        {
+          "pageNumber": 38,
+          "nativePresent": true,
+          "supplementedLines": 2,
+          "rejectedLines": 22,
+          "needsReview": true,
+          "elapsedMs": 415
+        },
+        {
+          "pageNumber": 39,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 15,
+          "needsReview": true,
+          "elapsedMs": 341
+        },
+        {
+          "pageNumber": 40,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 36,
+          "needsReview": true,
+          "elapsedMs": 341
+        },
+        {
+          "pageNumber": 41,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 26,
+          "needsReview": true,
+          "elapsedMs": 342
+        },
+        {
+          "pageNumber": 42,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 38,
+          "needsReview": true,
+          "elapsedMs": 354
+        },
+        {
+          "pageNumber": 43,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 21,
+          "needsReview": true,
+          "elapsedMs": 360
+        },
+        {
+          "pageNumber": 44,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 22,
+          "needsReview": true,
+          "elapsedMs": 408
+        },
+        {
+          "pageNumber": 45,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 19,
+          "needsReview": true,
+          "elapsedMs": 420
+        },
+        {
+          "pageNumber": 46,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 19,
+          "needsReview": true,
+          "elapsedMs": 422
+        },
+        {
+          "pageNumber": 47,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 31,
+          "needsReview": true,
+          "elapsedMs": 367
+        },
+        {
+          "pageNumber": 48,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 37,
+          "needsReview": true,
+          "elapsedMs": 379
+        },
+        {
+          "pageNumber": 49,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 3,
+          "needsReview": true,
+          "elapsedMs": 200
+        },
+        {
+          "pageNumber": 50,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 33,
+          "needsReview": true,
+          "elapsedMs": 350
+        },
+        {
+          "pageNumber": 51,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 14,
+          "needsReview": true,
+          "elapsedMs": 318
+        },
+        {
+          "pageNumber": 52,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 18,
+          "needsReview": true,
+          "elapsedMs": 294
+        },
+        {
+          "pageNumber": 53,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 17,
+          "needsReview": true,
+          "elapsedMs": 251
+        },
+        {
+          "pageNumber": 54,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 279
+        },
+        {
+          "pageNumber": 55,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 482
+        },
+        {
+          "pageNumber": 56,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 3,
+          "needsReview": true,
+          "elapsedMs": 268
+        },
+        {
+          "pageNumber": 57,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 33,
+          "needsReview": true,
+          "elapsedMs": 386
+        },
+        {
+          "pageNumber": 58,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 446
+        },
+        {
+          "pageNumber": 59,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 17,
+          "needsReview": true,
+          "elapsedMs": 348
+        },
+        {
+          "pageNumber": 60,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 23,
+          "needsReview": true,
+          "elapsedMs": 310
+        },
+        {
+          "pageNumber": 61,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 24,
+          "needsReview": true,
+          "elapsedMs": 415
+        },
+        {
+          "pageNumber": 62,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 28,
+          "needsReview": true,
+          "elapsedMs": 365
+        },
+        {
+          "pageNumber": 63,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 17,
+          "needsReview": true,
+          "elapsedMs": 215
+        },
+        {
+          "pageNumber": 64,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 337
+        },
+        {
+          "pageNumber": 65,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 26,
+          "needsReview": true,
+          "elapsedMs": 351
+        },
+        {
+          "pageNumber": 66,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 38,
+          "needsReview": true,
+          "elapsedMs": 494
+        },
+        {
+          "pageNumber": 67,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 33,
+          "needsReview": true,
+          "elapsedMs": 334
+        },
+        {
+          "pageNumber": 68,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 21,
+          "needsReview": true,
+          "elapsedMs": 363
+        },
+        {
+          "pageNumber": 69,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 332
+        },
+        {
+          "pageNumber": 70,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 20,
+          "needsReview": true,
+          "elapsedMs": 460
+        },
+        {
+          "pageNumber": 71,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 6,
+          "needsReview": true,
+          "elapsedMs": 220
+        },
+        {
+          "pageNumber": 72,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 38,
+          "needsReview": true,
+          "elapsedMs": 496
+        },
+        {
+          "pageNumber": 73,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 14,
+          "needsReview": true,
+          "elapsedMs": 419
+        },
+        {
+          "pageNumber": 74,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 56,
+          "needsReview": true,
+          "elapsedMs": 495
+        },
+        {
+          "pageNumber": 75,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 14,
+          "needsReview": true,
+          "elapsedMs": 374
+        },
+        {
+          "pageNumber": 76,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 321
+        },
+        {
+          "pageNumber": 77,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 395
+        },
+        {
+          "pageNumber": 78,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 23,
+          "needsReview": true,
+          "elapsedMs": 554
+        },
+        {
+          "pageNumber": 79,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 43,
+          "needsReview": true,
+          "elapsedMs": 518
+        },
+        {
+          "pageNumber": 80,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 11,
+          "needsReview": true,
+          "elapsedMs": 244
+        },
+        {
+          "pageNumber": 81,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 37,
+          "needsReview": true,
+          "elapsedMs": 496
+        },
+        {
+          "pageNumber": 82,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 331
+        },
+        {
+          "pageNumber": 83,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 279
+        },
+        {
+          "pageNumber": 84,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 38,
+          "needsReview": true,
+          "elapsedMs": 280
+        },
+        {
+          "pageNumber": 85,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 21,
+          "needsReview": true,
+          "elapsedMs": 279
+        },
+        {
+          "pageNumber": 86,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 11,
+          "needsReview": true,
+          "elapsedMs": 285
+        },
+        {
+          "pageNumber": 87,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 18,
+          "needsReview": true,
+          "elapsedMs": 247
+        },
+        {
+          "pageNumber": 88,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 249
+        },
+        {
+          "pageNumber": 89,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 14,
+          "needsReview": true,
+          "elapsedMs": 291
+        },
+        {
+          "pageNumber": 90,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 296
+        },
+        {
+          "pageNumber": 91,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 10,
+          "needsReview": true,
+          "elapsedMs": 222
+        },
+        {
+          "pageNumber": 92,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 7,
+          "needsReview": true,
+          "elapsedMs": 251
+        },
+        {
+          "pageNumber": 93,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 28,
+          "needsReview": true,
+          "elapsedMs": 319
+        },
+        {
+          "pageNumber": 94,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 18,
+          "needsReview": true,
+          "elapsedMs": 242
+        },
+        {
+          "pageNumber": 95,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 11,
+          "needsReview": true,
+          "elapsedMs": 249
+        },
+        {
+          "pageNumber": 96,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 59,
+          "needsReview": true,
+          "elapsedMs": 348
+        },
+        {
+          "pageNumber": 97,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 3,
+          "needsReview": true,
+          "elapsedMs": 232
+        },
+        {
+          "pageNumber": 98,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 328
+        },
+        {
+          "pageNumber": 99,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 34,
+          "needsReview": true,
+          "elapsedMs": 350
+        },
+        {
+          "pageNumber": 100,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 23,
+          "needsReview": true,
+          "elapsedMs": 313
+        },
+        {
+          "pageNumber": 101,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 17,
+          "needsReview": true,
+          "elapsedMs": 265
+        },
+        {
+          "pageNumber": 102,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 31,
+          "needsReview": true,
+          "elapsedMs": 299
+        },
+        {
+          "pageNumber": 103,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 303
+        },
+        {
+          "pageNumber": 104,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 329
+        },
+        {
+          "pageNumber": 105,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 28,
+          "needsReview": true,
+          "elapsedMs": 309
+        },
+        {
+          "pageNumber": 106,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 35,
+          "needsReview": true,
+          "elapsedMs": 349
+        },
+        {
+          "pageNumber": 107,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 31,
+          "needsReview": true,
+          "elapsedMs": 380
+        },
+        {
+          "pageNumber": 108,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 10,
+          "needsReview": true,
+          "elapsedMs": 272
+        },
+        {
+          "pageNumber": 109,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 18,
+          "needsReview": true,
+          "elapsedMs": 241
+        },
+        {
+          "pageNumber": 110,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 31,
+          "needsReview": true,
+          "elapsedMs": 228
+        },
+        {
+          "pageNumber": 111,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 30,
+          "needsReview": true,
+          "elapsedMs": 313
+        },
+        {
+          "pageNumber": 112,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 19,
+          "needsReview": true,
+          "elapsedMs": 233
+        },
+        {
+          "pageNumber": 113,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 298
+        },
+        {
+          "pageNumber": 114,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 29,
+          "needsReview": true,
+          "elapsedMs": 371
+        },
+        {
+          "pageNumber": 115,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 15,
+          "needsReview": true,
+          "elapsedMs": 350
+        },
+        {
+          "pageNumber": 116,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 294
+        },
+        {
+          "pageNumber": 117,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 22,
+          "needsReview": true,
+          "elapsedMs": 343
+        },
+        {
+          "pageNumber": 118,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 11,
+          "needsReview": true,
+          "elapsedMs": 372
+        },
+        {
+          "pageNumber": 119,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 14,
+          "needsReview": true,
+          "elapsedMs": 284
+        },
+        {
+          "pageNumber": 120,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 8,
+          "needsReview": true,
+          "elapsedMs": 165
+        },
+        {
+          "pageNumber": 121,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 321
+        },
+        {
+          "pageNumber": 122,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 11,
+          "needsReview": true,
+          "elapsedMs": 246
+        },
+        {
+          "pageNumber": 123,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 8,
+          "needsReview": true,
+          "elapsedMs": 242
+        },
+        {
+          "pageNumber": 124,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 10,
+          "needsReview": true,
+          "elapsedMs": 197
+        },
+        {
+          "pageNumber": 125,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 174
+        },
+        {
+          "pageNumber": 126,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 213
+        },
+        {
+          "pageNumber": 127,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 8,
+          "needsReview": true,
+          "elapsedMs": 189
+        },
+        {
+          "pageNumber": 128,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 5,
+          "needsReview": true,
+          "elapsedMs": 174
+        },
+        {
+          "pageNumber": 129,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 11,
+          "needsReview": true,
+          "elapsedMs": 183
+        },
+        {
+          "pageNumber": 130,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 5,
+          "needsReview": true,
+          "elapsedMs": 299
+        },
+        {
+          "pageNumber": 131,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 7,
+          "needsReview": true,
+          "elapsedMs": 187
+        },
+        {
+          "pageNumber": 132,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 23,
+          "needsReview": true,
+          "elapsedMs": 374
+        },
+        {
+          "pageNumber": 133,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 6,
+          "needsReview": true,
+          "elapsedMs": 198
+        },
+        {
+          "pageNumber": 134,
+          "nativePresent": true,
+          "supplementedLines": 3,
+          "rejectedLines": 17,
+          "needsReview": true,
+          "elapsedMs": 299
+        },
+        {
+          "pageNumber": 135,
+          "nativePresent": true,
+          "supplementedLines": 3,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 318
+        },
+        {
+          "pageNumber": 136,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 15,
+          "needsReview": true,
+          "elapsedMs": 284
+        },
+        {
+          "pageNumber": 137,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 253
+        },
+        {
+          "pageNumber": 138,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 8,
+          "needsReview": true,
+          "elapsedMs": 340
+        },
+        {
+          "pageNumber": 139,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 401
+        },
+        {
+          "pageNumber": 140,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 27,
+          "needsReview": true,
+          "elapsedMs": 324
+        },
+        {
+          "pageNumber": 141,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 316
+        },
+        {
+          "pageNumber": 142,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 15,
+          "needsReview": true,
+          "elapsedMs": 235
+        },
+        {
+          "pageNumber": 143,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 10,
+          "needsReview": true,
+          "elapsedMs": 196
+        },
+        {
+          "pageNumber": 144,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 6,
+          "needsReview": true,
+          "elapsedMs": 192
+        },
+        {
+          "pageNumber": 145,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 233
+        },
+        {
+          "pageNumber": 146,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 436
+        },
+        {
+          "pageNumber": 147,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 267
+        },
+        {
+          "pageNumber": 148,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 24,
+          "needsReview": true,
+          "elapsedMs": 353
+        },
+        {
+          "pageNumber": 149,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 18,
+          "needsReview": true,
+          "elapsedMs": 381
+        },
+        {
+          "pageNumber": 150,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 330
+        },
+        {
+          "pageNumber": 151,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 5,
+          "needsReview": true,
+          "elapsedMs": 325
+        },
+        {
+          "pageNumber": 152,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 290
+        },
+        {
+          "pageNumber": 153,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 390
+        },
+        {
+          "pageNumber": 154,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 22,
+          "needsReview": true,
+          "elapsedMs": 384
+        },
+        {
+          "pageNumber": 155,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 407
+        },
+        {
+          "pageNumber": 156,
+          "nativePresent": true,
+          "supplementedLines": 3,
+          "rejectedLines": 94,
+          "needsReview": true,
+          "elapsedMs": 500
+        },
+        {
+          "pageNumber": 157,
+          "nativePresent": true,
+          "supplementedLines": 5,
+          "rejectedLines": 71,
+          "needsReview": true,
+          "elapsedMs": 507
+        },
+        {
+          "pageNumber": 158,
+          "nativePresent": true,
+          "supplementedLines": 5,
+          "rejectedLines": 34,
+          "needsReview": true,
+          "elapsedMs": 370
+        },
+        {
+          "pageNumber": 159,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 44,
+          "needsReview": true,
+          "elapsedMs": 353
+        },
+        {
+          "pageNumber": 160,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 44,
+          "needsReview": true,
+          "elapsedMs": 345
+        },
+        {
+          "pageNumber": 161,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 39,
+          "needsReview": true,
+          "elapsedMs": 341
+        },
+        {
+          "pageNumber": 162,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 193
+        },
+        {
+          "pageNumber": 163,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 6,
+          "needsReview": true,
+          "elapsedMs": 186
+        },
+        {
+          "pageNumber": 164,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 4,
+          "needsReview": true,
+          "elapsedMs": 159
+        },
+        {
+          "pageNumber": 165,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 7,
+          "needsReview": true,
+          "elapsedMs": 243
+        },
+        {
+          "pageNumber": 166,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 4,
+          "needsReview": true,
+          "elapsedMs": 192
+        },
+        {
+          "pageNumber": 167,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 6,
+          "needsReview": true,
+          "elapsedMs": 244
+        },
+        {
+          "pageNumber": 168,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 315
+        },
+        {
+          "pageNumber": 169,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 11,
+          "needsReview": true,
+          "elapsedMs": 302
+        },
+        {
+          "pageNumber": 170,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 452
+        },
+        {
+          "pageNumber": 171,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 7,
+          "needsReview": true,
+          "elapsedMs": 382
+        },
+        {
+          "pageNumber": 172,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 23,
+          "needsReview": true,
+          "elapsedMs": 383
+        },
+        {
+          "pageNumber": 173,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 392
+        },
+        {
+          "pageNumber": 174,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 26,
+          "needsReview": true,
+          "elapsedMs": 382
+        },
+        {
+          "pageNumber": 175,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 19,
+          "needsReview": true,
+          "elapsedMs": 372
+        },
+        {
+          "pageNumber": 176,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 11,
+          "needsReview": true,
+          "elapsedMs": 435
+        },
+        {
+          "pageNumber": 177,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 17,
+          "needsReview": true,
+          "elapsedMs": 377
+        },
+        {
+          "pageNumber": 178,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 37,
+          "needsReview": true,
+          "elapsedMs": 334
+        },
+        {
+          "pageNumber": 179,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 20,
+          "needsReview": true,
+          "elapsedMs": 206
+        },
+        {
+          "pageNumber": 180,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 40,
+          "needsReview": true,
+          "elapsedMs": 309
+        },
+        {
+          "pageNumber": 181,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 41,
+          "needsReview": true,
+          "elapsedMs": 239
+        },
+        {
+          "pageNumber": 182,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 30,
+          "needsReview": true,
+          "elapsedMs": 156
+        },
+        {
+          "pageNumber": 183,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 15,
+          "needsReview": true,
+          "elapsedMs": 219
+        },
+        {
+          "pageNumber": 184,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 18,
+          "needsReview": true,
+          "elapsedMs": 155
+        },
+        {
+          "pageNumber": 185,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 18,
+          "needsReview": true,
+          "elapsedMs": 199
+        },
+        {
+          "pageNumber": 186,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 32,
+          "needsReview": true,
+          "elapsedMs": 317
+        },
+        {
+          "pageNumber": 187,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 23,
+          "needsReview": true,
+          "elapsedMs": 345
+        },
+        {
+          "pageNumber": 188,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 15,
+          "needsReview": true,
+          "elapsedMs": 212
+        },
+        {
+          "pageNumber": 189,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 24,
+          "needsReview": true,
+          "elapsedMs": 154
+        },
+        {
+          "pageNumber": 190,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 5,
+          "needsReview": true,
+          "elapsedMs": 187
+        },
+        {
+          "pageNumber": 191,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 346
+        },
+        {
+          "pageNumber": 192,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 27,
+          "needsReview": true,
+          "elapsedMs": 311
+        },
+        {
+          "pageNumber": 193,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 17,
+          "needsReview": true,
+          "elapsedMs": 361
+        },
+        {
+          "pageNumber": 194,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 33,
+          "needsReview": true,
+          "elapsedMs": 347
+        },
+        {
+          "pageNumber": 195,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 351
+        },
+        {
+          "pageNumber": 196,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 29,
+          "needsReview": true,
+          "elapsedMs": 259
+        },
+        {
+          "pageNumber": 197,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 34,
+          "needsReview": true,
+          "elapsedMs": 266
+        },
+        {
+          "pageNumber": 198,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 271
+        },
+        {
+          "pageNumber": 199,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 48,
+          "needsReview": true,
+          "elapsedMs": 315
+        },
+        {
+          "pageNumber": 200,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 29,
+          "needsReview": true,
+          "elapsedMs": 419
+        },
+        {
+          "pageNumber": 201,
+          "nativePresent": true,
+          "supplementedLines": 2,
+          "rejectedLines": 21,
+          "needsReview": true,
+          "elapsedMs": 363
+        },
+        {
+          "pageNumber": 202,
+          "nativePresent": true,
+          "supplementedLines": 3,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 392
+        },
+        {
+          "pageNumber": 203,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 14,
+          "needsReview": true,
+          "elapsedMs": 275
+        },
+        {
+          "pageNumber": 204,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 316
+        },
+        {
+          "pageNumber": 205,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 52,
+          "needsReview": true,
+          "elapsedMs": 534
+        },
+        {
+          "pageNumber": 206,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 10,
+          "needsReview": true,
+          "elapsedMs": 293
+        },
+        {
+          "pageNumber": 207,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 21,
+          "needsReview": true,
+          "elapsedMs": 1072
+        },
+        {
+          "pageNumber": 208,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 260
+        },
+        {
+          "pageNumber": 209,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 21,
+          "needsReview": true,
+          "elapsedMs": 280
+        },
+        {
+          "pageNumber": 210,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 17,
+          "needsReview": true,
+          "elapsedMs": 319
+        },
+        {
+          "pageNumber": 211,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 14,
+          "needsReview": true,
+          "elapsedMs": 317
+        },
+        {
+          "pageNumber": 212,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 19,
+          "needsReview": true,
+          "elapsedMs": 346
+        },
+        {
+          "pageNumber": 213,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 299
+        },
+        {
+          "pageNumber": 214,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 19,
+          "needsReview": true,
+          "elapsedMs": 329
+        },
+        {
+          "pageNumber": 215,
+          "nativePresent": true,
+          "supplementedLines": 4,
+          "rejectedLines": 38,
+          "needsReview": true,
+          "elapsedMs": 328
+        },
+        {
+          "pageNumber": 216,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 51,
+          "needsReview": true,
+          "elapsedMs": 343
+        },
+        {
+          "pageNumber": 217,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 30,
+          "needsReview": true,
+          "elapsedMs": 253
+        },
+        {
+          "pageNumber": 218,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 39,
+          "needsReview": true,
+          "elapsedMs": 261
+        },
+        {
+          "pageNumber": 219,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 29,
+          "needsReview": true,
+          "elapsedMs": 308
+        },
+        {
+          "pageNumber": 220,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 22,
+          "needsReview": true,
+          "elapsedMs": 296
+        },
+        {
+          "pageNumber": 221,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 29,
+          "needsReview": true,
+          "elapsedMs": 366
+        },
+        {
+          "pageNumber": 222,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 26,
+          "needsReview": true,
+          "elapsedMs": 297
+        },
+        {
+          "pageNumber": 223,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 23,
+          "needsReview": true,
+          "elapsedMs": 419
+        },
+        {
+          "pageNumber": 224,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 29,
+          "needsReview": true,
+          "elapsedMs": 296
+        },
+        {
+          "pageNumber": 225,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 255
+        },
+        {
+          "pageNumber": 226,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 59,
+          "needsReview": true,
+          "elapsedMs": 443
+        },
+        {
+          "pageNumber": 227,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 283
+        },
+        {
+          "pageNumber": 228,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 8,
+          "needsReview": true,
+          "elapsedMs": 292
+        },
+        {
+          "pageNumber": 229,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 371
+        },
+        {
+          "pageNumber": 230,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 28,
+          "needsReview": true,
+          "elapsedMs": 328
+        },
+        {
+          "pageNumber": 231,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 4,
+          "needsReview": true,
+          "elapsedMs": 409
+        },
+        {
+          "pageNumber": 232,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 4,
+          "needsReview": true,
+          "elapsedMs": 203
+        },
+        {
+          "pageNumber": 233,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 337
+        },
+        {
+          "pageNumber": 234,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 317
+        },
+        {
+          "pageNumber": 235,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 29,
+          "needsReview": true,
+          "elapsedMs": 304
+        },
+        {
+          "pageNumber": 236,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 18,
+          "needsReview": true,
+          "elapsedMs": 307
+        },
+        {
+          "pageNumber": 237,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 34,
+          "needsReview": true,
+          "elapsedMs": 351
+        },
+        {
+          "pageNumber": 238,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 51,
+          "needsReview": true,
+          "elapsedMs": 467
+        },
+        {
+          "pageNumber": 239,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 45,
+          "needsReview": true,
+          "elapsedMs": 350
+        },
+        {
+          "pageNumber": 240,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 7,
+          "needsReview": true,
+          "elapsedMs": 215
+        },
+        {
+          "pageNumber": 241,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 5,
+          "needsReview": true,
+          "elapsedMs": 209
+        },
+        {
+          "pageNumber": 242,
+          "nativePresent": true,
+          "supplementedLines": 2,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 370
+        },
+        {
+          "pageNumber": 243,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 19,
+          "needsReview": true,
+          "elapsedMs": 337
+        },
+        {
+          "pageNumber": 244,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 242
+        },
+        {
+          "pageNumber": 245,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 14,
+          "needsReview": true,
+          "elapsedMs": 245
+        },
+        {
+          "pageNumber": 246,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 214
+        },
+        {
+          "pageNumber": 247,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 7,
+          "needsReview": true,
+          "elapsedMs": 252
+        },
+        {
+          "pageNumber": 248,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 8,
+          "needsReview": true,
+          "elapsedMs": 305
+        },
+        {
+          "pageNumber": 249,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 253
+        },
+        {
+          "pageNumber": 250,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 254
+        },
+        {
+          "pageNumber": 251,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 11,
+          "needsReview": true,
+          "elapsedMs": 270
+        },
+        {
+          "pageNumber": 252,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 4,
+          "needsReview": true,
+          "elapsedMs": 204
+        },
+        {
+          "pageNumber": 253,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 300
+        },
+        {
+          "pageNumber": 254,
+          "nativePresent": true,
+          "supplementedLines": 3,
+          "rejectedLines": 37,
+          "needsReview": true,
+          "elapsedMs": 408
+        },
+        {
+          "pageNumber": 255,
+          "nativePresent": true,
+          "supplementedLines": 2,
+          "rejectedLines": 20,
+          "needsReview": true,
+          "elapsedMs": 340
+        },
+        {
+          "pageNumber": 256,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 278
+        },
+        {
+          "pageNumber": 257,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 264
+        },
+        {
+          "pageNumber": 258,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 319
+        },
+        {
+          "pageNumber": 259,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 6,
+          "needsReview": true,
+          "elapsedMs": 169
+        },
+        {
+          "pageNumber": 260,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 24,
+          "needsReview": true,
+          "elapsedMs": 309
+        },
+        {
+          "pageNumber": 261,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 29,
+          "needsReview": true,
+          "elapsedMs": 330
+        },
+        {
+          "pageNumber": 262,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 340
+        },
+        {
+          "pageNumber": 263,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 301
+        },
+        {
+          "pageNumber": 264,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 18,
+          "needsReview": true,
+          "elapsedMs": 352
+        },
+        {
+          "pageNumber": 265,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 245
+        },
+        {
+          "pageNumber": 266,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 4,
+          "needsReview": true,
+          "elapsedMs": 142
+        },
+        {
+          "pageNumber": 267,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 26,
+          "needsReview": true,
+          "elapsedMs": 334
+        },
+        {
+          "pageNumber": 268,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 18,
+          "needsReview": true,
+          "elapsedMs": 308
+        },
+        {
+          "pageNumber": 269,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 5,
+          "needsReview": true,
+          "elapsedMs": 343
+        },
+        {
+          "pageNumber": 270,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 28,
+          "needsReview": true,
+          "elapsedMs": 343
+        },
+        {
+          "pageNumber": 271,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 58,
+          "needsReview": true,
+          "elapsedMs": 399
+        },
+        {
+          "pageNumber": 272,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 296
+        },
+        {
+          "pageNumber": 273,
+          "nativePresent": true,
+          "supplementedLines": 4,
+          "rejectedLines": 41,
+          "needsReview": true,
+          "elapsedMs": 385
+        },
+        {
+          "pageNumber": 274,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 21,
+          "needsReview": true,
+          "elapsedMs": 303
+        },
+        {
+          "pageNumber": 275,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 71,
+          "needsReview": true,
+          "elapsedMs": 429
+        },
+        {
+          "pageNumber": 276,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 48,
+          "needsReview": true,
+          "elapsedMs": 371
+        },
+        {
+          "pageNumber": 277,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 43,
+          "needsReview": true,
+          "elapsedMs": 394
+        },
+        {
+          "pageNumber": 278,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 28,
+          "needsReview": true,
+          "elapsedMs": 348
+        },
+        {
+          "pageNumber": 279,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 29,
+          "needsReview": true,
+          "elapsedMs": 334
+        },
+        {
+          "pageNumber": 280,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 52,
+          "needsReview": true,
+          "elapsedMs": 359
+        },
+        {
+          "pageNumber": 281,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 31,
+          "needsReview": true,
+          "elapsedMs": 315
+        },
+        {
+          "pageNumber": 282,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 256
+        },
+        {
+          "pageNumber": 283,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 19,
+          "needsReview": true,
+          "elapsedMs": 325
+        },
+        {
+          "pageNumber": 284,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 67,
+          "needsReview": true,
+          "elapsedMs": 479
+        },
+        {
+          "pageNumber": 285,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 20,
+          "needsReview": true,
+          "elapsedMs": 241
+        },
+        {
+          "pageNumber": 286,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 249
+        },
+        {
+          "pageNumber": 287,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 3,
+          "needsReview": true,
+          "elapsedMs": 251
+        },
+        {
+          "pageNumber": 288,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 34,
+          "needsReview": true,
+          "elapsedMs": 443
+        },
+        {
+          "pageNumber": 289,
+          "nativePresent": true,
+          "supplementedLines": 2,
+          "rejectedLines": 48,
+          "needsReview": true,
+          "elapsedMs": 428
+        },
+        {
+          "pageNumber": 290,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 30,
+          "needsReview": true,
+          "elapsedMs": 397
+        },
+        {
+          "pageNumber": 291,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 15,
+          "needsReview": true,
+          "elapsedMs": 315
+        },
+        {
+          "pageNumber": 292,
+          "nativePresent": true,
+          "supplementedLines": 7,
+          "rejectedLines": 51,
+          "needsReview": true,
+          "elapsedMs": 370
+        },
+        {
+          "pageNumber": 293,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 3,
+          "needsReview": true,
+          "elapsedMs": 174
+        },
+        {
+          "pageNumber": 294,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 7,
+          "needsReview": true,
+          "elapsedMs": 243
+        },
+        {
+          "pageNumber": 295,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 222
+        },
+        {
+          "pageNumber": 296,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 27,
+          "needsReview": true,
+          "elapsedMs": 348
+        },
+        {
+          "pageNumber": 297,
+          "nativePresent": true,
+          "supplementedLines": 2,
+          "rejectedLines": 42,
+          "needsReview": true,
+          "elapsedMs": 349
+        },
+        {
+          "pageNumber": 298,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 268
+        },
+        {
+          "pageNumber": 299,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 26,
+          "needsReview": true,
+          "elapsedMs": 255
+        },
+        {
+          "pageNumber": 300,
+          "nativePresent": true,
+          "supplementedLines": 1,
+          "rejectedLines": 23,
+          "needsReview": true,
+          "elapsedMs": 339
+        },
+        {
+          "pageNumber": 301,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 15,
+          "needsReview": true,
+          "elapsedMs": 308
+        },
+        {
+          "pageNumber": 302,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 20,
+          "needsReview": true,
+          "elapsedMs": 284
+        },
+        {
+          "pageNumber": 303,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 26,
+          "needsReview": true,
+          "elapsedMs": 367
+        },
+        {
+          "pageNumber": 304,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 361
+        },
+        {
+          "pageNumber": 305,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 405
+        },
+        {
+          "pageNumber": 306,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 40,
+          "needsReview": true,
+          "elapsedMs": 394
+        },
+        {
+          "pageNumber": 307,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 13,
+          "needsReview": true,
+          "elapsedMs": 301
+        },
+        {
+          "pageNumber": 308,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 40,
+          "needsReview": true,
+          "elapsedMs": 378
+        },
+        {
+          "pageNumber": 309,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 8,
+          "needsReview": true,
+          "elapsedMs": 260
+        },
+        {
+          "pageNumber": 310,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 26,
+          "needsReview": true,
+          "elapsedMs": 280
+        },
+        {
+          "pageNumber": 311,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 5,
+          "needsReview": true,
+          "elapsedMs": 151
+        },
+        {
+          "pageNumber": 312,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 7,
+          "needsReview": true,
+          "elapsedMs": 269
+        },
+        {
+          "pageNumber": 313,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 10,
+          "needsReview": true,
+          "elapsedMs": 282
+        },
+        {
+          "pageNumber": 314,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 12,
+          "needsReview": true,
+          "elapsedMs": 231
+        },
+        {
+          "pageNumber": 315,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 8,
+          "needsReview": true,
+          "elapsedMs": 234
+        },
+        {
+          "pageNumber": 316,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 19,
+          "needsReview": true,
+          "elapsedMs": 253
+        },
+        {
+          "pageNumber": 317,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 27,
+          "needsReview": true,
+          "elapsedMs": 313
+        },
+        {
+          "pageNumber": 318,
+          "nativePresent": true,
+          "supplementedLines": 3,
+          "rejectedLines": 22,
+          "needsReview": true,
+          "elapsedMs": 278
+        },
+        {
+          "pageNumber": 319,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 29,
+          "needsReview": true,
+          "elapsedMs": 310
+        },
+        {
+          "pageNumber": 320,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 21,
+          "needsReview": true,
+          "elapsedMs": 270
+        },
+        {
+          "pageNumber": 321,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 36,
+          "needsReview": true,
+          "elapsedMs": 429
+        },
+        {
+          "pageNumber": 322,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 28,
+          "needsReview": true,
+          "elapsedMs": 296
+        },
+        {
+          "pageNumber": 323,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 22,
+          "needsReview": true,
+          "elapsedMs": 398
+        },
+        {
+          "pageNumber": 324,
+          "nativePresent": true,
+          "supplementedLines": 3,
+          "rejectedLines": 42,
+          "needsReview": true,
+          "elapsedMs": 392
+        },
+        {
+          "pageNumber": 325,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 9,
+          "needsReview": true,
+          "elapsedMs": 218
+        },
+        {
+          "pageNumber": 326,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 4,
+          "needsReview": true,
+          "elapsedMs": 183
+        },
+        {
+          "pageNumber": 327,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 32,
+          "needsReview": true,
+          "elapsedMs": 395
+        },
+        {
+          "pageNumber": 328,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 49,
+          "needsReview": true,
+          "elapsedMs": 343
+        },
+        {
+          "pageNumber": 329,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 44,
+          "needsReview": true,
+          "elapsedMs": 380
+        },
+        {
+          "pageNumber": 330,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 32,
+          "needsReview": true,
+          "elapsedMs": 312
+        },
+        {
+          "pageNumber": 331,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 10,
+          "needsReview": true,
+          "elapsedMs": 290
+        },
+        {
+          "pageNumber": 332,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 27,
+          "needsReview": true,
+          "elapsedMs": 365
+        },
+        {
+          "pageNumber": 333,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 7,
+          "needsReview": true,
+          "elapsedMs": 255
+        },
+        {
+          "pageNumber": 334,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 20,
+          "needsReview": true,
+          "elapsedMs": 332
+        },
+        {
+          "pageNumber": 335,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 27,
+          "needsReview": true,
+          "elapsedMs": 327
+        },
+        {
+          "pageNumber": 336,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 14,
+          "needsReview": true,
+          "elapsedMs": 262
+        },
+        {
+          "pageNumber": 337,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 28,
+          "needsReview": true,
+          "elapsedMs": 310
+        },
+        {
+          "pageNumber": 338,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 5,
+          "needsReview": true,
+          "elapsedMs": 154
+        },
+        {
+          "pageNumber": 339,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 16,
+          "needsReview": true,
+          "elapsedMs": 311
+        },
+        {
+          "pageNumber": 340,
+          "nativePresent": true,
+          "supplementedLines": 3,
+          "rejectedLines": 7,
+          "needsReview": true,
+          "elapsedMs": 245
+        },
+        {
+          "pageNumber": 341,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 7,
+          "needsReview": true,
+          "elapsedMs": 285
+        },
+        {
+          "pageNumber": 342,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 14,
+          "needsReview": true,
+          "elapsedMs": 259
+        },
+        {
+          "pageNumber": 343,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 25,
+          "needsReview": true,
+          "elapsedMs": 331
+        },
+        {
+          "pageNumber": 344,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 15,
+          "needsReview": true,
+          "elapsedMs": 267
+        },
+        {
+          "pageNumber": 345,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 6,
+          "needsReview": true,
+          "elapsedMs": 181
+        },
+        {
+          "pageNumber": 346,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 4,
+          "needsReview": true,
+          "elapsedMs": 153
+        },
+        {
+          "pageNumber": 347,
+          "nativePresent": false,
+          "supplementedLines": 0,
+          "rejectedLines": 0,
+          "needsReview": true,
+          "elapsedMs": 21
+        },
+        {
+          "pageNumber": 348,
+          "nativePresent": true,
+          "supplementedLines": 0,
+          "rejectedLines": 10,
+          "needsReview": true,
+          "elapsedMs": 131
+        }
+      ],
+      "nativeTextRetainedPages": 348
+    }
+  },
+  "retrieval": {
+    "synthetic100": {
+      "manifestHash": "0625df2f4b2b80931fa0e75df34c47a96eed3cc54cb7a71ceecd5387a44c175b",
+      "status": "complete",
+      "executionFailures": 0,
+      "sources": [
+        {
+          "sourceHash": "465fab558c352270874d5083d4c68db6d058d7bcc5f92ddca39948245486c5b4",
+          "contentHash": "cb7a64b4f17bc006c6729a0311e275f4bb383b9a0b429b95ed4379eb78faa523",
+          "pagesHash": "26c5f56c7d2c0678127db2413af2275f179c5072c6010442e32e747b1f7b00e4",
+          "pages": 100,
+          "uploadBatches": 20,
+          "embeddingCalls": 100,
+          "idempotent": true
+        }
+      ],
+      "positiveQuestions": 55,
+      "fullAnchorHits": 55,
+      "negativeQuestions": 5,
+      "negativeCitationSuppression": 5,
+      "allCitationsValid": true,
+      "apiCalls": 235,
+      "neurons": 51.6,
+      "medianSearchMs": 720.0,
+      "maxSearchMs": 2201,
+      "rerankerFallback": 1,
+      "results": [
+        {
+          "caseHash": "3377a48d85dfbbc2d9c7c9ca4ca0bb3809062c309e0eaf0411121b2ad8beaf9f",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 936,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "3dda0e2f69f45bf0d9e19096e9b179856a1eb29fdcfb14a82a4cbbb574d9d66a",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 709,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "594d2ee11ce7365891ba04adbe784b6341f1bcef4351c928263fd4b96d2a1062",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 594,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "a364cb3b55419279fc2bb3d1d36270e543283a39e0f36276c13a31bc571af1ea",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 503,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "3e116df4102591e7435836737a00c1eee51d0e971bb3f50bc0e8ac64f203d378",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 804,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "a24ee9db988b3b88c748e5115591f9dc98fb655b78865a6abcb94d915ebdb5c7",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": true,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 2201,
+          "drainMs": 305
+        },
+        {
+          "caseHash": "a28874edcf827fd08207514b9f0307efc1edb89bebb1f0f84c02463c8f41bf14",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 2147,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "b87404d0f274d183adacd74b1c25731e2b1ae4f8d87e6ffca9c86e46716b1769",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 535,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "af14e675fd8a281033b1893a4b1df5b35defaa484fb1a1dbc62a832d537f1647",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 531,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "40f54387ee7f8028202489f348294f7bc7bfa99e6a71cac59a7ef6feda95a59b",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1017,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "247c68db0108d33c62ad3d61ee3f1ccb05fea6e706364535cd68a7b761f817ca",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 594,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f20fe9bf315253e503130d78ad00f7ce9d01efd450c168df442d7fddf3ef58a9",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 698,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "aa4f66c03b31371831e34042fa860d94ae09a22894c130e462ba01a904d57bbf",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 876,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "0164a4c693d57698d5aa163c46f3a74329e313291d711637c2515cb050455379",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 566,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "4c358d4ab7366071a172c0852cfc4bb689534b09453b2f4d81b02484042dd049",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 725,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "7b17aa49216c86bbffa87bfeb059d07ca7849474e3fb951ddbd309f298a54c6f",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 823,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "d94c7e21b80ed6960a39d2dcf509418968d65be31b143c3035cf1127e15760c4",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 555,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f0d11c02a9ee94e132d63a6674439bf8876d4ebdcaba688750de6cb19967a887",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 652,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "9ef3e1c277cf85d1d4f1982d88c9e400706ef682645a0a6e1a3ba50d8b6274ed",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 632,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "d1cc820a7fdd1fac5263311a60db38f57ff6ae1554ae9f26aca669203fc7babb",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 625,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "50ed687fef0fd0ee8e568286ae049a1b17b9b0a10583a6688286f42b08f3f2cf",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 936,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "7cbf2e25cdde90a7d692771c8dd9b7ef2610d320c08385d0e2c500d5d97af8c9",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1430,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "11290f96552f67797ca1f515917cf8a280102dafeff87a9d4b30930852e42b53",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 686,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "3152cb97243c980da9dc2b2c095cddd3e92d1452020093897d54ccf6d714349e",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 561,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "1fcf3e080c396f774476f5c260593757751bc0cd0343a592c2dfaac182dc717b",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 668,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "4314942ef0a75b055a173a0449f83e1393ccb05b6d3688a475f9eb7f5b905227",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 691,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "877223bc168030aa08f7d4fc6d7544aca50531f7e42637be5120447149139804",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 820,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "07b255929e5b2650895a5dd1acc8788a7f51e731507e311272b319d3b7906678",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 800,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "3eb275936bcb40e3e023337914370349e112d1d3345f4f77108953e9e32f0616",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 590,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "5032d79a1fdf79bfdcdba6ed50c5962936146069defe6bb0de8514b38b5b96fa",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1218,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "700efe60f7ea5ad8537e282b942d5147bcc98f6f79e05056fc7f6d1a8631f9e3",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 656,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "e65b61fc39ace6b4f85b2900db1e74f36290cd76b77e9a1d1afbcd68c5c93ca6",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 694,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f3eb66e96fcb16e13faf61582aaafd296a493f03babd3b60f14b5e2ecaf9b89e",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 839,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "2c51f9a3c9ff841c8a343536e9a0f455679ca53bb2e174eda7673b925169bf59",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 531,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "7b831b660d6e7ddeebb72d9405e97a938a7f29ec6e0550eb34a49b798f34f894",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 714,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "3363bef1ad1e89f048278cc8e643273e199cb103805cdcdcbda89fc9fb6b2448",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 715,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "9a698ab286b2076206f445de0fb13261a33adfa1f42ca8b1dc2bac3d7edff32c",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 637,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "e43269bda0d063e88c5c89dc60e339c38bb821db18c863fb79f1f5246e95f2c6",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1180,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "4158bb66dc8d3d0b23e0f3f67c427de8d5e630e4cfe2fc6739ec906d74ec70ac",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 730,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "b8abc86a1d344de4c0abd00f14d31980f6876f4f4624f0c5abe738f5bb23961c",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 836,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "dd7ea99fed3de14ffcdd7916afd1f05814acada193b8a37f4b6f6437b4f4870f",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 826,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "218d3f9d37e69c633d14366d487104192ce1e83da68a4fe2fa0ab3e955399415",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 760,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "189c54907a6d872d005785664515c7e39ee92cb8618590b9ab5c192ce6a42ece",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 905,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "b0c21018a4c0e9b73f546ece402c51355cd67d3c3eae9fab7ec707e9070003c3",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 881,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "7f0a6cf2bae130eea0f18511b00e359d74ab198fbc96d900143e0fa111f128a6",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 795,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "1fbd541f071ac209ff54a4c98993b62ceaaab856d8f8a448cf71e34a14257745",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 767,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "a07489f2d476fb0cde7c6791bcbb14227330cf8672a734c825a22a9b0546c1d8",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 799,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "41519d5b3541dd28af5cd25cba44c9f5a534a8ae785cb5e3bc9d39e408c6da67",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 805,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "88d9d9799ecd47cb9d0c04193b296f7fba6bd06537cc87cef2f504c4a72aac3d",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 954,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "ffe70bb7fd97acda1faae1bf6fa029a47db11b0d3035b6674ed07e3475b8d35e",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1012,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "5df8b84a57ae660968a69579fb51355f7f4d6d230242f95044e0787a90c8677e",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 883,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "0989d5bc027176e5aa0b6f478844a8f429e9392b381b51a3a27ab59bd9f5e8d5",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 661,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "1c4104466f947162b3929f28608f3fba2a4b6132f3a23c7f10bfa3a5d7351adf",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 725,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "3b53ab9fa7e2a5cc425b6b6f6925ff2b3038cb56a2c5ca60e6250a7d4682cfe5",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 578,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "8e86f268d28dd42a7a464f4734d789afb27dad03e184adbef75c29cb489a7fe6",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1166,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "091ac8309665a42c449765e62d52f7aece49bd64d970dddab5ac54728d51308e",
+          "status": "fallback",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 256,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "54f23b78ce98eb1390968f78b7cd902e6ec76a8f049d3c1e9b000f5efb0c1d6b",
+          "status": "fallback",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 279,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "4dd9f4cab83607032b1213cfca2b77a9ed587ae56dd4a2b7ecb42c93152db89d",
+          "status": "fallback",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 240,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "4d65fd63baeeb489747d9a825af30d43dd4345d44c66659ea60910da79d316bb",
+          "status": "fallback",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 277,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "ab6241c594d38cd7d2d0622c8bee1fbd4ca36ed43ef9970d3803751d033181b4",
+          "status": "fallback",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 226,
+          "drainMs": 1
+        }
+      ]
+    },
+    "public348": {
+      "manifestHash": "b0d3c51ecef639e9a950ff73b38d8c643a7ddca981881b302e1ddca65cdcd0f9",
+      "status": "complete",
+      "executionFailures": 0,
+      "sources": [
+        {
+          "sourceHash": "877fbb720a16650ad7b1bcfaae86f106f7ffa84cf873f92f98944496c61ccdbf",
+          "contentHash": "f4ff9a30ab3e6e5aa0eefba48c17eac9d9d9ef6ed5cd0483d2931f7a6b58eaa4",
+          "pagesHash": "ab77d6062edd7127850781f461287a83baea8b7441b8306407dd5dd7f585af15",
+          "pages": 348,
+          "uploadBatches": 70,
+          "embeddingCalls": 346,
+          "idempotent": true
+        }
+      ],
+      "positiveQuestions": 24,
+      "fullAnchorHits": 24,
+      "negativeQuestions": 6,
+      "negativeCitationSuppression": 6,
+      "allCitationsValid": true,
+      "apiCalls": 412,
+      "neurons": 320.78,
+      "medianSearchMs": 787.5,
+      "maxSearchMs": 1104,
+      "rerankerFallback": 0,
+      "results": [
+        {
+          "caseHash": "53f6d9bb893cec3bd69071c8dc491685d7e86b50533832e8a4b09b15231d57e6",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 628,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "d28036abce74267f375934cf698d4bf42cb964a97e5bece9a044dc40984f7cf8",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 704,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "0a44e3c76d89fbee1fbf59d1f4e791078d5957532b1abc0e185c4456202553f1",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 688,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f39b5aba1165dad4e49edeeb6bf4e15524cc0b7d5c7bd8f0263d8cb507bac6ce",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 642,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "54472dfbc5c326ad4ed6a5404be1e47eeeaaf96bddc1baf29c12e3e4b5f85a75",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 861,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "90db8c73ae9ca2bcab20dd5bcf4bd6a60241079bb66fc31c1bc7a93a6019fb59",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 818,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "d4836f2ea09058c9eb6ebb86b1095f030910ff2732c1de2b4ca2e2ee1165b3d6",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 521,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "cd4cb41dea1ccda92d048b3cf5ca44fdb01ed5bf87099d7dbfa3ed40c6c02ac1",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 946,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "7963cb8b746983947cbc4c18d8436cf9e3ed36aa85d633f7ddfa9330c634563c",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 700,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "9759db6fa83b62003e95451f39d4fd017edac15c107090252723494ed56fab3e",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 550,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "c7684915188f03d7579477275f38868a0431330fb64dbc7f47f8251d26447d1f",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 871,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f1aea647225842a4ea8ec5d368f27a159b7230ba0587b561e536479b0eb93765",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 739,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "1930b55fbf5d4fcb295f4e0e9c328a818edf7c1fb207747c7f4363b1e9d28662",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 998,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f9b80f0c8437157dde868379fae5da7eb384817c270dc2842b672e59afccd67d",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 960,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "65a4ee7dcb74187c9a8da7819ded6ea8cacb17cfd6bd2d280857685d375c052b",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 577,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "42ef3ba5084afbfadcec2e4afb786dc7e44a53bd3191fd50f9b23584df988a5f",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 834,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "a657847368830dee58bb38aaa8a75a7a5aa32df24523ae6e6e09cf107d2544a3",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 849,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "9fa4549eadec1b2473d9338075be1d833cb2852550866e03a1c75bf9237feae2",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 919,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f4e3d4f5d8b033fac1917eb311fcba8f598dde8961169e3d724a693247d29649",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 902,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "473b576ed9282c0f532c69abb6a771e3ffb3e9a33dae428b21fbf0585aa9d7eb",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 766,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "3dc11aa06739709a07c2c47eec8332feb02c505450ac13851a9c3c48dd1cf001",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 948,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "fee34529740fab42aed15fd5270c39b4bd3399d33cf75842ec165a2e99d16046",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 711,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "cd9bc156662ac42634f1b96e8135e8bfbf043b63f2edf2a4a5bdc3a481b243d3",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 809,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "ea9cf67dc785e7771beff2ca3edfb11dfc427b89aba82da6ca0c0aa163bad929",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1104,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "8e39a6c9e39fecc13b38d2d9e7525969b2359878ff21143ee53c86cc4685f5ce",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 822,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "b58f6460437d82ea2160b84822a7b116dcfbb8ac362b82ae5261759d867533ff",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 588,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "d61da78370394c6d211b05a790a0b34335b28ec682d306c013396d9145156585",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 612,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "b70ea9433fe003c19081e5d8d07a734559060cb0575a472027ff37399b073b46",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 891,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "2c172907edfbddbf4a2215e3a89a49fce94ba208cead038fdf9dd38e689a1c3d",
+          "status": "fallback",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 193,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "dd0100ef7788004408bc381a82ba5fa45ae89cfca1b455c5901e49d1d64665dc",
+          "status": "fallback",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 186,
+          "drainMs": 0
+        }
+      ]
+    },
+    "discardedSupplement": {
+      "manifestHash": "fc0ba41e0376282865150a1040366f30c84fbe4f6c794de32f1fad762ee9198d",
+      "status": "complete",
+      "executionFailures": 0,
+      "sources": [
+        {
+          "sourceHash": "877fbb720a16650ad7b1bcfaae86f106f7ffa84cf873f92f98944496c61ccdbf",
+          "contentHash": "f4ff9a30ab3e6e5aa0eefba48c17eac9d9d9ef6ed5cd0483d2931f7a6b58eaa4",
+          "pagesHash": "f437fa98ce369b7dc970fad5ffe0830b30e886294a910d83c49a07c6ec6e8348",
+          "pages": 348,
+          "uploadBatches": 70,
+          "embeddingCalls": 346,
+          "idempotent": true
+        }
+      ],
+      "positiveQuestions": 24,
+      "fullAnchorHits": 23,
+      "negativeQuestions": 6,
+      "negativeCitationSuppression": 6,
+      "allCitationsValid": true,
+      "apiCalls": 412,
+      "neurons": 327.24,
+      "medianSearchMs": 1011.0,
+      "maxSearchMs": 1917,
+      "rerankerFallback": 0,
+      "results": [
+        {
+          "caseHash": "53f6d9bb893cec3bd69071c8dc491685d7e86b50533832e8a4b09b15231d57e6",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 989,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "d28036abce74267f375934cf698d4bf42cb964a97e5bece9a044dc40984f7cf8",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1917,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "0a44e3c76d89fbee1fbf59d1f4e791078d5957532b1abc0e185c4456202553f1",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1712,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f39b5aba1165dad4e49edeeb6bf4e15524cc0b7d5c7bd8f0263d8cb507bac6ce",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1288,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "54472dfbc5c326ad4ed6a5404be1e47eeeaaf96bddc1baf29c12e3e4b5f85a75",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1037,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "90db8c73ae9ca2bcab20dd5bcf4bd6a60241079bb66fc31c1bc7a93a6019fb59",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 992,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "d4836f2ea09058c9eb6ebb86b1095f030910ff2732c1de2b4ca2e2ee1165b3d6",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 936,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "cd4cb41dea1ccda92d048b3cf5ca44fdb01ed5bf87099d7dbfa3ed40c6c02ac1",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 0,
+          "evidenceRecall": 0,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 996,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "7963cb8b746983947cbc4c18d8436cf9e3ed36aa85d633f7ddfa9330c634563c",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1442,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "9759db6fa83b62003e95451f39d4fd017edac15c107090252723494ed56fab3e",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 819,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "c7684915188f03d7579477275f38868a0431330fb64dbc7f47f8251d26447d1f",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 882,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f1aea647225842a4ea8ec5d368f27a159b7230ba0587b561e536479b0eb93765",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1065,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "1930b55fbf5d4fcb295f4e0e9c328a818edf7c1fb207747c7f4363b1e9d28662",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 987,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f9b80f0c8437157dde868379fae5da7eb384817c270dc2842b672e59afccd67d",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1039,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "65a4ee7dcb74187c9a8da7819ded6ea8cacb17cfd6bd2d280857685d375c052b",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 701,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "42ef3ba5084afbfadcec2e4afb786dc7e44a53bd3191fd50f9b23584df988a5f",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 862,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "a657847368830dee58bb38aaa8a75a7a5aa32df24523ae6e6e09cf107d2544a3",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1048,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "9fa4549eadec1b2473d9338075be1d833cb2852550866e03a1c75bf9237feae2",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1040,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f4e3d4f5d8b033fac1917eb311fcba8f598dde8961169e3d724a693247d29649",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1269,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "473b576ed9282c0f532c69abb6a771e3ffb3e9a33dae428b21fbf0585aa9d7eb",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 950,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "3dc11aa06739709a07c2c47eec8332feb02c505450ac13851a9c3c48dd1cf001",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1161,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "fee34529740fab42aed15fd5270c39b4bd3399d33cf75842ec165a2e99d16046",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 798,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "cd9bc156662ac42634f1b96e8135e8bfbf043b63f2edf2a4a5bdc3a481b243d3",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1189,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "ea9cf67dc785e7771beff2ca3edfb11dfc427b89aba82da6ca0c0aa163bad929",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1423,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "8e39a6c9e39fecc13b38d2d9e7525969b2359878ff21143ee53c86cc4685f5ce",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 1057,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "b58f6460437d82ea2160b84822a7b116dcfbb8ac362b82ae5261759d867533ff",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 1026,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "d61da78370394c6d211b05a790a0b34335b28ec682d306c013396d9145156585",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 635,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "b70ea9433fe003c19081e5d8d07a734559060cb0575a472027ff37399b073b46",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 958,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "2c172907edfbddbf4a2215e3a89a49fce94ba208cead038fdf9dd38e689a1c3d",
+          "status": "fallback",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 208,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "dd0100ef7788004408bc381a82ba5fa45ae89cfca1b455c5901e49d1d64665dc",
+          "status": "fallback",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 289,
+          "drainMs": 0
+        }
+      ]
+    },
+    "discardedProseSupplement": {
+      "manifestHash": "3b98e7606279ee849a2cf5090366afc605ceba320d79055318c584e2c8dc5556",
+      "status": "complete",
+      "executionFailures": 0,
+      "sources": [
+        {
+          "sourceHash": "877fbb720a16650ad7b1bcfaae86f106f7ffa84cf873f92f98944496c61ccdbf",
+          "contentHash": "f4ff9a30ab3e6e5aa0eefba48c17eac9d9d9ef6ed5cd0483d2931f7a6b58eaa4",
+          "pagesHash": "dfb3782d624f9f2fdec35c00823c55b9a0283499997c06d8a5a582c516fef9e6",
+          "pages": 348,
+          "uploadBatches": 70,
+          "embeddingCalls": 346,
+          "idempotent": true
+        }
+      ],
+      "positiveQuestions": 24,
+      "fullAnchorHits": 23,
+      "negativeQuestions": 6,
+      "negativeCitationSuppression": 6,
+      "allCitationsValid": true,
+      "apiCalls": 412,
+      "neurons": 321.36,
+      "medianSearchMs": 806.5,
+      "maxSearchMs": 1879,
+      "rerankerFallback": 0,
+      "results": [
+        {
+          "caseHash": "53f6d9bb893cec3bd69071c8dc491685d7e86b50533832e8a4b09b15231d57e6",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 927,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "d28036abce74267f375934cf698d4bf42cb964a97e5bece9a044dc40984f7cf8",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1069,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "0a44e3c76d89fbee1fbf59d1f4e791078d5957532b1abc0e185c4456202553f1",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 962,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f39b5aba1165dad4e49edeeb6bf4e15524cc0b7d5c7bd8f0263d8cb507bac6ce",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 566,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "54472dfbc5c326ad4ed6a5404be1e47eeeaaf96bddc1baf29c12e3e4b5f85a75",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 796,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "90db8c73ae9ca2bcab20dd5bcf4bd6a60241079bb66fc31c1bc7a93a6019fb59",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 792,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "d4836f2ea09058c9eb6ebb86b1095f030910ff2732c1de2b4ca2e2ee1165b3d6",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 781,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "cd4cb41dea1ccda92d048b3cf5ca44fdb01ed5bf87099d7dbfa3ed40c6c02ac1",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 0,
+          "evidenceRecall": 0,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 598,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "7963cb8b746983947cbc4c18d8436cf9e3ed36aa85d633f7ddfa9330c634563c",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 918,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "9759db6fa83b62003e95451f39d4fd017edac15c107090252723494ed56fab3e",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1601,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "c7684915188f03d7579477275f38868a0431330fb64dbc7f47f8251d26447d1f",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1879,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f1aea647225842a4ea8ec5d368f27a159b7230ba0587b561e536479b0eb93765",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 817,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "1930b55fbf5d4fcb295f4e0e9c328a818edf7c1fb207747c7f4363b1e9d28662",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1019,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f9b80f0c8437157dde868379fae5da7eb384817c270dc2842b672e59afccd67d",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 795,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "65a4ee7dcb74187c9a8da7819ded6ea8cacb17cfd6bd2d280857685d375c052b",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 674,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "42ef3ba5084afbfadcec2e4afb786dc7e44a53bd3191fd50f9b23584df988a5f",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 757,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "a657847368830dee58bb38aaa8a75a7a5aa32df24523ae6e6e09cf107d2544a3",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 913,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "9fa4549eadec1b2473d9338075be1d833cb2852550866e03a1c75bf9237feae2",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 673,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "f4e3d4f5d8b033fac1917eb311fcba8f598dde8961169e3d724a693247d29649",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1278,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "473b576ed9282c0f532c69abb6a771e3ffb3e9a33dae428b21fbf0585aa9d7eb",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 894,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "3dc11aa06739709a07c2c47eec8332feb02c505450ac13851a9c3c48dd1cf001",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1209,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "fee34529740fab42aed15fd5270c39b4bd3399d33cf75842ec165a2e99d16046",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 647,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "cd9bc156662ac42634f1b96e8135e8bfbf043b63f2edf2a4a5bdc3a481b243d3",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 690,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "ea9cf67dc785e7771beff2ca3edfb11dfc427b89aba82da6ca0c0aa163bad929",
+          "status": "grounded",
+          "expected": "supported",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": 1,
+          "evidenceRecall": 1,
+          "noEvidenceAccepted": null,
+          "elapsedMs": 1082,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "8e39a6c9e39fecc13b38d2d9e7525969b2359878ff21143ee53c86cc4685f5ce",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 723,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "b58f6460437d82ea2160b84822a7b116dcfbb8ac362b82ae5261759d867533ff",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 1045,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "d61da78370394c6d211b05a790a0b34335b28ec682d306c013396d9145156585",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 527,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "b70ea9433fe003c19081e5d8d07a734559060cb0575a472027ff37399b073b46",
+          "status": "insufficient",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 916,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "2c172907edfbddbf4a2215e3a89a49fce94ba208cead038fdf9dd38e689a1c3d",
+          "status": "fallback",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 218,
+          "drainMs": 0
+        },
+        {
+          "caseHash": "dd0100ef7788004408bc381a82ba5fa45ae89cfca1b455c5901e49d1d64665dc",
+          "status": "fallback",
+          "expected": "no_evidence",
+          "citationValid": true,
+          "qualityEligible": true,
+          "executionFailure": null,
+          "rerankerFallback": false,
+          "pageRecall": null,
+          "evidenceRecall": null,
+          "noEvidenceAccepted": true,
+          "elapsedMs": 296,
+          "drainMs": 0
+        }
+      ]
+    }
+  },
+  "excludedAuthAttempt": {
+    "status": "failed",
+    "completedQuestions": 0,
+    "apiCalls": 1,
+    "excludedFromQuality": true
+  },
+  "mathSample": {
+    "physicalPage": 40,
+    "manuallyTranscribedLinearReferences": 5,
+    "beforeMatches": 0,
+    "afterMatches": 0,
+    "reviewFlag": true,
+    "notSemanticEquivalenceAccuracy": true
+  }
+}

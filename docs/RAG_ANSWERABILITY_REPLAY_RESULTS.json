@@ -1,0 +1,2256 @@
+{
+  "method": "offline evidence-gate replay of saved retrieval pages; no new AI calls or final-answer evaluation",
+  "pages": 100,
+  "sets": [
+    {
+      "set": "fixture",
+      "count": 60,
+      "positives": 55,
+      "beforeAllExpected": 52,
+      "afterAllExpected": 52,
+      "negativeBeforeWithReferences": 0,
+      "negativeAfterWithReferences": 0,
+      "rows": [
+        {
+          "id": "def-1",
+          "kind": "paraphrase",
+          "expectedPages": [
+            1
+          ],
+          "before": [
+            86,
+            1,
+            87
+          ],
+          "after": [
+            86,
+            1,
+            87
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-1",
+          "kind": "ocr",
+          "expectedPages": [
+            5
+          ],
+          "before": [
+            5
+          ],
+          "after": [
+            5
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-2",
+          "kind": "paraphrase",
+          "expectedPages": [
+            6
+          ],
+          "before": [
+            10
+          ],
+          "after": [
+            10
+          ],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-2",
+          "kind": "ocr",
+          "expectedPages": [
+            10
+          ],
+          "before": [
+            10
+          ],
+          "after": [
+            10
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-3",
+          "kind": "paraphrase",
+          "expectedPages": [
+            11
+          ],
+          "before": [
+            11
+          ],
+          "after": [
+            11
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-3",
+          "kind": "ocr",
+          "expectedPages": [
+            15
+          ],
+          "before": [
+            13,
+            15,
+            12
+          ],
+          "after": [
+            13,
+            15,
+            12
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-4",
+          "kind": "paraphrase",
+          "expectedPages": [
+            16
+          ],
+          "before": [
+            16,
+            20,
+            21,
+            19
+          ],
+          "after": [
+            16,
+            20,
+            21,
+            19
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-4",
+          "kind": "ocr",
+          "expectedPages": [
+            20
+          ],
+          "before": [
+            20
+          ],
+          "after": [
+            20
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-5",
+          "kind": "paraphrase",
+          "expectedPages": [
+            21
+          ],
+          "before": [
+            16,
+            21,
+            20,
+            17,
+            19
+          ],
+          "after": [
+            16,
+            21,
+            20,
+            17,
+            19
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-5",
+          "kind": "ocr",
+          "expectedPages": [
+            25
+          ],
+          "before": [
+            25,
+            23,
+            21,
+            22
+          ],
+          "after": [
+            25,
+            23,
+            21,
+            22
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-6",
+          "kind": "paraphrase",
+          "expectedPages": [
+            26
+          ],
+          "before": [
+            26
+          ],
+          "after": [
+            26
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-6",
+          "kind": "ocr",
+          "expectedPages": [
+            30
+          ],
+          "before": [
+            30
+          ],
+          "after": [
+            30
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-7",
+          "kind": "paraphrase",
+          "expectedPages": [
+            31
+          ],
+          "before": [
+            31
+          ],
+          "after": [
+            31
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-7",
+          "kind": "ocr",
+          "expectedPages": [
+            35
+          ],
+          "before": [
+            35
+          ],
+          "after": [
+            35
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-8",
+          "kind": "paraphrase",
+          "expectedPages": [
+            36
+          ],
+          "before": [
+            36
+          ],
+          "after": [
+            36
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-8",
+          "kind": "ocr",
+          "expectedPages": [
+            40
+          ],
+          "before": [
+            40,
+            38
+          ],
+          "after": [
+            40,
+            38
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-9",
+          "kind": "paraphrase",
+          "expectedPages": [
+            41
+          ],
+          "before": [
+            41
+          ],
+          "after": [
+            41
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-9",
+          "kind": "ocr",
+          "expectedPages": [
+            45
+          ],
+          "before": [
+            45,
+            42
+          ],
+          "after": [
+            45,
+            42
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-10",
+          "kind": "paraphrase",
+          "expectedPages": [
+            46
+          ],
+          "before": [
+            46,
+            47
+          ],
+          "after": [
+            46,
+            47
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-10",
+          "kind": "ocr",
+          "expectedPages": [
+            50
+          ],
+          "before": [
+            50
+          ],
+          "after": [
+            50
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-11",
+          "kind": "paraphrase",
+          "expectedPages": [
+            51
+          ],
+          "before": [
+            51,
+            58,
+            54
+          ],
+          "after": [
+            51,
+            58,
+            54
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-11",
+          "kind": "ocr",
+          "expectedPages": [
+            55
+          ],
+          "before": [
+            55,
+            51,
+            53,
+            80
+          ],
+          "after": [
+            55,
+            51,
+            53,
+            80
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-12",
+          "kind": "paraphrase",
+          "expectedPages": [
+            56
+          ],
+          "before": [
+            73,
+            58
+          ],
+          "after": [
+            73,
+            58
+          ],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-12",
+          "kind": "ocr",
+          "expectedPages": [
+            60
+          ],
+          "before": [
+            60
+          ],
+          "after": [
+            60
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-13",
+          "kind": "paraphrase",
+          "expectedPages": [
+            61
+          ],
+          "before": [
+            63,
+            64,
+            62,
+            65,
+            61
+          ],
+          "after": [
+            63,
+            64,
+            62,
+            65,
+            61
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-13",
+          "kind": "ocr",
+          "expectedPages": [
+            65
+          ],
+          "before": [
+            65,
+            63,
+            64,
+            62
+          ],
+          "after": [
+            65,
+            63,
+            64,
+            62
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-14",
+          "kind": "paraphrase",
+          "expectedPages": [
+            66
+          ],
+          "before": [
+            67,
+            66
+          ],
+          "after": [
+            66
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": true
+        },
+        {
+          "id": "ocr-14",
+          "kind": "ocr",
+          "expectedPages": [
+            70
+          ],
+          "before": [
+            70,
+            69,
+            67,
+            66
+          ],
+          "after": [
+            70,
+            69,
+            67,
+            66
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-15",
+          "kind": "paraphrase",
+          "expectedPages": [
+            71
+          ],
+          "before": [
+            71,
+            72,
+            75,
+            74,
+            73
+          ],
+          "after": [
+            71,
+            72,
+            75,
+            74,
+            73
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-15",
+          "kind": "ocr",
+          "expectedPages": [
+            75
+          ],
+          "before": [
+            74,
+            75
+          ],
+          "after": [
+            74,
+            75
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-16",
+          "kind": "paraphrase",
+          "expectedPages": [
+            76
+          ],
+          "before": [
+            76
+          ],
+          "after": [
+            76
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-16",
+          "kind": "ocr",
+          "expectedPages": [
+            80
+          ],
+          "before": [
+            80
+          ],
+          "after": [
+            80
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-17",
+          "kind": "paraphrase",
+          "expectedPages": [
+            81
+          ],
+          "before": [
+            81,
+            83
+          ],
+          "after": [
+            81,
+            83
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-17",
+          "kind": "ocr",
+          "expectedPages": [
+            85
+          ],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "def-18",
+          "kind": "paraphrase",
+          "expectedPages": [
+            86
+          ],
+          "before": [
+            86,
+            90,
+            87,
+            89,
+            88
+          ],
+          "after": [
+            86,
+            90,
+            87,
+            89,
+            88
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-18",
+          "kind": "ocr",
+          "expectedPages": [
+            90
+          ],
+          "before": [
+            90,
+            86
+          ],
+          "after": [
+            90,
+            86
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-19",
+          "kind": "paraphrase",
+          "expectedPages": [
+            91
+          ],
+          "before": [
+            91,
+            93
+          ],
+          "after": [
+            91,
+            93
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-19",
+          "kind": "ocr",
+          "expectedPages": [
+            95
+          ],
+          "before": [
+            95,
+            91
+          ],
+          "after": [
+            95,
+            91
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "def-20",
+          "kind": "paraphrase",
+          "expectedPages": [
+            96
+          ],
+          "before": [
+            98,
+            96,
+            97
+          ],
+          "after": [
+            98,
+            96,
+            97
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ocr-20",
+          "kind": "ocr",
+          "expectedPages": [
+            100
+          ],
+          "before": [
+            100
+          ],
+          "after": [
+            100
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "comparison-1",
+          "kind": "comparison",
+          "expectedPages": [
+            1,
+            6
+          ],
+          "before": [
+            1,
+            6,
+            8,
+            10,
+            7
+          ],
+          "after": [
+            1,
+            6,
+            8,
+            10,
+            7
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "comparison-3",
+          "kind": "comparison",
+          "expectedPages": [
+            11,
+            16
+          ],
+          "before": [
+            11,
+            21,
+            16,
+            20,
+            18
+          ],
+          "after": [
+            11,
+            21,
+            16,
+            20,
+            18
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "comparison-5",
+          "kind": "comparison",
+          "expectedPages": [
+            21,
+            26
+          ],
+          "before": [
+            21,
+            26,
+            23,
+            22,
+            25
+          ],
+          "after": [
+            21,
+            26,
+            23,
+            22,
+            25
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "comparison-7",
+          "kind": "comparison",
+          "expectedPages": [
+            31,
+            36
+          ],
+          "before": [
+            31,
+            36,
+            38,
+            37,
+            33
+          ],
+          "after": [
+            31,
+            36,
+            38,
+            37,
+            33
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "comparison-9",
+          "kind": "comparison",
+          "expectedPages": [
+            41,
+            46
+          ],
+          "before": [
+            41,
+            49,
+            46,
+            47,
+            43
+          ],
+          "after": [
+            41,
+            49,
+            46,
+            47,
+            43
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "comparison-11",
+          "kind": "comparison",
+          "expectedPages": [
+            51,
+            56
+          ],
+          "before": [
+            51,
+            56,
+            57,
+            71,
+            58
+          ],
+          "after": [
+            51,
+            56,
+            57,
+            71,
+            58
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "comparison-13",
+          "kind": "comparison",
+          "expectedPages": [
+            61,
+            66
+          ],
+          "before": [
+            61,
+            66,
+            70,
+            68,
+            63
+          ],
+          "after": [
+            61,
+            66,
+            70,
+            68,
+            63
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "comparison-15",
+          "kind": "comparison",
+          "expectedPages": [
+            71,
+            76
+          ],
+          "before": [
+            71,
+            76,
+            80,
+            79,
+            78
+          ],
+          "after": [
+            71,
+            76,
+            80,
+            79,
+            78
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "comparison-17",
+          "kind": "comparison",
+          "expectedPages": [
+            81,
+            86
+          ],
+          "before": [
+            81,
+            87,
+            86,
+            83,
+            82
+          ],
+          "after": [
+            81,
+            87,
+            86,
+            83,
+            82
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "comparison-19",
+          "kind": "comparison",
+          "expectedPages": [
+            91,
+            96
+          ],
+          "before": [
+            91,
+            96,
+            98,
+            93,
+            97
+          ],
+          "after": [
+            91,
+            96,
+            98,
+            93,
+            97
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ambiguous-1",
+          "kind": "rewrite",
+          "expectedPages": [
+            1
+          ],
+          "before": [
+            86,
+            1,
+            88,
+            87,
+            34
+          ],
+          "after": [
+            86,
+            1,
+            88,
+            87,
+            34
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ambiguous-6",
+          "kind": "rewrite",
+          "expectedPages": [
+            26
+          ],
+          "before": [
+            26,
+            30,
+            27
+          ],
+          "after": [
+            26,
+            30,
+            27
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ambiguous-11",
+          "kind": "rewrite",
+          "expectedPages": [
+            51
+          ],
+          "before": [
+            51,
+            58,
+            56,
+            54,
+            71
+          ],
+          "after": [
+            51,
+            58,
+            56,
+            54,
+            71
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ambiguous-16",
+          "kind": "rewrite",
+          "expectedPages": [
+            76
+          ],
+          "before": [
+            76,
+            78
+          ],
+          "after": [
+            76,
+            78
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "ambiguous-19",
+          "kind": "rewrite",
+          "expectedPages": [
+            91
+          ],
+          "before": [
+            91,
+            93,
+            94
+          ],
+          "after": [
+            91,
+            93,
+            94
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "negative-1",
+          "kind": "negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "negative-2",
+          "kind": "negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "negative-3",
+          "kind": "negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "negative-4",
+          "kind": "negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "negative-5",
+          "kind": "negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        }
+      ]
+    },
+    {
+      "set": "holdout-fixture",
+      "count": 40,
+      "positives": 30,
+      "beforeAllExpected": 29,
+      "afterAllExpected": 29,
+      "negativeBeforeWithReferences": 0,
+      "negativeAfterWithReferences": 0,
+      "rows": [
+        {
+          "id": "holdout-def-1",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            1
+          ],
+          "before": [
+            1,
+            90,
+            3
+          ],
+          "after": [
+            1,
+            90,
+            3
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-2",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            6
+          ],
+          "before": [
+            6
+          ],
+          "after": [
+            6
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-3",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            11
+          ],
+          "before": [
+            11,
+            12
+          ],
+          "after": [
+            11,
+            12
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-4",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            16
+          ],
+          "before": [
+            16,
+            18,
+            20,
+            19,
+            21
+          ],
+          "after": [
+            16,
+            18,
+            20,
+            19,
+            21
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-5",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            21
+          ],
+          "before": [
+            21
+          ],
+          "after": [
+            21
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-6",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            26
+          ],
+          "before": [
+            26,
+            30
+          ],
+          "after": [
+            26,
+            30
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-7",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            31
+          ],
+          "before": [
+            31
+          ],
+          "after": [
+            31
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-8",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            36
+          ],
+          "before": [
+            36,
+            38
+          ],
+          "after": [
+            36,
+            38
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-9",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            41
+          ],
+          "before": [
+            41
+          ],
+          "after": [
+            41
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-10",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            46
+          ],
+          "before": [
+            46
+          ],
+          "after": [
+            46
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-11",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            51
+          ],
+          "before": [
+            51,
+            53,
+            55,
+            52,
+            54
+          ],
+          "after": [
+            51,
+            53,
+            55,
+            52,
+            54
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-12",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            56
+          ],
+          "before": [
+            58,
+            56,
+            60,
+            54,
+            59
+          ],
+          "after": [
+            58,
+            56,
+            60,
+            54,
+            59
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-13",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            61
+          ],
+          "before": [
+            64,
+            63,
+            62,
+            61,
+            29
+          ],
+          "after": [
+            64,
+            63,
+            62,
+            61,
+            29
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-14",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            66
+          ],
+          "before": [
+            66
+          ],
+          "after": [
+            66
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-15",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            71
+          ],
+          "before": [
+            71,
+            72,
+            75,
+            73,
+            74
+          ],
+          "after": [
+            71,
+            72,
+            75,
+            73,
+            74
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-16",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            76
+          ],
+          "before": [
+            76,
+            80,
+            77
+          ],
+          "after": [
+            76,
+            80,
+            77
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-17",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            81
+          ],
+          "before": [
+            81,
+            82,
+            85,
+            83,
+            84
+          ],
+          "after": [
+            81,
+            82,
+            85,
+            83,
+            84
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-18",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            86
+          ],
+          "before": [
+            90,
+            86,
+            87
+          ],
+          "after": [
+            90,
+            86,
+            87
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-19",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            91
+          ],
+          "before": [
+            93,
+            91,
+            95,
+            94,
+            81
+          ],
+          "after": [
+            93,
+            91,
+            95,
+            94,
+            81
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-def-20",
+          "kind": "holdout_paraphrase",
+          "expectedPages": [
+            96
+          ],
+          "before": [
+            96,
+            98,
+            97,
+            99,
+            100
+          ],
+          "after": [
+            96,
+            98,
+            97,
+            99,
+            100
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-ocr-25",
+          "kind": "holdout_ocr",
+          "expectedPages": [
+            25
+          ],
+          "before": [
+            25,
+            23,
+            22,
+            21
+          ],
+          "after": [
+            25,
+            23,
+            22,
+            21
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-ocr-30",
+          "kind": "holdout_ocr",
+          "expectedPages": [
+            30
+          ],
+          "before": [
+            30
+          ],
+          "after": [
+            30
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-ocr-55",
+          "kind": "holdout_ocr",
+          "expectedPages": [
+            55
+          ],
+          "before": [
+            55,
+            53,
+            51,
+            52
+          ],
+          "after": [
+            55,
+            53,
+            51,
+            52
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-ocr-90",
+          "kind": "holdout_ocr",
+          "expectedPages": [
+            90
+          ],
+          "before": [
+            90,
+            86,
+            89,
+            87
+          ],
+          "after": [
+            90,
+            86,
+            89,
+            87
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-ocr-100",
+          "kind": "holdout_ocr",
+          "expectedPages": [
+            100
+          ],
+          "before": [
+            100
+          ],
+          "after": [
+            100
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-compare-1-5",
+          "kind": "holdout_comparison",
+          "expectedPages": [
+            1,
+            21
+          ],
+          "before": [
+            1,
+            21,
+            23,
+            25,
+            3
+          ],
+          "after": [
+            1,
+            21,
+            23,
+            25,
+            3
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-compare-2-11",
+          "kind": "holdout_comparison",
+          "expectedPages": [
+            6,
+            51
+          ],
+          "before": [
+            6,
+            51,
+            8,
+            53,
+            55
+          ],
+          "after": [
+            6,
+            51,
+            8,
+            53,
+            55
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-compare-3-16",
+          "kind": "holdout_comparison",
+          "expectedPages": [
+            11,
+            76
+          ],
+          "before": [
+            11,
+            76,
+            12,
+            13,
+            15
+          ],
+          "after": [
+            11,
+            76,
+            12,
+            13,
+            15
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-compare-7-6",
+          "kind": "holdout_comparison",
+          "expectedPages": [
+            31,
+            26
+          ],
+          "before": [
+            31,
+            33,
+            35,
+            32,
+            34
+          ],
+          "after": [
+            31,
+            33,
+            35,
+            32,
+            34
+          ],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-compare-19-20",
+          "kind": "holdout_comparison",
+          "expectedPages": [
+            91,
+            96
+          ],
+          "before": [
+            91,
+            96,
+            98,
+            99,
+            93
+          ],
+          "after": [
+            91,
+            96,
+            98,
+            99,
+            93
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-negative-1",
+          "kind": "holdout_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-negative-2",
+          "kind": "holdout_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-negative-3",
+          "kind": "holdout_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-negative-4",
+          "kind": "holdout_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "holdout-negative-5",
+          "kind": "holdout_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-negative-6",
+          "kind": "holdout_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-negative-7",
+          "kind": "holdout_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-negative-8",
+          "kind": "holdout_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": false
+        },
+        {
+          "id": "holdout-negative-9",
+          "kind": "holdout_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "holdout-negative-10",
+          "kind": "holdout_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        }
+      ]
+    },
+    {
+      "set": "validation-fixture",
+      "count": 20,
+      "positives": 10,
+      "beforeAllExpected": 10,
+      "afterAllExpected": 10,
+      "negativeBeforeWithReferences": 5,
+      "negativeAfterWithReferences": 0,
+      "rows": [
+        {
+          "id": "validation-positive-1",
+          "kind": "validation_positive",
+          "expectedPages": [
+            1
+          ],
+          "before": [
+            1,
+            2,
+            3,
+            90,
+            4
+          ],
+          "after": [
+            1,
+            2,
+            3,
+            90,
+            4
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "validation-positive-5",
+          "kind": "validation_positive",
+          "expectedPages": [
+            21
+          ],
+          "before": [
+            21,
+            20,
+            22
+          ],
+          "after": [
+            21,
+            20,
+            22
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "validation-positive-6",
+          "kind": "validation_positive",
+          "expectedPages": [
+            26
+          ],
+          "before": [
+            30,
+            26,
+            29
+          ],
+          "after": [
+            30,
+            26,
+            29
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "validation-positive-7",
+          "kind": "validation_positive",
+          "expectedPages": [
+            31
+          ],
+          "before": [
+            31,
+            33,
+            35,
+            32,
+            34
+          ],
+          "after": [
+            31,
+            33,
+            35,
+            32,
+            34
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "validation-positive-13",
+          "kind": "validation_positive",
+          "expectedPages": [
+            61
+          ],
+          "before": [
+            63,
+            61,
+            62,
+            65
+          ],
+          "after": [
+            63,
+            61,
+            62,
+            65
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "validation-comparison-7-6",
+          "kind": "validation_comparison",
+          "expectedPages": [
+            31,
+            26
+          ],
+          "before": [
+            31,
+            26,
+            33,
+            35,
+            32
+          ],
+          "after": [
+            31,
+            26,
+            33,
+            35,
+            32
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "validation-comparison-4-5",
+          "kind": "validation_comparison",
+          "expectedPages": [
+            16,
+            21
+          ],
+          "before": [
+            21,
+            22,
+            24,
+            16,
+            23
+          ],
+          "after": [
+            21,
+            22,
+            24,
+            16,
+            23
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "validation-comparison-12-13",
+          "kind": "validation_comparison",
+          "expectedPages": [
+            56,
+            61
+          ],
+          "before": [
+            56,
+            61,
+            63,
+            65,
+            71
+          ],
+          "after": [
+            56,
+            61,
+            63,
+            65,
+            71
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "validation-comparison-19-18",
+          "kind": "validation_comparison",
+          "expectedPages": [
+            91,
+            86
+          ],
+          "before": [
+            91,
+            86,
+            88,
+            90,
+            89
+          ],
+          "after": [
+            91,
+            86,
+            88,
+            90,
+            89
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "validation-comparison-16-20",
+          "kind": "validation_comparison",
+          "expectedPages": [
+            76,
+            96
+          ],
+          "before": [
+            76,
+            98,
+            96,
+            97,
+            99
+          ],
+          "after": [
+            76,
+            98,
+            96,
+            97,
+            99
+          ],
+          "beforeAllExpected": true,
+          "afterAllExpected": true,
+          "gateApplied": false
+        },
+        {
+          "id": "validation-hard-negative-1",
+          "kind": "validation_hard_negative",
+          "expectedPages": [],
+          "before": [
+            3,
+            1,
+            4,
+            2
+          ],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "validation-hard-negative-2",
+          "kind": "validation_hard_negative",
+          "expectedPages": [],
+          "before": [
+            8,
+            10
+          ],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "validation-hard-negative-3",
+          "kind": "validation_hard_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "validation-hard-negative-4",
+          "kind": "validation_hard_negative",
+          "expectedPages": [],
+          "before": [
+            19
+          ],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "validation-hard-negative-5",
+          "kind": "validation_hard_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "validation-hard-negative-6",
+          "kind": "validation_hard_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "validation-hard-negative-7",
+          "kind": "validation_hard_negative",
+          "expectedPages": [],
+          "before": [
+            31,
+            33,
+            35,
+            32,
+            34
+          ],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "validation-hard-negative-8",
+          "kind": "validation_hard_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "validation-hard-negative-9",
+          "kind": "validation_hard_negative",
+          "expectedPages": [],
+          "before": [],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        },
+        {
+          "id": "validation-hard-negative-10",
+          "kind": "validation_hard_negative",
+          "expectedPages": [],
+          "before": [
+            95
+          ],
+          "after": [],
+          "beforeAllExpected": false,
+          "afterAllExpected": false,
+          "gateApplied": true
+        }
+      ]
+    }
+  ]
+}
