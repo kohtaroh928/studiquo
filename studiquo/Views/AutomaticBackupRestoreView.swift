@@ -37,6 +37,7 @@ struct AutomaticBackupRestoreView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("自動バックアップ")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

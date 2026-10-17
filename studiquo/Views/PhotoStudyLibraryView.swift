@@ -352,7 +352,7 @@ struct PhotoStudyLibraryView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color(uiColor: .systemBackground))
+        .background(Theme.Palette.canvas)
         .onAppear { model.reloadIfAllowed() }
         .accessibilityIdentifier("photo-study-library")
     }
@@ -364,7 +364,7 @@ struct PhotoStudyLibraryView: View {
             Text("ノートを見ながら資料写真を表示するため、写真ライブラリへのアクセスを許可してください。")
         } actions: {
             Button("アクセスを許可") { model.requestAccess() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.themePrimary)
                 .disabled(model.isLoading)
             if model.isLoading { ProgressView() }
         }
@@ -377,7 +377,7 @@ struct PhotoStudyLibraryView: View {
             Text("設定でStudiquoに写真へのアクセスを許可してください。")
         } actions: {
             Button("設定を開く") { model.openSettings() }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.themePrimary)
         }
     }
 
@@ -432,7 +432,7 @@ struct PhotoStudySquareCell: View {
     let image: UIImage?
 
     var body: some View {
-        Color(uiColor: .secondarySystemBackground)
+        Theme.Palette.canvas
             .aspectRatio(1, contentMode: .fit)
             .overlay {
                 if let image {
@@ -620,7 +620,7 @@ struct PhotoStudyPaneViewer: View {
                     Text(errorMessage)
                 } actions: {
                     Button("再試行", action: load)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.themePrimary)
                 }
                 .foregroundStyle(.white)
             } else {
