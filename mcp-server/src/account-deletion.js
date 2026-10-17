@@ -45,6 +45,8 @@ async function stillDeleting(env, deletionStateKey, generation) {
 const MAX_ROOMS_PER_RUN = 40;
 
 async function removeDocumentRooms(env, chatKey) {
+  // Invitations still waiting for this account's answer (document-collab.js).
+  for (const key of await entries(env, `doc-invite:${chatKey}:`)) await env.STUDIQUO_DATA.delete(key);
   const prefix = roomMembershipKey(chatKey, "");
   const keys = await entries(env, prefix);
   let failure = null;

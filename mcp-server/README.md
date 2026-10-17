@@ -175,3 +175,7 @@ npm run dev
 ```
 
 KVネームスペース `STUDIQUO_DATA` のIDは `wrangler.jsonc` に設定済みです。別のCloudflareアカウントで動かす場合は、`npx wrangler kv namespace create STUDIQUO_DATA` で作り直してIDを差し替えてください。
+
+## 共同編集の招待
+
+招待(`POST /api/document/rooms/:id/invite`)は、相手を参加者にしません。保留の招待(`doc-invite:<相手のキー>:<部屋>`、14日で失効、1人あたり20件まで)を作り、相手に通知します。相手が `POST .../invite/accept` を呼んだ時点で、招待した人がまだ部屋の所有者であれば参加者になります(所有者でなくなっていれば410)。`POST .../invite/decline` で断り、`GET /api/document/invites` で保留の一覧を見られます。すでに参加している人の役割変更だけは、そのまま反映されます。

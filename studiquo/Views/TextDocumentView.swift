@@ -2682,6 +2682,7 @@ private struct CollabSheet: View {
     @State private var isStarting = false
     @State private var isSyncing = false
     @State private var participants: [DocumentCollabService.Participant] = []
+    @State private var inviteNotice = ""
     @State private var selectedFriendCode = ""
     @State private var selectedRole = "editor"
     @State private var errorMessage: String?
@@ -2763,6 +2764,9 @@ private struct CollabSheet: View {
                     }
                     Button("招待する") { Task { await invite(roomID: roomID) } }
                         .disabled(selectedFriendCode.isEmpty)
+                    if !inviteNotice.isEmpty {
+                        Text(inviteNotice).font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
             }
             Section {
@@ -2826,6 +2830,8 @@ private struct CollabSheet: View {
         do {
             _ = try await DocumentCollabService.invite(roomID: roomID, code: selectedFriendCode, role: selectedRole)
             selectedFriendCode = ""
+            // The friend is added to the participants only after they accept.
+            await MainActor.run { inviteNotice = L("招待を送りました。相手が承諾すると、参加者に追加されます。") }
             await refreshParticipants()
         } catch {
             await MainActor.run { errorMessage = "招待に失敗しました。相手が友達登録されているか確認してください。" }

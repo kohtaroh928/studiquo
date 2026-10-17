@@ -134,6 +134,9 @@ function environment() {
     },
     async put(key, value) { values.set(key, value); },
     async delete(key) { values.delete(key); },
+    async list({ prefix }) {
+      return { keys: [...values.keys()].filter(name => name.startsWith(prefix)).map(name => ({ name })), list_complete: true };
+    },
   };
   return {
     STUDIQUO_DATA: studiquoData,
@@ -208,13 +211,28 @@ async function befriend(env, token, friend) {
 // `inviteeToken` is the token belonging to the person being invited — the
 // route resolves their friend code to a userKey server-side (the same way
 // chat.js resolves one when adding a friend), so this registers them first.
-async function invite(env, ownerToken, inviteeToken, role, { name = "友人" } = {}) {
+async function sendInvite(env, ownerToken, inviteeToken, role, { name = "友人" } = {}) {
   const code = await registerFriend(env, inviteeToken, name, { befriendedBy: ownerToken });
   return worker.fetch(
     request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: ownerToken, body: { code, role } }),
     env,
     noopCtx
   );
+}
+
+// An invitation only seats the person once they accept it. Most tests are about
+// what a participant can do, so this sends the invitation and has the invitee
+// accept it; the response is the invitation's, as before.
+async function invite(env, ownerToken, inviteeToken, role, options) {
+  const response = await sendInvite(env, ownerToken, inviteeToken, role, options);
+  if (response.status === 200) {
+    const accepted = await worker.fetch(
+      request(`/api/document/rooms/${ROOM_ID}/invite/accept`, { method: "POST", token: inviteeToken, body: {} }),
+      env, noopCtx
+    );
+    assert.equal(accepted.status, 200, "the invitee can accept");
+  }
+  return response;
 }
 
 function getState(env, token) {
@@ -431,7 +449,7 @@ test("inviting more than the per-minute limit is rate limited", async () => {
 
   let lastStatus = 200;
   for (let i = 0; i < 6; i += 1) {
-    const response = await invite(env, owner, freshToken(`invitee${i}`), "editor");
+    const response = await invite(env, owner, freshToken("abcdef"[i]), "editor");
     lastStatus = response.status;
   }
   assert.equal(lastStatus, 429);
@@ -542,27 +560,19 @@ test("a request outside /api/document/ is not handled by this router", async () 
   assert.equal(response.status, 200);
 });
 
-test("an invitee whose account is deleted while the invite is being made is not left in the room", async () => {
+test("an invitee whose account is deleted while the invite is being made is left with no invitation", async () => {
   const env = environment();
   const owner = freshToken("1");
   const invitee = freshToken("2");
   await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
   const code = await registerFriend(env, invitee, "友人", { befriendedBy: owner });
   const inviteeKey = await sha256Hex(invitee);
-  const binding = env.DOCUMENT_ROOM;
-  // The deletion lands after the code was resolved and the seat was made.
-  env.DOCUMENT_ROOM = {
-    getByName(id) {
-      const room = binding.getByName(id);
-      return {
-        ...room,
-        async invite(ownerKey, userKey, role) {
-          const result = await room.invite(ownerKey, userKey, role);
-          await env.STUDIQUO_DATA.delete(`chat:user:${userKey}`);
-          return result;
-        },
-      };
-    },
+  // The deletion lands after the code was resolved and the invitation was written.
+  const put = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (name, value, options) => {
+    const result = await put.call(env.STUDIQUO_DATA, name, value, options);
+    if (name.startsWith("doc-invite:")) await env.STUDIQUO_DATA.delete(`chat:user:${inviteeKey}`);
+    return result;
   };
   const response = await worker.fetch(
     request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: owner, body: { code, role: "editor" } }),
@@ -570,6 +580,88 @@ test("an invitee whose account is deleted while the invite is being made is not 
     noopCtx
   );
   assert.equal(response.status, 404);
-  assert.equal(await binding.getByName(ROOM_ID).roleOf(inviteeKey), null);
-  assert.equal(await env.STUDIQUO_DATA.get(`doc-room:${inviteeKey}:${ROOM_ID}`), null);
+  assert.equal(await env.STUDIQUO_DATA.get(`doc-invite:${inviteeKey}:${ROOM_ID}`), null);
+  assert.equal(await env.DOCUMENT_ROOM.getByName(ROOM_ID).roleOf(inviteeKey), null);
+});
+
+test("an invitation does not seat anyone until it is accepted", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  const friend = freshToken("2");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  const sent = await sendInvite(env, owner, friend, "editor");
+  assert.equal(sent.status, 200);
+  assert.equal((await sent.json()).status, "pending");
+  assert.equal((await getState(env, friend)).status, 403, "not a participant yet");
+  assert.equal(await env.DOCUMENT_ROOM.getByName(ROOM_ID).roleOf(await sha256Hex(friend)), null);
+  assert.equal(await env.STUDIQUO_DATA.get(`doc-room:${await sha256Hex(friend)}:${ROOM_ID}`), null);
+
+  const waiting = await (await worker.fetch(request("/api/document/invites", { token: friend }), env, noopCtx)).json();
+  assert.deepEqual(waiting.map(item => [item.roomID, item.role]), [[ROOM_ID, "editor"]]);
+
+  const accepted = await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/invite/accept`, { method: "POST", token: friend, body: {} }), env, noopCtx);
+  assert.equal((await accepted.json()).status, "joined");
+  assert.equal((await getState(env, friend)).status, 200);
+  assert.deepEqual(await (await worker.fetch(request("/api/document/invites", { token: friend }), env, noopCtx)).json(), []);
+  assert.notEqual(await env.STUDIQUO_DATA.get(`doc-room:${await sha256Hex(friend)}:${ROOM_ID}`), null);
+});
+
+test("declining an invitation removes it and seats no one", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  const friend = freshToken("2");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  await sendInvite(env, owner, friend, "reviewer");
+  const declined = await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/invite/decline`, { method: "POST", token: friend, body: {} }), env, noopCtx);
+  assert.equal((await declined.json()).status, "declined");
+  assert.equal((await getState(env, friend)).status, 403);
+  const again = await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/invite/accept`, { method: "POST", token: friend, body: {} }), env, noopCtx);
+  assert.equal(again.status, 404, "nothing left to accept");
+});
+
+test("nobody can accept an invitation that was not made for them", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  const friend = freshToken("2");
+  const stranger = freshToken("3");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  await sendInvite(env, owner, friend, "editor");
+  const response = await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/invite/accept`, { method: "POST", token: stranger, body: {} }), env, noopCtx);
+  assert.equal(response.status, 404);
+  assert.equal((await getState(env, stranger)).status, 403);
+});
+
+test("an invitation from someone who is no longer the room's owner is void", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  const friend = freshToken("2");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  await sendInvite(env, owner, friend, "editor");
+  await env.DOCUMENT_ROOM.getByName(ROOM_ID).removeAccount(await sha256Hex(owner));
+  const response = await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/invite/accept`, { method: "POST", token: friend, body: {} }), env, noopCtx);
+  assert.equal(response.status, 410);
+  assert.equal(await env.STUDIQUO_DATA.get(`doc-invite:${await sha256Hex(friend)}:${ROOM_ID}`), null, "and it is cleared");
+});
+
+test("one person can hold only so many invitations at once", async () => {
+  const env = environment();
+  const friend = freshToken("2");
+  const friendKey = await sha256Hex(friend);
+  for (let i = 0; i < 20; i++) await env.STUDIQUO_DATA.put(`doc-invite:${friendKey}:${String(i).padStart(64, "0")}`, JSON.stringify({ inviterKey: "x", role: "editor", createdAt: i }));
+  const owner = freshToken("1");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  const response = await sendInvite(env, owner, friend, "editor");
+  assert.equal(response.status, 429);
+});
+
+test("an invitation lapses after two weeks", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  const friend = freshToken("2");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  const ttls = [];
+  const put = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (name, value, options) => { if (name.startsWith("doc-invite:")) ttls.push(options?.expirationTtl); return put.call(env.STUDIQUO_DATA, name, value, options); };
+  await sendInvite(env, owner, friend, "editor");
+  assert.deepEqual(ttls, [14 * 24 * 3600]);
 });
