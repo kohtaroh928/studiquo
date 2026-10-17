@@ -247,6 +247,7 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
   1. Workerを配備する(`REQUIRE_ID_TOKEN_NONCE`なし)。nonceを送らない従来のビルドも、これまでどおり使える。
   2. アプリ(nonceを送るビルド)を入れ直し、Apple・Googleでサインインできることを実機で確認する。
   3. 使われているすべてのビルドがnonceを送るようになったら、`REQUIRE_ID_TOKEN_NONCE="true"`を`vars`に入れて配備する。**nonceのない旧ビルドは、Apple・Googleでサインインできなくなる**(アプリ側の更新が要る)。
+  - **2026-10-17に、本番で手順3まで実施した。** 実機の新ビルド(GoogleSignIn 9.2.0)で、Apple・Googleのサインインが`verified`になり、配備後の通信がすべて成功することを確認してから、`REQUIRE_ID_TOKEN_NONCE="true"`を入れた(ステージングは`"false"`)。読み取りだけでは、nonceのない「本物のIDトークン」を作れないため、必須の効果そのものはテスト(`app.test.js`)で確認している。実環境の確認は、実機でのサインインが、必須のあとも成功すること。
 - **最初の確認**: 失敗するのが、Apple・Googleだけか(パスワード、Passkeyは別経路)。失敗した端末のアプリのビルド。`REQUIRE_ID_TOKEN_NONCE`の値。
 - **変更せず調べる**: Workers Logsで、`event=id_token_nonce`の行を検索する。サインインごとに1行出て、`provider`(`apple`・`google`)と`outcome`だけが入る(nonce・トークン・アカウントは入らない)。`outcome`の意味: `verified`(nonceが一致して初めて使われた)、`absent`(nonceが送られていない。必須でない間だけ受け付ける)、`absent_refused`(nonceが無く、必須のため拒否)、`malformed`(nonceの形が不正)、`missing_claim`(IDトークンにnonceが無い)、`mismatch`(nonceがIDトークンのものと違う)、`replayed`(同じnonceを再び使った)。あわせて、`/api/auth/apple`・`/api/auth/google`の401の件数と時刻、端末の時刻のずれ(IDトークンの期限)を見る。
 - **必須にしてよいかの判断**: 導入のあと、実機の新ビルドで両方のサインインを行い、`verified`が出ることを確認する。しばらく`absent`が出なくなれば、nonceを送らないビルドは使われていない。`absent`が出るうちは、`REQUIRE_ID_TOKEN_NONCE`を入れない。

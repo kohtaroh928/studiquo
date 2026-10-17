@@ -134,7 +134,12 @@
     // without one is refused before KV is read, so invented tokens cost nothing.
     // Turned on once every device had signed in again with TOKEN_SIGNING_KEY set;
     // removing this line accepts the older unsigned tokens again.
-    "REQUIRE_SIGNED_TOKENS": "true"
+    "REQUIRE_SIGNED_TOKENS": "true",
+    // A Sign in with Apple / Google exchange must carry the nonce the app made for
+    // it (src/id-token-nonce.js). Turned on after the app's build that sends one was
+    // installed and both sign-ins were seen to verify. Removing this line accepts
+    // the sign-ins of older builds, which send none, again.
+    "REQUIRE_ID_TOKEN_NONCE": "true"
   },
   "observability": {
     "enabled": true,
@@ -237,6 +242,7 @@
         "ARGON2_WRITE": "false",
         // Staging has no TOKEN_SIGNING_KEY, so signatures are neither made nor required.
         "REQUIRE_SIGNED_TOKENS": "false",
+        "REQUIRE_ID_TOKEN_NONCE": "false",
         // Mail from staging says so, and uses Resend's shared test sender.
         "RESEND_FROM_EMAIL": "Studiquo Staging <onboarding@resend.dev>"
       },
