@@ -447,7 +447,7 @@ final class AuthenticationStoreTests: XCTestCase {
     /// loginWithApple/loginWithGoogle do — this verifies restore() actually
     /// honors it on a *freshly constructed* store, simulating relaunch.
     func testRestoreRecognizesALocalEmailIdentityAfterRelaunch() async {
-        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 200, body: ["token": "1234567890.\(String(repeating: "c", count: 40))"])
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 200, body: ["token": "\(Int(Date().timeIntervalSince1970)).\(String(repeating: "c", count: 40))"])
         let firstLaunch = makeStore()
         let signedIn = await firstLaunch.login(email: "student@example.com", password: "correct-horse-battery")
         XCTAssertTrue(signedIn)

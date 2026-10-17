@@ -207,7 +207,7 @@ struct TextDocumentView: View {
             Divider()
             page
         }
-        .background(Color(.secondarySystemBackground))
+        .background(Theme.Palette.canvas)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear(perform: load)
         .onDisappear { flushSave() }
@@ -301,7 +301,7 @@ struct TextDocumentView: View {
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundStyle(.white)
                                 .padding(3)
-                                .background(Circle().fill(Color.accentColor))
+                                .background(Circle().fill(Theme.Palette.accent))
                                 .offset(x: 8, y: -8)
                         }
                     }
@@ -476,7 +476,7 @@ struct TextDocumentView: View {
                         apply(alignment: alignment.nsAlignment)
                     } label: {
                         Image(systemName: alignment.icon)
-                            .foregroundStyle(formatting.alignment == alignment.nsAlignment ? Color.accentColor : Color.primary)
+                            .foregroundStyle(formatting.alignment == alignment.nsAlignment ? Theme.Palette.accent : Color.primary)
                     }
                 }
 
@@ -524,9 +524,9 @@ struct TextDocumentView: View {
     private func toggle(_ icon: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .foregroundStyle(isOn ? Color.accentColor : Color.primary)
+                .foregroundStyle(isOn ? Theme.Palette.accent : Color.primary)
                 .frame(width: 30, height: 30)
-                .background(isOn ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                .background(isOn ? Theme.Palette.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
         }
     }
 
@@ -1783,7 +1783,7 @@ private struct InsertTableSheet: View {
                         Stepper("行: \(rows)", value: $rows, in: 1...30)
                         Stepper("列: \(columns)", value: $columns, in: 1...20)
                         Button("挿入", action: onInsert)
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.themePrimary)
                             .frame(maxWidth: .infinity)
                     }
                     .padding(.top, 8)
@@ -1811,8 +1811,8 @@ private struct InsertTableSheet: View {
                     ForEach(1...maxColumns, id: \.self) { column in
                         RoundedRectangle(cornerRadius: 3)
                             .fill(isHighlighted(row: row, column: column)
-                                  ? Color.accentColor
-                                  : Color(.tertiarySystemFill))
+                                  ? Theme.Palette.accent
+                                  : Theme.Palette.surfaceSunken)
                             .frame(width: cellSize, height: cellSize)
                     }
                 }
@@ -1865,6 +1865,7 @@ private struct LinkEditSheet: View {
                     Button("リンクを削除", role: .destructive, action: onRemove)
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("リンク")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1919,7 +1920,7 @@ private struct DocumentTableOfContentsBlockView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
     }
 }
 
@@ -1954,7 +1955,7 @@ private struct EquationEditSheet: View {
                         .padding(18)
                 }
                 .frame(maxWidth: .infinity, minHeight: 100)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
                 .padding(.horizontal)
                 keypad
                 Spacer(minLength: 0)
@@ -2024,7 +2025,7 @@ private struct EquationEditSheet: View {
                 Text(title).font(.caption2)
             }
             .frame(width: 60, height: 52)
-            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+            .background(Theme.Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -2051,7 +2052,7 @@ private struct EquationEditSheet: View {
                                 .font(.system(.body, design: .rounded))
                                 .frame(maxWidth: .infinity, minHeight: 34)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.themeSecondary)
                     }
                 }
             }
@@ -2062,14 +2063,14 @@ private struct EquationEditSheet: View {
                     Label("選択解除", systemImage: "xmark.circle")
                         .frame(maxWidth: .infinity, minHeight: 34)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.themeSecondary)
                 Button(role: .destructive) {
                     backspace()
                 } label: {
                     Image(systemName: "delete.left")
                         .frame(maxWidth: .infinity, minHeight: 34)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.themeSecondary)
             }
         }
         .padding(.horizontal)
@@ -2178,7 +2179,7 @@ private struct DocumentEquationBlockView: View {
         MathExpressionView(expression: MathExpressionParser.parse(block.equationSource), fontSize: 20)
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+            .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
             .contentShape(Rectangle())
             .onTapGesture {
                 draft = block.equationSource
@@ -2246,7 +2247,7 @@ private struct DocumentTableBlockView: View {
                                     width: cellWidth * CGFloat(cell.columnSpan) + CGFloat(cell.columnSpan - 1),
                                     alignment: .topLeading
                                 )
-                                .background(Color(.secondarySystemBackground))
+                                .background(Theme.Palette.canvas)
                                 .contextMenu {
                                     if cellIndex < cellCountInRow - 1 {
                                         Button("右のセルと結合") {
@@ -2289,7 +2290,7 @@ private struct DocumentTableBlockView: View {
                     }
                 }
                 .font(.caption)
-                .buttonStyle(.bordered)
+                .buttonStyle(.themeSecondary)
                 .transition(.opacity)
             }
         }
@@ -2340,7 +2341,7 @@ private struct CommentThreadSheet: View {
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(Capsule().fill(Color(.tertiarySystemFill)))
+                                    .background(Capsule().fill(Theme.Palette.surfaceSunken))
                             }
                             Spacer()
                             Text(comment.createdAt, style: .relative).font(.caption).foregroundStyle(.secondary)
@@ -2354,10 +2355,11 @@ private struct CommentThreadSheet: View {
                             comment.isResolved.toggle()
                             onChange()
                         }
-                        .tint(comment.isResolved ? .orange : .green)
+                        .tint(comment.isResolved ? Theme.Palette.warning : Theme.Palette.success)
                     }
                 }
             }
+                .themeScreenBackground()
             .overlay {
                 if allComments.isEmpty {
                     ContentUnavailableView("コメントはまだありません", systemImage: "bubble.left")
@@ -2413,14 +2415,14 @@ private struct SegmentCommentButton: View {
             } label: {
                 let count = allComments.count
                 Image(systemName: count > 0 ? "bubble.left.fill" : "bubble.left")
-                    .foregroundStyle(blocks.contains { $0.hasUnresolvedComments } ? Color.orange : Color.secondary)
+                    .foregroundStyle(blocks.contains { $0.hasUnresolvedComments } ? Theme.Palette.warning : Color.secondary)
                     .overlay(alignment: .topTrailing) {
                         if count > 0 {
                             Text("\(count)")
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundStyle(.white)
                                 .padding(3)
-                                .background(Circle().fill(Color.accentColor))
+                                .background(Circle().fill(Theme.Palette.accent))
                                 .offset(x: 8, y: -8)
                         }
                     }
@@ -2451,7 +2453,7 @@ private struct SegmentFootnoteButton: View {
             } label: {
                 let count = (block.anchoredFootnotes ?? []).count
                 Image(systemName: count > 0 ? "text.append" : "text.badge.plus")
-                    .foregroundStyle(count > 0 ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(count > 0 ? Theme.Palette.accent : Color.secondary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("脚注")
@@ -2500,6 +2502,7 @@ private struct FootnoteEditSheet: View {
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("脚注")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -2570,21 +2573,22 @@ private struct ChangeHistorySheet: View {
                                 Text(record.previousText)
                                     .font(.caption)
                                     .strikethrough()
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(Theme.Palette.danger)
                             }
                             Text(record.newText.isEmpty ? "(空にした)" : record.newText)
                                 .font(.caption)
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Theme.Palette.success)
                         }
                     }
                     .swipeActions {
                         if record.status == .pending {
-                            Button("承認") { accept(record) }.tint(.green)
+                            Button("承認") { accept(record) }.tint(Theme.Palette.success)
                             Button("却下", role: .destructive) { reject(record) }
                         }
                     }
                 }
             }
+                .themeScreenBackground()
             .overlay {
                 if sortedRecords.isEmpty {
                     ContentUnavailableView("変更履歴はまだありません", systemImage: "clock.arrow.circlepath")
@@ -2648,7 +2652,7 @@ private struct ChangeHistorySheet: View {
     private func statusBadge(_ status: DocumentChangeStatus) -> some View {
         switch status {
         case .pending:
-            Text("未承認").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+            Text("未承認").font(.caption2.weight(.semibold)).foregroundStyle(Theme.Palette.warning)
         case .accepted:
             Text("承認済み").font(.caption2).foregroundStyle(.secondary)
         case .rejected:
@@ -2720,7 +2724,7 @@ private struct CollabSheet: View {
             } label: {
                 if isStarting { ProgressView() } else { Text("共同編集を開始") }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.themePrimary)
             .disabled(isStarting)
         }
         .padding()
@@ -2773,6 +2777,7 @@ private struct CollabSheet: View {
                 }
             }
         }
+            .themeScreenBackground()
     }
 
     private func roleLabel(_ role: String) -> String {

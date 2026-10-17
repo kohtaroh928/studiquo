@@ -97,8 +97,8 @@ struct FlashcardDeckView: View {
                     } label: {
                         Label("暗記する", systemImage: "play.fill")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.indigo)
+                    .buttonStyle(.themePrimary)
+                    .tint(Theme.Palette.accent)
                     .disabled(deck.sortedCards.isEmpty)
                 } else {
                     Button {
@@ -106,13 +106,13 @@ struct FlashcardDeckView: View {
                     } label: {
                         Label("カード作成へ戻る", systemImage: "rectangle.stack.badge.plus")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.themeSecondary)
                 }
                 Spacer()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color(uiColor: .secondarySystemBackground))
+            .background(Theme.Palette.canvas)
 
             if mode == .edit { editor }
             else { study }
@@ -172,11 +172,7 @@ struct FlashcardStudyContent: View {
         }
         .animation(.easeInOut(duration: 0.22), value: phase)
         .background(
-            LinearGradient(
-                colors: [Color.indigo.opacity(0.10), Color.cyan.opacity(0.06), Color.clear],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            Theme.Palette.canvas
         )
         .fullScreenCover(isPresented: $adGate.isShowingAd) {
             InterstitialAdPlaceholder { adGate.dismiss() }
@@ -202,8 +198,8 @@ struct FlashcardStudyContent: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .buttonStyle(.themePrimary)
+                .tint(Theme.Palette.accent)
                 .disabled(deck.sortedCards.isEmpty)
 
                 if !missedCards.isEmpty {
@@ -215,15 +211,15 @@ struct FlashcardStudyContent: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
+                    .buttonStyle(.themePrimary)
+                    .tint(Theme.Palette.warning)
                     .accessibilityIdentifier("flashcard-mistake-review-start")
                 }
 
                 studySetting(
                     title: "出題順",
                     icon: "shuffle",
-                    color: .purple
+                    color: Theme.Palette.accent
                 ) {
                     Picker("出題順", selection: Binding(
                         get: { deck.orderMode },
@@ -249,7 +245,7 @@ struct FlashcardStudyContent: View {
 
                 if deck.sortedCards.isEmpty {
                     Label("先に暗記カードを作成してください", systemImage: "exclamationmark.circle")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.Palette.warning)
                         .font(.subheadline)
                 } else {
                     HStack(spacing: 10) {
@@ -287,7 +283,7 @@ struct FlashcardStudyContent: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
-        .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+        .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
     }
 
     private func studySetting<Content: View>(
@@ -303,8 +299,8 @@ struct FlashcardStudyContent: View {
             content()
         }
         .padding(16)
-        .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(color.opacity(0.24)))
+        .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous).stroke(color.opacity(0.24)))
     }
 
     @ViewBuilder
@@ -316,7 +312,7 @@ struct FlashcardStudyContent: View {
                     Text("\(index + 1) / \(cards.count)")
                         .font(.subheadline.monospacedDigit().weight(.semibold))
                     ProgressView(value: Double(index), total: Double(max(cards.count, 1)))
-                        .tint(.indigo)
+                        .tint(Theme.Palette.accent)
                 }
 
                 VStack(spacing: 20) {
@@ -329,10 +325,10 @@ struct FlashcardStudyContent: View {
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.background, in: RoundedRectangle(cornerRadius: 24))
-                .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.indigo.opacity(0.22), lineWidth: 2))
-                .shadow(color: .indigo.opacity(0.12), radius: 14, y: 6)
-                .contentShape(RoundedRectangle(cornerRadius: 24))
+                .background(.background, in: RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous).stroke(Theme.Palette.accent.opacity(0.22), lineWidth: 2))
+                .shadow(color: Theme.Palette.accent.opacity(0.12), radius: 14, y: 6)
+                .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous))
                 .onTapGesture {
                     showsAnswer.toggle()
                 }
@@ -342,8 +338,8 @@ struct FlashcardStudyContent: View {
 
                 if showsAnswer {
                     HStack(spacing: 12) {
-                        gradeButton("不正解", icon: "xmark", color: .red) { grade(correct: false) }
-                        gradeButton("正解", icon: "checkmark", color: .green) { grade(correct: true) }
+                        gradeButton("不正解", icon: "xmark", color: Theme.Palette.danger) { grade(correct: false) }
+                        gradeButton("正解", icon: "checkmark", color: Theme.Palette.success) { grade(correct: true) }
                     }
                 }
             }
@@ -370,7 +366,7 @@ struct FlashcardStudyContent: View {
                     Circle()
                         .trim(from: 0, to: CGFloat(percentage) / 100)
                         .stroke(
-                            percentage == 100 ? Color.green : Color.indigo,
+                            percentage == 100 ? Theme.Palette.success : Theme.Palette.accent,
                             style: StrokeStyle(lineWidth: 18, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
@@ -386,12 +382,12 @@ struct FlashcardStudyContent: View {
                 if incorrectCards.isEmpty {
                     Label("全問正解です！", systemImage: "party.popper.fill")
                         .font(.headline)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Theme.Palette.success)
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("間違えたカード", systemImage: "exclamationmark.triangle.fill")
                             .font(.headline)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Theme.Palette.warning)
                         ForEach(Array(incorrectCards.prefix(visibleIncorrectCount).enumerated()), id: \.element.persistentModelID) { offset, card in
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("\(offset + 1). \(card.question)").font(.headline)
@@ -399,14 +395,14 @@ struct FlashcardStudyContent: View {
                             }
                             .padding(14)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.orange.opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
+                            .background(Theme.Palette.warning.opacity(0.09), in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
                         }
                         if visibleIncorrectCount < incorrectCards.count {
                             Button("さらに表示", systemImage: "chevron.down") {
                                 visibleIncorrectCount += 10
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.orange)
+                            .buttonStyle(.themePrimary)
+                            .tint(Theme.Palette.warning)
                             .frame(maxWidth: .infinity)
                         }
                     }
@@ -418,19 +414,19 @@ struct FlashcardStudyContent: View {
                         phase = .setup
                         onExit()
                     }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.indigo)
+                        .buttonStyle(.themePrimary)
+                        .tint(Theme.Palette.accent)
                     HStack(spacing: 12) {
                         Button("全て", systemImage: "rectangle.stack.fill") {
                             startStudy(with: deck.sortedCards)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
+                        .buttonStyle(.themePrimary)
+                        .tint(Theme.Palette.accent)
                         Button("間違いのみ", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90") {
                             startStudy(with: FlashcardStudyLogic.retryCards(from: incorrectCards))
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.orange)
+                        .buttonStyle(.themePrimary)
+                        .tint(Theme.Palette.warning)
                         .disabled(incorrectCards.isEmpty)
                     }
                 }
@@ -553,15 +549,16 @@ struct FlashcardEditorContent: View {
                         appendRecognizedText(items.first, to: &answer)
                     }
                 Button("このカードを保存して次へ", action: createCard)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .disabled(!canCreateCard)
                 if !canCreateCard && (!question.isEmpty || !answer.isEmpty) {
                     Text("問題と答えの両方を入力すると、次のカードを作れます。")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.Palette.warning)
                 }
             }
         }
+            .themeScreenBackground()
     }
 
     private var cardList: some View {
@@ -582,6 +579,7 @@ struct FlashcardEditorContent: View {
                 .onMove(perform: moveCards)
             }
         }
+            .themeScreenBackground()
     }
 
     private func createCard() {
@@ -646,6 +644,7 @@ private struct FlashcardEditView: View {
                 TextField("問題", text: $question, axis: .vertical)
                 TextField("答え", text: $answer, axis: .vertical)
             }
+                .themeScreenBackground()
             .navigationTitle("カードを編集")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }

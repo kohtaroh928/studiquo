@@ -80,7 +80,7 @@ struct UserProfileView: View {
                     if !authentication.errorMessage.isEmpty {
                         Text(authentication.errorMessage)
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Theme.Palette.danger)
                     }
                 } header: {
                     Text("ログイン")
@@ -91,6 +91,7 @@ struct UserProfileView: View {
                     Button("ログアウト", role: .destructive) { authentication.logout(); dismiss() }
                 }
             }
+                .themeScreenBackground()
             .confirmationDialog(
                 "パスキーをすべて削除しますか?",
                 isPresented: $confirmsPasskeyRemoval, titleVisibility: .visible
@@ -2524,7 +2525,7 @@ struct FriendsHomeView: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
-                                .background(Color.red, in: Capsule())
+                                .background(Theme.Palette.danger, in: Capsule())
                         }
                     }
                 }
@@ -2548,13 +2549,13 @@ struct FriendsHomeView: View {
                                 Button { store.unblock(friend) } label: {
                                     Label("ブロック解除", systemImage: "checkmark.circle")
                                 }
-                                .tint(.orange)
+                                .tint(Theme.Palette.warning)
                                 .disabled(store.pendingBlockRoomIDs.contains(roomID))
                             } else {
                                 Button { friendToBlock = friend } label: {
                                     Label("ブロック", systemImage: "nosign")
                                 }
-                                .tint(.orange)
+                                .tint(Theme.Palette.warning)
                                 .disabled(store.pendingBlockRoomIDs.contains(roomID))
                             }
                         }
@@ -2606,6 +2607,7 @@ struct FriendsHomeView: View {
             }
 
         }
+            .themeScreenBackground()
     }
 
     private var isSidebarVisible: Bool {
@@ -2760,6 +2762,7 @@ private struct MyFriendCardPopover: View {
                     .textSelection(.enabled)
             }
         }
+            .themeScreenBackground()
         .navigationTitle("自分のカード")
     }
 }
@@ -2790,9 +2793,9 @@ private struct FriendRequestsPopover: View {
                             if !store.pendingRequestActions.contains(request.code) {
                                 HStack {
                                     Button("承認") { store.accept(request) }
-                                        .buttonStyle(.borderedProminent)
+                                        .buttonStyle(.themePrimary)
                                     Button("拒否", role: .destructive) { store.reject(request) }
-                                        .buttonStyle(.bordered)
+                                        .buttonStyle(.themeSecondary)
                                 }
                             }
                         }
@@ -2802,6 +2805,7 @@ private struct FriendRequestsPopover: View {
             }
             groupInvites
         }
+            .themeScreenBackground()
         .navigationTitle("申請・招待")
         .task {
             await store.refreshIncomingRequests()
@@ -2831,9 +2835,9 @@ private struct FriendRequestsPopover: View {
                             if !store.pendingGroupActions.contains(invite.roomID) {
                                 HStack {
                                     Button("承認") { store.acceptGroupInvite(invite) }
-                                        .buttonStyle(.borderedProminent)
+                                        .buttonStyle(.themePrimary)
                                     Button("拒否", role: .destructive) { store.rejectGroupInvite(invite) }
-                                        .buttonStyle(.bordered)
+                                        .buttonStyle(.themeSecondary)
                                 }
                             }
                         }
@@ -2873,7 +2877,7 @@ private struct FriendSidebarRow: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(Color.red, in: Capsule())
+                    .background(Theme.Palette.danger, in: Capsule())
             }
         }
         .padding(.vertical, 2)
@@ -2901,6 +2905,7 @@ private struct FriendChatListView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle("メッセージ")
         .overlay {
             if summaries.isEmpty && groupSummaries.isEmpty {
@@ -2939,7 +2944,7 @@ private struct GroupChatSummaryRow: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
-                            .background(Color.red, in: Capsule())
+                            .background(Theme.Palette.danger, in: Capsule())
                     }
                 }
             }
@@ -2987,7 +2992,7 @@ private struct FriendChatSummaryRow: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
-                            .background(Color.red, in: Capsule())
+                            .background(Theme.Palette.danger, in: Capsule())
                     }
                 }
             }
@@ -3079,6 +3084,7 @@ private struct FriendProfileView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle(profile.name)
         .confirmationDialog(
             "\(profile.name)さんをブロックしますか?",
@@ -3121,7 +3127,7 @@ private struct GroupProfileView: View {
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(.white)
                                 .padding(6)
-                                .background(Color.accentColor, in: Circle())
+                                .background(Theme.Palette.accent, in: Circle())
                         }
                     }
                     .buttonStyle(.plain)
@@ -3162,6 +3168,7 @@ private struct GroupProfileView: View {
                 .disabled(store.pendingGroupActions.contains(group.roomID))
             }
         }
+            .themeScreenBackground()
         .navigationTitle(group.name)
         .sheet(isPresented: $showsInvite) {
             InviteToGroupView(
@@ -3221,6 +3228,7 @@ struct FriendPrivacySettingsView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle("フレンド設定")
     }
 }
@@ -3252,6 +3260,7 @@ private struct BlockedContactsView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle("ブロック一覧")
         .overlay {
             if store.blockedContacts.isEmpty {
@@ -3341,6 +3350,7 @@ private struct AddFriendView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("フレンドを追加")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .task {
@@ -3450,6 +3460,7 @@ private struct CreateGroupView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("グループを作成")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .alert("エラー", isPresented: Binding(
@@ -3491,7 +3502,7 @@ private struct ChatComposerAttachmentChip: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 42, height: 34)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
             } else {
                 Image(systemName: attachment.icon)
                     .foregroundStyle(.secondary)
@@ -3509,7 +3520,7 @@ private struct ChatComposerAttachmentChip: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
     }
 }
 
@@ -3603,10 +3614,10 @@ struct GroupChatView: View {
                 if isComposerDropTargeted {
                     Label("ここに画像を追加", systemImage: "photo.badge.plus")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Theme.Palette.accent)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(Color.accentColor.opacity(0.12), in: Capsule())
+                        .background(Theme.Palette.accent.opacity(0.12), in: Capsule())
                 }
                 if isAttachingAppMaterial {
                     HStack(spacing: 6) {
@@ -3645,7 +3656,7 @@ struct GroupChatView: View {
                         Button { isImportingFiles = true } label: { Label("ファイルから追加", systemImage: "doc.badge.plus") }
                     } label: {
                         Image(systemName: "plus").frame(width: 32, height: 34)
-                            .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                            .background(Theme.Palette.surface, in: Circle())
                     }
                     .accessibilityLabel("追加")
                     Button { showsCameraScanner = true } label: {
@@ -3662,7 +3673,7 @@ struct GroupChatView: View {
                     .textFieldStyle(.plain)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 11)
-                    .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                    .background(Theme.Palette.surface, in: Capsule())
                     .submitLabel(.send)
                     .onSubmit(send)
                     .frame(minWidth: 0, maxWidth: .infinity)
@@ -3670,7 +3681,7 @@ struct GroupChatView: View {
                 Button(action: send) {
                     Image(systemName: canSend ? "arrow.up.circle.fill" : "mic")
                         .font(.system(size: 30, weight: .semibold))
-                        .foregroundStyle(canSend ? Color.accentColor : .primary)
+                        .foregroundStyle(canSend ? Theme.Palette.accent : .primary)
                         .frame(width: 34, height: 34)
                 }
                 .disabled(!canSend)
@@ -3679,7 +3690,7 @@ struct GroupChatView: View {
                 }
             }
             .padding(12)
-            .background(Color(uiColor: .systemBackground))
+            .background(Theme.Palette.canvas)
             .scaleEffect(isComposerDropTargeted ? 1.01 : 1)
             .dropDestination(for: PageSnippet.self) { snippets, _ in
                 guard !snippets.isEmpty else { return false }
@@ -3770,7 +3781,7 @@ struct GroupChatView: View {
         } message: {
             Text(store.errorMessage)
         }
-        .background(Color(red: 0.84, green: 0.94, blue: 1.0))
+        .background(Theme.Palette.canvas)
         .dropDestination(for: String.self) { items, _ in
             guard let value = items.first, PaneDropPayload.isTab(value) else { return false }
             return onPaneDrop(value)
@@ -3779,8 +3790,8 @@ struct GroupChatView: View {
         }
         .overlay {
             if isPaneDropTargeted {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
+                    .strokeBorder(Theme.Palette.accent, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
                     .padding(4)
                     .allowsHitTesting(false)
             }
@@ -3963,7 +3974,7 @@ private struct GroupMessageBubble: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 10)
-                        .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 18))
+                        .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
                 } else {
                     let parts = FriendMessageParts(text: message.text)
                     if !parts.body.isEmpty {
@@ -3973,16 +3984,16 @@ private struct GroupMessageBubble: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 11)
-                            .background(message.isMine ? Color(red: 0.37, green: 0.92, blue: 0.40) : .white, in: RoundedRectangle(cornerRadius: 20))
-                            .foregroundStyle(Color.black)
-                            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 20))
+                            .background(message.isMine ? Theme.Palette.accentSoft : Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+                            .foregroundStyle(Theme.Palette.textPrimary)
+                            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
                             .contextMenu { messageActions(parts: parts) }
                             .frame(maxWidth: 280, alignment: message.isMine ? .trailing : .leading)
                     }
                     ForEach(parts.attachments) { attachment in
                         Button { onOpenAttachment(attachment) } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: attachment.icon).font(.title3).foregroundStyle(Color.accentColor)
+                                Image(systemName: attachment.icon).font(.title3).foregroundStyle(Theme.Palette.accent)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(attachment.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
                                     Text(attachment.kind).font(.caption).foregroundStyle(.secondary)
@@ -3991,7 +4002,7 @@ private struct GroupMessageBubble: View {
                                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
                             }
                             .padding(10).frame(maxWidth: 260)
-                            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                            .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
@@ -4064,6 +4075,7 @@ private struct GroupMembersView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("メンバー")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .sheet(isPresented: $showsInvite) {
@@ -4098,6 +4110,7 @@ private struct InviteToGroupView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("友達を招待")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .alert("エラー", isPresented: Binding(
@@ -4190,14 +4203,14 @@ struct FriendChatView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "plus.circle.fill")
                             .font(.title3)
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Theme.Palette.accent)
                         Text("ここに追加")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Theme.Palette.accent)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+                    .background(Theme.Palette.accent.opacity(0.12), in: Capsule())
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
                 if isAttachingAppMaterial {
@@ -4246,7 +4259,7 @@ struct FriendChatView: View {
                         Image(systemName: "plus")
                             .font(.system(size: 17, weight: .semibold))
                             .frame(width: 32, height: 34)
-                            .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                            .background(Theme.Palette.surface, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .fixedSize()
@@ -4258,7 +4271,7 @@ struct FriendChatView: View {
                         Image(systemName: "camera")
                             .font(.system(size: 17, weight: .semibold))
                             .frame(width: 32, height: 34)
-                            .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                            .background(Theme.Palette.surface, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .fixedSize()
@@ -4279,7 +4292,7 @@ struct FriendChatView: View {
                         .textFieldStyle(.plain)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
-                        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                        .background(Theme.Palette.surface, in: Capsule())
                         .submitLabel(.send)
                         .onSubmit(send)
                         .frame(minWidth: 0, maxWidth: .infinity)
@@ -4288,7 +4301,7 @@ struct FriendChatView: View {
                     Button(action: send) {
                         Image(systemName: canSend ? "arrow.up.circle.fill" : "mic")
                             .font(.system(size: 30, weight: .semibold))
-                            .foregroundStyle(canSend ? Color.accentColor : .primary)
+                            .foregroundStyle(canSend ? Theme.Palette.accent : .primary)
                             .frame(width: 34, height: 34)
                     }
                     .accessibilityIdentifier("friend-chat-send")
@@ -4298,7 +4311,7 @@ struct FriendChatView: View {
                 }
             }
             .padding(12)
-            .background(Color(uiColor: .systemBackground))
+            .background(Theme.Palette.canvas)
             .scaleEffect(isComposerDropTargeted ? 1.01 : 1)
             .dropDestination(for: String.self) { items, _ in
                 guard let value = items.first else { return false }
@@ -4373,7 +4386,7 @@ struct FriendChatView: View {
                 reportingMessage = nil
             }, onCancel: { reportingMessage = nil })
         }
-        .background(Color(red: 0.84, green: 0.94, blue: 1.0))
+        .background(Theme.Palette.canvas)
         .dropDestination(for: String.self) { items, _ in
             guard let value = items.first, isPaneSwitchDrop(value) else { return false }
             return onPaneDrop(value)
@@ -4382,8 +4395,8 @@ struct FriendChatView: View {
         }
         .overlay {
             if isDropTargeted {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
+                    .strokeBorder(Theme.Palette.accent, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
                     .padding(4)
                     .allowsHitTesting(false)
             }
@@ -4754,7 +4767,7 @@ struct FriendChatView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: attachment.icon)
                                     .font(.title3)
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(Theme.Palette.accent)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(attachment.title)
                                         .font(.subheadline.weight(.semibold))
@@ -4771,7 +4784,7 @@ struct FriendChatView: View {
                             }
                             .padding(10)
                             .frame(maxWidth: 260)
-                            .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                            .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
@@ -4793,7 +4806,7 @@ struct FriendChatView: View {
                 if message.isMine, message.sendFailed == true {
                     Label("送信できませんでした", systemImage: "exclamationmark.circle.fill")
                         .font(.caption2)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.Palette.danger)
                         .frame(maxWidth: 280, alignment: .trailing)
                 } else if message.isMine, message.serverID == nil, message.isCanceled != true,
                           message.sendFailed != true, message.roomID != nil {
@@ -4828,9 +4841,9 @@ struct FriendChatView: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
-            .background(isMine ? Color(red: 0.37, green: 0.92, blue: 0.40) : .white, in: RoundedRectangle(cornerRadius: 20))
-            .foregroundStyle(Color.black)
-            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 20))
+            .background(isMine ? Theme.Palette.accentSoft : Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+            .foregroundStyle(Theme.Palette.textPrimary)
+            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
     }
 
     /// A message that already failed to send never reached anyone — there's
@@ -4861,7 +4874,7 @@ struct FriendChatView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
-            .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 18))
+            .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
     }
 
     private func messageTime(_ sentAt: Date, isMine: Bool) -> some View {
@@ -4922,6 +4935,7 @@ private struct ReportMessageSheet: View {
                     Text("通報の内容は運営側の確認用に記録されます。相手には通知されません。")
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("通報する")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

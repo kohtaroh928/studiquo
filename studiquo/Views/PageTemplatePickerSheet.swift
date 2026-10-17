@@ -51,7 +51,7 @@ struct PageTemplatePickerSheet: View {
                 .padding(.horizontal, 26)
                 .padding(.vertical, 20)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.Palette.canvas)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -141,7 +141,7 @@ struct NewNotebookSheet: View {
                 }
                 .padding(22)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.Palette.canvas)
             .navigationTitle("新規ノート")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -256,7 +256,7 @@ private struct PageTemplatePreviewButton: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(isSelected ? Color.accentColor : Color.black.opacity(0.10), lineWidth: isSelected ? 2.5 : 1)
+                            .strokeBorder(isSelected ? Theme.Palette.accent : Color.black.opacity(0.10), lineWidth: isSelected ? 2.5 : 1)
                     }
                     .shadow(color: .black.opacity(0.10), radius: 4, y: 2)
 
@@ -265,7 +265,7 @@ private struct PageTemplatePreviewButton: View {
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 19, height: 19)
-                            .background(Color.accentColor, in: Circle())
+                            .background(Theme.Palette.accent, in: Circle())
                             .padding(4)
                     }
                 }
@@ -298,7 +298,7 @@ private struct PaperColorButton: View {
                     .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 1))
                     .overlay {
                         if isSelected {
-                            Circle().strokeBorder(Color.accentColor, lineWidth: 3)
+                            Circle().strokeBorder(Theme.Palette.accent, lineWidth: 3)
                         }
                     }
                 Text(option.title)

@@ -19,7 +19,7 @@ struct ICloudSyncSettingsSection: View {
             if ICloudSyncPreference.isEnabledAtLaunch && monitor.isQuotaExceeded {
                 Label("iCloudの空き容量がありません。新しい内容は、このiPadにだけ保存されています。", systemImage: "exclamationmark.icloud")
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Palette.warning)
                     .accessibilityIdentifier("icloud-sync-quota-note")
             }
         } header: {
@@ -57,17 +57,17 @@ struct ICloudQuotaBanner: View {
                             ICloudSyncPreference.setEnabled(false)
                             didStop = true
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.themePrimary)
                         .accessibilityIdentifier("icloud-quota-stop")
                     }
                     Button("閉じる") { monitor.dismissBanner() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.themeSecondary)
                         .accessibilityIdentifier("icloud-quota-dismiss")
                 }
             }
             .padding(14)
             .frame(maxWidth: 460, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
             .padding(.top, 8)
             .accessibilityIdentifier("icloud-quota-banner")
         }

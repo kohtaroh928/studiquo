@@ -40,13 +40,17 @@ final class AuthenticationLogoutRevocationTests: XCTestCase {
         let expectation = expectation(description: "revoke request sent")
         RevokeRequestRecordingProtocol.expectation = expectation
 
-        makeLoggedInStore().logout()
+        // The fixture replaces the token saved in setUp with a fresh unexpired one,
+        // so read back whichever token the signed-in device actually holds.
+        let store = makeLoggedInStore()
+        let heldToken = try XCTUnwrap(MCPCloudCredentials.currentToken())
+        store.logout()
 
         await fulfillment(of: [expectation], timeout: 2)
         let sent = RevokeRequestRecordingProtocol.capturedRequest
         XCTAssertEqual(sent?.url?.path, "/api/session/revoke")
         XCTAssertEqual(sent?.httpMethod, "POST")
-        XCTAssertEqual(sent?.value(forHTTPHeaderField: "Authorization"), "Bearer \(deviceToken)")
+        XCTAssertEqual(sent?.value(forHTTPHeaderField: "Authorization"), "Bearer \(heldToken)")
     }
 
     /// "ログアウト後、以前発行されたトークンでAPIにアクセスしようとすると拒否されること" —
