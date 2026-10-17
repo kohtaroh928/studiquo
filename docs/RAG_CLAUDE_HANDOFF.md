@@ -1,16 +1,41 @@
 # Studiquo RAG：Codex / Claude 共通の引き継ぎ
 
-最終更新: 2026-10-17。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
+最終更新: 2026-10-18。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
 
-## 今回の作業終了時点（2026-10-17）
+## 共同開発キットのGitHub保存（2026-10-18）
 
-- 今回の依頼: ユーザーがRAG開発成果のcommit/pushを明示承認。既存のGitHub `codex/rag-wip`へ保存した。mainへのmerge、deploy、remote migrationは行わない。
-- 保存対象: RAG本体、OpenAI統合と必要なiPad依存、Doclingのローカル実装・private Worker・Linux recipe、合成評価fixture、テスト、設計・検証記録、引き継ぎ。ページ編集のRAG失効処理が使うNotePageHistoryと対応テストも依存として含める。
-- 除外: 生成cache・評価の生出力・エディタ設定・無関係な画面/navigation/folder rename変更。残るローカル変更は保持。部分stageしたContentView/StudiquoAppではworking treeとcommitの差を確認する。
-- 保存結果: 実装commit `9ed298d` をGitHubの `codex/rag-wip`へpushし、remote SHA一致を確認。現在の引き継ぎ文書はその確認後の追記。最新tipはgit log/remote branchを確認する。
-- 今回の再検証: mcp-server 1,723件、private Worker 28件、Python processor 60件、Docling tools 49件が成功。Swiftはstageしたソースの構文確認を実施。iOS実行テストは今回再実行しておらず、第5節の過去結果と区別する。有料API評価は実行していない。秘密情報検査と601ファイルの独立レビューでpush阻害所見なし。検出8件は監査用SHA256ハッシュ6件と明示的な合成テストplaceholder2件の偽陽性。
-- 次の一手: 第6節のLinux実行確認と原PDF別同意/認可/admission/取消削除の呼出元。実Linux/Cloudflare、MCP/iPad自動処理接続は引き続き未完。既存評価の成功を回答精度改善や配備完了と混同しない。
-- 自動スケジュールはPAUSEDを維持。Codex/Claudeの同時編集を避ける。
+- ユーザーが公開作業を明示依頼。共有対象はAGENTS/CLAUDE/INDEX、共同開発ガイド、collaboration/rag-promptの8ファイル、この引き継ぎ。アプリ差分、生成.local/cache/output、以前のローカル再開テスト報告2ファイルは含めない。
+- 保存先は既存codex/rag-wip（mainへのmergeやdeployではない）。公開commitはgit logとremote branchのSHA一致で確認する。友人はdocs/RAG_COLLABORATION.mdから独立cloneを作り、START_PROMPT.mdを使用する。
+- この公開前の再検証はworkspace3＋既存baseline7の10件成功。本番prompt・凍結baselineは不変、候補exampleは品質未評価。有料API0回。秘密情報検査と選別済みsnapshotの確認を行ってから送信する。
+- 友人の候補作成/本人PCの確認は未着手。Notionタスク3fc5d67983c381fa9008e37723e0ca04に公開状況を記録する。自動スケジュールPAUSED、本番設定変更なし。今回開始したテストは完了。
+- 前回の再開テスト報告はローカルに残り、この共有commitだけのcloneにはない。友人のプロンプト作業は凍結した共有fixtureだけで開始できる。Project用INDEX複製の更新は別途残る。
+
+## 今回の環境整備（2026-10-18、友人の並行開発）
+
+- docs/RAG_COLLABORATION.mdとcollaboration/rag-prompt/を追加。友人は別clone/branchで候補・評価計画、本体担当はDocling/安全境界/iPad接続。PR baseはcodex/rag-wip、本番promptへ直接反映しない。
+- キー不要のcheck/prepareで凍結合成6ケース×2styleの12組を生成。質問/根拠/生成設定を保持し、候補の指示追加だけを変更。新しい回答生成なし、品質未評価。
+- 担当別HANDOFF/START_PROMPT/PROPOSALとAGENTS/CLAUDEの入口を整備。友人は共通handoffを編集せず、担当HANDOFFを更新し本体担当が集約する。既存同一worktree交代とは別。
+- 検証: workspace3＋既存baseline7の10件成功。HEAD clean export＋kitでnode_modules/credentialsなしにcheck/prepare成功、同名run上書き拒否/無効run名3件拒否、.local Git除外を確認。既存本番prompt・凍結資料の変更なし。
+- Notion: 初回候補用タスク https://www.notion.so/3fc5d67983c381fa9008e37723e0ca04 を未着手で追加。友人の担当欄は既存schemaにないため未設定。既存RAGカードは進行中を保持。
+- 環境整備当時の公開状態: 未コミット・未push（上の公開作業記録を優先）。友人のPC/権限/ログインは未確認。有料API0回、スケジュールPAUSED、配備なし。今回の検証processは完了。
+- 次の一手: 環境整備のみのGitHub保存を確認後、友人が独立cloneしてcheck/testし、候補一つと採点計画をPR。Project資料はINDEX複製の更新が必要だが今回置き場は変更していない。
+
+## 今回の確認（2026-10-18、未実装項目の照会）
+
+- 実ファイル・残実装計画・最新テスト記録を確認し、未実装と未検証/未配備を分けて回答する。アプリ/サーバーのコード変更とテスト再実行はなし。前回のProject資料18件更新・iPad134/UI3成功は以前の結果として保持。
+- 未実装/未接続: 原PDFからDoclingへのアプリ自動解析全経路、その経路専用の別同意・本人/文書世代・費用予約・取消削除の呼出元、実encoder接続、図/OCR/数式の解釈と索引対応、精密bbox遷移、本番の要求分解/回答漏れ検査・修正、解析job記録の保持整理・予算/運用監視。
+- 既存ホーム資料の登録/検索許可・認可・失効制御は実装済みで、上記新原PDF解析の未実装と混同しない。Docling構造抽出、prepared取込、metadata、再帰分割、ページ単位出典、private runner/Container制御もローカル実装済み。
+- 別の残件: Linux/Cloudflare実環境、実機/旧実store/iCloud、実資料・新API回答品質、リランカー実比較、main統合/配備・0009適用。本文の意味分割はvectorsなしの現状でsemanticApplied=false。Qwen/Cohere交換を実施済みとしない。
+- 次の一手は原PDF自動解析の未接続部分と実encoder接続の優先順位を決め、既存計画に沿って実装。質問への回答のみで新機能実装を開始していない。このターンが開始した実装/テストprocessはなし。Notionは既存RAGカードへ確認結果を追記する。Project用複製の追加更新は不要。
+
+## 今回の作業終了時点（2026-10-17、Project更新・テスト再開）
+
+- ユーザー依頼でDesktopのProject用資料18ファイルを更新。11複製は正本とのbyte一致確認、残り7件は現状資料/README。旧Google説明、プランの利用枠、RAG構造解析・自動原PDF未接続などの現状を反映。claude.aiへのアップロードは未実施（人間が同名旧資料と差し替える運用）。人物像の手記ファイルは未変更。
+- テスト再開: 署名付きiPad simulator関連12suite・134件とRAG UI3件が成功。出典から3ページ目への遷移、検索状態表示、検索データ管理も確認。今回アプリソースは変更せず、以前からの無関係な未コミット変更を保持。
+- 固定の旧4候補24回答から差分要求8回答をoffline再確認。記述あり5/欠落3で以前と同じ。新回答や現在のLunaの精度測定ではない。有料API0回、未使用20問を調整に使わず、本番prompt変更なし。
+- 根拠: docs/RAG_TEST_RESUMPTION_REPORT.md / RESULTS.json。今回はこの報告とhandoffがローカル未コミット。直前の実装は9ed298d、引き継ぎ追記09e2a7eでGitHub codex/rag-wipへ保存済み。
+- 未完: 実機/旧実store/iCloud、Linux/実Cloudflare、原PDF別同意・認可・admission・取消削除とMCP/iPad接続、実encoder、図/OCR/数式・実資料品質・精密位置遷移。次のAPI品質試験は費用・版・モデル・件数を固定して別測定する。
+- 直前push時のサーバー1723/Worker28/processor60/tools49成功は今回のアプリ137件と区別する。自動スケジュールはPAUSED。deploy/remote migrationなし。
 
 ## 1. 再開する場所
 
