@@ -13,6 +13,13 @@ export async function aiPrivacyRejection(request, env) {
   if (env.AI_PROVIDER_APPROVED !== "true") {
     return json({ error: "AI機能は公開準備中です。学習資料は送信されません。" }, 503);
   }
+  // Without the paywall every new account is a standard one, so anyone could
+  // open accounts until the service-wide daily AI limits are used up for all.
+  // The AI is therefore not opened unless billing is on too.
+  if (env.PAYWALL_ENABLED !== "true") {
+    console.error(JSON.stringify({ event: "ai_requires_paywall", message: "AI_PROVIDER_APPROVED is true but PAYWALL_ENABLED is not" }));
+    return json({ error: "AI機能は公開準備中です。学習資料は送信されません。" }, 503);
+  }
   if (request.headers.get("X-Studiquo-AI-Consent") !== AI_CONSENT_VERSION) {
     return json({ error: "設定のプライバシーでAIへのデータ送信を許可してください。" }, 403);
   }
