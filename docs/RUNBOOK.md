@@ -248,7 +248,8 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
   2. アプリ(nonceを送るビルド)を入れ直し、Apple・Googleでサインインできることを実機で確認する。
   3. 使われているすべてのビルドがnonceを送るようになったら、`REQUIRE_ID_TOKEN_NONCE="true"`を`vars`に入れて配備する。**nonceのない旧ビルドは、Apple・Googleでサインインできなくなる**(アプリ側の更新が要る)。
 - **最初の確認**: 失敗するのが、Apple・Googleだけか(パスワード、Passkeyは別経路)。失敗した端末のアプリのビルド。`REQUIRE_ID_TOKEN_NONCE`の値。
-- **変更せず調べる**: Workers Logsで、`/api/auth/apple`・`/api/auth/google`の401の件数と時刻。端末の時刻のずれ(IDトークンの期限)。
+- **変更せず調べる**: Workers Logsで、`event=id_token_nonce`の行を検索する。サインインごとに1行出て、`provider`(`apple`・`google`)と`outcome`だけが入る(nonce・トークン・アカウントは入らない)。`outcome`の意味: `verified`(nonceが一致して初めて使われた)、`absent`(nonceが送られていない。必須でない間だけ受け付ける)、`absent_refused`(nonceが無く、必須のため拒否)、`malformed`(nonceの形が不正)、`missing_claim`(IDトークンにnonceが無い)、`mismatch`(nonceがIDトークンのものと違う)、`replayed`(同じnonceを再び使った)。あわせて、`/api/auth/apple`・`/api/auth/google`の401の件数と時刻、端末の時刻のずれ(IDトークンの期限)を見る。
+- **必須にしてよいかの判断**: 導入のあと、実機の新ビルドで両方のサインインを行い、`verified`が出ることを確認する。しばらく`absent`が出なくなれば、nonceを送らないビルドは使われていない。`absent`が出るうちは、`REQUIRE_ID_TOKEN_NONCE`を入れない。
 - **判断の目安**:
   - 401が、nonceの必須化の直後に出た: nonceを送らない旧ビルドが使われている。ビルドを更新する。または、`REQUIRE_ID_TOKEN_NONCE`を外す。
   - 401が、特定の端末だけ: アプリが、IDトークンのnonceと違う値をWorkerに送っている(アプリの不具合)。ビルドと、直前のSDK更新(GoogleSignInは9.x以降でnonceに対応)を確認する。

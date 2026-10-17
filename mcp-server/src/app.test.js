@@ -2845,3 +2845,54 @@ for (const provider of ["apple", "google"]) {
     assert.ok(!(await response.json()).token.includes("legacy"));
   });
 }
+
+// ---- The nonce outcome is logged (to watch the rollout), without any secret -------
+
+async function nonceLogs(run) {
+  const lines = [];
+  const original = console.log;
+  console.log = (...args) => { lines.push(args.join(" ")); };
+  try { await run(); } finally { console.log = original; }
+  return lines.map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(entry => entry?.event === "id_token_nonce");
+}
+
+for (const provider of ["apple", "google"]) {
+  test(`${provider}: each outcome of the nonce check is logged as one line, with no secret in it`, async () => {
+    const { env, sign, exchange } = await providerFixture(provider);
+    // This test signs in more often than the per-minute limit of the real endpoint.
+    env.RATE_LIMIT_APPLE_AUTH = fakeCloudflareLimiter(10_000);
+    env.RATE_LIMIT_GOOGLE_AUTH = fakeCloudflareLimiter(10_000);
+    const strict = { ...env, REQUIRE_ID_TOKEN_NONCE: "true" };
+    const nonce = (letter) => letter.repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+    const cases = [
+      ["verified", async () => exchange(await sign({ nonce: nonceHash(nonce("v")) }), { nonce: nonce("v") })],
+      ["absent", async () => exchange(await sign({}), {})],
+      ["absent_refused", async () => exchange(await sign({}), {}, strict)],
+      ["malformed", async () => exchange(await sign({ nonce: nonceHash("short") }), { nonce: "short" })],
+      ["missing_claim", async () => exchange(await sign({}), { nonce: nonce("m") })],
+      ["mismatch", async () => exchange(await sign({ nonce: nonceHash(nonce("x")) }), { nonce: nonce("y") })],
+    ];
+    for (const [outcome, run] of cases) {
+      const entries = await nonceLogs(run);
+      assert.deepEqual(entries, [{ event: "id_token_nonce", provider, outcome }], outcome);
+    }
+    // A replay of the verified sign-in.
+    const token = await sign({ nonce: nonceHash(nonce("r")) });
+    await exchange(token, { nonce: nonce("r") });
+    const replay = await nonceLogs(() => exchange(token, { nonce: nonce("r") }));
+    assert.deepEqual(replay, [{ event: "id_token_nonce", provider, outcome: "replayed" }]);
+  });
+}
+
+test("a nonce, an ID token or an account never appears in the logged line", async () => {
+  const { sign, exchange } = await providerFixture("apple");
+  const nonce = "z".repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+  const lines = [];
+  const original = console.log;
+  console.log = (...args) => { lines.push(args.join(" ")); };
+  try { await exchange(await sign({ nonce: nonceHash(nonce) }), { nonce }); } finally { console.log = original; }
+  const text = lines.join("\n");
+  assert.ok(!text.includes(nonce));
+  assert.ok(!text.includes(nonceHash(nonce)));
+  assert.ok(!text.includes("nonce-sub"));
+});

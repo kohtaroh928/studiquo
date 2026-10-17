@@ -23,16 +23,39 @@ import { secretsEqual, sha256Hex } from "./auth.js";
 const RAW_NONCE = /^[A-Za-z0-9_-]{16,200}$/;
 const SINGLE_USE_SECONDS = 3_600;
 
-/** `null` when the sign-in may go on, otherwise true (refuse it). */
-export async function idTokenNonceRefused(env, payload, suppliedNonce) {
+/**
+ * One structured log line per sign-in, saying how its nonce fared. It is how the
+ * rollout is watched: `absent` means a build that sends no nonce is still in use, so
+ * REQUIRE_ID_TOKEN_NONCE is not yet safe to turn on. It carries no nonce, token or
+ * account: only the provider and the outcome.
+ *
+ *   verified         the nonce matched and had not been used
+ *   absent           no nonce was sent; accepted because nonces are not yet required
+ *   absent_refused   no nonce was sent, and nonces are required
+ *   malformed        the nonce is not in the accepted shape
+ *   missing_claim    a nonce was sent but the ID token carries none
+ *   mismatch         the nonce does not belong to the ID token
+ *   replayed         the nonce was already used
+ */
+function logOutcome(provider, outcome) {
+  console.log(JSON.stringify({ event: "id_token_nonce", provider, outcome }));
+}
+
+/** `false` when the sign-in may go on, `true` when it is to be refused. */
+export async function idTokenNonceRefused(env, payload, suppliedNonce, provider = "unknown") {
+  const refuse = outcome => { logOutcome(provider, outcome); return true; };
   if (suppliedNonce === undefined || suppliedNonce === null || suppliedNonce === "") {
-    return env.REQUIRE_ID_TOKEN_NONCE === "true";
+    if (env.REQUIRE_ID_TOKEN_NONCE === "true") return refuse("absent_refused");
+    logOutcome(provider, "absent");
+    return false;
   }
-  if (typeof suppliedNonce !== "string" || !RAW_NONCE.test(suppliedNonce)) return true;
-  if (typeof payload?.nonce !== "string") return true;
+  if (typeof suppliedNonce !== "string" || !RAW_NONCE.test(suppliedNonce)) return refuse("malformed");
+  if (typeof payload?.nonce !== "string") return refuse("missing_claim");
   const expected = await sha256Hex(suppliedNonce);
-  if (!(await secretsEqual(payload.nonce.toLowerCase(), expected))) return true;
+  if (!(await secretsEqual(payload.nonce.toLowerCase(), expected))) return refuse("mismatch");
   // Atomic: the counter object admits exactly one caller per nonce.
   const firstUse = await env.RATE_COUNTER.getByName(`idtoken-nonce:${expected}`).bump(1, SINGLE_USE_SECONDS);
-  return !firstUse;
+  if (!firstUse) return refuse("replayed");
+  logOutcome(provider, "verified");
+  return false;
 }
