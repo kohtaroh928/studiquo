@@ -1,6 +1,6 @@
 # Studiquo Architecture
 
-最終更新: 2026-10-05
+最終更新: 2026-10-17
 
 ## 1. 目的
 
@@ -110,6 +110,13 @@ CloudKit互換性を壊しやすいため、モデル追加・必須属性・関
 
 ## 5. Cloudflare Worker
 
+### 5.0 入口(ドメインとレート制限の層)
+
+- 本番Workerの入口は、独自ドメイン`api.studiquo.app`(Cloudflareのゾーン`studiquo.app`に、Workerのカスタムドメインとして割り当てる)だけである。`workers.dev`のアドレスと、バージョンごとのプレビューURLは無効にしている(`wrangler.jsonc`の`workers_dev: false`、`preview_urls: false`)。ステージングは`workers.dev`で動かし、`env.staging`で明示的に有効にしている。
+- ゾーンのWAFに、レート制限ルール(同じIPからの通信が10秒に200件を超えたら、10秒ブロック)を置き、認証より前の連打をWorkerに届く前に止める。無料プランで選べる条件に合わせ、URIパスが`/`で始まる通信を対象にしている。同じゾーンに別のサイトを置くときは、条件を見直す。
+- アプリの接続先(`WorkerAIProvider.defaultEndpoint`)、Passkeyの`RP ID`(`passkeys.js`)、`project.yml`・entitlementsの関連ドメイン(`applinks`、`webcredentials`)は、すべてこのドメインに揃える。ドメインを変えると、登録済みのPasskeyは使えなくなる。
+- Worker内でも、認証前後の各経路にレート制限を持つ(Cloudflare Rate Limiting bindingsと`RATE_COUNTER`)。
+
 ### 5.1 リクエスト処理
 
 Wranglerは`src/worker.js`を読み込み、実処理を`src/app.js`へ委譲する。
@@ -135,7 +142,7 @@ AIの公開APIでは`ai-privacy.js`が提供条件の承認フラグ、同意バ
 | `USER_REGISTRY` Durable Object | ユーザープロフィール、友達コード、友達・グループ関係の調整 |
 | `CHAT_ROOM` Durable Object | チャットルーム、メッセージ、添付情報 |
 | `DOCUMENT_ROOM` Durable Object | 共同編集参加者、提案、承認状態 |
-| `RATE_COUNTER` Durable Object | AIなどの利用量カウンター |
+| `RATE_COUNTER` Durable Object | AI、`/mcp`、スナップショット保存、共同編集の部屋作成、自動エラーの新規行などの利用量・回数カウンター |
 | `MCP_INBOX` Durable Object | 外部MCPクライアントが作成した項目の受信箱と取り込み状態 |
 | Cloudflare Rate Limiting bindings | 認証、チャット、MCP、Webhookなどの短時間レート制限 |
 
@@ -152,6 +159,7 @@ Durable Objectはユーザーまたはルーム単位の直列化が必要な状
 | Gemini / Anthropic / OpenAI | AIチャット、採点、復習教材生成 |
 | APNs | チャット、お知らせなどのプッシュ通知 |
 | Cloudflare Access | `/api/admin/*`管理画面・管理APIの保護 |
+| Cloudflare WAF(ゾーン`studiquo.app`) | `api.studiquo.app`への短時間の連打を、Workerの前で制限 |
 | Slack webhook | 問題報告の運営通知 |
 
 外部サービスの秘密鍵はWorker secretsで管理し、iOSアプリやリポジトリへ入れない。
