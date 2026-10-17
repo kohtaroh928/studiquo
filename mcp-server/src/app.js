@@ -23,7 +23,7 @@ import { isRevoked, revoke } from "./revocation.js";
 import { isExpired, remainingValiditySeconds } from "./token.js";
 import { resolveChatUserKey } from "./chat-identity.js";
 import { realSession } from "./session.js";
-import { handleMCPOAuth, externalSession, pairingInfo, approvePairing, listConnections, revokeConnection, revokeAllConnections } from "./mcp-oauth.js";
+import { handleMCPOAuth, externalSession, issueOwnerCode, listConnections, revokeConnection, revokeAllConnections } from "./mcp-oauth.js";
 import { verifyAppleIdentityToken } from "./apple-auth.js";
 import { verifyGoogleIdentityToken } from "./google-auth.js";
 import { linkVerifiedEmail, identityKey } from "./oauth-links.js";
@@ -332,7 +332,7 @@ export default {
         if (isCrossSiteWrite(request, url)) return json({ error: "Forbidden." }, 403);
         if (!(await accessAllowed(request, env))) return json({ error: "Forbidden." }, 403);
       }
-      const oauth = await handleMCPOAuth(url, request, env);
+      const oauth = await handleMCPOAuth(url, request, env, ctx);
       if (oauth) return oauth;
       if (url.pathname === "/.well-known/apple-app-site-association") return associationFile();
       const invitePage = handleInvitePage(url);
@@ -414,16 +414,14 @@ export default {
         const result = await startAccountDeletion(env, session.sub);
         return json(result, result.cleanupPending || result.externalDeletionPending ? 202 : 200);
       }
-      if (url.pathname === "/api/mcp/pair" && request.method === "GET") {
-        return json(await pairingInfo(env, url.searchParams.get("code") ?? "") ?? { error: "Code expired or invalid." });
-      }
-      if (url.pathname === "/api/mcp/pair" && request.method === "POST") {
+      if (url.pathname === "/api/mcp/pairing-code" && request.method === "POST") {
         if (!session) return json({ error: "Sign in again." }, 401);
         const needsPasskey = await requireRecentPasskey(env, token, session, "approve-app");
         if (needsPasskey) return needsPasskey;
         if (!(await checkRateLimit(env.RATE_LIMIT_MCP_PAIR, accountHash))) return json({ error: "Too many attempts." }, 429);
         const body = await readJSONLimited(request, 1000);
-        return json({ approved: await approvePairing(env, String(body?.code ?? "").trim().toUpperCase(), session.sub) });
+        const issued = await issueOwnerCode(env, session.sub, String(body?.kind ?? ""));
+        return issued ? json(issued) : json({ error: "Unknown kind." }, 400);
       }
       if (url.pathname === "/api/mcp/connections" && request.method === "GET") {
         return session ? json(await listConnections(env, session.sub)) : json({ error: "Sign in again." }, 401);
