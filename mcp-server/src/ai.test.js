@@ -461,7 +461,7 @@ test("user text is screened before sending; a flagged message never reaches the 
   }
 });
 
-test("self-harm is not refused by the app, and a moderation outage fails open", async () => {
+test("self-harm is not refused by the app, and a moderation outage stops the request (fails closed) and gives the credits back", async () => {
   let mode = "selfharm";
   const fetchState = installFetch(() => responsesOK("ok"), {
     moderation: () => mode === "selfharm"
@@ -471,7 +471,10 @@ test("self-harm is not refused by the app, and a moderation outage fails open", 
   try {
     assert.equal((await run("chat", chatBody(), { sub: "a" })).response.status, 200);
     mode = "outage";
-    assert.equal((await run("chat", chatBody(), { sub: "b" })).response.status, 200);
+    const stopped = await run("chat", chatBody(), { sub: "b" });
+    assert.equal(stopped.response.status, 503);
+    assert.equal(JSON.parse(stopped.text).code, "moderation_unavailable");
+    assert.equal(fetchState.calls.length, 1, "nothing was sent to the model during the outage");
   } finally {
     fetchState.restore();
   }

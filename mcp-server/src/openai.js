@@ -140,9 +140,13 @@ export async function callOpenAIChat(env, { model, systemInstruction, turns, ima
  * Screens user-written text with OpenAI's moderation endpoint. Returns a
  * Japanese message when the text must not be sent, otherwise null. Self-harm
  * categories are let through on purpose (the model answers those with care
- * rather than the app refusing a student in distress). Fails open: a
- * moderation outage must not take the whole feature down.
+ * rather than the app refusing a student in distress). Fails closed: when the
+ * screening cannot be done (the service is down, answers with an error or with
+ * something unreadable) nothing is sent, and MODERATION_UNAVAILABLE is
+ * returned instead of a message. Only `AI_MODERATION=off` skips the screening.
  */
+export const MODERATION_UNAVAILABLE = Object.freeze({ unavailable: true });
+
 export async function moderationRejection(env, texts, apiKey = env.OPENAI_API_KEY) {
   if (env.AI_MODERATION === "off" || !apiKey) return null;
   const input = texts.map(text => String(text ?? "").slice(0, 8000)).filter(Boolean);
@@ -156,15 +160,21 @@ export async function moderationRejection(env, texts, apiKey = env.OPENAI_API_KE
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
       console.error(JSON.stringify({ message: "moderation unavailable", status: response.status }));
-      return null;
+      return MODERATION_UNAVAILABLE;
     }
     const payload = await response.json();
-    for (const result of payload?.results ?? []) {
+    // An answer that does not say what was checked is no answer.
+    if (!Array.isArray(payload?.results) || payload.results.length === 0) {
+      console.error(JSON.stringify({ message: "moderation unreadable" }));
+      return MODERATION_UNAVAILABLE;
+    }
+    for (const result of payload.results) {
       const hit = Object.entries(result?.categories ?? {}).some(([name, on]) => on && !name.startsWith("self-harm"));
       if (hit) return "この内容は学習アプリでは扱えません。表現を変えて、もう一度送信してください。";
     }
   } catch (error) {
     console.error(JSON.stringify({ message: "moderation failed", error: error instanceof Error ? error.message : String(error) }));
+    return MODERATION_UNAVAILABLE;
   }
   return null;
 }

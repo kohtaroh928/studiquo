@@ -17,7 +17,7 @@ import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { takeParsedBody } from "./ai-body.js";
 import { sendPush } from "./push.js";
 import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.js";
-import { callOpenAIChat, callOpenAIStructured, moderationRejection, extractDeltaText as openaiDeltaText } from "./openai.js";
+import { callOpenAIChat, callOpenAIStructured, moderationRejection, MODERATION_UNAVAILABLE, extractDeltaText as openaiDeltaText } from "./openai.js";
 
 /**
  * Which chat models each plan may pick (see entitlements.js's `getPlan` for
@@ -160,6 +160,11 @@ async function moderateOrRefund(env, gate, texts) {
   const blocked = await moderationRejection(env, texts);
   if (!blocked) return null;
   await gate.refund();
+  // Not screened means not sent: the credits are handed back and the person is
+  // asked to try again later.
+  if (blocked === MODERATION_UNAVAILABLE) {
+    return json({ error: "いま内容の安全確認ができないため、AIを一時的にご利用いただけません。しばらくしてからもう一度お試しください。", code: "moderation_unavailable" }, 503);
+  }
   return json({ error: blocked, code: "content_rejected" }, 400);
 }
 

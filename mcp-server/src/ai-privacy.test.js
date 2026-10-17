@@ -3,7 +3,7 @@ import test from "node:test";
 import { takeParsedBody } from "./ai-body.js";
 import { aiPrivacyRejection, AI_CONSENT_VERSION } from "./ai-privacy.js";
 
-const APPROVED = { AI_PROVIDER_APPROVED: "true" };
+const APPROVED = { AI_PROVIDER_APPROVED: "true", PAYWALL_ENABLED: "true" };
 
 function request(body = {}, consent = AI_CONSENT_VERSION, path = "chat", age = "adult") {
   const headers = { "Content-Type": "application/json", "X-Studiquo-AI-Consent": consent };
@@ -15,6 +15,12 @@ test("approval is opt-in and an old consent cannot enable requests", async () =>
   assert.equal((await aiPrivacyRejection(request(), { AI_PROVIDER_APPROVED: true })).status, 503);
   assert.equal((await aiPrivacyRejection(request({}, ""), APPROVED)).status, 403);
   assert.equal((await aiPrivacyRejection(request({}, "google-v2"), APPROVED)).status, 403);
+});
+test("the AI is not opened unless billing (the paywall) is on too, so free accounts cannot use up the shared limits", async () => {
+  const withoutPaywall = { AI_PROVIDER_APPROVED: "true" };
+  assert.equal((await aiPrivacyRejection(request(), withoutPaywall)).status, 503);
+  assert.equal((await aiPrivacyRejection(request(), { ...withoutPaywall, PAYWALL_ENABLED: "false" })).status, 503);
+  assert.equal(await aiPrivacyRejection(request(), APPROVED), null);
 });
 test("a request without a confirmed age band is refused; adult and teen pass", async () => {
   assert.equal((await aiPrivacyRejection(request({}, AI_CONSENT_VERSION, "chat", ""), APPROVED)).status, 403);

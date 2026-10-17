@@ -49,8 +49,8 @@ AIの利用量は**クレジット**で数え、プランごとに4つの窓（1
 **AIを使える人の条件と安全策**（OpenAIの利用条件が13歳未満を対象外とし、未成年には保護者の同意を求めるため）:
 
 - アプリは初回に年齢区分（`adult`＝18歳以上、`teen`＝13〜17歳で保護者の同意あり）を確認し、リクエストに`X-Studiquo-Age`ヘッダーを付けます。13歳未満は選べず、AIを使えません。ヘッダーが無い・不正な値のリクエストは`ai-privacy.js`が403で止めます。
-- 同意の版は`openai-v1`（`X-Studiquo-AI-Consent`）。古い版や`AI_PROVIDER_APPROVED`が`true`でないときは使えません。
-- 利用者の入力文はOpenAIのモデレーション（`omni-moderation-latest`）にかけ、不適切と判定されたら送らずに400（`code: "content_rejected"`）を返します（自傷関連は止めません。モデレーション自体が落ちているときは通します。`AI_MODERATION=off`で無効化）。
+- 同意の版は`openai-v1`（`X-Studiquo-AI-Consent`）。古い版や`AI_PROVIDER_APPROVED`が`true`でないときは使えません。`PAYWALL_ENABLED`が`true`でないときも使えません(課金なしのアカウントを量産して全体の1日上限を使い切られるのを防ぐため。AIを解禁するときは両方を`true`にします)。
+- 利用者の入力文はOpenAIのモデレーション（`omni-moderation-latest`）にかけ、不適切と判定されたら送らずに400（`code: "content_rejected"`）を返します（自傷関連は止めません。モデレーション自体が落ちている・読めないときは送らずに503（`code: "moderation_unavailable"`）を返し、消費した回数は戻します。`AI_MODERATION=off`で無効化）。
 - OpenAIへ送るときは`store: false`と、アカウントのハッシュを元にした`safety_identifier`を付けます（アカウントIDそのものは送りません）。
 
 システムプロンプトと採点スキーマはWorker側にあるので、**採点の指示を直すのにアプリの再申請は要りません。** モデルは`OPENAI_*_MODEL`で差し替えられます。
