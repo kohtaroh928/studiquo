@@ -4,13 +4,20 @@ import { eraseLibraryID, getOrCreateLibraryID, libraryIdObjectName, newLibraryID
 
 function fakeContext() {
   const values = new Map();
+  // blockConcurrencyWhile lets one piece of work run at a time, as a Durable
+  // Object does.
+  let turn = Promise.resolve();
   return {
     storage: {
       async get(key) { return values.get(key); },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
     },
-    async blockConcurrencyWhile(work) { return work(); },
+    blockConcurrencyWhile(work) {
+      const run = turn.then(work);
+      turn = run.catch(() => {});
+      return run;
+    },
   };
 }
 
@@ -39,4 +46,10 @@ test("the object is named for the account without revealing it, and apart from t
   const name = libraryIdObjectName("a".repeat(64));
   assert.equal(name, `library-id:${"a".repeat(64)}`);
   assert.ok(!name.includes("@"));
+});
+
+test("several first requests at once all get the same id", async () => {
+  const ctx = fakeContext();
+  const ids = await Promise.all(Array.from({ length: 20 }, () => getOrCreateLibraryID(ctx)));
+  assert.equal(new Set(ids).size, 1);
 });
