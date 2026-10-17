@@ -18,6 +18,7 @@ import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats
 import { handleInvitePage } from "./invite.js";
 import { accessAllowed, isAccessGuardedPath, isCrossSiteWrite } from "./access.js";
 import { appGateRejection } from "./app-gate.js";
+import { idTokenNonceRefused } from "./id-token-nonce.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired, remainingValiditySeconds } from "./token.js";
 import { resolveChatUserKey } from "./chat-identity.js";
@@ -566,10 +567,6 @@ const REFRESH_OLD_TOKEN_GRACE_SECONDS = 14 * 24 * 60 * 60;
 async function handleSessionRefresh(request, env, token, session) {
   if (!session) return json({ error: "Sign in again." }, 401);
   const parsed = await readJSONLimited(request, 1_000);
-  const randomValue = parsed?.randomValue;
-  if (typeof randomValue !== "string" || !/^[0-9A-Za-z_-]{16,200}$/.test(randomValue)) {
-    return json({ error: "randomValue is required." }, 400);
-  }
   const issuedAt = Number(token.slice(0, token.indexOf(".")));
   if (Date.now() / 1000 - issuedAt < REFRESH_MIN_AGE_SECONDS) return json({ refreshed: false });
   const oldKey = await sha256Hex(token);
@@ -577,8 +574,8 @@ async function handleSessionRefresh(request, env, token, session) {
   const originMs = session.originIssuedAtMs ?? session.issuedAtMs ?? issuedAt * 1000;
   const maxDays = Number(env.SESSION_MAX_DAYS) > 0 ? Number(env.SESSION_MAX_DAYS) : DEFAULT_SESSION_MAX_DAYS;
   if (Date.now() - originMs > maxDays * 24 * 60 * 60 * 1000) return json({ refreshed: false, reason: "session_too_old" });
-  const refreshed = await mintSession(env, session.originalSub ?? session.sub, randomValue, { originIssuedAtMs: originMs });
-  if (!refreshed) return json({ error: "Invalid randomValue." }, 400);
+  const refreshed = await mintSession(env, session.originalSub ?? session.sub, undefined, { originIssuedAtMs: originMs });
+  if (!refreshed) return json({ error: "Signing in is not available for this account right now." }, 400);
   const newKey = await sha256Hex(refreshed);
   const oldRemaining = remainingValiditySeconds(token);
   await env.STUDIQUO_DATA.put(`session-refreshed:${oldKey}`, "1", { expirationTtl: oldRemaining });
@@ -613,12 +610,9 @@ async function handleAppleSignIn(request, env) {
     return json({ error: "Invalid JSON." }, 400);
   }
 
-  const { identityToken, randomValue } = parsed ?? {};
+  const { identityToken, nonce } = parsed ?? {};
   if (typeof identityToken !== "string" || !identityToken) {
     return json({ error: "identityToken is required." }, 400);
-  }
-  if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
-    return json({ error: "randomValue is required." }, 400);
   }
 
   let payload;
@@ -627,6 +621,8 @@ async function handleAppleSignIn(request, env) {
   } catch {
     return json({ error: "Invalid Apple identity token." }, 401);
   }
+  // The token must have been made for this very sign-in (id-token-nonce.js).
+  if (await idTokenNonceRefused(env, payload, nonce)) return json({ error: "Invalid Apple identity token." }, 401);
 
   const sub = payload.sub;
   if (typeof sub !== "string" || !sub) return json({ error: "Invalid Apple identity token." }, 401);
@@ -667,8 +663,8 @@ async function handleAppleSignIn(request, env) {
     identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
-  const token = await mintSession(env, identityKey, randomValue);
-  if (!token) return json({ error: "Invalid randomValue." }, 400);
+  const token = await mintSession(env, identityKey);
+  if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
   return json({ token });
 }
 
@@ -693,12 +689,9 @@ async function handleGoogleSignIn(request, env) {
     return json({ error: "Invalid JSON." }, 400);
   }
 
-  const { idToken, randomValue } = parsed ?? {};
+  const { idToken, nonce } = parsed ?? {};
   if (typeof idToken !== "string" || !idToken) {
     return json({ error: "idToken is required." }, 400);
-  }
-  if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
-    return json({ error: "randomValue is required." }, 400);
   }
 
   let payload;
@@ -707,6 +700,7 @@ async function handleGoogleSignIn(request, env) {
   } catch {
     return json({ error: "Invalid Google identity token." }, 401);
   }
+  if (await idTokenNonceRefused(env, payload, nonce)) return json({ error: "Invalid Google identity token." }, 401);
 
   const sub = payload.sub;
   if (typeof sub !== "string" || !sub) return json({ error: "Invalid Google identity token." }, 401);
@@ -728,8 +722,8 @@ async function handleGoogleSignIn(request, env) {
     identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
-  const token = await mintSession(env, identityKey, randomValue);
-  if (!token) return json({ error: "Invalid randomValue." }, 400);
+  const token = await mintSession(env, identityKey);
+  if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
 
   return json({ token });
 }
@@ -805,7 +799,7 @@ async function handleSendEmailVerification(request, env) {
 // covering both initial signup and "forgot password" with the same
 // endpoint, since proving control of the email is the same prerequisite
 // either way — and mints a real session, same as Apple/Google do on their
-// own exchange. `password` and `randomValue` are required for this reason:
+// own exchange. `password` is required for this reason:
 // this is the only place a local account's password is ever set.
 async function handleConfirmEmailVerification(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_EMAIL_VERIFY_CONFIRM, clientKey(request));
@@ -820,14 +814,11 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     return json({ error: "Invalid JSON." }, 400);
   }
 
-  const { email, code, password, randomValue } = parsed ?? {};
+  const { email, code, password } = parsed ?? {};
   if (typeof email !== "string" || !email) return json({ error: "email is required." }, 400);
   if (typeof code !== "string" || !code) return json({ error: "code is required." }, 400);
   if (typeof password !== "string" || password.length < 8 || password.length > 1_024) {
     return json({ error: "password is required." }, 400);
-  }
-  if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
-    return json({ error: "randomValue is required." }, 400);
   }
 
   // Checked before the code is: a refused password costs the caller no code
@@ -933,8 +924,8 @@ async function handleConfirmEmailVerification(request, env, ctx) {
       }
     }
   }
-  const token = await mintSession(env, accountKey, randomValue);
-  if (!token) return json({ error: "Invalid randomValue." }, 400);
+  const token = await mintSession(env, accountKey);
+  if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
   // The owner just proved they hold this mailbox from here, so this is the
   // baseline context: remember it without sending a notice.
   inBackground(ctx, noteSignInContext(env, request, normalizedEmail, { notify: false }));
@@ -961,12 +952,9 @@ async function handleLocalLogin(request, env, ctx) {
     return json({ error: "Invalid JSON." }, 400);
   }
 
-  const { email, password, randomValue } = parsed ?? {};
+  const { email, password } = parsed ?? {};
   if (typeof email !== "string" || !email) return json({ error: "email is required." }, 400);
   if (typeof password !== "string" || !password) return json({ error: "password is required." }, 400);
-  if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
-    return json({ error: "randomValue is required." }, 400);
-  }
 
   // Not a deliverable address: refuse without creating throttle state for it.
   if (email.length > 254) return json({ error: "メールアドレスまたはパスワードが違います。" }, 401);
@@ -1025,8 +1013,8 @@ async function handleLocalLogin(request, env, ctx) {
   // site: an account with a passkey signs in with that instead.
   const passkeyGate = await gatePasskeyAccount(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, normalizedEmail, { notify: work => inBackground(ctx, work) });
   if (passkeyGate) return passkeyGate;
-  const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, randomValue);
-  if (!token) return json({ error: "Invalid randomValue." }, 400);
+  const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`);
+  if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
   // A sign-in from a country+network this account hasn't used lately emails
   // the owner (login-monitor.js); the outcome also feeds the spike alerts.
   inBackground(ctx, (async () => {

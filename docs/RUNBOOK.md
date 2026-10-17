@@ -62,6 +62,7 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
 | パスワードのhashの移行(`ARGON2_WRITE`)の切替・戻し、ログインが重い・失敗する | RB-11 | 配布version、フラグ、CPU・メモリ、旧形式のレコード |
 | 全機能を一時的に止めたい、古いアプリを使わせたくない、連打で止まる・止められない | RB-13 | 運用スイッチ、WAF、独自ドメイン |
 | トークンの署名の導入・鍵の入れ替え、署名つきトークンで401になる | RB-14 | 署名の鍵、移行の段階 |
+| Apple・Googleのサインインが「Invalid … identity token」で失敗する、nonceの必須化 | RB-15 | アプリのビルド、nonce、`REQUIRE_ID_TOKEN_NONCE` |
 | ログイン失敗の急増アラート、攻撃の疑い、利用者が待たされる | RB-12 | 失敗回数と待機、Slack通知、漏えいパスワードの照合 |
 
 ## 5. 症状別の対応
@@ -237,6 +238,25 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
 - **承認が必要な復旧**: 鍵の設定・入れ替え・削除、`REQUIRE_SIGNED_TOKENS`の切替。戻すときは、`REQUIRE_SIGNED_TOKENS`を外して再配備する(従来のトークンが、また使える)。
 - **復旧の判定**: 署名つきのトークンでAPIが成功し、でっち上げたトークンが401になる。主要な操作(ログイン、同期、チャット)が通り、401が増え続けない。
 - **未解決時の引継ぎ**: 鍵の設定状況(名前だけ)、`REQUIRE_SIGNED_TOKENS`の値と配備した版、401の件数と時刻、影響を受けた端末。
+
+### RB-15: IDトークンのnonce(Apple・Google)
+
+- **使う症状**: Apple・Googleでサインインできない(「Invalid Apple/Google identity token」の401)。nonceを必須にする。
+- **仕組みの要点**: アプリが作ったnonceの**ハッシュ**がIDトークンに入り、Workerが、アプリの送った**生のnonce**のハッシュと突き合わせる。同じnonceは1回しか使えない(`mcp-server/README.md`の「IDトークンのnonce」)。`REQUIRE_ID_TOKEN_NONCE`が未設定の間は、nonceを送らない従来のビルドも受け付ける。
+- **導入の順序**(各段階を個別の承認で行う):
+  1. Workerを配備する(`REQUIRE_ID_TOKEN_NONCE`なし)。nonceを送らない従来のビルドも、これまでどおり使える。
+  2. アプリ(nonceを送るビルド)を入れ直し、Apple・Googleでサインインできることを実機で確認する。
+  3. 使われているすべてのビルドがnonceを送るようになったら、`REQUIRE_ID_TOKEN_NONCE="true"`を`vars`に入れて配備する。**nonceのない旧ビルドは、Apple・Googleでサインインできなくなる**(アプリ側の更新が要る)。
+- **最初の確認**: 失敗するのが、Apple・Googleだけか(パスワード、Passkeyは別経路)。失敗した端末のアプリのビルド。`REQUIRE_ID_TOKEN_NONCE`の値。
+- **変更せず調べる**: Workers Logsで、`/api/auth/apple`・`/api/auth/google`の401の件数と時刻。端末の時刻のずれ(IDトークンの期限)。
+- **判断の目安**:
+  - 401が、nonceの必須化の直後に出た: nonceを送らない旧ビルドが使われている。ビルドを更新する。または、`REQUIRE_ID_TOKEN_NONCE`を外す。
+  - 401が、特定の端末だけ: アプリが、IDトークンのnonceと違う値をWorkerに送っている(アプリの不具合)。ビルドと、直前のSDK更新(GoogleSignInは9.x以降でnonceに対応)を確認する。
+  - 同じサインインを短時間にやり直して401: nonceは1回しか使えない。やり直しは、新しいnonceで始まるので、通常は起きない。アプリが、古い結果を送り直していないか確認する。
+- **避ける操作**: アプリを更新する前に`REQUIRE_ID_TOKEN_NONCE`を入れる(Apple・Googleでサインインできなくなる)。GoogleSignIn SDKを、nonceに対応しない版(8.x以前)に戻す。
+- **承認が必要な復旧**: `REQUIRE_ID_TOKEN_NONCE`の切替と再配備、アプリの配布。戻すときは、`REQUIRE_ID_TOKEN_NONCE`を外して再配備する。
+- **復旧の判定**: Apple・Googleでサインインでき、401が落ち着く。
+- **未解決時の引継ぎ**: アプリのビルド、`REQUIRE_ID_TOKEN_NONCE`の値と配備した版、401の件数と時刻、影響を受けた端末。
 
 ## 6. 復旧操作の承認と確認
 
