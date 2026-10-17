@@ -340,3 +340,27 @@ test("connecting an app tells the owner's devices, and a failed notice does not 
     assert.equal(connections[0].kind, "claude");
   } finally { errors.mock.restore(); }
 });
+
+test("issued tokens are listed under their account, and the first listing starts the clock for deletions", async () => {
+  const env = environment();
+  env.RATE_COUNTER = countingCounter();
+  const redirectUri = "https://client.example/a";
+  const registered = await fetch(env, "/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ client_name: "C", redirect_uris: [redirectUri] }) });
+  const { client_id: clientId } = await registered.json();
+  const challenge = createHash("sha256").update("v".repeat(43)).digest("base64url");
+  const page = await (await fetch(env, `/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&code_challenge_method=S256&code_challenge=${challenge}&state=s`)).text();
+  const flowId = page.match(/id:'([a-f0-9]{64})'/)[1];
+  const { redirect } = await (await enterOwnerCode(env, flowId, "apple:owner")).json();
+  const code = new URL(redirect).searchParams.get("code");
+  assert.equal(await env.STUDIQUO_DATA.get("mcp:token-index-since"), null, "nothing issued yet");
+  const token = await fetch(env, "/oauth/token", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", client_id: clientId, redirect_uri: redirectUri, code, code_verifier: "v".repeat(43) }).toString(),
+  });
+  const issued = await token.json();
+  assert.equal(token.status, 200);
+  const owner = hash("apple:owner");
+  assert.notEqual(await env.STUDIQUO_DATA.get(`mcp:token-index:${owner}:access:${hash(issued.access_token)}`), null);
+  assert.notEqual(await env.STUDIQUO_DATA.get(`mcp:token-index:${owner}:refresh:${hash(issued.refresh_token)}`), null);
+  assert.ok(Number(await env.STUDIQUO_DATA.get("mcp:token-index-since")) > 0);
+});

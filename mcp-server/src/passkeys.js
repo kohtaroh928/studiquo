@@ -240,12 +240,15 @@ export async function handlePasskeys(url, request, env) {
         createdAt: Date.now(),
       };
       const updated = [...saved.filter(item => item.id !== record.id), record].slice(-10);
+      // Listed BEFORE the record exists, and always (at least under the address):
+      // deleting an account finds its passkeys through this list, so a record
+      // must never exist without an entry in it.
+      const owner = await realSession(env, token);
+      await indexAccountPasskey(env, owner?.sub ?? `email:${pending.email}`, pending.email, record.id);
       await Promise.all([
         env.STUDIQUO_DATA.put(`passkeys:user:${pending.userKey}`, JSON.stringify(updated)),
         env.STUDIQUO_DATA.put(`passkeys:credential:${record.id}`, JSON.stringify(record)),
       ]);
-      const owner = await realSession(env, token);
-      if (owner) await indexAccountPasskey(env, owner.sub, pending.email, record.id);
       await sendPasskeyNotice(env, pending.email, "Studiquoにパスキーが追加されました", [
         "お使いのStudiquoアカウントに、パスキーが追加されました。",
         "",

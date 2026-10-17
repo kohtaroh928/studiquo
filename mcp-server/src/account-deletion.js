@@ -2,6 +2,8 @@ import { sha256Hex } from "./auth.js";
 import { queueRevenueCatDeletion } from "./privacy-retention.js";
 import { roomMembershipKey } from "./document-room-store.js";
 import { generationOf } from "./session.js";
+import { tokenIndexCoversEverything } from "./mcp-oauth.js";
+import { dropPasskeyIndex, indexedPasskeyIds, passkeyAccountKeys, passkeyIndexComplete } from "./passkey-policy.js";
 
 // How long the retired password generation outlives the deletion. KV can serve
 // a stale record for about a minute; a week is a wide margin on top of that.
@@ -260,17 +262,33 @@ export async function deleteAccount(env, canonicalSub) {
     }
   }
 
-  const passkeyCredentialKeys = await entries(env, "passkeys:credential:");
+  // The account's passkeys are found through its own list (passkey-policy.js)
+  // rather than by reading every passkey there is. While that list does not yet
+  // cover passkeys from before it existed, or has reached its limit (and so may
+  // have dropped some), every record is read as before.
   const ownedCredentialKeys = [];
-  for (const key of passkeyCredentialKeys) {
-    const credential = await env.STUDIQUO_DATA.get(key, "json");
-    if (emails.includes(String(credential?.email ?? "").toLowerCase())) ownedCredentialKeys.push(key);
-  }
-  const passkeyUserKeys = await entries(env, "passkeys:user:");
   const ownedPasskeyUserKeys = [];
-  for (const key of passkeyUserKeys) {
-    const credentials = await env.STUDIQUO_DATA.get(key, "json") ?? [];
-    if (credentials.some(item => emails.includes(String(item.email ?? "").toLowerCase()))) ownedPasskeyUserKeys.push(key);
+  const listKeys = new Set();
+  for (const identity of new Set([...identityKeys, canonicalSub])) for (const key of await passkeyAccountKeys(env, identity, null)) listKeys.add(key);
+  for (const email of emails) for (const key of await passkeyAccountKeys(env, `email:${String(email).trim().toLowerCase()}`, email)) listKeys.add(key);
+  const listed = (await passkeyIndexComplete(env)) ? await indexedPasskeyIds(env, [...listKeys]) : null;
+  if (listed && !listed.full) {
+    const userKeys = new Set();
+    for (const id of listed.ids) {
+      ownedCredentialKeys.push(`passkeys:credential:${id}`);
+      const credential = await env.STUDIQUO_DATA.get(`passkeys:credential:${id}`, "json");
+      if (credential?.userKey) userKeys.add(`passkeys:user:${credential.userKey}`);
+    }
+    ownedPasskeyUserKeys.push(...userKeys);
+  } else {
+    for (const key of await entries(env, "passkeys:credential:")) {
+      const credential = await env.STUDIQUO_DATA.get(key, "json");
+      if (emails.includes(String(credential?.email ?? "").toLowerCase())) ownedCredentialKeys.push(key);
+    }
+    for (const key of await entries(env, "passkeys:user:")) {
+      const credentials = await env.STUDIQUO_DATA.get(key, "json") ?? [];
+      if (credentials.some(item => emails.includes(String(item.email ?? "").toLowerCase()))) ownedPasskeyUserKeys.push(key);
+    }
   }
 
   const chatIdentityHash = await sha256Hex(`chat-account:${canonicalSub}`);
@@ -308,10 +326,20 @@ export async function deleteAccount(env, canonicalSub) {
   const mcpAccountHashes = await Promise.all([...identityKeys].map(identity => sha256Hex(`mcp-account:${identity}`)));
   const grantPrefixes = await Promise.all([...identityKeys].map(async identity => `mcp:grant:${await sha256Hex(identity)}:`));
   const mcpKeys = [];
-  for (const prefix of ["mcp:grant:", "mcp:access:", "mcp:refresh:"]) {
-    for (const key of await entries(env, prefix)) {
-      if (grantPrefixes.some(grantPrefix => key.startsWith(grantPrefix))) mcpKeys.push(key);
-      else if (prefix !== "mcp:grant:") {
+  // A grant's key starts with its account's hash, so each identity's grants are
+  // listed by prefix rather than found among everyone's.
+  for (const prefix of grantPrefixes) mcpKeys.push(...await entries(env, prefix));
+  // Tokens are listed per account too (mcp-oauth.js). Until every token that
+  // could exist has been issued under that list, the old scan also runs.
+  for (const identity of identityKeys) {
+    const indexPrefix = `mcp:token-index:${await sha256Hex(identity)}:`;
+    for (const indexKey of await entries(env, indexPrefix)) {
+      mcpKeys.push(indexKey, `mcp:${indexKey.slice(indexPrefix.length)}`);
+    }
+  }
+  if (!(await tokenIndexCoversEverything(env))) {
+    for (const prefix of ["mcp:access:", "mcp:refresh:"]) {
+      for (const key of await entries(env, prefix)) {
         const value = await env.STUDIQUO_DATA.get(key, "json");
         if (identityKeys.has(value?.sub)) mcpKeys.push(key);
       }
