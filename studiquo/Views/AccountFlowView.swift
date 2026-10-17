@@ -72,6 +72,12 @@ struct AccountGateView: View {
             guard !cleanupPending else { return }
             await authentication.checkPasskeyRequirement()
         }
+        // Remembers which account this device is signed in as (LibraryLedger).
+        // Nothing depends on it yet; it only starts the record.
+        .task(id: authentication.state) {
+            guard !cleanupPending, authentication.state == .authenticated else { return }
+            await LibraryIdentityService.refresh()
+        }
         // The Worker can only answer "which plan?" once there is a session.
         .task(id: authentication.state) {
             guard !cleanupPending else { return }
