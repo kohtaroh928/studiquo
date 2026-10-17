@@ -184,8 +184,8 @@ enum ExportService {
     static func makePNG(from page: NotePage, notebookTitle: String) -> URL? {
         guard let data = makeImage(from: page).pngData() else { return nil }
         let safeTitle = notebookTitle.replacingOccurrences(of: "/", with: "-")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeTitle)-page-\(page.order + 1).png")
-        try? data.write(to: url, options: .atomic)
+        let url = StudiquoWorkFiles.file(named: "\(safeTitle)-page-\(page.order + 1).png")
+        try? data.write(to: url, options: [.atomic, .completeFileProtection])
         return url
     }
 
@@ -252,9 +252,9 @@ enum ExportService {
         guard let data = pdfData(pages: pages) else { return nil }
 
         let safeFilename = filename.replacingOccurrences(of: "/", with: "-")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeFilename).pdf")
+        let url = StudiquoWorkFiles.file(named: "\(safeFilename).pdf")
         do {
-            try data.write(to: url)
+            try data.write(to: url, options: .completeFileProtection)
             return url
         } catch {
             return nil
