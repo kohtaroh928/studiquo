@@ -2828,6 +2828,26 @@ test("the library id cannot be worked out from an e-mail address, and a new acco
   assert.notEqual((await libraryID(env, token)).body.libraryID, body.libraryID);
 });
 
+test("an id asked for while the account is being deleted is taken away again, not left for a new sign-up", async () => {
+  const registry = fakeLibraryRegistry();
+  const env = Object.assign(environment({ strictSessions: true }), { USER_REGISTRY: registry });
+  const token = freshToken("g");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "apple:alice" }));
+  // The deletion starts after the session was checked, while the id is being made.
+  const original = registry.getByName.bind(registry);
+  registry.getByName = name => {
+    const object = original(name);
+    return { ...object, async libraryID() {
+      const id = await object.libraryID();
+      await env.STUDIQUO_DATA.put(`account-deletion:${sha256Hex("apple:alice")}`, JSON.stringify({ status: "deleting" }));
+      return id;
+    } };
+  };
+  const response = await libraryID(env, token);
+  assert.equal(response.status, 401);
+  assert.equal(registry._stored.size, 0, "the id made meanwhile was erased");
+});
+
 test("without the registry nothing is handed out, and the library id needs a signed-in session", async () => {
   const bare = environment({ strictSessions: true });
   const token = freshToken("f");

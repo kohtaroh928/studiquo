@@ -395,11 +395,17 @@ export async function deleteAccount(env, canonicalSub) {
   // The id the app keeps this account's on-device library under is erased too, so
   // signing up again gives a new one and an earlier library is not handed to the
   // new account (library-id.js). Idempotent, so a retry repeats it harmlessly.
-  if (env.USER_REGISTRY) {
-    for (const identity of new Set([...identityKeys, canonicalSub])) {
+  // The names that could have been used: every identity of the account, and the
+  // e-mail identities (as for the passkey lists), since the id is kept under the
+  // account's canonical identity and the one an address resolved to.
+  const eraseLibraryIDs = async () => {
+    if (!env.USER_REGISTRY) return;
+    const identities = new Set([...identityKeys, canonicalSub, ...emails.map(email => `email:${String(email).trim().toLowerCase()}`)]);
+    for (const identity of identities) {
       await env.USER_REGISTRY.getByName(libraryIdObjectName(await sha256Hex(identity))).eraseLibraryID();
     }
-  }
+  };
+  await eraseLibraryIDs();
 
   // The rest of the per-account RATE_COUNTER state goes only after the account
   // itself is gone, so a Durable Object hiccup here can't hold the real
@@ -419,6 +425,11 @@ export async function deleteAccount(env, canonicalSub) {
   // Last of the data steps: if a room cannot be removed, everything else is
   // already gone and the retry only has the rooms left.
   if (env.DOCUMENT_ROOM) await removeDocumentRooms(env, chatKey);
+
+  // Once more just before the account counts as deleted: an id request that was
+  // already past its session check when the first erase ran may have made a new
+  // one since (app.js rechecks too; this closes what is left).
+  await eraseLibraryIDs();
 
   // The finished marker keeps only hashes of the identities: an email address
   // must not outlive the account it belonged to (sign-in only needs the hashes

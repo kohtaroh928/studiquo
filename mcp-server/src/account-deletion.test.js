@@ -1032,4 +1032,6 @@ test("deleting an account erases its library id, so signing up again gives a new
   const named = identity => `library-id:${hash(identity)}`;
   assert.ok(erased.includes(named("apple:alice")), "the account's own object");
   assert.ok(erased.includes(named("google:alice-g")) || erased.includes(named("alice")), "and the linked identities' too, in case an id was made under one");
+  assert.ok(erased.includes(named("email:alice@example.com")), "and the e-mail identity, as for the passkey lists");
+  assert.ok(erased.filter(name => name === named("apple:alice")).length >= 2, "erased again at the end, in case one was made meanwhile");
 });

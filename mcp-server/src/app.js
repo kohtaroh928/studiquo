@@ -31,7 +31,7 @@ import { linkVerifiedEmail, identityKey } from "./oauth-links.js";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
 import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError } from "./local-auth.js";
 import { startAccountDeletion } from "./account-deletion.js";
-import { mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted } from "./session.js";
+import { mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted, accountIsUnavailable } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { beginLoginAttempt, finishLoginAttempt, abandonLoginAttempt } from "./login-throttle.js";
 import { isBreachedPassword } from "./pwned-passwords.js";
@@ -415,7 +415,20 @@ export default {
         if (!session) return json({ error: "Sign in again." }, 401);
         const canonical = await resolveAccountKey(env, session.sub);
         if (!env.USER_REGISTRY) return json({ error: "Not available." }, 503);
-        const libraryID = await env.USER_REGISTRY.getByName(libraryIdObjectName(await sha256Hex(canonical))).libraryID();
+        const registry = env.USER_REGISTRY.getByName(libraryIdObjectName(await sha256Hex(canonical)));
+        let libraryID;
+        try {
+          libraryID = await registry.libraryID();
+          // A deletion may have started after the session was checked and erased
+          // this id before it was asked for: the id just made would outlive the
+          // account (and a new sign-up would get it back). Take it away again.
+          if (await accountIsUnavailable(env, session.sub)) {
+            await registry.eraseLibraryID();
+            return json({ error: "Sign in again." }, 401);
+          }
+        } catch {
+          return json({ error: "Not available." }, 503);
+        }
         return json({ libraryID });
       }
       if (url.pathname === "/api/account" && request.method === "DELETE") {
