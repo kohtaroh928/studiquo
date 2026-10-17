@@ -155,7 +155,8 @@ struct LoginView: View {
                             email: email, password: password, isBusy: authentication.isSignInBusy
                         ))
                     SignInWithAppleButton(.signIn) { request in
-                        request.requestedScopes = [.email]
+                        // The scopes, and a nonce whose hash Apple puts in the ID token.
+                        AppleSignInService.prepare(request)
                     } onCompletion: { result in
                         Task { await authentication.loginWithApple(result: result) }
                     }

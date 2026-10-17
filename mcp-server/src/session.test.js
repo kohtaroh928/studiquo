@@ -20,7 +20,7 @@ test("a token mintSession issues is recognized by hasRealSession", async () => {
   const env = environment();
   const token = await mintSession(env, "apple-sub-1", "r".repeat(40));
 
-  assert.match(token, /^\d+\.r{40}$/);
+  assert.match(token, /^\d+\.[0-9a-f]{64}$/);
   assert.equal(await hasRealSession(env, token), true);
 });
 
@@ -31,11 +31,27 @@ test("a client-fabricated token in the same shape is not a real session", async 
   assert.equal(await hasRealSession(env, fabricated), false);
 });
 
-test("mintSession refuses a randomValue that would make the token too short", async () => {
+test("the secret half of a token comes from the Worker, never from the value the app sends", async () => {
   const env = environment();
-  const token = await mintSession(env, "apple-sub-1", "short");
+  const sent = "s".repeat(40);
+  const first = await mintSession(env, "apple-sub-1", sent);
+  const second = await mintSession(env, "apple-sub-1", sent);
+  assert.ok(!first.includes(sent));
+  assert.notEqual(first, second, "the same value from the app gives two different tokens");
+  for (const token of [first, second]) {
+    assert.match(token, /^\d+\.[0-9a-f]{64}$/);
+    assert.equal(await hasRealSession(env, token), true);
+  }
+  // Nothing is needed from the app at all, and an odd value changes nothing.
+  assert.match(await mintSession(env, "apple-sub-2"), /^\d+\.[0-9a-f]{64}$/);
+  assert.match(await mintSession(env, "apple-sub-3", "short"), /^\d+\.[0-9a-f]{64}$/);
+});
 
-  assert.equal(token, null);
+test("many tokens made in a row never repeat", async () => {
+  const env = environment();
+  const seen = new Set();
+  for (let i = 0; i < 200; i += 1) seen.add(await mintSession(env, `sub-${i % 5}`));
+  assert.equal(seen.size, 200);
 });
 
 test("two unlinked identities mint their own independently valid sessions", async () => {

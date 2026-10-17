@@ -27,11 +27,16 @@ final class GoogleSignInService {
         guard let presentingViewController = Self.presentingViewController() else {
             throw GoogleSignInServiceError.noPresentingViewController
         }
-        let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presentingViewController)
+        // The hash of a fresh nonce goes into the ID token; the raw nonce goes to our
+        // server (see SignInNonce).
+        let nonce = SignInNonce.make()
+        let result = try await GIDSignIn.sharedInstance.signIn(
+            withPresenting: presentingViewController, hint: nil, additionalScopes: nil, nonce: nonce.hashed
+        )
         guard let idToken = result.user.idToken?.tokenString, let subject = result.user.userID else {
             throw GoogleSignInServiceError.invalidResponse
         }
-        let token = try await exchange(idToken: idToken, randomValue: MCPCloudCredentials.makeRandomValue())
+        let token = try await exchange(idToken: idToken, randomValue: MCPCloudCredentials.makeRandomValue(), nonce: nonce.raw)
         MCPCloudCredentials.save(token)
         return (subject, result.user.profile?.email)
     }
@@ -40,18 +45,22 @@ final class GoogleSignInService {
     /// MCPCloudCredentials.makeToken() produces, just minted server-side here
     /// from the random half this device supplies — same contract as
     /// AppleSignInService.exchange(identityToken:randomValue:).
-    private func exchange(idToken: String, randomValue: String) async throws -> String {
+    private func exchange(idToken: String, randomValue: String, nonce: String?) async throws -> String {
         try await exchange(
             idToken: idToken,
             randomValue: randomValue,
+            nonce: nonce,
             endpoint: endpoint,
             session: .shared
         )
     }
 
+    /// `randomValue` is still sent for a server from before the Worker made the secret
+    /// half of the token itself; the current server ignores it.
     func exchange(
         idToken: String,
         randomValue: String,
+        nonce: String? = nil,
         endpoint: URL,
         session: URLSession
     ) async throws -> String {
@@ -59,7 +68,7 @@ final class GoogleSignInService {
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(ExchangeRequest(idToken: idToken, randomValue: randomValue))
+        request.httpBody = try JSONEncoder().encode(ExchangeRequest(idToken: idToken, randomValue: randomValue, nonce: nonce))
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw GoogleSignInServiceError.serverRejected
@@ -87,5 +96,5 @@ enum GoogleSignInServiceError: LocalizedError {
     }
 }
 
-private struct ExchangeRequest: Encodable { let idToken: String; let randomValue: String }
+private struct ExchangeRequest: Encodable { let idToken: String; let randomValue: String; let nonce: String? }
 private struct ExchangeResponse: Decodable { let token: String }
