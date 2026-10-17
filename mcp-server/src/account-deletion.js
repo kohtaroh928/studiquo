@@ -2,6 +2,7 @@ import { sha256Hex } from "./auth.js";
 import { queueRevenueCatDeletion } from "./privacy-retention.js";
 import { roomMembershipKey } from "./document-room-store.js";
 import { generationOf } from "./session.js";
+import { libraryIdObjectName } from "./library-id.js";
 
 // How long the retired password generation outlives the deletion. KV can serve
 // a stale record for about a minute; a week is a wide margin on top of that.
@@ -390,6 +391,15 @@ export async function deleteAccount(env, canonicalSub) {
   if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ ...checkpoint, deletionKeys: [...new Set(deletionKeys)] }));
   await deleteKeys(env, deletionKeys);
+
+  // The id the app keeps this account's on-device library under is erased too, so
+  // signing up again gives a new one and an earlier library is not handed to the
+  // new account (library-id.js). Idempotent, so a retry repeats it harmlessly.
+  if (env.USER_REGISTRY) {
+    for (const identity of new Set([...identityKeys, canonicalSub])) {
+      await env.USER_REGISTRY.getByName(libraryIdObjectName(await sha256Hex(identity))).eraseLibraryID();
+    }
+  }
 
   // The rest of the per-account RATE_COUNTER state goes only after the account
   // itself is gone, so a Durable Object hiccup here can't hold the real

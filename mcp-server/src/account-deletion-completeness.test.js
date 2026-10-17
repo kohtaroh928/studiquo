@@ -173,6 +173,7 @@ function fakeRegistry(values) {
           const stored = values.get(`chat:user:${key}`);
           return stored ? JSON.parse(stored) : null;
         },
+        async eraseLibraryID() {},
       };
     },
   };
