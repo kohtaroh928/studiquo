@@ -88,3 +88,32 @@ test("while the list does not yet cover older passkeys, the reset still finds th
   assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:legacy"), null);
   assert.equal(await env.STUDIQUO_DATA.get("passkeys:user:dev-a"), null);
 });
+
+test("a passkey of an address the account owns but never linked is cut off too (no canonical mapping needed)", async () => {
+  const env = { STUDIQUO_DATA: kv() };
+  await env.STUDIQUO_DATA.put("email-account-owner:b@example.com", "email:a@example.com");
+  const record = { id: "b-passkey", email: "b@example.com", createdAt: Date.now() - 1000 };
+  await revokePasskeysForAccount(env, { accountKey: "email:a@example.com", emails: ["a@example.com"] });
+  assert.equal(await passkeyRevokedByReset(env, record), true);
+  assert.equal(await passkeyRevokedByReset(env, { ...record, email: "c@example.com" }), false, "an address nobody here owns is not");
+});
+
+test("when the account's list is full, the reset scans instead of trusting a list that dropped old ids", async () => {
+  const env = { STUDIQUO_DATA: kv() };
+  // Twelve registered; the list kept the last ten, so the first two are only found by scanning.
+  for (let i = 0; i < 12; i++) {
+    await register(env, { email: "a@example.com", id: `p${i}`, userKey: `dev-${i}`, account: "email:a@example.com", createdAt: 100 });
+  }
+  const result = await revokePasskeysForAccount(env, { accountKey: "email:a@example.com", emails: ["a@example.com"] });
+  assert.equal(result.removed, 12);
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:p0"), null, "the oldest is gone too");
+});
+
+test("the reset time is written again after the sweep", async () => {
+  const env = { STUDIQUO_DATA: kv() };
+  const writes = [];
+  const put = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (key, value) => { if (key.startsWith("passkey-valid-from:")) writes.push(key); return put.call(env.STUDIQUO_DATA, key, value); };
+  await revokePasskeysForAccount(env, { accountKey: "email:a@example.com", emails: ["a@example.com"] });
+  assert.ok(writes.length >= 2 && new Set(writes).size < writes.length, "each key written at the start and again at the end");
+});

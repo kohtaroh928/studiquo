@@ -73,8 +73,16 @@ export async function revokePasskeysForAccount(env, { accountKey, emails = [] })
   // The account's own list finds them without reading every passkey there is.
   // Until the list covers passkeys from before it existed, the full scan is the
   // only way to be sure.
-  if (!(await passkeyIndexComplete(env))) return scanAndRevoke(env, { accountKey, wanted });
-  const ids = await indexedPasskeyIds(env, [...keys]);
+  const scanned = async () => {
+    const result = await scanAndRevoke(env, { accountKey, wanted });
+    await setPasskeyValidFrom(env, [...keys]);
+    return result;
+  };
+  if (!(await passkeyIndexComplete(env))) return scanned();
+  const { ids, full } = await indexedPasskeyIds(env, [...keys]);
+  // A list at its limit has dropped its oldest ids (more than that many passkeys
+  // were registered), so the passkeys it names are not all there are.
+  if (full) return scanned();
   let removed = 0;
   const userKeys = new Set();
   for (const id of ids) {
@@ -93,6 +101,9 @@ export async function revokePasskeysForAccount(env, { accountKey, emails = [] })
     else await env.STUDIQUO_DATA.put(`passkeys:user:${userKey}`, JSON.stringify(kept));
   }
   await dropPasskeyIndex(env, [...keys]);
+  // Again, so a passkey registered while the sweep ran (after the time written
+  // at the start, but missed by the sweep) is older than this one.
+  await setPasskeyValidFrom(env, [...keys]);
   return { removed };
 }
 

@@ -98,7 +98,8 @@ export async function loadAccountPasskeys(env, accountKey, email) {
 // key-value listing can lag by up to a minute, so a passkey registered just as
 // the reset ran could be missed and, unlike a session, would never expire. This
 // time is read straight from a key, not found by listing, so it still catches
-// that one. A record without a registration time predates the field, and so
+// that one, as long as the key itself has reached the place reading it (a
+// key-value read can also be about a minute behind). A record without a registration time predates the field, and so
 // predates any reset that wrote this.
 const validFromKey = async accountKey => `passkey-valid-from:${await sha256Hex(accountKey)}`;
 
@@ -107,7 +108,16 @@ export async function setPasskeyValidFrom(env, keys, now = Date.now()) {
 }
 
 export async function passkeyRevokedByReset(env, record, keys = null) {
-  const checked = keys ?? await passkeyAccountKeys(env, `email:${String(record?.email ?? "").trim().toLowerCase()}`, record?.email);
+  let checked = keys;
+  if (!checked) {
+    const email = String(record?.email ?? "").trim().toLowerCase();
+    checked = await passkeyAccountKeys(env, `email:${email}`, record?.email);
+    // The account that owns this address, even when the sign-in methods were
+    // never linked (so the canonical mapping above does not reach it): a reset
+    // writes its time under that account's key.
+    const owner = email ? await env.STUDIQUO_DATA.get(`email-account-owner:${email}`) : null;
+    if (owner) checked = [...new Set([...checked, ...await passkeyAccountKeys(env, owner, null)])];
+  }
   for (const key of checked) {
     const validFrom = Number(await env.STUDIQUO_DATA.get(await validFromKey(key)));
     if (Number.isFinite(validFrom) && validFrom > 0 && !(Number(record?.createdAt) >= validFrom)) return true;
@@ -121,11 +131,20 @@ export async function passkeyIndexComplete(env) {
   return Boolean(await env.STUDIQUO_DATA.get(BACKFILL_DONE));
 }
 
-/** The ids filed under these account keys, without opening the records. */
+/**
+ * The ids filed under these account keys, without opening the records. `full`
+ * is true when a list is at its size limit: the oldest ids drop off a full list,
+ * so it can no longer be taken as everything the account has.
+ */
 export async function indexedPasskeyIds(env, keys) {
   const ids = new Set();
-  for (const key of keys) for (const id of (await env.STUDIQUO_DATA.get(await indexKey(key), "json")) ?? []) ids.add(id);
-  return [...ids];
+  let full = false;
+  for (const key of keys) {
+    const list = (await env.STUDIQUO_DATA.get(await indexKey(key), "json")) ?? [];
+    if (list.length >= MAX_PER_ACCOUNT) full = true;
+    for (const id of list) ids.add(id);
+  }
+  return { ids: [...ids], full };
 }
 
 export async function dropPasskeyIndex(env, keys) {
