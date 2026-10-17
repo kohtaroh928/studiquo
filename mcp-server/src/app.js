@@ -622,7 +622,7 @@ async function handleAppleSignIn(request, env) {
     return json({ error: "Invalid Apple identity token." }, 401);
   }
   // The token must have been made for this very sign-in (id-token-nonce.js).
-  if (await idTokenNonceRefused(env, payload, nonce)) return json({ error: "Invalid Apple identity token." }, 401);
+  if (await idTokenNonceRefused(env, payload, nonce, "apple")) return json({ error: "Invalid Apple identity token." }, 401);
 
   const sub = payload.sub;
   if (typeof sub !== "string" || !sub) return json({ error: "Invalid Apple identity token." }, 401);
@@ -700,7 +700,7 @@ async function handleGoogleSignIn(request, env) {
   } catch {
     return json({ error: "Invalid Google identity token." }, 401);
   }
-  if (await idTokenNonceRefused(env, payload, nonce)) return json({ error: "Invalid Google identity token." }, 401);
+  if (await idTokenNonceRefused(env, payload, nonce, "google")) return json({ error: "Invalid Google identity token." }, 401);
 
   const sub = payload.sub;
   if (typeof sub !== "string" || !sub) return json({ error: "Invalid Google identity token." }, 401);

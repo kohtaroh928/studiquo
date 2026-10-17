@@ -161,6 +161,8 @@ Sign in with Apple / GoogleのIDトークンが、**このサインインのた�
 | --- | --- | --- |
 | `REQUIRE_ID_TOKEN_NONCE` | `"true"` | nonceを送らないサインインを拒否する。未設定の間は、nonceのない従来のビルドも受け付ける(nonceを送ってきた場合は、必ず検証する)。 |
 
+サインインごとに、結果を1行のログ(`{"event":"id_token_nonce","provider":"apple","outcome":"verified"}`)に出す。`outcome`は`verified`、`absent`、`absent_refused`、`malformed`、`missing_claim`、`mismatch`、`replayed`。nonce・トークン・アカウントは入れない。`absent`が出なくなったことを確かめてから、`REQUIRE_ID_TOKEN_NONCE`を入れる。
+
 導入の手順は`docs/RUNBOOK.md`のRB-15。
 
 ログ: `wrangler.jsonc`で`observability.logs.invocation_logs`を`false`にしている。自動で出るリクエストごとのログ行には、秘密を含むURL(接続の承認コード、OAuthの状態ID、招待トークン)が入るため。Worker自身が出す構造化ログは、そのまま残る。
