@@ -120,6 +120,18 @@ openssl rand -base64 32 | npx wrangler secret put SNAPSHOT_ENCRYPTION_KEY
 
 鍵を失うと保存済みの写しは読めなくなりますが、アプリで再同期すれば復旧します。鍵を替えるときは、現在の鍵を`SNAPSHOT_ENCRYPTION_KEY_OLD`(`SNAPSHOT_ENCRYPTION_KEY_OLD_ID`に旧ID)へ移し、新しい鍵を`SNAPSHOT_ENCRYPTION_KEY`(`SNAPSHOT_ENCRYPTION_KEY_ID`に新ID)へ入れます。
 
+## 運用スイッチ
+
+アプリを更新せずに切り替えられる設定です。どれも未設定が既定で、未設定なら無効です。`wrangler.jsonc`の`vars`、またはダッシュボードの変数で設定します。
+
+| 変数 | 値 | 動作 |
+| --- | --- | --- |
+| `MAINTENANCE_MODE` | `"true"` | アプリ・MCP・OAuthの経路が、`Retry-After: 300`つきの503(`code: "maintenance"`)を返す。`/health`、アプリ関連づけファイル、法務・招待ページ、お知らせの一覧、管理画面は動き続ける。障害や不具合のあるリリースを止めるときに使う。 |
+| `MIN_APP_BUILD` | ビルド番号(例: `"5"`) | アプリのAPIで、それより古いビルドに426(`code: "app_update_required"`)を返す。ビルド番号は、iOSが付けるUser-Agent(`studiquo/<ビルド> CFNetwork/…`)から読むので、この確認を入れる前のビルドにも効く。アプリ以外のクライアントは対象外。数値でない値や0以下は、無効として扱う。 |
+| `SESSION_MAX_DAYS` | 日数(既定365) | ログインを更新(`/api/session/refresh`)できる期間の上限。ログインの始まりからこの日数を過ぎると、更新されず、手元のトークンが切れたあとに再ログインになる。 |
+
+ログ: `wrangler.jsonc`で`observability.logs.invocation_logs`を`false`にしている。自動で出るリクエストごとのログ行には、秘密を含むURL(接続の承認コード、OAuthの状態ID、招待トークン)が入るため。Worker自身が出す構造化ログは、そのまま残る。
+
 ## 開発
 
 ```bash

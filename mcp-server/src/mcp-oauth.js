@@ -1,4 +1,4 @@
-import { bearerToken, sha256Hex } from "./auth.js";
+import { bearerToken, secretsEqual, sha256Hex } from "./auth.js";
 import { json, readJSONLimited, readTextLimited } from "./http.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { accountIsUnavailable } from "./session.js";
@@ -221,7 +221,7 @@ export async function handleMCPOAuth(url, request, env) {
           !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) return json({ error: "invalid_grant" }, 400);
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
       const challenge = btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-      if (challenge !== code.codeChallenge) return json({ error: "invalid_grant" }, 400);
+      if (!(await secretsEqual(challenge, code.codeChallenge))) return json({ error: "invalid_grant" }, 400);
       if (await accountIsUnavailable(env, code.sub)) return json({ error: "invalid_grant" }, 400);
       const accountHash = await sha256Hex(`mcp-account:${code.sub}`);
       if (!(await env.MCP_INBOX.getByName(accountHash).consumeOnce(await sha256Hex(rawCode)))) {
@@ -236,6 +236,18 @@ export async function handleMCPOAuth(url, request, env) {
       const raw = String(form.get("refresh_token") ?? "");
       const key = `mcp:refresh:${await sha256Hex(raw)}`;
       const refresh = await env.STUDIQUO_DATA.get(key, "json");
+      if (!refresh) {
+        // A refresh token that was already exchanged is presented again: either a
+        // client lost the reply and retried, or a copy of it was stolen. Both
+        // holders cannot be told apart, so the connection is cut (the owner
+        // approves the app again) and every token issued under it stops working.
+        const spent = await env.STUDIQUO_DATA.get(`mcp:refresh-used:${await sha256Hex(raw)}`, "json");
+        if (spent?.sub && spent.clientId === clientId) {
+          await env.STUDIQUO_DATA.delete(await grantKey(spent.sub, clientId));
+          console.warn(JSON.stringify({ message: "mcp refresh token reused; connection revoked" }));
+        }
+        return json({ error: "invalid_grant" }, 400);
+      }
       const grant = refresh && refresh.clientId === clientId ? await env.STUDIQUO_DATA.get(await grantKey(refresh.sub, clientId), "json") : null;
       if (!grant || !sameGeneration(grant, refresh)) {
         return json({ error: "invalid_grant" }, 400);
@@ -245,6 +257,8 @@ export async function handleMCPOAuth(url, request, env) {
       if (!(await env.MCP_INBOX.getByName(accountHash).consumeOnce(await sha256Hex(raw)))) {
         return json({ error: "invalid_grant" }, 400);
       }
+      // Remembered (not just deleted) so that a second use can be recognised.
+      await env.STUDIQUO_DATA.put(`mcp:refresh-used:${await sha256Hex(raw)}`, JSON.stringify({ sub: refresh.sub, clientId }), { expirationTtl: REFRESH_TTL });
       await env.STUDIQUO_DATA.delete(key);
       return json(await issueTokens(env, refresh.sub, clientId, refresh.scope, grant.nonce));
     }

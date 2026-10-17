@@ -48,7 +48,7 @@ async function clearDeletedCustomerRecords(env, hashes) {
  * once the issued-at prefix is added, so this is the one place that check
  * can't be skipped.
  */
-export async function mintSession(env, identityKey, randomValue) {
+export async function mintSession(env, identityKey, randomValue, { originIssuedAtMs } = {}) {
   const issuedAt = Math.floor(Date.now() / 1000);
   const token = `${issuedAt}.${randomValue}`;
   if (token.length < 32 || token.length > 256) return null;
@@ -103,7 +103,11 @@ export async function mintSession(env, identityKey, randomValue) {
   // Read first: an ordinary sign-in has no job, and must not pay for a write.
   if (await env.STUDIQUO_DATA.get(providerJobKey)) await env.STUDIQUO_DATA.delete(providerJobKey);
   const key = await sha256Hex(token);
-  await env.STUDIQUO_DATA.put(`${SESSION_PREFIX}${key}`, JSON.stringify({ sub: identityKey, issuedAt, issuedAtMs: Date.now() }), {
+  await env.STUDIQUO_DATA.put(`${SESSION_PREFIX}${key}`, JSON.stringify({
+    sub: identityKey, issuedAt, issuedAtMs: Date.now(),
+    // When the login this token descends from began (see handleSessionRefresh).
+    originIssuedAtMs: Number.isFinite(originIssuedAtMs) ? originIssuedAtMs : Date.now(),
+  }), {
     expirationTtl: VALIDITY_SECONDS,
   });
   return token;

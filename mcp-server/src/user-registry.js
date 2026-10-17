@@ -3,8 +3,12 @@ import { DurableObject } from "cloudflare:workers";
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const MAX_FRIENDS = 500;
 
+// New codes are 10 characters (about 50 bits). They used to be 7 (about 35 bits),
+// which is few enough to be guessed at scale by many accounts each trying a few
+// codes. Existing 7-character codes stay valid: nothing here or in the app
+// checks for an exact length, only the 6-32 character pattern.
 function generateCode() {
-  const bytes = new Uint8Array(7);
+  const bytes = new Uint8Array(10);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, value => CODE_ALPHABET[value % 32]).join("");
 }

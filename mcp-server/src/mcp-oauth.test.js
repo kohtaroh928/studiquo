@@ -161,3 +161,51 @@ test("a registered client expires after a year instead of staying forever", asyn
   const { client_id } = await response.json();
   assert.equal(ttls.get(`mcp:client:${client_id}`), 365 * 24 * 3600);
 });
+
+test("a refresh token that was already exchanged cuts the whole connection", async () => {
+  const { approvePairing } = await import("./mcp-oauth.js");
+  const env = environment();
+  const sub = "apple:owner";
+  const clientId = "studiquo_" + "b".repeat(32);
+  const redirectUri = "https://client.example/callback";
+  await env.STUDIQUO_DATA.put(`mcp:client:${clientId}`, JSON.stringify({ clientName: "App", redirectUris: [redirectUri] }));
+  await env.STUDIQUO_DATA.put(`mcp:auth:${"3".repeat(64)}`, JSON.stringify({ status: "pending", clientId, clientName: "App", redirectUri, codeChallenge: "c".repeat(43), scope: "studiquo.read" }));
+  await env.STUDIQUO_DATA.put(`mcp:pair:ZZZZZZZZZZZZ`, "3".repeat(64));
+  assert.equal(await approvePairing(env, "ZZZZZZZZZZZZ", sub), true);
+  const grant = JSON.parse(await env.STUDIQUO_DATA.get(`mcp:grant:${hash(sub)}:${hash(clientId)}`));
+  const first = "mcp_refresh_" + "1".repeat(40);
+  await env.STUDIQUO_DATA.put(`mcp:refresh:${hash(first)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read", grantId: grant.nonce }));
+  const refresh = token => fetch(env, "/oauth/token", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "refresh_token", client_id: clientId, refresh_token: token }).toString(),
+  });
+
+  // The legitimate exchange rotates the token.
+  const rotated = await refresh(first);
+  assert.equal(rotated.status, 200);
+  const { access_token: access, refresh_token: second } = await rotated.json();
+  const mcp = token => fetch(env, "/mcp", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+  assert.notEqual((await mcp(access)).status, 401, "the new access token works");
+
+  // The old token is shown again, by a client that retried or by whoever copied it.
+  assert.equal((await refresh(first)).status, 400);
+
+  // Everything issued under the connection is dead, including what was just rotated in.
+  assert.equal(await env.STUDIQUO_DATA.get(`mcp:grant:${hash(sub)}:${hash(clientId)}`), null);
+  assert.equal((await refresh(second)).status, 400);
+  assert.equal((await mcp(access)).status, 401);
+});
+
+test("an unknown refresh token revokes nothing", async () => {
+  const env = environment();
+  const sub = "apple:owner";
+  const clientId = "studiquo_" + "c".repeat(32);
+  const grantKey = `mcp:grant:${hash(sub)}:${hash(clientId)}`;
+  await env.STUDIQUO_DATA.put(grantKey, JSON.stringify({ clientName: "App", createdAt: 1, nonce: "n" }));
+  const response = await fetch(env, "/oauth/token", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "refresh_token", client_id: clientId, refresh_token: "mcp_refresh_" + "9".repeat(40) }).toString(),
+  });
+  assert.equal(response.status, 400);
+  assert.notEqual(await env.STUDIQUO_DATA.get(grantKey), null);
+});
