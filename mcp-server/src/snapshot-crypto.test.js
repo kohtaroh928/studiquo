@@ -30,9 +30,19 @@ test("a ciphertext moved to another key name does not open", async () => {
 test("a tampered ciphertext is rejected", async () => {
   const env = { SNAPSHOT_ENCRYPTION_KEY: newKey() };
   const sealed = await sealSnapshot(env, "snapshot:a", SNAPSHOT);
-  const last = sealed.length - 1;
-  const tampered = sealed.slice(0, last) + (sealed[last] === "A" ? "B" : "A");
+  // Form: "enc1.<key id>.<iv>.<ciphertext>". Change a character well inside the
+  // ciphertext. The very last base64 character can carry bits that decoding
+  // throws away, so changing only that one sometimes left the bytes the same and
+  // the test passed or failed by chance.
+  const ciphertextStart = sealed.lastIndexOf(".") + 1;
+  const middle = ciphertextStart + Math.floor((sealed.length - ciphertextStart) / 2);
+  const tampered = sealed.slice(0, middle) + (sealed[middle] === "A" ? "B" : "A") + sealed.slice(middle + 1);
+  assert.notEqual(tampered, sealed);
   await assert.rejects(openSnapshot(env, "snapshot:a", tampered));
+  // And a change near the end, inside the authentication tag, is caught as well.
+  const nearEnd = sealed.length - 8;
+  const tagTampered = sealed.slice(0, nearEnd) + (sealed[nearEnd] === "A" ? "B" : "A") + sealed.slice(nearEnd + 1);
+  await assert.rejects(openSnapshot(env, "snapshot:a", tagTampered));
 });
 
 test("the wrong key does not open a sealed snapshot", async () => {
