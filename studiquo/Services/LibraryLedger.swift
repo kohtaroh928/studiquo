@@ -24,6 +24,13 @@ struct LibraryLedger: Codable, Equatable {
         value.count == 64 && value.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
     }
 
+    /// Drops anything that is not a well-formed account id, and a "last active"
+    /// account that is not in the list.
+    mutating func sanitize() {
+        entries = entries.filter { Self.isValidAccountID($0.accountID) }
+        if let last = lastActiveAccountID, !entries.contains(where: { $0.accountID == last }) { lastActiveAccountID = nil }
+    }
+
     @discardableResult
     mutating func recordSignIn(accountID: String, at date: Date) -> Bool {
         guard Self.isValidAccountID(accountID) else { return false }
@@ -55,15 +62,38 @@ struct LibraryLedgerStore {
         return LibraryLedgerStore(fileURL: base.appendingPathComponent("studiquo/LibraryLedger.json"))
     }
 
-    /// An empty ledger when there is none yet. A file that cannot be read is set
-    /// aside (never silently overwritten, since later stages rely on it) and an
-    /// empty ledger is returned.
-    func load() -> LibraryLedger {
-        guard let data = try? Data(contentsOf: fileURL) else { return LibraryLedger() }
-        if let ledger = try? JSONDecoder.ledger.decode(LibraryLedger.self, from: data) { return ledger }
-        let aside = fileURL.deletingLastPathComponent().appendingPathComponent("LibraryLedger.unreadable-\(Int(Date().timeIntervalSince1970)).json")
-        try? fileManager.moveItem(at: fileURL, to: aside)
+    /// One process-wide lock: a read-change-write must not interleave with another.
+    private static let lock = NSLock()
+
+    /// What was found: an empty ledger when there is none yet, `nil` when there
+    /// is one that cannot be read right now (the iPad is locked, a read error) or
+    /// that is damaged and could not be set aside. A caller that gets `nil` must
+    /// not write: a ledger that exists must never be replaced by an empty one.
+    ///
+    /// A damaged file is moved aside (never silently overwritten, since later
+    /// stages rely on it). Entries that are not valid account ids are dropped,
+    /// because an id may become a folder name and the file can be edited.
+    func load() -> LibraryLedger? {
+        guard fileManager.fileExists(atPath: fileURL.path) else { return LibraryLedger() }
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        if var ledger = try? JSONDecoder.ledger.decode(LibraryLedger.self, from: data) {
+            ledger.sanitize()
+            return ledger
+        }
+        let aside = fileURL.deletingLastPathComponent().appendingPathComponent("LibraryLedger.unreadable-\(UUID().uuidString).json")
+        do { try fileManager.moveItem(at: fileURL, to: aside) } catch { return nil }
         return LibraryLedger()
+    }
+
+    /// Reads, changes and writes under one lock. Returns the saved ledger, or nil
+    /// when it could not be read (nothing is written) or written.
+    @discardableResult
+    func update(_ change: (inout LibraryLedger) -> Bool) -> LibraryLedger? {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        guard var ledger = load() else { return nil }
+        guard change(&ledger) else { return nil }
+        return save(ledger) ? ledger : nil
     }
 
     @discardableResult
@@ -111,6 +141,7 @@ enum LibraryIdentityService {
         endpoint: URL? = MCPCloudCredentials.configuredEndpoint(),
         store: LibraryLedgerStore = .default,
         now: Date = Date(),
+        currentToken: () -> String? = { MCPCloudCredentials.currentToken() },
         fetch: Fetch = { try await URLSession.shared.data(for: $0) }
     ) async -> String? {
         guard let token, !token.isEmpty, let endpoint else { return nil }
@@ -119,10 +150,13 @@ enum LibraryIdentityService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         guard let (data, response) = try? await fetch(request),
               let http = response as? HTTPURLResponse, http.statusCode == 200,
-              let answer = try? JSONDecoder().decode(Answer.self, from: data) else { return nil }
-        var ledger = store.load()
-        guard ledger.recordSignIn(accountID: answer.libraryID, at: now) else { return nil }
-        store.save(ledger)
-        return answer.libraryID
+              let answer = try? JSONDecoder().decode(Answer.self, from: data),
+              LibraryLedger.isValidAccountID(answer.libraryID) else { return nil }
+        // The answer is about the account that held this token when it was asked.
+        // If the person signed out (or in as someone else) meanwhile, it is not
+        // recorded as the current account.
+        guard currentToken() == token else { return nil }
+        let saved = store.update { $0.recordSignIn(accountID: answer.libraryID, at: now) }
+        return saved == nil ? nil : answer.libraryID
     }
 }

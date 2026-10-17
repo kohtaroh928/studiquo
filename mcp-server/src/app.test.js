@@ -2772,13 +2772,15 @@ test("an account without a passkey is not asked for one", async () => {
 
 // ---- Library id: one opaque id per account, for the app's per-account library ----
 
+const LIBRARY_SECRET = Buffer.alloc(32, 7).toString("base64");
+
 async function libraryID(env, token) {
   const response = await worker.fetch(request("/api/account/library-id", { token }), env, noopCtx);
   return { status: response.status, body: await response.json() };
 }
 
 test("the library id is an opaque hash, the same for every sign-in method of one account and different for another account", async () => {
-  const env = environment({ strictSessions: true });
+  const env = Object.assign(environment({ strictSessions: true }), { LIBRARY_ID_SECRET: LIBRARY_SECRET });
   const apple = freshToken("a");
   const google = freshToken("b");
   const other = freshToken("c");
@@ -2797,8 +2799,27 @@ test("the library id is an opaque hash, the same for every sign-in method of one
   assert.equal((await libraryID(env, apple)).body.libraryID, first.body.libraryID, "and stable");
 });
 
+test("the library id is keyed: it cannot be worked out from an e-mail address, and without the key none is given", async () => {
+  const env = Object.assign(environment({ strictSessions: true }), { LIBRARY_ID_SECRET: LIBRARY_SECRET });
+  const token = freshToken("e");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:alice@example.com" }));
+  const { body } = await libraryID(env, token);
+  assert.notEqual(body.libraryID, sha256Hex("library-account:email:alice@example.com"), "not the plain hash anyone could compute");
+  assert.notEqual(body.libraryID, sha256Hex("studiquo-library-id-v1:email:alice@example.com"));
+  // A different key gives a different id (which is why the key is never changed).
+  const other = Object.assign(environment({ strictSessions: true }), { LIBRARY_ID_SECRET: Buffer.alloc(32, 9).toString("base64") });
+  await other.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:alice@example.com" }));
+  assert.notEqual((await libraryID(other, token)).body.libraryID, body.libraryID);
+  // No key, or a key that is too short: nothing is handed out.
+  for (const bad of [undefined, "", Buffer.alloc(8, 1).toString("base64")]) {
+    const unset = Object.assign(environment({ strictSessions: true }), bad === undefined ? {} : { LIBRARY_ID_SECRET: bad });
+    await unset.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:alice@example.com" }));
+    assert.equal((await libraryID(unset, token)).status, 503);
+  }
+});
+
 test("the library id needs a signed-in session", async () => {
-  const env = environment({ strictSessions: true });
+  const env = Object.assign(environment({ strictSessions: true }), { LIBRARY_ID_SECRET: LIBRARY_SECRET });
   const nobody = await worker.fetch(request("/api/account/library-id"), env, noopCtx);
   assert.equal(nobody.status, 401);
   const forged = await worker.fetch(request("/api/account/library-id", { token: freshToken("z") }), env, noopCtx);
