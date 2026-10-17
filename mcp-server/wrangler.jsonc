@@ -129,7 +129,12 @@
     // Keep "false" for the first deploy, then set "true" in a second deploy
     // once the first is stable. Never roll back to code from before Argon2id
     // support once it has been "true": those accounts would be locked out.
-    "ARGON2_WRITE": "true"
+    "ARGON2_WRITE": "true",
+    // Tokens must carry the Worker's signature (src/token-signature.js). A token
+    // without one is refused before KV is read, so invented tokens cost nothing.
+    // Turned on once every device had signed in again with TOKEN_SIGNING_KEY set;
+    // removing this line accepts the older unsigned tokens again.
+    "REQUIRE_SIGNED_TOKENS": "true"
   },
   "observability": {
     "enabled": true,
@@ -230,6 +235,8 @@
         "ALLOW_SANDBOX_PURCHASES": "true",
         "APNS_TOPIC": "com.yabuko.studiquo",
         "ARGON2_WRITE": "false",
+        // Staging has no TOKEN_SIGNING_KEY, so signatures are neither made nor required.
+        "REQUIRE_SIGNED_TOKENS": "false",
         // Mail from staging says so, and uses Resend's shared test sender.
         "RESEND_FROM_EMAIL": "Studiquo Staging <onboarding@resend.dev>"
       },
