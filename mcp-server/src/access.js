@@ -24,6 +24,22 @@ export async function accessAllowed(request, env) {
   }
 }
 
+/**
+ * Whether a state-changing request to the admin API came from another site. The
+ * Access login can arrive as a cookie, which a browser attaches to a request a
+ * hostile page makes; such a request names its own origin, so one that does not
+ * match this Worker's origin is refused. A request that names no origin (a
+ * script or curl) is not a browser acting on someone's behalf and is let through.
+ */
+export function isCrossSiteWrite(request, url) {
+  const method = request.method.toUpperCase();
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return false;
+  const site = request.headers.get("sec-fetch-site");
+  if (site && site !== "same-origin" && site !== "none") return true;
+  const origin = request.headers.get("origin");
+  return Boolean(origin) && origin !== url.origin;
+}
+
 // Every /api/admin/* route except RevenueCat's webhook, which RevenueCat's
 // servers call (no Access login) and which carries its own shared secret.
 export function isAccessGuardedPath(pathname) {

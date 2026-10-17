@@ -426,7 +426,8 @@ test("POST /api/auth/apple: first sign-in creates the account and a matching ses
 
   const session = await env.STUDIQUO_DATA.get(`session:${sha256Hex(token)}`, "json");
   assert.equal(typeof session.issuedAtMs, "number");
-  assert.deepEqual(session, { sub: "000123.apple-sub.4567", issuedAt, issuedAtMs: session.issuedAtMs });
+  // A first sign-in is the start of its own login: the origin is the issue time.
+  assert.deepEqual(session, { sub: "000123.apple-sub.4567", issuedAt, issuedAtMs: session.issuedAtMs, originIssuedAtMs: session.issuedAtMs });
 });
 
 test("POST /api/auth/apple: a later sign-in does not overwrite the account's stored email", async () => {
@@ -551,7 +552,7 @@ test("POST /api/auth/google: first sign-in creates the account and a matching se
 
   const session = await env.STUDIQUO_DATA.get(`session:${sha256Hex(token)}`, "json");
   assert.equal(typeof session.issuedAtMs, "number");
-  assert.deepEqual(session, { sub: "google:108234567890123456789", issuedAt, issuedAtMs: session.issuedAtMs });
+  assert.deepEqual(session, { sub: "google:108234567890123456789", issuedAt, issuedAtMs: session.issuedAtMs, originIssuedAtMs: session.issuedAtMs });
 });
 
 test("POST /api/auth/google: an invalid idToken is rejected with 401", async () => {

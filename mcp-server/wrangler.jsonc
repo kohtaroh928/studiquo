@@ -133,7 +133,10 @@
   },
   "observability": {
     "enabled": true,
-    "logs": { "head_sampling_rate": 1 },
+    // invocation_logs off: the automatic per-request log line carries the full
+    // URL, and some URLs hold a secret (the pairing code, the OAuth status id,
+    // an invite token). The Worker's own structured log lines are still kept.
+    "logs": { "head_sampling_rate": 1, "invocation_logs": false },
     "traces": { "enabled": true, "head_sampling_rate": 0.05 }
   },
   // ---------------------------------------------------------------------------
@@ -230,7 +233,7 @@
         // Mail from staging says so, and uses Resend's shared test sender.
         "RESEND_FROM_EMAIL": "Studiquo Staging <onboarding@resend.dev>"
       },
-      "observability": { "enabled": true, "logs": { "head_sampling_rate": 1 } }
+      "observability": { "enabled": true, "logs": { "head_sampling_rate": 1, "invocation_logs": false } }
     }
   }
 }
