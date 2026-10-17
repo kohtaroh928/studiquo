@@ -1,0 +1,441 @@
+{
+  "date": "2026-10-15",
+  "method": "paired evaluation incomplete: one baseline completion; candidate rejected by v2 validation",
+  "externalCalls": 3,
+  "modelEvaluated": true,
+  "releaseAccepted": false,
+  "manifest": {
+    "version": 1,
+    "suiteId": "task-plan-paired-20261015-v1",
+    "input": {
+      "version": 1,
+      "syntheticOnly": true,
+      "externalCalls": 0,
+      "modelEvaluated": false,
+      "releaseAccepted": false,
+      "draftHash": "da62542b60cc32a348faad176a71bc11266829e9220d1d5659561cc026d2bf43",
+      "questionOrderHash": "f2fc6060a3c7939c47fcc169a300b174a6408cd752c90e547696b6b70bdd320e",
+      "clarificationHash": "ba3051f14b4ba5fd2adeb19bb73bb2e2473230b7d44f479b70b007ed8878ff2f",
+      "rows": [
+        {
+          "variant": "baseline",
+          "index": 0,
+          "questionHash": "861039f1de1d8d31cd51d6385cf043adea680df23da6b759e0c2b49f96367714",
+          "instructionsHash": "b2ea70aae4f1e3c65ea3bbc738bca1f73114c44e320b8261a9b3f03a30b9a855",
+          "requestHash": "95700687f2559bac6f86d6fe43afd7b8dbbdb5be8f3acd10d243dca00db0abd2",
+          "bytes": 4955
+        },
+        {
+          "variant": "baseline",
+          "index": 1,
+          "questionHash": "ab8955c782e4810925c6f40e2ed04ebc7e59153b1cf6e66697ff72dceedcda19",
+          "instructionsHash": "b2ea70aae4f1e3c65ea3bbc738bca1f73114c44e320b8261a9b3f03a30b9a855",
+          "requestHash": "d85f95b1e8a42df76acb3929efbcc87125ad9716f83c4de41422fac583a7c424",
+          "bytes": 4940
+        },
+        {
+          "variant": "baseline",
+          "index": 2,
+          "questionHash": "ec0a204eb361197834528516104b3f7673e292b8d1aac650b654ba34a2818cb3",
+          "instructionsHash": "b2ea70aae4f1e3c65ea3bbc738bca1f73114c44e320b8261a9b3f03a30b9a855",
+          "requestHash": "296d7205ca4f53fed4d5d18fe7f4561628b4eb29f69695d6ae082c02f1482b82",
+          "bytes": 4939
+        },
+        {
+          "variant": "baseline",
+          "index": 3,
+          "questionHash": "ebbc25d51734169a3fa76b91ff891e09eee05f5523d76fe7971a8800e742f9a5",
+          "instructionsHash": "b2ea70aae4f1e3c65ea3bbc738bca1f73114c44e320b8261a9b3f03a30b9a855",
+          "requestHash": "aed53305575e3d733ae256cdaba49ebbb5624b7a7a6d22186a2979bd121a530b",
+          "bytes": 4956
+        },
+        {
+          "variant": "baseline",
+          "index": 4,
+          "questionHash": "446f2f7e2941a8877038047e25b0076a47d95c911cb3118d353267b52559888f",
+          "instructionsHash": "b2ea70aae4f1e3c65ea3bbc738bca1f73114c44e320b8261a9b3f03a30b9a855",
+          "requestHash": "77b6deb8d4c3ed882474a9b9e88dd0b5ba129669ea2c144a12746c11db314a86",
+          "bytes": 4962
+        },
+        {
+          "variant": "baseline",
+          "index": 5,
+          "questionHash": "a6992edd60835c01b2b18a97cdaffcb0a896479eceb5eb3d5cb54b1ef82c5787",
+          "instructionsHash": "b2ea70aae4f1e3c65ea3bbc738bca1f73114c44e320b8261a9b3f03a30b9a855",
+          "requestHash": "a7d987fbae80e90252d61d814e7b3a5d308f3aa991e46a58129b6bbfc149921c",
+          "bytes": 4968
+        },
+        {
+          "variant": "baseline",
+          "index": 6,
+          "questionHash": "9bcaf3abbaaf28c3825f01859e7965757bf8f8e8eb96fd24589882eefd965b88",
+          "instructionsHash": "b2ea70aae4f1e3c65ea3bbc738bca1f73114c44e320b8261a9b3f03a30b9a855",
+          "requestHash": "811d817f932043e761ddca45f9f0ae583249c5ecdf5be65dd7e47e3c2056ba5b",
+          "bytes": 4952
+        },
+        {
+          "variant": "baseline",
+          "index": 7,
+          "questionHash": "ad501c1f5bf8828dbb5c811530c0e451a928df86c7f72a39917e63cfabc0550d",
+          "instructionsHash": "b2ea70aae4f1e3c65ea3bbc738bca1f73114c44e320b8261a9b3f03a30b9a855",
+          "requestHash": "a32fe678abf1a7f5f8456e3a2518abe0cba083b8e8fd57afa448a53abe72f83e",
+          "bytes": 4976
+        },
+        {
+          "variant": "candidate",
+          "index": 0,
+          "questionHash": "861039f1de1d8d31cd51d6385cf043adea680df23da6b759e0c2b49f96367714",
+          "instructionsHash": "a935e769d6504b3c600e4a5d545943350372f6346a255ae2b95ec4ec78b1ddda",
+          "requestHash": "e1d354e85d16a2adc20df4f89264d6ee2ca78597092ff45135069dbb3953f14d",
+          "bytes": 6203
+        },
+        {
+          "variant": "candidate",
+          "index": 1,
+          "questionHash": "ab8955c782e4810925c6f40e2ed04ebc7e59153b1cf6e66697ff72dceedcda19",
+          "instructionsHash": "a935e769d6504b3c600e4a5d545943350372f6346a255ae2b95ec4ec78b1ddda",
+          "requestHash": "4b1802e5d2e2e004cfb64816c792124abcabacf163b57c1b602d88c667a663f4",
+          "bytes": 6188
+        },
+        {
+          "variant": "candidate",
+          "index": 2,
+          "questionHash": "ec0a204eb361197834528516104b3f7673e292b8d1aac650b654ba34a2818cb3",
+          "instructionsHash": "a935e769d6504b3c600e4a5d545943350372f6346a255ae2b95ec4ec78b1ddda",
+          "requestHash": "4bdea8398a33c907ff7523fde4de47c47b38c122ac209715378a68a617e31d1d",
+          "bytes": 6187
+        },
+        {
+          "variant": "candidate",
+          "index": 3,
+          "questionHash": "ebbc25d51734169a3fa76b91ff891e09eee05f5523d76fe7971a8800e742f9a5",
+          "instructionsHash": "a935e769d6504b3c600e4a5d545943350372f6346a255ae2b95ec4ec78b1ddda",
+          "requestHash": "76faf34c7f3a01a11b3a6a1c8cc07d1ae3880f1e753f40647d161c2d5cbceb54",
+          "bytes": 6204
+        },
+        {
+          "variant": "candidate",
+          "index": 4,
+          "questionHash": "446f2f7e2941a8877038047e25b0076a47d95c911cb3118d353267b52559888f",
+          "instructionsHash": "a935e769d6504b3c600e4a5d545943350372f6346a255ae2b95ec4ec78b1ddda",
+          "requestHash": "546f8d3ed812d1963a1c21eb5f6188f6297bd105dddb374d595261dde2a26a73",
+          "bytes": 6210
+        },
+        {
+          "variant": "candidate",
+          "index": 5,
+          "questionHash": "a6992edd60835c01b2b18a97cdaffcb0a896479eceb5eb3d5cb54b1ef82c5787",
+          "instructionsHash": "a935e769d6504b3c600e4a5d545943350372f6346a255ae2b95ec4ec78b1ddda",
+          "requestHash": "9b3fa783523e9ba08687eb3693d2960fbcdafbcee6094404e722033bdd08bf36",
+          "bytes": 6216
+        },
+        {
+          "variant": "candidate",
+          "index": 6,
+          "questionHash": "9bcaf3abbaaf28c3825f01859e7965757bf8f8e8eb96fd24589882eefd965b88",
+          "instructionsHash": "a935e769d6504b3c600e4a5d545943350372f6346a255ae2b95ec4ec78b1ddda",
+          "requestHash": "5f6a0733a6ad61946a7839f34a256b006425c6c9b3b7df4ef8815d556b75c616",
+          "bytes": 6200
+        },
+        {
+          "variant": "candidate",
+          "index": 7,
+          "questionHash": "ad501c1f5bf8828dbb5c811530c0e451a928df86c7f72a39917e63cfabc0550d",
+          "instructionsHash": "a935e769d6504b3c600e4a5d545943350372f6346a255ae2b95ec4ec78b1ddda",
+          "requestHash": "31a5ff01c9d83031bf7bf7c6782d23fb4a1882600ce059e5fb4bfe99dda89e88",
+          "bytes": 6224
+        }
+      ]
+    },
+    "limits": {
+      "dispatches": 16,
+      "stageDispatches": 6,
+      "reservedMicroUSD": 8192,
+      "totalReservedMicroUSD": 131072,
+      "requestBytes": 24576,
+      "responseBytes": 262144,
+      "timeoutMs": 60000,
+      "totalMs": 360000,
+      "pricingDate": "2026-10-15",
+      "inputMicroUSDPerToken": 0.125,
+      "outputMicroUSDPerToken": 0.5
+    },
+    "sourceHashes": {
+      "paired-task-planner-live.mjs": "df8f176a34f725aa2ce23efdce25262bf389c49ad81244f6965416836d8bcc9e",
+      "paired-task-planner-request.mjs": "5c7bd5708ff670e5f9630dc4c89d690ab1d0b79eefc8f809da2c162af724098b",
+      "paired-task-planner-response.mjs": "0a399114bb75960a484da42d99897b229e33a2be0c07d4550ecb7b010e6af7ff",
+      "task-planner-request.mjs": "2ff7714e7140c7e6a1390a0d8a714d646ffe07e7c3f912f73d6407d375b23637",
+      "task-plan-v2.mjs": "124e6bd5324d4a8bbe6781aa3b52e2b6529eab09886535b4bf993cdbe1fe3dec"
+    },
+    "jobs": [
+      {
+        "ordinal": 0,
+        "index": 0,
+        "variant": "baseline",
+        "stage": 0,
+        "requestHash": "95700687f2559bac6f86d6fe43afd7b8dbbdb5be8f3acd10d243dca00db0abd2"
+      },
+      {
+        "ordinal": 1,
+        "index": 0,
+        "variant": "candidate",
+        "stage": 0,
+        "requestHash": "e1d354e85d16a2adc20df4f89264d6ee2ca78597092ff45135069dbb3953f14d"
+      },
+      {
+        "ordinal": 2,
+        "index": 1,
+        "variant": "candidate",
+        "stage": 0,
+        "requestHash": "4b1802e5d2e2e004cfb64816c792124abcabacf163b57c1b602d88c667a663f4"
+      },
+      {
+        "ordinal": 3,
+        "index": 1,
+        "variant": "baseline",
+        "stage": 0,
+        "requestHash": "d85f95b1e8a42df76acb3929efbcc87125ad9716f83c4de41422fac583a7c424"
+      },
+      {
+        "ordinal": 4,
+        "index": 2,
+        "variant": "baseline",
+        "stage": 0,
+        "requestHash": "296d7205ca4f53fed4d5d18fe7f4561628b4eb29f69695d6ae082c02f1482b82"
+      },
+      {
+        "ordinal": 5,
+        "index": 2,
+        "variant": "candidate",
+        "stage": 0,
+        "requestHash": "4bdea8398a33c907ff7523fde4de47c47b38c122ac209715378a68a617e31d1d"
+      },
+      {
+        "ordinal": 6,
+        "index": 3,
+        "variant": "candidate",
+        "stage": 1,
+        "requestHash": "76faf34c7f3a01a11b3a6a1c8cc07d1ae3880f1e753f40647d161c2d5cbceb54"
+      },
+      {
+        "ordinal": 7,
+        "index": 3,
+        "variant": "baseline",
+        "stage": 1,
+        "requestHash": "aed53305575e3d733ae256cdaba49ebbb5624b7a7a6d22186a2979bd121a530b"
+      },
+      {
+        "ordinal": 8,
+        "index": 4,
+        "variant": "baseline",
+        "stage": 1,
+        "requestHash": "77b6deb8d4c3ed882474a9b9e88dd0b5ba129669ea2c144a12746c11db314a86"
+      },
+      {
+        "ordinal": 9,
+        "index": 4,
+        "variant": "candidate",
+        "stage": 1,
+        "requestHash": "546f8d3ed812d1963a1c21eb5f6188f6297bd105dddb374d595261dde2a26a73"
+      },
+      {
+        "ordinal": 10,
+        "index": 5,
+        "variant": "candidate",
+        "stage": 1,
+        "requestHash": "9b3fa783523e9ba08687eb3693d2960fbcdafbcee6094404e722033bdd08bf36"
+      },
+      {
+        "ordinal": 11,
+        "index": 5,
+        "variant": "baseline",
+        "stage": 1,
+        "requestHash": "a7d987fbae80e90252d61d814e7b3a5d308f3aa991e46a58129b6bbfc149921c"
+      },
+      {
+        "ordinal": 12,
+        "index": 6,
+        "variant": "baseline",
+        "stage": 2,
+        "requestHash": "811d817f932043e761ddca45f9f0ae583249c5ecdf5be65dd7e47e3c2056ba5b"
+      },
+      {
+        "ordinal": 13,
+        "index": 6,
+        "variant": "candidate",
+        "stage": 2,
+        "requestHash": "5f6a0733a6ad61946a7839f34a256b006425c6c9b3b7df4ef8815d556b75c616"
+      },
+      {
+        "ordinal": 14,
+        "index": 7,
+        "variant": "candidate",
+        "stage": 2,
+        "requestHash": "31a5ff01c9d83031bf7bf7c6782d23fb4a1882600ce059e5fb4bfe99dda89e88"
+      },
+      {
+        "ordinal": 15,
+        "index": 7,
+        "variant": "baseline",
+        "stage": 2,
+        "requestHash": "a32fe678abf1a7f5f8456e3a2518abe0cba083b8e8fd57afa448a53abe72f83e"
+      }
+    ]
+  },
+  "verification": {
+    "targetPassed": 12,
+    "relatedPassed": 23,
+    "workerPassed": 1373,
+    "failures": 0,
+    "skipped": 0,
+    "independentCodeTests": 12,
+    "independentSafetyTests": 11,
+    "independentReview": "no High/Medium; cleanup best-effort caveat documented",
+    "runtimePolicyOutputChanges": 0,
+    "oldSourceHashesUnchanged": true
+  },
+  "liveEvaluation": {
+    "status": "stopped_audit_required",
+    "runId": "studiquo-rag-paired-planner-20261015-01",
+    "maximumDispatches": 16,
+    "maximumReservedMicroUSD": 131072,
+    "failedRerunAllowed": false,
+    "dispatchAttempts": 1,
+    "providerReceiptConfirmed": false,
+    "completed": 0,
+    "failed": 1,
+    "laterRequestsNotDispatched": 15,
+    "reservedMicroUSD": 8192,
+    "usage": null,
+    "billedCostUSD": null,
+    "reason": "dispatch_failed_or_uncertain; original runner did not retain error category",
+    "journalHash": "108b9aa1a64e295f7308c1944d776219eb9da147ae6ce00136b5d365aeb09a94",
+    "lockRetained": true,
+    "rerunAllowed": false
+  },
+  "failedRunnerSnapshot": {
+    "path": "mcp-server/scripts/rag-quality/baselines/20261015-paired-first-attempt/paired-task-planner-live.mjs.txt",
+    "hash": "df8f176a34f725aa2ce23efdce25262bf389c49ad81244f6965416836d8bcc9e"
+  },
+  "diagnosticVerification": {
+    "externalCalls": 0,
+    "sourceHash": "743e9063c0247876efcb629317a3004d22de7c7db8a9475a47b06da82be18337",
+    "targetPassed": 13,
+    "relatedPassed": 24,
+    "workerPassed": 1374,
+    "failures": 0,
+    "skipped": 0,
+    "independentCodeTests": 13,
+    "independentSafetyTests": 13,
+    "independentReview": "no High/Medium; old cause remains unknown",
+    "oldRunRetried": false
+  },
+  "nextAction": {
+    "status": "quote_span_alignment_fix_design",
+    "description": "今回のsubject引用位置不一致を確認。次はモデルに位置計数をさせる契約を見直す設計。旧runの個別違反とモデル内部原因は不明。再送なし。"
+  },
+  "diagnosticStage": {
+    "status": "stopped_audit_required",
+    "runId": "studiquo-rag-paired-planner-diagnostic-20261015-01",
+    "dispatchAttempts": 2,
+    "completed": 1,
+    "failed": 1,
+    "remainingStage0NotDispatched": 4,
+    "laterStagesNotDispatched": 10,
+    "locked": true,
+    "journalHash": "b6e01a802133a6f79ea8f3edcc05bd35b524388499839d42be5ba02c12404f00",
+    "manifestHash": "503c4bba1e36f6b96d453ab2fa45abf8a9ca6262b322320e2c1c1a81547d1f68",
+    "sourceHashes": {
+      "paired-task-planner-live.mjs": "743e9063c0247876efcb629317a3004d22de7c7db8a9475a47b06da82be18337",
+      "paired-task-planner-request.mjs": "5c7bd5708ff670e5f9630dc4c89d690ab1d0b79eefc8f809da2c162af724098b",
+      "paired-task-planner-response.mjs": "0a399114bb75960a484da42d99897b229e33a2be0c07d4550ecb7b010e6af7ff",
+      "task-planner-request.mjs": "2ff7714e7140c7e6a1390a0d8a714d646ffe07e7c3f912f73d6407d375b23637",
+      "task-plan-v2.mjs": "124e6bd5324d4a8bbe6781aa3b52e2b6529eab09886535b4bf993cdbe1fe3dec"
+    },
+    "reservedMicroUSD": 16384,
+    "knownCompletedUsage": {
+      "input": 780,
+      "output": 448,
+      "reasoning": 249,
+      "total": 1228,
+      "cached": 0,
+      "cacheWrite": 0
+    },
+    "failedUsage": null,
+    "totalBilledCostUSD": null,
+    "knownCompletedUncachedEstimateUSD": 0.000302,
+    "knownCompletedElapsedMs": 6202.810957999999,
+    "failure": {
+      "ordinal": 1,
+      "phase": "validation",
+      "httpStatus": 200,
+      "reason": "task_planner_invalid_plan",
+      "individualViolation": "unknown; failing plan not retained"
+    },
+    "strictAnnotationComparison": {
+      "version": 2,
+      "annotationMatches": 0,
+      "missingAnnotationIds": [
+        "r1",
+        "r2"
+      ],
+      "extraTaskIds": [
+        "t1",
+        "t2"
+      ],
+      "ambiguousMatches": 0,
+      "semanticCompleteness": "pending",
+      "evidenceSupport": "unknown",
+      "releaseAccepted": false
+    },
+    "independentMeaningReview": {
+      "reviewer": "independent AI reviewer",
+      "baseline": "index0 r1/r2 independently retained; mismatch only request span breadth",
+      "candidate": "not assessable; v2 validation failure",
+      "humanReview": "pending",
+      "pairedQualityResultAvailable": false
+    },
+    "laterStagesAuthorizedByThisRun": false
+  },
+  "externalCallCounting": "dispatch attempts across first and approved diagnostic run; old provider receipt uncertain",
+  "granularDiagnostic": {
+    "date": "2026-10-15",
+    "status": "reproduced_validation_quote_mismatch",
+    "directory": "/private/tmp/studiquo-rag-paired-candidate-identify-20261015-01",
+    "journalHash": "bc316b31f7860a3b8de415092b30f79380bdfbe53b70b70503657d59091a9bf1",
+    "sourceHashes": {
+      "paired-task-planner-live.mjs": "a243cc3ccd9713fd3926d50616d83ea5a2421a2e965cb967efbda19f964d51ef",
+      "paired-task-planner-request.mjs": "5c7bd5708ff670e5f9630dc4c89d690ab1d0b79eefc8f809da2c162af724098b",
+      "paired-task-planner-response.mjs": "6bd876ab87b589ee4d0924d13838b2018a1d54359a09c56cd71277d0e66657e1",
+      "task-planner-request.mjs": "2ff7714e7140c7e6a1390a0d8a714d646ffe07e7c3f912f73d6407d375b23637",
+      "task-plan-v2.mjs": "124e6bd5324d4a8bbe6781aa3b52e2b6529eab09886535b4bf993cdbe1fe3dec",
+      "task-plan-diagnostic.mjs": "a824eda66e3d2aa0e6ac6755354ec3a9d4344bd408b68da967983d098b8325ea"
+    },
+    "dispatches": 1,
+    "completed": 0,
+    "failed": 1,
+    "reservedMicroUSD": 8192,
+    "actualBilledUSD": null,
+    "usage": null,
+    "phase": "validation",
+    "httpStatus": 200,
+    "reason": "task_planner_invalid_plan",
+    "diagnostic": {
+      "code": "span_quote_mismatch",
+      "role": "subjects",
+      "taskIndex": 0,
+      "spanIndex": 0
+    },
+    "lockRetained": true,
+    "oldRunSameCause": "unknown",
+    "rawPayloadRetained": false,
+    "automaticRetry": false,
+    "qualityAccepted": false,
+    "workerTests": {
+      "passed": 1380,
+      "failed": 0,
+      "skipped": 0
+    },
+    "independentAudit": "passed: chain, source hashes, fixed candidate binding, reservation before dispatch, one attempt, all three run locks retained"
+  }
+}

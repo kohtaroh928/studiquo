@@ -1,0 +1,74 @@
+{
+  "change": "Retrieval-only exact identifier identities and legacy FTS query aliases for horizontal letter-number whitespace",
+  "indexVersion": 2,
+  "storedFTSChanged": false,
+  "migration": false,
+  "reembedding": false,
+  "extra8": {
+    "before": {
+      "questions": 8,
+      "positiveAndFollowup": 6,
+      "negative": 1,
+      "clarificationControls": 1,
+      "canonicalTop5Coverage": 4,
+      "expandedCandidateRecall": 5,
+      "lexicalEligibleCoverage": 5,
+      "negativeExcluded": 1,
+      "clarificationMatches": 1
+    },
+    "after": {
+      "questions": 8,
+      "positiveAndFollowup": 6,
+      "negative": 1,
+      "clarificationControls": 1,
+      "canonicalTop5Coverage": 5,
+      "expandedCandidateRecall": 6,
+      "lexicalEligibleCoverage": 6,
+      "negativeExcluded": 1,
+      "clarificationMatches": 1
+    },
+    "status": "Now used for repair; no longer unused holdout"
+  },
+  "validation22": {
+    "questions": 22,
+    "positiveAndFollowup": 14,
+    "negative": 6,
+    "clarificationControls": 2,
+    "canonicalTop5Coverage": 14,
+    "expandedCandidateRecall": 14,
+    "lexicalEligibleCoverage": 14,
+    "negativeExcluded": 6,
+    "clarificationMatches": 2
+  },
+  "originalNatural": {
+    "positiveQueries": 8,
+    "negativeQueries": 2,
+    "productionLexicalEligibleCoverage": 8,
+    "negativeLexicalGate": 2
+  },
+  "synthetic100PageLocal": {
+    "positiveQueries": 55,
+    "negativeQueries": 5,
+    "expandedCandidateRecall": 55,
+    "productionLexicalEligibleCoverage": 43,
+    "negativeLexicalGate": 5
+  },
+  "tests": {
+    "newRegressionPassed": 6,
+    "targetedPassed": 20,
+    "allWorkerPassed": 777,
+    "allWorkerFailed": 0
+  },
+  "externalMaterialCalls": 0,
+  "deploy": false,
+  "iOSChanged": false,
+  "limitations": [
+    "Local BM25/lexical checks, not real vector/reranker/Gemini quality",
+    "Same observed cases used for repair, not independent domain holdout",
+    "Conservative ASCII identifier detection: prefix 2-12 letters, horizontal gap up to 4, bounded dotted number and suffix",
+    "No newline or hyphen/slash-number joining; currencies and selected unit/date forms excluded",
+    "Scalar values are not numerically simplified; leading zeros stay distinct",
+    "Existing vectorScore bypass and detailed fact-linking rules unchanged; lexical distinction is not an absolute final-answer identity guarantee",
+    "Physical iPad and true paper scans remain untested"
+  ]
+}

@@ -20,6 +20,7 @@
 // source. Whoever adds a product in one place must add it in the other, or
 // a real purchase grants nothing on the server.
 export const PRODUCT_PLAN_MAP = {
+  "com.yabuko.studiquo.standard.yearly": "standard",
   "com.yabuko.studiquo.plus.monthly": "plus",
   "com.yabuko.studiquo.plus.yearly": "plus",
   "com.yabuko.studiquo.pro.monthly": "pro",

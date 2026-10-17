@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-10",
+  "pages": 100,
+  "localMockModels": true,
+  "results": [
+    {
+      "case": "comparison",
+      "before": [
+        1,
+        3,
+        16,
+        6,
+        11
+      ],
+      "after": [
+        1,
+        3,
+        5,
+        2,
+        4
+      ],
+      "status": "grounded",
+      "unrelatedAfter": []
+    },
+    {
+      "case": "compound",
+      "before": [
+        3,
+        2,
+        1,
+        5,
+        4
+      ],
+      "after": [
+        3,
+        2,
+        1,
+        5,
+        4
+      ],
+      "status": "grounded",
+      "unrelatedAfter": []
+    }
+  ]
+}

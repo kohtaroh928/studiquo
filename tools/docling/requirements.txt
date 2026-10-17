@@ -1,0 +1,2 @@
+# Explicit preparation only; runtime never installs packages or fetches model weights.
+docling==2.139.0

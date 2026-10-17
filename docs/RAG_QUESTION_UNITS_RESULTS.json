@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-15",
+  "scope": "offline_question_unit_preprocessor",
+  "sourceHashes": {
+    "mcp-server/scripts/rag-quality/question-units.mjs": "00781da530a7f6c27c5e586caebc3ce5795b784cae27f2734386c2a3408f3a25",
+    "mcp-server/src/rag-question-units.test.js": "eccc5e25b2630e7db23550c06f010df09b3987097d288d5f328864610f84e61d"
+  },
+  "tests": {
+    "targetPassed": 11,
+    "workerPassed": 1436,
+    "failed": 0,
+    "skipped": 0,
+    "deterministicCombinations": 1000,
+    "developmentQuestionsCoverageOnly": 8,
+    "log": "/private/tmp/studiquo-question-units-all.log"
+  },
+  "independentDesignReview": "passed",
+  "independentCodeReview": "passed_11",
+  "unresolvedHighMedium": 0,
+  "modelQuality": "not_evaluated",
+  "apiDispatches": 0,
+  "keyReads": 0,
+  "runtimeConnected": false,
+  "releaseAccepted": false,
+  "frozenSourceHashesMatched": true,
+  "failedLocksRetained": 4,
+  "next": "v4_role_reference_bounds_and_schema_validator"
+}

@@ -1,0 +1,249 @@
+{
+  "date": "2026-10-14",
+  "syntheticOnly": true,
+  "method": "production handleAI request captured with local synthetic retrieval; real OpenAI generation; explicit medium/default; no deployed Cloudflare",
+  "model": "gpt-6-luna",
+  "reasoning": "medium",
+  "serviceTier": "default",
+  "dispatches": 6,
+  "completed": 6,
+  "failed": 0,
+  "usage": {
+    "input": 21351,
+    "output": 585,
+    "reasoning": 310,
+    "total": 21936
+  },
+  "reservedMicroUSD": 49152,
+  "uncachedStandardEstimatedUSD": 0.0024276,
+  "latencyMs": {
+    "min": 1237,
+    "max": 4443,
+    "mean": 2528.8333333333335
+  },
+  "journalSHA256": "154788cdaaebdb5466a923e90a351f983340f0b503e66fdfee7c21df1b8569aa",
+  "cases": [
+    {
+      "id": "e50-versions-01:source_only",
+      "model": "gpt-6-luna",
+      "elapsedMs": 3720,
+      "usage": {
+        "input": 3385,
+        "output": 74,
+        "reasoning": 40,
+        "total": 3459
+      }
+    },
+    {
+      "id": "e50-versions-01:explain",
+      "model": "gpt-6-luna",
+      "elapsedMs": 1676,
+      "usage": {
+        "input": 3602,
+        "output": 46,
+        "reasoning": 0,
+        "total": 3648
+      }
+    },
+    {
+      "id": "e50-partial-03:explain",
+      "model": "gpt-6-luna",
+      "elapsedMs": 4443,
+      "usage": {
+        "input": 3813,
+        "output": 242,
+        "reasoning": 161,
+        "total": 4055
+      }
+    },
+    {
+      "id": "e50-partial-03:source_only",
+      "model": "gpt-6-luna",
+      "elapsedMs": 2807,
+      "usage": {
+        "input": 3596,
+        "output": 174,
+        "reasoning": 109,
+        "total": 3770
+      }
+    },
+    {
+      "id": "e50-pages_tables-02:source_only",
+      "model": "gpt-6-luna",
+      "elapsedMs": 1290,
+      "usage": {
+        "input": 3369,
+        "output": 21,
+        "reasoning": 0,
+        "total": 3390
+      }
+    },
+    {
+      "id": "e50-pages_tables-02:explain",
+      "model": "gpt-6-luna",
+      "elapsedMs": 1237,
+      "usage": {
+        "input": 3586,
+        "output": 28,
+        "reasoning": 0,
+        "total": 3614
+      }
+    }
+  ],
+  "retrieval": [
+    {
+      "caseId": "e50-versions-01",
+      "style": "source_only",
+      "status": "grounded",
+      "pages": [
+        1
+      ]
+    },
+    {
+      "caseId": "e50-versions-01",
+      "style": "explain",
+      "status": "grounded",
+      "pages": [
+        1
+      ]
+    },
+    {
+      "caseId": "e50-pages_tables-02",
+      "style": "explain",
+      "status": "grounded",
+      "pages": [
+        1
+      ]
+    },
+    {
+      "caseId": "e50-pages_tables-02",
+      "style": "source_only",
+      "status": "grounded",
+      "pages": [
+        1
+      ]
+    },
+    {
+      "caseId": "e50-partial-03",
+      "style": "source_only",
+      "status": "partial",
+      "pages": [
+        1
+      ]
+    },
+    {
+      "caseId": "e50-partial-03",
+      "style": "explain",
+      "status": "partial",
+      "pages": [
+        1
+      ]
+    }
+  ],
+  "tests": {
+    "workerPass": 1284,
+    "relatedPass": 15,
+    "failed": 0,
+    "skipped": 0
+  },
+  "semanticReview": "Codex and independent AI review complete; not human teacher review",
+  "humanGoldReview": "pending",
+  "realCloudflare": false,
+  "realPDF": false,
+  "realIPad": false,
+  "productionDeployed": false,
+  "claimScores": [
+    {
+      "caseId": "e50-versions-01",
+      "style": "source_only",
+      "claimId": "c1",
+      "result": "pass",
+      "reasonCode": "document_value"
+    },
+    {
+      "caseId": "e50-versions-01",
+      "style": "source_only",
+      "claimId": "c2",
+      "result": "pass",
+      "reasonCode": "applicability_basis"
+    },
+    {
+      "caseId": "e50-versions-01",
+      "style": "explain",
+      "claimId": "c1",
+      "result": "pass",
+      "reasonCode": "document_value"
+    },
+    {
+      "caseId": "e50-versions-01",
+      "style": "explain",
+      "claimId": "c2",
+      "result": "pass",
+      "reasonCode": "applicability_basis"
+    },
+    {
+      "caseId": "e50-pages_tables-02",
+      "style": "source_only",
+      "claimId": "c1",
+      "result": "pass",
+      "reasonCode": "row_value_identity"
+    },
+    {
+      "caseId": "e50-pages_tables-02",
+      "style": "explain",
+      "claimId": "c1",
+      "result": "pass",
+      "reasonCode": "row_value_identity"
+    },
+    {
+      "caseId": "e50-partial-03",
+      "style": "source_only",
+      "claimId": "c1",
+      "result": "fail",
+      "reasonCode": "explicit_comparison_delta_missing"
+    },
+    {
+      "caseId": "e50-partial-03",
+      "style": "source_only",
+      "claimId": "c2",
+      "result": "pass",
+      "reasonCode": "missing_price_not_fabricated"
+    },
+    {
+      "caseId": "e50-partial-03",
+      "style": "explain",
+      "claimId": "c1",
+      "result": "fail",
+      "reasonCode": "explicit_comparison_delta_missing"
+    },
+    {
+      "caseId": "e50-partial-03",
+      "style": "explain",
+      "claimId": "c2",
+      "result": "pass",
+      "reasonCode": "missing_price_not_fabricated"
+    }
+  ],
+  "remainingFindings": [
+    {
+      "caseId": "e50-partial-03",
+      "styles": [
+        "source_only",
+        "explain"
+      ],
+      "kind": "coverage",
+      "status": "unresolved",
+      "code": "explicit_two_hour_difference_missing"
+    },
+    {
+      "caseId": "e50-partial-03",
+      "styles": [
+        "explain"
+      ],
+      "kind": "clarity",
+      "status": "pending_human_review",
+      "code": "purchase_price_per_documented_lighting_duration_not_actual_usage_cost"
+    }
+  ],
+  "overallSemanticPass": false
+}

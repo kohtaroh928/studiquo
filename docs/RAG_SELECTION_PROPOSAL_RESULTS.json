@@ -1,0 +1,376 @@
+{
+  "schemaVersion": 1,
+  "method": "Hand-authored proposal simulations. NO model calls or model-quality measurement. Labels are evaluation-only; they never enter proposalTask or messages. Structural validity does not imply complete answers.",
+  "labelStatus": "Independent agent label review applied; human/teacher review pending; holdout is not blind.",
+  "summary": {
+    "simulations": 8,
+    "structurallyValid": 8,
+    "validButMissingRequired": 4,
+    "safeMissingRequired": 0,
+    "productionEligible": 0
+  },
+  "cases": [
+    {
+      "id": "biology-comparison",
+      "status": "shadow",
+      "productionEligible": false,
+      "safe": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 3,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r3"
+        ],
+        "pages": [
+          3,
+          1
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 777,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "biology-input-output",
+      "status": "shadow",
+      "productionEligible": false,
+      "safe": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3",
+          "r4",
+          "r5"
+        ],
+        "pages": [
+          3,
+          5,
+          1,
+          2,
+          4
+        ],
+        "referenceCount": 5,
+        "distinctSources": 1,
+        "textCharacters": 1925,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 4,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r3"
+        ],
+        "pages": [
+          1
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 390,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "split-materials",
+      "status": "shadow",
+      "productionEligible": false,
+      "safe": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 46,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1"
+        ],
+        "pages": [
+          1
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 14,
+        "requiredFacts": 0,
+        "totalRequiredFacts": 2,
+        "missingRequired": [
+          "inputs",
+          "output"
+        ],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "hidden-condition",
+      "status": "shadow",
+      "productionEligible": false,
+      "safe": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 32,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1"
+        ],
+        "pages": [
+          1
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 17,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 2,
+        "missingRequired": [
+          "condition"
+        ],
+        "protectedRequiredMissing": [
+          "condition"
+        ],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "formula-scope",
+      "status": "shadow",
+      "productionEligible": false,
+      "safe": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          2
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 28,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1"
+        ],
+        "pages": [
+          1
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 14,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 2,
+        "missingRequired": [
+          "scope"
+        ],
+        "protectedRequiredMissing": [
+          "scope"
+        ],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "negated-distinction",
+      "status": "shadow",
+      "productionEligible": false,
+      "safe": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 51,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1"
+        ],
+        "pages": [
+          1
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 14,
+        "requiredFacts": 0,
+        "totalRequiredFacts": 2,
+        "missingRequired": [
+          "absorb",
+          "reflect"
+        ],
+        "protectedRequiredMissing": [
+          "reflect"
+        ],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "same-page-overlap",
+      "status": "shadow",
+      "productionEligible": false,
+      "safe": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          1
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 31,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r2"
+        ],
+        "pages": [
+          1
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 19,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    },
+    {
+      "id": "cross-source-confirmation",
+      "status": "shadow",
+      "productionEligible": false,
+      "safe": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          1,
+          1
+        ],
+        "referenceCount": 2,
+        "distinctSources": 2,
+        "textCharacters": 24,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r2"
+        ],
+        "pages": [
+          1
+        ],
+        "referenceCount": 1,
+        "distinctSources": 1,
+        "textCharacters": 12,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 1,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      }
+    }
+  ]
+}

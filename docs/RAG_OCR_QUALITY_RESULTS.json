@@ -1,0 +1,909 @@
+{
+  "pages": [
+    {
+      "pageNumber": 1,
+      "scan": false,
+      "referenceCharacters": 373,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 2,
+      "scan": false,
+      "referenceCharacters": 357,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 3,
+      "scan": false,
+      "referenceCharacters": 370,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 4,
+      "scan": false,
+      "referenceCharacters": 372,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 5,
+      "scan": true,
+      "referenceCharacters": 368,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 12904
+    },
+    {
+      "pageNumber": 6,
+      "scan": false,
+      "referenceCharacters": 366,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 7,
+      "scan": false,
+      "referenceCharacters": 357,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 8,
+      "scan": false,
+      "referenceCharacters": 365,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 9,
+      "scan": false,
+      "referenceCharacters": 366,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 10,
+      "scan": true,
+      "referenceCharacters": 371,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 208
+    },
+    {
+      "pageNumber": 11,
+      "scan": false,
+      "referenceCharacters": 366,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 12,
+      "scan": false,
+      "referenceCharacters": 364,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 13,
+      "scan": false,
+      "referenceCharacters": 369,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 14,
+      "scan": false,
+      "referenceCharacters": 367,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 15,
+      "scan": true,
+      "referenceCharacters": 370,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 209
+    },
+    {
+      "pageNumber": 16,
+      "scan": false,
+      "referenceCharacters": 360,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 17,
+      "scan": false,
+      "referenceCharacters": 358,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 18,
+      "scan": false,
+      "referenceCharacters": 361,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 19,
+      "scan": false,
+      "referenceCharacters": 365,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 20,
+      "scan": true,
+      "referenceCharacters": 376,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 203
+    },
+    {
+      "pageNumber": 21,
+      "scan": false,
+      "referenceCharacters": 364,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 22,
+      "scan": false,
+      "referenceCharacters": 354,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 23,
+      "scan": false,
+      "referenceCharacters": 357,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 24,
+      "scan": false,
+      "referenceCharacters": 361,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 25,
+      "scan": true,
+      "referenceCharacters": 367,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 199
+    },
+    {
+      "pageNumber": 26,
+      "scan": false,
+      "referenceCharacters": 360,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 27,
+      "scan": false,
+      "referenceCharacters": 356,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 28,
+      "scan": false,
+      "referenceCharacters": 360,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 29,
+      "scan": false,
+      "referenceCharacters": 367,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 30,
+      "scan": true,
+      "referenceCharacters": 363,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 195
+    },
+    {
+      "pageNumber": 31,
+      "scan": false,
+      "referenceCharacters": 380,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 32,
+      "scan": false,
+      "referenceCharacters": 361,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 33,
+      "scan": false,
+      "referenceCharacters": 376,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 34,
+      "scan": false,
+      "referenceCharacters": 369,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 35,
+      "scan": true,
+      "referenceCharacters": 376,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 202
+    },
+    {
+      "pageNumber": 36,
+      "scan": false,
+      "referenceCharacters": 380,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 37,
+      "scan": false,
+      "referenceCharacters": 367,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 38,
+      "scan": false,
+      "referenceCharacters": 383,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 39,
+      "scan": false,
+      "referenceCharacters": 372,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 40,
+      "scan": true,
+      "referenceCharacters": 384,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 232
+    },
+    {
+      "pageNumber": 41,
+      "scan": false,
+      "referenceCharacters": 360,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 42,
+      "scan": false,
+      "referenceCharacters": 358,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 43,
+      "scan": false,
+      "referenceCharacters": 369,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 44,
+      "scan": false,
+      "referenceCharacters": 370,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 45,
+      "scan": true,
+      "referenceCharacters": 371,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 202
+    },
+    {
+      "pageNumber": 46,
+      "scan": false,
+      "referenceCharacters": 358,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 47,
+      "scan": false,
+      "referenceCharacters": 363,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 48,
+      "scan": false,
+      "referenceCharacters": 372,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 49,
+      "scan": false,
+      "referenceCharacters": 366,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 50,
+      "scan": true,
+      "referenceCharacters": 377,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 198
+    },
+    {
+      "pageNumber": 51,
+      "scan": false,
+      "referenceCharacters": 364,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 52,
+      "scan": false,
+      "referenceCharacters": 359,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 53,
+      "scan": false,
+      "referenceCharacters": 371,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 54,
+      "scan": false,
+      "referenceCharacters": 365,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 55,
+      "scan": true,
+      "referenceCharacters": 378,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 201
+    },
+    {
+      "pageNumber": 56,
+      "scan": false,
+      "referenceCharacters": 359,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 57,
+      "scan": false,
+      "referenceCharacters": 357,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 58,
+      "scan": false,
+      "referenceCharacters": 370,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 59,
+      "scan": false,
+      "referenceCharacters": 362,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 60,
+      "scan": true,
+      "referenceCharacters": 381,
+      "editDistance": 4,
+      "factExact": false,
+      "textLayerEmpty": true,
+      "ocrMs": 201
+    },
+    {
+      "pageNumber": 61,
+      "scan": false,
+      "referenceCharacters": 360,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 62,
+      "scan": false,
+      "referenceCharacters": 362,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 63,
+      "scan": false,
+      "referenceCharacters": 371,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 64,
+      "scan": false,
+      "referenceCharacters": 372,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 65,
+      "scan": true,
+      "referenceCharacters": 380,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 199
+    },
+    {
+      "pageNumber": 66,
+      "scan": false,
+      "referenceCharacters": 356,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 67,
+      "scan": false,
+      "referenceCharacters": 360,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 68,
+      "scan": false,
+      "referenceCharacters": 371,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 69,
+      "scan": false,
+      "referenceCharacters": 362,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 70,
+      "scan": true,
+      "referenceCharacters": 376,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 208
+    },
+    {
+      "pageNumber": 71,
+      "scan": false,
+      "referenceCharacters": 372,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 72,
+      "scan": false,
+      "referenceCharacters": 354,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 73,
+      "scan": false,
+      "referenceCharacters": 374,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 74,
+      "scan": false,
+      "referenceCharacters": 369,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 75,
+      "scan": true,
+      "referenceCharacters": 383,
+      "editDistance": 8,
+      "factExact": false,
+      "textLayerEmpty": true,
+      "ocrMs": 209
+    },
+    {
+      "pageNumber": 76,
+      "scan": false,
+      "referenceCharacters": 361,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 77,
+      "scan": false,
+      "referenceCharacters": 366,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 78,
+      "scan": false,
+      "referenceCharacters": 368,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 79,
+      "scan": false,
+      "referenceCharacters": 368,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 80,
+      "scan": true,
+      "referenceCharacters": 372,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 217
+    },
+    {
+      "pageNumber": 81,
+      "scan": false,
+      "referenceCharacters": 374,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 82,
+      "scan": false,
+      "referenceCharacters": 365,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 83,
+      "scan": false,
+      "referenceCharacters": 373,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 84,
+      "scan": false,
+      "referenceCharacters": 369,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 85,
+      "scan": true,
+      "referenceCharacters": 383,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 205
+    },
+    {
+      "pageNumber": 86,
+      "scan": false,
+      "referenceCharacters": 364,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 87,
+      "scan": false,
+      "referenceCharacters": 362,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 88,
+      "scan": false,
+      "referenceCharacters": 368,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 89,
+      "scan": false,
+      "referenceCharacters": 370,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 90,
+      "scan": true,
+      "referenceCharacters": 380,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 211
+    },
+    {
+      "pageNumber": 91,
+      "scan": false,
+      "referenceCharacters": 364,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 92,
+      "scan": false,
+      "referenceCharacters": 352,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 93,
+      "scan": false,
+      "referenceCharacters": 372,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 94,
+      "scan": false,
+      "referenceCharacters": 362,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 95,
+      "scan": true,
+      "referenceCharacters": 368,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 200
+    },
+    {
+      "pageNumber": 96,
+      "scan": false,
+      "referenceCharacters": 379,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 97,
+      "scan": false,
+      "referenceCharacters": 360,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 98,
+      "scan": false,
+      "referenceCharacters": 377,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 99,
+      "scan": false,
+      "referenceCharacters": 368,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": false,
+      "ocrMs": null
+    },
+    {
+      "pageNumber": 100,
+      "scan": true,
+      "referenceCharacters": 384,
+      "editDistance": 0,
+      "factExact": true,
+      "textLayerEmpty": true,
+      "ocrMs": 209
+    }
+  ],
+  "ocrCER": 0.0015982951518380393,
+  "layerCER": 0.0,
+  "ocrFactsExact": 18,
+  "layerFactsExact": 80,
+  "medianOCRMs": 204.0
+}

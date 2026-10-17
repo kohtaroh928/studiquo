@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-17",
+  "scope": "local_ipad_structured_integration",
+  "ios_full_selected": {
+    "passed": 98,
+    "failed": 0
+  },
+  "ios_latest_related_overlapping": {
+    "passed": 36,
+    "failed": 0
+  },
+  "worker": {
+    "passed": 1723,
+    "failed": 0,
+    "skipped": 0
+  },
+  "python_existing": {
+    "passed": 49
+  },
+  "quality_improvement_proven": false,
+  "remote_deploy": false,
+  "remote_migration": false,
+  "scheduler": "PAUSED",
+  "sha256": {
+    "studiquo/Services/RAGStructuredDocument.swift": "959f84463b4fcbcded1d831d05574d8707f0e41cb9fa51ee41743286af70d6c7",
+    "studiquo/Services/RAGCitationMetadata.swift": "33b67571e16552cf854b0e171d431edb8498fefd743fa7ea4b6176928da5393c",
+    "studiquo/Services/RAGStructuredAttachment.swift": "411252957a0c507250152604c7930c612e8dedada413f7a60f3ffcf745305c05",
+    "studiquo/Services/BoundedAIStreamLines.swift": "f18410d15f0f8f4146c77bc8502f503cb65fb18b8d2fd180de24becb12a352e8",
+    "studiquo/Services/RAGIndexingService.swift": "bcb11a9e28cbf127471a44d59ec683d0f6ff82253d80dd48e547a9d73de9bb7a",
+    "studiquo/Services/RAGLibrarySyncService.swift": "64d2e967715065f79d2a24520f0be3a6e0a81c930dc866b98829716f2ff8d263",
+    "studiquo/Services/RAGControlClient.swift": "edfdb285078bf66853b50e7c8bfb74573270d70cf1e884fff02b10e9a659401c",
+    "studiquo/Services/NotebookEncryptionService.swift": "4d9a01530f474dd4678eb8d95ef5a5149267297f0d6b918f67febb5854314807",
+    "studiquo/Services/AIProvider.swift": "200e7411567581edca278a6795bf5b99e2d5a154f420501743b559812204adfe",
+    "studiquo/Models/Notebook.swift": "4462f5d0e409cfa81145b8c7cf82d3944630454d0c8ea9cd36ea8c167760cc74",
+    "studiquo/Views/RAGStructuredImportView.swift": "f15993f52e32f00c811aedf56f8a55a0c9dd862a6e1c4447a69b6baae81bc5e9",
+    "studiquo/Views/RAGControlsView.swift": "67546d1105c1242bc6ee137b773edb181ba62e977b08f199e828f1def5a35883",
+    "studiquo/Views/RAGAutomaticLibraryControls.swift": "6d4ce1ee5671abd03af137d29e98c65fd83ae952f5961b0fddc836accdbf4935",
+    "mcp-server/src/rag/index.js": "1b56072226680965aae28e0be8ed5241e3235b61a87331ffee896cc0cd50ad8b"
+  }
+}

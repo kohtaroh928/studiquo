@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "syntheticOnly": true,
+  "externalCalls": 0,
+  "priorReportHash": "fe3b4759afcbb05d42c1e865fda15f9bd1143d6461a0be6a95126767304e3cee",
+  "annotationHash": "d30708f02420741193348e58a4169e60a58519fa42f3e3789156f7d1a0adc4f8",
+  "developmentQuestions": 30,
+  "styleContracts": 60,
+  "reusedAnswers": 24,
+  "deltaReviewedAnswers": 8,
+  "rows": [
+    {
+      "variant": "v1",
+      "id": "e50-partial-03:explain",
+      "answerHash": "bab8decfaea94895bfcbc3b8c20f303a80b8f9ac2aa58bc5e983ce2c39d47427",
+      "probe": {
+        "candidate": "explicit_candidate",
+        "reason": "finite_relation_pattern",
+        "authoritative": false
+      },
+      "reviewed": "satisfied",
+      "reviewHash": "bb9ef070ce78760b129c547765860ea6b63aa5d4a7b1bee4857d651a2a8854f1",
+      "otherRequirementsPending": 9,
+      "contentAccepted": false,
+      "releaseAccepted": false
+    },
+    {
+      "variant": "v1",
+      "id": "e50-partial-03:source_only",
+      "answerHash": "29674e13384b41bcbb4a5f113d9c728ad8e0eb200383e24d08c125ec83f3c74e",
+      "probe": {
+        "candidate": "explicit_candidate",
+        "reason": "finite_relation_pattern",
+        "authoritative": false
+      },
+      "reviewed": "satisfied",
+      "reviewHash": "71e83ee43deab3a4fb6001aace26a6782a317ae1d77a91fbc766fc3386f91b2f",
+      "otherRequirementsPending": 9,
+      "contentAccepted": false,
+      "releaseAccepted": false
+    },
+    {
+      "variant": "dedup",
+      "id": "e50-partial-03:explain",
+      "answerHash": "4b28bb8c68b6678c3ecca2851bae9a28f7a06072b39d25e685d5de37b249d21e",
+      "probe": {
+        "candidate": "explicit_candidate",
+        "reason": "finite_relation_pattern",
+        "authoritative": false
+      },
+      "reviewed": "satisfied",
+      "reviewHash": "d4019a8b7db00246946c06b0ae6823066165ee79011b97cc41d7b244a85578e2",
+      "otherRequirementsPending": 9,
+      "contentAccepted": false,
+      "releaseAccepted": false
+    },
+    {
+      "variant": "dedup",
+      "id": "e50-partial-03:source_only",
+      "answerHash": "ef6245137923deb9ac8f2a2c9c08a1f5de83928567555dfdad26a1fb30c91e93",
+      "probe": {
+        "candidate": "omission_candidate",
+        "reason": "no_explicit_relation_candidate",
+        "authoritative": false
+      },
+      "reviewed": "omitted",
+      "reviewHash": "0e002f6ddb9f543945f692696dc55b8e52c9d7323fd5cdb3f646ccbbc3de5a72",
+      "otherRequirementsPending": 9,
+      "contentAccepted": false,
+      "releaseAccepted": false
+    },
+    {
+      "variant": "dedup_plus_partial",
+      "id": "e50-partial-03:explain",
+      "answerHash": "7616ea1ed4c1b347b556474b7d7357ebc2b495c0e8776ffa69d8562668b6ce70",
+      "probe": {
+        "candidate": "needs_review",
+        "reason": "quoted_or_uncertain_statement",
+        "authoritative": false
+      },
+      "reviewed": "satisfied",
+      "reviewHash": "056dedb12d8f15cd47ab15db4a3addaccab468147c110fb6082e39c1e9b0c964",
+      "otherRequirementsPending": 9,
+      "contentAccepted": false,
+      "releaseAccepted": false
+    },
+    {
+      "variant": "dedup_plus_partial",
+      "id": "e50-partial-03:source_only",
+      "answerHash": "112825c7daacd18301d2c903f8ebc47208277464cc4b4087cfd31e159efce56f",
+      "probe": {
+        "candidate": "omission_candidate",
+        "reason": "no_explicit_relation_candidate",
+        "authoritative": false
+      },
+      "reviewed": "omitted",
+      "reviewHash": "a9c6afd95a8b84e3e3451b5debdd6e206ae68e8429dc7c9dacfce9723fe18b6d",
+      "otherRequirementsPending": 9,
+      "contentAccepted": false,
+      "releaseAccepted": false
+    },
+    {
+      "variant": "partial_only",
+      "id": "e50-partial-03:explain",
+      "answerHash": "52cb7dae01eb5d0eac1b8e9467b0aeaab313176683d0405b11ff628ac6a26e75",
+      "probe": {
+        "candidate": "needs_review",
+        "reason": "quoted_or_uncertain_statement",
+        "authoritative": false
+      },
+      "reviewed": "satisfied",
+      "reviewHash": "92ba2b08de9adc80c1ca463d3570c6e377f22dd5f056fb752537ebb98b895a70",
+      "otherRequirementsPending": 9,
+      "contentAccepted": false,
+      "releaseAccepted": false
+    },
+    {
+      "variant": "partial_only",
+      "id": "e50-partial-03:source_only",
+      "answerHash": "e0dd6c55ca00ad4f06140cf6ce528d70509b7326e454847038cd94f82ffdacb5",
+      "probe": {
+        "candidate": "omission_candidate",
+        "reason": "no_explicit_relation_candidate",
+        "authoritative": false
+      },
+      "reviewed": "omitted",
+      "reviewHash": "babd346f50c59c0e3ef052e2e4c3fa1191bb47a53883bb04772c6de443902c8a",
+      "otherRequirementsPending": 9,
+      "contentAccepted": false,
+      "releaseAccepted": false
+    }
+  ],
+  "counts": {
+    "satisfied": 5,
+    "omitted": 3,
+    "explicitCandidates": 3,
+    "omissionCandidates": 3,
+    "needsReview": 2
+  },
+  "limitation": "finite syntax diagnostic plus reviewer-supplied annotations, not semantic automatic grading or runtime prevention",
+  "verification": {
+    "targetTests": 9,
+    "relatedTests": 24,
+    "workerTests": 1317,
+    "failures": 0,
+    "skipped": 0,
+    "independentTests": 16,
+    "independentAnswerReview": "8 annotations verified against private source answers",
+    "unresolvedHighMedium": 0,
+    "runtimeV1ByteEqualityCases": 77,
+    "apiCalls": 0
+  },
+  "sourceHashes": {
+    "answer-coverage.mjs": "cf04ec767de1b0fd076dbe8d409a327a0646ada4412eb02a5b509a853b3f7f61",
+    "answer-coverage-replay.mjs": "cae902199e65f955f713ab410305c29db0ccf95b04e1b111669bf5ba1d7e453d",
+    "answer-coverage-reviews.json": "9c4ecdeff3d8966451c1555128c709b150959f915aa71751a99e6b3cc486e973"
+  }
+}

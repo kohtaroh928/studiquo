@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "model": "gemini-3.6-flash",
+  "intervalMs": 31000,
+  "labelStatus": "Independent agent label review applied; human/teacher review pending; holdout is not blind.",
+  "method": "Paragraph-ID selection-only shadow on fixed synthetic references. Full excerpts retained. No labels sent, no product integration. Sequential/no retry/max20 calls/5sec; stop on auth/quota/5xx.",
+  "summary": {
+    "planned": 4,
+    "attempts": 1,
+    "notAttempted": 3,
+    "valid": 0,
+    "fallbacks": 1,
+    "validButMissingRequired": 0,
+    "validRequiredFacts": 0,
+    "validTotalRequiredFacts": 0,
+    "baselineReferences": 3,
+    "shadowReferences": 3
+  },
+  "cases": [
+    {
+      "id": "split-materials",
+      "split": "dev",
+      "status": "fallback",
+      "reason": "provider_failure",
+      "elapsedMs": 413,
+      "provider": {
+        "requestedModel": "gemini-3.6-flash",
+        "httpStatus": 429,
+        "finishReason": null,
+        "modelVersion": null,
+        "usage": null,
+        "error": {
+          "status": "RESOURCE_EXHAUSTED",
+          "reason": null,
+          "quotas": [
+            {
+              "tier": "free",
+              "window": "day",
+              "limit": 20
+            }
+          ],
+          "retrySeconds": 68882
+        }
+      },
+      "productionEligible": false,
+      "baseline": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 46,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "shadow": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          1,
+          2,
+          3
+        ],
+        "referenceCount": 3,
+        "distinctSources": 1,
+        "textCharacters": 46,
+        "requiredFacts": 2,
+        "totalRequiredFacts": 2,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0
+      },
+      "witnessCount": 0
+    }
+  ],
+  "interpretation": {
+    "observedViolation": "free daily quota limit20",
+    "retrySeconds": 68882,
+    "retryApproxHours": 19.13,
+    "note": "Returned quota violation, not a full billing/account audit.31sec pacing cannot resolve daily quota. No retries or account billing changes."
+  },
+  "limitations": [
+    "No valid model proposal in this run. No new quality result for conditions/formulas/distributed information.",
+    "First planned case attempted; other3 not sent. Baseline retention is fallback, not model success.",
+    "No usage metadata: failed request cost unknown.",
+    "Earlier2biologydev successes remain separate historical results, not merged as full4case success."
+  ]
+}

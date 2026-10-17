@@ -1,0 +1,155 @@
+{
+  "date": "2026-10-13",
+  "method": "production handleAI + fixed local synthetic retrieval + real OpenAI; moderation disabled for fixed synthetic probes only",
+  "syntheticOnly": true,
+  "styleOrder": "source_first",
+  "dispatches": 6,
+  "stopped": false,
+  "rubricVersion": "2026-10-13-v2",
+  "review": "Codex and independent AI review; target criteria only, teacher review pending",
+  "usage": {
+    "input": 19389,
+    "output": 2058,
+    "reasoning": 1058,
+    "total": 21447
+  },
+  "latencyMs": {
+    "min": 4243,
+    "max": 4935,
+    "mean": 4469.0
+  },
+  "rows": [
+    {
+      "id": "learning-partial-devices",
+      "style": "source_only",
+      "httpStatus": 200,
+      "rubricVersion": "2026-10-13-v2",
+      "inputHash": "ce3c3ffe281d104e47b493618b086af8a4cdb3f7c9253389613f9778ece66a11",
+      "referenceHash": "7cc867b4629005394f4faf0e5efd657efbb5dad6a49f7679933b539fe56f2f3b",
+      "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": null,
+        "forbiddenClaims": null
+      },
+      "automatedChecksPass": true,
+      "semanticAutomatedChecks": "not_configured"
+    },
+    {
+      "id": "learning-partial-devices",
+      "style": "explain",
+      "httpStatus": 200,
+      "rubricVersion": "2026-10-13-v2",
+      "inputHash": "ce3c3ffe281d104e47b493618b086af8a4cdb3f7c9253389613f9778ece66a11",
+      "referenceHash": "7cc867b4629005394f4faf0e5efd657efbb5dad6a49f7679933b539fe56f2f3b",
+      "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": null,
+        "forbiddenClaims": null
+      },
+      "automatedChecksPass": true,
+      "semanticAutomatedChecks": "not_configured"
+    },
+    {
+      "id": "learning-density-background",
+      "style": "source_only",
+      "httpStatus": 200,
+      "rubricVersion": "2026-10-13-v2",
+      "inputHash": "e01d421199bce7896424b925fdc44d2362d4664cf48b0892dc38d043849b1fd7",
+      "referenceHash": "7a48aac73f3b137044f105aa951e94d7b636dfc2faf6ab9a78c1aaf54261e685",
+      "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": null,
+        "forbiddenClaims": null
+      },
+      "automatedChecksPass": true,
+      "semanticAutomatedChecks": "not_configured"
+    },
+    {
+      "id": "learning-density-background",
+      "style": "explain",
+      "httpStatus": 200,
+      "rubricVersion": "2026-10-13-v2",
+      "inputHash": "e01d421199bce7896424b925fdc44d2362d4664cf48b0892dc38d043849b1fd7",
+      "referenceHash": "7a48aac73f3b137044f105aa951e94d7b636dfc2faf6ab9a78c1aaf54261e685",
+      "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": null,
+        "forbiddenClaims": null
+      },
+      "automatedChecksPass": true,
+      "semanticAutomatedChecks": "not_configured"
+    },
+    {
+      "id": "learning-transport-paragraphs",
+      "style": "source_only",
+      "httpStatus": 200,
+      "rubricVersion": "2026-10-13-v2",
+      "inputHash": "6c08dffdfbaffa7d176779167394fec9b600ec16bd262f17613c5778b391b617",
+      "referenceHash": "b329abb2fd6d92a330b4906baa413f24e6fbf58ce529421f368aecbed44e89fe",
+      "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": null,
+        "forbiddenClaims": null
+      },
+      "automatedChecksPass": true,
+      "semanticAutomatedChecks": "not_configured"
+    },
+    {
+      "id": "learning-transport-paragraphs",
+      "style": "explain",
+      "httpStatus": 200,
+      "rubricVersion": "2026-10-13-v2",
+      "inputHash": "6c08dffdfbaffa7d176779167394fec9b600ec16bd262f17613c5778b391b617",
+      "referenceHash": "b329abb2fd6d92a330b4906baa413f24e6fbf58ce529421f368aecbed44e89fe",
+      "configHash": "ebb57b3618b5a3513d994bf2d57237987918f3814c2f24247b6013381a0355fc",
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": null,
+        "forbiddenClaims": null
+      },
+      "automatedChecksPass": true,
+      "semanticAutomatedChecks": "not_configured"
+    }
+  ],
+  "workerTests": {
+    "pass": 1221,
+    "fail": 0,
+    "skip": 0
+  },
+  "limitations": [
+    "one repeat per style",
+    "not blinded holdout",
+    "not actual Cloudflare/PDF/OCR/iPad",
+    "50-question evaluation not run",
+    "scientific local homogeneity not evaluated"
+  ]
+}

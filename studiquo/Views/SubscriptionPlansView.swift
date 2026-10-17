@@ -100,15 +100,15 @@ struct SubscriptionPlansView: View {
     /// the Worker's own plan gate) actually offer.
     private var standardFeatures: [String] {
         let models = AIModelCatalog.offered.filter { $0.requiredPlan == .standard }.map(\.displayName)
-        return ["月30 AIクレジット", models.joined(separator: "・"), "資料作成・共同編集は無制限"]
+        return ["月\(PlanAllowance.forPlan(.standard).monthlyCredits) AIクレジット", models.joined(separator: "・"), "資料作成・共同編集は無制限"]
     }
 
     private var plusFeatures: [String] {
-        return ["月750 AIクレジット", "GoogleのAIモデル"]
+        return ["月\(PlanAllowance.forPlan(.plus).monthlyCredits) AIクレジット", AIModelCatalog.availableModels(for: .plus).map(\.displayName).joined(separator: "・")]
     }
 
     private var proFeatures: [String] {
-        return ["月2,000 AIクレジット", "GoogleのAIモデル"]
+        return ["月\(PlanAllowance.forPlan(.pro).monthlyCredits) AIクレジット", AIModelCatalog.availableModels(for: .pro).map(\.displayName).joined(separator: "・")]
     }
 
     private func planCard(plan: StudiquoPlan, subtitle: String, features: [String]) -> some View {

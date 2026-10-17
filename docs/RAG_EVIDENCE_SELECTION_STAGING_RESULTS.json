@@ -1,0 +1,549 @@
+{
+  "date": "2026-10-10",
+  "environment": "staging",
+  "material": "synthetic; previously extracted 100-page text fixture plus 6-page device fixture and 1 other-owner page; no real user material",
+  "checks": {
+    "passed": 84,
+    "total": 84
+  },
+  "upload": {
+    "name": "100-page-upload",
+    "ok": true,
+    "elapsedMs": 91924,
+    "embedded": 100
+  },
+  "readiness": [
+    {
+      "attempt": 1,
+      "http": 200,
+      "state": "waiting",
+      "reason": "vector_pending",
+      "elapsedMs": 2272,
+      "sinceFinalUploadMs": 2273
+    },
+    {
+      "attempt": 2,
+      "http": 200,
+      "state": "waiting",
+      "reason": "vector_pending",
+      "elapsedMs": 855,
+      "sinceFinalUploadMs": 16328
+    },
+    {
+      "attempt": 3,
+      "http": 200,
+      "state": "waiting",
+      "reason": "vector_pending",
+      "elapsedMs": 3745,
+      "sinceFinalUploadMs": 30076
+    },
+    {
+      "attempt": 4,
+      "http": 200,
+      "state": "waiting",
+      "reason": "vector_pending",
+      "elapsedMs": 1107,
+      "sinceFinalUploadMs": 42980
+    },
+    {
+      "attempt": 5,
+      "http": 200,
+      "state": "waiting",
+      "reason": "vector_pending",
+      "elapsedMs": 1447,
+      "sinceFinalUploadMs": 54429
+    },
+    {
+      "attempt": 6,
+      "http": 200,
+      "state": "waiting",
+      "reason": "vector_pending",
+      "elapsedMs": 1141,
+      "sinceFinalUploadMs": 67802
+    },
+    {
+      "attempt": 7,
+      "http": 200,
+      "state": "ready",
+      "elapsedMs": 3628,
+      "sinceFinalUploadMs": 81434
+    }
+  ],
+  "stability": [
+    {
+      "phase": "polling",
+      "sinceFinalUploadMs": 5471,
+      "http": 200,
+      "status": "grounded",
+      "pages": [
+        1
+      ],
+      "calls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 526,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 441,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "phase": "polling",
+      "sinceFinalUploadMs": 31871,
+      "http": 200,
+      "status": "grounded",
+      "pages": [
+        1
+      ],
+      "calls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 141,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 167,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "phase": "polling",
+      "sinceFinalUploadMs": 56659,
+      "http": 200,
+      "status": "grounded",
+      "pages": [
+        1
+      ],
+      "calls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 106,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 342,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "phase": "polling",
+      "sinceFinalUploadMs": 83739,
+      "http": 200,
+      "status": "grounded",
+      "pages": [
+        1
+      ],
+      "calls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 382,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 361,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "phase": "after-ready",
+      "sinceFinalUploadMs": 85829,
+      "http": 200,
+      "status": "grounded",
+      "pages": [
+        1
+      ],
+      "calls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 135,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 617,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "phase": "after-ready",
+      "sinceFinalUploadMs": 97790,
+      "http": 200,
+      "status": "grounded",
+      "pages": [
+        1
+      ],
+      "calls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 186,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 255,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "phase": "after-ready",
+      "sinceFinalUploadMs": 109750,
+      "http": 200,
+      "status": "grounded",
+      "pages": [
+        1
+      ],
+      "calls": [
+        {
+          "model": "@cf/baai/bge-m3",
+          "elapsedMs": 201,
+          "ok": true,
+          "dimensions": 1024
+        },
+        {
+          "model": "@cf/baai/bge-reranker-base",
+          "elapsedMs": 232,
+          "ok": true
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "detail-price-model",
+      "http": 200,
+      "elapsedMs": 4735,
+      "ragStatus": "grounded",
+      "citationPages": [
+        6,
+        1
+      ],
+      "citationCount": 2,
+      "scopeCorrect": true,
+      "expectedPagePresent": true,
+      "answerChecks": {
+        "model": true,
+        "price": true,
+        "shipping": true,
+        "corporate": true,
+        "pickup": true
+      },
+      "answerNonempty": true,
+      "streamError": false,
+      "streamConsumed": true
+    },
+    {
+      "id": "detail-current-page",
+      "http": 200,
+      "elapsedMs": 2275,
+      "ragStatus": "grounded",
+      "citationPages": [
+        6
+      ],
+      "citationCount": 1,
+      "scopeCorrect": true,
+      "expectedPagePresent": true,
+      "answerChecks": {
+        "price": true,
+        "shipping": true,
+        "corporate": true,
+        "pickup": true
+      },
+      "answerNonempty": true,
+      "streamError": false,
+      "streamConsumed": true
+    },
+    {
+      "id": "detail-duplicate",
+      "http": 200,
+      "elapsedMs": 2358,
+      "ragStatus": "grounded",
+      "citationPages": [
+        1
+      ],
+      "citationCount": 1,
+      "scopeCorrect": true,
+      "expectedPagePresent": true,
+      "answerChecks": null,
+      "answerNonempty": true,
+      "streamError": false,
+      "streamConsumed": true
+    },
+    {
+      "id": "library",
+      "http": 200,
+      "elapsedMs": 3092,
+      "ragStatus": "grounded",
+      "citationPages": [
+        1
+      ],
+      "citationCount": 1,
+      "scopeCorrect": true,
+      "expectedPagePresent": true,
+      "answerChecks": null,
+      "answerNonempty": true,
+      "streamError": false,
+      "streamConsumed": true
+    },
+    {
+      "id": "folder-ocr",
+      "http": 200,
+      "elapsedMs": 2347,
+      "ragStatus": "grounded",
+      "citationPages": [
+        5
+      ],
+      "citationCount": 1,
+      "scopeCorrect": true,
+      "expectedPagePresent": true,
+      "answerChecks": null,
+      "answerNonempty": true,
+      "streamError": false,
+      "streamConsumed": true
+    },
+    {
+      "id": "notebook-ocr",
+      "http": 200,
+      "elapsedMs": 1987,
+      "ragStatus": "grounded",
+      "citationPages": [
+        7,
+        10
+      ],
+      "citationCount": 2,
+      "scopeCorrect": true,
+      "expectedPagePresent": true,
+      "answerChecks": null,
+      "answerNonempty": true,
+      "streamError": false,
+      "streamConsumed": true
+    },
+    {
+      "id": "current-page",
+      "http": 200,
+      "elapsedMs": 1936,
+      "ragStatus": "grounded",
+      "citationPages": [
+        11
+      ],
+      "citationCount": 1,
+      "scopeCorrect": true,
+      "expectedPagePresent": true,
+      "answerChecks": null,
+      "answerNonempty": true,
+      "streamError": false,
+      "streamConsumed": true
+    },
+    {
+      "id": "comparison",
+      "http": 200,
+      "elapsedMs": 2305,
+      "ragStatus": "grounded",
+      "citationPages": [
+        3,
+        5,
+        1,
+        2,
+        4
+      ],
+      "citationCount": 5,
+      "scopeCorrect": true,
+      "expectedPagePresent": true,
+      "answerChecks": null,
+      "answerNonempty": true,
+      "streamError": false,
+      "streamConsumed": true
+    },
+    {
+      "id": "compound",
+      "http": 200,
+      "elapsedMs": 2731,
+      "ragStatus": "grounded",
+      "citationPages": [
+        3,
+        5,
+        2,
+        1,
+        4
+      ],
+      "citationCount": 5,
+      "scopeCorrect": true,
+      "expectedPagePresent": true,
+      "answerChecks": null,
+      "answerNonempty": true,
+      "streamError": false,
+      "streamConsumed": true
+    },
+    {
+      "id": "wrong-folder",
+      "http": 200,
+      "elapsedMs": 1553,
+      "ragStatus": "fallback",
+      "citationPages": [],
+      "citationCount": 0,
+      "scopeCorrect": true,
+      "expectedPagePresent": true,
+      "answerChecks": null,
+      "answerNonempty": true,
+      "streamError": false,
+      "streamConsumed": true
+    },
+    {
+      "id": "other-owner",
+      "http": 200,
+      "elapsedMs": 2930,
+      "ragStatus": "grounded",
+      "citationPages": [
+        1
+      ],
+      "citationCount": 1,
+      "scopeCorrect": true,
+      "expectedPagePresent": true,
+      "answerChecks": null,
+      "answerNonempty": true,
+      "streamError": false,
+      "streamConsumed": true
+    }
+  ],
+  "sourceHashReEmbedding": 0,
+  "detailProbe": {
+    "status": "grounded",
+    "pages": [
+      6,
+      1
+    ],
+    "reads": [
+      {
+        "page": 6,
+        "ownerChecked": true,
+        "rows": 1
+      },
+      {
+        "page": 1,
+        "ownerChecked": true,
+        "rows": 1
+      },
+      {
+        "page": 5,
+        "ownerChecked": true,
+        "rows": 1
+      },
+      {
+        "page": 2,
+        "ownerChecked": true,
+        "rows": 1
+      },
+      {
+        "page": 3,
+        "ownerChecked": true,
+        "rows": 1
+      }
+    ],
+    "evidenceSpanCount": 2,
+    "calls": [
+      {
+        "model": "@cf/baai/bge-m3",
+        "elapsedMs": 132,
+        "ok": true,
+        "dimensions": 1024
+      },
+      {
+        "model": "@cf/baai/bge-reranker-base",
+        "elapsedMs": 285,
+        "ok": true
+      }
+    ],
+    "reserveLiveObserved": false
+  },
+  "chatTimingMs": {
+    "median": 2347,
+    "min": 1553,
+    "max": 4735
+  },
+  "priorInterruptedAttempts": [
+    {
+      "attempt": 1,
+      "failedChecks": [
+        {
+          "name": "consent-gate"
+        },
+        {
+          "name": "evaluation-failed"
+        }
+      ]
+    },
+    {
+      "attempt": 2,
+      "failedChecks": [
+        {
+          "name": "upload-10"
+        },
+        {
+          "name": "evaluation-failed"
+        }
+      ]
+    },
+    {
+      "attempt": 3,
+      "failedChecks": [
+        {
+          "name": "consent-gate",
+          "http": 503,
+          "error": "AI provider review pending."
+        },
+        {
+          "name": "evaluation-failed"
+        }
+      ]
+    }
+  ],
+  "final": {
+    "version": "40606bdf-ed0e-4491-8921-51e845e5c1c3",
+    "flags": {
+      "AI_PROVIDER_APPROVED": "false",
+      "RAG_ENABLED": "false"
+    },
+    "temporaryGeminiSecretAbsent": true,
+    "D1": {
+      "chunks": 0,
+      "pages": 0,
+      "sources": 0,
+      "total_fts_rows": 0,
+      "deletion_barriers": 8
+    },
+    "vectorCount": 0,
+    "disabledHTTP": {
+      "http": 200,
+      "disabled": true
+    },
+    "evaluationSessionsRemoved": true,
+    "privateCredentialFilesRemoved": true,
+    "helperProcessesStopped": true
+  },
+  "limitations": [
+    "11 synthetic chats do not establish production accuracy",
+    "reserve refill did not trigger: required pages already in initial selection",
+    "OCR strings reused; no fresh scan OCR",
+    "comparison and compound still have five partly redundant same-topic citations",
+    "deployment-time provider gate mismatch cause remains unconfirmed",
+    "invoice and Gemini token usage not measured",
+    "no physical iPad validation"
+  ]
+}

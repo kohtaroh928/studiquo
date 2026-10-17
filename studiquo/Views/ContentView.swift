@@ -842,6 +842,8 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
     @State private var showsTermsOfUse = false
     @State private var showsSubscriptionPlans = false
     @State private var showsAccountDeletion = false
+    @State private var showsRAGManagement = false
+    @Environment(\.modelContext) private var settingsModelContext
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
 
     init(@ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
@@ -922,12 +924,14 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
 
             Section {
                 Button("AI機能とデータ送信について") { showsAIDataDisclosure = true }
+                Button("資料検索の保存データと許可") { showsRAGManagement = true }
+                    .accessibilityIdentifier("settings-rag-data")
                 Button("プライバシーポリシーを見る") { showsPrivacyPolicy = true }
                 Button("利用規約を見る") { showsTermsOfUse = true }
             } header: {
                 Text("プライバシー")
             } footer: {
-                Text("許可後にAIを使うと、質問・会話履歴と、送信対象として選択した資料・答案画像がGoogleへ送信されます。許可はいつでも取り消せます。")
+                Text("許可後にAIを使うと、質問・会話履歴と、送信対象として選択した資料・答案画像がOpenAIへ送信されます。許可はいつでも取り消せます。")
             }
 
             Section {
@@ -949,13 +953,13 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
             }
         }
         .sheet(isPresented: $showsAIDataDisclosure) {
-            AIDataDisclosureView(onAcknowledge: {
-                AIDataDisclosure.acknowledge()
+            AIDataDisclosureView(onAcknowledge: { band in
+                AIDataDisclosure.acknowledge(ageBand: band)
                 showsAIDataDisclosure = false
             }, onDecline: {
                 AIDataDisclosure.revoke()
                 showsAIDataDisclosure = false
-            })
+            }, onDismiss: { showsAIDataDisclosure = false })
         }
         .sheet(isPresented: $showsPrivacyPolicy) {
             PrivacyPolicyView()
@@ -968,6 +972,16 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
         }
         .sheet(isPresented: $showsAccountDeletion) {
             DeleteAccountView()
+        }
+        .sheet(isPresented: $showsRAGManagement) {
+            NavigationStack {
+                RAGControlsView(store: AIChatStore.shared(for: settingsModelContext))
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("閉じる") { showsRAGManagement = false }
+                        }
+                    }
+            }
         }
     }
 }
@@ -1375,7 +1389,7 @@ private struct NotificationPreferenceToggle: View {
     }
 }
 
-private struct DeleteAccountView: View {
+struct DeleteAccountView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -1610,13 +1624,20 @@ private struct AppNotificationRoutingModifier: ViewModifier {
 /// (`AIDataDisclosureGate`) and the always-available explanation in
 /// 設定 → プライバシー — there was previously no disclosure anywhere in the
 /// app that note text, answer photos, or chat questions leave the device
-/// for Google's Gemini (and, for the separate opt-in bring-your-own-key
+/// for OpenAI (and, for the separate opt-in bring-your-own-key
 /// features, Anthropic).
+enum AIAgeBand: String {
+    case adult
+    case teen
+}
+
 enum AIDataDisclosure {
+    static let ageBandDefaultsKey = "aiAgeBand"
     static let acknowledgedDefaultsKey = "hasAcknowledgedAIDataDisclosure"
     static let consentVersionDefaultsKey = "aiDataConsentVersion"
     static let decisionVersionDefaultsKey = "aiDataDecisionVersion"
-    static let currentVersion = "google-v2"
+    static let chatDeclinedVersionDefaultsKey = "aiChatConsentDeclinedVersion"
+    static let currentVersion = "openai-v1"
     static let allowsDirectProviders = false
 
     /// Swappable so tests can point this at an isolated suite instead of
@@ -1629,20 +1650,41 @@ enum AIDataDisclosure {
     /// install updating to the version that first added this screen, since
     /// nobody has acknowledged anything yet either way.
     static var hasBeenAcknowledged: Bool {
-        defaults.string(forKey: consentVersionDefaultsKey) == currentVersion
+        defaults.string(forKey: consentVersionDefaultsKey) == currentVersion && ageBand != nil
+    }
+
+    static var ageBand: AIAgeBand? {
+        defaults.string(forKey: ageBandDefaultsKey).flatMap(AIAgeBand.init(rawValue:))
     }
 
     static var hasMadeDecision: Bool {
         defaults.string(forKey: decisionVersionDefaultsKey) == currentVersion
     }
 
-    static func acknowledge() {
+    /// True once the student has said no on the card shown when sending an
+    /// AI chat message. From then on sending shows the "not allowed" error
+    /// in the chat instead of asking again; allowing or revoking from
+    /// settings resets it.
+    static var hasDeclinedInChat: Bool {
+        defaults.string(forKey: chatDeclinedVersionDefaultsKey) == currentVersion
+    }
+
+    static func acknowledge(ageBand: AIAgeBand) {
+        defaults.set(ageBand.rawValue, forKey: ageBandDefaultsKey)
         defaults.set(currentVersion, forKey: consentVersionDefaultsKey)
         defaults.set(currentVersion, forKey: decisionVersionDefaultsKey)
+        defaults.removeObject(forKey: chatDeclinedVersionDefaultsKey)
+    }
+
+    static func declineInChat() {
+        revoke()
+        defaults.set(currentVersion, forKey: chatDeclinedVersionDefaultsKey)
     }
 
     static func revoke() {
+        defaults.removeObject(forKey: chatDeclinedVersionDefaultsKey)
         defaults.removeObject(forKey: consentVersionDefaultsKey)
+        defaults.removeObject(forKey: ageBandDefaultsKey)
         defaults.set(currentVersion, forKey: decisionVersionDefaultsKey)
         defaults.set(false, forKey: AIReviewService.isEnabledDefaultsKey)
     }
@@ -1661,8 +1703,8 @@ private struct AIDataDisclosureGate: ViewModifier {
             get: { !hasMadeDecision },
             set: { _ in }
         )) {
-            AIDataDisclosureView(onAcknowledge: {
-                AIDataDisclosure.acknowledge()
+            AIDataDisclosureView(onAcknowledge: { band in
+                AIDataDisclosure.acknowledge(ageBand: band)
                 hasMadeDecision = true
             }, onDecline: {
                 AIDataDisclosure.revoke()
@@ -1675,8 +1717,20 @@ private struct AIDataDisclosureGate: ViewModifier {
 /// The first-launch (and update-time, for an existing install that never
 /// saw this) explanation of what AI features send off-device, and to whom.
 private struct AIDataDisclosureView: View {
-    let onAcknowledge: () -> Void
+    let onAcknowledge: (AIAgeBand) -> Void
     let onDecline: () -> Void
+    var onDismiss: (() -> Void)? = nil
+
+    private enum AgeChoice { case adult, teen, child }
+    @State private var ageChoice: AgeChoice?
+
+    private var chosenBand: AIAgeBand? {
+        switch ageChoice {
+        case .adult: return .adult
+        case .teen: return .teen
+        default: return nil
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -1685,7 +1739,7 @@ private struct AIDataDisclosureView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("AI機能について", systemImage: "sparkles")
                             .font(.title2.bold())
-                        Text("studiquoのAIトーク・添削・翌日復習は、Googleの生成AI「Gemini」を使っています。これらの機能を使うと、次の内容がGeminiに送信されます。")
+                        Text("studiquoのAIトーク・添削・翌日復習は、OpenAIの生成AI(ChatGPTのモデル)を使っています。これらの機能を使うと、次の内容がOpenAIに送信されます。")
                             .foregroundStyle(.secondary)
                     }
 
@@ -1698,9 +1752,27 @@ private struct AIDataDisclosureView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("送信先と利用の選択", systemImage: "hand.raised")
                             .font(.headline)
-                        Text("現在の送信先はGoogleのみです。許可しなくてもノートなどの基本機能は使えます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。")
+                        Text("現在の送信先はOpenAIのみです。許可しなくてもノートなどの基本機能は使えます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("年齢の確認", systemImage: "person.badge.shield.checkmark")
+                            .font(.headline)
+                        Text("AI機能は13歳以上の方が利用できます。13〜17歳の方は、保護者の同意を得てからご利用ください。")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        ageOption(.adult, "18歳以上です")
+                        ageOption(.teen, "13〜17歳で、保護者の同意を得ています")
+                        ageOption(.child, "13歳未満です")
+                        if ageChoice == .child {
+                            Text("13歳未満の方はAI機能を利用できません。ノートなどの基本機能はそのままお使いいただけます。")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
                     }
                     .padding(14)
                     .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
@@ -1713,10 +1785,18 @@ private struct AIDataDisclosureView: View {
             }
             .navigationTitle("はじめに")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if let onDismiss {
+                    ToolbarItem(placement: .confirmationAction) { Button("閉じる", action: onDismiss) }
+                }
+            }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 10) {
-                    Button("GoogleへのAI送信を許可する", action: onAcknowledge)
-                        .buttonStyle(.borderedProminent)
+                    Button("OpenAIへのAI送信を許可する") {
+                        if let band = chosenBand { onAcknowledge(band) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(chosenBand == nil)
                     Button("許可しない・許可を取り消す", action: onDecline)
                         .buttonStyle(.bordered)
                 }
@@ -1726,6 +1806,19 @@ private struct AIDataDisclosureView: View {
             }
         }
         .interactiveDismissDisabled()
+    }
+
+    private func ageOption(_ choice: AgeChoice, _ title: String) -> some View {
+        Button {
+            ageChoice = choice
+        } label: {
+            HStack {
+                Image(systemName: ageChoice == choice ? "largecircle.fill.circle" : "circle")
+                Text(title).foregroundStyle(.primary)
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private func disclosureRow(icon: String, title: String, detail: String) -> some View {
@@ -1860,6 +1953,7 @@ struct PrivacyPolicyView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    Text("公開日：2026年10月7日").font(.caption).foregroundStyle(.secondary)
                     Text("studiquoは、利用者の情報をどのように取り扱うかを、このページで説明します。")
                         .foregroundStyle(.secondary)
 
@@ -1878,8 +1972,10 @@ struct PrivacyPolicyView: View {
                     policySection(title: "第三者サービスとの連携") {
                         bullet("Sign in with Apple / Google Sign-In", "アカウント作成・ログインのために使用します。")
                         bullet("Google Calendar API", "許可を得たうえで、選択されているカレンダーの予定を読み取り専用で同期します。取得した情報を広告、行動追跡、第三者への販売には使用しません。")
-                        bullet("Google Gemini", "AIトーク・添削・翌日復習機能で、既定の生成AIとして使用します。これらの機能を使うたびに、上記の内容がGoogleに送信されます。")
-                        bullet("AI送信の許可", "初回送信前に内容と送信先を確認し、許可した場合のみ利用できます。現在の送信先はGoogleのみです。資料は送信対象として選択したものだけが送信されます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。許可は設定から取り消せます。")
+                        bullet("OpenAI", "AIトーク・添削・翌日復習機能で、生成AIとして使用します。これらの機能を使うたびに、上記の内容がOpenAIに送信されます。OpenAIの回答を後から取得するための保存は無効(store:false)にして送り、その他の保存・取扱いは提供元の利用条件に従います。送信前の文章は不適切な内容の確認のためOpenAIのモデレーション機能にも渡します。利用者の特定にはアカウントを元にしたハッシュ識別子のみを添えます。")
+                        bullet("年齢の確認", "AI機能は13歳以上の方のみご利用いただけます。13歳以上18歳未満の方は、保護者の同意を得たうえでご利用ください。初回送信前に年齢区分の確認を行い、13歳未満の方にはAI機能を提供しません。")
+                        bullet("AI送信の許可", "初回送信前に内容と送信先を確認し、許可した場合のみ利用できます。通常のAIチャットの送信先はOpenAIです。任意の資料検索は別途Cloudflareへの保存・AI処理許可を必要とします。資料は送信対象として選択したもの、または別途許可した自動資料検索の範囲だけが送信されます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。許可は設定から取り消せます。")
+                        bullet("任意の資料検索（RAG）", "別途許可し、選択した保護されていないノート・PDF、または自動資料検索で許可した範囲のPDFの本文、OCR結果、タイトル、ページ番号をCloudflare Workers AIへ送信し、Embeddingと順位付けに使用します。本文・検索用データはD1・FTS・Vectorizeへ資料の検索データ削除またはアカウント削除まで保存します。検索時には質問もCloudflareへ送り、曖昧な質問では直前の質問も検索に使います。検索された抜粋はOpenAIにも送信します。削除後も古い処理による再保存を防ぐため、利用者識別子から作ったハッシュや資料の識別子と削除済み状態の記録を保持します。許可の取消だけでは保存済みデータは削除されません。資料検索画面から削除できます。")
                         bullet("Cloudflare", "本アプリのサーバーインフラとして使用しており、アカウント情報・学習コンテンツ・チャット内容の保管場所です。")
                         bullet("Apple iCloud", "「iCloudで同期する」をオンにした端末では、ノート・暗記帳・文書・スライド・フォルダ・カレンダーの予定(連携して取得した予定を含む)・AIトークの履歴・学習記録など、アプリ内に保存されるデータが、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。この設定は端末ごとの任意の設定で、新しくインストールした場合は初期状態でオフです(以前のバージョンから引き続き利用している場合は、これまでどおりオンです)。同期されたデータは利用者ご自身のiCloudに保存され、iCloudの保存容量を使用します。")
                         bullet("Slack", "問題報告・診断の通知に使用します。問題報告の本文・画像は送らず、報告ID・端末情報と管理画面へのリンクだけを送ります。本文・画像の閲覧には管理者ログインが必要です。")
@@ -2836,6 +2932,13 @@ struct ContentView: View {
                 openNotebookTab(notebook)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: RAGCitationNavigation.notification)) { notification in
+            guard let citation = notification.object as? RAGCitation,
+                  let (notebook, _) = RAGCitationNavigation.resolve(citation, notebooks: allNotebooks) else { return }
+            selectNotebookTab(notebook)
+        }
+        .task { await RAGDeletionQueue.flush() }
+        .modifier(RAGLibrarySyncModifier())
         .modifier(AppNotificationRoutingModifier(route: routeNotification))
         .onReceive(NotificationCenter.default.publisher(for: .studiquoOpenAIChatTab)) { notification in
             guard let tab = notification.object as? AIChatTabInfo else { return }
@@ -6546,6 +6649,7 @@ struct ContentView: View {
 
     private func moveToTrash(_ notebook: Notebook) {
         performLibraryRemoval {
+            RAGDeletionQueue.enqueueNotebook(notebook, state: "trashed")
             notebook.isTrashed = true
             notebook.trashedAt = .now
             closeNotebookTabs(notebook)
@@ -6561,6 +6665,7 @@ struct ContentView: View {
 
     private func permanentlyDelete(_ notebook: Notebook) {
         performLibraryRemoval {
+            RAGDeletionQueue.enqueueNotebook(notebook)
             closeNotebookTabs(notebook)
             modelContext.delete(notebook)
         }
@@ -6594,6 +6699,7 @@ struct ContentView: View {
                 notebook.updatedAt = .now
             }
         } else {
+            RAGDeletionQueue.enqueueNotebook(notebook, state: "locked")
             NotebookEncryptionService.lock(notebook)
             notebook.isLocked = true
             notebook.updatedAt = .now
@@ -6603,6 +6709,7 @@ struct ContentView: View {
 
     private func emptyTrash() {
         for notebook in allNotebooks where notebook.isTrashed {
+            RAGDeletionQueue.enqueueNotebook(notebook)
             closeNotebookTabs(notebook)
             modelContext.delete(notebook)
         }

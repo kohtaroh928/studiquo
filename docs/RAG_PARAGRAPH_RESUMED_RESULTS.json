@@ -1,0 +1,346 @@
+{
+  "observedAtUTC": "2026-10-11T02:33:24.932Z",
+  "fixtureIdentity": "64065b142e48cca4b4295ba6359e74d5339a38296fb8e1625cf79f669a5a0f58",
+  "quotaRecoveryVerified": false,
+  "externalCalls": 4,
+  "report": {
+    "schemaVersion": 2,
+    "model": "gemini-3.6-flash",
+    "intervalMs": 31000,
+    "labelStatus": "Independent agent label review applied; human/teacher review pending; holdout is not blind.",
+    "method": "Paragraph-ID selection-only shadow on fixed synthetic references. Full excerpts retained. Witness coverage measures exact draft-labelled spans, not semantic entailment. No labels sent, no product integration. Sequential/no retry/max20 calls/5sec; stop on auth/quota/5xx.",
+    "summary": {
+      "planned": 4,
+      "attempts": 4,
+      "notAttempted": 0,
+      "valid": 3,
+      "fallbacks": 1,
+      "validButMissingRequired": 0,
+      "validRequiredFacts": 6,
+      "validTotalRequiredFacts": 6,
+      "validWitnessMissingRequired": 0,
+      "validWitnessRequiredFacts": 6,
+      "validWitnessTotalRequiredFacts": 6,
+      "baselineReferences": 10,
+      "shadowReferences": 9
+    },
+    "cases": [
+      {
+        "id": "split-materials",
+        "split": "dev",
+        "status": "shadow",
+        "reason": "structurally_valid",
+        "elapsedMs": 2024,
+        "provider": {
+          "requestedModel": "gemini-3.6-flash",
+          "httpStatus": 200,
+          "finishReason": "STOP",
+          "modelVersion": "gemini-3.6-flash",
+          "usage": {
+            "prompt": 382,
+            "output": 138,
+            "thoughts": null,
+            "total": 520,
+            "cached": null
+          },
+          "error": null
+        },
+        "productionEligible": false,
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 46,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "shadow": {
+          "referenceIds": [
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            2,
+            3
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 32,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "witnessCount": 2,
+        "witnessCoverage": {
+          "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+          "witnessIds": [
+            "r2_p1",
+            "r3_p1"
+          ],
+          "witnessCount": 2,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0,
+          "unlabelledWitnessIds": [],
+          "partialLabelOverlapWitnessIds": [],
+          "singleParagraphReferences": 3,
+          "totalReferences": 3
+        }
+      },
+      {
+        "id": "hidden-condition",
+        "split": "dev",
+        "status": "fallback",
+        "reason": "timeout",
+        "elapsedMs": 5006,
+        "provider": {
+          "requestedModel": "gemini-3.6-flash",
+          "httpStatus": null,
+          "finishReason": null,
+          "modelVersion": null,
+          "usage": null,
+          "error": null
+        },
+        "productionEligible": false,
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 32,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "shadow": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 32,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "witnessCount": 0,
+        "witnessCoverage": null
+      },
+      {
+        "id": "formula-scope",
+        "split": "holdout",
+        "status": "shadow",
+        "reason": "structurally_valid",
+        "elapsedMs": 1744,
+        "provider": {
+          "requestedModel": "gemini-3.6-flash",
+          "httpStatus": 200,
+          "finishReason": "STOP",
+          "modelVersion": "gemini-3.6-flash",
+          "usage": {
+            "prompt": 343,
+            "output": 115,
+            "thoughts": null,
+            "total": 458,
+            "cached": null
+          },
+          "error": null
+        },
+        "productionEligible": false,
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 28,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "shadow": {
+          "referenceIds": [
+            "r1",
+            "r2"
+          ],
+          "pages": [
+            1,
+            2
+          ],
+          "referenceCount": 2,
+          "distinctSources": 1,
+          "textCharacters": 28,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "witnessCount": 2,
+        "witnessCoverage": {
+          "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+          "witnessIds": [
+            "r1_p1",
+            "r2_p1"
+          ],
+          "witnessCount": 2,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0,
+          "unlabelledWitnessIds": [],
+          "partialLabelOverlapWitnessIds": [],
+          "singleParagraphReferences": 2,
+          "totalReferences": 2
+        }
+      },
+      {
+        "id": "negated-distinction",
+        "split": "holdout",
+        "status": "shadow",
+        "reason": "structurally_valid",
+        "elapsedMs": 2209,
+        "provider": {
+          "requestedModel": "gemini-3.6-flash",
+          "httpStatus": 200,
+          "finishReason": "STOP",
+          "modelVersion": "gemini-3.6-flash",
+          "usage": {
+            "prompt": 388,
+            "output": 234,
+            "thoughts": null,
+            "total": 622,
+            "cached": null
+          },
+          "error": null
+        },
+        "productionEligible": false,
+        "baseline": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 51,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "shadow": {
+          "referenceIds": [
+            "r1",
+            "r2",
+            "r3"
+          ],
+          "pages": [
+            1,
+            2,
+            3
+          ],
+          "referenceCount": 3,
+          "distinctSources": 1,
+          "textCharacters": 51,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0
+        },
+        "witnessCount": 3,
+        "witnessCoverage": {
+          "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+          "witnessIds": [
+            "r1_p1",
+            "r2_p1",
+            "r3_p1"
+          ],
+          "witnessCount": 3,
+          "requiredFacts": 2,
+          "totalRequiredFacts": 2,
+          "missingRequired": [],
+          "protectedRequiredMissing": [],
+          "supportingFacts": 0,
+          "offIntentFacts": 0,
+          "unlabelledWitnessIds": [
+            "r1_p1"
+          ],
+          "partialLabelOverlapWitnessIds": [],
+          "singleParagraphReferences": 3,
+          "totalReferences": 3
+        }
+      }
+    ]
+  },
+  "successfulUsage": {
+    "prompt": 1113,
+    "output": 487,
+    "total": 1600,
+    "unknownUsageCalls": 1
+  },
+  "completedIds": [
+    "split-materials",
+    "formula-scope",
+    "negated-distinction"
+  ],
+  "pendingIds": [
+    "hidden-condition"
+  ]
+}

@@ -1,0 +1,446 @@
+{
+  "date": "2026-10-16",
+  "scope": "complete twelve-pair fixed development comparison with four independent semantic review stages",
+  "directory": "/private/tmp/studiquo-rag-subject-role-live-20261016-01",
+  "runId": "b0fc8f2f-cda7-4aa7-afd4-ca8d2bab73fd",
+  "manifestHash": "3be1b351bb6f7c9787415ea568e3710b0bc2dde17396cdec6285b8a81a100744",
+  "entryPath": "/private/tmp/studiquo-subject-role-stage3-entry-20261016.mjs",
+  "entryHash": "d252b0fe3be4ca8136faa0d839d751a458f97203cca33ce9cee710fc2012cede",
+  "stage": 3,
+  "stageStats": {
+    "requests": 8,
+    "usage": {
+      "input": 11136,
+      "output": 2043,
+      "reasoning": 969,
+      "cached": 0,
+      "cacheWrite": 11112
+    },
+    "usageDerivedUSDEstimate": 0.0024129,
+    "elapsedMs": {
+      "min": 2823.072042,
+      "median": 3733.8960835000003,
+      "max": 7467.226875,
+      "sum": 34330.116292
+    }
+  },
+  "cumulativeStats": {
+    "requests": 24,
+    "usage": {
+      "input": 33662,
+      "output": 6134,
+      "reasoning": 2413,
+      "cached": 0,
+      "cacheWrite": 33590
+    },
+    "usageDerivedUSDEstimate": 0.00727295,
+    "elapsedMs": {
+      "min": 2470.8408340000005,
+      "median": 3560.3358129999997,
+      "max": 7467.226875,
+      "sum": 93176.342252
+    }
+  },
+  "stageRows": [
+    {
+      "ordinal": 16,
+      "index": 8,
+      "variant": "baseline",
+      "responseHash": "83b79822e1504e851044f5c686693923e2a2f889bd564a2754762b6cf05b5233",
+      "elapsedMs": 3748.9049999999997,
+      "usage": {
+        "input": 1241,
+        "output": 166,
+        "reasoning": 41,
+        "total": 1407,
+        "cached": 0,
+        "cacheWrite": 1238
+      }
+    },
+    {
+      "ordinal": 17,
+      "index": 8,
+      "variant": "candidate",
+      "responseHash": "cae081d2d5d2f7923da882f5523d93526c84f7a08d2c64169bcc27121a418840",
+      "elapsedMs": 4836.3395,
+      "usage": {
+        "input": 1462,
+        "output": 304,
+        "reasoning": 164,
+        "total": 1766,
+        "cached": 0,
+        "cacheWrite": 1459
+      }
+    },
+    {
+      "ordinal": 18,
+      "index": 9,
+      "variant": "candidate",
+      "responseHash": "ea5b68b7002a7a9246074ef272a918540fa42b05e38e2dec6ed7779b1e9a02e4",
+      "elapsedMs": 5253.919791,
+      "usage": {
+        "input": 1497,
+        "output": 319,
+        "reasoning": 197,
+        "total": 1816,
+        "cached": 0,
+        "cacheWrite": 1494
+      }
+    },
+    {
+      "ordinal": 19,
+      "index": 9,
+      "variant": "baseline",
+      "responseHash": "af9d53022c7a431642c116b0fb3164de38f2e4a6aea8b4cb0ee17697a8b45f6a",
+      "elapsedMs": 7467.226875,
+      "usage": {
+        "input": 1276,
+        "output": 498,
+        "reasoning": 361,
+        "total": 1774,
+        "cached": 0,
+        "cacheWrite": 1273
+      }
+    },
+    {
+      "ordinal": 20,
+      "index": 10,
+      "variant": "baseline",
+      "responseHash": "08f843ba0373f7a53b08d805ec699972b08e38ffb1bd70b21d5a50207b206d64",
+      "elapsedMs": 2979.3296249999985,
+      "usage": {
+        "input": 1270,
+        "output": 184,
+        "reasoning": 50,
+        "total": 1454,
+        "cached": 0,
+        "cacheWrite": 1267
+      }
+    },
+    {
+      "ordinal": 21,
+      "index": 10,
+      "variant": "candidate",
+      "responseHash": "a2e9ae52d5c5714e8ea11a2873e7bfd49429c94baff37ce3a7749fdedaa17b8e",
+      "elapsedMs": 3718.8871670000008,
+      "usage": {
+        "input": 1491,
+        "output": 180,
+        "reasoning": 46,
+        "total": 1671,
+        "cached": 0,
+        "cacheWrite": 1488
+      }
+    },
+    {
+      "ordinal": 22,
+      "index": 11,
+      "variant": "candidate",
+      "responseHash": "b43c388925dd445bd34d2d22dee7be7675e5ad9d11260accbe79a343a29ac3e4",
+      "elapsedMs": 3502.4362919999985,
+      "usage": {
+        "input": 1560,
+        "output": 197,
+        "reasoning": 56,
+        "total": 1757,
+        "cached": 0,
+        "cacheWrite": 1557
+      }
+    },
+    {
+      "ordinal": 23,
+      "index": 11,
+      "variant": "baseline",
+      "responseHash": "b27680aa3b12b152be9e3761f6bbacab359528c9bfd6cf560430c09322640b68",
+      "elapsedMs": 2823.072042,
+      "usage": {
+        "input": 1339,
+        "output": 195,
+        "reasoning": 54,
+        "total": 1534,
+        "cached": 0,
+        "cacheWrite": 1336
+      }
+    }
+  ],
+  "technicalFailures": 0,
+  "stageReservedMicroUSD": 65536,
+  "totalReservedMicroUSD": 196608,
+  "actualBillingUSD": null,
+  "reservationIsBillingCap": false,
+  "priceSource": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+  "priceChecked": "2026-10-16",
+  "pricesUSDPerMillion": {
+    "input": 0.1,
+    "cached": 0.01,
+    "cacheWrite": 0.125,
+    "output": 0.5
+  },
+  "semanticReview": "all 24 reviewed_match and reviewComplete within frozen task-extraction oracle; clarification decisions not assessed",
+  "releaseAccepted": false,
+  "testsRerun": false,
+  "priorWorkerTests": {
+    "pass": 1659,
+    "fail": 0,
+    "skip": 0
+  },
+  "modelQualityImprovement": "not established",
+  "humanGoldReview": "pending",
+  "journalRecords": 61,
+  "journalHash": "7291d06cc3ea6ac8fadda917cbd8596835fc01b3c81212f46a52c5b806c0254f",
+  "tailHash": "bf3c43065d95c3213e35dfebdbb527b7977389ada286d0460bd994fc525646a5",
+  "auditDocument": "docs/RAG_SUBJECT_ROLE_COMPARISON_STAGE3_AUDIT.md",
+  "auditHash": "e83002fa818d7a86906337f4f353d83a29b1321f8198f545b32bec68e18aaf3f",
+  "artifactHash": "27696831023239b31fee25269d9581860c9056300e291d5a350d26b4afc68ee4",
+  "reviewSubmissionHash": "f235a1a28604dc5b67f08b9bd1bbbcaf6f6956c4563bf544e6264532f17be8d7",
+  "comparisonDecision": "continue",
+  "cases": [
+    {
+      "variant": "baseline",
+      "index": 8,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "candidate",
+      "index": 8,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "candidate",
+      "index": 9,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "baseline",
+      "index": 9,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "baseline",
+      "index": 10,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "candidate",
+      "index": 10,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "candidate",
+      "index": 11,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    },
+    {
+      "variant": "baseline",
+      "index": 11,
+      "semanticStatus": "reviewed_match",
+      "reviewComplete": true,
+      "missing": {
+        "lower": 0,
+        "upper": 0
+      },
+      "extra": {
+        "lower": 0,
+        "upper": 0
+      }
+    }
+  ],
+  "stageCandidateAllMatched": true,
+  "stageBaselineMismatchCount": 0,
+  "cumulativeComparablePairs": 12,
+  "baselineReviewedMatchCount": 12,
+  "candidateReviewedMatchCount": 12,
+  "baselineMismatchCount": 0,
+  "candidateAllMatched": true,
+  "phase": "done",
+  "generationComplete": true,
+  "allReviewsComplete": true,
+  "reviewArtifactsRecorded": 4,
+  "oldFiveLocksRetained": true,
+  "priorStageAuditHashesUnchanged": true,
+  "sourceManifestUnchanged": true,
+  "safetyReview": "entry, pre-review and final 61-row chain/four original review artifacts/cases/audit document hashes independently verified; no High/Medium remaining",
+  "pairPlanComparison": [
+    {
+      "index": 0,
+      "identicalPlan": true,
+      "identicalTasks": true,
+      "baselineStatus": "candidate",
+      "candidateStatus": "candidate",
+      "baselineUnresolved": 0,
+      "candidateUnresolved": 0
+    },
+    {
+      "index": 1,
+      "identicalPlan": true,
+      "identicalTasks": true,
+      "baselineStatus": "candidate",
+      "candidateStatus": "candidate",
+      "baselineUnresolved": 0,
+      "candidateUnresolved": 0
+    },
+    {
+      "index": 2,
+      "identicalPlan": true,
+      "identicalTasks": true,
+      "baselineStatus": "candidate",
+      "candidateStatus": "candidate",
+      "baselineUnresolved": 0,
+      "candidateUnresolved": 0
+    },
+    {
+      "index": 3,
+      "identicalPlan": true,
+      "identicalTasks": true,
+      "baselineStatus": "candidate",
+      "candidateStatus": "candidate",
+      "baselineUnresolved": 0,
+      "candidateUnresolved": 0
+    },
+    {
+      "index": 4,
+      "identicalPlan": false,
+      "identicalTasks": false,
+      "baselineStatus": "candidate",
+      "candidateStatus": "candidate",
+      "baselineUnresolved": 0,
+      "candidateUnresolved": 0
+    },
+    {
+      "index": 5,
+      "identicalPlan": true,
+      "identicalTasks": true,
+      "baselineStatus": "candidate",
+      "candidateStatus": "candidate",
+      "baselineUnresolved": 0,
+      "candidateUnresolved": 0
+    },
+    {
+      "index": 6,
+      "identicalPlan": false,
+      "identicalTasks": false,
+      "baselineStatus": "candidate",
+      "candidateStatus": "candidate",
+      "baselineUnresolved": 0,
+      "candidateUnresolved": 0
+    },
+    {
+      "index": 7,
+      "identicalPlan": true,
+      "identicalTasks": true,
+      "baselineStatus": "candidate",
+      "candidateStatus": "candidate",
+      "baselineUnresolved": 0,
+      "candidateUnresolved": 0
+    },
+    {
+      "index": 8,
+      "identicalPlan": false,
+      "identicalTasks": true,
+      "baselineStatus": "candidate",
+      "candidateStatus": "needs_clarification",
+      "baselineUnresolved": 0,
+      "candidateUnresolved": 1
+    },
+    {
+      "index": 9,
+      "identicalPlan": false,
+      "identicalTasks": true,
+      "baselineStatus": "needs_clarification",
+      "candidateStatus": "candidate",
+      "baselineUnresolved": 1,
+      "candidateUnresolved": 0
+    },
+    {
+      "index": 10,
+      "identicalPlan": true,
+      "identicalTasks": true,
+      "baselineStatus": "candidate",
+      "candidateStatus": "candidate",
+      "baselineUnresolved": 0,
+      "candidateUnresolved": 0
+    },
+    {
+      "index": 11,
+      "identicalPlan": true,
+      "identicalTasks": true,
+      "baselineStatus": "candidate",
+      "candidateStatus": "candidate",
+      "baselineUnresolved": 0,
+      "candidateUnresolved": 0
+    }
+  ],
+  "identicalPlanPairs": 8,
+  "identicalTaskPairs": 10,
+  "clarificationStatusDifferenceIndices": [
+    8,
+    9
+  ],
+  "clarificationJudgmentAssessed": false,
+  "allRunEntriesMustNotBeRepeated": true,
+  "additionalPaidEvaluationAuthorizedByThisManifest": false,
+  "next": "offline define and independently review clarification-decision expectations separately from frozen extraction oracle; assess available conversation/context and missing-target handling before any runtime adoption or new paid suite"
+}

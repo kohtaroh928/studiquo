@@ -1,0 +1,9 @@
+-- Index format v2: context-aware inputs, independent of Embedding model v1.
+-- Existing rows remain version 1 and readable until explicitly reindexed.
+ALTER TABLE rag_sources ADD COLUMN index_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE rag_sources ADD COLUMN context_hash TEXT NOT NULL DEFAULT '';
+ALTER TABLE rag_pages ADD COLUMN index_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE rag_pages ADD COLUMN context_hash TEXT NOT NULL DEFAULT '';
+ALTER TABLE rag_chunks ADD COLUMN index_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE rag_chunks ADD COLUMN embedding_hash TEXT NOT NULL DEFAULT '';
+ALTER TABLE rag_chunks ADD COLUMN heading_context TEXT NOT NULL DEFAULT '';

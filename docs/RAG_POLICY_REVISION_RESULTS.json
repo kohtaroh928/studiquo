@@ -1,0 +1,744 @@
+{
+  "date": "2026-10-14",
+  "method": "fixed saved local-production synthetic contexts; real OpenAI generation; no deployed Cloudflare/PDF/OCR/iPad",
+  "model": "gpt-6-luna",
+  "reasoning": "medium",
+  "serviceTier": "default",
+  "syntheticOnly": true,
+  "runtimeDecision": "restore all v1 output bytes; reject A and C after required-delta omissions; no further API sends",
+  "sameContextAndInputAcrossVariants": true,
+  "variants": [
+    {
+      "variant": "v1",
+      "decision": "adopted_existing",
+      "journal": "/private/tmp/studiquo-rag-policy-v1-20261014-01/journal.ndjson",
+      "journalHash": "371651efccb90f84242edd41c6d3b9e200dab091ae236a0143ace900f203d2b3",
+      "manifestHash": "5eec75b847507295f1497511cd1aa2302b0f23c3663315b7a79d3266500b0cca",
+      "capturedVariantLabel": "v1",
+      "contextHash": "911b5a1952ef7b0f930dda210fe94e19506783c94cb792a0a928e9d24dd2223e",
+      "rubricHash": "661f4ec7e9666a957cde224974bd4f657c3dfc07413f5b433a5d7d0ce7fcdcd9",
+      "policyRows": [
+        {
+          "caseId": "e50-versions-01",
+          "style": "source_only",
+          "status": "grounded",
+          "policyHash": "316a39cd76d798baf5fac68fd3b0679155418a057979126a89e43302ff325219",
+          "requestHash": "2ca18434393bda313799679be075255de1ef8406240a215e01b9461f8d564f9e",
+          "inputHash": "9e88f0a99bdcd49ca4b2c684a63ae3092b5da6bbd2cd8e1358cc37892200c5a9",
+          "referenceHash": "6cdce8d24f463f8edfea1b640e017e44059dab64efeba4f1932a9c885b67be34"
+        },
+        {
+          "caseId": "e50-versions-01",
+          "style": "explain",
+          "status": "grounded",
+          "policyHash": "01c50e675f5b296e83e6da68a65336df4e0240854cafd5e935621d1280f0752f",
+          "requestHash": "c5afc95d0a9a58d8dff591711231890f5881ca9a55eb99e84f1ec5c8b924cc8a",
+          "inputHash": "9e88f0a99bdcd49ca4b2c684a63ae3092b5da6bbd2cd8e1358cc37892200c5a9",
+          "referenceHash": "6cdce8d24f463f8edfea1b640e017e44059dab64efeba4f1932a9c885b67be34"
+        },
+        {
+          "caseId": "e50-partial-03",
+          "style": "explain",
+          "status": "partial",
+          "policyHash": "e47fa09d3f13339ec650b64a8e450a597132e05b313da41f967b78b7e10f9295",
+          "requestHash": "c39edd26d05af9827e11c86968fe43dcf7ad74fc25890e8fe93d8c5daf836003",
+          "inputHash": "1160497b1840699a10deaa79e95a664d2587689bead4c6e321742cb1da7a758c",
+          "referenceHash": "5fc0acd213dd0f209460e985481347ceaf5bac32c1e437eccc348059124fe82e"
+        },
+        {
+          "caseId": "e50-partial-03",
+          "style": "source_only",
+          "status": "partial",
+          "policyHash": "39a07c2846f288f7299f5c3f0e0c7699e48038084937647e6fe04d97fccdb3a0",
+          "requestHash": "7bcdca6a3bd80625e3e02afdc5a27b59fd63475eb9fc590d67a71d809e4eb6a8",
+          "inputHash": "1160497b1840699a10deaa79e95a664d2587689bead4c6e321742cb1da7a758c",
+          "referenceHash": "5fc0acd213dd0f209460e985481347ceaf5bac32c1e437eccc348059124fe82e"
+        },
+        {
+          "caseId": "boundary-different-conditions",
+          "style": "source_only",
+          "status": "grounded",
+          "policyHash": "316a39cd76d798baf5fac68fd3b0679155418a057979126a89e43302ff325219",
+          "requestHash": "843f0f0538caf0ebc9dadaff8acd75cb13c30ca9ad638d88785c438d2852d97e",
+          "inputHash": "ed816525c7fd8bf154a0c58e8859fdcde2d6f689253de5285de024dc1e436263",
+          "referenceHash": "307f98de50392a7a20082d157c1dd49fef471b7f092b6910cdffaabd6afcce71"
+        },
+        {
+          "caseId": "boundary-different-conditions",
+          "style": "explain",
+          "status": "grounded",
+          "policyHash": "01c50e675f5b296e83e6da68a65336df4e0240854cafd5e935621d1280f0752f",
+          "requestHash": "97cf16cd9a3ef3f60056a1f10aa02e2861f8c5a2a178b1a8b355d160a7f384f1",
+          "inputHash": "ed816525c7fd8bf154a0c58e8859fdcde2d6f689253de5285de024dc1e436263",
+          "referenceHash": "307f98de50392a7a20082d157c1dd49fef471b7f092b6910cdffaabd6afcce71"
+        }
+      ],
+      "completed": 6,
+      "failed": 0,
+      "unresolved": 0,
+      "reservedMicroUSD": 49152,
+      "usage": {
+        "input": 27357,
+        "output": 1365,
+        "reasoning": 911,
+        "total": 28722
+      },
+      "latencyMs": {
+        "min": 1930,
+        "max": 7998,
+        "mean": 4741,
+        "p50": 4055,
+        "p95": 7998
+      },
+      "estimatedUncachedUSD": 0.0034182,
+      "contentReview": {
+        "reviewer": "Codex and independent AI reviewer; human review pending",
+        "requiredContentComplete": 6,
+        "requiredContentIncomplete": 0,
+        "missingRequirement": null,
+        "unsupportedPriceOrOverallWinnerObserved": false,
+        "invalidDifferentConditionPerformanceDeltaObserved": false,
+        "conditionConclusionFirst": "not_met_in_boundary_answers; known minor presentation limitation"
+      },
+      "rows": [
+        {
+          "id": "e50-versions-01:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4088,
+            "output": 74,
+            "reasoning": 31,
+            "total": 4162
+          },
+          "elapsedMs": 3308,
+          "answerHash": "cc77c4310b5efd530cc10a4af510ff20769aae6884fb7a76d1363e50b6f638e4",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-versions-01:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4305,
+            "output": 81,
+            "reasoning": 41,
+            "total": 4386
+          },
+          "elapsedMs": 1930,
+          "answerHash": "5d751541e150528d73bc72615c48b304c9913e1be994b9d935cae50b25bbaf17",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-partial-03:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4523,
+            "output": 349,
+            "reasoning": 286,
+            "total": 4872
+          },
+          "elapsedMs": 6457,
+          "answerHash": "bab8decfaea94895bfcbc3b8c20f303a80b8f9ac2aa58bc5e983ce2c39d47427",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-partial-03:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4306,
+            "output": 391,
+            "reasoning": 310,
+            "total": 4697
+          },
+          "elapsedMs": 7998,
+          "answerHash": "29674e13384b41bcbb4a5f113d9c728ad8e0eb200383e24d08c125ec83f3c74e",
+          "deltaExplicit": true
+        },
+        {
+          "id": "boundary-different-conditions:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4959,
+            "output": 244,
+            "reasoning": 130,
+            "total": 5203
+          },
+          "elapsedMs": 4055,
+          "answerHash": "d4d4d54c4b6f79488c3a3b259b0495b147bd439a3bdc99a09ca4db212c963c3f",
+          "deltaExplicit": null
+        },
+        {
+          "id": "boundary-different-conditions:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 5176,
+            "output": 226,
+            "reasoning": 113,
+            "total": 5402
+          },
+          "elapsedMs": 4698,
+          "answerHash": "43c46db9453a41ba7cb10e15a5a1809c7d80465a311e15092d236712c521be6d",
+          "deltaExplicit": null
+        }
+      ]
+    },
+    {
+      "variant": "dedup",
+      "decision": "rejected",
+      "journal": "/private/tmp/studiquo-rag-policy-dedup-20261014-01/journal.ndjson",
+      "journalHash": "12cb7b7220afc966dac2cf10d257cf3df93d066f9fa2d7471f9941e999d92e9f",
+      "manifestHash": "cb7a527106853801c935b359895188a0f65b30046fadabb600570f25fe6adf3d",
+      "capturedVariantLabel": "dedup",
+      "contextHash": "911b5a1952ef7b0f930dda210fe94e19506783c94cb792a0a928e9d24dd2223e",
+      "rubricHash": "661f4ec7e9666a957cde224974bd4f657c3dfc07413f5b433a5d7d0ce7fcdcd9",
+      "policyRows": [
+        {
+          "caseId": "e50-versions-01",
+          "style": "source_only",
+          "status": "grounded",
+          "policyHash": "2e7dd8ce03f1f529eb62eff12cda36b932c42dd4c4aa6431312314028de6e434",
+          "requestHash": "b0c977e736ddf2815949af4f01e203bd56d79f0365ebca3ee643dd666f2baf4a",
+          "inputHash": "9e88f0a99bdcd49ca4b2c684a63ae3092b5da6bbd2cd8e1358cc37892200c5a9",
+          "referenceHash": "6cdce8d24f463f8edfea1b640e017e44059dab64efeba4f1932a9c885b67be34"
+        },
+        {
+          "caseId": "e50-versions-01",
+          "style": "explain",
+          "status": "grounded",
+          "policyHash": "01c50e675f5b296e83e6da68a65336df4e0240854cafd5e935621d1280f0752f",
+          "requestHash": "c5afc95d0a9a58d8dff591711231890f5881ca9a55eb99e84f1ec5c8b924cc8a",
+          "inputHash": "9e88f0a99bdcd49ca4b2c684a63ae3092b5da6bbd2cd8e1358cc37892200c5a9",
+          "referenceHash": "6cdce8d24f463f8edfea1b640e017e44059dab64efeba4f1932a9c885b67be34"
+        },
+        {
+          "caseId": "e50-partial-03",
+          "style": "explain",
+          "status": "partial",
+          "policyHash": "e47fa09d3f13339ec650b64a8e450a597132e05b313da41f967b78b7e10f9295",
+          "requestHash": "c39edd26d05af9827e11c86968fe43dcf7ad74fc25890e8fe93d8c5daf836003",
+          "inputHash": "1160497b1840699a10deaa79e95a664d2587689bead4c6e321742cb1da7a758c",
+          "referenceHash": "5fc0acd213dd0f209460e985481347ceaf5bac32c1e437eccc348059124fe82e"
+        },
+        {
+          "caseId": "e50-partial-03",
+          "style": "source_only",
+          "status": "partial",
+          "policyHash": "fd86dcc0fc0851e85e60a8022d14d34f235f3545d01ae5f7c5956264dac7b0db",
+          "requestHash": "32863d91af07e341e614122ff7ba08c28a99e6c2aeeed22d201a932fe30b776e",
+          "inputHash": "1160497b1840699a10deaa79e95a664d2587689bead4c6e321742cb1da7a758c",
+          "referenceHash": "5fc0acd213dd0f209460e985481347ceaf5bac32c1e437eccc348059124fe82e"
+        },
+        {
+          "caseId": "boundary-different-conditions",
+          "style": "source_only",
+          "status": "grounded",
+          "policyHash": "2e7dd8ce03f1f529eb62eff12cda36b932c42dd4c4aa6431312314028de6e434",
+          "requestHash": "845b3fa85e92b6be0a01e6073191a45cf539214c8d555562636a6e3333952a73",
+          "inputHash": "ed816525c7fd8bf154a0c58e8859fdcde2d6f689253de5285de024dc1e436263",
+          "referenceHash": "307f98de50392a7a20082d157c1dd49fef471b7f092b6910cdffaabd6afcce71"
+        },
+        {
+          "caseId": "boundary-different-conditions",
+          "style": "explain",
+          "status": "grounded",
+          "policyHash": "01c50e675f5b296e83e6da68a65336df4e0240854cafd5e935621d1280f0752f",
+          "requestHash": "97cf16cd9a3ef3f60056a1f10aa02e2861f8c5a2a178b1a8b355d160a7f384f1",
+          "inputHash": "ed816525c7fd8bf154a0c58e8859fdcde2d6f689253de5285de024dc1e436263",
+          "referenceHash": "307f98de50392a7a20082d157c1dd49fef471b7f092b6910cdffaabd6afcce71"
+        }
+      ],
+      "completed": 6,
+      "failed": 0,
+      "unresolved": 0,
+      "reservedMicroUSD": 49152,
+      "usage": {
+        "input": 27204,
+        "output": 986,
+        "reasoning": 551,
+        "total": 28190
+      },
+      "latencyMs": {
+        "min": 2320,
+        "max": 3785,
+        "mean": 3232.5,
+        "p50": 3355,
+        "p95": 3785
+      },
+      "estimatedUncachedUSD": 0.0032134,
+      "contentReview": {
+        "reviewer": "Codex and independent AI reviewer; human review pending",
+        "requiredContentComplete": 5,
+        "requiredContentIncomplete": 1,
+        "missingRequirement": "e50-partial-03:source_only omits explicit F is 2 hours longer",
+        "unsupportedPriceOrOverallWinnerObserved": false,
+        "invalidDifferentConditionPerformanceDeltaObserved": false,
+        "conditionConclusionFirst": "not_met_in_boundary_answers; known minor presentation limitation"
+      },
+      "rows": [
+        {
+          "id": "e50-versions-01:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4037,
+            "output": 70,
+            "reasoning": 29,
+            "total": 4107
+          },
+          "elapsedMs": 2320,
+          "answerHash": "abac09a39bc5525a5552e82e9e4cda84def47d01afed0bb37044c8fe0e6f9cd3",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-versions-01:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4305,
+            "output": 69,
+            "reasoning": 26,
+            "total": 4374
+          },
+          "elapsedMs": 2861,
+          "answerHash": "5a5ec2848dc5267da482c32dab076844e655b1bbeb37fed3361418f4c95b68aa",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-partial-03:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4523,
+            "output": 243,
+            "reasoning": 160,
+            "total": 4766
+          },
+          "elapsedMs": 3785,
+          "answerHash": "4b28bb8c68b6678c3ecca2851bae9a28f7a06072b39d25e685d5de37b249d21e",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-partial-03:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4255,
+            "output": 180,
+            "reasoning": 121,
+            "total": 4435
+          },
+          "elapsedMs": 3355,
+          "answerHash": "ef6245137923deb9ac8f2a2c9c08a1f5de83928567555dfdad26a1fb30c91e93",
+          "deltaExplicit": false
+        },
+        {
+          "id": "boundary-different-conditions:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4908,
+            "output": 220,
+            "reasoning": 126,
+            "total": 5128
+          },
+          "elapsedMs": 3702,
+          "answerHash": "c1da07e26208551596b7eec6b7940be4e14cd2f72157422164a71dee4b49ef3b",
+          "deltaExplicit": null
+        },
+        {
+          "id": "boundary-different-conditions:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 5176,
+            "output": 204,
+            "reasoning": 89,
+            "total": 5380
+          },
+          "elapsedMs": 3372,
+          "answerHash": "954893823f0188725dd5fe1e5bea9e329ebf3fe408f61dfcf3e05ae358a14093",
+          "deltaExplicit": null
+        }
+      ]
+    },
+    {
+      "variant": "dedup_plus_partial",
+      "decision": "rejected",
+      "journal": "/private/tmp/studiquo-rag-policy-current-20261014-01/journal.ndjson",
+      "journalHash": "1b099bf84ad93021d87aa6b76c51aeaee55b6a2499b1f8ba6d4eccfeb765c949",
+      "manifestHash": "f32d90f8219e1ac9f68bf4be415bf0c0e61dd36c4b886ebf1de707f436e9dee9",
+      "capturedVariantLabel": "current",
+      "contextHash": "911b5a1952ef7b0f930dda210fe94e19506783c94cb792a0a928e9d24dd2223e",
+      "rubricHash": "661f4ec7e9666a957cde224974bd4f657c3dfc07413f5b433a5d7d0ce7fcdcd9",
+      "policyRows": [
+        {
+          "caseId": "e50-versions-01",
+          "style": "source_only",
+          "status": "grounded",
+          "policyHash": "2e7dd8ce03f1f529eb62eff12cda36b932c42dd4c4aa6431312314028de6e434",
+          "requestHash": "b0c977e736ddf2815949af4f01e203bd56d79f0365ebca3ee643dd666f2baf4a",
+          "inputHash": "9e88f0a99bdcd49ca4b2c684a63ae3092b5da6bbd2cd8e1358cc37892200c5a9",
+          "referenceHash": "6cdce8d24f463f8edfea1b640e017e44059dab64efeba4f1932a9c885b67be34"
+        },
+        {
+          "caseId": "e50-versions-01",
+          "style": "explain",
+          "status": "grounded",
+          "policyHash": "01c50e675f5b296e83e6da68a65336df4e0240854cafd5e935621d1280f0752f",
+          "requestHash": "c5afc95d0a9a58d8dff591711231890f5881ca9a55eb99e84f1ec5c8b924cc8a",
+          "inputHash": "9e88f0a99bdcd49ca4b2c684a63ae3092b5da6bbd2cd8e1358cc37892200c5a9",
+          "referenceHash": "6cdce8d24f463f8edfea1b640e017e44059dab64efeba4f1932a9c885b67be34"
+        },
+        {
+          "caseId": "e50-partial-03",
+          "style": "explain",
+          "status": "partial",
+          "policyHash": "0fd046ca325417fae15667d5d7358fa4b29a188d5e2e5534527b942a36d530b7",
+          "requestHash": "98d31e062b117079485a82727131c49430b2ef1e0e34721d4c84198d685e1d9b",
+          "inputHash": "1160497b1840699a10deaa79e95a664d2587689bead4c6e321742cb1da7a758c",
+          "referenceHash": "5fc0acd213dd0f209460e985481347ceaf5bac32c1e437eccc348059124fe82e"
+        },
+        {
+          "caseId": "e50-partial-03",
+          "style": "source_only",
+          "status": "partial",
+          "policyHash": "aa6cd86677a05d11ea813fd6131bea0041e71804f6425d201a3df4f4274ca95e",
+          "requestHash": "0c44613e69b60f5a87b6f9a6e2c917addf8cf01fb475c2f4c3ed5f5b2826698e",
+          "inputHash": "1160497b1840699a10deaa79e95a664d2587689bead4c6e321742cb1da7a758c",
+          "referenceHash": "5fc0acd213dd0f209460e985481347ceaf5bac32c1e437eccc348059124fe82e"
+        },
+        {
+          "caseId": "boundary-different-conditions",
+          "style": "source_only",
+          "status": "grounded",
+          "policyHash": "2e7dd8ce03f1f529eb62eff12cda36b932c42dd4c4aa6431312314028de6e434",
+          "requestHash": "845b3fa85e92b6be0a01e6073191a45cf539214c8d555562636a6e3333952a73",
+          "inputHash": "ed816525c7fd8bf154a0c58e8859fdcde2d6f689253de5285de024dc1e436263",
+          "referenceHash": "307f98de50392a7a20082d157c1dd49fef471b7f092b6910cdffaabd6afcce71"
+        },
+        {
+          "caseId": "boundary-different-conditions",
+          "style": "explain",
+          "status": "grounded",
+          "policyHash": "01c50e675f5b296e83e6da68a65336df4e0240854cafd5e935621d1280f0752f",
+          "requestHash": "97cf16cd9a3ef3f60056a1f10aa02e2861f8c5a2a178b1a8b355d160a7f384f1",
+          "inputHash": "ed816525c7fd8bf154a0c58e8859fdcde2d6f689253de5285de024dc1e436263",
+          "referenceHash": "307f98de50392a7a20082d157c1dd49fef471b7f092b6910cdffaabd6afcce71"
+        }
+      ],
+      "completed": 6,
+      "failed": 0,
+      "unresolved": 0,
+      "reservedMicroUSD": 49152,
+      "usage": {
+        "input": 27334,
+        "output": 1070,
+        "reasoning": 601,
+        "total": 28404
+      },
+      "latencyMs": {
+        "min": 3023,
+        "max": 8288,
+        "mean": 4512.666666666667,
+        "p50": 3518,
+        "p95": 8288
+      },
+      "estimatedUncachedUSD": 0.0032684,
+      "contentReview": {
+        "reviewer": "Codex and independent AI reviewer; human review pending",
+        "requiredContentComplete": 5,
+        "requiredContentIncomplete": 1,
+        "missingRequirement": "e50-partial-03:source_only omits explicit F is 2 hours longer",
+        "unsupportedPriceOrOverallWinnerObserved": false,
+        "invalidDifferentConditionPerformanceDeltaObserved": false,
+        "conditionConclusionFirst": "not_met_in_boundary_answers; known minor presentation limitation"
+      },
+      "rows": [
+        {
+          "id": "e50-versions-01:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4037,
+            "output": 83,
+            "reasoning": 38,
+            "total": 4120
+          },
+          "elapsedMs": 3023,
+          "answerHash": "4a6d5324c718cf69a8ff480b302cf396a548206b10268f557fefeb6c83453bfd",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-versions-01:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4305,
+            "output": 48,
+            "reasoning": 0,
+            "total": 4353
+          },
+          "elapsedMs": 3492,
+          "answerHash": "783f894d55fc5a1c04d4e6a180923f193df3be6ac9ae8f3102294bd12e787021",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-partial-03:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4588,
+            "output": 266,
+            "reasoning": 169,
+            "total": 4854
+          },
+          "elapsedMs": 8288,
+          "answerHash": "7616ea1ed4c1b347b556474b7d7357ebc2b495c0e8776ffa69d8562668b6ce70",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-partial-03:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4320,
+            "output": 268,
+            "reasoning": 205,
+            "total": 4588
+          },
+          "elapsedMs": 4638,
+          "answerHash": "112825c7daacd18301d2c903f8ebc47208277464cc4b4087cfd31e159efce56f",
+          "deltaExplicit": false
+        },
+        {
+          "id": "boundary-different-conditions:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4908,
+            "output": 201,
+            "reasoning": 91,
+            "total": 5109
+          },
+          "elapsedMs": 4117,
+          "answerHash": "34564ecb7c24e234635b12c4be6bbee709e9fcf74c85adc827792c0f5f3568d6",
+          "deltaExplicit": null
+        },
+        {
+          "id": "boundary-different-conditions:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 5176,
+            "output": 204,
+            "reasoning": 98,
+            "total": 5380
+          },
+          "elapsedMs": 3518,
+          "answerHash": "dd98fe89bff235f8e697be1ef74efbc245e4ca426bbdfc70b2a0ab5aeaee5cdf",
+          "deltaExplicit": null
+        }
+      ]
+    },
+    {
+      "variant": "partial_only",
+      "decision": "rejected",
+      "journal": "/private/tmp/studiquo-rag-policy-partial-only-20261014-01/journal.ndjson",
+      "journalHash": "48ee7a7ba17b67cc25ab03444ce089b2bab2ccf4e5d384b438bb25853c46200e",
+      "manifestHash": "9ad65fd6a92eb0eff3f1c0c938dbe61edf53913dd3d2ef6679d44c7987f25b7b",
+      "capturedVariantLabel": "partial_only",
+      "contextHash": "911b5a1952ef7b0f930dda210fe94e19506783c94cb792a0a928e9d24dd2223e",
+      "rubricHash": "661f4ec7e9666a957cde224974bd4f657c3dfc07413f5b433a5d7d0ce7fcdcd9",
+      "policyRows": [
+        {
+          "caseId": "e50-versions-01",
+          "style": "source_only",
+          "status": "grounded",
+          "policyHash": "316a39cd76d798baf5fac68fd3b0679155418a057979126a89e43302ff325219",
+          "requestHash": "2ca18434393bda313799679be075255de1ef8406240a215e01b9461f8d564f9e",
+          "inputHash": "9e88f0a99bdcd49ca4b2c684a63ae3092b5da6bbd2cd8e1358cc37892200c5a9",
+          "referenceHash": "6cdce8d24f463f8edfea1b640e017e44059dab64efeba4f1932a9c885b67be34"
+        },
+        {
+          "caseId": "e50-versions-01",
+          "style": "explain",
+          "status": "grounded",
+          "policyHash": "01c50e675f5b296e83e6da68a65336df4e0240854cafd5e935621d1280f0752f",
+          "requestHash": "c5afc95d0a9a58d8dff591711231890f5881ca9a55eb99e84f1ec5c8b924cc8a",
+          "inputHash": "9e88f0a99bdcd49ca4b2c684a63ae3092b5da6bbd2cd8e1358cc37892200c5a9",
+          "referenceHash": "6cdce8d24f463f8edfea1b640e017e44059dab64efeba4f1932a9c885b67be34"
+        },
+        {
+          "caseId": "e50-partial-03",
+          "style": "explain",
+          "status": "partial",
+          "policyHash": "0fd046ca325417fae15667d5d7358fa4b29a188d5e2e5534527b942a36d530b7",
+          "requestHash": "98d31e062b117079485a82727131c49430b2ef1e0e34721d4c84198d685e1d9b",
+          "inputHash": "1160497b1840699a10deaa79e95a664d2587689bead4c6e321742cb1da7a758c",
+          "referenceHash": "5fc0acd213dd0f209460e985481347ceaf5bac32c1e437eccc348059124fe82e"
+        },
+        {
+          "caseId": "e50-partial-03",
+          "style": "source_only",
+          "status": "partial",
+          "policyHash": "d1a4d9d80c696676ae4a6bcbab3bb4d6598f93fe71add927b03632ebd43e243d",
+          "requestHash": "c9ef2c2e7d5d2cb832bea01b6f71cdb10ae418abe22d07d979d1d5bd5e516c82",
+          "inputHash": "1160497b1840699a10deaa79e95a664d2587689bead4c6e321742cb1da7a758c",
+          "referenceHash": "5fc0acd213dd0f209460e985481347ceaf5bac32c1e437eccc348059124fe82e"
+        },
+        {
+          "caseId": "boundary-different-conditions",
+          "style": "source_only",
+          "status": "grounded",
+          "policyHash": "316a39cd76d798baf5fac68fd3b0679155418a057979126a89e43302ff325219",
+          "requestHash": "843f0f0538caf0ebc9dadaff8acd75cb13c30ca9ad638d88785c438d2852d97e",
+          "inputHash": "ed816525c7fd8bf154a0c58e8859fdcde2d6f689253de5285de024dc1e436263",
+          "referenceHash": "307f98de50392a7a20082d157c1dd49fef471b7f092b6910cdffaabd6afcce71"
+        },
+        {
+          "caseId": "boundary-different-conditions",
+          "style": "explain",
+          "status": "grounded",
+          "policyHash": "01c50e675f5b296e83e6da68a65336df4e0240854cafd5e935621d1280f0752f",
+          "requestHash": "97cf16cd9a3ef3f60056a1f10aa02e2861f8c5a2a178b1a8b355d160a7f384f1",
+          "inputHash": "ed816525c7fd8bf154a0c58e8859fdcde2d6f689253de5285de024dc1e436263",
+          "referenceHash": "307f98de50392a7a20082d157c1dd49fef471b7f092b6910cdffaabd6afcce71"
+        }
+      ],
+      "completed": 6,
+      "failed": 0,
+      "unresolved": 0,
+      "reservedMicroUSD": 49152,
+      "usage": {
+        "input": 27487,
+        "output": 1530,
+        "reasoning": 1059,
+        "total": 29017
+      },
+      "latencyMs": {
+        "min": 2286,
+        "max": 7919,
+        "mean": 4238.666666666667,
+        "p50": 2733,
+        "p95": 7919
+      },
+      "estimatedUncachedUSD": 0.0035137,
+      "contentReview": {
+        "reviewer": "Codex and independent AI reviewer; human review pending",
+        "requiredContentComplete": 5,
+        "requiredContentIncomplete": 1,
+        "missingRequirement": "e50-partial-03:source_only omits explicit F is 2 hours longer",
+        "unsupportedPriceOrOverallWinnerObserved": false,
+        "invalidDifferentConditionPerformanceDeltaObserved": false,
+        "conditionConclusionFirst": "not_met_in_boundary_answers; known minor presentation limitation"
+      },
+      "rows": [
+        {
+          "id": "e50-versions-01:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4088,
+            "output": 78,
+            "reasoning": 26,
+            "total": 4166
+          },
+          "elapsedMs": 2557,
+          "answerHash": "3220cd72f7f971b4d9fbb1370f767bdea2d57ff065b44dbcc90d4e17c2eaf144",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-versions-01:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4305,
+            "output": 48,
+            "reasoning": 0,
+            "total": 4353
+          },
+          "elapsedMs": 2286,
+          "answerHash": "4e11daa28a00f88c33b7d5f8a843d442e02f04b5a3ac7d0a67358a916803d172",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-partial-03:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4588,
+            "output": 405,
+            "reasoning": 327,
+            "total": 4993
+          },
+          "elapsedMs": 6315,
+          "answerHash": "52cb7dae01eb5d0eac1b8e9467b0aeaab313176683d0405b11ff628ac6a26e75",
+          "deltaExplicit": null
+        },
+        {
+          "id": "e50-partial-03:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4371,
+            "output": 509,
+            "reasoning": 455,
+            "total": 4880
+          },
+          "elapsedMs": 7919,
+          "answerHash": "e0dd6c55ca00ad4f06140cf6ce528d70509b7326e454847038cd94f82ffdacb5",
+          "deltaExplicit": false
+        },
+        {
+          "id": "boundary-different-conditions:source_only",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 4959,
+            "output": 223,
+            "reasoning": 108,
+            "total": 5182
+          },
+          "elapsedMs": 3622,
+          "answerHash": "4175835f93fd41f381ca58ffd2280b25a802d228a870223de28e8aec7a11e1ff",
+          "deltaExplicit": null
+        },
+        {
+          "id": "boundary-different-conditions:explain",
+          "model": "gpt-6-luna",
+          "usage": {
+            "input": 5176,
+            "output": 267,
+            "reasoning": 143,
+            "total": 5443
+          },
+          "elapsedMs": 2733,
+          "answerHash": "cf54ab6c5a17435c65ff228de6a01c7ef8b7c268e4e5706a72dc5b97a3a0a372",
+          "deltaExplicit": null
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "dispatches": 24,
+    "completed": 24,
+    "failed": 0,
+    "unresolved": 0,
+    "reservedMicroUSD": 196608,
+    "estimatedUncachedUSD": 0.0134137,
+    "input": 109382,
+    "output": 4951,
+    "reasoning": 3122
+  },
+  "limitations": [
+    "one response per case/style/revision; not statistical causal evidence",
+    "no new question breadth or pressure-test of explanation backgrounds",
+    "reserved20 not sent; gold human review pending",
+    "real retrieval/revalidation/stream/credits/device not exercised by replay",
+    "initial full test failed on an unnecessary rewording; old full-comparison limitation restored without weakening tests",
+    "global first-failure stop was operational between independent journals, not an automatic suite lock",
+    "prices are uncached estimates, not confirmed invoice; output includes reasoning so reasoning is not added twice"
+  ],
+  "pricing": {
+    "url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+    "verified": "2026-10-14",
+    "inputPerMillionUSD": 0.1,
+    "outputPerMillionUSD": 0.5,
+    "reservationInputPerMillionUSD": 0.125
+  },
+  "projectSync": "none",
+  "verification": {
+    "relatedTests": 90,
+    "workerTests": 1308,
+    "failures": 0,
+    "skipped": 0,
+    "runtimeByteEquivalenceCases": 77,
+    "independentSafety": "no High/Medium findings",
+    "independentContentReview": "all four conditions reviewed; reject A and C",
+    "iOSTests": "not rerun; no iOS changes",
+    "log": "/private/tmp/studiquo-rag-policy-rejected-all-final.log"
+  },
+  "evaluationModuleHash": "ccbf506f6070f329644a66e99daee744a4b4ff894f35ff9a0a35196bbf30f87a"
+}

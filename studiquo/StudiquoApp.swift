@@ -368,7 +368,7 @@ private struct NoteSnippetFriendUITestRoot: View {
     @StateObject private var friendStore: FriendStore
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         let store = FriendStore(
             defaults: UserDefaults(suiteName: "NoteSnippetFriendUITest-\(UUID().uuidString)")!,
             autoRefresh: false
@@ -481,7 +481,7 @@ private struct NoteAIChatUITestRoot: View {
     @StateObject private var friendStore: FriendStore
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         AI.provider = UITestAIProvider()
         let store = FriendStore(
             defaults: UserDefaults(suiteName: "NoteAIChatUITest-\(UUID().uuidString)")!,
@@ -528,6 +528,13 @@ private enum NoteAIChatUITestStore {
         )
         let container = try! ModelContainer(for: studiquoSchema, configurations: configuration)
         let notebook = Notebook(title: "AIトーク回帰テスト")
+        if ProcessInfo.processInfo.arguments.contains("--rag-citation-test") {
+            for index in 1..<3 {
+                let extra = NotePage(order: index)
+                extra.notebook = notebook
+                notebook.addPage(extra)
+            }
+        }
         let page = NotePage(order: 0)
         page.notebook = notebook
         notebook.addPage(page)
@@ -539,6 +546,12 @@ private enum NoteAIChatUITestStore {
             question.thread = thread
             thread.addMessage(question)
             let reply = AIChatMessage(text: "既存の返答", role: .assistant)
+            if ProcessInfo.processInfo.arguments.contains("--rag-citation-test") {
+                reply.ragCitations = [.init(sourceId: notebook.ragID, title: notebook.title, pageNumber: 3, chunkId: "synthetic-ui-chunk")]
+                if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--rag-status-test=") }) {
+                    reply.ragStatusRawValue = String(argument.dropFirst("--rag-status-test=".count))
+                }
+            }
             reply.thread = thread
             thread.addMessage(reply)
         }
@@ -622,7 +635,7 @@ private struct StartupUITestRoot: View {
     @StateObject private var subscriptionStore = SubscriptionStore()
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         UserDefaults.standard.set("", forKey: "libraryFolderNames")
         UserDefaults.standard.set(true, forKey: "didMigrateFoldersToHierarchy")
     }
@@ -667,7 +680,7 @@ private struct LibraryDropUITestRoot: View {
     private let gatesOnLogin = ProcessInfo.processInfo.arguments.contains("--ui-test-login-gate")
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         if ProcessInfo.processInfo.arguments.contains("--ui-test-login-gate") {
             LibraryDropUITestStore.authentication.ignoresAuthFailures = true
             LibraryDropUITestStore.authentication.finishOnboarding()
@@ -967,7 +980,7 @@ private struct TabPickerCreateUITestRoot: View {
     @StateObject private var subscriptionStore = SubscriptionStore()
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         UserDefaults.standard.set("", forKey: "libraryFolderNames")
         UserDefaults.standard.set(true, forKey: "didMigrateFoldersToHierarchy")
         _ = TabPickerCreateUITestStore.container

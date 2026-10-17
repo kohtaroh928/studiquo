@@ -1,0 +1,305 @@
+{
+  "schemaVersion": 1,
+  "labelStatus": "Authored synthetic stress labels; independent agent review applied; human/teacher review pending; no blind holdout.",
+  "method": "Offline deterministic controls, zero model calls. Oracle reads draft labels. Unlabelled witnesses are not classified as irrelevant. Whole-reference paragraphs limit discrimination.",
+  "summary": {
+    "cases": 4,
+    "singleParagraphReferences": 0,
+    "totalReferences": 9,
+    "fullReferenceCoveredCases": 4,
+    "firstParagraphMissingCases": 4,
+    "labelOracleMissingCases": 0
+  },
+  "cases": [
+    {
+      "id": "multi-input-output",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          2,
+          3
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 289,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 1
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 0,
+        "totalRequiredFacts": 3,
+        "missingRequired": [
+          "inputs",
+          "light",
+          "outputs"
+        ],
+        "protectedRequiredMissing": [
+          "light"
+        ],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 0,
+        "totalReferences": 2
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p2",
+          "r1_p3",
+          "r2_p2"
+        ],
+        "witnessCount": 3,
+        "requiredFacts": 3,
+        "totalRequiredFacts": 3,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 0,
+        "totalReferences": 2
+      }
+    },
+    {
+      "id": "multi-negated-comparison",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          4,
+          5
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 255,
+        "requiredFacts": 4,
+        "totalRequiredFacts": 4,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 1,
+        "totalRequiredFacts": 4,
+        "missingRequired": [
+          "photosynthesis",
+          "dark",
+          "respiration"
+        ],
+        "protectedRequiredMissing": [
+          "dark"
+        ],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [
+          "r1_p1"
+        ],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 0,
+        "totalReferences": 2
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p2",
+          "r1_p3",
+          "r2_p1",
+          "r2_p2"
+        ],
+        "witnessCount": 4,
+        "requiredFacts": 4,
+        "totalRequiredFacts": 4,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 0,
+        "totalReferences": 2
+      }
+    },
+    {
+      "id": "multi-formula-domain",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2"
+        ],
+        "pages": [
+          7,
+          8
+        ],
+        "referenceCount": 2,
+        "distinctSources": 1,
+        "textCharacters": 290,
+        "requiredFacts": 5,
+        "totalRequiredFacts": 5,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 0
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "witnessCount": 2,
+        "requiredFacts": 0,
+        "totalRequiredFacts": 5,
+        "missingRequired": [
+          "formula",
+          "constant",
+          "symbols",
+          "units",
+          "exception"
+        ],
+        "protectedRequiredMissing": [
+          "constant",
+          "units",
+          "exception"
+        ],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [
+          "r1_p1",
+          "r2_p1"
+        ],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 0,
+        "totalReferences": 2
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p2",
+          "r1_p3",
+          "r1_p4",
+          "r2_p2"
+        ],
+        "witnessCount": 4,
+        "requiredFacts": 5,
+        "totalRequiredFacts": 5,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 0,
+        "totalReferences": 2
+      }
+    },
+    {
+      "id": "multi-cross-source-exception",
+      "split": "dev",
+      "fullReferences": {
+        "referenceIds": [
+          "r1",
+          "r2",
+          "r3"
+        ],
+        "pages": [
+          10,
+          2,
+          6
+        ],
+        "referenceCount": 3,
+        "distinctSources": 3,
+        "textCharacters": 286,
+        "requiredFacts": 4,
+        "totalRequiredFacts": 4,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 1,
+        "offIntentFacts": 1
+      },
+      "firstParagraph": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1"
+        ],
+        "witnessCount": 3,
+        "requiredFacts": 0,
+        "totalRequiredFacts": 4,
+        "missingRequired": [
+          "price",
+          "corporate",
+          "individual-excluded",
+          "shipping"
+        ],
+        "protectedRequiredMissing": [
+          "corporate",
+          "individual-excluded",
+          "shipping"
+        ],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [
+          "r1_p1",
+          "r2_p1",
+          "r3_p1"
+        ],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 0,
+        "totalReferences": 3
+      },
+      "labelOracle": {
+        "method": "Exact draft-labelled original-span coverage; not semantic entailment or relevance accuracy.",
+        "witnessIds": [
+          "r1_p2",
+          "r1_p3",
+          "r2_p2",
+          "r2_p3"
+        ],
+        "witnessCount": 4,
+        "requiredFacts": 4,
+        "totalRequiredFacts": 4,
+        "missingRequired": [],
+        "protectedRequiredMissing": [],
+        "supportingFacts": 0,
+        "offIntentFacts": 0,
+        "unlabelledWitnessIds": [],
+        "partialLabelOverlapWitnessIds": [],
+        "singleParagraphReferences": 0,
+        "totalReferences": 3
+      }
+    }
+  ],
+  "fixtureHash": "aaf0d54fcfd72b1e419d3c461d65cd100a434cc832abd00c3e6df19cd4147ab7"
+}
