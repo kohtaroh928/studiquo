@@ -2772,15 +2772,30 @@ test("an account without a passkey is not asked for one", async () => {
 
 // ---- Library id: one opaque id per account, for the app's per-account library ----
 
-const LIBRARY_SECRET = Buffer.alloc(32, 7).toString("base64");
+// A stand-in for the UserRegistry object: one stored value per object name.
+function fakeLibraryRegistry() {
+  const stored = new Map();
+  return {
+    _stored: stored,
+    getByName(name) {
+      return {
+        async libraryID() {
+          if (!stored.has(name)) stored.set(name, Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"));
+          return stored.get(name);
+        },
+        async eraseLibraryID() { stored.delete(name); },
+      };
+    },
+  };
+}
 
 async function libraryID(env, token) {
   const response = await worker.fetch(request("/api/account/library-id", { token }), env, noopCtx);
   return { status: response.status, body: await response.json() };
 }
 
-test("the library id is an opaque hash, the same for every sign-in method of one account and different for another account", async () => {
-  const env = Object.assign(environment({ strictSessions: true }), { LIBRARY_ID_SECRET: LIBRARY_SECRET });
+test("the library id is random, the same for every sign-in method of one account, and different for another account", async () => {
+  const env = Object.assign(environment({ strictSessions: true }), { USER_REGISTRY: fakeLibraryRegistry() });
   const apple = freshToken("a");
   const google = freshToken("b");
   const other = freshToken("c");
@@ -2793,37 +2808,34 @@ test("the library id is an opaque hash, the same for every sign-in method of one
   const first = await libraryID(env, apple);
   assert.equal(first.status, 200);
   assert.match(first.body.libraryID, /^[a-f0-9]{64}$/);
-  assert.ok(!JSON.stringify(first.body).includes("alice"), "the identity itself is not in the answer");
+  assert.ok(!JSON.stringify(first.body).includes("alice"));
   assert.equal((await libraryID(env, google)).body.libraryID, first.body.libraryID, "the same person, whichever way they signed in");
   assert.notEqual((await libraryID(env, other)).body.libraryID, first.body.libraryID);
   assert.equal((await libraryID(env, apple)).body.libraryID, first.body.libraryID, "and stable");
 });
 
-test("the library id is keyed: it cannot be worked out from an e-mail address, and without the key none is given", async () => {
-  const env = Object.assign(environment({ strictSessions: true }), { LIBRARY_ID_SECRET: LIBRARY_SECRET });
+test("the library id cannot be worked out from an e-mail address, and a new account gets a new one", async () => {
+  const registry = fakeLibraryRegistry();
+  const env = Object.assign(environment({ strictSessions: true }), { USER_REGISTRY: registry });
   const token = freshToken("e");
   await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:alice@example.com" }));
   const { body } = await libraryID(env, token);
-  assert.notEqual(body.libraryID, sha256Hex("library-account:email:alice@example.com"), "not the plain hash anyone could compute");
-  assert.notEqual(body.libraryID, sha256Hex("studiquo-library-id-v1:email:alice@example.com"));
-  // A different key gives a different id (which is why the key is never changed).
-  const other = Object.assign(environment({ strictSessions: true }), { LIBRARY_ID_SECRET: Buffer.alloc(32, 9).toString("base64") });
-  await other.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:alice@example.com" }));
-  assert.notEqual((await libraryID(other, token)).body.libraryID, body.libraryID);
-  // No key, or a key that is too short: nothing is handed out.
-  for (const bad of [undefined, "", Buffer.alloc(8, 1).toString("base64")]) {
-    const unset = Object.assign(environment({ strictSessions: true }), bad === undefined ? {} : { LIBRARY_ID_SECRET: bad });
-    await unset.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:alice@example.com" }));
-    assert.equal((await libraryID(unset, token)).status, 503);
+  for (const guess of ["email:alice@example.com", "library-account:email:alice@example.com"]) {
+    assert.notEqual(body.libraryID, sha256Hex(guess), "not a hash anyone could compute");
   }
+  // Erased with the account (account-deletion.js): the next one starts afresh.
+  for (const object of [...registry._stored.keys()]) registry._stored.delete(object);
+  assert.notEqual((await libraryID(env, token)).body.libraryID, body.libraryID);
 });
 
-test("the library id needs a signed-in session", async () => {
-  const env = Object.assign(environment({ strictSessions: true }), { LIBRARY_ID_SECRET: LIBRARY_SECRET });
-  const nobody = await worker.fetch(request("/api/account/library-id"), env, noopCtx);
-  assert.equal(nobody.status, 401);
-  const forged = await worker.fetch(request("/api/account/library-id", { token: freshToken("z") }), env, noopCtx);
-  assert.equal(forged.status, 401);
+test("without the registry nothing is handed out, and the library id needs a signed-in session", async () => {
+  const bare = environment({ strictSessions: true });
+  const token = freshToken("f");
+  await bare.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "apple:alice" }));
+  assert.equal((await libraryID(bare, token)).status, 503);
+  const env = Object.assign(environment({ strictSessions: true }), { USER_REGISTRY: fakeLibraryRegistry() });
+  assert.equal((await worker.fetch(request("/api/account/library-id"), env, noopCtx)).status, 401);
+  assert.equal((await worker.fetch(request("/api/account/library-id", { token: freshToken("z") }), env, noopCtx)).status, 401);
 });
 
 // ---- ID token nonce: the token must have been made for THIS sign-in ---------------

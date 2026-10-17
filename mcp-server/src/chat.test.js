@@ -520,6 +520,7 @@ function fakeUserRegistryBinding(studiquoData) {
   return {
     getByName(key) {
       return {
+        async eraseLibraryID() {},
         resolveChatKey(identityHash, legacyTokenHash) {
           return enqueue(key, async () => {
             if (chatIdentityKeys.has(identityHash)) return chatIdentityKeys.get(identityHash);

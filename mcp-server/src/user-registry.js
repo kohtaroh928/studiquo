@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { eraseLibraryID, getOrCreateLibraryID } from "./library-id.js";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const MAX_FRIENDS = 500;
@@ -18,6 +19,21 @@ function generateCode() {
 // concurrent "this user doesn't exist yet" registrations for the same key
 // can no longer each mint and persist a different friend code for it.
 export class UserRegistry extends DurableObject {
+  // The opaque id the app keeps one on-device library per account under
+  // (GET /api/account/library-id). Made at random the first time it is asked
+  // for and kept here, in an object named for the account; nothing about the
+  // account can be worked out from it. This object is single-threaded and its
+  // storage is strongly consistent, so two first requests at once get the same
+  // id. Erased with the account (eraseLibraryID), so signing up again gives a
+  // new id and a previous library is not handed to the new account.
+  async libraryID() {
+    return getOrCreateLibraryID(this.ctx);
+  }
+
+  async eraseLibraryID() {
+    await eraseLibraryID(this.ctx);
+  }
+
   async resolveChatKey(identityHash, legacyTokenHash) {
     const existing = await this.ctx.storage.get("chatIdentityKey");
     if (existing) return existing;

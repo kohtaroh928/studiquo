@@ -465,7 +465,7 @@ test("50. Durable Objectの削除処理が途中で失敗しても再実行で�
   const roomID = "room-retry-50";
   await env.STUDIQUO_DATA.put(`chat:user:${chatKey}`, JSON.stringify({ code: "RETRY50", linkToken: "LINK50", groups: [{ roomID }] }));
   let attempts = 0;
-  env.USER_REGISTRY = { getByName() { return { async resolveChatKey() { return chatKey; } }; } };
+  env.USER_REGISTRY = { getByName() { return { async resolveChatKey() { return chatKey; }, async eraseLibraryID() {} }; } };
   env.CHAT_ROOM = { getByName() { return {
     async removeDeletedAccount() {
       attempts += 1;
@@ -1021,4 +1021,15 @@ test("退会するとパスキーの索引と復旧手続きも消え、同じ�
   assert.equal(await env.STUDIQUO_DATA.get(`passkey-account:${await hash("email:pk@example.com")}`), null);
   assert.equal(await env.STUDIQUO_DATA.get(`passkey-recovery:${await hash("apple-pk")}`), null);
   assert.equal(await accountHasPasskey(env, "apple-pk", "pk@example.com"), false);
+});
+
+test("deleting an account erases its library id, so signing up again gives a new one", async () => {
+  const env = environment();
+  const erased = [];
+  env.USER_REGISTRY = { getByName(name) { return { async resolveChatKey(hash) { return hash; }, async getUser() { return null; }, async eraseLibraryID() { erased.push(name); } }; } };
+  await seedLinked(env, "apple:alice", "alice@example.com", [{ provider: "apple", sub: "alice" }, { provider: "google", sub: "alice-g" }]);
+  await deleteAccount(env, "apple:alice");
+  const named = identity => `library-id:${hash(identity)}`;
+  assert.ok(erased.includes(named("apple:alice")), "the account's own object");
+  assert.ok(erased.includes(named("google:alice-g")) || erased.includes(named("alice")), "and the linked identities' too, in case an id was made under one");
 });
