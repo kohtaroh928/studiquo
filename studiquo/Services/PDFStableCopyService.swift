@@ -9,8 +9,7 @@ enum PDFStableCopyService {
     /// (e.g. after a security-scope `defer` has already run), so handing it
     /// back would only defer the failure to a later, more confusing point.
     static func copy(_ url: URL, fileManager: FileManager = .default) -> URL? {
-        let folder = fileManager.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folder = StudiquoWorkFiles.makeFolder(fileManager: fileManager)
         let filename = url.lastPathComponent.isEmpty
             ? UUID().uuidString + "." + (url.pathExtension.isEmpty ? "pdf" : url.pathExtension)
             : url.lastPathComponent

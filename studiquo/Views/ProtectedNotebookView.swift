@@ -214,12 +214,11 @@ struct NotebookLockGate<Content: View>: View {
             lockState.recordPDFPasswordVerified()
             return
         }
-        let tempFolder = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tempFolder = StudiquoWorkFiles.makeFolder()
         do {
             try FileManager.default.createDirectory(at: tempFolder, withIntermediateDirectories: true)
             let sourceURL = tempFolder.appendingPathComponent("\(notebook.title).pdf")
-            try data.write(to: sourceURL)
+            try data.write(to: sourceURL, options: .completeFileProtection)
             _ = try PDFPasswordService.unlock(sourceURL, password: pdfPasswordEntry)
             lockState.recordPDFPasswordVerified()
             NotificationCenter.default.post(

@@ -6064,12 +6064,11 @@ struct ContentView: View {
                 pdfPendingNotebookUnlock = nil
                 return
             }
-            let tempFolder = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let tempFolder = StudiquoWorkFiles.makeFolder()
             do {
                 try FileManager.default.createDirectory(at: tempFolder, withIntermediateDirectories: true)
                 let sourceURL = tempFolder.appendingPathComponent("\(notebook.title).pdf")
-                try data.write(to: sourceURL)
+                try data.write(to: sourceURL, options: .completeFileProtection)
                 let output = try PDFPasswordService.removePassword(
                     from: sourceURL,
                     password: password,
@@ -6253,9 +6252,9 @@ struct ContentView: View {
 
     private func exportMCPSnapshot() -> URL? {
         guard let data = makeMCPSnapshotData() else { return nil }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("studiquo-mcp-snapshot.json")
+        let url = StudiquoWorkFiles.file(named: "studiquo-mcp-snapshot.json")
         do {
-            try data.write(to: url, options: .atomic)
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
             return url
         } catch {
             return nil

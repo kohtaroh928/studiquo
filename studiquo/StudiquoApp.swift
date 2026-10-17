@@ -200,6 +200,8 @@ struct StudiquoApp: App {
     /// `init()` above makes its first `Purchases.shared` call, so it can't
     /// simply live inside `body`'s `.task` alongside `startup.start()`.
     init() {
+        // Files left in the work folder by the last run (StudiquoWorkFiles).
+        StudiquoWorkFiles.sweep()
         // Before anything can create the store file — see `ICloudSyncPreference`.
         ICloudSyncPreference.resolveAtLaunch()
         // Listen from the start: a "full" report can arrive right after launch.

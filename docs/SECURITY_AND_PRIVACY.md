@@ -185,6 +185,9 @@ Keychain itemのserviceとaccountを固定し、tokenやkeyをUserDefaultsへ複
 - importしたファイル名、PDF、画像、生成物には個人情報が含まれる前提で扱う。
 - temporary/cache上の生成物は用途終了後に削除し、共有先へ渡した後の管理は利用者へ明示する。
 - 自動backupは平文JSONを含む。OSのData Protectionに依存するだけで、保護ノート相当の暗号化ではない。
+- 自動backupは「使用中は可」(`completeUnlessOpen`)で書く。閉じていてiPadがロック中のときは読めない。バックグラウンド移行直後の書き込みを、ロックと競合しても完了させるため。
+- 一時的に平文を書き出すファイル(PDFのパスワード確認、書き出し、MCPスナップショット)は、専用フォルダ(`StudiquoWork`)に置く。フォルダと中のファイルは「完全」(`complete`、ロック解除中だけ読める)で、起動のたびに空にする(`StudiquoWorkFiles`)。
+- 未対応: SwiftDataのストア本体と共有受信箱(App Group)の保護段階は、実機で確認してから決める。保護ノートを開いている間の復号済みデータの露出も同様。
 - アカウント削除ではSwiftDataだけでなくApplication Support、Documents、Caches、temporary、共有添付の残存も確認する。
 - 副ペインの「ファイルアプリと2分割」は、選んだファイルをコピーせず元の場所のまま読み取り専用で開く。表示中だけsecurity-scopedアクセスを保持し、ペインを閉じる・別の内容へ切り替える・分割を畳む時に解放する。
 - 開いたファイルの履歴（表示名とブックマーク）は`Library/Application Support/studiquo/ExternalFileBookmarks.json`に保存する。端末固有のためバックアップ対象から外し、ログ・エラーレポート・識別子へパスやファイル名を出さない。アカウント削除ではこの履歴を消すが、元のファイルは消さない。
