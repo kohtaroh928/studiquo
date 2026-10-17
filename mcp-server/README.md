@@ -144,6 +144,25 @@ Workerが発行するトークンに署名を付け、でっち上げたトー�
 
 導入の手順(鍵の設定と、署名を必須にする順序)は`docs/RUNBOOK.md`のRB-14。
 
+## トークンの中身はWorkerが作る
+
+セッショントークンの「ランダムな部分」は、Workerが自分の乱数源(256ビット)で作ります。以前は、アプリが送ってきた`randomValue`をそのまま使っていたため、トークンの強さがアプリの乱数に左右されていました。今は、`randomValue`を**送られても無視**します(送らなくてもよい)。`randomValue`を送る旧ビルドも、そのまま動きます。
+
+## ID トークンのnonce(Apple・Google)
+
+Sign in with Apple / GoogleのIDトークンが、**このサインインのために作られたもの**だとWorkerが確かめる仕組みです(`src/id-token-nonce.js`)。確かめないと、IDトークンのコピーを、期限が切れるまで、別の人が送り直せます。
+
+1. アプリが、ランダムなnonce(生の値)を作る。
+2. そのSHA-256(小文字の16進)を、Apple / Googleに渡す。IDトークンの`nonce`に入って返ってくる。
+3. アプリが、IDトークンと、生のnonceを、Workerに送る(`nonce`)。
+4. Workerは、`SHA-256(nonce)`がIDトークンの`nonce`と等しいかを確かめ、同じnonceを2回使わせない(1時間)。
+
+| 変数(`vars`) | 値 | 動作 |
+| --- | --- | --- |
+| `REQUIRE_ID_TOKEN_NONCE` | `"true"` | nonceを送らないサインインを拒否する。未設定の間は、nonceのない従来のビルドも受け付ける(nonceを送ってきた場合は、必ず検証する)。 |
+
+導入の手順は`docs/RUNBOOK.md`のRB-15。
+
 ログ: `wrangler.jsonc`で`observability.logs.invocation_logs`を`false`にしている。自動で出るリクエストごとのログ行には、秘密を含むURL(接続の承認コード、OAuthの状態ID、招待トークン)が入るため。Worker自身が出す構造化ログは、そのまま残る。
 
 ## 開発

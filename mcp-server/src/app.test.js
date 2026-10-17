@@ -143,9 +143,10 @@ async function seedAppleJWKS(env, jwk) {
   await env.STUDIQUO_DATA.put("apple:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signAppleIdentityToken(privateKey, kid, { sub, email, isPrivateEmail, emailVerified } = {}) {
+function signAppleIdentityToken(privateKey, kid, { sub, email, isPrivateEmail, emailVerified, nonce } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const claims = { sub };
+  if (nonce !== undefined) claims.nonce = nonce;
   if (email !== undefined) claims.email = email;
   if (isPrivateEmail !== undefined) claims.is_private_email = isPrivateEmail;
   if (emailVerified !== undefined) claims.email_verified = emailVerified;
@@ -172,9 +173,10 @@ async function seedGoogleJWKS(env, jwk) {
   await env.STUDIQUO_DATA.put("google:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signGoogleIdentityToken(privateKey, kid, { sub, email, emailVerified } = {}) {
+function signGoogleIdentityToken(privateKey, kid, { sub, email, emailVerified, nonce } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const claims = { sub };
+  if (nonce !== undefined) claims.nonce = nonce;
   if (email !== undefined) claims.email = email;
   if (emailVerified !== undefined) claims.email_verified = emailVerified;
   return new SignJWT(claims)
@@ -414,7 +416,7 @@ test("POST /api/auth/apple: first sign-in creates the account and a matching ses
 
   assert.equal(response.status, 200);
   const { token } = await response.json();
-  assert.match(token, /^\d+\.r{40}$/);
+  assert.match(token, /^\d+\.[0-9a-f]{64}$/); // the secret half is made by the Worker, not taken from the request
   const issuedAt = Number(token.split(".")[0]);
   assert.ok(issuedAt >= beforeRequest);
 
@@ -540,7 +542,7 @@ test("POST /api/auth/google: first sign-in creates the account and a matching se
 
   assert.equal(response.status, 200);
   const { token } = await response.json();
-  assert.match(token, /^\d+\.r{40}$/);
+  assert.match(token, /^\d+\.[0-9a-f]{64}$/); // the secret half is made by the Worker, not taken from the request
   const issuedAt = Number(token.split(".")[0]);
   assert.ok(issuedAt >= beforeRequest);
 
@@ -696,7 +698,7 @@ test("POST /api/auth/email/send-code then /confirm-code links the email under pr
   assert.equal(confirmResponse.status, 200);
   const { verified, token } = await confirmResponse.json();
   assert.equal(verified, true);
-  assert.match(token, /^\d+\.r{40}$/);
+  assert.match(token, /^\d+\.[0-9a-f]{64}$/); // the secret half is made by the Worker, not taken from the request
 
   const linked = await env.STUDIQUO_DATA.get("email-accounts:person@example.com", "json");
   assert.deepEqual(linked, [{ provider: "email", sub: "person@example.com" }]);
@@ -1121,7 +1123,7 @@ test("POST /api/auth/local/login: the correct password mints a working token", a
 
   assert.equal(response.status, 200);
   const { token } = await response.json();
-  assert.match(token, /^\d+\.l{40}$/);
+  assert.match(token, /^\d+\.[0-9a-f]{64}$/);
 
   // The minted token actually works against an ordinary gated endpoint.
   const actions = await worker.fetch(request("/api/actions", { token }), env, noopCtx);
@@ -2622,12 +2624,26 @@ test("POST /api/session/refresh exchanges a token only once and shortens the old
   assert.equal(env._ttls.get(`session:${sha256Hex(token)}`), 14 * 86_400, "the replaced token stops working after the grace period");
 });
 
-test("POST /api/session/refresh refuses a randomValue with unexpected characters", async () => {
+test("POST /api/session/refresh ignores a randomValue, whatever it holds, and makes its own", async () => {
   const env = environment({ strictSessions: true });
   const token = tokenIssuedDaysAgo(30, "p");
   await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:chars@example.com" }));
-  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: "has space and \u00e9 chars!!" } }), env, noopCtx);
-  assert.equal(response.status, 400);
+  const junk = "has space and \u00e9 chars!!";
+  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: junk } }), env, noopCtx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.refreshed, true);
+  assert.match(result.token, /^\d+\.[0-9a-f]{64}$/);
+  assert.ok(!result.token.includes("space"));
+});
+
+test("POST /api/session/refresh works with no randomValue at all", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(30, "q");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:none@example.com" }));
+  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: {} }), env, noopCtx);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).refreshed, true);
 });
 
 test("POST /api/session/refresh leaves a recent token alone", async () => {
@@ -2657,7 +2673,8 @@ test("POST /api/session/refresh refuses expired, unknown, revoked and malformed 
 
   const valid = tokenIssuedDaysAgo(30, "w");
   await env.STUDIQUO_DATA.put(`session:${sha256Hex(valid)}`, JSON.stringify({ sub: "email:valid@example.com" }));
-  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: valid, body: { randomValue: "short" } }), env, noopCtx)).status, 400);
+  // A short or odd randomValue is no longer a reason to refuse: it is ignored.
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: valid, body: { randomValue: "short" } }), env, noopCtx)).status, 200);
   assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", body }), env, noopCtx)).status, 401);
 });
 
@@ -2755,3 +2772,76 @@ test("an account without a passkey is not asked for one", async () => {
   const response = await worker.fetch(request("/api/mcp/pair", { method: "POST", token, body: { code: "ABCD1234" } }), env, noopCtx);
   assert.notEqual(response.status, 403);
 });
+
+// ---- ID token nonce: the token must have been made for THIS sign-in ---------------
+
+const nonceHash = nonce => createHash("sha256").update(nonce).digest("hex");
+const RAW_NONCE = "n".repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+
+async function providerFixture(provider) {
+  const env = environment();
+  const keys = provider === "apple" ? await makeAppleSigningKey() : await makeGoogleSigningKey();
+  await (provider === "apple" ? seedAppleJWKS : seedGoogleJWKS)(env, keys.jwk);
+  const sign = (claims = {}) => provider === "apple"
+    ? signAppleIdentityToken(keys.privateKey, keys.jwk.kid, { sub: "nonce-sub", ...claims })
+    : signGoogleIdentityToken(keys.privateKey, keys.jwk.kid, { sub: "nonce-sub", email: "nonce@example.com", emailVerified: true, ...claims });
+  const exchange = async (idToken, extra = {}, environmentOverride = env) => worker.fetch(request(
+    provider === "apple" ? "/api/auth/apple" : "/api/auth/google",
+    { method: "POST", body: { ...(provider === "apple" ? { identityToken: idToken } : { idToken }), ...extra } },
+  ), environmentOverride, noopCtx);
+  return { env, sign, exchange };
+}
+
+for (const provider of ["apple", "google"]) {
+  test(`${provider}: a token made for this sign-in (nonce hash matches) is accepted, and no randomValue is needed`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    const response = await exchange(await sign({ nonce: nonceHash(RAW_NONCE) }), { nonce: RAW_NONCE });
+    assert.equal(response.status, 200);
+    assert.match((await response.json()).token, /^\d+\.[0-9a-f]{64}$/);
+  });
+
+  test(`${provider}: the same request sent again is refused (a nonce works once)`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    const idToken = await sign({ nonce: nonceHash(RAW_NONCE) });
+    assert.equal((await exchange(idToken, { nonce: RAW_NONCE })).status, 200);
+    assert.equal((await exchange(idToken, { nonce: RAW_NONCE })).status, 401);
+  });
+
+  test(`${provider}: a copied ID token sent with someone else's nonce is refused`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    const idToken = await sign({ nonce: nonceHash(RAW_NONCE) });
+    const attackersNonce = "a".repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+    assert.equal((await exchange(idToken, { nonce: attackersNonce })).status, 401);
+    // The copy sent with no nonce at all is accepted only while nonces are optional.
+    assert.equal((await exchange(idToken, {})).status, 200);
+  });
+
+  test(`${provider}: a nonce sent for a token that carries none is refused`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    assert.equal((await exchange(await sign({}), { nonce: RAW_NONCE })).status, 401);
+  });
+
+  test(`${provider}: a malformed nonce is refused`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    for (const bad of ["short", "has space and é chars!!!!!!!!!!!!!!!", "x".repeat(300), 12345, {}]) {
+      assert.equal((await exchange(await sign({ nonce: nonceHash(String(bad)) }), { nonce: bad })).status, 401, JSON.stringify(bad).slice(0, 30));
+    }
+  });
+
+  test(`${provider}: with no nonce the sign-in still works until REQUIRE_ID_TOKEN_NONCE is on`, async () => {
+    const { env, sign, exchange } = await providerFixture(provider);
+    assert.equal((await exchange(await sign({}), {})).status, 200);
+    const strict = { ...env, REQUIRE_ID_TOKEN_NONCE: "true" };
+    assert.equal((await exchange(await sign({}), {}, strict)).status, 401);
+    assert.equal((await exchange(await sign({ nonce: nonceHash(RAW_NONCE) }), {}, strict)).status, 401, "a token with a nonce, sent without it");
+    const nonce = "b".repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+    assert.equal((await exchange(await sign({ nonce: nonceHash(nonce) }), { nonce }, strict)).status, 200);
+  });
+
+  test(`${provider}: a build that still sends a randomValue works, and the value is ignored`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    const response = await exchange(await sign({}), { randomValue: "legacy".repeat(8) });
+    assert.equal(response.status, 200);
+    assert.ok(!(await response.json()).token.includes("legacy"));
+  });
+}

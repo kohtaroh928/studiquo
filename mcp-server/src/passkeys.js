@@ -20,11 +20,11 @@ const RP_ID = "api.studiquo.app";
 const ORIGIN = `https://${RP_ID}`;
 const APP_ID = "972G4VGUA6.com.yabuko.studiquo";
 
-export async function mintPasskeySession(env, email, randomValue) {
+export async function mintPasskeySession(env, email) {
   const link = await linkVerifiedEmail(env, {
     provider: "email", sub: email, email, emailVerified: true,
   });
-  return mintSession(env, link.canonicalIdentityKey ?? `email:${email}`, randomValue);
+  return mintSession(env, link.canonicalIdentityKey ?? `email:${email}`);
 }
 
 async function body(request) {
@@ -233,10 +233,6 @@ export async function handlePasskeys(url, request, env) {
     const payload = await body(request);
     const transaction = String(payload?.transaction ?? "");
     const credentialID = String(payload?.credential?.id ?? "");
-    const randomValue = payload?.randomValue;
-    if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
-      return json({ error: "randomValue is required." }, 400);
-    }
     const [pending, record] = await Promise.all([
       env.STUDIQUO_DATA.get(`passkeys:challenge:${transaction}`, "json"),
       env.STUDIQUO_DATA.get(`passkeys:credential:${credentialID}`, "json"),
@@ -264,8 +260,8 @@ export async function handlePasskeys(url, request, env) {
       // as a verified Apple/Google token — mint a real session the same way
       // those exchanges do, rather than leaving the client to keep reusing
       // whatever bearer token it happened to already hold.
-      const token = await mintPasskeySession(env, record.email, randomValue);
-      if (!token) return json({ error: "Invalid randomValue." }, 400);
+      const token = await mintPasskeySession(env, record.email);
+      if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
       // Passkeys registered before the per-account list existed are listed
       // the first time they are used, and a recovery someone else started
       // is called off.

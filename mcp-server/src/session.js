@@ -40,21 +40,30 @@ async function clearDeletedCustomerRecords(env, hashes) {
   }
 }
 
+// 32 random bytes as 64 hex characters. The secret half of a token is made HERE,
+// by the Worker, from its own random source. It used to be a value the app sent
+// and the Worker stored as it came, so a token was only as unguessable as the
+// app's own randomness.
+function newSecretHalf() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
 /**
- * Mints a "<issued-at epoch>.<randomValue>" token for `identityKey`, records
- * it as a real, server-issued session (so requireRealSession can recognize
- * it later), and returns the token — or `null` if the resulting token falls
- * outside bearerToken()'s own 32-256 length window (auth.js). Every caller
- * already validates `randomValue`'s own length, but not the combined length
- * once the issued-at prefix is added, so this is the one place that check
- * can't be skipped.
+ * Mints a "<issued-at epoch>.<random>[.<signature>]" token for `identityKey`,
+ * records it as a real, server-issued session (so requireRealSession can
+ * recognize it later), and returns the token — or `null` if the account's
+ * deletion is in progress and nobody may sign in to it yet.
+ *
+ * The third argument is accepted for compatibility with apps that still send a
+ * `randomValue` and is ignored: the secret half of the token always comes from the
+ * Worker (256 random bits, so two logins never share one in practice).
  */
-export async function mintSession(env, identityKey, randomValue, { originIssuedAtMs } = {}) {
+export async function mintSession(env, identityKey, _suppliedByTheApp, { originIssuedAtMs } = {}) {
   const issuedAt = Math.floor(Date.now() / 1000);
   // Signed when a signing key is configured (token-signature.js), so that an
   // invented token can be refused later without a KV read.
-  const token = await signSessionToken(env, `${issuedAt}.${randomValue}`);
-  if (token.length < 32 || token.length > 256) return null;
+  const token = await signSessionToken(env, `${issuedAt}.${newSecretHalf()}`);
   const deletionStateKey = `account-deletion:${await sha256Hex(identityKey)}`;
   const deletionState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
   if (deletionState?.status === "deleting") return null;
