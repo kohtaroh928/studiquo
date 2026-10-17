@@ -12,7 +12,8 @@ import { json, readJSONLimited } from "./http.js";
 import { mintSession, hasRealSession, realSession } from "./session.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 import {
-  REAUTH_ACTIONS, cancelPasskeyRecovery, indexAccountPasskey, isEstablishedPasskey, listAccountPasskeys,
+  REAUTH_ACTIONS, cancelPasskeyRecovery, dropPasskeyIndex, indexAccountPasskey, indexedPasskeyIds, passkeyAccountKeys,
+  passkeyIndexComplete, passkeyRevokedByReset, setPasskeyValidFrom, isEstablishedPasskey, listAccountPasskeys,
   listEstablishedPasskeys, markRecentPasskey, removeAllPasskeys, requireRecentPasskey, sendPasskeyNotice,
 } from "./passkey-policy.js";
 
@@ -58,15 +59,51 @@ async function keysWithPrefix(env, prefix) {
 // the session's account), and the reset is for one of them.
 //
 // Throws when it cannot finish, leaving the caller to stop the reset rather
-// than carry on with a passkey that still works. The scan reads every passkey
-// record, so its cost grows with the number of passkeys in the service.
+// than carry on with a passkey that still works. It reads only this account's
+// passkeys (the per-account list), so the cost does not grow with the service.
 export async function revokePasskeysForAccount(env, { accountKey, emails = [] }) {
-  const wanted = new Set(emails.map(email => String(email).trim().toLowerCase()).filter(Boolean));
+  const wanted = [...new Set(emails.map(email => String(email).trim().toLowerCase()).filter(Boolean))];
+  // Nothing registered before this moment counts any more, whether or not the
+  // sweeps below find it (see passkeyRevokedByReset).
+  const keys = new Set();
+  if (accountKey) for (const key of await passkeyAccountKeys(env, accountKey, null)) keys.add(key);
+  for (const email of wanted) for (const key of await passkeyAccountKeys(env, accountKey || `email:${email}`, email)) keys.add(key);
+  await setPasskeyValidFrom(env, [...keys]);
+
+  // The account's own list finds them without reading every passkey there is.
+  // Until the list covers passkeys from before it existed, the full scan is the
+  // only way to be sure.
+  if (!(await passkeyIndexComplete(env))) return scanAndRevoke(env, { accountKey, wanted });
+  const ids = await indexedPasskeyIds(env, [...keys]);
+  let removed = 0;
+  const userKeys = new Set();
+  for (const id of ids) {
+    const record = await env.STUDIQUO_DATA.get(`passkeys:credential:${id}`, "json");
+    if (!record) continue;
+    if (record.userKey) userKeys.add(record.userKey);
+    await env.STUDIQUO_DATA.delete(`passkeys:credential:${id}`);
+    removed += 1;
+  }
+  const gone = new Set(ids);
+  for (const userKey of userKeys) {
+    const list = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
+    const kept = list.filter(item => !gone.has(item.id));
+    if (kept.length === list.length) continue;
+    if (kept.length === 0) await env.STUDIQUO_DATA.delete(`passkeys:user:${userKey}`);
+    else await env.STUDIQUO_DATA.put(`passkeys:user:${userKey}`, JSON.stringify(kept));
+  }
+  await dropPasskeyIndex(env, [...keys]);
+  return { removed };
+}
+
+// The original sweep, kept for the time before the per-account list is complete.
+async function scanAndRevoke(env, { accountKey, wanted }) {
+  const emails = new Set(wanted);
   const owners = new Map();
   const belongs = async item => {
     const email = String(item?.email ?? "").trim().toLowerCase();
     if (!email) return false;
-    if (wanted.has(email)) return true;
+    if (emails.has(email)) return true;
     if (!accountKey) return false;
     if (!owners.has(email)) owners.set(email, await env.STUDIQUO_DATA.get(`email-account-owner:${email}`));
     return owners.get(email) === accountKey;
@@ -254,6 +291,9 @@ export async function handlePasskeys(url, request, env) {
         requireUserVerification: true,
       });
       if (!verification.verified) return json({ error: "Passkey verification failed." }, 401);
+      // A reset cuts off every passkey registered before it, including one the
+      // reset's own sweep did not find.
+      if (await passkeyRevokedByReset(env, record)) return json({ error: "Passkey verification failed." }, 401);
       record.counter = verification.authenticationInfo.newCounter;
       await env.STUDIQUO_DATA.put(`passkeys:credential:${record.id}`, JSON.stringify(record));
       // A successful passkey assertion is itself the proof of identity, same

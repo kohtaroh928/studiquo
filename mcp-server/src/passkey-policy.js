@@ -84,12 +84,52 @@ export async function loadAccountPasskeys(env, accountKey, email) {
   for (const key of await passkeyAccountKeys(env, accountKey, email)) {
     for (const id of (await env.STUDIQUO_DATA.get(await indexKey(key), "json")) ?? []) ids.add(id);
   }
+  const keys = await passkeyAccountKeys(env, accountKey, email);
   const records = [];
   for (const id of ids) {
     const record = await env.STUDIQUO_DATA.get(`passkeys:credential:${id}`, "json");
-    if (record) records.push(record);
+    if (record && !(await passkeyRevokedByReset(env, record, keys))) records.push(record);
   }
   return records;
+}
+
+// A password reset writes "nothing registered before now counts" for the account
+// (setPasskeyValidFrom). The reset also deletes the passkeys it can list, but a
+// key-value listing can lag by up to a minute, so a passkey registered just as
+// the reset ran could be missed and, unlike a session, would never expire. This
+// time is read straight from a key, not found by listing, so it still catches
+// that one. A record without a registration time predates the field, and so
+// predates any reset that wrote this.
+const validFromKey = async accountKey => `passkey-valid-from:${await sha256Hex(accountKey)}`;
+
+export async function setPasskeyValidFrom(env, keys, now = Date.now()) {
+  for (const key of keys) await env.STUDIQUO_DATA.put(await validFromKey(key), String(now));
+}
+
+export async function passkeyRevokedByReset(env, record, keys = null) {
+  const checked = keys ?? await passkeyAccountKeys(env, `email:${String(record?.email ?? "").trim().toLowerCase()}`, record?.email);
+  for (const key of checked) {
+    const validFrom = Number(await env.STUDIQUO_DATA.get(await validFromKey(key)));
+    if (Number.isFinite(validFrom) && validFrom > 0 && !(Number(record?.createdAt) >= validFrom)) return true;
+  }
+  return false;
+}
+
+/** True once every passkey record made before the per-account list existed has been filed in it. */
+export async function passkeyIndexComplete(env) {
+  await ensurePasskeyIndex(env);
+  return Boolean(await env.STUDIQUO_DATA.get(BACKFILL_DONE));
+}
+
+/** The ids filed under these account keys, without opening the records. */
+export async function indexedPasskeyIds(env, keys) {
+  const ids = new Set();
+  for (const key of keys) for (const id of (await env.STUDIQUO_DATA.get(await indexKey(key), "json")) ?? []) ids.add(id);
+  return [...ids];
+}
+
+export async function dropPasskeyIndex(env, keys) {
+  for (const key of keys) await env.STUDIQUO_DATA.delete(await indexKey(key));
 }
 
 export function isEstablishedPasskey(record, now = Date.now()) {

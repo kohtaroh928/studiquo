@@ -2305,11 +2305,13 @@ test("POST /api/auth/email/confirm-code: a reset whose sign-out cannot be comple
 
 // A passkey signs in as the e-mail address it was registered for, so one
 // registered by whoever held the old password must not survive the reset.
-async function seedPasskey(env, email, id, userKey) {
-  const record = { id, publicKey: [1, 2, 3], counter: 0, transports: ["internal"], email, userKey };
+async function seedPasskey(env, email, id, userKey, createdAt = Date.now()) {
+  const record = { id, publicKey: [1, 2, 3], counter: 0, transports: ["internal"], email, userKey, createdAt };
   await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify(record));
   const existing = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
   await env.STUDIQUO_DATA.put(`passkeys:user:${userKey}`, JSON.stringify([...existing, record]));
+  // Registration files every passkey under its account; the reset finds them there.
+  await indexAccountPasskey(env, await env.STUDIQUO_DATA.get(`email-account-owner:${email}`) ?? `email:${email}`, email, id);
 }
 
 test("POST /api/auth/email/confirm-code: a reset removes the account's passkeys, and nobody else's", async t => {
@@ -2410,23 +2412,18 @@ test("POST /api/auth/email/confirm-code: the second passkey pass is tried again 
   mock.timers.tick(5_000);
 
   const realPut = env.STUDIQUO_DATA.put;
-  const realList = env.STUDIQUO_DATA.list;
   let stored = false;
   let failures = 0;
   env.STUDIQUO_DATA.put = async (key, value, options) => {
+    if (stored && key.startsWith("passkey-valid-from:") && failures < 2) { failures += 1; throw new Error("KV unavailable"); }
     if (key === "account:local:pk-retry@example.com" && !stored) {
-      stored = true;
       await seedPasskey(env, "pk-retry@example.com", "retry-passkey", "attacker-device");
+      stored = true;
     }
     return realPut(key, value, options);
   };
-  env.STUDIQUO_DATA.list = async options => {
-    if (stored && options.prefix === "passkeys:credential:" && failures < 2) { failures += 1; throw new Error("KV unavailable"); }
-    return realList.call(env.STUDIQUO_DATA, options);
-  };
   const response = await resetPasswordWith(env, "pk-retry@example.com", "another-passphrase-1", "n".repeat(40));
   env.STUDIQUO_DATA.put = realPut;
-  env.STUDIQUO_DATA.list = realList;
 
   assert.equal(response.status, 200);
   assert.equal(failures, 2, "two attempts failed");
@@ -2435,7 +2432,7 @@ test("POST /api/auth/email/confirm-code: the second passkey pass is tried again 
 
 test("POST /api/auth/email/confirm-code: an account that has a passkey is refused a first password by code, and keeps the passkey", async () => {
   const env = environment({ strictSessions: true });
-  await seedPasskey(env, "pk-first@example.com", "owners-passkey", "device-a");
+  await seedPasskey(env, "pk-first@example.com", "owners-passkey", "device-a", 1);
   // A code can be relayed by a look-alike site, so a passkey account does not accept one (passkey-policy.js).
   assert.equal((await resetPasswordWith(env, "pk-first@example.com", "correct-horse-battery", "s".repeat(40))).status, 403);
   assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:owners-passkey"), null, "nothing is removed by a refused request");
@@ -2450,13 +2447,13 @@ test("POST /api/auth/email/confirm-code: a reset whose passkeys cannot be remove
   const stored = await env.STUDIQUO_DATA.get("account:local:pk-failclosed@example.com");
   mock.timers.tick(5_000);
 
-  const realList = env.STUDIQUO_DATA.list;
-  env.STUDIQUO_DATA.list = async options => {
-    if (options.prefix === "passkeys:credential:") throw new Error("KV unavailable");
-    return realList.call(env.STUDIQUO_DATA, options);
+  const realPut = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (key, value, options) => {
+    if (key.startsWith("passkey-valid-from:")) throw new Error("KV unavailable");
+    return realPut(key, value, options);
   };
   const failed = await resetPasswordWith(env, "pk-failclosed@example.com", "another-passphrase-1", "n".repeat(40));
-  env.STUDIQUO_DATA.list = realList;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(failed.status, 503, "the person is told to try again");
   assert.equal(await env.STUDIQUO_DATA.get("account:local:pk-failclosed@example.com"), stored,
