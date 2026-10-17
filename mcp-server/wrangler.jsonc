@@ -4,6 +4,12 @@
   "main": "src/worker.js",
   "compatibility_date": "2026-08-27",
   "compatibility_flags": ["nodejs_compat"],
+  // Production is reached only through its own domain (api.studiquo.app), where
+  // the zone's WAF rate-limit rule applies. The workers.dev address and the
+  // per-version preview URLs sit outside that zone, so they stay off. The
+  // staging Worker below is reached through workers.dev and turns it back on.
+  "workers_dev": false,
+  "preview_urls": false,
   "triggers": { "crons": ["0 * * * *"] },
   "kv_namespaces": [
     {
@@ -146,6 +152,8 @@
   "env": {
     "staging": {
       "name": "studiquo-mcp-staging",
+      "workers_dev": true,
+      "preview_urls": false,
       // No hourly retention job on staging.
       "triggers": { "crons": [] },
       "kv_namespaces": [
