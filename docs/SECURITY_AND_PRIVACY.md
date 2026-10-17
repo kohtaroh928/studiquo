@@ -1,6 +1,6 @@
 # Studiquo Security and Privacy
 
-最終更新: 2026-10-07  
+最終更新: 2026-10-17  
 状態: 現行実装を基準にした内部設計・運用基準
 
 読み方: 「現行」「現在」は開発ブランチの実装を指し、本番へ反映済みとは限らない。独立レビューを実施し、指摘に基づく修正を進めている。公開手順と未完了項目は`PRIVACY_RELEASE_CHECKLIST.md`を参照する。
@@ -99,7 +99,7 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 - メール登録は6桁確認コードによる所有確認を完了してから有効化する。
 - パスワードは平文で保存しない。保存はArgon2id(6.4)で、旧PBKDF2のレコードは検証でき、正しいパスワードでログインしたときに書き換える。
 - 登録・再設定のパスワードは、長さ8〜1024文字と、漏えいパスワードの照合(6.4)だけで判断する。大文字・記号の必須や、定期変更の強制はしない(NIST SP 800-63Bの方針)。
-- Passkey challengeは使い捨てかつ短命とし、origin、RP ID、challenge、counterを検証する。
+- Passkey challengeは使い捨てかつ短命とし、origin、RP ID、challenge、counterを検証する。RP IDは`api.studiquo.app`で、ドメインを変えると登録済みのPasskeyは使えなくなる(2026-10-17に旧アドレスから移行した。Passkeyを持つアカウントはパスワードで入れないため、移行時は、復旧の待ち時間(48時間)か、該当Passkeyの削除が要る)。
 - **パスワードの再設定は、アカウントを取り戻す操作として扱う**(ADR-0005)。再設定すると、そのアカウントのすべての端末がサインアウトされる(Apple・Google・Passkeyで入った端末も含む。サインイン方式ではなく、アカウント単位で切る)。連携アプリ(MCP)の接続と、そのアカウントが所有するメールアドレスに登録されたPasskeyもすべて失効する。本人は再設定後にサインインし、Passkeyを登録し直せる。これらの失効が完了しない場合、新しいパスワードは保存せず、再試行を案内する。最初のパスワード設定(再設定でない)では、何も失効しない。
 - 同じ確認済みメールに属するidentityはcanonical accountへ統合する。統合前後の既存sessionにもcanonical identityを適用する。
 
@@ -197,6 +197,10 @@ Keychain itemのserviceとaccountを固定し、tokenやkeyをUserDefaultsへ複
 - JSON応答には原則`no-store`、`nosniff`、`frame-ancestors 'none'`、`no-referrer`を付ける。
 - エラー応答にstack trace、secret、存在確認に不要な内部ID、上流providerの機密情報を含めない。
 - Rate Limitは認証、Passkey、チャット、AI、MCP、報告、Webhookごとに目的に合う単位で設定する。
+- 本番の入口は独自ドメイン`api.studiquo.app`だけとし、`workers.dev`とプレビューURLは無効にする。ゾーンのWAFのレート制限(IPごと、10秒に200件)で、認証より前の連打を止める。
+- AIはリクエストの入口(アカウントごとに1分60件)と、クレジットの確認を、本文を読む前・外部のモデレーションを呼ぶ前に行う。`/mcp`は資格情報ごとに1分120回、スナップショット保存はトークンごとに1時間30回、共同編集の部屋作成はアカウントごとに1時間20件に制限する。
+- 保存するデータは、形式と期限を決める(アイコンのBase64の検証、通報・失効記録・MCPクライアント登録の期限、自動エラーの新規行の1日あたりの上限)。
+- 招待ページ・管理画面などのHTMLには、CSP(`default-src 'none'`、`frame-ancestors 'none'`など)と`X-Frame-Options: DENY`を付ける。
 - retryは冪等性を確認し、課金、送信、取り込み、削除で重複作用を起こさない。
 
 ## 10. AI機能のプライバシー
@@ -413,7 +417,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 
 - ログインに成功する経路が、KVの遅さのために、約3〜6秒かかる(ステージングの実測。失敗の経路は約0.9秒)。`linkVerifiedEmail`の無駄な書き込みは減らした。残る主な原因は、`mintSession`のKVの操作を、順番に3回行っていること(最初の2つの読み取りは、並列にできる)と、KVの読み取りそのものの遅延。Apple・Google・メールのすべてのサインインが通る処理で、本番の現行コードにも、同じ遅さがある可能性が高い。
 
-- メール(確認コード・新しい環境の通知)の送信元が、`RESEND_FROM_EMAIL`未設定のとき、Resendの共通の送信元(`onboarding@resend.dev`)になる。この送信元は、Resendのアカウントの持ち主のアドレスにだけ配送できる(ステージングで、`example.com`宛が422になった)。本番に、`RESEND_FROM_EMAIL`が設定されているかは、CLIからは確認できていない(ダッシュボードで確認する)。本番の前に、Resendで自分のドメインを認証し、そのドメインのアドレスを設定する。
+- メール(確認コード・新しい環境の通知)の送信元が、`RESEND_FROM_EMAIL`未設定のとき、Resendの共通の送信元(`onboarding@resend.dev`)になる。この送信元は、Resendのアカウントの持ち主のアドレスにだけ配送できる(ステージングで、`example.com`宛が422になった)。本番に`RESEND_FROM_EMAIL`が秘密情報として設定されていることは、2026-10-17に`wrangler secret list`で確認した(値と、Resendでのドメイン認証の状態は未確認)。本番の前に、Resendで自分のドメインを認証し、そのドメインのアドレスを設定する。
 
 ### P2: 設計改善
 
@@ -421,6 +425,10 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 10. チャットpushが本文previewをロック画面へ表示する。利用者がpreviewを隠せる設定を検討する。
 11. 保持期間と削除対象を機械可読な台帳にし、定期purgeと削除testへ接続する。
 12. 年齢確認がなく、学生利用を想定している。対象年齢、保護者同意、ストア上の年齢区分、未成年者dataの扱いをproduct・legalとして決定する。
+
+### 2026-10-16のサーバーAPI診断
+
+静的な診断で見つけた指摘のうち、招待・AI・レート制限・保存領域・HTMLのヘッダ・エラー応答などの小さな修正は、2026-10-17に本番へ反映した(`api-hardening.test.js`ほか)。入口の独自ドメイン化と`workers.dev`の停止も、同日に反映した(5.0)。設計の見直しを伴う残りの項目は、運営のタスク管理(Notionの「Studiquo タスク」)で管理する。
 
 課題を解消したら、コードとtestの参照を残してこの節を更新する。
 
