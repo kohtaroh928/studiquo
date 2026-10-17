@@ -374,7 +374,7 @@ export async function deleteAccount(env, canonicalSub) {
   const passkeyPolicyKeys = [];
   for (const identity of new Set([...identityKeys, canonicalSub, ...emails.map(email => `email:${String(email).trim().toLowerCase()}`)])) {
     const hash = await sha256Hex(identity);
-    passkeyPolicyKeys.push(`passkey-account:${hash}`, `passkey-recovery:${hash}`);
+    passkeyPolicyKeys.push(`passkey-account:${hash}`, `passkey-recovery:${hash}`, `passkey-valid-from:${hash}`);
   }
   const deletionKeys = [
     ...checkpointKeys, ...ownedSessionKeys, ...accountKeys, ...ownedCredentialKeys, ...ownedPasskeyUserKeys, ...passkeyPolicyKeys, ...mcpKeys, ...cutoffKeys,
