@@ -140,10 +140,10 @@ test("the list of connected apps shows only what the app displays", async () => 
   const token = freshToken("c");
   await env.STUDIQUO_DATA.put(`session:${hash(token)}`, JSON.stringify({ sub: "owner-sub", issuedAt: Math.floor(Date.now() / 1000) }));
   const clientId = "studiquo_" + "a".repeat(32);
-  await env.STUDIQUO_DATA.put(`mcp:grant:${hash("owner-sub")}:${hash(clientId)}`, JSON.stringify({ clientName: "Claude", createdAt: 1234, nonce: "secret-nonce" }));
+  await env.STUDIQUO_DATA.put(`mcp:grant:${hash("owner-sub")}:${hash(clientId)}`, JSON.stringify({ clientName: "Claude", kind: "claude", createdAt: 1234, nonce: "secret-nonce" }));
   const response = await call(env, "/api/mcp/connections", { token });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), [{ id: hash(clientId), clientName: "Claude", createdAt: 1234 }]);
+  assert.deepEqual(await response.json(), [{ id: hash(clientId), clientName: "Claude", kind: "claude", createdAt: 1234 }]);
 });
 
 // ---- HTML pages ------------------------------------------------------------

@@ -2750,7 +2750,7 @@ test("deleting the account and approving an app need a recent passkey check when
   await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:person@example.com" }));
 
   const deleteAccount = () => worker.fetch(request("/api/account", { method: "DELETE", token, body: { confirmation: "DELETE" } }), env, noopCtx);
-  const pair = () => worker.fetch(request("/api/mcp/pair", { method: "POST", token, body: { code: "ABCD1234" } }), env, noopCtx);
+  const pair = () => worker.fetch(request("/api/mcp/pairing-code", { method: "POST", token, body: { kind: "other" } }), env, noopCtx);
   for (const send of [deleteAccount, pair]) {
     const refused = await send();
     assert.equal(refused.status, 403);
@@ -2769,7 +2769,7 @@ test("an account without a passkey is not asked for one", async () => {
   const env = environment({ strictSessions: true });
   const token = freshToken("n");
   await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:nopass@example.com" }));
-  const response = await worker.fetch(request("/api/mcp/pair", { method: "POST", token, body: { code: "ABCD1234" } }), env, noopCtx);
+  const response = await worker.fetch(request("/api/mcp/pairing-code", { method: "POST", token, body: { kind: "other" } }), env, noopCtx);
   assert.notEqual(response.status, 403);
 });
 
