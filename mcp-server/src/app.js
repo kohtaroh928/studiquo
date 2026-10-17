@@ -8,6 +8,7 @@ import { getPlan, paywallEnabled } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys, revokePasskeysForAccount } from "./passkeys.js";
+import { libraryAccountId } from "./library-id.js";
 import { gatePasskeyAccount, requireRecentPasskey, resolveAccountKey } from "./passkey-policy.js";
 import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
@@ -408,11 +409,15 @@ export default {
       // A stable, opaque id for the person's account, so the app can keep one
       // library per account on a device (it is the same whichever sign-in
       // method is used, because it follows the account's canonical identity).
-      // Only a hash is returned: the identity itself never leaves the server.
+      // A keyed hash (library-id.js): the identity itself never leaves the server
+      // and the id cannot be worked out from an e-mail address.
       if (url.pathname === "/api/account/library-id" && request.method === "GET") {
         if (!session) return json({ error: "Sign in again." }, 401);
         const canonical = await resolveAccountKey(env, session.sub);
-        return json({ libraryID: await sha256Hex(`library-account:${canonical}`) });
+        const libraryID = await libraryAccountId(env, canonical);
+        // Without the secret there is no id to give: the app waits and asks again.
+        if (!libraryID) return json({ error: "Not available." }, 503);
+        return json({ libraryID });
       }
       if (url.pathname === "/api/account" && request.method === "DELETE") {
         if (!session) return json({ error: "Sign in again." }, 401);
