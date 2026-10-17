@@ -38,6 +38,8 @@ Obsidianでは、このフォルダ(`docs/`)をvaultとして開く。GitHubとV
 
 ## RAG(検索と回答の根拠)
 
+- [RAG_COLLABORATION](RAG_COLLABORATION.md): 友人との分担・環境準備・プロンプト候補の共同開発
+
 - [HYBRID_RAG](HYBRID_RAG.md): Hybrid RAG v1の設計
 - [RAG_IMPLEMENTATION_REPORT](RAG_IMPLEMENTATION_REPORT.md): 実装・検証の報告
 - [RAG_QUALITY_IMPLEMENTATION_PLAN](RAG_QUALITY_IMPLEMENTATION_PLAN.md): 検索品質改善の実装計画

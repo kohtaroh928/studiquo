@@ -25,4 +25,6 @@ docs/DEVELOPMENT_WORKFLOW.mdを正本とし、このファイルには重複し�
 
 ## RAG開発の引き継ぎ
 
-RAGを引き継ぐ場合は、最初に`docs/RAG_CLAUDE_HANDOFF.md`を読む。再開用promptは`docs/RAG_RESUME_PROMPT.md`。既存の未コミット成果はrag-wip worktreeにあり、mainやGitHub cloneだけでは引き継げない。作業の区切り/交代前には同じ引き継ぎ資料を更新する。Codexと同じworktreeで同時編集しない。
+RAGを引き継ぐ場合は、最初に`docs/RAG_CLAUDE_HANDOFF.md`を読む。再開用promptは`docs/RAG_RESUME_PROMPT.md`。RAG実装はGitHubのcodex/rag-wipへ保存済みだが、その後のローカル未コミット成果は別に確認する。mainには未統合。作業の区切り/交代前には同じ引き継ぎ資料を更新する。Codexと同じworktreeで同時編集しない。
+
+友人のプロンプト並行担当は`docs/RAG_COLLABORATION.md`と`collaboration/rag-prompt/START_PROMPT.md`を使い、自分のclone/branchと担当HANDOFFで作業する。統合担当用の再開promptを流用しない。
