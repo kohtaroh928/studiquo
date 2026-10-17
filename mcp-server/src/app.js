@@ -16,7 +16,8 @@ import { handleAdminReports } from "./admin-reports.js";
 import { handleAnnouncements, handleAnnouncementsPage } from "./announcements.js";
 import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats } from "./admin.js";
 import { handleInvitePage } from "./invite.js";
-import { accessAllowed, isAccessGuardedPath } from "./access.js";
+import { accessAllowed, isAccessGuardedPath, isCrossSiteWrite } from "./access.js";
+import { appGateRejection } from "./app-gate.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired, remainingValiditySeconds } from "./token.js";
 import { resolveChatUserKey } from "./chat-identity.js";
@@ -320,10 +321,15 @@ export default {
     try {
       const url = new URL(request.url);
       if (url.pathname === "/health") return json({ ok: true, service: "studiquo-mcp" });
+      const gate = appGateRejection(request, env, url);
+      if (gate) return gate;
       // /api/admin/* is not reliably behind Cloudflare Access at the edge, so
       // verify the Access login here, once, for every admin route.
-      if (isAccessGuardedPath(url.pathname) && !(await accessAllowed(request, env))) {
-        return json({ error: "Forbidden." }, 403);
+      if (isAccessGuardedPath(url.pathname)) {
+        // The login may be a cookie, so a write another site's page triggered
+        // must not be taken for the owner's own action (access.js).
+        if (isCrossSiteWrite(request, url)) return json({ error: "Forbidden." }, 403);
+        if (!(await accessAllowed(request, env))) return json({ error: "Forbidden." }, 403);
       }
       const oauth = await handleMCPOAuth(url, request, env);
       if (oauth) return oauth;
@@ -550,6 +556,11 @@ export default {
  * deliberately no absolute lifetime.
  */
 const REFRESH_MIN_AGE_SECONDS = 7 * 24 * 60 * 60;
+// A login that is exchanged again and again used to last for ever. Each new
+// token now remembers when the login it descends from began, and a login older
+// than this is no longer renewed: the token it holds runs out (at most 90 days
+// later) and the person signs in again. Adjustable with SESSION_MAX_DAYS.
+const DEFAULT_SESSION_MAX_DAYS = 365;
 const REFRESH_OLD_TOKEN_GRACE_SECONDS = 14 * 24 * 60 * 60;
 
 async function handleSessionRefresh(request, env, token, session) {
@@ -563,7 +574,10 @@ async function handleSessionRefresh(request, env, token, session) {
   if (Date.now() / 1000 - issuedAt < REFRESH_MIN_AGE_SECONDS) return json({ refreshed: false });
   const oldKey = await sha256Hex(token);
   if (await env.STUDIQUO_DATA.get(`session-refreshed:${oldKey}`)) return json({ refreshed: false });
-  const refreshed = await mintSession(env, session.originalSub ?? session.sub, randomValue);
+  const originMs = session.originIssuedAtMs ?? session.issuedAtMs ?? issuedAt * 1000;
+  const maxDays = Number(env.SESSION_MAX_DAYS) > 0 ? Number(env.SESSION_MAX_DAYS) : DEFAULT_SESSION_MAX_DAYS;
+  if (Date.now() - originMs > maxDays * 24 * 60 * 60 * 1000) return json({ refreshed: false, reason: "session_too_old" });
+  const refreshed = await mintSession(env, session.originalSub ?? session.sub, randomValue, { originIssuedAtMs: originMs });
   if (!refreshed) return json({ error: "Invalid randomValue." }, 400);
   const newKey = await sha256Hex(refreshed);
   const oldRemaining = remainingValiditySeconds(token);
