@@ -2,6 +2,7 @@ import { bearerToken, secretsEqual, sha256Hex } from "./auth.js";
 import { json, readJSONLimited, readTextLimited } from "./http.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { accountIsUnavailable } from "./session.js";
+import { accessTokenAcceptable, signAccessToken } from "./token-signature.js";
 
 const AUTH_TTL = 600;
 const CODE_TTL = 300;
@@ -51,7 +52,9 @@ function sameGeneration(grant, token) {
 
 async function issueTokens(env, sub, clientId, scope, grantId) {
   const generation = grantId ? { grantId } : {};
-  const accessToken = `mcp_${randomToken()}`;
+  // Signed when a key is configured, so a made-up access token is refused before
+  // KV is read (token-signature.js).
+  const accessToken = await signAccessToken(env, `mcp_${randomToken()}`);
   const accessHash = await sha256Hex(accessToken);
   await env.STUDIQUO_DATA.put(`mcp:access:${accessHash}`, JSON.stringify({ sub, clientId, scope, ...generation }), { expirationTtl: ACCESS_TTL });
   const result = { access_token: accessToken, token_type: "Bearer", expires_in: ACCESS_TTL, scope };
@@ -64,6 +67,7 @@ async function issueTokens(env, sub, clientId, scope, grantId) {
 export async function externalSession(env, request) {
   const token = bearerToken(request);
   if (!token?.startsWith("mcp_")) return null;
+  if (!(await accessTokenAcceptable(env, token))) return null;
   const session = await env.STUDIQUO_DATA.get(`mcp:access:${await sha256Hex(token)}`, "json");
   if (!session?.sub || !session?.clientId) return null;
   const grant = await env.STUDIQUO_DATA.get(await grantKey(session.sub, session.clientId), "json");

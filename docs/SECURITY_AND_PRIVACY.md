@@ -197,6 +197,7 @@ Keychain itemのserviceとaccountを固定し、tokenやkeyをUserDefaultsへ複
 - JSON応答には原則`no-store`、`nosniff`、`frame-ancestors 'none'`、`no-referrer`を付ける。
 - エラー応答にstack trace、secret、存在確認に不要な内部ID、上流providerの機密情報を含めない。
 - Rate Limitは認証、Passkey、チャット、AI、MCP、報告、Webhookごとに目的に合う単位で設定する。
+- Workerが発行するトークン(セッション、MCPアクセス)には、署名(HMAC-SHA256)を付ける。署名が合わないトークンは、KVを読まずに拒否する(`token-signature.js`)。署名の鍵は`TOKEN_SIGNING_KEY`(Worker secret)で、鍵がなければ、従来どおり署名も確認もしない。署名のない従来のトークンは、`REQUIRE_SIGNED_TOKENS="true"`にするまで受け付ける。
 - 本番の入口は独自ドメイン`api.studiquo.app`だけとし、`workers.dev`とプレビューURLは無効にする。ゾーンのWAFのレート制限(IPごと、10秒に200件)で、認証より前の連打を止める。
 - AIはリクエストの入口(アカウントごとに1分60件)と、クレジットの確認を、本文を読む前・外部のモデレーションを呼ぶ前に行う。`/mcp`は資格情報ごとに1分120回、スナップショット保存はトークンごとに1時間30回、共同編集の部屋作成はアカウントごとに1時間20件に制限する。
 - 保存するデータは、形式と期限を決める(アイコンのBase64の検証、通報・失効記録・MCPクライアント登録の期限、自動エラーの新規行の1日あたりの上限)。
