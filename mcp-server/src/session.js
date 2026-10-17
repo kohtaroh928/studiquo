@@ -5,6 +5,7 @@
 // trusting the token's own embedded timestamp as proof it's genuine.
 import { sha256Hex } from "./auth.js";
 import { VALIDITY_SECONDS } from "./token.js";
+import { sessionTokenAcceptable, signSessionToken } from "./token-signature.js";
 
 // Which life of the account a record belongs to. Each time a deleted account
 // is signed into again (mintSession) the count goes up by one, and jobs and
@@ -50,7 +51,9 @@ async function clearDeletedCustomerRecords(env, hashes) {
  */
 export async function mintSession(env, identityKey, randomValue, { originIssuedAtMs } = {}) {
   const issuedAt = Math.floor(Date.now() / 1000);
-  const token = `${issuedAt}.${randomValue}`;
+  // Signed when a signing key is configured (token-signature.js), so that an
+  // invented token can be refused later without a KV read.
+  const token = await signSessionToken(env, `${issuedAt}.${randomValue}`);
   if (token.length < 32 || token.length > 256) return null;
   const deletionStateKey = `account-deletion:${await sha256Hex(identityKey)}`;
   const deletionState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
@@ -124,6 +127,9 @@ export async function hasRealSession(env, token) {
 }
 
 export async function realSession(env, token) {
+  // First, before anything is read: a token whose signature is wrong (or missing
+  // while signatures are required) cannot be a real session.
+  if (!(await sessionTokenAcceptable(env, token))) return null;
   const key = await sha256Hex(token);
   const session = await env.STUDIQUO_DATA.get(`${SESSION_PREFIX}${key}`, "json");
   if (typeof session?.sub !== "string" || session.sub.length === 0) return null;
