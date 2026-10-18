@@ -384,6 +384,7 @@ private struct OnboardingView: View {
 /// Face ID / Touch ID is what confirms it is the owner.
 struct PasskeyEnrollmentView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
+    @State private var emailCode = ""
 
     var body: some View {
         ZStack {
@@ -398,7 +399,7 @@ struct PasskeyEnrollmentView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: 480)
-                Text("設定の24時間後から、パスワードやメールのコードではログインできなくなります。iCloudキーチェーンがオンになっている必要があります。")
+                Text("設定すると、次回からはパスキーでのみログインできます(パスワード、メールのコード、Apple、Googleでは入れなくなります)。最初の設定では、メールに届くコードで本人確認をします。iCloudキーチェーンがオンになっている必要があります。")
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -409,16 +410,43 @@ struct PasskeyEnrollmentView: View {
                         .foregroundStyle(Theme.Palette.danger)
                         .multilineTextAlignment(.center)
                 }
-                Button {
-                    Task { _ = await authentication.addPasskey() }
-                } label: {
-                    Label("パスキーを設定する", systemImage: "faceid")
-                        .frame(maxWidth: 320)
+                if authentication.passkeyNeedsEmailCode {
+                    Text("本人確認のため、\(authentication.email)にコードを送りました。コードを入力してください。")
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 480)
+                    TextField("6桁のコード", text: $emailCode)
+                        .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
+                        .multilineTextAlignment(.center)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 240)
+                        .accessibilityIdentifier("passkey-email-code")
+                    Button {
+                        Task { _ = await authentication.confirmPasskeyEmailCode(emailCode) }
+                    } label: {
+                        Label("確認してパスキーを設定する", systemImage: "faceid")
+                            .frame(maxWidth: 320)
+                    }
+                    .buttonStyle(.themePrimary)
+                    .controlSize(.large)
+                    .disabled(authentication.isPasskeyBusy || emailCode.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("passkey-confirm-code")
+                    Button("コードを再送する") { Task { await authentication.sendPasskeyEmailCode() } }
+                        .disabled(authentication.isPasskeyBusy)
+                        .accessibilityIdentifier("passkey-resend-code")
+                } else {
+                    Button {
+                        Task { _ = await authentication.addPasskey() }
+                    } label: {
+                        Label("パスキーを設定する", systemImage: "faceid")
+                            .frame(maxWidth: 320)
+                    }
+                    .buttonStyle(.themePrimary)
+                    .controlSize(.large)
+                    .disabled(authentication.isPasskeyBusy)
+                    .accessibilityIdentifier("passkey-enroll")
                 }
-                .buttonStyle(.themePrimary)
-                .controlSize(.large)
-                .disabled(authentication.isPasskeyBusy)
-                .accessibilityIdentifier("passkey-enroll")
                 if authentication.passkeyEnrollmentFailed {
                     Button("今回はスキップ") { authentication.skipPasskeyEnrollmentForNow() }
                         .accessibilityIdentifier("passkey-skip")
