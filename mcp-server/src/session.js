@@ -143,6 +143,15 @@ export async function suspensionKey(canonicalSub) {
   return `${SUSPENSION_PREFIX}${await sha256Hex(`chat-account:${canonicalSub}`)}`;
 }
 
+// Looked up under the canonical account and, for a session issued before two
+// sign-in methods were linked, under the identity it was issued to as well: an
+// operator's mark made against either one must hold.
+async function isSuspended(env, session) {
+  const subs = session.originalSub && session.originalSub !== session.sub ? [session.sub, session.originalSub] : [session.sub];
+  const marks = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get(await suspensionKey(item))));
+  return marks.some(Boolean);
+}
+
 /**
  * `allowSuspended` is for the few things a suspended person must still be able
  * to do — leaving (deleting the account, and the passkey check that deletion
@@ -167,7 +176,7 @@ export async function realSession(env, token, { allowSuspended = false } = {}) {
   const [deletionState, cutoff, suspended] = await Promise.all([
     env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(resolved.sub)}`, "json"),
     sessionCutoff(env, resolved.sub),
-    allowSuspended ? null : suspensionKey(resolved.sub).then(key => env.STUDIQUO_DATA.get(key)),
+    allowSuspended ? null : isSuspended(env, resolved),
   ]);
   if (suspended) return null;
   // "deleted" refuses too: a session minted just before the deletion read its
