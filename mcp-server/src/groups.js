@@ -269,6 +269,13 @@ export async function handleGroupRoutes(url, request, env, key, ctx) {
   const acceptMatch = /^\/api\/chat\/groups\/([a-f0-9]{64})\/invites\/accept$/.exec(url.pathname);
   if (acceptMatch && request.method === "POST") {
     const roomID = acceptMatch[1];
+    // Blocking the inviter after being invited must stop the join too.
+    const me = await currentUser(env, key);
+    const pending = (me?.incomingGroupInvites ?? []).find(invite => invite.roomID === roomID);
+    const inviter = (me?.friends ?? []).find(friend => friend.code === pending?.inviterCode);
+    if (inviter && await blockedBetween(env, key, inviter)) {
+      return json({ error: "This invitation can't be accepted right now." }, 403);
+    }
     const result = await env.USER_REGISTRY.getByName(key).resolveIncomingGroupInvite(key, "accept", roomID);
     if (result.status === "not_found") return json({ error: "Invitation not found." }, 404);
     try {

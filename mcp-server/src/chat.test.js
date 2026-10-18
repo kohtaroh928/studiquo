@@ -3909,3 +3909,14 @@ test("inviting a blocked friend to an existing group is refused; unblocking rest
   assert.equal((await inviteToGroup(env, aliceToken, group.roomID, bob.code)).status, 200);
   void bobToken;
 });
+
+test("a group invitation can't be accepted after the invitee blocks the inviter", async () => {
+  const env = environment();
+  const { aliceToken, bobToken, bob, roomID } = await befriended(env, "g5", "g6");
+  const group = await (await createGroup(env, aliceToken, "G", [bob.code])).json();
+  await blockOtherParticipant(env, bobToken, roomID); // Bob blocks Alice after being invited
+  const accept = await acceptGroupInvite(env, bobToken, group.roomID);
+  assert.equal(accept.status, 403);
+  await unblockOtherParticipant(env, bobToken, roomID);
+  assert.equal((await acceptGroupInvite(env, bobToken, group.roomID)).status, 200);
+});
