@@ -32,7 +32,7 @@ import { linkVerifiedEmail, identityKey } from "./oauth-links.js";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
 import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError } from "./local-auth.js";
 import { startAccountDeletion } from "./account-deletion.js";
-import { mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted, accountIsUnavailable } from "./session.js";
+import { hasModerationMark, CHAT_SUSPENSION_PREFIX, mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted, accountIsUnavailable } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { beginLoginAttempt, finishLoginAttempt, abandonLoginAttempt } from "./login-throttle.js";
 import { isBreachedPassword } from "./pwned-passwords.js";
@@ -545,6 +545,10 @@ export default {
       // hash changes on every sign-in, and invitations are addressed to the
       // friend code's account key (the same key chat uses).
       // Resolved only for these routes: it is a Durable Object call.
+      // Turning chat off for someone turns off sharing documents with friends too.
+      if (url.pathname.startsWith("/api/document/") && session && await hasModerationMark(env, session, CHAT_SUSPENSION_PREFIX)) {
+        return json({ error: "Chat is unavailable for this account.", code: "chat_suspended" }, 403);
+      }
       const documentUserKey = url.pathname.startsWith("/api/document/") ? await resolveChatUserKey(env, session?.sub, key) : key;
       const documentCollab = await handleDocumentCollab(url, request, env, documentUserKey, ctx);
       if (documentCollab) return documentCollab;

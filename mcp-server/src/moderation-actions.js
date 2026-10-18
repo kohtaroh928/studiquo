@@ -3,7 +3,7 @@
 //   POST /api/admin/chat-reports/:id/remove-message   stage 2: blank the message
 //   POST /api/admin/chat-reports/:id/warn             stage 1: push a fixed warning
 //   POST /api/admin/accounts/suspend    {reportID, scope?}   stage 3 (scope "chat") / 4 ("account", default)
-//   POST /api/admin/accounts/unsuspend  {reportID | suspensionID, scope?}   (no scope: lifts both)
+//   POST /api/admin/accounts/unsuspend  {reportID | suspensionID, scope}
 //   GET  /api/admin/accounts/suspended
 //   GET  /api/admin/audit-log
 // See docs/RUNBOOK.md RB-17.
@@ -103,7 +103,7 @@ export async function handleModerationActions(url, request, env) {
     const reportID = String(body?.reportID ?? "");
     if (!/^[0-9a-f-]{36}$/.test(reportID)) return json({ error: "reportID is required." }, 400);
     const scope = body?.scope === undefined ? "account" : body.scope;
-    if (!PREFIXES[scope]) return json({ error: "scope must be account or chat." }, 400);
+    if (!Object.hasOwn(PREFIXES, scope)) return json({ error: "scope must be account or chat." }, 400);
     const found = await reportedAccount(env, reportID);
     if (found.response) return found.response;
     await auditAdmin(env, request, `account.suspend_${scope}`, found.identityHash.slice(0, 16), `report ${reportID}`);
@@ -122,8 +122,9 @@ export async function handleModerationActions(url, request, env) {
       id = found.identityHash;
     }
     if (!/^[0-9a-f]{64}$/.test(id)) return json({ error: "suspensionID or reportID is required." }, 400);
-    const scopes = body?.scope === undefined ? Object.keys(PREFIXES) : [body.scope];
-    if (!scopes.every(scope => PREFIXES[scope])) return json({ error: "scope must be account or chat." }, 400);
+    // Required, so lifting a chat stop can't quietly lift an account stop too.
+    if (!Object.hasOwn(PREFIXES, body?.scope)) return json({ error: "scope must be account or chat." }, 400);
+    const scopes = [body.scope];
     await auditAdmin(env, request, "account.unsuspend", id.slice(0, 16), scopes.join(","));
     for (const scope of scopes) await env.STUDIQUO_DATA.delete(`${PREFIXES[scope]}${id}`);
     return json({ suspended: false });

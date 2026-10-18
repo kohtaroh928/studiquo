@@ -184,6 +184,7 @@ test("leaving the app: reports about you go, reports you filed lose who filed th
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map(row => row.reporter_key), ["deleted:r1", "deleted:r2"]);
   assert.ok(rows.every(row => !row.snapshot.includes("CONTEXT") && row.snapshot.includes("REPORTED")));
+  assert.deepEqual(env._db.prepare("SELECT DISTINCT reason FROM chat_reports").all().map(row => row.reason), [""], "the free-text reason goes too");
 
   // The person reported leaves: their reports go, including ones filed after the room rewrote them to a marker.
   const marker = `deleted:${await sha256Hex(c)}`;

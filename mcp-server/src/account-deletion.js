@@ -369,7 +369,7 @@ export async function deleteAccount(env, canonicalSub) {
     const filed = await env.ADMIN_DB.prepare("SELECT id, snapshot FROM chat_reports WHERE reporter_key = ?").bind(chatKey).all();
     for (const row of filed.results ?? []) {
       const kept = JSON.parse(row.snapshot).map(item => item.reported ? item : { ...item, text: "" });
-      await env.ADMIN_DB.prepare("UPDATE chat_reports SET reporter_key = ?, snapshot = ? WHERE id = ?")
+      await env.ADMIN_DB.prepare("UPDATE chat_reports SET reporter_key = ?, snapshot = ?, reason = '' WHERE id = ?")
         .bind(`deleted:${row.id}`, JSON.stringify(kept), row.id).run();
     }
   }
