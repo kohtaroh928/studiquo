@@ -65,9 +65,12 @@ export function parseOverview(xml) {
     });
   }
   const st = /<status:Status\s([^>]*)\/?>/.exec(xml);
+  const total = st && /^\d+$/.test(attr(st[1], 'totalRes') ?? '') ? Number(attr(st[1], 'totalRes')) : null;
   return {
     items,
-    total: st ? Number(attr(st[1], 'totalRes')) || 0 : 0,
+    total: total ?? 0,
+    // Statusが無い・件数が数字でない応答(HTMLのエラーページ、途中で切れた応答)は正常な「0件」ではない
+    ok: Boolean(st) && total !== null,
     errCd: st ? attr(st[1], 'errCd') : null,
     errMsg: st ? attr(st[1], 'errMsg') : null,
   };
@@ -98,17 +101,20 @@ export function relevance(item, hint) {
 async function fetchAll(client, keyword, { maxPages = 4 } = {}) {
   const all = [];
   let start = 1;
+  let total = 0;
   for (let page = 0; page < maxPages; page++) {
     const url =
       `${BASE}?method=getVulnOverviewList&feed=hnd&keyword=${encodeURIComponent(keyword)}` +
       `&rangeDatePublic=n&rangeDatePublished=n&rangeDateFirstPublished=n&lang=ja&maxCountItem=${PAGE}&startItem=${start}`;
     const parsed = parseOverview(await client.text(url, { minGapMs: 1000 }));
     if (parsed.errCd) throw new Error(`JVN: ${parsed.errCd} ${parsed.errMsg ?? ''}`.trim());
+    if (!parsed.ok) throw new Error('JVN: 応答がJVNの形式ではありません(エラーページか、途中で切れた応答)');
     all.push(...parsed.items);
+    total = parsed.total;
     start += PAGE;
     if (start > parsed.total || parsed.items.length === 0) break;
   }
-  return all;
+  return { items: all, truncated: total > all.length && all.length >= PAGE * maxPages, total };
 }
 
 /** 1項目×CVE番号ごとに指摘を作る。CVE番号が無ければJVNDB番号で1件。 */
@@ -116,7 +122,8 @@ export function jvnFindings(item, asset, via) {
   const base = {
     sources: ['jvn'],
     asset: assetKey(asset),
-    summary: item.titleJa ?? '',
+    // 概要文には「バージョン4.1.4より前」のような版の範囲が書かれていることが多く、LLMが版を突き合わせる材料になる
+    summary: item.description || item.titleJa || '',
     titleJa: item.titleJa,
     jvndb: item.jvndb,
     cvss: item.cvss,
@@ -133,13 +140,14 @@ export function jvnFindings(item, asset, via) {
     : [{ ...base, ids: ids(null), cve: null }];
 }
 
-export async function queryJvn(client, assets) {
+export async function queryJvn(client, assets, { onWarning = () => {} } = {}) {
   const findings = [];
   for (const asset of assets) {
     const hint = nvdHintFor(asset);
     if (!hint || !asset.version) continue;
     const keyword = hint.jvn?.keyword ?? hint.keyword;
-    const items = await fetchAll(client, keyword);
+    const { items, truncated, total } = await fetchAll(client, keyword);
+    if (truncated) onWarning(`JVN: 「${keyword}」は${total}件あり、先頭${items.length}件までしか読んでいません(キーワードを絞ってください)`);
     for (const item of items) {
       const via = relevance(item, { ...hint, keyword });
       if (via) findings.push(...jvnFindings(item, asset, via));

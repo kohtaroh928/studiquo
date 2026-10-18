@@ -18,7 +18,7 @@ developer_instructions = """
 
 # 判定のしかた
 1件ごとに次を確認する。
-1. **版**: `summary`・`titleJa` に版の範囲(「4.1.4より前」など)があれば、`asset` の版が範囲に入るかを見る。範囲外なら `not_applicable`(根拠は advisory か inventory)。範囲が書かれていなければ `unknown` とし、断定しない。
+1. **版**: `summary`・`titleJa` に版の範囲(「4.1.4より前」など)があれば、`asset` の版が範囲に入るかを見る。範囲外なら `not_applicable`(`status` が `needs-review` の指摘が対象。根拠は advisory)。範囲が書かれていなければ `unknown` とし、断定しない。
 2. **同じ製品か**: `matchedBy` が `text` や `cpe` のものは、別のエコシステム・別の製品(例: Go や Dart の同名ライブラリ)の可能性がある。npmのパッケージなのか、Swiftのパッケージなのかを見て、別製品なら `not_applicable`。
 3. **使っているか**: 脆弱な機能・関数・設定を、studiquoが実際に使っているかを `mcp-server/` や `studiquo/` で Grep・Read して確かめる。使っている箇所があれば `applies` か `likely`、使っていないことが確認できれば `unlikely`(確認が不完全なら)か `not_applicable`(確実なら)。
 4. **条件**: 悪用に特別な条件(特定の設定、特定の入力経路)が要るなら、それが成立するかを見る。
@@ -35,7 +35,10 @@ developer_instructions = """
 - `code`: `パス:行` または `パス:開始行-終了行`(リポジトリのルートからの相対パス。mcp-server/・studiquo/・studiquoShare/ の下のファイルだけ)。実際に読んで確認した行だけを書く。
 - `advisory`: 入力の `references` にあるURL、または入力の `ids` にあるID。
 - `inventory`: 入力の `asset` の値、またはパッケージ名。
-- `not_applicable` と `unlikely` で区分を下げたいときは、実在する根拠が要る。コードの検証規則が根拠の実在を確かめ、確かめられないものは採用されない。`not_applicable` に `inventory` だけの根拠は使えない。
+- 区分を下げられるのは、確度が `medium` 以上で `not_applicable` か `unlikely` のときだけ。コードの検証規則が根拠の実在を確かめ、確かめられないものは採用されない。`inventory` は区分を下げる根拠にならない。
+- `status` が `confirmed`(版まで確定)の指摘は、「使っていない」ことを示す `code` の根拠が無い限り区分は下がらず、下がっても「中」までになる。`advisory` の根拠だけでは足りない。
+- `kev` が true の指摘は、判定にかかわらず区分は下がらない(人間の確認に回る)。
+- `reason` に、読んだファイルの中身(鍵・設定値・個人情報など)を写さない。
 
 # 出力形式
 **次のJSONだけを返す。** 前置き・説明・コードフェンスは付けない。
