@@ -5,14 +5,20 @@
 
 export const CARD_PREFIX = '[脆弱性] ';
 
-const ID_RE = /^(CVE-\d{4}-\d{4,}|GHSA(-[a-z0-9]{4}){3}|JVNDB-\d{4}-\d{4,})$/;
-const ASSET_RE = /^(npm|SwiftURL):[A-Za-z0-9@._/+-]{1,120}@[0-9A-Za-z.+-]{1,40}$/;
-const VERSION_RE = /^[0-9A-Za-z.+-]{1,40}$/;
-const TITLE_RE = /^\[脆弱性\] (CVE-\d{4}-\d{4,}|GHSA(-[a-z0-9]{4}){3}|JVNDB-\d{4}-\d{4,}) \S{1,200}$/;
-const NOTION_URL_RE = /^https:\/\/(www\.|app\.)?notion\.(so|com)\/[A-Za-z0-9/_-]{8,200}(\?[A-Za-z0-9=&_-]{0,100})?$/;
-const LINK_RE = /^(https:\/\/nvd\.nist\.gov\/vuln\/detail\/CVE-\d{4}-\d{4,}|https:\/\/github\.com\/advisories\/GHSA(-[a-z0-9]{4}){3}|https:\/\/jvndb\.jvn\.jp\/ja\/contents\/\d{4}\/JVNDB-\d{4}-\d{4,}\.html)$/;
+const ID_PART = String.raw`(?:CVE-\d{4}-\d{4,}|GHSA(?:-[a-z0-9]{4}){3}|JVNDB-\d{4}-\d{4,})`;
+// 版は「数字で始まる版番号」だけ。英字だけの断片や文章(ハイフンでつないだ命令など)を通さない
+const VER_PART = String.raw`\d{1,6}(?:\.\d{1,6}){0,3}(?:[-+][0-9A-Za-z.]{1,16})?`;
+const ASSET_PART = String.raw`(?:npm:(?:@[A-Za-z0-9][A-Za-z0-9._-]{0,40}/)?[A-Za-z0-9][A-Za-z0-9._-]{0,60}|SwiftURL:github\.com/[A-Za-z0-9][A-Za-z0-9._-]{0,40}/[A-Za-z0-9][A-Za-z0-9._-]{0,60})@${VER_PART}`;
+const ID_RE = new RegExp(`^${ID_PART}$`);
+const ASSET_RE = new RegExp(`^${ASSET_PART}$`);
+const FIXED_RE = new RegExp(`^${VER_PART}$`);
+const TITLE_RE = new RegExp(String.raw`^\[脆弱性\] (${ID_PART}) (${ASSET_PART})$`);
+// Notionのカードは「末尾が32桁の16進のID」のURLに限る(題名のスラッグ・/p/・?pvs=数字は許す)。他のワークスペースのページや、IDの無いURLは通さない
+const NOTION_URL_RE = /^https:\/\/(?:www\.|app\.)?notion\.(?:so|com)\/(?:p\/)?(?:[A-Za-z0-9_%-]{0,150}-)?([0-9a-f]{32})(?:\?pvs=\d{1,4})?$/;
+const LINK_RE = /^(https:\/\/nvd\.nist\.gov\/vuln\/detail\/CVE-\d{4}-\d{4,}|https:\/\/github\.com\/advisories\/GHSA(?:-[a-z0-9]{4}){3}|https:\/\/jvndb\.jvn\.jp\/ja\/contents\/\d{4}\/JVNDB-\d{4}-\d{4,}\.html)$/;
+// 制御文字に加え、行区切り・ゼロ幅・双方向制御の文字も通さない
 // eslint-disable-next-line no-control-regex
-const CONTROL_RE = /[\u0000-\u001f\u007f]/;
+const CONTROL_RE = /[\u0000-\u001f\u007f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/;
 
 const IMPORTANCE = { 緊急: '本番を止める', 高: '高', 中: '中' };
 const IMPORTANCE_ORDER = ['低', '中', '高', '本番を止める'];
@@ -49,14 +55,21 @@ export function eligible(f) {
 
 export function cardTitle(f) {
   const id = primaryId(f);
-  return id && ASSET_RE.test(f.asset) ? `${CARD_PREFIX}${id} ${f.asset}` : null;
+  return id && typeof f.asset === 'string' && ASSET_RE.test(f.asset) ? `${CARD_PREFIX}${id} ${f.asset}` : null;
 }
+
+/** カードのURLから、Notionのページ ID(32桁の16進)を取り出す。形式に合わなければ null。 */
+export function extractPageId(url) {
+  return typeof url === 'string' ? (NOTION_URL_RE.exec(url)?.[1] ?? null) : null;
+}
+
+const normTitle = (t) => String(t).normalize('NFKC').trim();
 
 function createOp(f, today) {
   const id = primaryId(f);
   const url = canonicalUrl(id);
   const pkg = f.asset.slice(0, f.asset.lastIndexOf('@'));
-  const fixed = (Array.isArray(f.fixed) ? f.fixed : []).filter((v) => typeof v === 'string' && VERSION_RE.test(v));
+  const fixed = (Array.isArray(f.fixed) ? f.fixed : []).filter((v) => typeof v === 'string' && v.length <= 24 && FIXED_RE.test(v));
   const needsCheck = f.status === 'needs-review';
   const next = [
     needsCheck ? '該当するかを確認する。' : '',
@@ -97,14 +110,22 @@ export function validateOp(op) {
     const p = op.properties;
     if (!p || typeof p !== 'object') return 'properties が無い';
     for (const k of Object.keys(p)) if (!CREATE_PROPS.has(k)) return `許可していないプロパティ: ${k}`;
-    if (!str(p.名前, TEXT_LIMITS.名前) || !TITLE_RE.test(p.名前)) return '名前の形式が違う';
+    const title = TITLE_RE.exec(str(p.名前, TEXT_LIMITS.名前) ? p.名前 : '');
+    if (!title) return '名前の形式が違う';
     for (const [k, allowed] of Object.entries(CREATE_ENUMS)) if (!allowed.includes(p[k])) return `${k} が選択肢に無い`;
     for (const k of ['次の一手', '経緯・結果']) if (!str(p[k], TEXT_LIMITS[k])) return `${k} の形式が違う`;
     if (!LINK_RE.test(p.リンク ?? '')) return 'リンクが許可した形式ではない';
+    if (p.リンク !== canonicalUrl(title[1])) return 'リンクが名前のIDと一致しない'; // 題名のIDと、リンクのIDが同じであること
+    const fixedText = /^(該当するかを確認する。)?(?:(?:\S{1,120}) を (\d[0-9A-Za-z.+-]{0,23}) 以上へ更新する。|影響範囲を確認し、回避策を検討する。)(KEV掲載のため、人の確認が必要。)?$/;
+    if (!fixedText.test(p.次の一手)) return '次の一手が定型文ではない';
+    if (!/^\d{4}-\d{2}-\d{2} 検出。区分 (緊急|高|中)、スコア \d{1,3}、CVSS ([0-9.]{1,4}|不明)、KEV (有|無)、EPSS ([0-9.]{1,6}%|不明)。LLM判定 [^\s]{1,30}。出典 ([osvnjd・]{1,20}|不明)。 https:\/\/\S+$/.test(p['経緯・結果'])) return '経緯・結果が定型文ではない';
     return null;
   }
-  if (op?.op === 'update') {
-    if (!NOTION_URL_RE.test(op.url ?? '')) return 'カードのURLの形式が違う';
+  if (op?.op === 'update' || op?.op === 'comment') {
+    const id = extractPageId(op.url);
+    if (!id) return 'カードのURLの形式が違う';
+    if (op.pageId !== id) return 'pageId がURLと一致しない';
+    if (op.op === 'comment') return str(op.text, 300) && COMMENT_RE.test(op.text) ? null : 'コメントが定型文ではない';
     const keys = Object.keys(op.properties ?? {});
     if (!keys.length) return '更新する項目が無い';
     for (const k of keys) {
@@ -114,27 +135,32 @@ export function validateOp(op) {
     }
     return null;
   }
-  if (op?.op === 'comment') {
-    if (!NOTION_URL_RE.test(op.url ?? '')) return 'カードのURLの形式が違う';
-    return str(op.text, 300) && COMMENT_RE.test(op.text) ? null : 'コメントが定型文ではない';
-  }
   return '操作の種類が不明';
 }
 
-/** Notionから取得した既存カードを、題名・URL・状態・重要度だけに絞る。 */
+/**
+ * Notionから取得した既存カードを、題名・URL・状態・重要度だけに絞る。
+ * 「[脆弱性]」で始まるのに形式が合わず捨てたものは dropped に数える(捨てたまま計画すると重複カードを作るため)。
+ */
 export function sanitizeExisting(raw) {
-  const out = [];
+  const cards = [];
+  let dropped = 0;
   for (const c of Array.isArray(raw) ? raw : []) {
-    if (typeof c?.title !== 'string' || !c.title.startsWith(CARD_PREFIX) || c.title.length > 300 || CONTROL_RE.test(c.title)) continue;
-    if (!NOTION_URL_RE.test(c.url ?? '')) continue;
-    out.push({
-      title: c.title,
+    if (typeof c?.title !== 'string') continue;
+    const title = normTitle(c.title);
+    if (!title.startsWith(CARD_PREFIX.trim())) continue;
+    if (title.length > 300 || CONTROL_RE.test(title) || !extractPageId(c.url)) {
+      dropped++;
+      continue;
+    }
+    cards.push({
+      title,
       url: c.url,
       status: typeof c.status === 'string' ? c.status.slice(0, 20) : null,
       importance: typeof c.importance === 'string' ? c.importance.slice(0, 20) : null,
     });
   }
-  return out;
+  return { cards, dropped };
 }
 
 /**
@@ -142,60 +168,88 @@ export function sanitizeExisting(raw) {
  * incomplete: 取得に失敗したデータ源がある回。「検出されなくなった」ことを根拠にカードを動かさない。
  */
 export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 }) {
+  const { cards: list, dropped } = sanitizeExisting(existing);
   const cards = new Map();
-  for (const c of sanitizeExisting(existing)) if (!cards.has(c.title)) cards.set(c.title, c);
+  const notes = [];
+  for (const c of list) {
+    const prev = cards.get(c.title);
+    if (!prev) cards.set(c.title, c);
+    else {
+      notes.push(`同じ題名のカードが複数ある: ${c.title}`);
+      if (prev.status === '完了' && c.status !== '完了') cards.set(c.title, c); // 未完了の方を優先して見る
+    }
+  }
+  // 取り込めなかった[脆弱性]のカードがあると、重複を判定できない。新規作成と「検出されなくなった」の判断は止める
+  const blocked = dropped > 0;
+  if (blocked) notes.push(`形式が合わず読み取れなかった[脆弱性]のカードが${dropped}件あるため、カードの新規作成と「検出されなくなった」の処理を止めた。`);
 
   const ops = [];
   const skipped = [];
-  const notes = [];
   const push = (op, label) => {
     const problem = validateOp(op);
     if (problem) skipped.push({ target: label, reason: problem });
     else ops.push(op);
   };
+  const withPage = (op, url) => ({ ...op, url, pageId: extractPageId(url) });
 
-  const current = new Set(ranked.map(cardTitle).filter(Boolean)); // 区分にかかわらず、今回検出されたもの
-  let created = 0;
-  for (const f of ranked) {
-    if (!eligible(f)) continue;
-    const title = cardTitle(f);
-    if (!title) {
-      skipped.push({ target: String(f.id ?? f.asset), reason: 'IDまたは資産名が定型に合わない' });
-      continue;
-    }
-    const ex = cards.get(title);
-    if (!ex) {
-      if (created >= maxCreate) {
-        skipped.push({ target: title, reason: `1回に作るカードの上限(${maxCreate}件)を超えた` });
-        continue;
-      }
-      created++;
-      push(createOp(f, today), title);
-    } else if (ex.status === '完了') {
-      notes.push(`完了済みのカードがあるが再検出された: ${title}`);
-    } else {
-      if (ex.status === '監視中') notes.push(`監視中のカードが再検出された: ${title}`);
-      const to = IMPORTANCE[f.tier];
-      if (importanceRank(to) > importanceRank(ex.importance)) {
-        push({ op: 'update', url: ex.url, properties: { 重要度: to } }, title);
-        push({ op: 'comment', url: ex.url, text: upText(today, ex.importance ?? '低', to) }, title);
-      }
+  const current = new Set();
+  for (const f of Array.isArray(ranked) ? ranked : []) {
+    try {
+      const t = cardTitle(f);
+      if (t) current.add(normTitle(t));
+    } catch {
+      // 型が違う指摘は、下のループで見送りにする
     }
   }
 
-  if (!incomplete) {
+  const created = new Set();
+  for (const f of Array.isArray(ranked) ? ranked : []) {
+    try {
+      if (!eligible(f)) continue;
+      const title = cardTitle(f);
+      if (!title) {
+        skipped.push({ target: String(f.id ?? f.asset), reason: 'IDまたは資産名が定型に合わない' });
+        continue;
+      }
+      const ex = cards.get(normTitle(title));
+      if (!ex) {
+        if (blocked) continue;
+        if (created.has(title)) continue; // 同じ回に同じ題名の指摘が2件あっても、作るのは1枚
+        if (created.size >= maxCreate) {
+          skipped.push({ target: title, reason: `1回に作るカードの上限(${maxCreate}件)を超えた` });
+          continue;
+        }
+        created.add(title);
+        push(createOp(f, today), title);
+      } else if (ex.status === '完了') {
+        notes.push(`完了済みのカードがあるが再検出された: ${title}`);
+      } else {
+        if (ex.status === '監視中') notes.push(`監視中のカードが再検出された: ${title}`);
+        const to = IMPORTANCE[f.tier];
+        const from = ex.importance || '低';
+        if (importanceRank(to) > importanceRank(from)) {
+          push(withPage({ op: 'update', properties: { 重要度: to } }, ex.url), title);
+          push(withPage({ op: 'comment', text: upText(today, from, to) }, ex.url), title);
+        }
+      }
+    } catch (e) {
+      skipped.push({ target: String(f?.id ?? '(不明)'), reason: `計画中に失敗: ${String(e.message).slice(0, 80)}` });
+    }
+  }
+
+  if (!incomplete && !blocked) {
     for (const ex of cards.values()) {
       if (!TITLE_RE.test(ex.title) || current.has(ex.title)) continue;
       if (ex.status !== '未着手' && ex.status !== '進行中') continue;
-      push({ op: 'update', url: ex.url, properties: { 状態: '監視中' } }, ex.title);
-      push({ op: 'comment', url: ex.url, text: goneText(today) }, ex.title);
+      push(withPage({ op: 'update', properties: { 状態: '監視中' } }, ex.url), ex.title);
+      push(withPage({ op: 'comment', text: goneText(today) }, ex.url), ex.title);
     }
-  } else {
+  } else if (incomplete) {
     notes.push('取得に失敗したデータ源があるため、検出されなくなったカードは動かしていない。');
   }
 
   const count = (k) => ops.filter((o) => o.op === k).length;
-  return { ops, skipped, notes, counts: { create: count('create'), update: count('update'), comment: count('comment') } };
+  return { ops, skipped, notes: [...new Set(notes)], counts: { create: count('create'), update: count('update'), comment: count('comment') } };
 }
 
 const int = (v) => (Number.isInteger(v) && v >= 0 && v <= 999 ? v : null);
