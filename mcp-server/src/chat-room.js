@@ -395,6 +395,16 @@ export class ChatRoom extends DurableObject {
     }));
   }
 
+  // Operator removal (moderation-actions.js): the same end state as the sender
+  // retracting, without being the sender. Reachable only through the Worker's
+  // binding from the Access-gated admin API, never from a user's request.
+  async moderatorRemoveMessage(messageID) {
+    const row = this.ctx.storage.sql.exec("SELECT id, is_canceled FROM messages WHERE id = ?", messageID).toArray()[0];
+    if (!row) return { status: "not_found" };
+    this.ctx.storage.sql.exec("UPDATE messages SET is_canceled = 1, text = '' WHERE id = ?", messageID);
+    return { status: row.is_canceled ? "already_removed" : "removed" };
+  }
+
   // The reported message and its neighbours exactly as they are now, for a
   // moderator to read later. Taken at report time because cancelMessage
   // clears the text — otherwise the sender could erase the evidence by

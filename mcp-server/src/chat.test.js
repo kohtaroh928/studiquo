@@ -5,6 +5,7 @@ import worker from "./app.js";
 import { mintSession } from "./session.js";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 
 // Regression coverage for "friend requests are approved, not instant": adding
 // a friend by code must create a one-directional pending request instead of
@@ -172,6 +173,13 @@ function fakeChatRoomBinding() {
           message.text = "";
           message.isCanceled = true;
           return { status: "canceled" };
+        },
+        async moderatorRemoveMessage(messageID) {
+          const message = state.messages.find(item => item.id === messageID);
+          if (!message) return { status: "not_found" };
+          const was = message.isCanceled;
+          message.text = ""; message.isCanceled = true;
+          return { status: was ? "already_removed" : "removed" };
         },
         // Mirrors chat-room.js's real reportSnapshot.
         async reportSnapshot(userKey, messageID) {
@@ -3919,4 +3927,98 @@ test("a group invitation can't be accepted after the invitee blocks the inviter"
   assert.equal(accept.status, 403);
   await unblockOtherParticipant(env, bobToken, roomID);
   assert.equal((await acceptGroupInvite(env, bobToken, group.roomID)).status, 200);
+});
+
+// ---- Operator actions on a report: remove the message, suspend the account ----
+
+const adminKeys = await generateKeyPair("ES256", { extractable: true });
+const adminJWT = await new SignJWT({ email: "owner@example.test" }).setProtectedHeader({ alg: "ES256" })
+  .setIssuer("https://team.cloudflareaccess.com").setAudience("aud").setIssuedAt().setExpirationTime("1h").sign(adminKeys.privateKey);
+
+function asOperator(env) {
+  env.ACCESS_AUD = "aud";
+  env.ACCESS_TEAM_DOMAIN = "team.cloudflareaccess.com";
+  return env;
+}
+async function admin(env, path, { method = "POST", body = {} } = {}) {
+  env.ACCESS_JWKS = createLocalJWKSet({ keys: [{ ...(await exportJWK(adminKeys.publicKey)), alg: "ES256", use: "sig" }] });
+  return worker.fetch(new Request(`https://example.test${path}`, {
+    method,
+    headers: { "cf-access-jwt-assertion": adminJWT, ...(method === "POST" ? { "content-type": "application/json" } : {}) },
+    body: method === "POST" ? JSON.stringify(body) : undefined,
+  }), env, noopCtx);
+}
+async function reportedSetup(suffixA, suffixB) {
+  const env = asOperator(withAdminDB(environment()));
+  const pair = await befriended(env, suffixA, suffixB);
+  const sent = await (await sendMessage(env, pair.bobToken, pair.roomID, "不適切な発言")).json();
+  await reportMessage(env, pair.aliceToken, pair.roomID, sent.id, "いやがらせ");
+  const report = env._d1.prepare("SELECT id FROM chat_reports").get();
+  return { env, ...pair, sent, reportID: report.id };
+}
+
+test("an operator can remove a reported message: it is blanked for everyone, the copy is kept, the report is closed and logged", async () => {
+  const { env, aliceToken, roomID, sent, reportID } = await reportedSetup("s1", "s2");
+  const response = await admin(env, `/api/admin/chat-reports/${reportID}/remove-message`);
+  assert.deepEqual(await response.json(), { status: "removed" });
+  const seen = (await (await readMessages(env, aliceToken, roomID)).json()).find(item => item.id === sent.id);
+  assert.equal(seen.text, "");
+  assert.equal(seen.isCanceled, true);
+  const row = env._d1.prepare("SELECT status, admin_note, snapshot FROM chat_reports WHERE id = ?").get(reportID);
+  assert.equal(row.status, "resolved");
+  assert.match(row.admin_note, /メッセージを削除/);
+  assert.ok(row.snapshot.includes("不適切な発言"));
+  assert.deepEqual(env._d1.prepare("SELECT action, target FROM admin_audit_log").all().map(r => ({ ...r })), [{ action: "chat_report.remove_message", target: reportID }]);
+  // Doing it again is harmless; an unknown report is a 404.
+  assert.deepEqual(await (await admin(env, `/api/admin/chat-reports/${reportID}/remove-message`)).json(), { status: "already_removed" });
+  assert.equal((await admin(env, `/api/admin/chat-reports/${crypto.randomUUID()}/remove-message`)).status, 404);
+});
+
+test("suspending the reported account signs them out of everything; the reporter is unaffected; unsuspending restores it", async () => {
+  const { env, aliceToken, bobToken, reportID } = await reportedSetup("s3", "s4");
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 200);
+
+  const suspended = await admin(env, "/api/admin/accounts/suspend", { body: { reportID } });
+  assert.equal(suspended.status, 200);
+  const { suspensionID } = await suspended.json();
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 401);
+  assert.equal((await sendMessage(env, bobToken, "a".repeat(64), "x")).status, 401);
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: aliceToken }), env, noopCtx)).status, 200);
+  assert.equal(env._d1.prepare("SELECT status FROM chat_reports WHERE id = ?").get(reportID).status, "resolved");
+  const listed = await (await admin(env, "/api/admin/accounts/suspended", { method: "GET" })).json();
+  assert.deepEqual(listed.suspended.map(item => item.suspensionID), [suspensionID]);
+
+  assert.equal((await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID } })).status, 200);
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 200);
+  assert.deepEqual(env._d1.prepare("SELECT action FROM admin_audit_log ORDER BY id").all().map(r => r.action),
+    ["account.suspend", "account.list_suspended", "account.unsuspend"]);
+});
+
+test("suspension needs a report about an identifiable account; bad input is refused; the operator login is required", async () => {
+  const { env, reportID } = await reportedSetup("s5", "s6");
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: {} })).status, 400);
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID: crypto.randomUUID() } })).status, 404);
+  for (const key of [...env._kv.keys()].filter(k => k.startsWith("chat-identity-of:"))) env._kv.delete(key);
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID } })).status, 409);
+  env._d1.prepare("UPDATE chat_reports SET reported_key = 'deleted:abc'").run();
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID } })).status, 410);
+  const noLogin = await worker.fetch(new Request("https://example.test/api/admin/accounts/suspend", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reportID }),
+  }), env, noopCtx);
+  assert.equal(noLogin.status, 403);
+});
+
+test("a suspended person can still delete their account, and nothing else", async () => {
+  const env = environment();
+  const token = freshToken("s7");
+  const identityHash = await seedAccountSession(env, token, "apple-suspended");
+  await registerUser(env, token, "Sam");
+  env._kv.set(`account-suspended:${identityHash}`, JSON.stringify({ at: 1 }));
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token }), env, noopCtx)).status, 401);
+  const deleted = await deleteAccount(env, token);
+  assert.ok([200, 202].includes(deleted.status), `delete answered ${deleted.status}`);
+  // Leaving removes the person's data but not the suspension, so signing up
+  // again with the same account is still suspended.
+  assert.ok(env._kv.has(`account-suspended:${identityHash}`));
+  assert.ok(![...env._kv.keys()].some(key => key.startsWith("chat-identity-of:")));
 });

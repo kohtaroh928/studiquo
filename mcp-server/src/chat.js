@@ -223,6 +223,11 @@ export async function handleChat(url, request, env, ctx) {
       return json({ error: "Bio must be a string of at most 500 characters." }, 400);
     }
     const user = await env.USER_REGISTRY.getByName(key).ensureUser(key, body?.name, parseStudyStats(body), body?.bio);
+    // So a report about this chat user can be traced to the account an operator
+    // may suspend (moderation-actions.js); the chat key alone can't be reversed.
+    const identityLink = `chat-identity-of:${key}`;
+    const identityHash = await sha256Hex(`chat-account:${session.sub}`);
+    if ((await env.STUDIQUO_DATA.get(identityLink)) !== identityHash) await env.STUDIQUO_DATA.put(identityLink, identityHash);
     return json({ code: user.code, name: user.name, linkToken: user.linkToken, avatarUpdatedAt: user.avatarUpdatedAt ?? null });
   }
 
