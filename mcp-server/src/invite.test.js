@@ -23,6 +23,13 @@ test("the invite page never forwards to the custom scheme on its own", async () 
   assert.doesNotMatch(text, /http-equiv="refresh"/i);
 });
 
+test("the invite page's policy allows no script at all", async () => {
+  const response = await worker.fetch(request("/invite?token=ABCD1234"), {}, noopCtx);
+  const policy = response.headers.get("content-security-policy");
+  assert.match(policy, /script-src 'none'/);
+  assert.doesNotMatch(policy, /unsafe-inline'?[^;]*script|script-src[^;]*unsafe-inline/);
+});
+
 test("GET /invite with a missing or malformed token is rejected with 400", async () => {
   const missing = await worker.fetch(request("/invite"), {}, noopCtx);
   assert.equal(missing.status, 400);
