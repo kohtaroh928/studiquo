@@ -4,7 +4,7 @@ import { isExpired } from "./token.js";
 import { checkRateLimit } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.js";
-import { realSession } from "./session.js";
+import { realSession, hasModerationMark, CHAT_SUSPENSION_PREFIX } from "./session.js";
 import { handleGroupRoutes } from "./groups.js";
 import { sendPush } from "./push.js";
 import { chatMessageNotification } from "./message-notification.js";
@@ -212,6 +212,10 @@ export async function handleChat(url, request, env, ctx) {
   // A session changes on each sign-in, but a person's chat identity must not.
   // Preserve the old token-derived key when upgrading an existing account so
   // its friend codes and room participants remain usable after token rotation.
+  // An operator turned chat off for this person (moderation-actions.js).
+  if (await hasModerationMark(env, session, CHAT_SUSPENSION_PREFIX)) {
+    return json({ error: "Chat is unavailable for this account.", code: "chat_suspended" }, 403);
+  }
   const key = await resolveChatUserKey(env, session.sub, tokenKey);
 
   const devices = await handleDeviceRoutes(url, request, env, key, ctx);

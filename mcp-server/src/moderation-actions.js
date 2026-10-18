@@ -1,13 +1,22 @@
 // What an operator can do about a chat report beyond reading it (all behind
 // Cloudflare Access, all logged before they act — see audit.js):
 //   POST /api/admin/chat-reports/:id/remove-message   stage 2: blank the message
-//   POST /api/admin/accounts/suspend    {reportID}    stage 4: suspend the reported account
-//   POST /api/admin/accounts/unsuspend  {reportID | suspensionID}
+//   POST /api/admin/chat-reports/:id/warn             stage 1: push a fixed warning
+//   POST /api/admin/accounts/suspend    {reportID, scope?}   stage 3 (scope "chat") / 4 ("account", default)
+//   POST /api/admin/accounts/unsuspend  {reportID | suspensionID, scope?}   (no scope: lifts both)
 //   GET  /api/admin/accounts/suspended
+//   GET  /api/admin/audit-log
 // See docs/RUNBOOK.md RB-17.
 import { json, readJSONLimited } from "./http.js";
 import { auditAdmin } from "./audit.js";
-import { SUSPENSION_PREFIX } from "./session.js";
+import { SUSPENSION_PREFIX, CHAT_SUSPENSION_PREFIX } from "./session.js";
+import { sendPush } from "./push.js";
+
+const WARNING = {
+  title: "運営からのお知らせ",
+  body: "あなたの投稿が利用規約に反している可能性があるため、確認しました。繰り返される場合は、機能の利用を制限することがあります。",
+};
+const PREFIXES = { account: SUSPENSION_PREFIX, chat: CHAT_SUSPENSION_PREFIX };
 
 const NOTE_MAX = 2_000;
 const requireJSON = request => (request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json");
@@ -36,23 +45,32 @@ async function reportedAccount(env, reportID) {
 
 export async function handleModerationActions(url, request, env) {
   const removeMatch = /^\/api\/admin\/chat-reports\/([0-9a-f-]{36})\/remove-message$/.exec(url.pathname);
+  const warnMatch = /^\/api\/admin\/chat-reports\/([0-9a-f-]{36})\/warn$/.exec(url.pathname);
   const isAccounts = url.pathname.startsWith("/api/admin/accounts/");
-  if (!removeMatch && !isAccounts) return null;
+  if (!removeMatch && !warnMatch && !isAccounts && url.pathname !== "/api/admin/audit-log") return null;
   if (!env.ADMIN_DB) return json({ error: "Unavailable." }, 503);
+
+  if (url.pathname === "/api/admin/audit-log" && request.method === "GET") {
+    await auditAdmin(env, request, "audit_log.view");
+    const rows = await env.ADMIN_DB.prepare("SELECT id, at, actor, action, target, detail FROM admin_audit_log ORDER BY id DESC LIMIT 200").all();
+    return json({ entries: rows.results ?? [] });
+  }
 
   if (url.pathname === "/api/admin/accounts/suspended" && request.method === "GET") {
     await auditAdmin(env, request, "account.list_suspended");
-    const names = [];
-    let cursor;
-    do {
-      const page = await env.STUDIQUO_DATA.list({ prefix: SUSPENSION_PREFIX, cursor });
-      names.push(...page.keys.map(key => key.name));
-      cursor = page.list_complete ? undefined : page.cursor;
-    } while (cursor);
-    const suspended = await Promise.all(names.map(async name => ({
-      suspensionID: name.slice(SUSPENSION_PREFIX.length),
-      ...(await env.STUDIQUO_DATA.get(name, "json")),
-    })));
+    const suspended = [];
+    for (const [scope, prefix] of Object.entries(PREFIXES)) {
+      const names = [];
+      let cursor;
+      do {
+        const page = await env.STUDIQUO_DATA.list({ prefix, cursor });
+        names.push(...page.keys.map(key => key.name));
+        cursor = page.list_complete ? undefined : page.cursor;
+      } while (cursor);
+      for (const name of names) {
+        suspended.push({ scope, suspensionID: name.slice(prefix.length), ...(await env.STUDIQUO_DATA.get(name, "json")) });
+      }
+    }
     return json({ suspended });
   }
 
@@ -69,18 +87,31 @@ export async function handleModerationActions(url, request, env) {
     return json({ status: result.status });
   }
 
+  if (warnMatch) {
+    const report = await env.ADMIN_DB.prepare("SELECT reported_key FROM chat_reports WHERE id = ?").bind(warnMatch[1]).first();
+    if (!report) return json({ error: "Not found." }, 404);
+    if (report.reported_key.startsWith("deleted:")) return json({ error: "That account has been deleted." }, 410);
+    await auditAdmin(env, request, "chat_report.warn", warnMatch[1]);
+    const results = await sendPush(env, report.reported_key, WARNING);
+    const delivered = results.filter(result => result?.delivered).length;
+    await resolveReport(env, warnMatch[1], delivered > 0 ? "注意を送信" : "注意を送ったが届いた端末なし");
+    return json({ warned: true, devices: results.length, delivered });
+  }
+
   const body = await readJSONLimited(request, 1_000);
   if (url.pathname === "/api/admin/accounts/suspend") {
     const reportID = String(body?.reportID ?? "");
     if (!/^[0-9a-f-]{36}$/.test(reportID)) return json({ error: "reportID is required." }, 400);
+    const scope = body?.scope === undefined ? "account" : body.scope;
+    if (!PREFIXES[scope]) return json({ error: "scope must be account or chat." }, 400);
     const found = await reportedAccount(env, reportID);
     if (found.response) return found.response;
-    await auditAdmin(env, request, "account.suspend", found.identityHash.slice(0, 16), `report ${reportID}`);
-    await env.STUDIQUO_DATA.put(`${SUSPENSION_PREFIX}${found.identityHash}`, JSON.stringify({
+    await auditAdmin(env, request, `account.suspend_${scope}`, found.identityHash.slice(0, 16), `report ${reportID}`);
+    await env.STUDIQUO_DATA.put(`${PREFIXES[scope]}${found.identityHash}`, JSON.stringify({
       at: Date.now(), reportID, // who did it is in the audit log, not here
     }));
-    await resolveReport(env, reportID, "アカウントを停止");
-    return json({ suspended: true, suspensionID: found.identityHash });
+    await resolveReport(env, reportID, scope === "chat" ? "チャットを停止" : "アカウントを停止");
+    return json({ suspended: true, scope, suspensionID: found.identityHash });
   }
 
   if (url.pathname === "/api/admin/accounts/unsuspend") {
@@ -91,8 +122,10 @@ export async function handleModerationActions(url, request, env) {
       id = found.identityHash;
     }
     if (!/^[0-9a-f]{64}$/.test(id)) return json({ error: "suspensionID or reportID is required." }, 400);
-    await auditAdmin(env, request, "account.unsuspend", id.slice(0, 16));
-    await env.STUDIQUO_DATA.delete(`${SUSPENSION_PREFIX}${id}`);
+    const scopes = body?.scope === undefined ? Object.keys(PREFIXES) : [body.scope];
+    if (!scopes.every(scope => PREFIXES[scope])) return json({ error: "scope must be account or chat." }, 400);
+    await auditAdmin(env, request, "account.unsuspend", id.slice(0, 16), scopes.join(","));
+    for (const scope of scopes) await env.STUDIQUO_DATA.delete(`${PREFIXES[scope]}${id}`);
     return json({ suspended: false });
   }
 
