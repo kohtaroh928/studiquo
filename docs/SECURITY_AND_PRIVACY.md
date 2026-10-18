@@ -49,7 +49,7 @@ iPadアプリ ── SwiftData / CloudKit / Keychain / 端末ファイル
 Cloudflare Worker ── KV / D1 / Durable Objects
   │
   ├─ Apple / Google / Passkeys / Resend
-  ├─ Gemini / Anthropic / OpenAI
+  ├─ OpenAI(Anthropicはコードにあるが、どのプランにも載せておらず無効)
   ├─ RevenueCat / APNs
   └─ Slack / Cloudflare Access
 
@@ -229,10 +229,10 @@ AI機能では、操作に応じて次の情報が端末外へ出る。
 - 画像は長辺を制限し、最大枚数とrequest sizeを制限する。
 - AIへのsystem instructionと利用者コンテンツを区切り、prompt delimiterを無害化する。
 - AI出力は信頼せず、JSON schema、型、文字数を検証してから保存・表示する。
-- AI要求本文、画像、API keyをアプリログ、Workerログ、エラーreportへ記録しない。
+- AI要求本文、画像、API keyをアプリログ、Workerログ、エラーreportへ記録しない。(例外: OpenAIがエラーを返したとき、そのエラー応答の本文を最大300文字までWorkerログに出す箇所がある(`ai.js`)。応答は要求本文の再掲を含まない想定だが、含まないことは確認していない。)
 - provider、model、送信項目を増やす変更では、アプリ内開示、プライバシーポリシー、App Store申告を同時に更新する。
 
-同意は`google-v2`として端末に保存し、APIヘッダーにも付与する。旧booleanの確認済み状態は同意とみなさない。取消し時に翌日復習も停止する。`AI_PROVIDER_APPROVED`は既定falseで、対象年齢・訓練利用・保持条件の承認がない限り送信を拒否する。
+同意は`openai-v1`として端末に保存し、APIヘッダーにも付与する。旧booleanの確認済み状態は同意とみなさない。取消し時に翌日復習も停止する。`AI_PROVIDER_APPROVED`は既定falseで、対象年齢・訓練利用・保持条件の承認がない限り送信を拒否する。
 
 ## 11. MCP連携
 
@@ -347,7 +347,7 @@ Workerは削除状態を`deleting`として先に記録し、途中失敗後も�
 
 ## 16. 外部サービス変更時の確認
 
-Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic、OpenAI、APNs、Slackなどを追加・変更するときは、次を記録する。
+Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Anthropic、OpenAI、APNs、Slack、Have I Been Pwnedなどを追加・変更するときは、次を記録する。
 
 - 送るデータと目的
 - 保存地域、保持期間、再委託、モデル訓練への利用有無
@@ -405,7 +405,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 ### P0: 公開前に判断が必要
 
 1. Privacy Manifestにデータ分類を追加したが、App Store Connect申告・責任者照合は未実施。
-2. Google一社に制限し、同意・承認gateを実装した。学生・未成年者への提供可否、契約、訓練利用・保存条件の承認は未完了。承認までAIは停止する。
+2. OpenAI一社に制限し、同意・承認gateを実装した。学生・未成年者への提供可否、契約、訓練利用・保存条件の承認は未完了。承認までAIは停止する。
 3. D1/KV削除・90日/180日保持・RevenueCat削除ジョブを実装した。本番migration・secret設定・定期処理有効化・監視は未実施。詳細は`PRIVACY_RELEASE_CHECKLIST.md`。
 4. 再登録時の課金顧客世代管理、Apple認可取消し、共同編集データ削除範囲を公開前に確定する。
 

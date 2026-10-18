@@ -401,6 +401,24 @@ test("47b. 自動エラーの「影響ユーザー」の記録が削除される
   assert.equal(env._appErrorUsers.has(usageHash), false);
 });
 
+test("47c. 紐づく別のidentityで記録された利用状況も削除される(新しいアカウントを始めたidentityは残る)", async () => {
+  const env = environment();
+  const identities = [
+    { provider: "apple", sub: "apple-47c" },
+    { provider: "google", sub: "google-47c" },
+  ];
+  await seedLinked(env, "apple-47c", "usage47c@example.com", identities);
+  const linkedHash = hash("usage-account:google:google-47c");
+  const canonicalHash = hash("usage-account:apple-47c");
+  env._usageEvents.add(linkedHash);
+  env._usageEvents.add(canonicalHash);
+  env._usersFirstSeen.add(linkedHash);
+  await deleteAccount(env, "apple-47c");
+  assert.equal(env._usageEvents.has(linkedHash), false, "usage recorded under a linked identity");
+  assert.equal(env._usageEvents.has(canonicalHash), false);
+  assert.equal(env._usersFirstSeen.has(linkedHash), false);
+});
+
 test("48. 別アカウントのMCP・同期・利用状況データは残る", async () => {
   const env = environment();
   const deleted = "account-delete-48";
