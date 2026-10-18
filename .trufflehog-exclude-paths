@@ -1,3 +1,5 @@
 # trufflehog が検査しないファイル(正規表現、1行1つ)。
 # 架空のURL(user:password@example.edu)を使うテスト。
 ^studiquoTests/UniversityCalendarTests\.swift$
+# 偽のURL(user:pass@api.studiquo.app など)を拒否することを確かめるテスト。実在の資格情報ではない。
+^studiquoTests/WorkerEndpointPolicyTests\.swift$
