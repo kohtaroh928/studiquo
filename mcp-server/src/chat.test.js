@@ -3988,7 +3988,7 @@ test("suspending the reported account signs them out of everything; the reporter
   const listed = await (await admin(env, "/api/admin/accounts/suspended", { method: "GET" })).json();
   assert.deepEqual(listed.suspended.map(item => item.suspensionID), [suspensionID]);
 
-  assert.equal((await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID } })).status, 200);
+  assert.equal((await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID, scope: "account" } })).status, 200);
   assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 200);
   assert.deepEqual(env._d1.prepare("SELECT action FROM admin_audit_log ORDER BY id").all().map(r => r.action),
     ["account.suspend_account", "account.list_suspended", "account.unsuspend"]);
@@ -4033,10 +4033,17 @@ test("chat-only suspension blocks chat but not the rest of the account; lifting 
   assert.equal((await chat.json()).code, "chat_suspended");
   // The session itself is still good (this route is not chat).
   assert.equal((await worker.fetch(request("/api/account/library-id", { token: bobToken }), env, noopCtx)).status !== 401, true);
+  // Sharing documents with friends is part of chat.
+  env.DOCUMENT_ROOM = { getByName() { throw new Error("must not be reached"); } };
+  const document = await worker.fetch(request(`/api/document/rooms/${"d".repeat(64)}/invite`, { method: "POST", token: bobToken, body: { code: "ABC123" } }), env, noopCtx);
+  assert.equal(document.status, 403);
+  assert.equal((await document.json()).code, "chat_suspended");
   assert.equal((await worker.fetch(request("/api/chat/friends", { token: aliceToken }), env, noopCtx)).status, 200);
   const listed = (await (await admin(env, "/api/admin/accounts/suspended", { method: "GET" })).json()).suspended;
   assert.deepEqual(listed.map(item => item.scope), ["chat"]);
   assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "bogus" } })).status, 400);
+  assert.equal((await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID } })).status, 400);
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "toString" } })).status, 400);
   await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID, scope: "chat" } });
   assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 200);
 });

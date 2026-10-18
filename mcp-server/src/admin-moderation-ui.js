@@ -140,7 +140,9 @@ export const MODERATION_SCRIPT = `
     var request = state.tab === 'reports' ? api('GET', '/api/admin/chat-reports?status=' + encodeURIComponent(status))
       : state.tab === 'suspended' ? api('GET', '/api/admin/accounts/suspended')
       : api('GET', '/api/admin/audit-log');
+    var asked = state.tab;
     request.then(function (data) {
+      if (asked !== state.tab) return; // an answer for a tab the operator has left
       list.textContent = '';
       var rows = state.tab === 'reports' ? data.reports : state.tab === 'suspended' ? data.suspended : data.entries;
       if (!rows.length) list.appendChild(el('div', '該当するものはありません。', 'empty'));
