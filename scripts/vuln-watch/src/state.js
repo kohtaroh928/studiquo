@@ -1,18 +1,25 @@
-// 前回の結果の記憶(git管理外)。レポートの「新規/継続」と、前回成功時刻を持つ。
+// 前回の結果の記憶(git管理外)。
+//   - reported: レポートの「新規/継続」の印に使う、報告済みの指摘ID
+//   - lastSuccessAt: 前回、取得に失敗したデータ源が無かった時刻
+//   - verdicts: LLM判定のキャッシュ(設計書 3.6)。入力のハッシュが同じで7日以内なら、エージェントを呼ばずに再利用する
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+
+const DAY = 86_400_000;
 
 export function loadState(path) {
   try {
     if (existsSync(path)) {
       const s = JSON.parse(readFileSync(path, 'utf8'));
-      return { lastSuccessAt: s.lastSuccessAt ?? null, reported: s.reported ?? {} };
+      return { lastSuccessAt: s.lastSuccessAt ?? null, reported: s.reported ?? {}, verdicts: s.verdicts ?? {} };
     }
   } catch {
-    // 壊れていたら無かったことにする(全件が「新規」になるだけ)
+    // 壊れていたら無かったことにする(全件が「新規」になり、判定のやり直しになるだけ)
   }
-  return { lastSuccessAt: null, reported: {} };
+  return { lastSuccessAt: null, reported: {}, verdicts: {} };
 }
+
+const write = (path, state) => writeFileSync(path, JSON.stringify(state, null, 2) + '\n');
 
 export function markNew(findings, state) {
   return findings.map((f) => ({ ...f, isNew: !(f.id in state.reported) }));
@@ -22,5 +29,39 @@ export function markNew(findings, state) {
 export function saveState(path, findings, now, previous) {
   const reported = {};
   for (const f of findings) reported[f.id] = previous.reported[f.id] ?? { firstSeenAt: now };
-  writeFileSync(path, JSON.stringify({ lastSuccessAt: now, reported }, null, 2) + '\n');
+  write(path, { lastSuccessAt: now, reported, verdicts: previous.verdicts ?? {} });
+}
+
+/** 前回の成功から days 日以上空いていたら警告文を返す。一度も成功していなければ null(初回)。 */
+export function gapWarning(state, now, days = 3) {
+  if (!state.lastSuccessAt) return null;
+  const gap = (now.getTime() - Date.parse(state.lastSuccessAt)) / DAY;
+  return gap >= days ? `前回の成功から約${Math.floor(gap)}日あいています(Macが寝ていたか、アプリが閉じていた可能性があります)。` : null;
+}
+
+/** 毎週月曜はキャッシュを使わず、全件を判定し直す。 */
+export function isFreshDay(now) {
+  return now.getDay() === 1;
+}
+
+/** 判定に回す指摘(pending)と、キャッシュを使える指摘(cached)に分ける。 */
+export function selectForJudgement(items, state, now, { fresh = false, ttlDays = 7 } = {}) {
+  const pending = [];
+  const cached = [];
+  for (const item of items) {
+    const c = state.verdicts[item.id];
+    const usable = !fresh && c && c.hash === item.hash && now.getTime() - Date.parse(c.judgedAt) < ttlDays * DAY;
+    if (usable) cached.push({ id: item.id, ...c.verdict });
+    else pending.push(item);
+  }
+  return { pending, cached };
+}
+
+/** 新しく得た判定を保存する。現在の指摘に無いIDの判定は捨てる。 */
+export function saveVerdicts(path, state, entries, liveIds, now) {
+  const live = new Set(liveIds);
+  const verdicts = {};
+  for (const [id, v] of Object.entries(state.verdicts)) if (live.has(id)) verdicts[id] = v;
+  for (const { id, hash, verdict } of entries) verdicts[id] = { hash, verdict, judgedAt: now };
+  write(path, { lastSuccessAt: state.lastSuccessAt, reported: state.reported, verdicts });
 }
