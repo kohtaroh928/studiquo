@@ -689,7 +689,7 @@
       "sensitive": false,
       "usage": "MCPサーバー",
       "nvd": {
-        "keyword": "modelcontextprotocol sdk",
+        "keyword": "modelcontextprotocol",
         "products": [
           "typescript-sdk",
           "sdk",

@@ -4,6 +4,8 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
+const MAX_BYTES = 20_000_000;
+
 export function createClient({ cacheDir = null, ttlMs = 6 * 3600_000, offline = false, fetchImpl = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const lastAt = new Map();
 
@@ -43,6 +45,7 @@ export function createClient({ cacheDir = null, ttlMs = 6 * 3600_000, offline = 
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
         const data = await res.text();
+        if (data.length > MAX_BYTES) throw new Error(`応答が大きすぎます(${data.length}文字): ${host}`);
         if (file) {
           mkdirSync(cacheDir, { recursive: true });
           writeFileSync(file, data);

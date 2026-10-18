@@ -44,7 +44,7 @@ export function renderReport({ ranked, inventory, unmatchable = [], warnings = [
   out.push(`- 監視対象: ${inventory.length}件(npm ${inventory.filter((a) => a.ecosystem === 'npm').length} / Swift ${inventory.filter((a) => a.ecosystem === 'SwiftURL').length})`);
   out.push(`- 検出: ${TIERS.map((t) => `${t} ${count[t]}`).join(' / ')}`);
   out.push('- 範囲: NVD・OSV・JVN iPedia・CISA KEV・EPSS。ライブラリのみ。');
-  if (triage?.status === 'applied') out.push(`- LLM判定: ${triage.accepted}件を反映${triage.rejected.length ? `(検証で採用しなかった判定 ${triage.rejected.length}件、末尾に一覧)` : ''}`);
+  if (triage?.status === 'applied') out.push(`- LLM判定: 判定対象${triage.total ?? '?'}件のうち${triage.accepted}件に判定が返り、反映${triage.rejected.length ? `(検証で採用しなかった判定 ${triage.rejected.length}件、末尾に一覧)` : ''}`);
   else out.push('- **LLM判定なし**: 区分は機械判定のみです。「要確認」の指摘は未判定のままです。');
   if (sourceErrors.length) out.push('', '> **取得に失敗したデータ源があります。この結果は不完全です。**', ...sourceErrors.map((e) => `> - ${clean(e, 300)}`));
   if (warnings.length) out.push('', ...warnings.map((w) => `> ${clean(w, 300)}`));

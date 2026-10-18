@@ -4,7 +4,7 @@
 //   node src/cli.js scan [--offline] [--no-nvd] [--no-jvn] [--out <dir>]   収集→照合→採点→機械判定のレポート
 //   node src/cli.js triage-pack [--out <dir>]                  判定に回す指摘を triage-input.json に出す(scanも出す)
 //   node src/cli.js triage-apply [--verdicts <file>] [--out <dir>]   エージェントの返信(ファイルか標準入力)を検証して反映
-// 終了コード: 0=完了 / 2=取得に失敗したデータ源があり結果が不完全 / 3=LLM判定が反映されなかった
+// 終了コード: 0=完了 / 2=取得に失敗したデータ源があり結果が不完全 / 3=LLM判定が反映されなかった / 4=その両方
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -90,7 +90,7 @@ async function cmdScan(args) {
 
   if (!args['no-jvn']) {
     try {
-      findings = findings.concat(await queryJvn(client, items));
+      findings = findings.concat(await queryJvn(client, items, { onWarning: (w) => sourceErrors.push(w) }));
     } catch (e) {
       sourceErrors.push(`JVN: ${e.message}`);
     }
@@ -156,15 +156,18 @@ function cmdTriageApply(args) {
   const outDir = outDirOf(args);
   const { run, input } = readRun(outDir);
   const raw = typeof args.verdicts === 'string' ? readFileSync(args.verdicts, 'utf8') : readFileSync(0, 'utf8');
-  const result = applyTriage(run.ranked, input, raw, { repoRoot });
-  const triage = { status: result.status, accepted: result.accepted, rejected: result.rejected };
+  const result = applyTriage(run.ranked, input, raw, { repoRoot, allowLowering: run.sourceErrors.length === 0 });
+  const triage = { status: result.status, accepted: result.accepted, judged: result.judged, total: result.total, rejected: result.rejected };
   const md = renderReport({ ranked: result.ranked, inventory: run.inventory, unmatchable: run.unmatchable, warnings: run.warnings, sourceErrors: run.sourceErrors, generatedAt: run.generatedAt, triage });
   writeFileSync(`${outDir}/latest.md`, md);
   writeFileSync(`${outDir}/triage-result.json`, JSON.stringify({ ...triage, ranked: result.ranked }, null, 2));
   console.log(`LLM判定: ${result.accepted}件を反映 / 採用しなかった ${result.rejected.length}件\nレポート: ${outDir}/latest.md`);
   for (const r of result.rejected) console.warn(`  - ${r.id}: ${r.reason}`);
-  if (run.sourceErrors.length) return 2;
-  return result.status === 'applied' ? 0 : 3;
+  const incomplete = run.sourceErrors.length > 0;
+  const noVerdict = result.status !== 'applied';
+  if (incomplete && noVerdict) return 4;
+  if (incomplete) return 2;
+  return noVerdict ? 3 : 0;
 }
 
 const args = parseArgs(process.argv.slice(2));
