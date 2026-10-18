@@ -599,7 +599,7 @@ $('list').onclick = async e => {
     }
   }
   if (edit) { fillForm(items.find(a => a.id === edit)); scrollTo(0, 0); }
-  if (del && confirm('削除しますか?(元に戻せません)')) {
+  if (del && confirm('削除しますか?(一覧から消えます。内容と操作の記録は残ります)')) {
     await fetch('/api/admin/announcements/' + del, { method: 'DELETE' }); await load();
   }
 };
