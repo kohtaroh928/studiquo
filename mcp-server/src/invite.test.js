@@ -8,12 +8,19 @@ function request(path) {
   return new Request(`https://example.test${path}`);
 }
 
-test("GET /invite with a valid token serves an HTML page linking to the studiquo:// scheme", async () => {
+test("GET /invite with a valid token serves an HTML page with a button to the studiquo:// scheme", async () => {
   const response = await worker.fetch(request("/invite?token=ABCD1234"), {}, noopCtx);
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /text\/html/);
   const text = await response.text();
-  assert.match(text, /studiquo:\/\/friend\/add\?token=ABCD1234/);
+  assert.match(text, /<a class="button" href="studiquo:\/\/friend\/add\?token=ABCD1234">/);
+});
+
+test("the invite page never forwards to the custom scheme on its own", async () => {
+  const text = await (await worker.fetch(request("/invite?token=ABCD1234"), {}, noopCtx)).text();
+  assert.doesNotMatch(text, /<script/i, "no script: the token is handed over only by a tap");
+  assert.doesNotMatch(text, /location\.(replace|href|assign)/);
+  assert.doesNotMatch(text, /http-equiv="refresh"/i);
 });
 
 test("GET /invite with a missing or malformed token is rejected with 400", async () => {
