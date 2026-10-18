@@ -254,11 +254,18 @@ export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 
 
 const int = (v) => (Number.isInteger(v) && v >= 0 && v <= 999 ? v : null);
 
+// LLMが確度中以上で「非該当」と判定した「情報」止まりの指摘。消さず latest.md には残すが、
+// 日次要約のカウントからは外す(ユーザー合意・2026-10-19)。要約から外れても判定自体は記録に残るため、
+// 誤判定を見逃さないための「情報」の目的(設計書2.3)は latest.md の確認で引き続き担保する。
+const judgedNotApplicable = (f) => f.tier === '情報' && f.verdict?.applicability === 'not_applicable' && f.verdict?.confidence !== 'low';
+
 /** 実行の最後に返す、固定書式の要約と、通知の文言(無ければ null)。 */
 export function buildSummary({ ranked, run, triage, plan, executed = {}, today, outDir }) {
   const tiers = ['緊急', '高', '中', '情報'];
-  const n = (t) => ranked.filter((f) => f.tier === t).length;
-  const fresh = ranked.filter((f) => f.isNew).length;
+  const visible = ranked.filter((f) => !judgedNotApplicable(f));
+  const hidden = ranked.length - visible.length;
+  const n = (t) => visible.filter((f) => f.tier === t).length;
+  const fresh = visible.filter((f) => f.isNew).length;
   const urgentNew = ranked.filter((f) => f.isNew && (f.tier === '緊急' || f.kev)).length;
   const errors = run.sourceErrors?.length ?? 0;
   const ex = Object.fromEntries(['created', 'updated', 'commented', 'failed'].map((k) => [k, int(executed[k])]));
@@ -271,6 +278,7 @@ export function buildSummary({ ranked, run, triage, plan, executed = {}, today, 
     `取得失敗: ${errors ? `${errors}件(結果は不完全)` : 'なし'}`,
     `レポート: ${outDir}/latest.md`,
   ];
+  if (hidden) lines.push(`判定済み・対象外(要約から除外): ${hidden}件 / latest.mdに記録`);
   for (const note of plan?.notes ?? []) lines.push(`注意: ${note}`);
   return { text: lines.join('\n'), notify: urgentNew ? `脆弱性監視: 緊急またはKEV掲載の新規 ${urgentNew}件。Notionのカードを確認してください` : null };
 }
