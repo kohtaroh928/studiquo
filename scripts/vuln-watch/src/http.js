@@ -17,11 +17,11 @@ export function createClient({ cacheDir = null, ttlMs = 6 * 3600_000, offline = 
     return `${cacheDir}/${createHash('sha256').update(url + (body ?? '')).digest('hex')}.json`;
   }
 
-  /** JSONを返す。キャッシュが新しければネットワークに行かない。offline ならキャッシュのみ(古くても使う)。 */
-  async function json(url, { method = 'GET', body = null, headers = {}, minGapMs = 0, retries = 3 } = {}) {
+  /** 本文(文字列)を返す。キャッシュが新しければネットワークに行かない。offline ならキャッシュのみ(古くても使う)。 */
+  async function text(url, { method = 'GET', body = null, headers = {}, minGapMs = 0, retries = 3 } = {}) {
     const file = cacheDir ? cachePath(url, body) : null;
     if (file && existsSync(file) && (offline || Date.now() - statSync(file).mtimeMs < ttlMs)) {
-      return JSON.parse(readFileSync(file, 'utf8'));
+      return readFileSync(file, 'utf8');
     }
     if (offline) throw new Error(`オフラインでキャッシュが無い: ${url}`);
 
@@ -42,10 +42,10 @@ export function createClient({ cacheDir = null, ttlMs = 6 * 3600_000, offline = 
           continue;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
-        const data = await res.json();
+        const data = await res.text();
         if (file) {
           mkdirSync(cacheDir, { recursive: true });
-          writeFileSync(file, JSON.stringify(data));
+          writeFileSync(file, data);
         }
         return data;
       } catch (e) {
@@ -57,5 +57,10 @@ export function createClient({ cacheDir = null, ttlMs = 6 * 3600_000, offline = 
     throw lastErr;
   }
 
-  return { json };
+  /** JSONとして読む。 */
+  async function json(url, opts) {
+    return JSON.parse(await text(url, opts));
+  }
+
+  return { json, text };
 }
