@@ -99,9 +99,9 @@ test('nvd: 間接依存はNVDを引かない', () => {
 
 const fakeFetch = (routes) => async (url, init) => {
   for (const [pat, body] of routes) {
-    if (url.includes(pat)) return { ok: true, status: 200, json: async () => (typeof body === 'function' ? body(init) : body) };
+    if (url.includes(pat)) return { ok: true, status: 200, text: async () => JSON.stringify(typeof body === 'function' ? body(init) : body) };
   }
-  return { ok: false, status: 404, json: async () => ({}) };
+  return { ok: false, status: 404, text: async () => '{}' };
 };
 
 test('osv: 問い合わせ→詳細取得→修正版と点数の抽出。取り下げは除外', async () => {
@@ -137,7 +137,7 @@ test('http: 4xxは再試行せず失敗、5xxは再試行して成功', async ()
   let calls = 0;
   const flaky = createClient({
     sleep: async () => {},
-    fetchImpl: async () => (++calls < 3 ? { ok: false, status: 503 } : { ok: true, status: 200, json: async () => ({ ok: 1 }) }),
+    fetchImpl: async () => (++calls < 3 ? { ok: false, status: 503 } : { ok: true, status: 200, text: async () => '{"ok":1}' }),
   });
   assert.deepEqual(await flaky.json('https://example.com/x'), { ok: 1 });
   assert.equal(calls, 3);

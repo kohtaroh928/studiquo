@@ -49,11 +49,15 @@ export function mergeFindings(findings) {
     prev.references = [...new Set([...prev.references, ...f.references])].slice(0, 8);
     prev.cve ??= f.cve;
     // 数値のCVSSがある方を優先。同じ種類ならNVD(公式の数値)を優先
-    if (f.cvss !== null && (prev.cvss === null || (f.sources.includes('nvd') && !/代用値/.test(f.cvssSource ?? '')))) {
+    const isProxy = (x) => /代用値/.test(x ?? '');
+    if (f.cvss !== null && (prev.cvss === null || (isProxy(prev.cvssSource) && !isProxy(f.cvssSource)) || (f.sources.includes('nvd') && !isProxy(f.cvssSource)))) {
       prev.cvss = f.cvss;
       prev.cvssSource = f.cvssSource;
     }
     prev.fixed ??= f.fixed;
+    prev.jvndb ??= f.jvndb;
+    prev.titleJa ??= f.titleJa;
+    prev.matchedBy ??= f.matchedBy;
     prev.summary ||= f.summary;
     if (f.status === 'confirmed') prev.status = 'confirmed';
   }
