@@ -3248,7 +3248,9 @@ struct ContentView: View {
                 sharedImport.refresh()
                 return
             }
-            friendStore.add(url: url)
+            // Only an invite link of ours takes the student to the friends screen; any
+            // other address someone else's app opens us with changes nothing.
+            guard friendStore.add(url: url) else { return }
             returnToHome()
             homeSection = .friends
         }
