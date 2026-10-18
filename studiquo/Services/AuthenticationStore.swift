@@ -59,6 +59,10 @@ final class AuthenticationStore: ObservableObject {
     /// (iCloud Keychain off, a managed device) must not be locked out of their
     /// own notes. It comes back at the next launch.
     @Published private(set) var passkeyEnrollmentFailed = false
+    /// True while the first passkey waits for the code mailed to the account's
+    /// address (see PasskeyService.sendEmailCode).
+    @Published private(set) var passkeyNeedsEmailCode = false
+    @Published private(set) var passkeyEmailCodeSent = false
 
     private let sessionAccount = "session"
     private let service: String
@@ -236,6 +240,8 @@ final class AuthenticationStore: ObservableObject {
         delete(account: sessionAccount)
         needsPasskeyEnrollment = false
         passkeyEnrollmentFailed = false
+        passkeyNeedsEmailCode = false
+        passkeyEmailCodeSent = false
         state = .needsLogin
         // Best-effort and non-blocking: remove this device while the bearer
         // token is still available, then revoke that token. Local sign-out
@@ -416,17 +422,58 @@ final class AuthenticationStore: ObservableObject {
             }
             needsPasskeyEnrollment = false
             passkeyEnrollmentFailed = false
+            passkeyNeedsEmailCode = false
+            passkeyEmailCodeSent = false
             errorMessage = ""
             return true
         } catch let error as ASAuthorizationError where error.code == .canceled {
             return false
         } catch PasskeyError.cancelled {
             return false
+        } catch PasskeyError.emailCodeRequired {
+            // The first passkey: the mailbox is confirmed with a code first.
+            passkeyNeedsEmailCode = true
+            errorMessage = ""
+            if !passkeyEmailCodeSent { await sendPasskeyEmailCode() }
+            return false
         } catch {
             passkeyEnrollmentFailed = true
             errorMessage = error.localizedDescription
             return false
         }
+    }
+
+    /// Mails the code that confirms the mailbox before the first passkey.
+    func sendPasskeyEmailCode() async {
+        guard !email.isEmpty else { return }
+        isPasskeyBusy = true
+        defer { isPasskeyBusy = false }
+        do {
+            try await PasskeyService.shared.sendEmailCode(email: email, token: MCPCloudCredentials.loadOrCreateToken())
+            passkeyEmailCodeSent = true
+            errorMessage = ""
+        } catch {
+            errorMessage = "確認コードを送れませんでした。しばらくしてからもう一度お試しください。"
+        }
+    }
+
+    /// Checks the code and, when it is right, goes straight on to the passkey.
+    func confirmPasskeyEmailCode(_ code: String) async -> Bool {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !email.isEmpty, !trimmed.isEmpty else { return false }
+        isPasskeyBusy = true
+        do {
+            try await PasskeyService.shared.confirmEmailCode(
+                email: email, code: trimmed, token: MCPCloudCredentials.loadOrCreateToken()
+            )
+        } catch {
+            isPasskeyBusy = false
+            errorMessage = error.localizedDescription
+            return false
+        }
+        isPasskeyBusy = false
+        passkeyNeedsEmailCode = false
+        return await addPasskey()
     }
 
     /// Looks up whether the signed-in account has a passkey and, if it
@@ -438,33 +485,25 @@ final class AuthenticationStore: ObservableObject {
             needsPasskeyEnrollment = false
             return
         }
+        // A private-relay address (Sign in with Apple, "hide my e-mail") cannot be
+        // tied to a passkey: the server only accepts an address the account has
+        // verified as its own. Those accounts are not asked, and keep signing in as before.
+        guard !Self.isPrivateRelayAddress(email) else {
+            needsPasskeyEnrollment = false
+            return
+        }
         guard let registered = await passkeyRegistered() else { return }
         needsPasskeyEnrollment = !registered
+    }
+
+    static func isPrivateRelayAddress(_ address: String) -> Bool {
+        address.lowercased().hasSuffix("@privaterelay.appleid.com")
     }
 
     /// Hides the request until the next launch; only offered after a failure.
     func skipPasskeyEnrollmentForNow() {
         guard passkeyEnrollmentFailed else { return }
         needsPasskeyEnrollment = false
-    }
-
-    /// Deletes every passkey of the account, for someone who did not add the
-    /// ones it has (or who wants to start over), then asks for a new one.
-    func removeAllPasskeys() async -> Bool {
-        isPasskeyBusy = true
-        defer { isPasskeyBusy = false }
-        do {
-            try await PasskeyService.shared.removeAllPasskeys(token: MCPCloudCredentials.loadOrCreateToken())
-            errorMessage = ""
-            passkeyEnrollmentFailed = false
-            await checkPasskeyRequirement()
-            return true
-        } catch PasskeyError.cancelled {
-            return false
-        } catch {
-            errorMessage = error.localizedDescription
-            return false
-        }
     }
 
     func loginWithPasskey() async -> Bool {

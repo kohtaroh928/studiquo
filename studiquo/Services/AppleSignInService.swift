@@ -97,6 +97,7 @@ final class AppleSignInService: NSObject, ASAuthorizationControllerDelegate, ASA
         request.httpBody = try JSONEncoder().encode(ExchangeRequest(identityToken: identityToken, randomValue: randomValue, nonce: nonce))
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+            if (response as? HTTPURLResponse)?.statusCode == 403, PasskeyRequired.isIn(body: data) { throw AppleSignInError.passkeyRequired }
             throw AppleSignInError.serverRejected
         }
         return try JSONDecoder().decode(ExchangeResponse.self, from: data).token
@@ -132,10 +133,13 @@ final class AppleSignInService: NSObject, ASAuthorizationControllerDelegate, ASA
 
 enum AppleSignInError: LocalizedError {
     case invalidResponse, serverRejected
+    /// The account has a passkey, so an Apple sign-in is no longer accepted.
+    case passkeyRequired
     var errorDescription: String? {
         switch self {
         case .invalidResponse: "Appleのサインイン応答を読み取れませんでした。"
         case .serverRejected: "サインインサーバーに接続できませんでした。"
+        case .passkeyRequired: PasskeyRequired.message
         }
     }
 }
