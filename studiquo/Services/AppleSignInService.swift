@@ -95,7 +95,7 @@ final class AppleSignInService: NSObject, ASAuthorizationControllerDelegate, ASA
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(ExchangeRequest(identityToken: identityToken, randomValue: randomValue, nonce: nonce))
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw AppleSignInError.serverRejected
         }

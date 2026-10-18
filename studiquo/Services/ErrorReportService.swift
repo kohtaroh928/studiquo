@@ -242,7 +242,7 @@ enum ErrorReportService {
         request.httpBody = data
 
         guard ErrorReportSettings.isEnabled else { return .rejected }
-        guard let (_, response) = try? await session.data(for: request),
+        guard let (_, response) = try? await session.dataNoticing(for: request),
               let http = response as? HTTPURLResponse else { return .retryLater }
         switch http.statusCode {
         case 200..<300: return .delivered

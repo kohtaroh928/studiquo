@@ -123,7 +123,7 @@ final class WorkerAIProvider: AIProvider {
         request.setValue(AIDataDisclosure.ageBand?.rawValue, forHTTPHeaderField: "X-Studiquo-Age")
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.dataNoticing(for: request)
             guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { return nil }
             return try? JSONDecoder().decode(AIUsage.self, from: data)
         } catch {
@@ -218,7 +218,7 @@ final class WorkerAIProvider: AIProvider {
         let request = try request(path: "api/ai/chat", body: payload)
 
         do {
-            let (stream, response) = try await URLSession.shared.bytes(for: request)
+            let (stream, response) = try await URLSession.shared.bytesNoticing(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
             }
@@ -305,7 +305,7 @@ final class WorkerAIProvider: AIProvider {
         let request = try request(path: path, body: body)
 
         do {
-            let (stream, response) = try await URLSession.shared.bytes(for: request)
+            let (stream, response) = try await URLSession.shared.bytesNoticing(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
             }
@@ -366,7 +366,7 @@ final class WorkerAIProvider: AIProvider {
     private func post(path: String, body: [String: Any]) async throws -> Data {
         let request = try request(path: path, body: body)
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.dataNoticing(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
             }

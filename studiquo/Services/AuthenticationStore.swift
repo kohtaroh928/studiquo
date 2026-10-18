@@ -189,7 +189,7 @@ final class AuthenticationStore: ObservableObject {
             // A wait or a busy server says nothing about the password, so it
             // must not read as "wrong password".
             switch error {
-            case .tooManyAttempts, .serverBusy, .passkeyRequired: errorMessage = error.localizedDescription
+            case .tooManyAttempts, .serverBusy, .passkeyRequired, .servicePaused: errorMessage = error.localizedDescription
             case .rejected: errorMessage = "メールアドレスまたはパスワードが違います。"
             }
             return false
@@ -687,11 +687,11 @@ enum AccountDeletionService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["confirmation": "DELETE"])
-        var (data, response) = try await URLSession.shared.data(for: request)
+        var (data, response) = try await URLSession.shared.dataNoticing(for: request)
         // An account with a passkey proves it with one first, then asks again.
         if PasskeyReauth.isRequired(status: (response as? HTTPURLResponse)?.statusCode, body: data) {
             try await PasskeyService.shared.reauthenticate(token: token, action: "delete-account")
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await URLSession.shared.dataNoticing(for: request)
         }
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw AccountDeletionError.rejected

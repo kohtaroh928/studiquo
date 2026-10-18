@@ -63,6 +63,8 @@ struct AccountGateView: View {
             }
         }
         .environmentObject(authentication)
+        // Why the server is paused, or that this build must be updated (ServerNotice.swift).
+        .safeAreaInset(edge: .top, spacing: 0) { ServerNoticeBanner() }
         .animation(.easeInOut(duration: 0.2), value: authentication.state)
         .task(id: authentication.state) {
             guard !cleanupPending, authentication.state == .authenticated else { return }

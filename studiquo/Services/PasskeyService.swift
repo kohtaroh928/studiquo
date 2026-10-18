@@ -152,7 +152,7 @@ final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAutho
         var request = URLRequest(url: endpoint.appending(path: "api/passkeys/status"))
         request.timeoutInterval = 15
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        guard let (data, response) = try? await session.data(for: request),
+        guard let (data, response) = try? await session.dataNoticing(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let status = try? JSONDecoder().decode(PasskeyStatus.self, from: data) else { return nil }
         return status.registered
@@ -212,7 +212,7 @@ enum PasskeyHTTPClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         request.httpBody = try JSONEncoder().encode(body)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             if PasskeyReauth.isRequired(status: (response as? HTTPURLResponse)?.statusCode, body: data) {
                 throw PasskeyError.reauthRequired
