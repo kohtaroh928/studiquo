@@ -6,6 +6,7 @@ import worker from "./app.js";
 import { runPrivacyRetention } from "./privacy-retention.js";
 import { deleteAccount } from "./account-deletion.js";
 import { sha256Hex } from "./auth.js";
+import { mintSession, realSession, accountIsUnavailable, suspensionKey } from "./session.js";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 
 class FakeD1Statement {
@@ -190,4 +191,27 @@ test("leaving the app: reports about you go, reports you filed lose who filed th
   await deleteAccount(env, "apple-c");
   assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM chat_reports WHERE id = 'r3'").get().n, 0);
   assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM chat_reports WHERE reported_key = ?").get(c).n, 0);
+});
+
+test("a suspended account's session is refused everywhere except where leaving needs it", async () => {
+  const values = new Map();
+  const env = { STUDIQUO_DATA: {
+    async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+    async put(key, value) { values.set(key, value); },
+    async delete(key) { values.delete(key); },
+  } };
+  const token = await mintSession(env, "apple-s");
+  assert.equal((await realSession(env, token))?.sub, "apple-s");
+  assert.equal(await accountIsUnavailable(env, "apple-s"), false);
+
+  values.set(await suspensionKey("apple-s"), JSON.stringify({ at: 1 }));
+  assert.equal(await realSession(env, token), null);
+  assert.equal((await realSession(env, token, { allowSuspended: true }))?.sub, "apple-s");
+  assert.equal(await accountIsUnavailable(env, "apple-s"), true, "connected apps stop too");
+
+  // Signing in again doesn't help: the new session is just as refused.
+  const again = await mintSession(env, "apple-s");
+  assert.equal(await realSession(env, again), null);
+  values.delete(await suspensionKey("apple-s"));
+  assert.equal((await realSession(env, again))?.sub, "apple-s");
 });

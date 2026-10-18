@@ -14,6 +14,7 @@ import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
 import { handleAppErrors } from "./app-errors.js";
 import { handleAdminReports } from "./admin-reports.js";
+import { handleModerationActions } from "./moderation-actions.js";
 import { handleAnnouncements, handleAnnouncementsPage } from "./announcements.js";
 import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats } from "./admin.js";
 import { handleInvitePage } from "./invite.js";
@@ -358,6 +359,8 @@ export default {
       if (adminWebhook) return adminWebhook;
       const adminStats = await handleAdminStats(url, request, env);
       if (adminStats) return adminStats;
+      const moderationActions = await handleModerationActions(url, request, env);
+      if (moderationActions) return moderationActions;
       const adminReports = await handleAdminReports(url, request, env);
       if (adminReports) return adminReports;
       const appErrors = await handleAppErrors(url, request, env);
@@ -392,7 +395,9 @@ export default {
       const token = bearerToken(request);
       if (!token) return json({ error: "A valid bearer token is required." }, 401);
       if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
-      if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
+      // Leaving stays possible for a suspended account (App Store requirement).
+      const mayBeSuspended = url.pathname === "/api/account" && request.method === "DELETE";
+      if (!(await hasRealSession(env, token, { allowSuspended: mayBeSuspended }))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
       const key = await sha256Hex(token);
       if (await isRevoked(env, key)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
 
@@ -401,7 +406,7 @@ export default {
         return json({ revoked: true });
       }
 
-      const session = await realSession(env, token);
+      const session = await realSession(env, token, { allowSuspended: mayBeSuspended });
       if (url.pathname === "/api/session/refresh" && request.method === "POST") {
         return handleSessionRefresh(request, env, token, session);
       }

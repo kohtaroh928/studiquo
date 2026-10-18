@@ -400,7 +400,7 @@ export async function deleteAccount(env, canonicalSub) {
     ...emails.flatMap(email => [`email-account-owner:${email}`, `email-accounts:${email}`, `email-verify:${email}`]),
     ...[...identityKeys].map(key => `identity-canonical:${key}`),
     ...ownedTokenHashes.flatMap(hash => [`snapshot:${hash}`, `actions:${hash}`]),
-    ...mcpAccountHashes.map(hash => `snapshot:${hash}`), `chat:user:${chatKey}`, `chat:devices:${chatKey}`,
+    ...mcpAccountHashes.map(hash => `snapshot:${hash}`), `chat:user:${chatKey}`, `chat:devices:${chatKey}`, `chat-identity-of:${chatKey}`,
     ...devices.map(device => `chat:device-owner:${device.token}`),
   ];
   if (chatUser) deletionKeys.push(`chat:code:${chatUser.code}`, `chat:linktoken:${chatUser.linkToken}`, `chat:avatar:${chatUser.code}`);
