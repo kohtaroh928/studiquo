@@ -19,6 +19,7 @@ import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats
 import { handleInvitePage } from "./invite.js";
 import { accessAllowed, isAccessGuardedPath, isCrossSiteWrite } from "./access.js";
 import { appGateRejection } from "./app-gate.js";
+import { disabledFeatures } from "./features.js";
 import { idTokenNonceRefused } from "./id-token-nonce.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired, remainingValiditySeconds } from "./token.js";
@@ -322,7 +323,11 @@ export default {
   async fetch(request, env, ctx) {
     try {
       const url = new URL(request.url);
-      if (url.pathname === "/health") return json({ ok: true, service: "studiquo-mcp" });
+      if (url.pathname === "/health") {
+        // Stopped features are listed so a typo in DISABLED_FEATURES shows here.
+        const stopped = [...disabledFeatures(env)];
+        return json({ ok: true, service: "studiquo-mcp", ...(stopped.length ? { disabledFeatures: stopped } : {}) });
+      }
       const gate = appGateRejection(request, env, url);
       if (gate) return gate;
       // /api/admin/* is not reliably behind Cloudflare Access at the edge, so
