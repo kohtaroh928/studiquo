@@ -1,0 +1,10 @@
+{
+  "name": "studiquo-vuln-watch",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "inventory": "node src/cli.js inventory",
+    "scan": "node src/cli.js scan",
+    "test": "node --test test/*.test.js"
+  }
+}
