@@ -21,7 +21,7 @@ const accessToken = await new SignJWT({}).setProtectedHeader({ alg: "ES256" })
 
 async function fixture(extra = {}) {
   const db = new DatabaseSync(":memory:");
-  for (const file of ["0001_admin_dashboard.sql", "0003_announcements.sql", "0004_announcement_push.sql"]) {
+  for (const file of ["0001_admin_dashboard.sql", "0003_announcements.sql", "0004_announcement_push.sql", "0007_moderation.sql"]) {
     db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
   }
   const values = new Map();

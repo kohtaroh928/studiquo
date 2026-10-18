@@ -9,6 +9,7 @@ import { handleGroupRoutes } from "./groups.js";
 import { sendPush } from "./push.js";
 import { chatMessageNotification } from "./message-notification.js";
 import { handleDeviceRoutes } from "./devices.js";
+import { fileChatReport } from "./chat-reports.js";
 
 const MAX_BODY = 16_000;
 // Attachment uploads carry base64-encoded image/file bytes (up to
@@ -665,10 +666,8 @@ export async function handleChat(url, request, env, ctx) {
     return roomResponse(env.CHAT_ROOM.getByName(blockStatusMatch[1]).blockStatus(key));
   }
 
-  // Records a report for manual review — there's no in-app moderation
-  // queue or admin role yet, so this is written to STUDIQUO_DATA under a
-  // listable prefix (`report:...`) rather than into the room's own
-  // Durable Object storage, which has no external inspection tool at all.
+  // Records a report for the operator (chat-reports.js: a D1 row holding a
+  // snapshot of the message, a Slack ping, and the admin API to work it).
   // Verifying the reporter is an actual room participant (not just anyone
   // with a valid token) still goes through the room itself.
   const reportMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/messages\/(\d+)\/report$/.exec(url.pathname);
@@ -685,11 +684,16 @@ export async function handleChat(url, request, env, ctx) {
       if (forbidden) return forbidden;
       throw error;
     }
-    const reportKey = `report:chat:${Date.now()}:${crypto.randomUUID()}`;
-    await env.STUDIQUO_DATA.put(reportKey, JSON.stringify({
-      roomID: reportMatch[1], messageID, reporterKey: key, reason, createdAt: Date.now(),
-    }), { expirationTtl: REPORT_TTL_SECONDS });
-    return json({ status: "reported" });
+    if (!env.ADMIN_DB) {
+      // No operator inbox to write to (a deployment without D1): keep the old
+      // write-only record rather than losing the report.
+      const reportKey = `report:chat:${Date.now()}:${crypto.randomUUID()}`;
+      await env.STUDIQUO_DATA.put(reportKey, JSON.stringify({
+        roomID: reportMatch[1], messageID, reporterKey: key, reason, createdAt: Date.now(),
+      }), { expirationTtl: REPORT_TTL_SECONDS });
+      return json({ status: "reported" });
+    }
+    return fileChatReport(env, ctx, url, { roomID: reportMatch[1], messageID, reporterKey: key, reason });
   }
 
   // Group chat routes share this file's /api/chat/ prefix and auth gate

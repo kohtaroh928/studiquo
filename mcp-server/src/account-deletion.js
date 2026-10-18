@@ -356,6 +356,10 @@ export async function deleteAccount(env, canonicalSub) {
     for (const tokenHash of ownedTokenHashes) {
       await env.ADMIN_DB.prepare("DELETE FROM issue_reports WHERE reporter_key = ?").bind(tokenHash).run();
     }
+    // Chat reports: ones about this person's messages go with them; ones they
+    // filed about others stay (the moderator still needs them) minus who filed.
+    await env.ADMIN_DB.prepare("DELETE FROM chat_reports WHERE reported_key = ?").bind(chatKey).run();
+    await env.ADMIN_DB.prepare("UPDATE chat_reports SET reporter_key = '' WHERE reporter_key = ?").bind(chatKey).run();
   }
 
   // KV also covers historical reports whose dashboard mirror failed. The

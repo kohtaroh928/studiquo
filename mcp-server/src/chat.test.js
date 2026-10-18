@@ -3,6 +3,8 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 import worker from "./app.js";
 import { mintSession } from "./session.js";
+import { readFileSync, readdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 
 // Regression coverage for "friend requests are approved, not instant": adding
 // a friend by code must create a one-directional pending request instead of
@@ -170,6 +172,20 @@ function fakeChatRoomBinding() {
           message.text = "";
           message.isCanceled = true;
           return { status: "canceled" };
+        },
+        // Mirrors chat-room.js's real reportSnapshot.
+        async reportSnapshot(userKey, messageID) {
+          if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          const target = state.messages.find(item => item.id === messageID);
+          if (!target) return null;
+          const near = state.messages.filter(item => item.id >= messageID - 3 && item.id <= messageID + 2);
+          return {
+            reportedKey: target.senderKey,
+            messages: near.map(item => ({
+              id: item.id, fromReported: item.senderKey === target.senderKey, text: item.text,
+              sentAt: item.sentAt, isCanceled: item.isCanceled, reported: item.id === messageID,
+            })),
+          };
         },
         // Mirrors chat-room.js's real editMessage: only the original sender
         // may edit, and a canceled message can never be resurrected by one.
@@ -3772,4 +3788,124 @@ test("a chat report is stored with a 90-day expiry", async () => {
   const reportKeys = [...ttls.keys()].filter(key => key.startsWith("report:chat:"));
   assert.equal(reportKeys.length, 1);
   assert.equal(ttls.get(reportKeys[0]), 90 * 24 * 60 * 60);
+});
+
+
+// ---- Moderation: reports reach the operator, blocks cover group invites ----
+
+function withAdminDB(env) {
+  const db = new DatabaseSync(":memory:");
+  for (const file of readdirSync(new URL("../migrations/", import.meta.url)).sort()) {
+    db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  }
+  env.ADMIN_DB = {
+    prepare: sql => {
+      const make = (params = []) => ({
+        bind: (...next) => make(next),
+        async run() { const r = db.prepare(sql).run(...params); return { success: true, meta: { changes: Number(r.changes) } }; },
+        async all() { return { results: db.prepare(sql).all(...params) }; },
+        async first() { return db.prepare(sql).get(...params) ?? null; },
+      });
+      return make();
+    },
+  };
+  env._d1 = db;
+  return env;
+}
+
+async function befriended(env, suffixA, suffixB) {
+  const aliceToken = freshToken(suffixA);
+  const bobToken = freshToken(suffixB);
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  return { aliceToken, bobToken, alice, bob, roomID: accepted.roomID };
+}
+
+test("a report is kept in D1 with the message as it was, even if the sender retracts afterwards", async () => {
+  const env = withAdminDB(environment());
+  const { aliceToken, bobToken, roomID } = await befriended(env, "m1", "m2");
+  await sendMessage(env, aliceToken, roomID, "こんにちは");
+  const sent = await (await sendMessage(env, bobToken, roomID, "不適切な発言")).json();
+
+  assert.equal((await reportMessage(env, aliceToken, roomID, sent.id, "いやがらせ")).status, 200);
+  await cancelMessage(env, bobToken, roomID, sent.id);
+
+  const rows = env._d1.prepare("SELECT * FROM chat_reports").all();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, "open");
+  assert.equal(rows[0].reason, "いやがらせ");
+  assert.notEqual(rows[0].reported_key, rows[0].reporter_key);
+  const snapshot = JSON.parse(rows[0].snapshot);
+  assert.equal(snapshot.find(item => item.reported).text, "不適切な発言");
+  assert.equal(snapshot.find(item => !item.reported).fromReported, false);
+  assert.equal([...env._kv.keys()].filter(k => k.startsWith("report:chat:")).length, 0);
+});
+
+test("reporting the same message twice adds one report; your own message and unknown messages are refused", async () => {
+  const env = withAdminDB(environment());
+  const { aliceToken, bobToken, roomID } = await befriended(env, "m3", "m4");
+  const mine = await (await sendMessage(env, aliceToken, roomID, "mine")).json();
+  const theirs = await (await sendMessage(env, bobToken, roomID, "theirs")).json();
+
+  assert.equal((await reportMessage(env, aliceToken, roomID, theirs.id, "a")).status, 200);
+  assert.equal((await reportMessage(env, aliceToken, roomID, theirs.id, "b")).status, 200);
+  assert.equal(env._d1.prepare("SELECT COUNT(*) AS n FROM chat_reports").get().n, 1);
+  assert.equal((await reportMessage(env, aliceToken, roomID, mine.id, "x")).status, 400);
+  assert.equal((await reportMessage(env, aliceToken, roomID, 999, "x")).status, 404);
+  assert.equal(env._d1.prepare("SELECT COUNT(*) AS n FROM chat_reports").get().n, 1);
+});
+
+test("an outsider cannot file a chat report into D1", async () => {
+  const env = withAdminDB(environment());
+  const { bobToken, roomID } = await befriended(env, "m5", "m6");
+  const sent = await (await sendMessage(env, bobToken, roomID, "hi")).json();
+  const eveToken = freshToken("m7");
+  await registerUser(env, eveToken, "Eve");
+  assert.equal((await reportMessage(env, eveToken, roomID, sent.id, "x")).status, 403);
+  assert.equal(env._d1.prepare("SELECT COUNT(*) AS n FROM chat_reports").get().n, 0);
+});
+
+test("a filed report pings Slack with the id and a link, never the message text or reason", async () => {
+  const env = withAdminDB(environment());
+  env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.example.test/x";
+  const { aliceToken, bobToken, roomID } = await befriended(env, "m8", "m9");
+  const sent = await (await sendMessage(env, bobToken, roomID, "SECRET-BODY")).json();
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { calls.push({ url, body: String(init?.body ?? "") }); return new Response("ok"); };
+  try {
+    await reportMessage(env, aliceToken, roomID, sent.id, "SECRET-REASON");
+    await reportMessage(env, aliceToken, roomID, sent.id, "SECRET-REASON");
+  } finally { globalThis.fetch = realFetch; }
+  assert.equal(calls.length, 1, "a repeat report must not ping again");
+  const id = env._d1.prepare("SELECT id FROM chat_reports").get().id;
+  assert.ok(calls[0].body.includes(id));
+  assert.ok(!calls[0].body.includes("SECRET"));
+});
+
+test("a blocked pair cannot be put in a group together, in either direction, and the answer doesn't say who blocked", async () => {
+  const env = environment();
+  const { aliceToken, bobToken, alice, bob, roomID } = await befriended(env, "g1", "g2");
+  await blockOtherParticipant(env, bobToken, roomID); // Bob blocks Alice
+
+  const byBlocked = await createGroup(env, aliceToken, "G", [bob.code]); // Alice (blocked) invites Bob
+  assert.equal(byBlocked.status, 403);
+  const byBlocker = await createGroup(env, bobToken, "G", [alice.code]);
+  assert.equal(byBlocker.status, 403);
+  assert.deepEqual(await byBlocked.clone().json(), await byBlocker.clone().json());
+  assert.equal((await byBlocked.json()).error, "This friend cannot be invited right now.");
+  assert.equal((await createGroup(env, aliceToken, "Solo", [])).status, 201);
+});
+
+test("inviting a blocked friend to an existing group is refused; unblocking restores it", async () => {
+  const env = environment();
+  const { aliceToken, bobToken, bob, roomID } = await befriended(env, "g3", "g4");
+  const group = await (await createGroup(env, aliceToken, "G", [])).json();
+  await blockOtherParticipant(env, aliceToken, roomID);
+  assert.equal((await inviteToGroup(env, aliceToken, group.roomID, bob.code)).status, 403);
+  await unblockOtherParticipant(env, aliceToken, roomID);
+  assert.equal((await inviteToGroup(env, aliceToken, group.roomID, bob.code)).status, 200);
+  void bobToken;
 });
