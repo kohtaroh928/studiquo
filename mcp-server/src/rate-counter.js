@@ -152,6 +152,29 @@ export class RateCounter extends DurableObject {
     });
   }
 
+  // App Attest (app-attest.js): one object per registered app key, holding its
+  // public key and the last assertion counter. Deliberately has no alarm: a key
+  // stays valid for as long as the app install does, and forgetting the counter
+  // would let an old assertion be sent again.
+  async attestRegister(record) {
+    if (await this.ctx.storage.get("attest")) return false;
+    await this.ctx.storage.put("attest", record);
+    return true;
+  }
+
+  async attestKey() {
+    return (await this.ctx.storage.get("attest")) ?? null;
+  }
+
+  // Moves the counter forward only if `counter` is higher than what is stored,
+  // as one step, so two requests with the same counter cannot both pass.
+  async attestAdvance(counter) {
+    const record = await this.ctx.storage.get("attest");
+    if (!record || counter <= record.counter) return false;
+    await this.ctx.storage.put("attest", { ...record, counter, lastSeenAt: Date.now() });
+    return true;
+  }
+
   async alarm() {
     await this.ctx.storage.deleteAll();
   }
