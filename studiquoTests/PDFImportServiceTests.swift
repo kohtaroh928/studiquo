@@ -40,6 +40,33 @@ final class PDFImportServiceTests: XCTestCase {
         return url
     }
 
+    func testExtractPagesChecked_refusesAPDFWithTooManyPagesAndReturnsNoPages() {
+        let url = makePDF(name: "long.pdf", pageCount: 3)
+        let result = PDFImportService.extractPagesChecked(from: url, maxPages: 2)
+        XCTAssertEqual(result.rejection, .tooManyPages(limit: 2))
+        XCTAssertTrue(result.pages.isEmpty, "half a PDF must never look like a finished import")
+    }
+
+    func testExtractPagesChecked_stopsWhenTheRenderedPagesOutgrowTheBudget() {
+        let url = makePDF(name: "heavy.pdf", pageCount: 3)
+        let result = PDFImportService.extractPagesChecked(from: url, maxRenderedBytes: 1)
+        XCTAssertEqual(result.rejection, .renderedPagesTooLarge)
+        XCTAssertTrue(result.pages.isEmpty)
+    }
+
+    func testExtractPagesChecked_acceptsAPDFWithinTheLimits() {
+        let url = makePDF(name: "fine.pdf", pageCount: 3)
+        let result = PDFImportService.extractPagesChecked(from: url)
+        XCTAssertNil(result.rejection)
+        XCTAssertEqual(result.pages.count, 3)
+    }
+
+    func testExtractPagesChecked_unreadableFileIsNotARejection() {
+        let result = PDFImportService.extractPagesChecked(from: workDir.appendingPathComponent("missing.pdf"))
+        XCTAssertNil(result.rejection)
+        XCTAssertTrue(result.pages.isEmpty)
+    }
+
     func testExtractPages_returnsAllPagesForUnprotectedPDF() {
         let url = makePDF(name: "plain.pdf", pageCount: 3)
         let pages = PDFImportService.extractPages(from: url)
