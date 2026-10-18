@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 import Security
 
-/// Where a locked notebook's encryption key lives.
+/// Where a locked notebook's encryption keys live.
 ///
 /// Synced via iCloud Keychain (`kSecAttrSynchronizable`) rather than kept
 /// device-only, so a locked notebook opens on every device signed into the
@@ -15,55 +15,164 @@ import Security
 /// 保護 toggle: this key is retrievable by anything that can read the
 /// signed-in user's iCloud Keychain, but nothing in this app calls
 /// `unlock(_:)` without a device-owner authentication having just succeeded.
+///
+/// **A key is never replaced.** The notebook (sealed, in CloudKit) can reach a
+/// new device before the key reaches its Keychain. Creating "the" key there, as
+/// one fixed Keychain item, would sync out and overwrite the real one on every
+/// device, and every locked notebook would become unreadable for good. So:
+/// - every key is its own Keychain item, named by a random id, and a key is only
+///   ever *added*, never deleted or overwritten;
+/// - a sealed blob records the id of the key that sealed it (`SealedBlob`), so
+///   opening it asks for exactly that key, and a key that has not arrived yet is
+///   a failure to try again later, not a reason to make a new one;
+/// - a key is created only to seal, and only when this device has no key at all.
+///   Two devices that each create one before syncing simply end up holding both.
+/// Blobs sealed before this (no id) use the one original item, `legacyAccount`,
+/// which is read but never written.
 enum NotebookEncryptionKeyStore {
     /// Internal (not `private`) so tests can pass a unique service string
     /// into `NotebookEncryptionService.lock`/`unlock` instead of touching
     /// this same key the real app uses.
     static let defaultService = "com.yabuko.studiquo.notebook-encryption"
-    private static let account = "content-key"
+    private static let legacyAccount = "content-key"
+    private static let accountPrefix = "content-key-"
 
+    struct StoredKey {
+        /// nil for the original, id-less key.
+        let id: String?
+        let key: SymmetricKey
+        let created: Date
+    }
+
+    /// The key a sealed blob names (`nil` = the original one), or nil when this
+    /// device does not have it (yet).
+    static func key(withID id: String?, service: String = defaultService) -> SymmetricKey? {
+        lookup(service: service)?.first { $0.id == id }?.key
+    }
+
+    /// The key to seal new content with: the newest one this device holds, or a
+    /// new one when it holds none. nil only if the Keychain refuses to store it.
+    /// nil as well when the Keychain cannot be read right now (the device was just
+    /// locked, say): that is "unknown", and a key must not be made for it.
+    static func keyForSealing(service: String = defaultService) -> StoredKey? {
+        guard let keys = lookup(service: service) else { return nil }
+        if let newest = keys.max(by: { $0.created < $1.created }) { return newest }
+        return create(service: service)
+    }
+
+    /// Kept for callers that only need "a key to use": the sealing key.
     static func loadOrCreateKey(service: String = defaultService) -> SymmetricKey {
-        if let existing = load(service: service) { return existing }
-        let created = SymmetricKey(size: .bits256)
-        save(created, service: service)
-        return created
+        keyForSealing(service: service)?.key ?? SymmetricKey(size: .bits256)
     }
 
-    /// Test-only: removes the key so a test doesn't leak Keychain state
-    /// into the next one (or into the real app's own key, if a test ever
+    /// Test-only: removes every key of `service` so a test doesn't leak Keychain
+    /// state into the next one (or into the real app's own keys, if a test ever
     /// forgot to pass a unique `service`).
-    static func deleteKey(service: String = defaultService) {
-        SecItemDelete(query(service: service) as CFDictionary)
+    static func deleteKey(service: String) {
+        SecItemDelete(baseQuery(service: service) as CFDictionary)
     }
 
-    private static func load(service: String) -> SymmetricKey? {
-        var attributes = query(service: service)
+    /// Test-only: adds a key under a chosen id (nil = the original item).
+    @discardableResult
+    static func addKey(id: String?, key: SymmetricKey, service: String) -> Bool {
+        add(account: id.map { accountPrefix + $0 } ?? legacyAccount, key: key, service: service)
+    }
+
+    static func allKeys(service: String) -> [StoredKey] { lookup(service: service) ?? [] }
+
+    /// Every key of `service`. Empty only when the Keychain says there is none;
+    /// nil when it could not be read (any other status), which is not the same.
+    private static func lookup(service: String) -> [StoredKey]? {
+        var attributes = baseQuery(service: service)
         attributes[kSecReturnData as String] = true
-        attributes[kSecMatchLimit as String] = kSecMatchLimitOne
+        attributes[kSecReturnAttributes as String] = true
+        attributes[kSecMatchLimit as String] = kSecMatchLimitAll
         var result: AnyObject?
-        guard SecItemCopyMatching(attributes as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return SymmetricKey(data: data)
+        let status = SecItemCopyMatching(attributes as CFDictionary, &result)
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else { return nil }
+        return items.compactMap { item in
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  let data = item[kSecValueData as String] as? Data, data.count == 32 else { return nil }
+            let id: String?
+            if account == legacyAccount { id = nil }
+            else if account.hasPrefix(accountPrefix) { id = String(account.dropFirst(accountPrefix.count)) }
+            else { return nil }
+            return StoredKey(id: id, key: SymmetricKey(data: data), created: item[kSecAttrCreationDate as String] as? Date ?? .distantPast)
+        }
     }
 
-    private static func save(_ key: SymmetricKey, service: String) {
-        let base = query(service: service)
-        SecItemDelete(base as CFDictionary)
-        var item = base
+    private static func create(service: String) -> StoredKey? {
+        let id = SealedBlob.newKeyID()
+        let key = SymmetricKey(size: .bits256)
+        guard add(account: accountPrefix + id, key: key, service: service) else { return nil }
+        return StoredKey(id: id, key: key, created: Date())
+    }
+
+    /// Add only. A duplicate is an error here, never a reason to delete the
+    /// existing item: that deletion is what used to reach every device.
+    private static func add(account: String, key: SymmetricKey, service: String) -> Bool {
+        var item = baseQuery(service: service)
+        item[kSecAttrAccount as String] = account
         item[kSecValueData as String] = key.withUnsafeBytes { Data($0) }
         // Must be a non-"ThisDeviceOnly" accessibility class — only those
         // are eligible to sync via iCloud Keychain at all.
         item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
-        SecItemAdd(item as CFDictionary, nil)
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
-    private static func query(service: String) -> [String: Any] {
+    private static func baseQuery(service: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
             kSecAttrSynchronizable as String: true,
         ]
+    }
+}
+
+/// A sealed notebook as stored in `Notebook.encryptedContent`: a marker, the id
+/// of the key that sealed it, then the AES-GCM combined box. A blob sealed by an
+/// older build has no marker and is the box alone; it opens with the original
+/// key. A (1 in 4 billion) older blob whose first bytes happen to equal the
+/// marker is still tried as an old blob when the marked reading fails.
+enum SealedBlob {
+    private static let marker = Data("SQK1".utf8)
+    private static let idLength = 16
+
+    static func newKeyID() -> String {
+        (0..<idLength).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max)) }.joined()
+    }
+
+    /// nil for an id that is not a valid key id: an unmarked blob sealed with a
+    /// new key would only open with the original key, so it must not be written.
+    static func wrap(_ box: Data, keyID: String?) -> Data? {
+        guard let keyID else { return box }
+        guard let idBytes = bytes(fromHex: keyID) else { return nil }
+        return marker + idBytes + box
+    }
+
+    /// The readings of `blob` worth trying, most likely first.
+    static func readings(of blob: Data) -> [(keyID: String?, box: Data)] {
+        var out: [(keyID: String?, box: Data)] = []
+        if blob.count > marker.count + idLength, blob.prefix(marker.count) == marker {
+            let idBytes = blob.dropFirst(marker.count).prefix(idLength)
+            out.append((idBytes.map { String(format: "%02x", $0) }.joined(), Data(blob.dropFirst(marker.count + idLength))))
+        }
+        out.append((nil, blob))
+        return out
+    }
+
+    private static func bytes(fromHex hex: String) -> Data? {
+        guard hex.count == idLength * 2 else { return nil }
+        var data = Data()
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
+            data.append(byte)
+            index = next
+        }
+        return data
     }
 }
 
@@ -115,7 +224,15 @@ enum NotebookEncryptionService {
     /// `NotebookBackupService`'s own best-effort writes, since there's no
     /// good way to surface a Keychain failure from a background/disappear
     /// hook.
-    static func lock(_ notebook: Notebook, keyService: String = NotebookEncryptionKeyStore.defaultService) {
+    /// Returns whether the notebook is now sealed. `false` means nothing was
+    /// changed and the content is still readable: the caller must not mark the
+    /// notebook protected.
+    @discardableResult
+    static func lock(_ notebook: Notebook, keyService: String = NotebookEncryptionKeyStore.defaultService) -> Bool {
+        // Already sealed (for example its key has not reached this device, so it
+        // could not be opened): the live fields are empty, and sealing them again
+        // would overwrite the real content with nothing.
+        guard notebook.encryptedContent == nil else { return true }
         let pages = notebook.sortedPages
         let content = EncryptedContent(pages: pages.map { page in
             EncryptedContent.Page(
@@ -131,10 +248,14 @@ enum NotebookEncryptionService {
             )
         })
         guard let plainData = try? JSONEncoder().encode(content),
-              let sealed = try? AES.GCM.seal(plainData, using: NotebookEncryptionKeyStore.loadOrCreateKey(service: keyService)),
-              let combined = sealed.combined else { return }
+              let sealingKey = NotebookEncryptionKeyStore.keyForSealing(service: keyService),
+              let sealed = try? AES.GCM.seal(plainData, using: sealingKey.key),
+              let combined = sealed.combined,
+              let blob = SealedBlob.wrap(combined, keyID: sealingKey.id) else { return false }
 
-        notebook.encryptedContent = combined
+        // Content that was sealed with the original (id-less) key stays in the
+        // old format, so a build from before this change can still open it.
+        notebook.encryptedContent = blob
         for page in pages {
             page.drawingData = nil
             page.backgroundImageData = nil
@@ -147,6 +268,7 @@ enum NotebookEncryptionService {
                 element.imageData = nil
             }
         }
+        return true
     }
 
     /// Restores the live fields from `notebook.encryptedContent` and clears
@@ -158,10 +280,10 @@ enum NotebookEncryptionService {
     @discardableResult
     static func unlock(_ notebook: Notebook, keyService: String = NotebookEncryptionKeyStore.defaultService) -> Bool {
         guard let encrypted = notebook.encryptedContent else { return true }
-        guard let sealedBox = try? AES.GCM.SealedBox(combined: encrypted),
-              let plainData = try? AES.GCM.open(sealedBox, using: NotebookEncryptionKeyStore.loadOrCreateKey(service: keyService)),
-              let content = try? JSONDecoder().decode(EncryptedContent.self, from: plainData)
-        else { return false }
+        // Opens with the key the blob names and never creates one: a key that has
+        // not reached this device yet is a failure to retry later, not a reason
+        // to make a new key (see `NotebookEncryptionKeyStore`).
+        guard let content = openedContent(encrypted, keyService: keyService) else { return false }
 
         let pages = notebook.sortedPages
         guard pages.count == content.pages.count else { return false }
@@ -181,5 +303,16 @@ enum NotebookEncryptionService {
         }
         notebook.encryptedContent = nil
         return true
+    }
+
+    private static func openedContent(_ blob: Data, keyService: String) -> EncryptedContent? {
+        for reading in SealedBlob.readings(of: blob) {
+            guard let key = NotebookEncryptionKeyStore.key(withID: reading.keyID, service: keyService),
+                  let box = try? AES.GCM.SealedBox(combined: reading.box),
+                  let plain = try? AES.GCM.open(box, using: key),
+                  let content = try? JSONDecoder().decode(EncryptedContent.self, from: plain) else { continue }
+            return content
+        }
+        return nil
     }
 }

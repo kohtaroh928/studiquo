@@ -150,6 +150,9 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
     }
 }
 
+/// The iCloud container in `studiquo.entitlements`.
+private let cloudKitContainerIdentifier = "iCloud.com.yabuko.studiquo"
+
 /// Only fall back after the cloud attempt has actually returned an error.
 /// A deadline cannot cancel ModelContainer.init; opening another container
 /// on the same store while migration is still running can contend for its lock.
@@ -164,7 +167,10 @@ private func makeStudiquoModelContainer() throws -> ModelContainer {
     }
     startupLogger.info("Opening persistent store with CloudKit")
     do {
-        let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .automatic)
+        // Named, not `.automatic`: automatic takes the first container in the
+        // entitlements, so adding another container later could silently send the
+        // library to the wrong one. Only the private database is ever used.
+        let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .private(cloudKitContainerIdentifier))
         let container = try ModelContainer(for: studiquoSchema, configurations: configuration)
         startupLogger.info("Persistent store ready (CloudKit)")
         return container
