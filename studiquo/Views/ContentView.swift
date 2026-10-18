@@ -1609,7 +1609,7 @@ enum MCPCloudCredentials {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["randomValue": makeRandomValue()])
-        guard let (data, response) = try? await session.data(for: request),
+        guard let (data, response) = try? await session.dataNoticing(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let body = try? JSONDecoder().decode(RefreshResponse.self, from: data),
               body.refreshed, let replacement = body.token,
@@ -1732,7 +1732,7 @@ enum MCPCloudCredentials {
         request.httpMethod = "POST"
         request.timeoutInterval = 10
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        _ = try? await URLSession.shared.data(for: request)
+        _ = try? await URLSession.shared.dataNoticing(for: request)
     }
 
     /// The Worker endpoint every cloud request (sync, AI, sign-in, revoke)
@@ -6441,7 +6441,7 @@ struct ContentView: View {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard 200..<300 ~= http.statusCode else {
             if PasskeyReauth.isRequired(status: http.statusCode, body: data) { throw PasskeyError.reauthRequired }
@@ -6550,7 +6550,7 @@ struct ContentView: View {
             upload.httpBody = snapshotData
             upload.setValue("application/json", forHTTPHeaderField: "Content-Type")
             upload.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
-            let (uploadData, uploadResponse) = try await URLSession.shared.data(for: upload)
+            let (uploadData, uploadResponse) = try await URLSession.shared.dataNoticing(for: upload)
             guard let uploadHTTP = uploadResponse as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
             }
@@ -6560,7 +6560,7 @@ struct ContentView: View {
 
             var download = URLRequest(url: baseURL.appending(path: "api/actions"))
             download.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
-            let (actionData, actionResponse) = try await URLSession.shared.data(for: download)
+            let (actionData, actionResponse) = try await URLSession.shared.dataNoticing(for: download)
             guard let actionHTTP = actionResponse as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
             }
@@ -6578,7 +6578,7 @@ struct ContentView: View {
                 var clear = URLRequest(url: baseURL.appending(path: "api/actions"))
                 clear.httpMethod = "DELETE"
                 clear.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
-                _ = try await URLSession.shared.data(for: clear)
+                _ = try await URLSession.shared.dataNoticing(for: clear)
             }
             mcpCloudStatus = actions.isEmpty
                 ? L("同期しました。新しいAI変更はありません。")
