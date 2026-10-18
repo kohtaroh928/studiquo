@@ -7,7 +7,6 @@
 // See docs/RUNBOOK.md RB-17.
 import { json, readJSONLimited } from "./http.js";
 import { auditAdmin } from "./audit.js";
-import { accessActor } from "./access.js";
 import { SUSPENSION_PREFIX } from "./session.js";
 
 const NOTE_MAX = 2_000;
@@ -43,10 +42,16 @@ export async function handleModerationActions(url, request, env) {
 
   if (url.pathname === "/api/admin/accounts/suspended" && request.method === "GET") {
     await auditAdmin(env, request, "account.list_suspended");
-    const page = await env.STUDIQUO_DATA.list({ prefix: SUSPENSION_PREFIX, limit: 200 });
-    const suspended = await Promise.all(page.keys.map(async key => ({
-      suspensionID: key.name.slice(SUSPENSION_PREFIX.length),
-      ...(await env.STUDIQUO_DATA.get(key.name, "json")),
+    const names = [];
+    let cursor;
+    do {
+      const page = await env.STUDIQUO_DATA.list({ prefix: SUSPENSION_PREFIX, cursor });
+      names.push(...page.keys.map(key => key.name));
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+    const suspended = await Promise.all(names.map(async name => ({
+      suspensionID: name.slice(SUSPENSION_PREFIX.length),
+      ...(await env.STUDIQUO_DATA.get(name, "json")),
     })));
     return json({ suspended });
   }
@@ -72,7 +77,7 @@ export async function handleModerationActions(url, request, env) {
     if (found.response) return found.response;
     await auditAdmin(env, request, "account.suspend", found.identityHash.slice(0, 16), `report ${reportID}`);
     await env.STUDIQUO_DATA.put(`${SUSPENSION_PREFIX}${found.identityHash}`, JSON.stringify({
-      at: Date.now(), reportID, by: (await accessActor(request, env)) ?? "unknown",
+      at: Date.now(), reportID, // who did it is in the audit log, not here
     }));
     await resolveReport(env, reportID, "アカウントを停止");
     return json({ suspended: true, suspensionID: found.identityHash });
