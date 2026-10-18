@@ -27,11 +27,17 @@ enum DocxZip {
         case corruptEntry(String)
         case decompressionFailed(String)
         case compressionFailed(String)
+        /// Too many entries, or too much once inflated: see `ImportLimits`.
+        case limitExceeded
     }
 
     // MARK: Reading
 
-    static func read(_ data: Data) throws -> [Entry] {
+    static func read(
+        _ data: Data,
+        maxEntries: Int = ImportLimits.maxZipEntries,
+        maxTotalUncompressedBytes: Int = ImportLimits.maxZipTotalUncompressedBytes
+    ) throws -> [Entry] {
         let bytes = [UInt8](data)
         guard let eocdOffset = findEndOfCentralDirectory(bytes) else {
             throw ZipError.notAZipFile
@@ -40,8 +46,11 @@ enum DocxZip {
         guard eocdOffset + 22 <= bytes.count else { throw ZipError.notAZipFile }
         let totalEntries = Int(readUInt16(bytes, eocdOffset + 10))
         let centralDirOffset = Int(readUInt32(bytes, eocdOffset + 16))
+        // The entry count comes from the file too; a real .docx has a handful.
+        guard totalEntries <= maxEntries else { throw ZipError.limitExceeded }
 
         var entries: [Entry] = []
+        var totalUncompressed = 0
         var cursor = centralDirOffset
         for _ in 0..<totalEntries {
             guard cursor + 46 <= bytes.count, readUInt32(bytes, cursor) == 0x0201_4b50 else {
@@ -65,6 +74,11 @@ enum DocxZip {
                     compressedSize: compressedSize,
                     uncompressedSize: uncompressedSize
                 )
+                // Each entry is within its own limit (see `inflate`), but many
+                // entries together are the same bomb. Counted on what was really
+                // produced, not on the size the header declared.
+                totalUncompressed += entryData.count
+                guard totalUncompressed <= maxTotalUncompressedBytes else { throw ZipError.limitExceeded }
                 entries.append(Entry(path: name, data: entryData))
             }
 

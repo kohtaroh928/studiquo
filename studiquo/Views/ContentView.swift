@@ -2237,6 +2237,9 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var isImportingFiles = false
     @State private var docxImportFailed = false
+    /// Why a file was refused for its size (see `ImportLimits`); nil shows the
+    /// generic "broken or unsupported" text.
+    @State private var importRejectionMessage: String?
     @State private var docxImportReport: String?
     @State private var isImportingBackup = false
     /// A locked PDF waiting for its password before it can be imported.
@@ -2806,7 +2809,7 @@ struct ContentView: View {
         .alert("読み込めませんでした", isPresented: $docxImportFailed) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("このファイルは開けませんでした。壊れているか、対応していない形式の可能性があります。")
+            Text(importRejectionMessage ?? L("このファイルは開けませんでした。壊れているか、対応していない形式の可能性があります。"))
         }
         .alert("一部の要素は変換できませんでした", isPresented: Binding(
             get: { docxImportReport != nil },
@@ -2825,6 +2828,11 @@ struct ContentView: View {
         .fileImporter(isPresented: $isImportingBackup, allowedContentTypes: [.json], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
                 for url in urls {
+                    if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxBackupFileBytes) {
+                        importRejectionMessage = L(rejection.message)
+                        docxImportFailed = true
+                        continue
+                    }
                     if let notebook = NotebookBackupService.restore(from: url) {
                         modelContext.insert(notebook)
                         openNotebookTab(notebook)
@@ -5956,6 +5964,13 @@ struct ContentView: View {
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
 
+        // Before anything reads the file: an oversized PDF must not be copied
+        // for the password prompt or read whole into memory.
+        if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxPDFFileBytes) {
+            pdfPrepareError = L(rejection.message)
+            return nil
+        }
+
         // A password-protected PDF opens to blank pages unless it is unlocked
         // first. Hold it aside and ask for the password, exactly as PDF
         // Expert does when a locked file is opened.
@@ -5980,9 +5995,14 @@ struct ContentView: View {
         let lockedPDFData = password != nil ? try? Data(contentsOf: url) : nil
 
         let coordinator = sharedImport
-        let extractedPages = await PDFImportService.extractPagesAsync(from: url, password: password) { done, total in
+        let extraction = await PDFImportService.extractPagesCheckedAsync(from: url, password: password) { done, total in
             Task { @MainActor in coordinator.advancePage(done: done, of: total) }
         }
+        if let rejection = extraction.rejection {
+            pdfPrepareError = L(rejection.message)
+            return nil
+        }
+        let extractedPages = extraction.pages
         guard !extractedPages.isEmpty else {
             // Broken or unsupported PDF. Saying so matters most in a batch,
             // where silence used to count it as imported.
@@ -6179,6 +6199,12 @@ struct ContentView: View {
         defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
         let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
         let fileExtension = url.pathExtension.lowercased()
+        if ["json", "txt", "tsv", "csv"].contains(fileExtension),
+           let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxTextFileBytes) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
         if fileExtension == "json", importMCPActions(from: url) {
             return
         }
@@ -6194,9 +6220,25 @@ struct ContentView: View {
             return
         }
         let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "tif", "tiff", "gif", "webp"]
-        guard type?.conforms(to: .image) == true || imageExtensions.contains(fileExtension),
-              let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-              let image = UIImage(data: data) else { return }
+        guard type?.conforms(to: .image) == true || imageExtensions.contains(fileExtension) else { return }
+        // The size on disk and the pixel size in the header are both checked
+        // before `UIImage(data:)` decodes anything: a small PNG can declare
+        // billions of pixels.
+        importRejectionMessage = nil
+        if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxImageFileBytes) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
+        // Read once and use these same bytes for the check and the decode, so
+        // the file cannot change in between.
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return }
+        if let rejection = ImportLimits.checkImage(data: data) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
+        guard let image = UIImage(data: data) else { return }
         let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
         assignToCurrentFolder(notebook)
         let page = NotePage(
@@ -6220,8 +6262,24 @@ struct ContentView: View {
     /// (`DocxReader`), so this works offline the same as the existing PDF
     /// import above.
     private func importDocx(from url: URL) {
-        guard let data = try? Data(contentsOf: url),
-              let result = try? DocxReader.read(from: data) else {
+        importRejectionMessage = nil
+        if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxDocxFileBytes) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            docxImportFailed = true
+            return
+        }
+        let result: DocxReader.Result
+        do {
+            result = try DocxReader.read(from: data)
+        } catch DocxReader.ReadError.archiveTooLarge {
+            importRejectionMessage = L(ImportLimits.Rejection.archiveTooLarge.message)
+            docxImportFailed = true
+            return
+        } catch {
             docxImportFailed = true
             return
         }
@@ -6319,7 +6377,8 @@ struct ContentView: View {
 
     @discardableResult
     private func importMCPActions(from url: URL) -> Bool {
-        guard let data = try? Data(contentsOf: url) else { return false }
+        guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxTextFileBytes) == nil,
+              let data = try? Data(contentsOf: url) else { return false }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let actions = try? decoder.decode([MCPPendingAction].self, from: data), !actions.isEmpty else {
@@ -6590,7 +6649,8 @@ struct ContentView: View {
 
     @discardableResult
     private func importFlashcards(from url: URL) -> Bool {
-        guard let data = try? Data(contentsOf: url),
+        guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxTextFileBytes) == nil,
+              let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else {
             return false
         }
