@@ -356,6 +356,22 @@ export async function deleteAccount(env, canonicalSub) {
     for (const tokenHash of ownedTokenHashes) {
       await env.ADMIN_DB.prepare("DELETE FROM issue_reports WHERE reporter_key = ?").bind(tokenHash).run();
     }
+    // Chat reports: ones about this person's messages go with them; ones they
+    // filed about others stay (the moderator still needs them) minus who filed.
+    // The room rewrites a deleted sender to this marker, so a report filed
+    // after the deletion carries it instead of the key.
+    const marker = `deleted:${await sha256Hex(chatKey)}`;
+    await env.ADMIN_DB.prepare("DELETE FROM chat_reports WHERE reported_key IN (?, ?)").bind(chatKey, marker).run();
+    // A per-row placeholder (not a shared blank) keeps the one-report-per-person
+    // index satisfied when several people who reported the same message leave.
+    // The copied surrounding messages aren't known to be the reporter's or
+    // another member's, so their text is dropped; the reported message stays.
+    const filed = await env.ADMIN_DB.prepare("SELECT id, snapshot FROM chat_reports WHERE reporter_key = ?").bind(chatKey).all();
+    for (const row of filed.results ?? []) {
+      const kept = JSON.parse(row.snapshot).map(item => item.reported ? item : { ...item, text: "" });
+      await env.ADMIN_DB.prepare("UPDATE chat_reports SET reporter_key = ?, snapshot = ?, reason = '' WHERE id = ?")
+        .bind(`deleted:${row.id}`, JSON.stringify(kept), row.id).run();
+    }
   }
 
   // KV also covers historical reports whose dashboard mirror failed. The
@@ -384,7 +400,7 @@ export async function deleteAccount(env, canonicalSub) {
     ...emails.flatMap(email => [`email-account-owner:${email}`, `email-accounts:${email}`, `email-verify:${email}`]),
     ...[...identityKeys].map(key => `identity-canonical:${key}`),
     ...ownedTokenHashes.flatMap(hash => [`snapshot:${hash}`, `actions:${hash}`]),
-    ...mcpAccountHashes.map(hash => `snapshot:${hash}`), `chat:user:${chatKey}`, `chat:devices:${chatKey}`,
+    ...mcpAccountHashes.map(hash => `snapshot:${hash}`), `chat:user:${chatKey}`, `chat:devices:${chatKey}`, `chat-identity-of:${chatKey}`,
     ...devices.map(device => `chat:device-owner:${device.token}`),
   ];
   if (chatUser) deletionKeys.push(`chat:code:${chatUser.code}`, `chat:linktoken:${chatUser.linkToken}`, `chat:avatar:${chatUser.code}`);

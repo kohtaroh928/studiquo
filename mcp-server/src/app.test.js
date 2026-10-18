@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import test, { mock } from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import worker from "./app.js";
@@ -1818,9 +1820,28 @@ test("POST /api/issue-reports stores the report and posts it to Slack when a web
   }
 });
 
+// A real D1-shaped database built from the migrations, for routes that now log
+// to admin_audit_log before they act.
+function withAuditDB(env) {
+  const db = new DatabaseSync(":memory:");
+  for (const file of readdirSync(new URL("../migrations/", import.meta.url)).sort()) {
+    db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  }
+  const statement = (sql, params = []) => ({
+    bind: (...next) => statement(sql, next),
+    async run() { db.prepare(sql).run(...params); return { success: true, meta: { changes: 1 } }; },
+    async all() { return { results: db.prepare(sql).all(...params) }; },
+    async first() { return db.prepare(sql).get(...params) ?? null; },
+  });
+  env.ADMIN_DB = { prepare: sql => statement(sql) };
+  env._auditDB = db;
+  return env;
+}
+
 test("report screenshots require verified Access and are not sent to Slack", async () => {
   const env = environment();
   Object.assign(env, ACCESS_ENV);
+  withAuditDB(env);
   env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.slack.test/services/xyz";
   const token = freshToken("q");
   const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
@@ -1859,6 +1880,8 @@ test("report screenshots require verified Access and are not sent to Slack", asy
   assert.equal(screenshotResponse.headers.get("content-type"), "image/png");
   const returnedBytes = Buffer.from(await screenshotResponse.arrayBuffer());
   assert.deepEqual(returnedBytes, pngBytes);
+  assert.deepEqual(env._auditDB.prepare("SELECT action, target FROM admin_audit_log").all().map(row => ({ ...row })),
+    [{ action: "issue_report.screenshot_view", target: id }]);
 });
 
 test("a report submitted with a screenshot is flagged hasScreenshot:true, with the image stored under its own KV key", async () => {
@@ -1905,6 +1928,7 @@ test("a report submitted without a screenshot is flagged hasScreenshot:false, wi
 test("a downloaded issue-report screenshot is cached only privately and only briefly", async () => {
   const env = environment();
   Object.assign(env, ACCESS_ENV);
+  withAuditDB(env);
   env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.slack.test/services/xyz";
   const token = freshToken("w9");
 

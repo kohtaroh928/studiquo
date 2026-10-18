@@ -115,3 +115,13 @@ test("the privacy policy discloses the automatic diagnostic reports and how to t
   assert.match(body, /ノートやチャットの本文は含めません/);
   assert.match(body, /いつでも停止できます/);
 });
+
+test("the policy and terms describe reports, blocks and what the operator can do about them", async () => {
+  const privacy = await (await worker.fetch(new Request("https://example.test/privacy"), {}, { waitUntil() {} })).text();
+  assert.match(privacy, /通報・ブロック・利用停止に関する情報/);
+  assert.match(privacy, /通報は90日で削除/);
+  assert.match(privacy, /取り消しても、通報の時点の内容は保存/);
+  const terms = await (await worker.fetch(new Request("https://example.test/terms"), {}, { waitUntil() {} })).text();
+  assert.match(terms, /メッセージの削除、通知による注意、チャット機能の停止、アカウントの利用停止/);
+  assert.match(terms, /利用を停止された場合でも、アカウントの削除はできます/);
+});

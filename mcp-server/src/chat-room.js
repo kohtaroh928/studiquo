@@ -395,6 +395,47 @@ export class ChatRoom extends DurableObject {
     }));
   }
 
+  // Operator removal (moderation-actions.js): the same end state as the sender
+  // retracting, without being the sender. Reachable only through the Worker's
+  // binding from the Access-gated admin API, never from a user's request.
+  async moderatorRemoveMessage(messageID) {
+    const row = this.ctx.storage.sql.exec("SELECT id, is_canceled FROM messages WHERE id = ?", messageID).toArray()[0];
+    if (!row) return { status: "not_found" };
+    this.ctx.storage.sql.exec("UPDATE messages SET is_canceled = 1, text = '' WHERE id = ?", messageID);
+    return { status: row.is_canceled ? "already_removed" : "removed" };
+  }
+
+  // The reported message and its neighbours exactly as they are now, for a
+  // moderator to read later. Taken at report time because cancelMessage
+  // clears the text — otherwise the sender could erase the evidence by
+  // retracting after being reported. `reported` is the sender's key.
+  async reportSnapshot(userKey, messageID) {
+    this.requireParticipant(userKey);
+    const target = this.ctx.storage.sql.exec(
+      "SELECT id, sender_key, text, sent_at, is_canceled FROM messages WHERE id = ?", messageID,
+    ).toArray()[0];
+    if (!target) return null;
+    const rows = this.ctx.storage.sql.exec(
+      `SELECT * FROM (SELECT id, sender_key, text, sent_at, is_canceled FROM messages WHERE id < ? ORDER BY id DESC LIMIT 3)
+       UNION ALL SELECT id, sender_key, text, sent_at, is_canceled FROM messages WHERE id = ?
+       UNION ALL SELECT * FROM (SELECT id, sender_key, text, sent_at, is_canceled FROM messages WHERE id > ? ORDER BY id ASC LIMIT 2)
+       ORDER BY id ASC`,
+      messageID, messageID, messageID,
+    ).toArray();
+    const clip = text => String(text ?? "").slice(0, 2_000);
+    return {
+      reportedKey: target.sender_key,
+      messages: rows.map(row => ({
+        id: row.id,
+        fromReported: row.sender_key === target.sender_key,
+        text: clip(row.text),
+        sentAt: row.sent_at,
+        isCanceled: !!row.is_canceled,
+        reported: row.id === messageID,
+      })),
+    };
+  }
+
   // A real retraction, not just a local hide: the stored text is actually
   // cleared here, so the recipient (or the sender's own data on a fresh
   // install) can never see the original content again once this succeeds —

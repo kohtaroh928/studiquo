@@ -424,7 +424,8 @@ export async function handlePasskeys(url, request, env) {
   // session then counts as freshly verified for a few minutes (see
   // requireRecentPasskey). Only the account's own passkeys are offered.
   if (url.pathname === "/api/passkeys/reauth/options" && request.method === "POST") {
-    const auth = await authenticatedSession(request, env);
+    // Deleting the account asks for this, and a suspended person may still delete.
+    const auth = await authenticatedSession(request, env, { allowSuspended: true });
     if (auth.response) return auth.response;
     const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_LOGIN_OPTIONS, auth.tokenHash);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
@@ -446,7 +447,8 @@ export async function handlePasskeys(url, request, env) {
   }
 
   if (url.pathname === "/api/passkeys/reauth/verify" && request.method === "POST") {
-    const auth = await authenticatedSession(request, env);
+    // Deleting the account asks for this, and a suspended person may still delete.
+    const auth = await authenticatedSession(request, env, { allowSuspended: true });
     if (auth.response) return auth.response;
     const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_LOGIN_VERIFY, auth.tokenHash);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
@@ -493,11 +495,11 @@ export async function handlePasskeys(url, request, env) {
 
 // The checks every signed-in passkey route shares: a well-formed, unexpired,
 // server-issued, unrevoked token. Returns the session, or the response to send.
-async function authenticatedSession(request, env) {
+async function authenticatedSession(request, env, options) {
   const token = bearerToken(request);
   if (!token) return { response: json({ error: "A valid bearer token is required." }, 401) };
   if (isExpired(token)) return { response: json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401) };
-  const session = await realSession(env, token);
+  const session = await realSession(env, token, options);
   if (!session) return { response: json({ error: "Reconnect from Studiquo to get a new token." }, 401) };
   const tokenHash = await sha256Hex(token);
   if (await isRevoked(env, tokenHash)) return { response: json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401) };
