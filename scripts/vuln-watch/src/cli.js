@@ -9,7 +9,7 @@
 // 共通: --state <path> で state.json の場所を変えられる(試験用)
 // 終了コード: 0=完了 / 2=取得に失敗したデータ源があり結果が不完全 / 3=LLM判定が反映されなかった / 4=その両方
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -84,6 +84,8 @@ async function cmdScan(args) {
   } catch (e) {
     sourceErrors.push(`OSV: ${e.message}`);
   }
+  if (args['no-nvd']) sourceErrors.push('NVD: 取得を省略しました(--no-nvd)');
+  if (args['no-jvn']) sourceErrors.push('JVN: 取得を省略しました(--no-jvn)');
   if (!args['no-nvd']) {
     try {
       findings = findings.concat(await queryNvd(client, items, { apiKey: loadApiKey() }));
@@ -128,6 +130,7 @@ async function cmdScan(args) {
 
   const outDir = outDirOf(args);
   mkdirSync(outDir, { recursive: true });
+  clearStale(outDir, ['triage-result.json', 'cards-existing.json', 'cards-ops.json', 'cards-ops.dry.json', 'summary.txt']);
   const run = { schema: 2, generatedAt, inventory: items, unmatchable, warnings, sourceErrors, ranked };
   writeFileSync(`${outDir}/latest.json`, JSON.stringify(run, null, 2));
   const counts = writeTriageFiles(outDir, ranked, generatedAt, state, now, Boolean(args.fresh) || isFreshDay(now));
@@ -150,8 +153,14 @@ function statePathOf(args) {
 
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 
+/** 前回の回の成果物を消す。古い返信や古い操作リストが、今回の回で使われないようにする。 */
+function clearStale(outDir, names) {
+  for (const n of names) rmSync(`${outDir}/${n}`, { force: true });
+}
+
 /** 候補の全件(triage-all.json: 検証用)と、エージェントに判定させる分(triage-input.json)を書く。 */
 function writeTriageFiles(outDir, ranked, generatedAt, state, now, fresh) {
+  clearStale(outDir, ['reply.json']); // 古い返信を、今回の指摘の判定として使わせない
   const all = buildTriageInput(ranked, { generatedAt });
   const { pending, cached } = selectForJudgement(all.items, state, now, { fresh });
   writeFileSync(`${outDir}/triage-all.json`, JSON.stringify(all, null, 2));
@@ -204,19 +213,21 @@ function cmdTriageApply(args) {
     // 読めない返信は applyTriage が「採用しなかった判定」として記録する
   }
 
-  const result = applyTriage(run.ranked, all, raw, { repoRoot, allowLowering: run.sourceErrors.length === 0, cachedVerdicts });
+  const result = applyTriage(run.ranked, all, raw, { repoRoot, allowLowering: run.sourceErrors.length === 0, cachedVerdicts, replyAllowedIds: pendingIds });
   const decided = new Set(result.acceptedVerdicts.map((e) => e.id));
-  const unjudged = input.items.filter((i) => !decided.has(i.id)).length; // エージェントに回したのに判定が付かなかった指摘
-  const triage = { status: result.status, accepted: result.accepted, judged: result.judged, total: result.total, rejected: result.rejected, redactions: result.redactions, unjudged, cached: cachedVerdicts.length };
+  const unjudged = all.items.filter((i) => !decided.has(i.id)).length; // 判定が付かなかった指摘(エージェントに回したのに返らなかったもの、検証で落ちたキャッシュを含む)
+  const cacheUsed = cachedVerdicts.filter((c) => decided.has(c.id)).length;
+  const cacheBad = cachedVerdicts.filter((c) => !decided.has(c.id)).map((c) => c.id);
+  const triage = { status: result.status, accepted: result.accepted, judged: result.judged, total: result.total, rejected: result.rejected, redactions: result.redactions, unjudged, cached: cacheUsed };
 
   const hashOf = new Map(all.items.map((i) => [i.id, i.hash]));
   const fresh = result.acceptedVerdicts.filter((e) => replyIds.has(e.id)).map((e) => ({ id: e.id, hash: hashOf.get(e.id), verdict: e.verdict }));
-  saveVerdicts(statePath, state, fresh, all.items.map((i) => i.id), now.toISOString());
+  saveVerdicts(statePath, state, fresh, all.items.map((i) => i.id), now.toISOString(), cacheBad);
 
   const md = renderReport({ ranked: result.ranked, inventory: run.inventory, unmatchable: run.unmatchable, warnings: run.warnings, sourceErrors: run.sourceErrors, generatedAt: run.generatedAt, triage });
   writeFileSync(`${outDir}/latest.md`, md);
   writeFileSync(`${outDir}/triage-result.json`, JSON.stringify({ ...triage, generatedAt: run.generatedAt, ranked: result.ranked }, null, 2));
-  console.log(`LLM判定: ${result.accepted}件を反映(うちキャッシュ ${cachedVerdicts.length}件) / 採用しなかった ${result.rejected.length}件 / 判定が付かなかった ${unjudged}件\nレポート: ${outDir}/latest.md`);
+  console.log(`LLM判定: ${result.accepted}件を反映(うちキャッシュ ${cacheUsed}件) / 採用しなかった ${result.rejected.length}件 / 判定が付かなかった ${unjudged}件\nレポート: ${outDir}/latest.md`);
   for (const r of result.rejected) console.warn(`  - ${r.id}: ${r.reason}`);
   const incomplete = run.sourceErrors.length > 0;
   const noVerdict = result.status === 'none' || unjudged > 0;
@@ -227,14 +238,18 @@ function cmdTriageApply(args) {
 
 function cmdCardsPlan(args) {
   const outDir = outDirOf(args);
+  clearStale(outDir, ['cards-ops.json']); // 失敗しても、前回の操作リストが残って実行されないように、最初に消す
   const run = readJson(`${outDir}/latest.json`);
   const result = readSameRun(`${outDir}/triage-result.json`, run.generatedAt);
   // 既存カードを取得できていないまま計画すると、重複を作ってしまう
   if (typeof args.existing !== 'string' && !args['dry-run']) throw new Error('--existing(Notionから取得した既存カード)が必要です。試すだけなら --dry-run を付けてください。');
   const existing = typeof args.existing === 'string' ? readJson(args.existing) : [];
   const plan = planCards({ ranked: result?.ranked ?? run.ranked, existing, today: new Date().toLocaleDateString('sv-SE'), incomplete: run.sourceErrors.length > 0 });
-  writeFileSync(`${outDir}/cards-ops.json`, JSON.stringify({ generatedAt: run.generatedAt, incomplete: run.sourceErrors.length > 0, triageApplied: Boolean(result), ...plan }, null, 2));
-  console.log(`カード計画: 作成 ${plan.counts.create} / 更新 ${plan.counts.update} / コメント ${plan.counts.comment} / 見送り ${plan.skipped.length} → ${outDir}/cards-ops.json`);
+  // --dry-run は既存カードを知らずに計画するため、実行用の cards-ops.json には書かない
+  const dryRun = Boolean(args['dry-run']) && typeof args.existing !== 'string';
+  const file = dryRun ? 'cards-ops.dry.json' : 'cards-ops.json';
+  writeFileSync(`${outDir}/${file}`, JSON.stringify({ generatedAt: run.generatedAt, dryRun, incomplete: run.sourceErrors.length > 0, triageApplied: Boolean(result), ...plan }, null, 2));
+  console.log(`カード計画: 作成 ${plan.counts.create} / 更新 ${plan.counts.update} / コメント ${plan.counts.comment} / 見送り ${plan.skipped.length} → ${outDir}/${file}${dryRun ? '(試験用。実行しない)' : ''}`);
   for (const s of plan.skipped) console.warn(`  見送り: ${s.target}: ${s.reason}`);
   for (const n of plan.notes) console.warn(`  注意: ${n}`);
 }

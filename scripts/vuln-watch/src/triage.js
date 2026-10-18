@@ -33,6 +33,11 @@ export function itemHash(item) {
 
 // 判定の reason に、読んだファイルの中身(鍵・トークンなど)が写り込んだときの検出(設計書 3.9)
 const SECRET_PATTERNS = [
+  /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g, // UUID形式(NVD APIキーなど)
+  /sk_(?:live|test)_[A-Za-z0-9]{8,}/g,
+  /xox[abprs]-[A-Za-z0-9-]{10,}/g,
+  /AIza[0-9A-Za-z_-]{35}/g,
+  /Bearer\s+[A-Za-z0-9._~+/=-]{16,}/g,
   /sk-[A-Za-z0-9_-]{16,}/g,
   /AKIA[0-9A-Z]{16}/g,
   /gh[pousr]_[A-Za-z0-9]{20,}/g,
@@ -45,7 +50,11 @@ export function redactSecrets(text) {
   let out = String(text);
   for (const re of SECRET_PATTERNS) out = out.replace(re, () => (count++, '[伏字]'));
   // 文字と数字が混ざった40文字以上の連なり(パスや単語だけの長い文字列は残す)
-  out = out.replace(/[A-Za-z0-9+/_=-]{40,}/g, (m) => (/[A-Za-z]/.test(m) && /[0-9]/.test(m) ? (count++, '[伏字]') : m));
+  // パス(/で区切られ、どの区間も40文字未満)は残す
+  out = out.replace(/[A-Za-z0-9+/_=-]{40,}/g, (m) => {
+    if (m.includes('/') && m.split('/').every((seg) => seg.length < 40)) return m;
+    return /[A-Za-z]/.test(m) && /[0-9]/.test(m) ? (count++, '[伏字]') : m;
+  });
   return { text: out, count };
 }
 
@@ -105,6 +114,9 @@ export function parseVerdicts(raw) {
   return list;
 }
 
+// エージェントの返信に入っていたIDは、親セッションの目に触れる前に形式を確かめる
+const safeId = (id) => (/^F-[0-9a-f]{12}$/.test(id) ? id : id ? '(不正なID)' : '(IDなし)');
+
 const lineCache = new Map();
 function lineCount(file) {
   if (!lineCache.has(file)) lineCache.set(file, readFileSync(file, 'utf8').split('\n').length);
@@ -144,7 +156,9 @@ function checkVerdict(v, item, repoRoot) {
   if (typeof v.reason !== 'string' || !v.reason.trim()) return { problem: 'reason が空' };
   const evidence = (Array.isArray(v.evidence) ? v.evidence : []).slice(0, LIMITS.evidence);
   const verified = evidence.filter((e) => verifyEvidence(e, item, repoRoot)).map((e) => ({ type: e.type, ref: e.ref }));
-  const { text: reason, count: redacted } = redactSecrets(clean(v.reason, LIMITS.reason));
+  // 先に伏せてから切る(境界で切れた鍵の前半が残らないように)
+  const { text: redactedReason, count: redacted } = redactSecrets(clean(v.reason, 2000));
+  const reason = redactedReason.slice(0, LIMITS.reason);
   return {
     redacted,
     verdict: {
@@ -169,7 +183,7 @@ function lowered(tier) {
  * @param {object} input buildTriageInput の結果
  * @param {string|object|null} rawVerdicts エージェントの返信
  */
-export function applyTriage(ranked, input, rawVerdicts, { repoRoot, allowLowering = true, cachedVerdicts = [] }) {
+export function applyTriage(ranked, input, rawVerdicts, { repoRoot, allowLowering = true, cachedVerdicts = [], replyAllowedIds = null }) {
   const rejected = [];
   const byId = new Map(input.items.map((i) => [i.id, i]));
   let list = [];
@@ -179,6 +193,16 @@ export function applyTriage(ranked, input, rawVerdicts, { repoRoot, allowLowerin
     } catch (e) {
       rejected.push({ id: '(全体)', reason: e.message });
     }
+  }
+
+  // 返信で判定してよいのは、今回エージェントに依頼した指摘だけ(依頼していない指摘のキャッシュを上書きさせない)
+  if (replyAllowedIds) {
+    list = list.filter((v) => {
+      const id = typeof v?.id === 'string' ? v.id : '';
+      if (replyAllowedIds.has(id)) return true;
+      rejected.push({ id: safeId(id), reason: '今回は判定を依頼していない指摘のID' });
+      return false;
+    });
   }
 
   // キャッシュした判定は、返信に同じIDが無いときだけ足す。根拠は、返信の判定と同じ検証をもう一度通す
@@ -191,7 +215,7 @@ export function applyTriage(ranked, input, rawVerdicts, { repoRoot, allowLowerin
     const id = typeof v?.id === 'string' ? v.id : '';
     const item = byId.get(id);
     if (!item) {
-      rejected.push({ id: clean(id, 40) || '(IDなし)', reason: '入力に無いID' });
+      rejected.push({ id: safeId(id), reason: '入力に無いID' });
       continue;
     }
     if (accepted.has(id)) {

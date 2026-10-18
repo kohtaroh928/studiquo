@@ -3,7 +3,7 @@
 //   - lastSuccessAt: 前回、取得に失敗したデータ源が無かった時刻
 //   - verdicts: LLM判定のキャッシュ(設計書 3.6)。入力のハッシュが同じで7日以内なら、エージェントを呼ばずに再利用する
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 
 const DAY = 86_400_000;
 
@@ -19,7 +19,12 @@ export function loadState(path) {
   return { lastSuccessAt: null, reported: {}, verdicts: {} };
 }
 
-const write = (path, state) => writeFileSync(path, JSON.stringify(state, null, 2) + '\n');
+// 同時に読まれても途中の内容を見せないよう、一時ファイルに書いてから置き換える
+const write = (path, state) => {
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n');
+  renameSync(tmp, path);
+};
 
 export function markNew(findings, state) {
   return findings.map((f) => ({ ...f, isNew: !(f.id in state.reported) }));
@@ -58,8 +63,9 @@ export function selectForJudgement(items, state, now, { fresh = false, ttlDays =
 }
 
 /** 新しく得た判定を保存する。現在の指摘に無いIDの判定は捨てる。 */
-export function saveVerdicts(path, state, entries, liveIds, now) {
+export function saveVerdicts(path, state, entries, liveIds, now, dropIds = []) {
   const live = new Set(liveIds);
+  for (const id of dropIds) live.delete(id); // 検証で落ちたキャッシュは捨てる
   const verdicts = {};
   for (const [id, v] of Object.entries(state.verdicts)) if (live.has(id)) verdicts[id] = v;
   for (const { id, hash, verdict } of entries) verdicts[id] = { hash, verdict, judgedAt: now };
