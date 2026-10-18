@@ -37,8 +37,6 @@ struct UserProfileView: View {
     @AppStorage("profileBio") private var bio = ""
     @AppStorage("profileImage") private var imageData = Data()
     @State private var selectedPhoto: PhotosPickerItem?
-    @State private var passkeyAdded = false
-    @State private var confirmsPasskeyRemoval = false
     /// A multiline `TextField(_:text:axis:.vertical)` bound straight to an
     /// `@AppStorage` value re-triggers this `Form`'s layout (the field's own
     /// height depends on its text) on every keystroke as the write-through to
@@ -66,42 +64,10 @@ struct UserProfileView: View {
                     Text("名前・写真・自己紹介はフレンドに表示されます。自己紹介は500文字まで共有されます。")
                 }
                 Section {
-                    Button {
-                        Task { passkeyAdded = await authentication.addPasskey() }
-                    } label: {
-                        Label(
-                            passkeyAdded ? "パスキーを追加しました" : "パスキーを追加",
-                            systemImage: passkeyAdded ? "checkmark.circle.fill" : "person.badge.key.fill"
-                        )
-                    }
-                    .disabled(authentication.isPasskeyBusy || passkeyAdded)
-                    Button("パスキーをすべて削除", role: .destructive) { confirmsPasskeyRemoval = true }
-                        .disabled(authentication.isPasskeyBusy)
-                    if !authentication.errorMessage.isEmpty {
-                        Text(authentication.errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Palette.danger)
-                    }
-                } header: {
-                    Text("ログイン")
-                } footer: {
-                    Text("パスキーはiCloudキーチェーンに安全に保存され、次回からFace IDまたはTouch IDでログインできます。")
-                }
-                Section {
                     Button("ログアウト", role: .destructive) { authentication.logout(); dismiss() }
                 }
             }
                 .themeScreenBackground()
-            .confirmationDialog(
-                "パスキーをすべて削除しますか?",
-                isPresented: $confirmsPasskeyRemoval, titleVisibility: .visible
-            ) {
-                Button("削除して設定し直す", role: .destructive) {
-                    Task { passkeyAdded = false; _ = await authentication.removeAllPasskeys() }
-                }
-            } message: {
-                Text("心当たりのないパスキーが追加されたときに使います。削除後、新しいパスキーの設定をお願いします。")
-            }
             .navigationTitle("プロフィール")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { dismiss() } } }
             .onAppear { bioDraft = bio }

@@ -167,18 +167,14 @@ test("passkeys registered before the per-account list existed are found once and
 });
 
 
-test("a passkey registered in the last 24 hours does not lock anything and does not call off a recovery", async () => {
+test("a passkey protects the account from the moment it is registered", async () => {
   const env = environment();
   const mail = captureMail();
   try {
     const now = Date.now();
-    await addPasskey(env, "fresh", { createdAt: now - 3_600_000 });
-    // Not protection yet: the password sign-in still goes through, and no demand for a check.
-    assert.equal(await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now }), null);
-    assert.equal(await requireRecentPasskey(env, "1.t".padEnd(40, "t"), { sub: ACCOUNT }, "delete-account"), null);
-    assert.equal(await accountHasPasskey(env, ACCOUNT, EMAIL), true, "it exists, so the app does not ask for another");
-    // A day later it is.
-    assert.equal((await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now: now + 24 * HOUR })).status, 403);
+    await addPasskey(env, "fresh", { createdAt: now });
+    assert.equal((await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now })).status, 403);
+    assert.equal((await requireRecentPasskey(env, "1.t".padEnd(40, "t"), { sub: ACCOUNT }, "delete-account")).status, 403);
   } finally { mail.restore(); }
 });
 
