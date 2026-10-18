@@ -438,32 +438,32 @@ test('cli: triage-apply は返信を検証して反映し、終了コードで�
   writeFileSync(`${out}/triage-input.json`, JSON.stringify(input));
   const good = `${out}/good.json`;
   writeFileSync(good, JSON.stringify({ verdicts: [verdict(f.id, { evidence: [{ type: 'code', ref: 'mcp-server/package.json:1' }] })] }));
-  const ok = spawnSync('node', [cli, 'triage-apply', '--out', out, '--verdicts', good], { encoding: 'utf8' });
+  const ok = spawnSync('node', [cli, 'triage-apply', '--state', `${out}/state.json`, '--out', out, '--verdicts', good], { encoding: 'utf8' });
   assert.equal(ok.status, 0, ok.stderr);
   assert.match(readFileSync(`${out}/latest.md`, 'utf8'), /判定対象1件のうち1件に判定が返り/);
   assert.ok(existsSync(`${out}/triage-result.json`));
 
   const bad = `${out}/bad.json`;
   writeFileSync(bad, 'ごめんなさい、判定できません');
-  const none = spawnSync('node', [cli, 'triage-apply', '--out', out, '--verdicts', bad], { encoding: 'utf8' });
+  const none = spawnSync('node', [cli, 'triage-apply', '--state', `${out}/state.json`, '--out', out, '--verdicts', bad], { encoding: 'utf8' });
   assert.equal(none.status, 3);
   assert.match(readFileSync(`${out}/latest.md`, 'utf8'), /LLM判定なし/);
 
-  const viaStdin = spawnSync('node', [cli, 'triage-apply', '--out', out], { input: JSON.stringify({ verdicts: [] }), encoding: 'utf8' });
+  const viaStdin = spawnSync('node', [cli, 'triage-apply', '--state', `${out}/state.json`, '--out', out], { input: JSON.stringify({ verdicts: [] }), encoding: 'utf8' });
   assert.equal(viaStdin.status, 3);
 
   // 取得に失敗したデータ源がある回: 判定が反映されれば2、反映されなければ4(2と3の両方)
   writeFileSync(`${out}/latest.json`, JSON.stringify({ schema: 2, generatedAt: 'T1', inventory: [], unmatchable: [], warnings: [], sourceErrors: ['KEV: 落ちた'], ranked: [f] }));
-  const partial = spawnSync('node', [cli, 'triage-apply', '--out', out, '--verdicts', good], { encoding: 'utf8' });
+  const partial = spawnSync('node', [cli, 'triage-apply', '--state', `${out}/state.json`, '--out', out, '--verdicts', good], { encoding: 'utf8' });
   assert.equal(partial.status, 2);
   assert.match(readFileSync(`${out}/latest.md`, 'utf8'), /取得に失敗したデータ源/);
   assert.doesNotMatch(readFileSync(`${out}/latest.md`, 'utf8'), /機械判定は高/); // 取得失敗の回は区分を下げない
-  const both = spawnSync('node', [cli, 'triage-apply', '--out', out, '--verdicts', bad], { encoding: 'utf8' });
+  const both = spawnSync('node', [cli, 'triage-apply', '--state', `${out}/state.json`, '--out', out, '--verdicts', bad], { encoding: 'utf8' });
   assert.equal(both.status, 4);
   writeFileSync(`${out}/latest.json`, JSON.stringify({ schema: 2, generatedAt: 'T1', inventory: [], unmatchable: [], warnings: [], sourceErrors: [], ranked: [f] }));
 
   writeFileSync(`${out}/triage-input.json`, JSON.stringify({ ...input, generatedAt: 'T0' }));
-  const stale = spawnSync('node', [cli, 'triage-apply', '--out', out, '--verdicts', good], { encoding: 'utf8' });
+  const stale = spawnSync('node', [cli, 'triage-apply', '--state', `${out}/state.json`, '--out', out, '--verdicts', good], { encoding: 'utf8' });
   assert.equal(stale.status, 1); // scanをやり直していない古い入力は受け付けない
   assert.match(stale.stderr, /生成時刻/);
 });
