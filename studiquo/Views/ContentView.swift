@@ -2951,8 +2951,9 @@ struct ContentView: View {
                                 .accessibilityLabel(isMCPCloudTokenVisible ? L("トークンを隠す") : L("トークンを表示"))
 
                                 Button {
-                                    UIPasteboard.general.string = mcpCloudToken
-                                    mcpCloudStatus = L("接続トークンをコピーしました。")
+                                    // This device only, and gone after a minute.
+                                    SecretPasteboard.copy(mcpCloudToken)
+                                    mcpCloudStatus = L("接続トークンをコピーしました。60秒でクリップボードから消えます。")
                                 } label: {
                                     Image(systemName: "doc.on.doc")
                                 }
@@ -2961,6 +2962,8 @@ struct ContentView: View {
                                 .disabled(mcpCloudToken.count < 32)
                             }
                         }
+                        // A revealed token must not show in the app switcher.
+                        .hidesInAppSwitcher(when: isMCPCloudTokenVisible)
                         Button("新しいトークンを生成", systemImage: "arrow.clockwise") {
                             mcpCloudToken = MCPCloudCredentials.generateAndSaveNewToken()
                         }
@@ -3210,6 +3213,8 @@ struct ContentView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
+            // A revealed token is hidden again as soon as the app leaves the front.
+            if phase != .active { isMCPCloudTokenVisible = false }
             StudyTimeTracker.shared.handle(scenePhase: phase)
             friendStore.handle(scenePhase: phase)
             if phase == .active {
