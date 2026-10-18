@@ -10,6 +10,7 @@ docsにある「何がどうなっているか」とは別に、「なぜそう�
 
 - [open-decisions](open-decisions.md): 公開前に人間が決める項目、運用上の未確認、認証方針のずれ、技術的な課題。作業の優先度を決めるときに読む
 - [branches](branches.md): ブランチ、未コミットの変更、worktreeの状態。2026-10-08のスナップショットなので、日付を見て使う
+- [app-attest-design](app-attest-design.md): App Attest(端末とアプリの証明)の設計。流れ、モード、互換性、ロールバック、残り
 - [decisions/INDEX](decisions/INDEX.md): 設計判断の記録(ADR)。1判断につき1ファイル
 
 Up: [docs 目次](../INDEX.md)
