@@ -1,3 +1,4 @@
+import { blockedBetween } from "./block-check.js";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { sendPush } from "./push.js";
 import { roomMembershipKey } from "./document-room-store.js";
@@ -75,19 +76,6 @@ async function withinLimit(env, keyPrefix, key, limit, windowSeconds = WINDOW_SE
 async function chatUser(env, userKey) {
   const registered = env.USER_REGISTRY ? await env.USER_REGISTRY.getByName(userKey).getUser(userKey) : null;
   return registered ?? await env.STUDIQUO_DATA.get(`chat:user:${userKey}`, "json");
-}
-
-// Whether either side has blocked the other in their direct room. A pair that
-// has no room yet has nothing blocked.
-async function blockedBetween(env, userKey, friend) {
-  if (!friend?.roomID) return false;
-  try {
-    const state = await env.CHAT_ROOM.getByName(friend.roomID).blockStatus(userKey);
-    return Boolean(state.blockedByMe || state.blockedByOther);
-  } catch (error) {
-    if (error instanceof Error && error.message === "Forbidden") return false;
-    throw error;
-  }
 }
 
 // DocumentRoom.requireParticipant/requireReviewer throw a plain

@@ -8,28 +8,30 @@
 // write requires a JSON content type: a cross-site HTML form can't send one
 // without a CORS preflight, which this API never answers.
 import { json, readJSONLimited } from "./http.js";
+import { auditAdmin } from "./audit.js";
 import { PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.js";
 
 const STATUSES = new Set(["open", "in_progress", "resolved"]);
+const CHAT_REPORT_STATUSES = new Set([...STATUSES, "dismissed"]);
 const MAX_NOTE_LENGTH = 2_000;
 const LIST_LIMIT = 200;
 
-function statusFilter(url) {
+function statusFilter(url, allowed = STATUSES) {
   const status = url.searchParams.get("status") ?? "open";
-  return status === "all" ? null : STATUSES.has(status) ? status : "open";
+  return status === "all" ? null : allowed.has(status) ? status : "open";
 }
 
 function requireJSON(request) {
   return (request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json");
 }
 
-async function readUpdate(request) {
+async function readUpdate(request, allowed = STATUSES) {
   if (!requireJSON(request)) return { response: json({ error: "Content-Type must be application/json." }, 415) };
   const body = await readJSONLimited(request, 10_000);
   if (!body || typeof body !== "object") return { response: json({ error: "Invalid request." }, 400) };
   const update = {};
   if (body.status !== undefined) {
-    if (!STATUSES.has(body.status)) return { response: json({ error: "Invalid status." }, 400) };
+    if (!allowed.has(body.status)) return { response: json({ error: "Invalid status." }, 400) };
     update.status = body.status;
   }
   if (body.note !== undefined) {
@@ -53,6 +55,21 @@ function issueReportJSON(row, origin) {
     status: row.status,
     note: row.admin_note,
     createdAt: row.created_at,
+  };
+}
+
+// The list leaves out the copied messages: reading those is a separate,
+// logged step (GET /api/admin/chat-reports/:id).
+function chatReportJSON(row, withSnapshot) {
+  return {
+    id: row.id,
+    roomID: row.room_id,
+    messageID: row.message_id,
+    reason: row.reason,
+    status: row.status,
+    note: row.admin_note,
+    createdAt: row.created_at,
+    ...(withSnapshot ? { messages: JSON.parse(row.snapshot), reporterKey: row.reporter_key, reportedKey: row.reported_key } : {}),
   };
 }
 
@@ -106,12 +123,14 @@ async function importLegacyReports(env) {
 }
 
 export async function handleAdminReports(url, request, env) {
-  if (!url.pathname.startsWith("/api/admin/issue-reports") && !url.pathname.startsWith("/api/admin/app-errors")) return null;
+  if (!url.pathname.startsWith("/api/admin/issue-reports") && !url.pathname.startsWith("/api/admin/app-errors")
+    && !url.pathname.startsWith("/api/admin/chat-reports")) return null;
   if (!env.ADMIN_DB) return json({ error: "Unavailable." }, 503);
 
   if (url.pathname === "/api/admin/issue-reports" && request.method === "GET") {
     const status = statusFilter(url);
     const cutoff = Date.now() - PERSONAL_RETENTION_MS;
+    await auditAdmin(env, request, "issue_report.list", "", status ?? "all");
     const rows = await env.ADMIN_DB.prepare(
       `SELECT * FROM issue_reports WHERE created_at > ? ${status ? "AND status = ?" : ""} ORDER BY created_at DESC LIMIT ${LIST_LIMIT}`
     ).bind(cutoff, ...(status ? [status] : [])).all();
@@ -120,6 +139,7 @@ export async function handleAdminReports(url, request, env) {
 
   if (url.pathname === "/api/admin/issue-reports/import-legacy" && request.method === "POST") {
     if (!requireJSON(request)) return json({ error: "Content-Type must be application/json." }, 415);
+    await auditAdmin(env, request, "issue_report.import_legacy");
     return json(await importLegacyReports(env));
   }
 
@@ -129,9 +149,38 @@ export async function handleAdminReports(url, request, env) {
     if (response) return response;
     const existing = await env.ADMIN_DB.prepare(`SELECT id FROM issue_reports WHERE id = ?`).bind(reportMatch[1]).first();
     if (!existing) return json({ error: "Not found." }, 404);
+    await auditAdmin(env, request, "issue_report.update", reportMatch[1], update.status ?? "note");
     await env.ADMIN_DB.prepare(
       `UPDATE issue_reports SET status = COALESCE(?, status), admin_note = COALESCE(?, admin_note), updated_at = ? WHERE id = ?`
     ).bind(update.status ?? null, update.note ?? null, Date.now(), reportMatch[1]).run();
+    return json({ updated: true });
+  }
+
+  if (url.pathname === "/api/admin/chat-reports" && request.method === "GET") {
+    const status = statusFilter(url, CHAT_REPORT_STATUSES);
+    await auditAdmin(env, request, "chat_report.list", "", status ?? "all");
+    const rows = await env.ADMIN_DB.prepare(
+      `SELECT * FROM chat_reports ${status ? "WHERE status = ?" : ""} ORDER BY created_at DESC LIMIT ${LIST_LIMIT}`
+    ).bind(...(status ? [status] : [])).all();
+    return json({ reports: (rows.results ?? []).map(row => chatReportJSON(row, false)) });
+  }
+
+  const chatReportMatch = /^\/api\/admin\/chat-reports\/([0-9a-f-]{36})$/.exec(url.pathname);
+  if (chatReportMatch && request.method === "GET") {
+    const row = await env.ADMIN_DB.prepare(`SELECT * FROM chat_reports WHERE id = ?`).bind(chatReportMatch[1]).first();
+    if (!row) return json({ error: "Not found." }, 404);
+    await auditAdmin(env, request, "chat_report.view", row.id);
+    return json(chatReportJSON(row, true));
+  }
+  if (chatReportMatch && request.method === "POST") {
+    const { update, response } = await readUpdate(request, CHAT_REPORT_STATUSES);
+    if (response) return response;
+    const existing = await env.ADMIN_DB.prepare(`SELECT id FROM chat_reports WHERE id = ?`).bind(chatReportMatch[1]).first();
+    if (!existing) return json({ error: "Not found." }, 404);
+    await auditAdmin(env, request, "chat_report.update", chatReportMatch[1], update.status ?? "note");
+    await env.ADMIN_DB.prepare(
+      `UPDATE chat_reports SET status = COALESCE(?, status), admin_note = COALESCE(?, admin_note), updated_at = ? WHERE id = ?`
+    ).bind(update.status ?? null, update.note ?? null, Date.now(), chatReportMatch[1]).run();
     return json({ updated: true });
   }
 
@@ -154,6 +203,7 @@ export async function handleAdminReports(url, request, env) {
     if (!existing) return json({ error: "Not found." }, 404);
     // Remember how new the newest affected build was when this was closed,
     // so only a still-newer build counts as a regression (see app-errors.js).
+    await auditAdmin(env, request, "app_error.update", errorMatch[1], update.status ?? "note");
     const resolvedAfter = update.status === "resolved" ? existing.last_app_version : null;
     await env.ADMIN_DB.prepare(
       `UPDATE app_errors SET
