@@ -18,14 +18,18 @@ npm test                                  # 単体テスト
 
 終了コード: `0`=完了 / `1`=失敗 / `2`=取得に失敗したデータ源があり結果が不完全 / `3`=LLM判定が反映されなかった / `4`=その両方(取得失敗あり、かつ判定なし)。取得に失敗したデータ源があるときは、判定が付いても区分は下げない。
 
-## 定期実行の1回分(LLM判定つき)
+## 定期実行(スケジュールタスク)
 
-スケジュールタスクの親セッションが行う手順。
+手順は `RUNBOOK.md`(自己完結)。タスクのプロンプトは「このファイルに従う」だけにして、手順の変更がレビューとテストを通るようにする。実行はmainのワークツリーで行うので、手順の変更はmainへのマージ後に効く。
 
-1. `node src/cli.js scan` を実行する。終了コード2なら、レポート冒頭の警告を報告に含める。JVNの件数が上限(200件)を超えたときも、ここに警告が出る。
-2. `dependency-monitor` エージェントを呼び、`scripts/vuln-watch/out/triage-input.json` を渡して判定させる。エージェントはJSONだけを返す(読み取り専用で、ファイルは書かない)。
-3. 返信を `triage-apply` の標準入力に渡す: `node src/cli.js triage-apply < reply.json`(返信をそのままファイルか標準入力に渡し、親が内容を書き換えない)。
-4. `out/latest.md` を報告する。終了コード3(判定が反映されなかった)のときは、機械判定のみである旨を添える。
+主なコマンド:
+
+```bash
+node src/cli.js scan                              # 収集→採点。判定に回す指摘の件数を出す
+node src/cli.js triage-apply --verdicts out/reply.json   # 判定の返信を検証して反映(返信が不要な回は --no-reply)
+node src/cli.js cards-plan --existing out/cards-existing.json   # Notionカードの操作リスト(out/cards-ops.json)
+node src/cli.js summary --created 1 --updated 0 --commented 0 --failed 0   # 固定書式の要約と NOTIFY= 行
+```
 
 ## ファイル
 
@@ -33,9 +37,9 @@ npm test                                  # 単体テスト
 |---|---|---|
 | `assets.manual.json` | 手書き補足。`sensitive`(認証・課金・個人情報)、`usage`、`exposure`、`nvd`(NVD・JVN検索のキーワード、vendor、product、`jvn.keyword`) | 管理する |
 | `inventory.json` | 自動生成の資産台帳。Swift分は `Package.resolved` が見つからないとき前回分を引き継ぐ | 管理する |
-| `out/` | レポート、`latest.json`、`triage-input.json`、`triage-result.json` | 管理しない |
+| `out/` | レポート、`latest.json`、`triage-all.json`、`triage-input.json`、`triage-result.json`、`cards-ops.json`、`summary.txt` | 管理しない |
 | `.cache/` | 取得結果のキャッシュ(6時間) | 管理しない |
-| `state.json` | 前回成功時刻と報告済みの指摘ID(「新規/継続」の印に使う)。取得に失敗したデータ源があった回は保存しない | 管理しない |
+| `state.json` | 前回成功時刻、報告済みの指摘ID(「新規/継続」の印)、LLM判定のキャッシュ(7日)。報告済みと成功時刻は、取得に失敗したデータ源があった回は更新しない | 管理しない |
 
 ## 設定
 

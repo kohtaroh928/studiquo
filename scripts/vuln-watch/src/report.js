@@ -45,7 +45,9 @@ export function renderReport({ ranked, inventory, unmatchable = [], warnings = [
   out.push(`- 検出: ${TIERS.map((t) => `${t} ${count[t]}`).join(' / ')}`);
   out.push('- 範囲: NVD・OSV・JVN iPedia・CISA KEV・EPSS。ライブラリのみ。');
   if (triage?.status === 'applied') out.push(`- LLM判定: 判定対象${triage.total ?? '?'}件のうち${triage.accepted}件に判定が返り、反映${triage.rejected.length ? `(検証で採用しなかった判定 ${triage.rejected.length}件、末尾に一覧)` : ''}`);
+  else if (triage?.status === 'idle') out.push('- LLM判定: 判定に回す指摘はありません。');
   else out.push('- **LLM判定なし**: 区分は機械判定のみです。「要確認」の指摘は未判定のままです。');
+  if (triage?.redactions) out.push(`- **判定の理由に鍵やトークンらしい文字列が${triage.redactions}件含まれていたため、伏せ字にしました。** エージェントが秘密のファイルを読んだ可能性があります。`);
   if (sourceErrors.length) out.push('', '> **取得に失敗したデータ源があります。この結果は不完全です。**', ...sourceErrors.map((e) => `> - ${clean(e, 300)}`));
   if (warnings.length) out.push('', ...warnings.map((w) => `> ${clean(w, 300)}`));
   out.push('');
