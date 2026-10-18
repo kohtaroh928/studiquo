@@ -113,4 +113,29 @@ final class PasskeyHTTPClientTests: XCTestCase {
             XCTFail("想定外のエラー: \(error)")
         }
     }
+
+    private func post(status: Int, body: String, path: String) async -> Error? {
+        URLProtocolStub.handler = { request in
+            (try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)), Data(body.utf8))
+        }
+        do {
+            let _: ResponseBody = try await PasskeyHTTPClient.post(
+                endpoint: URL(string: "https://example.test")!, path: path,
+                body: RequestBody(email: "student@example.com"), bearer: "t", session: session()
+            )
+            return nil
+        } catch { return error }
+    }
+
+    func testTheFirstPasskeyAsksForTheMailboxCode() async {
+        let error = await post(status: 403, body: #"{"error":"x","code":"email_code_required"}"#, path: "api/passkeys/register/options")
+        guard case .emailCodeRequired? = error as? PasskeyError else { return XCTFail("got \(String(describing: error))") }
+    }
+
+    func testAWrongMailboxCodeIsToldApart() async {
+        let error = await post(status: 401, body: #"{"error":"Incorrect or expired code."}"#, path: "api/passkeys/email-code/confirm")
+        guard case .wrongEmailCode? = error as? PasskeyError else { return XCTFail("got \(String(describing: error))") }
+        let other = await post(status: 401, body: "{}", path: "api/passkeys/register/verify")
+        guard case .serverRejected? = other as? PasskeyError else { return XCTFail("got \(String(describing: other))") }
+    }
 }

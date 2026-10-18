@@ -1,18 +1,17 @@
 // Passkeys are the only sign-in that a look-alike site relaying traffic (an
 // "adversary in the middle") cannot reuse: the device signs for the real
-// site's domain only. Passwords and e-mailed codes can be relayed, so an
-// account that has a passkey no longer signs in with them, and the actions
+// site's domain only. Passwords, e-mailed codes and Apple/Google tokens can be
+// relayed, so an account that has a passkey no longer signs in with them, and the actions
 // that would let a thief keep or widen access ask for the passkey again.
 //
 // Passkeys are listed per account here (the credential records themselves are
 // keyed by credential id), under the account's canonical identity and under
 // its e-mail identity, so a later linking of sign-in methods cannot hide them.
 //
-// A passkey only counts as protection once it is ESTABLISHED, 24 hours after it
-// was registered. Otherwise whoever holds a stolen session could register their
-// own passkey, lock the owner out of the password and code sign-ins, and call
-// off every recovery with it. In those first hours the owner can still sign in
-// as before, is told by e-mail, and can remove the passkeys (removeAllPasskeys).
+// A passkey counts as protection from the moment it is registered: from then
+// on the account signs in with it only (see gatePasskeyAccount). The app asks
+// every account for one at its first sign-in and has no way to remove it; the
+// way back after losing it is the e-mailed recovery below.
 import { sha256Hex } from "./auth.js";
 import { json } from "./http.js";
 import { revokeAllConnections } from "./mcp-oauth.js";
@@ -24,7 +23,8 @@ export const RECOVERY_DELAY_SECONDS = 48 * 60 * 60;
 // has to start (and be notified about) a new one.
 const RECOVERY_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 export const REAUTH_VALIDITY_SECONDS = 2 * 60;
-export const ESTABLISH_AFTER_SECONDS = 24 * 60 * 60;
+// 0: a passkey protects the account as soon as it is registered.
+export const ESTABLISH_AFTER_SECONDS = 0;
 export const REAUTH_ACTIONS = ["delete-account", "approve-app", "add-passkey", "remove-passkeys"];
 
 const RESEND_API_URL = "https://api.resend.com/emails";
@@ -93,7 +93,7 @@ export async function loadAccountPasskeys(env, accountKey, email) {
 }
 
 export function isEstablishedPasskey(record, now = Date.now()) {
-  // Records from before registration times were kept have been in use for long enough.
+  // Records from before registration times were kept count as established.
   return !Number.isFinite(record.createdAt) || now >= record.createdAt + ESTABLISH_AFTER_SECONDS * 1000;
 }
 
@@ -131,9 +131,15 @@ export async function removeAllPasskeys(env, accountKey, email) {
   }
 }
 
-/** A successful sign-in with an established passkey ends any recovery someone else started. */
+/** A successful sign-in with an established passkey ends any recovery someone else started. Returns whether there was one. */
 export async function cancelPasskeyRecovery(env, accountKey, email) {
-  for (const key of await passkeyAccountKeys(env, accountKey, email)) await env.STUDIQUO_DATA.delete(await recoveryKey(key));
+  let hadRecovery = false;
+  for (const key of await passkeyAccountKeys(env, accountKey, email)) {
+    const k = await recoveryKey(key);
+    if (await env.STUDIQUO_DATA.get(k)) hadRecovery = true;
+    await env.STUDIQUO_DATA.delete(k);
+  }
+  return hadRecovery;
 }
 
 export async function sendPasskeyNotice(env, email, subject, lines) {
@@ -156,8 +162,8 @@ export async function sendPasskeyNotice(env, email, subject, lines) {
 }
 
 /**
- * Called by the sign-in routes that a relayed password or code could pass
- * (e-mail code, password), after the credential checked out and before
+ * Called by the sign-in routes that a relayed password, code or provider token
+ * could pass (e-mail code, password, Apple, Google), after the credential checked out and before
  * anything changes. Returns null when the account has no established passkey
  * (or its recovery wait is over), otherwise the response to send instead.
  *
@@ -192,7 +198,7 @@ export async function gatePasskeyAccount(env, accountKey, email, { now = Date.no
       "",
       "セキュリティのため、それまでのパスキーはすべて削除し、すべての端末のログイン状態を解除しました。",
       "ご本人の場合は、Studiquoを開いて、新しいパスキーを設定してください。",
-      "心当たりがない場合は、すぐにメールアカウントのパスワードを変更し、Studiquoにログインして、パスワードを再設定してください。",
+      "心当たりがない場合は、すぐにメールアカウントのパスワードを変更し、Studiquoを開いて、新しいパスキーを設定してください。",
     ]));
     return null;
   }
@@ -203,7 +209,7 @@ export async function gatePasskeyAccount(env, accountKey, email, { now = Date.no
     notify(sendPasskeyNotice(env, email, "Studiquoのパスキーを使わないログインがありました", [
       "お使いのStudiquoアカウントには、パスキーが設定されています。パスキーを使わずにログインしようとした操作がありました。",
       "",
-      `何もしないと、${Math.round(RECOVERY_DELAY_SECONDS / 3600)}時間後に、パスワードやメールのコードだけでログインできるようになります。`,
+      `何もしないと、${Math.round(RECOVERY_DELAY_SECONDS / 3600)}時間後に、パスワード、メールのコード、Apple、Googleだけでログインできるようになります。`,
       "",
       "パスキーが使える場合は、Studiquoでパスキーでログインしてください。この手続きは取り消されます。",
       "心当たりがない場合も、すぐにパスキーでログインして取り消してください。メールを第三者に見られている可能性があるときは、メールアカウントのパスワードも変更してください。",

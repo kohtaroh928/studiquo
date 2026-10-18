@@ -373,6 +373,14 @@ final class AuthenticationStoreTests: XCTestCase {
         XCTAssertFalse(store.passkeyEnrollmentFailed)
     }
 
+    func testAPrivateRelayAddressIsNotAskedForAPasskey() async {
+        let store = makeSignedInStore(email: "abc123@privaterelay.appleid.com", registered: false)
+        await store.checkPasskeyRequirement()
+        XCTAssertFalse(store.needsPasskeyEnrollment, "the server cannot tie a passkey to a relay address")
+        XCTAssertTrue(AuthenticationStore.isPrivateRelayAddress("X@PrivateRelay.AppleID.com"))
+        XCTAssertFalse(AuthenticationStore.isPrivateRelayAddress("student@example.com"))
+    }
+
     func testSigningOutClearsTheRequest() async {
         let store = makeSignedInStore(registered: false)
         await store.checkPasskeyRequirement()

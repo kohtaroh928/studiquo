@@ -373,10 +373,10 @@ export default {
       // every other /api/* route — they must run before the bearer-token
       // gate below.
       if (url.pathname === "/api/auth/apple" && request.method === "POST") {
-        return handleAppleSignIn(request, env);
+        return handleAppleSignIn(request, env, ctx);
       }
       if (url.pathname === "/api/auth/google" && request.method === "POST") {
-        return handleGoogleSignIn(request, env);
+        return handleGoogleSignIn(request, env, ctx);
       }
       if (url.pathname === "/api/auth/email/send-code" && request.method === "POST") {
         return handleSendEmailVerification(request, env);
@@ -594,7 +594,7 @@ async function handleSessionRefresh(request, env, token, session) {
 // POST /api/auth/apple: exchanges a Sign in with Apple identityToken for a
 // studiquo bearer token, in the same "<issued-at epoch>.<random>" format
 // token.js already expects everywhere else.
-async function handleAppleSignIn(request, env) {
+async function handleAppleSignIn(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_APPLE_AUTH, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -663,6 +663,9 @@ async function handleAppleSignIn(request, env) {
     identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
+  // An account with a passkey signs in with that instead (passkey-policy.js).
+  const passkeyGate = await gatePasskeyAccount(env, identityKey, accountEmail && accountEmailVerified && !accountUsesPrivateRelay ? accountEmail : null, { notify: work => inBackground(ctx, work) });
+  if (passkeyGate) return passkeyGate;
   const token = await mintSession(env, identityKey);
   if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
   return json({ token });
@@ -673,7 +676,7 @@ async function handleAppleSignIn(request, env) {
 // rate-limit shape, same account-record pattern — except Google resends
 // `email`/`email_verified` on every sign-in (not just the first), so those
 // are refreshed each time rather than written once.
-async function handleGoogleSignIn(request, env) {
+async function handleGoogleSignIn(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_GOOGLE_AUTH, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -722,6 +725,9 @@ async function handleGoogleSignIn(request, env) {
     identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
+  // An account with a passkey signs in with that instead (passkey-policy.js).
+  const passkeyGate = await gatePasskeyAccount(env, identityKey, email && emailVerified ? email : null, { notify: work => inBackground(ctx, work) });
+  if (passkeyGate) return passkeyGate;
   const token = await mintSession(env, identityKey);
   if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
 

@@ -432,6 +432,30 @@ test("POST /api/auth/apple: first sign-in creates the account and a matching ses
   assert.deepEqual(session, { sub: "000123.apple-sub.4567", issuedAt, issuedAtMs: session.issuedAtMs, originIssuedAtMs: session.issuedAtMs });
 });
 
+test("POST /api/auth/apple and /google: an account with a passkey is told to use it", async () => {
+  const env = environment();
+  const apple = await makeAppleSigningKey();
+  await seedAppleJWKS(env, apple.jwk);
+  const google = await makeGoogleSigningKey();
+  await seedGoogleJWKS(env, google.jwk);
+  await env.STUDIQUO_DATA.put("passkeys:credential:cred-a", JSON.stringify({ id: "cred-a", email: "pk-apple@example.com", createdAt: Date.now() }));
+  await env.STUDIQUO_DATA.put("passkeys:credential:cred-g", JSON.stringify({ id: "cred-g", email: "pk-google@example.com", createdAt: Date.now() }));
+  await env.STUDIQUO_DATA.put("passkey-index-backfilled", "1");
+  const { indexAccountPasskey } = await import("./passkey-policy.js");
+  await indexAccountPasskey(env, "pk-apple-sub", "pk-apple@example.com", "cred-a");
+  await indexAccountPasskey(env, "google:pk-google-sub", "pk-google@example.com", "cred-g");
+
+  const appleToken = await signAppleIdentityToken(apple.privateKey, apple.jwk.kid, { sub: "pk-apple-sub", email: "pk-apple@example.com" });
+  const appleResponse = await worker.fetch(request("/api/auth/apple", { method: "POST", body: { identityToken: appleToken, randomValue: "a".repeat(40) } }), env, noopCtx);
+  assert.equal(appleResponse.status, 403);
+  assert.equal((await appleResponse.json()).code, "passkey_required");
+
+  const googleToken = await signGoogleIdentityToken(google.privateKey, google.jwk.kid, { sub: "pk-google-sub", email: "pk-google@example.com", emailVerified: true });
+  const googleResponse = await worker.fetch(request("/api/auth/google", { method: "POST", body: { idToken: googleToken, randomValue: "g".repeat(40) } }), env, noopCtx);
+  assert.equal(googleResponse.status, 403);
+  assert.equal((await googleResponse.json()).code, "passkey_required");
+});
+
 test("POST /api/auth/apple: a later sign-in does not overwrite the account's stored email", async () => {
   const env = environment();
   const { privateKey, jwk } = await makeAppleSigningKey();

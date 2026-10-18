@@ -71,6 +71,7 @@ final class GoogleSignInService {
         request.httpBody = try JSONEncoder().encode(ExchangeRequest(idToken: idToken, randomValue: randomValue, nonce: nonce))
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+            if (response as? HTTPURLResponse)?.statusCode == 403, PasskeyRequired.isIn(body: data) { throw GoogleSignInServiceError.passkeyRequired }
             throw GoogleSignInServiceError.serverRejected
         }
         return try JSONDecoder().decode(ExchangeResponse.self, from: data).token
@@ -87,11 +88,14 @@ final class GoogleSignInService {
 
 enum GoogleSignInServiceError: LocalizedError {
     case noPresentingViewController, invalidResponse, serverRejected
+    /// The account has a passkey, so a Google sign-in is no longer accepted.
+    case passkeyRequired
     var errorDescription: String? {
         switch self {
         case .noPresentingViewController: "サインイン画面を表示できませんでした。"
         case .invalidResponse: "Googleのサインイン応答を読み取れませんでした。"
         case .serverRejected: "サインインサーバーに接続できませんでした。"
+        case .passkeyRequired: PasskeyRequired.message
         }
     }
 }
