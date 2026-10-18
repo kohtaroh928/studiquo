@@ -104,6 +104,7 @@ export async function runPrivacyRetention(env, now = Date.now(), fetcher = fetch
   for (const [table, timeColumn, cutoff] of [
     ["revenuecat_events", "occurred_at", personalCutoff],
     ["app_error_users", "last_seen_at", personalCutoff],
+    ["chat_reports", "created_at", personalCutoff],
   ]) {
     await env.ADMIN_DB.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE ${timeColumn} <= ? ORDER BY ${timeColumn} LIMIT ?)`)
       .bind(cutoff, RETENTION_BATCH_SIZE).run();

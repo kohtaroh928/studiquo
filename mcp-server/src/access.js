@@ -8,20 +8,36 @@
 // is accepted alongside the Cf-Access-Jwt-Assertion header Access adds itself.
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
-export async function accessAllowed(request, env) {
-  if (!env.ACCESS_AUD || !env.ACCESS_TEAM_DOMAIN) return false;
+const actors = new WeakMap();
+
+// Who is signed in through Cloudflare Access: their email (a service token has
+// none, so its common name, else the subject), or null when the login does not
+// verify. Cached per request so the audit log doesn't verify twice.
+export async function accessActor(request, env) {
+  if (actors.has(request)) return actors.get(request);
+  const actor = await verifyActor(request, env);
+  actors.set(request, actor);
+  return actor;
+}
+
+async function verifyActor(request, env) {
+  if (!env.ACCESS_AUD || !env.ACCESS_TEAM_DOMAIN) return null;
   const cookie = (request.headers.get("cookie") ?? "")
     .split(";").map(part => part.trim()).find(part => part.startsWith("CF_Authorization="));
   const token = request.headers.get("cf-access-jwt-assertion") ?? cookie?.slice("CF_Authorization=".length);
-  if (!token) return false;
+  if (!token) return null;
   try {
     const issuer = `https://${env.ACCESS_TEAM_DOMAIN}`;
     const jwks = env.ACCESS_JWKS ?? createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
-    await jwtVerify(token, jwks, { issuer, audience: env.ACCESS_AUD });
-    return true;
+    const { payload } = await jwtVerify(token, jwks, { issuer, audience: env.ACCESS_AUD });
+    return String(payload.email ?? payload.common_name ?? payload.sub ?? "unknown");
   } catch {
-    return false;
+    return null;
   }
+}
+
+export async function accessAllowed(request, env) {
+  return (await accessActor(request, env)) !== null;
 }
 
 /**
