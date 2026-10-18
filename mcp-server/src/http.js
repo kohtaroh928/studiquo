@@ -37,8 +37,9 @@ export function binaryHeaders(contentType, cacheControl, { download = false } = 
  * submit a form elsewhere or load anything from another origin.
  * `connect` lets the page's own script call the Worker's API.
  */
-export function htmlHeaders({ connect = false } = {}) {
-  const policy = ["default-src 'none'", "script-src 'unsafe-inline'", "style-src 'unsafe-inline'"];
+export function htmlHeaders({ connect = false, scripts = true } = {}) {
+  // `scripts: false` for a page that has none: nothing can run there even if markup is injected.
+  const policy = ["default-src 'none'", scripts ? "script-src 'unsafe-inline'" : "script-src 'none'", "style-src 'unsafe-inline'"];
   if (connect) policy.push("connect-src 'self'");
   policy.push("base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'");
   return {

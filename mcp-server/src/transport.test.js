@@ -71,3 +71,48 @@ test("plain http to /health is also sent to https, and local development over ht
   assert.equal(plainHttpResponse(new Request("https://api.example.test/health"), new URL("https://api.example.test/health")), null);
   assert.notEqual(plainHttpResponse(request, new URL(request.url)), null);
 });
+
+test("HEAD over plain http is sent to https like GET", async () => {
+  const response = await worker.fetch(new Request("http://api.example.test/api/plan", { method: "HEAD" }), {}, noopCtx);
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get("location"), "https://api.example.test/api/plan");
+});
+
+test("a failing handler still answers with the transport header", async () => {
+  const broken = { STUDIQUO_DATA: { get() { throw new Error("KV down"); }, put() { throw new Error("KV down"); } } };
+  const original = console.error;
+  console.error = () => {};
+  try {
+    const response = await worker.fetch(new Request("https://example.test/api/plan", { headers: { authorization: "Bearer x.y" } }), broken, noopCtx);
+    assert.ok(response.status >= 400);
+    assert.equal(response.headers.get("strict-transport-security"), HSTS_VALUE);
+  } finally {
+    console.error = original;
+  }
+});
+
+test("a streamed response is passed through unbuffered, immutable headers or not", async () => {
+  const chunks = ["data: one\n\n", "data: two\n\n"];
+  const encoder = new TextEncoder();
+  let pulled = 0;
+  const body = new ReadableStream({
+    pull(controller) {
+      if (pulled < chunks.length) controller.enqueue(encoder.encode(chunks[pulled++]));
+      else controller.close();
+    },
+  });
+  const wrapped = withTransportHeaders(new Response(body, { headers: { "content-type": "text/event-stream" } }));
+  assert.equal(wrapped.headers.get("content-type"), "text/event-stream");
+  assert.equal(wrapped.headers.get("strict-transport-security"), HSTS_VALUE);
+  assert.equal(pulled, 0, "nothing was read while the header was added");
+  assert.equal(await wrapped.text(), chunks.join(""));
+});
+
+test("other methods over plain http are refused too, and the refusal says why", async () => {
+  const response = await worker.fetch(new Request("http://api.example.test/api/chat/inbox", { method: "OPTIONS" }), {}, noopCtx);
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).code, "https_required");
+  const upper = await worker.fetch(new Request("HTTP://API.EXAMPLE.TEST:80/health"), {}, noopCtx);
+  assert.equal(upper.status, 308);
+  assert.equal(upper.headers.get("location"), "https://api.example.test/health");
+});
