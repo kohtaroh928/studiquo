@@ -22,7 +22,7 @@
     },
     "npm:@modelcontextprotocol/sdk": {
       "usage": "MCPサーバー",
-      "nvd": { "keyword": "modelcontextprotocol sdk", "products": ["typescript-sdk", "sdk", "model_context_protocol"] }
+      "nvd": { "keyword": "modelcontextprotocol", "products": ["typescript-sdk", "sdk", "model_context_protocol"] }
     },
     "SwiftURL:googlesignin-ios": {
       "sensitive": true,
