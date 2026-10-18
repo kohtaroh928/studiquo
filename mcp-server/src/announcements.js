@@ -12,6 +12,7 @@
 // Adding a language: add one entry to SUPPORTED_LANGUAGES. Nothing else —
 // storage, the admin form and the app's fallback logic are all driven by
 // language codes, not by a fixed pair.
+import { featureDisabled } from "./features.js";
 import { accessAllowed } from "./access.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { json, readJSONLimited, securityHeaders, htmlHeaders } from "./http.js";
@@ -257,6 +258,12 @@ function pushResponse(row) {
 // resume after a closed tab: the batch counter's compare-and-set means a
 // batch is only ever claimed by one request.
 async function pushBatch(env, id, options, now) {
+  // The "push" kill switch (features.js). Refused before anything is recorded:
+  // sendPush sends nothing while it is on, and a batch counted as sent could not
+  // be pushed again once the switch is off.
+  if (featureDisabled(env, "push")) {
+    return json({ error: "プッシュ通知は停止中です。解除してから送信してください。", code: "feature_disabled", feature: "push" }, 503);
+  }
   let row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ?`).bind(id).first();
   if (!row) return json({ error: "Not found." }, 404);
   if (!PUSHABLE_KINDS.includes(row.kind)) return json({ error: "This kind is not pushed." }, 400);

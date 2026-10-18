@@ -13,8 +13,10 @@
 //                            this check. A request that does not look like the app
 //                            (another client, a browser) is never turned away.
 //
-// Both are unset by default, which turns them off.
+// Both are unset by default, which turns them off. DISABLED_FEATURES (features.js)
+// stops single features and is checked here too.
 import { json } from "./http.js";
+import { featureGateRejection } from "./features.js";
 
 function isGuardedRoute(pathname) {
   if (pathname === "/mcp" || pathname.startsWith("/oauth/")) return true;
@@ -29,6 +31,9 @@ export function appGateRejection(request, env, url) {
     response.headers.set("retry-after", "300");
     return response;
   }
+  // One feature stopped on its own (features.js). After maintenance, which stops all.
+  const stopped = featureGateRejection(env, url.pathname, request.method);
+  if (stopped) return stopped;
   const minimum = Number(env.MIN_APP_BUILD);
   if (Number.isFinite(minimum) && minimum > 0 && url.pathname.startsWith("/api/")) {
     const build = /^studiquo\/(\d+)(?:\s|$)/.exec(request.headers.get("user-agent") ?? "");

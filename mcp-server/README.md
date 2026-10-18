@@ -128,6 +128,7 @@ openssl rand -base64 32 | npx wrangler secret put SNAPSHOT_ENCRYPTION_KEY
 | --- | --- | --- |
 | `MAINTENANCE_MODE` | `"true"` | アプリ・MCP・OAuthの経路が、`Retry-After: 300`つきの503(`code: "maintenance"`)を返す。`/health`、アプリ関連づけファイル、法務・招待ページ、お知らせの一覧、管理画面は動き続ける。障害や不具合のあるリリースを止めるときに使う。 |
 | `MIN_APP_BUILD` | ビルド番号(例: `"5"`) | アプリのAPIで、それより古いビルドに426(`code: "app_update_required"`)を返す。ビルド番号は、iOSが付けるUser-Agent(`studiquo/<ビルド> CFNetwork/…`)から読むので、この確認を入れる前のビルドにも効く。アプリ以外のクライアントは対象外。数値でない値や0以下は、無効として扱う。 |
+| `DISABLED_FEATURES` | `"chat,email"`のようなカンマ区切り | 機能を1つずつ止める。止めた経路は503(`code: "feature_disabled"`、`feature`に機能名、`Retry-After: 300`)。名前は`ai`、`chat`、`collab`、`mcp`、`signin`、`email`、`push`。`email`と`push`は送信だけを止める。退会・ログアウト・セッション更新と`/health`は止めない。`/health`の`disabledFeatures`に効いた名前が出る。詳細は`docs/RUNBOOK.md`のRB-13。 |
 | `SESSION_MAX_DAYS` | 日数(既定365) | ログインを更新(`/api/session/refresh`)できる期間の上限。ログインの始まりからこの日数を過ぎると、更新されず、手元のトークンが切れたあとに再ログインになる。 |
 
 ## トークンの署名

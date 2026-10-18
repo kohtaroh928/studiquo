@@ -248,3 +248,12 @@ test("hashing-saturation refusals alert Slack once per hour, separately from fai
   for (let i = 0; i < MONITOR.failureAlert; i++) await recordLoginOutcome(env, request, "busy");
   assert.equal(sent.length, 1);
 }));
+
+test("a stopped email switch sends no sign-in notice but still remembers the context", () => captureOutbound(async (sent) => {
+  const env = { ...fakeEnv(), DISABLED_FEATURES: "email" };
+  const home = withCf({ country: "JP", asn: 2516, region: "Tokyo", asOrganization: "KDDI" });
+  const abroad = withCf({ country: "RO", asn: 9050, region: "Bucharest", asOrganization: "Some Hosting" });
+  await noteSignInContext(env, home, "person@example.com", { notify: false });
+  assert.deepEqual(await noteSignInContext(env, abroad, "person@example.com", { notify: true }), { newContext: true, firstSeen: false });
+  assert.equal(sent.length, 0);
+}));
