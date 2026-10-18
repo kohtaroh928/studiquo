@@ -495,3 +495,14 @@ test("the new-problem cap is per account", async () => {
   const other = await (await sendErrors(env, second, [crash({ signature: "someone-elses", title: "someone else" })])).json();
   assert.equal(other.accepted, 1);
 });
+
+test("the moderation section is on the dashboard, builds the page only through textContent, and its script parses", async () => {
+  const { MODERATION_SCRIPT, MODERATION_HTML } = await import("./admin-moderation-ui.js");
+  assert.doesNotMatch(MODERATION_SCRIPT, /innerHTML|insertAdjacentHTML|document\.write|outerHTML/);
+  assert.doesNotMatch(MODERATION_SCRIPT + MODERATION_HTML, /\u0060|\$\{/);
+  assert.doesNotThrow(() => new Function(MODERATION_SCRIPT));
+  const page = await worker.fetch(new Request("https://example.test/admin"), environment(), { waitUntil() {} });
+  const html = await page.text();
+  assert.ok(html.includes('id="moderation"'));
+  assert.ok(html.includes("mtab-reports"));
+});

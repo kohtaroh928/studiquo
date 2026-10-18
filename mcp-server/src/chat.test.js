@@ -5,7 +5,7 @@ import worker from "./app.js";
 import { mintSession } from "./session.js";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
+import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, exportPKCS8 } from "jose";
 
 // Regression coverage for "friend requests are approved, not instant": adding
 // a friend by code must create a one-directional pending request instead of
@@ -3991,7 +3991,7 @@ test("suspending the reported account signs them out of everything; the reporter
   assert.equal((await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID } })).status, 200);
   assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 200);
   assert.deepEqual(env._d1.prepare("SELECT action FROM admin_audit_log ORDER BY id").all().map(r => r.action),
-    ["account.suspend", "account.list_suspended", "account.unsuspend"]);
+    ["account.suspend_account", "account.list_suspended", "account.unsuspend"]);
 });
 
 test("suspension needs a report about an identifiable account; bad input is refused; the operator login is required", async () => {
@@ -4021,4 +4021,51 @@ test("a suspended person can still delete their account, and nothing else", asyn
   // again with the same account is still suspended.
   assert.ok(env._kv.has(`account-suspended:${identityHash}`));
   assert.ok(![...env._kv.keys()].some(key => key.startsWith("chat-identity-of:")));
+});
+
+test("chat-only suspension blocks chat but not the rest of the account; lifting it restores chat", async () => {
+  const { env, aliceToken, bobToken, reportID } = await reportedSetup("s8", "s9");
+  const response = await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "chat" } });
+  assert.equal(response.status, 200);
+  const { suspensionID } = await response.json();
+  const chat = await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx);
+  assert.equal(chat.status, 403);
+  assert.equal((await chat.json()).code, "chat_suspended");
+  // The session itself is still good (this route is not chat).
+  assert.equal((await worker.fetch(request("/api/account/library-id", { token: bobToken }), env, noopCtx)).status !== 401, true);
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: aliceToken }), env, noopCtx)).status, 200);
+  const listed = (await (await admin(env, "/api/admin/accounts/suspended", { method: "GET" })).json()).suspended;
+  assert.deepEqual(listed.map(item => item.scope), ["chat"]);
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "bogus" } })).status, 400);
+  await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID, scope: "chat" } });
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 200);
+});
+
+test("a warning is pushed to the reported person's devices with fixed wording, ignoring their notification settings", async () => {
+  const { env, reportID } = await reportedSetup("sa", "sb");
+  const pair = await generateKeyPair("ES256", { extractable: true });
+  Object.assign(env, { APNS_AUTH_KEY: await exportPKCS8(pair.privateKey), APNS_KEY_ID: "KEY1234567", APNS_TEAM_ID: "TEAM123456", APNS_TOPIC: "com.yabuko.studiquo" });
+  const reported = env._d1.prepare("SELECT reported_key FROM chat_reports").get().reported_key;
+  env._kv.set(`chat:devices:${reported}`, JSON.stringify([{ token: "c".repeat(64), environment: "production", preferences: { friendMessage: false } }]));
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { sent.push({ url: String(url), body: String(init?.body ?? "") }); return new Response("", { status: 200 }); };
+  let response;
+  try { response = await admin(env, `/api/admin/chat-reports/${reportID}/warn`); } finally { globalThis.fetch = realFetch; }
+  assert.deepEqual(await response.json(), { warned: true, devices: 1, delivered: 1 });
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0].body.includes("利用規約"));
+  assert.ok(!sent[0].body.includes("不適切な発言"), "the message text isn't in the push");
+  const row = env._d1.prepare("SELECT status, admin_note FROM chat_reports WHERE id = ?").get(reportID);
+  assert.deepEqual({ ...row }, { status: "resolved", admin_note: "注意を送信" });
+  assert.equal((await admin(env, `/api/admin/chat-reports/${crypto.randomUUID()}/warn`)).status, 404);
+});
+
+test("the audit log can be read by the operator, newest first, and reading it is itself logged", async () => {
+  const { env, reportID } = await reportedSetup("sc", "sd");
+  await admin(env, `/api/admin/chat-reports/${reportID}/remove-message`);
+  const { entries } = await (await admin(env, "/api/admin/audit-log", { method: "GET" })).json();
+  assert.equal(entries[0].action, "audit_log.view");
+  assert.equal(entries[1].action, "chat_report.remove_message");
+  assert.equal(entries[0].actor, "owner@example.test");
 });

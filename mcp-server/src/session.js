@@ -147,10 +147,20 @@ export async function suspensionKey(canonicalSub) {
 // sign-in methods were linked, under the identity it was issued to as well: an
 // operator's mark made against either one must hold.
 async function isSuspended(env, session) {
+  return hasModerationMark(env, session, SUSPENSION_PREFIX);
+}
+
+// An operator's mark of the given kind on this person (account-suspended: or
+// chat-suspended:), under the canonical account and the identity the session
+// was issued to.
+export async function hasModerationMark(env, session, prefix) {
   const subs = session.originalSub && session.originalSub !== session.sub ? [session.sub, session.originalSub] : [session.sub];
-  const marks = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get(await suspensionKey(item))));
+  const marks = await Promise.all(subs.map(async item =>
+    env.STUDIQUO_DATA.get(`${prefix}${await sha256Hex(`chat-account:${item}`)}`)));
   return marks.some(Boolean);
 }
+
+export const CHAT_SUSPENSION_PREFIX = "chat-suspended:";
 
 /**
  * `allowSuspended` is for the few things a suspended person must still be able

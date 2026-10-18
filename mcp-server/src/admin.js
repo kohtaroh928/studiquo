@@ -16,6 +16,7 @@ import { isRevoked } from "./revocation.js";
 import { realSession } from "./session.js";
 import { productForPlanChange } from "./entitlements.js";
 import { INBOX_CSS, INBOX_HTML, INBOX_SCRIPT } from "./admin-inbox-ui.js";
+import { MODERATION_HTML, MODERATION_SCRIPT } from "./admin-moderation-ui.js";
 
 // CANCELLATION isn't here on purpose: it only means "won't auto-renew", not
 // "access ended" — the subscriber stays active until the EXPIRATION event
@@ -349,6 +350,7 @@ ${INBOX_CSS}</style>
 <p id="error">読み込みに失敗しました。再読み込みしてください。</p>
 <div id="root"></div>
 ${INBOX_HTML}
+${MODERATION_HTML}
 <script>
 function card(label, value, href, id) {
   var tag = href ? 'a href="' + href + '"' : 'div';
@@ -408,6 +410,7 @@ fetch('/api/admin/stats').then(r => {
 });
 </script>
 <script>${INBOX_SCRIPT}</script>
+<script>${MODERATION_SCRIPT}</script>
 </html>`;
 
 export function handleAdminPage(url) {
