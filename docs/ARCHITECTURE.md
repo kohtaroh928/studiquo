@@ -154,9 +154,9 @@ Durable Objectはユーザーまたはルーム単位の直列化が必要な状
 | --- | --- |
 | Apple / Google | ID tokenを検証しStudiquoセッションを発行 |
 | WebAuthn / Passkeys | パスキー登録・ログイン |
-| Resend | メール確認コード送信 |
+| Resend | メール確認コード、新しい環境でのサインイン通知、パスキー通知の送信 |
 | RevenueCat | App Store課金、Webhook経由のサーバー側プラン同期 |
-| Gemini / Anthropic / OpenAI | AIチャット、採点、復習教材生成 |
+| OpenAI(Anthropicは実装のみで無効) | AIチャット、採点、復習教材生成 |
 | APNs | チャット、お知らせなどのプッシュ通知 |
 | Cloudflare Access | `/api/admin/*`管理画面・管理APIの保護 |
 | Cloudflare WAF(ゾーン`studiquo.app`) | `api.studiquo.app`への短時間の連打を、Workerの前で制限 |

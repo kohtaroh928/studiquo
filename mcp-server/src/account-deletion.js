@@ -357,6 +357,13 @@ export async function deleteAccount(env, canonicalSub) {
     await env.ADMIN_DB.prepare("DELETE FROM app_error_users WHERE user_key = ?").bind(usageHash).run();
     for (const identity of identityKeys) {
       const accountKey = await sha256Hex(`usage-account:${identity}`);
+      // The usage record is made from the identity a session was issued for, which
+      // may be any identity linked to the account, not only the canonical one. An
+      // identity that has begun a new account keeps its own records.
+      if (!activeAliases.has(identity) && accountKey !== usageHash) {
+        await env.ADMIN_DB.prepare("DELETE FROM usage_events WHERE user_key = ?").bind(accountKey).run();
+        await env.ADMIN_DB.prepare("DELETE FROM users_first_seen WHERE user_key = ?").bind(accountKey).run();
+      }
       // An identity that has already begun a new account (markAliases leaves it
       // alone) must not be marked as a deleted customer or have its provider
       // record erased: nothing would ever clear the mark, and the person would
