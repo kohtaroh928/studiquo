@@ -141,7 +141,8 @@ struct NotebookLockGate<Content: View>: View {
             if isGated {
                 lockPlaceholder
             } else {
-                content()
+                // A protected notebook that is open must not show in the app switcher.
+                content().hidesInAppSwitcher(when: notebook.isLocked || notebook.hasLockedPDFToUnlock)
             }
         }
         .onAppear {

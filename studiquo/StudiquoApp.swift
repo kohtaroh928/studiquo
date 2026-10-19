@@ -215,6 +215,8 @@ struct StudiquoApp: App {
         SubscriptionStore.configureSDK()
         CrashDiagnosticsSubscriber.shared.start()
         CloudKitErrorReporting.start()
+        // Covers sensitive screens in the app switcher (AppSwitcherPrivacy.swift).
+        AppSwitcherPrivacyCover.shared.start()
     }
 
     private var resolvedLocale: Locale {
