@@ -822,3 +822,40 @@ test("rows already stored with hidden characters (older index, structured input)
   const ok = await retrieve(benign, { sub: "alice" }, { messages: [{ role: "user", text: "細胞" }], rag: { scope: { type: "library" } } });
   assert.equal(ok.injectionHints, 0);
 });
+
+test("personal identifiers and secrets in an excerpt are masked before they reach the model", async () => {
+  const env = environment();
+  await indexSource(env, await accountKey("alice"), source({ pages: [{ pageNumber: 1, text: "細胞の説明。友達の連絡先 taro@example.com と 090-1234-5678、カード 4111 1111 1111 1111。" }] }));
+  const result = await retrieve(env, { sub: "alice" }, { messages: [{ role: "user", text: "細胞" }], rag: { scope: { type: "library" } } });
+  assert.equal(result.citations.length, 1);
+  for (const leaked of ["taro@example.com", "090-1234-5678", "4111"]) assert.ok(!result.context.includes(leaked), leaked);
+  assert.ok(result.context.includes("[メールアドレス]") && result.context.includes("[電話番号]") && result.context.includes("[カード番号]"));
+  assert.equal(result.redacted, 3);
+});
+
+test("a vector match that reports another account is dropped before lookup, and a missing report is never trusted to allow", async () => {
+  const env = environment();
+  await indexSource(env, await accountKey("alice"), source({ sourceId: "alice-src", pages: [{ pageNumber: 1, text: "細胞の説明。ALICE" }] }));
+  await indexSource(env, await accountKey("bob"), source({ sourceId: "bob-src", pages: [{ pageNumber: 1, text: "細胞の説明。BOB" }] }));
+  const bobKey = await accountKey("bob");
+  const seen = [], bound = [];
+  const prepare = env.ADMIN_DB.prepare.bind(env.ADMIN_DB);
+  env.ADMIN_DB.prepare = (sql) => { const statement = prepare(sql); const bind = statement.bind.bind(statement); statement.bind = (...args) => { bound.push(...args); return bind(...args); }; return statement; };
+  env.RAG_VECTORIZE.query = async (_, options) => {
+    seen.push(options.returnMetadata);
+    // Both accounts' vectors come back; bob's carry bob's key, as a mis-scoped index would.
+    return { matches: [...env.vector.values()].map((v) => ({ id: v.id, metadata: { accountKey: v.metadata.accountKey } })) };
+  };
+  const result = await retrieve(env, { sub: "alice" }, { messages: [{ role: "user", text: "細胞" }], rag: { scope: { type: "library" } } });
+  assert.deepEqual(result.citations.map((c) => c.sourceId), ["alice-src"]);
+  const bobIds = [...env.vector.values()].filter((v) => v.metadata.accountKey === bobKey).map((v) => v.id);
+  assert.ok(bobIds.length > 0, "the fixture really holds bob's vectors");
+  assert.ok(bobIds.every((id) => !bound.includes(id)), "bob's ids must not even reach the database lookup");
+  assert.ok(seen.every((mode) => mode === "indexed"), "accountKey must be requested back");
+});
+
+test("only the kinds the app creates can be indexed; there is no shared or friend kind", async () => {
+  const env = environment();
+  for (const kind of ["shared", "friend", "library", "", undefined])
+    await assert.rejects(indexSource(env, await accountKey("alice"), source({ kind })), /invalid_index/);
+});
