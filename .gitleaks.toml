@@ -1,0 +1,4 @@
+title = "Studiquo secret detection"
+[extend]
+useDefault = true
+# No repository-wide allowlist: confirmed false positives must be narrow and reviewed.

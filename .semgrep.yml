@@ -1,0 +1,122 @@
+rules:
+  - id: studiquo.swift.userdefaults-credential
+    languages: [swift]
+    severity: WARNING
+    message: 認証情報は UserDefaults ではなく Keychain に保存してください。
+    patterns:
+      - pattern: '$STORE.set($VALUE, forKey: $KEY)'
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: '(?i).*"[^" ]*(token|password|secret|credential)[^" ]*".*'
+    metadata:
+      category: security
+      confidence: MEDIUM
+  - id: studiquo.swift.trust-all-challenge
+    languages: [swift]
+    severity: WARNING
+    message: serverTrust を無条件に信頼していないか証明書検証を確認してください。
+    pattern: 'URLCredential(trust: $TRUST)'
+    metadata:
+      category: security
+      confidence: MEDIUM
+  - id: studiquo.javascript.dynamic-code
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: 動的コード実行は入力からのコード注入につながる可能性があります。
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+    metadata:
+      category: security
+      confidence: HIGH
+  - id: studiquo.javascript.unsafe-html
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: HTML 挿入前に信頼できない入力のエスケープを確認してください。
+    pattern-either:
+      - pattern: $EL.innerHTML = $INPUT
+      - pattern: $EL.insertAdjacentHTML($POSITION, $INPUT)
+    metadata:
+      category: security
+      confidence: MEDIUM
+  - id: studiquo.javascript.disabled-tls
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: TLS 証明書検証を無効にしないでください。
+    pattern: '{ ..., rejectUnauthorized: false, ... }'
+    metadata:
+      category: security
+      confidence: HIGH
+  - id: studiquo.swift.credential-log
+    languages: [swift]
+    severity: WARNING
+    message: 認証情報をログ出力しないでください。
+    patterns:
+      - pattern-either:
+          - pattern: print($VALUE)
+          - pattern: debugPrint($VALUE)
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: '(?i).*(token|password|secret|credential).*'
+    metadata:
+      category: security
+      confidence: MEDIUM
+  - id: studiquo.javascript.credential-log
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: 認証情報をログ出力しないでください。
+    patterns:
+      - pattern-either:
+          - pattern: console.log(..., $VALUE, ...)
+          - pattern: console.error(..., $VALUE, ...)
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: '(?i).*(token|password|secret|credential).*'
+    metadata:
+      category: security
+      confidence: MEDIUM
+  - id: studiquo.javascript.weak-hash
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: MD5/SHA1 をセキュリティ用途に使用していないか確認してください。
+    pattern-either:
+      - pattern: crypto.subtle.digest("SHA-1", ...)
+      - pattern: createHash("md5")
+      - pattern: createHash("sha1")
+    metadata:
+      category: security
+      confidence: MEDIUM
+  - id: studiquo.swift.weak-hash
+    languages: [swift]
+    severity: WARNING
+    message: MD5/SHA1 をセキュリティ用途に使用していないか確認してください。
+    pattern-either:
+      - pattern: Insecure.MD5.hash(...)
+      - pattern: Insecure.SHA1.hash(...)
+    metadata:
+      category: security
+      confidence: MEDIUM
+  - id: studiquo.javascript.request-fetch
+    languages: [javascript, typescript]
+    mode: taint
+    severity: WARNING
+    message: リクエスト由来の URL を fetch する前に許可先を検証してください。
+    pattern-sources:
+      - pattern: $REQUEST.url
+      - pattern: new URL($REQUEST.url).searchParams.get(...)
+    pattern-sinks:
+      - pattern: fetch($URL, ...)
+        focus-metavariable: $URL
+    metadata:
+      category: security
+      confidence: MEDIUM
+  - id: studiquo.javascript.dynamic-sql
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: SQL を動的に組み立てずバインドパラメータを使用してください。
+    pattern-either:
+      - pattern: $DB.prepare($LEFT + $RIGHT)
+      - pattern: $DB.prepare(`...${$VALUE}...`)
+    metadata:
+      category: security
+      confidence: MEDIUM

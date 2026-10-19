@@ -9,7 +9,13 @@
     "start": "node src/index.js",
     "smoke": "node src/smoke.js",
     "test": "node --test src/*.test.js",
-    "test:ai": "node --test src/ai.test.js"
+    "test:ai": "node --test src/ai.test.js",
+    "security:sast": "python3 ../security/sast/run.py",
+    "security:sast:test": "python3 -m unittest discover -s ../security/sast -p \"test_*.py\"",
+    "security:dast": "node ../security/dast/run.mjs",
+    "security:dast:contracts": "node ../security/dast/run.mjs --contracts-only",
+    "security:dast:test": "node --test ../security/dast/*.test.mjs",
+    "security:sast:rules": "python3 ../security/sast/test_rules.py"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4",
@@ -18,6 +24,8 @@
     "zod": "^4.0.17"
   },
   "devDependencies": {
+    "esbuild": "0.28.1",
+    "miniflare": "4.20260730.0",
     "wrangler": "^4.30.0"
   }
 }
