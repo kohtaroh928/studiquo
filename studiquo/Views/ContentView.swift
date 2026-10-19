@@ -3721,6 +3721,33 @@ struct ContentView: View {
         columnVisibility = .detailOnly
     }
 
+    /// After a document is created or imported, show the folder it landed in
+    /// instead of opening it. Folders are only browsable in the "すべて"
+    /// mode, so that mode is always used.
+    private func revealInLibrary(folderPath: String) {
+        clearOpenSelection()
+        homeSection = .notes
+        selectedFolder = folderPath.isEmpty ? nil : folderPath
+        libraryMode = .documents
+        searchText = ""
+        columnVisibility = .detailOnly
+    }
+
+    private var isEditorOpen: Bool {
+        selectedNotebook != nil || selectedFlashcardDeck != nil || selectedTextDocument != nil
+    }
+
+    /// A newly created item is shown in its folder from the home screen. When
+    /// it was created from inside an open editor (the "タブを追加" picker), the
+    /// student is working in tabs, so it opens as a tab instead.
+    private func finishCreation(folderPath: String? = nil, open: () -> Void) {
+        if isEditorOpen {
+            open()
+        } else if !sharedImport.isImporting {
+            revealInLibrary(folderPath: folderPath ?? importDestinationPath ?? selectedFolder ?? "")
+        }
+    }
+
     /// The detail pane shows exactly one thing, so opening any of the three
     /// kinds has to clear the other two.
     private func clearOpenSelection() {
@@ -5822,7 +5849,7 @@ struct ContentView: View {
         modelContext.insert(document)
         try? modelContext.save()
         newDocumentName = ""
-        openTextDocument(document)
+        finishCreation { openTextDocument(document) }
     }
 
     private func createFlashcardDeck() {
@@ -5831,7 +5858,7 @@ struct ContentView: View {
         assignToCurrentFolder(deck)
         modelContext.insert(deck)
         newFlashcardDeckName = ""
-        openFlashcardDeck(deck)
+        finishCreation { openFlashcardDeck(deck) }
     }
 
     private var createMenu: some View {
@@ -5897,6 +5924,7 @@ struct ContentView: View {
         } label: {
             Image(systemName: "plus")
         }
+        .accessibilityIdentifier("home-create-menu")
     }
 
     /// "PDFのパスワードを削除": shown only when `notebook` retains the
@@ -5963,9 +5991,11 @@ struct ContentView: View {
         assignToCurrentFolder(notebook)
         modelContext.insert(notebook)
         newNotebookName = ""
-        openNotebookTab(notebook)
-        selectedNotebook = notebook
-        libraryMode = .documents
+        finishCreation {
+            openNotebookTab(notebook)
+            selectedNotebook = notebook
+            libraryMode = .documents
+        }
     }
 
     @discardableResult
@@ -6038,9 +6068,11 @@ struct ContentView: View {
         // The password was just verified for this import; don't ask again
         // when the gate sees the notebook open for the first time.
         if password != nil { ImportedPDFPasswordSession.markVerified(notebook.persistentModelID) }
-        openNotebookTab(notebook)
-        selectedNotebook = notebook
-        libraryMode = .documents
+        finishCreation(folderPath: destinationPath) {
+            openNotebookTab(notebook)
+            selectedNotebook = notebook
+            libraryMode = .documents
+        }
         return notebook
     }
 
@@ -6179,8 +6211,9 @@ struct ContentView: View {
                 // 28 files should not leave 28 notebooks open as tabs.
                 openNotebooks = tabsBefore
                 selectedNotebook = selectedBefore
-                selectedFolder = destination.isEmpty ? nil : destination
-                libraryMode = .documents
+            }
+            if !isEditorOpen {
+                revealInLibrary(folderPath: destination)
             }
         }
     }
@@ -6197,6 +6230,12 @@ struct ContentView: View {
     /// Imports files chosen with the file picker, one at a time, showing the
     /// same progress card as a shared batch.
     private func importPickedFiles(_ urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        let destination = selectedFolder ?? ""
+        importDestinationPath = destination
+        let isBatch = urls.count > 1
+        let tabsBefore = openNotebooks
+        let selectedBefore = selectedNotebook
         let showsProgress = !sharedImport.isImporting
         if showsProgress { sharedImport.begin(total: urls.count) }
         for (index, url) in urls.enumerated() {
@@ -6205,6 +6244,15 @@ struct ContentView: View {
             await waitForPDFPromptsToSettle()
         }
         if showsProgress { sharedImport.end(attempted: []) }
+        try? modelContext.save()
+        importDestinationPath = nil
+        if isBatch {
+            openNotebooks = tabsBefore
+            selectedNotebook = selectedBefore
+        }
+        if !isEditorOpen {
+            revealInLibrary(folderPath: destination)
+        }
     }
 
     private func importFile(from url: URL) async {
@@ -6264,9 +6312,11 @@ struct ContentView: View {
         notebook.addPage(page)
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
-        openNotebookTab(notebook)
-        selectedNotebook = notebook
-        libraryMode = .documents
+        finishCreation {
+            openNotebookTab(notebook)
+            selectedNotebook = notebook
+            libraryMode = .documents
+        }
     }
 
     /// Imports a `.docx` file as a `TextDocument` — per the design's own
@@ -6317,7 +6367,7 @@ struct ContentView: View {
             let counts = Dictionary(grouping: result.droppedElementKinds, by: { $0 }).mapValues(\.count)
             docxImportReport = counts.sorted(by: { $0.key < $1.key }).map { "\($0.key) \($0.value)件" }.joined(separator: "、")
         }
-        openTextDocument(document)
+        finishCreation { openTextDocument(document) }
     }
 
     private func exportMCPSnapshot() -> URL? {
@@ -6689,8 +6739,10 @@ struct ContentView: View {
         }
         modelContext.insert(deck)
         try? modelContext.save()
-        libraryMode = .studyCards
-        openFlashcardDeck(deck)
+        finishCreation {
+            libraryMode = .studyCards
+            openFlashcardDeck(deck)
+        }
         return true
     }
 
