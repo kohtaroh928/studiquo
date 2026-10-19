@@ -23,3 +23,12 @@
   実行例（Node 24、キーは環境変数のみ）:
   `STUDIQUO_RAG_PROMPT_REMOTE=true STUDIQUO_RAG_EVAL_OPENAI_KEY=... node collaboration/rag-prompt/run-luna.mjs trial-01 example,requirement-coverage-v1 --max-calls 36 --budget-usd 0.5`
   採点: `node collaboration/rag-prompt/score.mjs collaboration/rag-prompt/.local/trial-01/answers.json [manual.json]`
+
+## 2026-10-19: trial-01 実行と採点（Claude）
+
+- `run-luna.mjs trial-01 example,requirement-coverage-v1 --max-calls 36 --budget-usd 0.5` を1回実行。36回すべて成功、再試行なし、モデルはgpt-6-luna。トークンからの概算約$0.019。
+- 結果: `results/trial-01.md`。生の回答は実行環境の`.local/`のみ（コミットしない、クラウド環境なので残らない）。
+- 要点: requirement-coverage-v1はp3-delta（Fが2時間長い）を改善。全プロンプトでv01-rule（2月1日以降の適用条件）とnp-conclusion-first（結論を先に）が欠落。explainで補足が一切付かず補足は評価不能。
+- 採点表のlm-same・p3-no-verdictのパターンに取りこぼしあり（未修正）。
+- 次の一手: 採点パターンの修正、v01-rule/結論先出しを指示に足した候補で再実行、複数回実行で揺らぎを見る。
+- Notion: 接続なしで未記録。
