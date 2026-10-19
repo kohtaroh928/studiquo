@@ -454,3 +454,44 @@ test("RAG_CONTEXT_AS_INPUT moves the excerpts out of the instructions into a sep
     }
   } finally { globalThis.fetch = original; }
 });
+
+test("a chat with an attached note has its links removed too; a chat with neither keeps them", async () => {
+  const original = globalThis.fetch;
+  const pieces = ["共有ノートより。[詳", "細](https://evil", ".example/?q=x)を見て。"];
+  globalThis.fetch = async () => new Response(sse(pieces));
+  try {
+    const withNote = await chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "友達から共有されたノートの本文" });
+    assert.equal(answerText(withNote.text), "共有ノートより。詳細を見て。");
+    const without = await chat(env(), { messages: [{ role: "user", text: "要点は？" }] });
+    assert.equal(answerText(without.text), pieces.join(""));
+    const blank = await chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "   " });
+    assert.equal(answerText(blank.text), pieces.join(""));
+  } finally { globalThis.fetch = original; }
+});
+
+test("a teen's finished reply is screened by moderation: a flagged reply gets a notice, a clean one and an adult's do not", async () => {
+  const original = globalThis.fetch;
+  let moderated = 0, flag = true;
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes("/moderations")) {
+      moderated++;
+      // Only the model's reply is flagged; the student's question is clean.
+      const hit = flag && JSON.parse(options.body).input.some((t) => t.includes("不適切"));
+      return new Response(JSON.stringify({ results: [{ categories: { violence: hit } }] }));
+    }
+    return new Response(sse(["不適切かもしれない回答です。"]));
+  };
+  try {
+    const screened = env({ AI_MODERATION: undefined });
+    const run = (headers) => chat(screened, { messages: [{ role: "user", text: "質問" }] }, headers);
+    const teen = await run({ "X-Studiquo-Age": "teen" });
+    assert.match(answerText(teen.text), /保護者や先生に相談/);
+    assert.ok(moderated >= 2, "the question and the reply are both screened"); // input moderation + output moderation
+    flag = false; moderated = 0;
+    const clean = await run({ "X-Studiquo-Age": "teen" });
+    assert.ok(!/保護者や先生/.test(answerText(clean.text)));
+    flag = true; moderated = 0;
+    const adult = await run({ "X-Studiquo-Age": "adult" });
+    assert.ok(!/保護者や先生/.test(answerText(adult.text)));
+  } finally { globalThis.fetch = original; }
+});

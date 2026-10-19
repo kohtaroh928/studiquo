@@ -12,6 +12,7 @@ import {organizeComparisonEvidence,assessComparisonEvidence} from './comparison-
 import { sourceQualification, sourceContextColumn, referencesAuthorized } from "./authorization.js";
 import { LIMITS } from "./limits.js";
 import { stripInvisible } from "./sanitize.js";
+import { countInjectionHints } from "./injection-hints.js";
 import { emptyRetrieval } from "./contract.js";
 async function retrieveInternal(env, session, payload, deadline) {
   if (env.RAG_ENABLED !== "true") return emptyRetrieval("disabled");
@@ -141,6 +142,7 @@ async function retrieveInternal(env, session, payload, deadline) {
       /* RRF remains usable if reranking is unavailable; no content logs. */
     }
     const references = [];
+    let hints = 0; // instruction-like phrases found in excerpts (count only, for the log)
     let sanitized = 0; // hidden characters removed from excerpts (count only, for the log)
     let truncated = false; // an excerpt was cut, or a selected one skipped, by a size budget
     const expand = async (hit, budget = LIMITS.excerptChars) => {
@@ -159,6 +161,7 @@ async function retrieveInternal(env, session, payload, deadline) {
       const cleaned = stripInvisible(neighbors.map((n) => n.text).join("\n"));
       sanitized += cleaned.removed;
       const joined = cleaned.text;
+      hints += countInjectionHints(joined);
       const cut = Math.min(LIMITS.excerptChars, budget);
       if (joined.length > cut) truncated = true;
       const text = joined.slice(0, cut);
@@ -218,6 +221,7 @@ async function retrieveInternal(env, session, payload, deadline) {
     Object.defineProperty(result, "authorization", { value: { key, references: proofs } });
     Object.defineProperty(result, "truncated", { value: truncated });
     Object.defineProperty(result, "sanitized", { value: sanitized });
+    Object.defineProperty(result, "injectionHints", { value: hints });
     return result;
   } catch {
     return emptyRetrieval("error");

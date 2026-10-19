@@ -268,6 +268,7 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
       reason: rag.reason ?? null,
       truncated: rag.truncated ?? null,
       sanitized: rag.sanitized ?? null,
+      injectionHints: rag.injectionHints ?? null,
       elapsedMs: Date.now() - retrievalStartedAt,
     }));
   }
@@ -321,7 +322,13 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
 
   return streamNormalizedText(upstream, extractText, ctx, env, key, {
     "x-studiquo-images-received": String(images.length),
-  }, gate.refund, rag.citations, rag.status, rag.context !== "");
+  }, gate.refund, rag.citations, rag.status,
+    // Text the student did not write reaches the model through retrieved
+    // excerpts and through an attached note (which may be a friend's shared
+    // note). Either can plant a link, so neither reply keeps links.
+    rag.context !== "" || (typeof payload?.noteContext === "string" && payload.noteContext.trim() !== ""),
+    // A teen's reply is also screened once it is complete (see streamNormalizedText).
+    provider === "openai" && request.headers.get("X-Studiquo-Age") === "teen");
 }
 
 /**
@@ -338,7 +345,7 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
  * runtime cancelled it. Here the buffer is an ordinary local and the
  * response is returned immediately while the pump runs behind it.
  */
-function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders = {}, refund = async () => {}, citations = [], ragStatus, redactRagLinks = false) {
+function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders = {}, refund = async () => {}, citations = [], ragStatus, redactRagLinks = false, moderateOutput = false) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
@@ -355,6 +362,7 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
 
     // Only an answer built from retrieved documents has its links removed.
     const redactor = redactRagLinks ? linkRedactor() : null;
+    let answer = ""; // what the student saw, kept (bounded) for the teen output screen
 
     // Every write is guarded. Once the app has the answer it closes the
     // connection, and a write into a stream nobody is reading rejects — the
@@ -401,13 +409,23 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
           if (text) {
             produced += text.length;
             const safe = redactor ? redactor.push(text) : text;
+            if (answer.length < 8000) answer += safe;
             if (safe) await send(safe);
           }
         }
       }
       if (redactor) {
         const rest = redactor.flush();
-        if (rest) await send(rest);
+        if (rest) {
+          if (answer.length < 8000) answer += rest;
+          await send(rest);
+        }
+      }
+      // The text is already on the student's screen and cannot be taken back, so a
+      // flagged reply gets a plain notice after it and a log line (no text).
+      if (moderateOutput && !failed && answer && await moderationRejection(env, [answer])) {
+        console.error(JSON.stringify({ message: "teen output flagged by moderation" }));
+        await send("\n\n（この回答には学習アプリで扱えない内容が含まれている可能性があります。内容を信じすぎず、保護者や先生に相談してください）");
       }
       completed = true;
       // A stream that ends in failure, or without a single character, is not an
