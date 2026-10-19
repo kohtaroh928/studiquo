@@ -356,7 +356,7 @@ enum ProofGradingService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await session.dataNoticing(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw GradingError.transport(L("応答を読み取れませんでした。"))
             }
