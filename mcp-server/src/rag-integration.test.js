@@ -483,7 +483,8 @@ test("a teen's finished reply is screened by moderation: a flagged reply gets a 
   };
   try {
     const screened = env({ AI_MODERATION: undefined });
-    const run = (headers) => chat(screened, { messages: [{ role: "user", text: "質問" }] }, headers);
+    const withNote = (headers) => chat(screened, { messages: [{ role: "user", text: "質問" }], noteContext: "共有ノートの本文" }, headers);
+    const run = withNote;
     const teen = await run({ "X-Studiquo-Age": "teen" });
     assert.match(answerText(teen.text), /保護者や先生に相談/);
     assert.ok(moderated >= 2, "the question and the reply are both screened"); // input moderation + output moderation
@@ -493,6 +494,11 @@ test("a teen's finished reply is screened by moderation: a flagged reply gets a 
     flag = true; moderated = 0;
     const adult = await run({ "X-Studiquo-Age": "adult" });
     assert.ok(!/保護者や先生/.test(answerText(adult.text)));
+    // A reply with no outside text in it (no note, no excerpts) is not screened a second time.
+    moderated = 0;
+    const plain = await chat(screened, { messages: [{ role: "user", text: "質問" }] }, { "X-Studiquo-Age": "teen" });
+    assert.ok(!/保護者や先生/.test(answerText(plain.text)));
+    assert.equal(moderated, 1, "only the student's question was screened");
   } finally { globalThis.fetch = original; }
 });
 
@@ -509,4 +515,47 @@ test("the shadow grounding check logs counts for a document-based answer and nev
     const event = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((e) => e?.event === "rag_grounding");
     assert.deepEqual(event, { event: "rag_grounding", status: "grounded", checkedNumbers: 1, ungroundedNumbers: 1, checkedTokens: 0, ungroundedTokens: 0 });
   } finally { globalThis.fetch = original; console.log = log; }
+});
+
+test("RAG_CONTEXT_AS_INPUT: a retry whose references were revoked sends no excerpt in the input", async () => {
+  const { callOpenAIChat } = await import("./openai.js");
+  const original = globalThis.fetch, bodies = [];
+  let status = 503;
+  globalThis.fetch = async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    const response = new Response(status === 503 ? "busy" : sse(["回答"]), { status });
+    status = 200; // the second attempt succeeds
+    return response;
+  };
+  try {
+    let attempt = 0;
+    await callOpenAIChat({ AI_RETRY_BASE_MS: 0 }, {
+      model: "gpt-test", systemInstruction: "base", turns: [{ role: "user", text: "質問" }], apiKey: "test-placeholder",
+      beforeDispatch: async () => (++attempt === 1
+        ? { instructions: "base", reference: "UNTRUSTED retrieved reference data 資料の抜粋" }
+        : "base"), // revalidation failed: references revoked
+    });
+    assert.equal(bodies.length, 2);
+    assert.equal(bodies[0].input.length, 2);
+    assert.match(JSON.stringify(bodies[0].input), /資料の抜粋/);
+    assert.equal(bodies[1].input.length, 1, "the revoked excerpt must not be resent");
+    assert.ok(!JSON.stringify(bodies[1]).includes("資料の抜粋"));
+  } finally { globalThis.fetch = original; }
+});
+
+test("links are still removed when the final re-check empties the references after they were sent", async () => {
+  const original = globalThis.fetch;
+  const qenv = qualityEnvironment(), environment = { ...env(), ...qenv };
+  globalThis.fetch = async () => {
+    // The source is deleted while the model is answering: the final re-check fails.
+    qenv.ADMIN_DB.db.exec("UPDATE rag_sources SET deleted=1");
+    return new Response(sse(["電流計は5000円です。[詳細](https://evil.example/?q=x)"]));
+  };
+  try {
+    await indexSource(environment, await accountKey("canonical-owner"), qualitySource({ pages: [{ pageNumber: 1, text: "電流計の価格は5000円です。" }] }));
+    environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map((v) => ({ id: v.id, score: 0.6 })) });
+    const result = await chat(environment, { messages: [{ role: "user", text: "電流計の価格を教えて" }], rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+    assert.ok(!/evil\.example/.test(answerText(result.text)), answerText(result.text));
+    assert.ok(!result.text.includes('"citations"'), "the citation is still dropped when the source is gone");
+  } finally { globalThis.fetch = original; }
 });

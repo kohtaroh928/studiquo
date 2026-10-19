@@ -49,3 +49,33 @@ test("internal identifiers are removed, also when split across pieces", () => {
     assert.ok(out.includes("通常の文章 abc123 は残る。"), `size ${size}: ${out}`);
   }
 });
+
+test("an internal id written as 'sourceId: value' is removed however the pieces fall", () => {
+  const text = "出典は sourceId: other-user-source です。chunk_id: 0123abcd と source id = \"abc-123\" も。";
+  for (const size of [1, 2, 3, 5, 7, 200]) {
+    const out = stream(text.match(new RegExp(`[\\s\\S]{1,${size}}`, "gu")));
+    assert.ok(!/other-user-source|0123abcd|abc-123/.test(out), `size ${size}: ${out}`);
+    assert.ok(out.startsWith("出典は ") && out.includes("です。"), `size ${size}: ${out}`);
+  }
+});
+
+test("links with any scheme, and images, are removed; plain brackets stay", () => {
+  assert.equal(redactLinks("[a](javascript:alert)x"), "ax");
+  for (const target of ["javascript:alert", "mailto:a@b.c", "tel:0312345678", "data:text/html,x", "//evil.example/x", "HTTPS://EVIL.example", "ftp://h/f"])
+    assert.equal(redactLinks(`見て[リンク](${target})ね`), "見てリンクね", target);
+  assert.equal(redactLinks("![図](https://evil.example/a.png)を見て"), "図を見て");
+  assert.equal(redactLinks("要素 [0](添字) と [a, b] の区間"), "要素 [0](添字) と [a, b] の区間");
+});
+
+test("a URL ends where the Japanese sentence continues", () => {
+  assert.equal(redactLinks("https://example.com/を参照してください。"), "（リンクは表示されません）を参照してください。");
+  assert.equal(redactLinks("詳細は https://example.com/a?b=c です"), "詳細は （リンクは表示されません） です");
+});
+
+test("a forced cut never splits a surrogate pair", () => {
+  const r = linkRedactor();
+  const text = "a".repeat(599) + "😀" + "b".repeat(10);
+  const out = r.push(text) + r.flush();
+  assert.equal(out, text);
+  assert.ok(!/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u.test(out));
+});
