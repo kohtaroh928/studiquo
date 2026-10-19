@@ -22,3 +22,11 @@ xcuserdata/
 *.mov
 *.mp4
 .env
+
+# Security reports contain internal findings; upload only sanitized summaries.
+/security-reports/
+/security/sast/__pycache__/
+/security/dast/__pycache__/
+
+# Local Workers runtime cache (test data is never persisted).
+/.wrangler/
