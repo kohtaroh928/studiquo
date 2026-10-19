@@ -1,5 +1,6 @@
 import { SignJWT, importPKCS8 } from "jose";
 import { loadDevices, removeDevice } from "./devices.js";
+import { featureDisabled } from "./features.js";
 
 const INVALID_TOKEN_REASONS = new Set(["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"]);
 
@@ -39,6 +40,8 @@ async function apnsErrorReason(response) {
  * never throws into the chat/friend action that triggered it.
  */
 export async function sendPush(env, userKey, notification, options = {}) {
+  // The "push" kill switch (features.js): nothing is sent, nothing is thrown.
+  if (featureDisabled(env, "push")) return [];
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? Date.now();
   if (!env.APNS_TEAM_ID || !env.APNS_TOPIC) {

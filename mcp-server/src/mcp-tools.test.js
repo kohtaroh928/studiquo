@@ -65,6 +65,7 @@ function environment() {
       async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
     },
     MCP_INBOX: fakeMCPInboxBinding(),
+    RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
     RATE_LIMIT_MCP_REGISTER: { async limit() { return { success: true }; } },
     RATE_LIMIT_MCP_AUTHORIZE: { async limit() { return { success: true }; } },
     RATE_LIMIT_MCP_TOKEN: { async limit() { return { success: true }; } },
@@ -107,15 +108,19 @@ async function pairMCPClient(env, deviceToken, { scope } = {}) {
     `/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&code_challenge_method=S256&code_challenge=${challengeB64}&state=abc${scopeParam}`
   );
   const page = await authorize.text();
-  const pairingCode = page.match(/<code>([A-Z2-9]{12})<\/code>/)?.[1];
-  const requestId = page.match(/\/oauth\/status\?id=([a-f0-9]{64})/)?.[1];
-  await fetchApp(env, "/api/mcp/pair", {
+  const requestId = page.match(/id:'([a-f0-9]{64})'/)?.[1];
+  const issued = await fetchApp(env, "/api/mcp/pairing-code", {
     method: "POST",
     headers: { authorization: `Bearer ${deviceToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ code: pairingCode }),
+    body: JSON.stringify({ kind: "other" }),
   });
-  const status = await fetchApp(env, `/oauth/status?id=${requestId}`);
-  const callback = new URL((await status.json()).redirect);
+  const { code: pairingCode } = await issued.json();
+  const approve = await fetchApp(env, "/oauth/pair", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: requestId, code: pairingCode }),
+  });
+  const callback = new URL((await approve.json()).redirect);
   const code = callback.searchParams.get("code");
   const token = await fetchApp(env, "/oauth/token", {
     method: "POST",

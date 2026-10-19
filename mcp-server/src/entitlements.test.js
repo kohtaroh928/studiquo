@@ -114,3 +114,99 @@ test("PRODUCT_PLAN_MAP maps every plus/pro product id to the right plan", () => 
   assert.equal(PRODUCT_PLAN_MAP["com.yabuko.studiquo.pro.monthly"], "pro");
   assert.equal(PRODUCT_PLAN_MAP["com.yabuko.studiquo.pro.yearly"], "pro");
 });
+
+// --- Paid Standard / paywall switch ---------------------------------------
+
+// Like fakeAdminDB, but routes by SQL text so the legacy-account lookup can
+// be answered separately from the subscribers lookup.
+function fakePaywallDB({ subscribers = [], legacy = [], paywall = true } = {}) {
+  return {
+    ...(paywall ? { PAYWALL_ENABLED: "true" } : {}),
+    ADMIN_DB: {
+      prepare(sql) {
+        return {
+          bind(appUserId) {
+            return {
+              async all() {
+                if (sql.includes("legacy_standard_accounts")) {
+                  return { results: legacy.filter(id => id === appUserId).map(id => ({ app_user_id: id })) };
+                }
+                return { results: subscribers.filter(row => row.app_user_id === appUserId) };
+              },
+            };
+          },
+        };
+      },
+    },
+  };
+}
+
+const STANDARD_YEARLY = "com.yabuko.studiquo.standard.yearly";
+
+test("the standard yearly product maps to standard", () => {
+  assert.equal(PRODUCT_PLAN_MAP[STANDARD_YEARLY], "standard");
+});
+
+test("paywall off: no subscription is still standard, whatever the legacy table holds", async () => {
+  const env = fakePaywallDB({ paywall: false });
+  assert.equal(await getPlan(env, "new-user"), "standard");
+  assert.equal(await getPlan(env, null), "standard");
+});
+
+test("paywall on: no subscription and not legacy resolves to free", async () => {
+  const env = fakePaywallDB();
+  assert.equal(await getPlan(env, "new-user"), "free");
+  assert.equal(await getPlan(env, null), "free");
+});
+
+test("paywall on: a legacy account without a subscription stays standard", async () => {
+  const env = fakePaywallDB({ legacy: ["old-user"] });
+  assert.equal(await getPlan(env, "old-user"), "standard");
+  assert.equal(await getPlan(env, "new-user"), "free");
+});
+
+test("paywall on: an active standard subscriber (trial or paid) resolves to standard", async () => {
+  const env = fakePaywallDB({
+    subscribers: [{ app_user_id: "u", status: "active", product_id: STANDARD_YEARLY, expires_at: FAR_FUTURE }],
+  });
+  assert.equal(await getPlan(env, "u"), "standard");
+});
+
+test("paywall on: an expired standard subscriber who is not legacy falls to free", async () => {
+  const env = fakePaywallDB({
+    subscribers: [{ app_user_id: "u", status: "expired", product_id: STANDARD_YEARLY, expires_at: PAST }],
+  });
+  assert.equal(await getPlan(env, "u"), "free");
+});
+
+test("paywall on: plus outranks standard and a legacy grant never lowers a subscription", async () => {
+  const env = fakePaywallDB({
+    legacy: ["u"],
+    subscribers: [{ app_user_id: "u", status: "active", product_id: "com.yabuko.studiquo.plus.yearly", expires_at: FAR_FUTURE }],
+  });
+  assert.equal(await getPlan(env, "u"), "plus");
+});
+
+test("a purchase under the pre-link identity still counts once the session is canonical", async () => {
+  const env = fakePaywallDB({
+    subscribers: [{ app_user_id: "apple-sub", status: "active", product_id: STANDARD_YEARLY, expires_at: FAR_FUTURE }],
+  });
+  assert.equal(await getPlan(env, ["google:canonical", "apple-sub"]), "standard");
+  assert.equal(await getPlan(env, ["google:canonical", undefined]), "free");
+});
+
+test("a legacy grant under the pre-link identity still counts", async () => {
+  const env = fakePaywallDB({ legacy: ["apple-sub"] });
+  assert.equal(await getPlan(env, ["google:canonical", "apple-sub"]), "standard");
+});
+
+test("productForPlanChange: the higher plan wins, unknown products never beat a known one", async () => {
+  const { productForPlanChange } = await import("./entitlements.js");
+  const standard = "com.yabuko.studiquo.standard.yearly";
+  const plus = "com.yabuko.studiquo.plus.yearly";
+  assert.equal(productForPlanChange(standard, plus), plus);
+  assert.equal(productForPlanChange(plus, standard), plus);
+  assert.equal(productForPlanChange(standard, "mystery"), standard);
+  assert.equal(productForPlanChange(standard, undefined), standard);
+  assert.equal(productForPlanChange(undefined, plus), plus);
+});

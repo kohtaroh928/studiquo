@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import test, { mock } from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import worker from "./app.js";
@@ -143,9 +145,10 @@ async function seedAppleJWKS(env, jwk) {
   await env.STUDIQUO_DATA.put("apple:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signAppleIdentityToken(privateKey, kid, { sub, email, isPrivateEmail, emailVerified } = {}) {
+function signAppleIdentityToken(privateKey, kid, { sub, email, isPrivateEmail, emailVerified, nonce } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const claims = { sub };
+  if (nonce !== undefined) claims.nonce = nonce;
   if (email !== undefined) claims.email = email;
   if (isPrivateEmail !== undefined) claims.is_private_email = isPrivateEmail;
   if (emailVerified !== undefined) claims.email_verified = emailVerified;
@@ -172,9 +175,10 @@ async function seedGoogleJWKS(env, jwk) {
   await env.STUDIQUO_DATA.put("google:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signGoogleIdentityToken(privateKey, kid, { sub, email, emailVerified } = {}) {
+function signGoogleIdentityToken(privateKey, kid, { sub, email, emailVerified, nonce } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const claims = { sub };
+  if (nonce !== undefined) claims.nonce = nonce;
   if (email !== undefined) claims.email = email;
   if (emailVerified !== undefined) claims.email_verified = emailVerified;
   return new SignJWT(claims)
@@ -414,7 +418,7 @@ test("POST /api/auth/apple: first sign-in creates the account and a matching ses
 
   assert.equal(response.status, 200);
   const { token } = await response.json();
-  assert.match(token, /^\d+\.r{40}$/);
+  assert.match(token, /^\d+\.[0-9a-f]{64}$/); // the secret half is made by the Worker, not taken from the request
   const issuedAt = Number(token.split(".")[0]);
   assert.ok(issuedAt >= beforeRequest);
 
@@ -426,7 +430,32 @@ test("POST /api/auth/apple: first sign-in creates the account and a matching ses
 
   const session = await env.STUDIQUO_DATA.get(`session:${sha256Hex(token)}`, "json");
   assert.equal(typeof session.issuedAtMs, "number");
-  assert.deepEqual(session, { sub: "000123.apple-sub.4567", issuedAt, issuedAtMs: session.issuedAtMs });
+  // A first sign-in is the start of its own login: the origin is the issue time.
+  assert.deepEqual(session, { sub: "000123.apple-sub.4567", issuedAt, issuedAtMs: session.issuedAtMs, originIssuedAtMs: session.issuedAtMs });
+});
+
+test("POST /api/auth/apple and /google: an account with a passkey is told to use it", async () => {
+  const env = environment();
+  const apple = await makeAppleSigningKey();
+  await seedAppleJWKS(env, apple.jwk);
+  const google = await makeGoogleSigningKey();
+  await seedGoogleJWKS(env, google.jwk);
+  await env.STUDIQUO_DATA.put("passkeys:credential:cred-a", JSON.stringify({ id: "cred-a", email: "pk-apple@example.com", createdAt: Date.now() }));
+  await env.STUDIQUO_DATA.put("passkeys:credential:cred-g", JSON.stringify({ id: "cred-g", email: "pk-google@example.com", createdAt: Date.now() }));
+  await env.STUDIQUO_DATA.put("passkey-index-backfilled", "1");
+  const { indexAccountPasskey } = await import("./passkey-policy.js");
+  await indexAccountPasskey(env, "pk-apple-sub", "pk-apple@example.com", "cred-a");
+  await indexAccountPasskey(env, "google:pk-google-sub", "pk-google@example.com", "cred-g");
+
+  const appleToken = await signAppleIdentityToken(apple.privateKey, apple.jwk.kid, { sub: "pk-apple-sub", email: "pk-apple@example.com" });
+  const appleResponse = await worker.fetch(request("/api/auth/apple", { method: "POST", body: { identityToken: appleToken, randomValue: "a".repeat(40) } }), env, noopCtx);
+  assert.equal(appleResponse.status, 403);
+  assert.equal((await appleResponse.json()).code, "passkey_required");
+
+  const googleToken = await signGoogleIdentityToken(google.privateKey, google.jwk.kid, { sub: "pk-google-sub", email: "pk-google@example.com", emailVerified: true });
+  const googleResponse = await worker.fetch(request("/api/auth/google", { method: "POST", body: { idToken: googleToken, randomValue: "g".repeat(40) } }), env, noopCtx);
+  assert.equal(googleResponse.status, 403);
+  assert.equal((await googleResponse.json()).code, "passkey_required");
 });
 
 test("POST /api/auth/apple: a later sign-in does not overwrite the account's stored email", async () => {
@@ -539,7 +568,7 @@ test("POST /api/auth/google: first sign-in creates the account and a matching se
 
   assert.equal(response.status, 200);
   const { token } = await response.json();
-  assert.match(token, /^\d+\.r{40}$/);
+  assert.match(token, /^\d+\.[0-9a-f]{64}$/); // the secret half is made by the Worker, not taken from the request
   const issuedAt = Number(token.split(".")[0]);
   assert.ok(issuedAt >= beforeRequest);
 
@@ -551,7 +580,7 @@ test("POST /api/auth/google: first sign-in creates the account and a matching se
 
   const session = await env.STUDIQUO_DATA.get(`session:${sha256Hex(token)}`, "json");
   assert.equal(typeof session.issuedAtMs, "number");
-  assert.deepEqual(session, { sub: "google:108234567890123456789", issuedAt, issuedAtMs: session.issuedAtMs });
+  assert.deepEqual(session, { sub: "google:108234567890123456789", issuedAt, issuedAtMs: session.issuedAtMs, originIssuedAtMs: session.issuedAtMs });
 });
 
 test("POST /api/auth/google: an invalid idToken is rejected with 401", async () => {
@@ -695,7 +724,7 @@ test("POST /api/auth/email/send-code then /confirm-code links the email under pr
   assert.equal(confirmResponse.status, 200);
   const { verified, token } = await confirmResponse.json();
   assert.equal(verified, true);
-  assert.match(token, /^\d+\.r{40}$/);
+  assert.match(token, /^\d+\.[0-9a-f]{64}$/); // the secret half is made by the Worker, not taken from the request
 
   const linked = await env.STUDIQUO_DATA.get("email-accounts:person@example.com", "json");
   assert.deepEqual(linked, [{ provider: "email", sub: "person@example.com" }]);
@@ -1120,7 +1149,7 @@ test("POST /api/auth/local/login: the correct password mints a working token", a
 
   assert.equal(response.status, 200);
   const { token } = await response.json();
-  assert.match(token, /^\d+\.l{40}$/);
+  assert.match(token, /^\d+\.[0-9a-f]{64}$/);
 
   // The minted token actually works against an ordinary gated endpoint.
   const actions = await worker.fetch(request("/api/actions", { token }), env, noopCtx);
@@ -1791,9 +1820,28 @@ test("POST /api/issue-reports stores the report and posts it to Slack when a web
   }
 });
 
+// A real D1-shaped database built from the migrations, for routes that now log
+// to admin_audit_log before they act.
+function withAuditDB(env) {
+  const db = new DatabaseSync(":memory:");
+  for (const file of readdirSync(new URL("../migrations/", import.meta.url)).sort()) {
+    db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  }
+  const statement = (sql, params = []) => ({
+    bind: (...next) => statement(sql, next),
+    async run() { db.prepare(sql).run(...params); return { success: true, meta: { changes: 1 } }; },
+    async all() { return { results: db.prepare(sql).all(...params) }; },
+    async first() { return db.prepare(sql).get(...params) ?? null; },
+  });
+  env.ADMIN_DB = { prepare: sql => statement(sql) };
+  env._auditDB = db;
+  return env;
+}
+
 test("report screenshots require verified Access and are not sent to Slack", async () => {
   const env = environment();
   Object.assign(env, ACCESS_ENV);
+  withAuditDB(env);
   env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.slack.test/services/xyz";
   const token = freshToken("q");
   const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
@@ -1832,6 +1880,8 @@ test("report screenshots require verified Access and are not sent to Slack", asy
   assert.equal(screenshotResponse.headers.get("content-type"), "image/png");
   const returnedBytes = Buffer.from(await screenshotResponse.arrayBuffer());
   assert.deepEqual(returnedBytes, pngBytes);
+  assert.deepEqual(env._auditDB.prepare("SELECT action, target FROM admin_audit_log").all().map(row => ({ ...row })),
+    [{ action: "issue_report.screenshot_view", target: id }]);
 });
 
 test("a report submitted with a screenshot is flagged hasScreenshot:true, with the image stored under its own KV key", async () => {
@@ -1878,6 +1928,7 @@ test("a report submitted without a screenshot is flagged hasScreenshot:false, wi
 test("a downloaded issue-report screenshot is cached only privately and only briefly", async () => {
   const env = environment();
   Object.assign(env, ACCESS_ENV);
+  withAuditDB(env);
   env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.slack.test/services/xyz";
   const token = freshToken("w9");
 
@@ -2199,6 +2250,23 @@ test("POST /api/auth/email/confirm-code: resetting the password signs out the se
   assert.ok(await realSession(env, afterReset), "the session minted by the reset does");
 });
 
+test("POST /api/auth/email/confirm-code: an account whose deletion is running is refused before anything is stored", async () => {
+  const env = environment({ strictSessions: true });
+  await env.STUDIQUO_DATA.put(`account-deletion:${await sha256Hex("email:deleting@example.com")}`, JSON.stringify({ status: "deleting" }));
+  const stub = stubResendCapturingCode();
+  const send = await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "deleting@example.com" } }), env, noopCtx);
+  stub.restore();
+  assert.equal(send.status, 200);
+  const response = await worker.fetch(
+    request("/api/auth/email/confirm-code", { method: "POST", body: { email: "deleting@example.com", code: stub.code(), password: "correct-horse-battery", randomValue: "d".repeat(40) } }),
+    env,
+    noopCtx
+  );
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).code, "account_deleting");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:deleting@example.com"), null, "no password was saved");
+});
+
 test("POST /api/auth/email/confirm-code: adding a first password does not sign out the account's other sessions", async t => {
   t.after(() => mock.timers.reset());
   mock.timers.enable({ apis: ["Date"], now: Date.now() });
@@ -2283,6 +2351,171 @@ test("POST /api/auth/email/confirm-code: a reset whose sign-out cannot be comple
   assert.equal(retried.status, 200, "a retry with a fresh code completes the reset");
 });
 
+// A passkey signs in as the e-mail address it was registered for, so one
+// registered by whoever held the old password must not survive the reset.
+// A passkey now protects its account as soon as it exists, which would make the
+// reset below stop at the passkey gate. These tests are about what a reset that
+// does go through removes (the gate itself is tested in passkey-policy.test.js),
+// so by default the record is dated a day ahead: not yet counted by the gate.
+async function seedPasskey(env, email, id, userKey, createdAt = Date.now() + 24 * 60 * 60 * 1000) {
+  const record = { id, publicKey: [1, 2, 3], counter: 0, transports: ["internal"], email, userKey, createdAt };
+  await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify(record));
+  const existing = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
+  await env.STUDIQUO_DATA.put(`passkeys:user:${userKey}`, JSON.stringify([...existing, record]));
+  // Registration files every passkey under its account; the reset finds them there.
+  await indexAccountPasskey(env, await env.STUDIQUO_DATA.get(`email-account-owner:${email}`) ?? `email:${email}`, email, id);
+}
+
+test("POST /api/auth/email/confirm-code: a reset removes the account's passkeys, and nobody else's", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-reset@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  await seedPasskey(env, "pk-reset@example.com", "attacker-passkey", "device-a");
+  await seedPasskey(env, "pk-reset@example.com", "second-passkey", "device-b");
+  await seedPasskey(env, "someone-else@example.com", "other-passkey", "device-c");
+  // A device list that holds both this account's passkey and another person's.
+  await seedPasskey(env, "someone-else@example.com", "shared-list-other", "device-a");
+
+  mock.timers.tick(5_000);
+  assert.equal((await resetPasswordWith(env, "pk-reset@example.com", "another-passphrase-1", "n".repeat(40))).status, 200);
+
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:attacker-passkey"), null);
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:second-passkey"), null);
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:user:device-b"), null, "a list left empty is deleted");
+  assert.deepEqual((await env.STUDIQUO_DATA.get("passkeys:user:device-a", "json")).map(item => item.id), ["shared-list-other"],
+    "a list is cleaned, not wiped, when it also holds another person's passkey");
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:other-passkey"), null, "another address's passkey is untouched");
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:user:device-c"), null);
+});
+
+test("POST /api/auth/email/confirm-code: a reset removes the passkeys of every address the account owns, not only the one reset", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-multi@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  const owner = await env.STUDIQUO_DATA.get("email-account-owner:pk-multi@example.com");
+  assert.ok(owner, "the account's owner record exists");
+  // A second address of the same account, and someone else's address.
+  await env.STUDIQUO_DATA.put("email-account-owner:second-address@example.com", owner);
+  await env.STUDIQUO_DATA.put("email-account-owner:foreign@example.com", "email:foreign@example.com");
+  await seedPasskey(env, "second-address@example.com", "second-address-passkey", "device-a");
+  await seedPasskey(env, "foreign@example.com", "foreign-passkey", "device-b");
+
+  mock.timers.tick(5_000);
+  assert.equal((await resetPasswordWith(env, "pk-multi@example.com", "another-passphrase-1", "n".repeat(40))).status, 200);
+
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:second-address-passkey"), null, "the other address of the account is covered");
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:foreign-passkey"), null, "someone else's address is not");
+});
+
+test("POST /api/auth/email/confirm-code: passkeys are found across every page of the listing", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-pages@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  for (let n = 1; n <= 7; n++) await seedPasskey(env, "pk-pages@example.com", `page-passkey-${n}`, `device-${n}`);
+
+  const realList = env.STUDIQUO_DATA.list;
+  env.STUDIQUO_DATA.list = async ({ prefix, cursor }) => {
+    const all = (await realList.call(env.STUDIQUO_DATA, { prefix })).keys;
+    const start = cursor ? Number(cursor) : 0;
+    return { keys: all.slice(start, start + 2), list_complete: start + 2 >= all.length, cursor: String(start + 2) };
+  };
+  mock.timers.tick(5_000);
+  assert.equal((await resetPasswordWith(env, "pk-pages@example.com", "another-passphrase-1", "n".repeat(40))).status, 200);
+
+  for (let n = 1; n <= 7; n++) assert.equal(await env.STUDIQUO_DATA.get(`passkeys:credential:page-passkey-${n}`), null, `passkey ${n}`);
+});
+
+test("POST /api/auth/email/confirm-code: a passkey registered while the new password is being stored is removed, even if the second sign-out pass fails", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-window@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  mock.timers.tick(5_000);
+
+  // Whoever still knew the old password registers a passkey at the moment the
+  // new password is written, after the first pass has already run; and the
+  // sessions' part of the second pass then fails.
+  const realPut = env.STUDIQUO_DATA.put;
+  let stored = false;
+  env.STUDIQUO_DATA.put = async (key, value, options) => {
+    if (key === "account:local:pk-window@example.com" && !stored) {
+      stored = true;
+      await seedPasskey(env, "pk-window@example.com", "window-passkey", "attacker-device");
+    }
+    if (stored && key.startsWith("session-valid-from:")) throw new Error("KV unavailable");
+    return realPut(key, value, options);
+  };
+  const response = await resetPasswordWith(env, "pk-window@example.com", "another-passphrase-1", "n".repeat(40));
+  env.STUDIQUO_DATA.put = realPut;
+
+  assert.equal(response.status, 200, "the password was stored, so the reset succeeds");
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:window-passkey"), null,
+    "the passkeys' pass does not depend on the sessions' pass");
+});
+
+test("POST /api/auth/email/confirm-code: the second passkey pass is tried again when it fails", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-retry@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  mock.timers.tick(5_000);
+
+  const realPut = env.STUDIQUO_DATA.put;
+  let stored = false;
+  let failures = 0;
+  env.STUDIQUO_DATA.put = async (key, value, options) => {
+    if (stored && key.startsWith("passkey-valid-from:") && failures < 2) { failures += 1; throw new Error("KV unavailable"); }
+    if (key === "account:local:pk-retry@example.com" && !stored) {
+      await seedPasskey(env, "pk-retry@example.com", "retry-passkey", "attacker-device");
+      stored = true;
+    }
+    return realPut(key, value, options);
+  };
+  const response = await resetPasswordWith(env, "pk-retry@example.com", "another-passphrase-1", "n".repeat(40));
+  env.STUDIQUO_DATA.put = realPut;
+
+  assert.equal(response.status, 200);
+  assert.equal(failures, 2, "two attempts failed");
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:retry-passkey"), null, "and the third removed the passkey");
+});
+
+test("POST /api/auth/email/confirm-code: an account that has a passkey is refused a first password by code, and keeps the passkey", async () => {
+  const env = environment({ strictSessions: true });
+  await seedPasskey(env, "pk-first@example.com", "owners-passkey", "device-a", 1);
+  // A code can be relayed by a look-alike site, so a passkey account does not accept one (passkey-policy.js).
+  assert.equal((await resetPasswordWith(env, "pk-first@example.com", "correct-horse-battery", "s".repeat(40))).status, 403);
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:owners-passkey"), null, "nothing is removed by a refused request");
+});
+
+test("POST /api/auth/email/confirm-code: a reset whose passkeys cannot be removed changes nothing", async t => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const env = environment({ strictSessions: true });
+  assert.equal((await resetPasswordWith(env, "pk-failclosed@example.com", "correct-horse-battery", "s".repeat(40))).status, 200);
+  await seedPasskey(env, "pk-failclosed@example.com", "attacker-passkey", "device-a");
+  const stored = await env.STUDIQUO_DATA.get("account:local:pk-failclosed@example.com");
+  mock.timers.tick(5_000);
+
+  const realPut = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (key, value, options) => {
+    if (key.startsWith("passkey-valid-from:")) throw new Error("KV unavailable");
+    return realPut(key, value, options);
+  };
+  const failed = await resetPasswordWith(env, "pk-failclosed@example.com", "another-passphrase-1", "n".repeat(40));
+  env.STUDIQUO_DATA.put = realPut;
+
+  assert.equal(failed.status, 503, "the person is told to try again");
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:pk-failclosed@example.com"), stored,
+    "the new password is not stored while a passkey that could still sign in remains");
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:attacker-passkey"), null);
+  const retried = await resetPasswordWith(env, "pk-failclosed@example.com", "another-passphrase-1", "m".repeat(40));
+  assert.equal(retried.status, 200);
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:attacker-passkey"), null, "and the retry removes it");
+});
+
 test("POST /api/auth/email/confirm-code: a reset also disconnects an app approved under a linked identity", async t => {
   t.after(() => mock.timers.reset());
   mock.timers.enable({ apis: ["Date"], now: Date.now() });
@@ -2355,6 +2588,51 @@ test("POST /api/auth/email/confirm-code: a failure to store the new password is 
   assert.equal(await env.STUDIQUO_DATA.get("account:local:busy@example.com"), stored, "the old password is untouched");
 });
 
+// --- GET /api/plan ----------------------------------------------------------
+
+function planEnvironment({ paywall = false, legacy = [] } = {}) {
+  const env = environment();
+  if (paywall) env.PAYWALL_ENABLED = "true";
+  env.ADMIN_DB = {
+    prepare(sql) {
+      return {
+        bind(appUserId) {
+          return {
+            async all() {
+              if (sql.includes("legacy_standard_accounts")) {
+                return { results: legacy.filter(id => id === appUserId).map(id => ({ app_user_id: id })) };
+              }
+              return { results: [] };
+            },
+          };
+        },
+      };
+    },
+  };
+  return env;
+}
+
+test("/api/plan: with the paywall off everyone is standard and paywallRequired is false", async () => {
+  const env = planEnvironment();
+  const response = await worker.fetch(request("/api/plan", { token: freshToken("p") }), env, noopCtx);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { plan: "standard", paywallRequired: false });
+});
+
+test("/api/plan: with the paywall on, an unlisted account is free and a legacy account is standard", async () => {
+  const free = await worker.fetch(request("/api/plan", { token: freshToken("p") }), planEnvironment({ paywall: true }), noopCtx);
+  assert.deepEqual(await free.json(), { plan: "free", paywallRequired: true });
+
+  // The test environment resolves every well-formed token to sub "test".
+  const legacy = await worker.fetch(request("/api/plan", { token: freshToken("p") }), planEnvironment({ paywall: true, legacy: ["test"] }), noopCtx);
+  assert.deepEqual(await legacy.json(), { plan: "standard", paywallRequired: true });
+});
+
+test("/api/plan: a request without a token is rejected", async () => {
+  const response = await worker.fetch(request("/api/plan"), planEnvironment(), noopCtx);
+  assert.equal(response.status, 401);
+});
+
 function tokenIssuedDaysAgo(days, suffix) {
   return `${Math.floor(Date.now() / 1000) - days * 86_400}.${suffix.repeat(40)}`;
 }
@@ -2395,12 +2673,26 @@ test("POST /api/session/refresh exchanges a token only once and shortens the old
   assert.equal(env._ttls.get(`session:${sha256Hex(token)}`), 14 * 86_400, "the replaced token stops working after the grace period");
 });
 
-test("POST /api/session/refresh refuses a randomValue with unexpected characters", async () => {
+test("POST /api/session/refresh ignores a randomValue, whatever it holds, and makes its own", async () => {
   const env = environment({ strictSessions: true });
   const token = tokenIssuedDaysAgo(30, "p");
   await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:chars@example.com" }));
-  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: "has space and \u00e9 chars!!" } }), env, noopCtx);
-  assert.equal(response.status, 400);
+  const junk = "has space and \u00e9 chars!!";
+  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: junk } }), env, noopCtx);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.refreshed, true);
+  assert.match(result.token, /^\d+\.[0-9a-f]{64}$/);
+  assert.ok(!result.token.includes("space"));
+});
+
+test("POST /api/session/refresh works with no randomValue at all", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(30, "q");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:none@example.com" }));
+  const response = await worker.fetch(request("/api/session/refresh", { method: "POST", token, body: {} }), env, noopCtx);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).refreshed, true);
 });
 
 test("POST /api/session/refresh leaves a recent token alone", async () => {
@@ -2430,7 +2722,8 @@ test("POST /api/session/refresh refuses expired, unknown, revoked and malformed 
 
   const valid = tokenIssuedDaysAgo(30, "w");
   await env.STUDIQUO_DATA.put(`session:${sha256Hex(valid)}`, JSON.stringify({ sub: "email:valid@example.com" }));
-  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: valid, body: { randomValue: "short" } }), env, noopCtx)).status, 400);
+  // A short or odd randomValue is no longer a reason to refuse: it is ignored.
+  assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", token: valid, body: { randomValue: "short" } }), env, noopCtx)).status, 200);
   assert.equal((await worker.fetch(request("/api/session/refresh", { method: "POST", body }), env, noopCtx)).status, 401);
 });
 
@@ -2506,7 +2799,7 @@ test("deleting the account and approving an app need a recent passkey check when
   await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:person@example.com" }));
 
   const deleteAccount = () => worker.fetch(request("/api/account", { method: "DELETE", token, body: { confirmation: "DELETE" } }), env, noopCtx);
-  const pair = () => worker.fetch(request("/api/mcp/pair", { method: "POST", token, body: { code: "ABCD1234" } }), env, noopCtx);
+  const pair = () => worker.fetch(request("/api/mcp/pairing-code", { method: "POST", token, body: { kind: "other" } }), env, noopCtx);
   for (const send of [deleteAccount, pair]) {
     const refused = await send();
     assert.equal(refused.status, 403);
@@ -2525,6 +2818,218 @@ test("an account without a passkey is not asked for one", async () => {
   const env = environment({ strictSessions: true });
   const token = freshToken("n");
   await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:nopass@example.com" }));
-  const response = await worker.fetch(request("/api/mcp/pair", { method: "POST", token, body: { code: "ABCD1234" } }), env, noopCtx);
+  const response = await worker.fetch(request("/api/mcp/pairing-code", { method: "POST", token, body: { kind: "other" } }), env, noopCtx);
   assert.notEqual(response.status, 403);
+});
+
+// ---- Library id: one opaque id per account, for the app's per-account library ----
+
+// A stand-in for the UserRegistry object: one stored value per object name.
+function fakeLibraryRegistry() {
+  const stored = new Map();
+  return {
+    _stored: stored,
+    getByName(name) {
+      return {
+        async libraryID() {
+          if (!stored.has(name)) stored.set(name, Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex"));
+          return stored.get(name);
+        },
+        async eraseLibraryID() { stored.delete(name); },
+      };
+    },
+  };
+}
+
+async function libraryID(env, token) {
+  const response = await worker.fetch(request("/api/account/library-id", { token }), env, noopCtx);
+  return { status: response.status, body: await response.json() };
+}
+
+test("the library id is random, the same for every sign-in method of one account, and different for another account", async () => {
+  const env = Object.assign(environment({ strictSessions: true }), { USER_REGISTRY: fakeLibraryRegistry() });
+  const apple = freshToken("a");
+  const google = freshToken("b");
+  const other = freshToken("c");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(apple)}`, JSON.stringify({ sub: "apple:alice" }));
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(google)}`, JSON.stringify({ sub: "google:alice-g" }));
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(other)}`, JSON.stringify({ sub: "apple:bob" }));
+  // Google was linked to the Apple account: both resolve to the same account.
+  await env.STUDIQUO_DATA.put("identity-canonical:google:alice-g", "apple:alice");
+
+  const first = await libraryID(env, apple);
+  assert.equal(first.status, 200);
+  assert.match(first.body.libraryID, /^[a-f0-9]{64}$/);
+  assert.ok(!JSON.stringify(first.body).includes("alice"));
+  assert.equal((await libraryID(env, google)).body.libraryID, first.body.libraryID, "the same person, whichever way they signed in");
+  assert.notEqual((await libraryID(env, other)).body.libraryID, first.body.libraryID);
+  assert.equal((await libraryID(env, apple)).body.libraryID, first.body.libraryID, "and stable");
+});
+
+test("the library id cannot be worked out from an e-mail address, and a new account gets a new one", async () => {
+  const registry = fakeLibraryRegistry();
+  const env = Object.assign(environment({ strictSessions: true }), { USER_REGISTRY: registry });
+  const token = freshToken("e");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:alice@example.com" }));
+  const { body } = await libraryID(env, token);
+  for (const guess of ["email:alice@example.com", "library-account:email:alice@example.com"]) {
+    assert.notEqual(body.libraryID, sha256Hex(guess), "not a hash anyone could compute");
+  }
+  // Erased with the account (account-deletion.js): the next one starts afresh.
+  for (const object of [...registry._stored.keys()]) registry._stored.delete(object);
+  assert.notEqual((await libraryID(env, token)).body.libraryID, body.libraryID);
+});
+
+test("an id asked for while the account is being deleted is taken away again, not left for a new sign-up", async () => {
+  const registry = fakeLibraryRegistry();
+  const env = Object.assign(environment({ strictSessions: true }), { USER_REGISTRY: registry });
+  const token = freshToken("g");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "apple:alice" }));
+  // The deletion starts after the session was checked, while the id is being made.
+  const original = registry.getByName.bind(registry);
+  registry.getByName = name => {
+    const object = original(name);
+    return { ...object, async libraryID() {
+      const id = await object.libraryID();
+      await env.STUDIQUO_DATA.put(`account-deletion:${sha256Hex("apple:alice")}`, JSON.stringify({ status: "deleting" }));
+      return id;
+    } };
+  };
+  const response = await libraryID(env, token);
+  assert.equal(response.status, 401);
+  assert.equal(registry._stored.size, 0, "the id made meanwhile was erased");
+});
+
+test("without the registry nothing is handed out, and the library id needs a signed-in session", async () => {
+  const bare = environment({ strictSessions: true });
+  const token = freshToken("f");
+  await bare.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "apple:alice" }));
+  assert.equal((await libraryID(bare, token)).status, 503);
+  const env = Object.assign(environment({ strictSessions: true }), { USER_REGISTRY: fakeLibraryRegistry() });
+  assert.equal((await worker.fetch(request("/api/account/library-id"), env, noopCtx)).status, 401);
+  assert.equal((await worker.fetch(request("/api/account/library-id", { token: freshToken("z") }), env, noopCtx)).status, 401);
+});
+
+// ---- ID token nonce: the token must have been made for THIS sign-in ---------------
+
+const nonceHash = nonce => createHash("sha256").update(nonce).digest("hex");
+const RAW_NONCE = "n".repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+
+async function providerFixture(provider) {
+  const env = environment();
+  const keys = provider === "apple" ? await makeAppleSigningKey() : await makeGoogleSigningKey();
+  await (provider === "apple" ? seedAppleJWKS : seedGoogleJWKS)(env, keys.jwk);
+  const sign = (claims = {}) => provider === "apple"
+    ? signAppleIdentityToken(keys.privateKey, keys.jwk.kid, { sub: "nonce-sub", ...claims })
+    : signGoogleIdentityToken(keys.privateKey, keys.jwk.kid, { sub: "nonce-sub", email: "nonce@example.com", emailVerified: true, ...claims });
+  const exchange = async (idToken, extra = {}, environmentOverride = env) => worker.fetch(request(
+    provider === "apple" ? "/api/auth/apple" : "/api/auth/google",
+    { method: "POST", body: { ...(provider === "apple" ? { identityToken: idToken } : { idToken }), ...extra } },
+  ), environmentOverride, noopCtx);
+  return { env, sign, exchange };
+}
+
+for (const provider of ["apple", "google"]) {
+  test(`${provider}: a token made for this sign-in (nonce hash matches) is accepted, and no randomValue is needed`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    const response = await exchange(await sign({ nonce: nonceHash(RAW_NONCE) }), { nonce: RAW_NONCE });
+    assert.equal(response.status, 200);
+    assert.match((await response.json()).token, /^\d+\.[0-9a-f]{64}$/);
+  });
+
+  test(`${provider}: the same request sent again is refused (a nonce works once)`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    const idToken = await sign({ nonce: nonceHash(RAW_NONCE) });
+    assert.equal((await exchange(idToken, { nonce: RAW_NONCE })).status, 200);
+    assert.equal((await exchange(idToken, { nonce: RAW_NONCE })).status, 401);
+  });
+
+  test(`${provider}: a copied ID token sent with someone else's nonce is refused`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    const idToken = await sign({ nonce: nonceHash(RAW_NONCE) });
+    const attackersNonce = "a".repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+    assert.equal((await exchange(idToken, { nonce: attackersNonce })).status, 401);
+    // The copy sent with no nonce at all is accepted only while nonces are optional.
+    assert.equal((await exchange(idToken, {})).status, 200);
+  });
+
+  test(`${provider}: a nonce sent for a token that carries none is refused`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    assert.equal((await exchange(await sign({}), { nonce: RAW_NONCE })).status, 401);
+  });
+
+  test(`${provider}: a malformed nonce is refused`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    for (const bad of ["short", "has space and é chars!!!!!!!!!!!!!!!", "x".repeat(300), 12345, {}]) {
+      assert.equal((await exchange(await sign({ nonce: nonceHash(String(bad)) }), { nonce: bad })).status, 401, JSON.stringify(bad).slice(0, 30));
+    }
+  });
+
+  test(`${provider}: with no nonce the sign-in still works until REQUIRE_ID_TOKEN_NONCE is on`, async () => {
+    const { env, sign, exchange } = await providerFixture(provider);
+    assert.equal((await exchange(await sign({}), {})).status, 200);
+    const strict = { ...env, REQUIRE_ID_TOKEN_NONCE: "true" };
+    assert.equal((await exchange(await sign({}), {}, strict)).status, 401);
+    assert.equal((await exchange(await sign({ nonce: nonceHash(RAW_NONCE) }), {}, strict)).status, 401, "a token with a nonce, sent without it");
+    const nonce = "b".repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+    assert.equal((await exchange(await sign({ nonce: nonceHash(nonce) }), { nonce }, strict)).status, 200);
+  });
+
+  test(`${provider}: a build that still sends a randomValue works, and the value is ignored`, async () => {
+    const { sign, exchange } = await providerFixture(provider);
+    const response = await exchange(await sign({}), { randomValue: "legacy".repeat(8) });
+    assert.equal(response.status, 200);
+    assert.ok(!(await response.json()).token.includes("legacy"));
+  });
+}
+
+// ---- The nonce outcome is logged (to watch the rollout), without any secret -------
+
+async function nonceLogs(run) {
+  const lines = [];
+  const original = console.log;
+  console.log = (...args) => { lines.push(args.join(" ")); };
+  try { await run(); } finally { console.log = original; }
+  return lines.map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(entry => entry?.event === "id_token_nonce");
+}
+
+for (const provider of ["apple", "google"]) {
+  test(`${provider}: each outcome of the nonce check is logged as one line, with no secret in it`, async () => {
+    const { env, sign, exchange } = await providerFixture(provider);
+    // This test signs in more often than the per-minute limit of the real endpoint.
+    env.RATE_LIMIT_APPLE_AUTH = fakeCloudflareLimiter(10_000);
+    env.RATE_LIMIT_GOOGLE_AUTH = fakeCloudflareLimiter(10_000);
+    const strict = { ...env, REQUIRE_ID_TOKEN_NONCE: "true" };
+    const nonce = (letter) => letter.repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+    const cases = [
+      ["verified", async () => exchange(await sign({ nonce: nonceHash(nonce("v")) }), { nonce: nonce("v") })],
+      ["absent", async () => exchange(await sign({}), {})],
+      ["absent_refused", async () => exchange(await sign({}), {}, strict)],
+      ["malformed", async () => exchange(await sign({ nonce: nonceHash("short") }), { nonce: "short" })],
+      ["missing_claim", async () => exchange(await sign({}), { nonce: nonce("m") })],
+      ["mismatch", async () => exchange(await sign({ nonce: nonceHash(nonce("x")) }), { nonce: nonce("y") })],
+    ];
+    for (const [outcome, run] of cases) {
+      const entries = await nonceLogs(run);
+      assert.deepEqual(entries, [{ event: "id_token_nonce", provider, outcome }], outcome);
+    }
+    // A replay of the verified sign-in.
+    const token = await sign({ nonce: nonceHash(nonce("r")) });
+    await exchange(token, { nonce: nonce("r") });
+    const replay = await nonceLogs(() => exchange(token, { nonce: nonce("r") }));
+    assert.deepEqual(replay, [{ event: "id_token_nonce", provider, outcome: "replayed" }]);
+  });
+}
+
+test("a nonce, an ID token or an account never appears in the logged line", async () => {
+  const { sign, exchange } = await providerFixture("apple");
+  const nonce = "z".repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+  const lines = [];
+  const original = console.log;
+  console.log = (...args) => { lines.push(args.join(" ")); };
+  try { await exchange(await sign({ nonce: nonceHash(nonce) }), { nonce }); } finally { console.log = original; }
+  const text = lines.join("\n");
+  assert.ok(!text.includes(nonce));
+  assert.ok(!text.includes(nonceHash(nonce)));
+  assert.ok(!text.includes("nonce-sub"));
 });

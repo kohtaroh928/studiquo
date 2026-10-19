@@ -1,0 +1,2248 @@
+{
+  "items": [
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/kv-asset-handler",
+      "version": "0.5.0",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/unenv-preset",
+      "version": "2.16.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/workerd-darwin-64",
+      "version": "1.20261006.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/workerd-darwin-arm64",
+      "version": "1.20261006.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/workerd-linux-64",
+      "version": "1.20261006.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/workerd-linux-arm64",
+      "version": "1.20261006.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cloudflare/workerd-windows-64",
+      "version": "1.20261006.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@cspotcode/source-map-support",
+      "version": "0.8.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@emnapi/runtime",
+      "version": "1.11.3",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/aix-ppc64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/android-arm",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/android-arm64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/android-x64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/darwin-arm64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/darwin-x64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/freebsd-arm64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/freebsd-x64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/linux-arm",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/linux-arm64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/linux-ia32",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/linux-loong64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/linux-mips64el",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/linux-ppc64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/linux-riscv64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/linux-s390x",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/linux-x64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/netbsd-arm64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/netbsd-x64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/openbsd-arm64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/openbsd-x64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/openharmony-arm64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/sunos-x64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/win32-arm64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/win32-ia32",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/win32-x64",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@hexagon/base64",
+      "version": "1.1.28",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@hono/node-server",
+      "version": "2.1.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/colour",
+      "version": "1.1.0",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-darwin-arm64",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-darwin-x64",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-freebsd-wasm32",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-libvips-darwin-arm64",
+      "version": "1.3.4",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-libvips-darwin-x64",
+      "version": "1.3.4",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-libvips-linux-arm",
+      "version": "1.3.4",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-libvips-linux-arm64",
+      "version": "1.3.4",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-libvips-linux-ppc64",
+      "version": "1.3.4",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-libvips-linux-riscv64",
+      "version": "1.3.4",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-libvips-linux-s390x",
+      "version": "1.3.4",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-libvips-linux-x64",
+      "version": "1.3.4",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-libvips-linuxmusl-arm64",
+      "version": "1.3.4",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-libvips-linuxmusl-x64",
+      "version": "1.3.4",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-linux-arm",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-linux-arm64",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-linux-ppc64",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-linux-riscv64",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-linux-s390x",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-linux-x64",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-linuxmusl-arm64",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-linuxmusl-x64",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-wasm32",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-webcontainers-wasm32",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-win32-arm64",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-win32-ia32",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@img/sharp-win32-x64",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@jridgewell/resolve-uri",
+      "version": "3.1.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@jridgewell/sourcemap-codec",
+      "version": "1.6.0",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@jridgewell/trace-mapping",
+      "version": "0.3.9",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@levischuck/tiny-cbor",
+      "version": "0.2.11",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@modelcontextprotocol/sdk",
+      "version": "1.32.1",
+      "direct": true,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": "MCPサーバー",
+      "nvd": {
+        "keyword": "modelcontextprotocol",
+        "products": [
+          "typescript-sdk",
+          "sdk",
+          "model_context_protocol"
+        ]
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@noble/hashes",
+      "version": "2.4.0",
+      "direct": true,
+      "exposure": "server",
+      "sensitive": true,
+      "usage": "ハッシュ計算(認証まわり)",
+      "nvd": {
+        "keyword": "noble-hashes",
+        "products": [
+          "noble-hashes",
+          "hashes"
+        ]
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-android",
+      "version": "2.9.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-cms",
+      "version": "2.9.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-csr",
+      "version": "2.9.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-ecc",
+      "version": "2.9.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-pfx",
+      "version": "2.9.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-pkcs8",
+      "version": "2.9.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-pkcs9",
+      "version": "2.9.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-rsa",
+      "version": "2.9.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-schema",
+      "version": "2.9.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-x509-attr",
+      "version": "2.9.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/asn1-x509",
+      "version": "2.9.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/utils",
+      "version": "2.0.3",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@peculiar/x509",
+      "version": "1.14.3",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@poppinss/colors",
+      "version": "4.1.6",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@poppinss/dumper",
+      "version": "0.6.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@poppinss/exception",
+      "version": "1.2.3",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@simplewebauthn/server",
+      "version": "13.3.3",
+      "direct": true,
+      "exposure": "server",
+      "sensitive": true,
+      "usage": "パスキー(WebAuthn)の検証",
+      "nvd": {
+        "keyword": "simplewebauthn",
+        "products": [
+          "simplewebauthn",
+          "server"
+        ]
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@sindresorhus/is",
+      "version": "7.2.0",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@speed-highlight/core",
+      "version": "1.2.24",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "accepts",
+      "version": "2.0.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "ajv-formats",
+      "version": "3.0.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "ajv",
+      "version": "8.20.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "asn1js",
+      "version": "3.0.10",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "blake3-wasm",
+      "version": "2.1.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "body-parser",
+      "version": "2.3.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "bytes",
+      "version": "3.1.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "call-bind-apply-helpers",
+      "version": "1.0.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "call-bound",
+      "version": "1.0.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "content-disposition",
+      "version": "1.1.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "content-type",
+      "version": "1.0.5",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "content-type",
+      "version": "2.1.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "cookie-signature",
+      "version": "1.2.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "cookie",
+      "version": "0.7.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "cookie",
+      "version": "1.1.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "cors",
+      "version": "2.8.6",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "cross-spawn",
+      "version": "7.0.6",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "debug",
+      "version": "4.4.3",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "depd",
+      "version": "2.0.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "detect-libc",
+      "version": "2.1.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "dunder-proto",
+      "version": "1.0.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "ee-first",
+      "version": "1.1.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "encodeurl",
+      "version": "2.0.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "error-stack-parser-es",
+      "version": "1.0.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "es-define-property",
+      "version": "1.0.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "es-errors",
+      "version": "1.3.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "es-object-atoms",
+      "version": "1.1.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "esbuild",
+      "version": "0.28.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "escape-html",
+      "version": "1.0.3",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "etag",
+      "version": "1.8.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "eventsource-parser",
+      "version": "3.1.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "eventsource",
+      "version": "3.0.7",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "express-rate-limit",
+      "version": "8.6.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "express",
+      "version": "5.2.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "fast-deep-equal",
+      "version": "3.1.3",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "fast-uri",
+      "version": "3.1.8",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "finalhandler",
+      "version": "2.1.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "forwarded",
+      "version": "0.2.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "fresh",
+      "version": "2.0.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "fsevents",
+      "version": "2.3.3",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "function-bind",
+      "version": "1.1.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "get-intrinsic",
+      "version": "1.3.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "get-proto",
+      "version": "1.0.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "gopd",
+      "version": "1.2.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "has-symbols",
+      "version": "1.1.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "hasown",
+      "version": "2.0.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "hono",
+      "version": "4.13.7",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "http-errors",
+      "version": "2.0.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "iconv-lite",
+      "version": "0.7.3",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "inherits",
+      "version": "2.0.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "ip-address",
+      "version": "10.7.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "ipaddr.js",
+      "version": "1.9.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "is-promise",
+      "version": "4.0.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "isexe",
+      "version": "2.0.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "jose",
+      "version": "5.10.0",
+      "direct": true,
+      "exposure": "server",
+      "sensitive": true,
+      "usage": "JWTの署名・検証",
+      "nvd": {
+        "keyword": "jose",
+        "vendors": [
+          "panva"
+        ],
+        "products": [
+          "jose"
+        ]
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "name": "jose",
+      "version": "6.2.10",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": true,
+      "usage": "JWTの署名・検証",
+      "nvd": {
+        "keyword": "jose",
+        "vendors": [
+          "panva"
+        ],
+        "products": [
+          "jose"
+        ]
+      }
+    },
+    {
+      "ecosystem": "npm",
+      "name": "json-schema-traverse",
+      "version": "1.0.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "json-schema-typed",
+      "version": "8.0.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "kleur",
+      "version": "4.1.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "math-intrinsics",
+      "version": "1.1.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "media-typer",
+      "version": "1.1.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "merge-descriptors",
+      "version": "2.0.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "mime-db",
+      "version": "1.54.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "mime-types",
+      "version": "3.0.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "miniflare",
+      "version": "5.20261006.2-beta",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "ms",
+      "version": "2.1.3",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "negotiator",
+      "version": "1.1.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "object-assign",
+      "version": "4.1.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "object-inspect",
+      "version": "1.13.4",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "on-finished",
+      "version": "2.4.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "once",
+      "version": "1.4.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "parseurl",
+      "version": "1.3.3",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "path-key",
+      "version": "3.1.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "path-to-regexp",
+      "version": "6.3.0",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "path-to-regexp",
+      "version": "8.4.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "pathe",
+      "version": "2.0.3",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "pkce-challenge",
+      "version": "5.0.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "proxy-addr",
+      "version": "2.0.8",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "pvtsutils",
+      "version": "1.3.6",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "pvutils",
+      "version": "1.2.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "qs",
+      "version": "6.16.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "range-parser",
+      "version": "1.3.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "raw-body",
+      "version": "3.0.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "reflect-metadata",
+      "version": "0.2.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "require-from-string",
+      "version": "2.0.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "router",
+      "version": "2.2.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "safer-buffer",
+      "version": "2.1.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "semver",
+      "version": "7.8.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "send",
+      "version": "1.2.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "serve-static",
+      "version": "2.2.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "setprototypeof",
+      "version": "1.2.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "sharp",
+      "version": "0.35.5",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "shebang-command",
+      "version": "2.0.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "shebang-regex",
+      "version": "3.0.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "side-channel-list",
+      "version": "1.0.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "side-channel-map",
+      "version": "1.0.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "side-channel-weakmap",
+      "version": "1.0.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "side-channel",
+      "version": "1.1.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "statuses",
+      "version": "2.0.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "supports-color",
+      "version": "10.2.2",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "toidentifier",
+      "version": "1.0.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "tslib",
+      "version": "1.14.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "tslib",
+      "version": "2.8.1",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "tsyringe",
+      "version": "4.10.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "type-is",
+      "version": "2.1.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "undici",
+      "version": "7.29.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "unenv",
+      "version": "2.0.0-rc.24",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "unpipe",
+      "version": "1.0.0",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "vary",
+      "version": "1.1.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "which",
+      "version": "2.0.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "workerd",
+      "version": "1.20261006.1",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "wrangler",
+      "version": "4.150.0",
+      "direct": true,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "wrappy",
+      "version": "1.0.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "ws",
+      "version": "8.21.0",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "youch-core",
+      "version": "0.3.3",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "youch",
+      "version": "4.1.0-beta.10",
+      "direct": false,
+      "exposure": "tooling",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "zod-to-json-schema",
+      "version": "3.25.2",
+      "direct": false,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "npm",
+      "name": "zod",
+      "version": "4.4.3",
+      "direct": true,
+      "exposure": "server",
+      "sensitive": false,
+      "usage": "入力検証",
+      "nvd": {
+        "keyword": "zod",
+        "products": [
+          "zod"
+        ]
+      }
+    },
+    {
+      "ecosystem": "SwiftURL",
+      "name": "github.com/google/app-check",
+      "identity": "app-check",
+      "version": "11.3.2",
+      "revision": "97f7d74dd0e8f3d0fe5fc75cc8957aa73bdc948a",
+      "exposure": "app",
+      "sensitive": true,
+      "usage": "アプリ認証の補助",
+      "nvd": null
+    },
+    {
+      "ecosystem": "SwiftURL",
+      "name": "github.com/google/GoogleSignIn-iOS",
+      "identity": "googlesignin-ios",
+      "version": "9.2.0",
+      "revision": "08d8dcecafb575f98879ffdbb8302c1b9ad65d19",
+      "exposure": "app",
+      "sensitive": true,
+      "usage": "Googleサインイン",
+      "nvd": {
+        "keyword": "GoogleSignIn",
+        "vendors": [
+          "google"
+        ],
+        "products": [
+          "googlesignin",
+          "googlesignin-ios",
+          "google_sign-in"
+        ]
+      }
+    },
+    {
+      "ecosystem": "SwiftURL",
+      "name": "github.com/google/GoogleUtilities",
+      "identity": "googleutilities",
+      "version": "8.1.5",
+      "revision": "5459ee5603def3db0fe14ca522185f42c48d978e",
+      "exposure": "app",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "SwiftURL",
+      "name": "github.com/google/gtm-session-fetcher",
+      "identity": "gtm-session-fetcher",
+      "version": "3.5.0",
+      "revision": "a2ab612cb980066ee56d90d60d8462992c07f24b",
+      "exposure": "app",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "SwiftURL",
+      "name": "github.com/google/GTMAppAuth",
+      "identity": "gtmappauth",
+      "version": "5.0.0",
+      "revision": "56e0ccf09a6dd29dc7e68bdf729598240ca8aa16",
+      "exposure": "app",
+      "sensitive": true,
+      "usage": "OAuth(Googleサインインの下層)",
+      "nvd": null
+    },
+    {
+      "ecosystem": "SwiftURL",
+      "name": "github.com/google/interop-ios-for-google-sdks",
+      "identity": "interop-ios-for-google-sdks",
+      "version": "101.0.0",
+      "revision": "040d087ac2267d2ddd4cca36c757d1c6a05fdbfe",
+      "exposure": "app",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "SwiftURL",
+      "name": "github.com/google/promises",
+      "identity": "promises",
+      "version": "2.4.1",
+      "revision": "f4a19a3c313dc2616c70bb49d29a799fb16be837",
+      "exposure": "app",
+      "sensitive": false,
+      "usage": null,
+      "nvd": null
+    },
+    {
+      "ecosystem": "SwiftURL",
+      "name": "github.com/mgriebling/SwiftMath",
+      "identity": "swiftmath",
+      "version": null,
+      "revision": "1d2c90827e9c3908269d810d055fb03b7da5fd53",
+      "exposure": "app",
+      "sensitive": false,
+      "usage": "数式の組版",
+      "nvd": {
+        "keyword": "SwiftMath",
+        "products": [
+          "swiftmath"
+        ]
+      }
+    },
+    {
+      "ecosystem": "SwiftURL",
+      "name": "github.com/openid/AppAuth-iOS",
+      "identity": "appauth-ios",
+      "version": "2.1.0",
+      "revision": "a7caeda164dc5108bf4649472b28a5af65dc6f33",
+      "exposure": "app",
+      "sensitive": true,
+      "usage": "OAuth(Googleサインインの下層)",
+      "nvd": null
+    },
+    {
+      "ecosystem": "SwiftURL",
+      "name": "github.com/RevenueCat/purchases-ios",
+      "identity": "purchases-ios",
+      "version": "5.92.0",
+      "revision": "e45bb84b726885492ce4e7ee94ddb252d171a205",
+      "exposure": "app",
+      "sensitive": true,
+      "usage": "課金(RevenueCat)",
+      "nvd": {
+        "keyword": "RevenueCat purchases-ios",
+        "vendors": [
+          "revenuecat"
+        ],
+        "products": [
+          "purchases-ios",
+          "purchases_ios"
+        ]
+      }
+    }
+  ]
+}

@@ -12,7 +12,7 @@ struct AITurn {
 ///
 /// The app talks only to this protocol, so changing model or vendor is one
 /// line in `AI.provider` rather than an edit at every call site. Two
-/// implementations exist today: the Worker proxy (Gemini, the shipping path)
+/// implementations exist today: the Worker proxy (OpenAI, the shipping path)
 /// and the direct Claude client kept from the earlier build.
 protocol AIProvider {
     /// True when the provider is configured well enough to be worth calling.
@@ -90,7 +90,7 @@ enum AI {
 
 // MARK: - Worker-backed provider
 
-/// Talks to the app's own Cloudflare Worker, which holds the Gemini key.
+/// Talks to the app's own Cloudflare Worker, which holds the OpenAI key.
 ///
 /// The app authenticates with the same device token the MCP sync already
 /// uses, so there is nothing extra for the student to set up — the AI is
@@ -103,18 +103,12 @@ final class WorkerAIProvider: AIProvider {
     /// back nil — which is why the chat reported "未設定" even though the
     /// endpoint was right there in settings. The default is repeated here so
     /// both paths agree.
-    static let defaultEndpoint = "https://studiquo-mcp.studiquo-mcp-server.workers.dev"
+    static let defaultEndpoint = "https://api.studiquo.app"
 
     /// Read fresh each call so changing the endpoint in settings takes effect
     /// without restarting.
-    private var baseURL: URL? {
-        var raw = (UserDefaults.standard.string(forKey: "mcpCloudEndpoint") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if raw.isEmpty { raw = Self.defaultEndpoint }
-        raw = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: raw), url.scheme?.lowercased() == "https",
-              url.host?.isEmpty == false, url.user == nil, url.password == nil else { return nil }
-        return url
+    var baseURL: URL? {
+        WorkerEndpointPolicy.resolve(UserDefaults.standard.string(forKey: "mcpCloudEndpoint"))
     }
 
     var isConfigured: Bool { baseURL != nil }
@@ -126,9 +120,10 @@ final class WorkerAIProvider: AIProvider {
         var request = URLRequest(url: baseURL.appending(path: "api/ai/usage"))
         request.httpMethod = "GET"
         request.setValue(AIDataDisclosure.currentVersion, forHTTPHeaderField: "X-Studiquo-AI-Consent")
+        request.setValue(AIDataDisclosure.ageBand?.rawValue, forHTTPHeaderField: "X-Studiquo-Age")
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.dataNoticing(for: request)
             guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { return nil }
             return try? JSONDecoder().decode(AIUsage.self, from: data)
         } catch {
@@ -155,6 +150,7 @@ final class WorkerAIProvider: AIProvider {
             case .notConfigured:
                 return L("AIサーバーのURLが設定されていません。設定のMCPクラウド連携を確認してください。")
             case .http(let status, let message):
+                if status == 402 { return L("AI機能のご利用にはStandard以上のプランが必要です。購入した直後は、反映まで数分かかることがあります。") }
                 if status == 429 { return message.isEmpty ? L("利用回数の上限に達しました。") : message }
                 if status == 401 { return L("この端末はまだAIサーバーに認証されていません。") }
                 return message.isEmpty ? L("AIに接続できませんでした（\(status)）。") : message
@@ -185,6 +181,7 @@ final class WorkerAIProvider: AIProvider {
         request.timeoutInterval = 300
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(AIDataDisclosure.currentVersion, forHTTPHeaderField: "X-Studiquo-AI-Consent")
+        request.setValue(AIDataDisclosure.ageBand?.rawValue, forHTTPHeaderField: "X-Studiquo-Age")
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
@@ -221,7 +218,7 @@ final class WorkerAIProvider: AIProvider {
         let request = try request(path: "api/ai/chat", body: payload)
 
         do {
-            let (stream, response) = try await URLSession.shared.bytes(for: request)
+            let (stream, response) = try await URLSession.shared.bytesNoticing(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
             }
@@ -235,7 +232,7 @@ final class WorkerAIProvider: AIProvider {
                Int(received) != encodedImages.count {
                 throw ProviderError.imageNotReceived
             }
-            // The Worker normalises Gemini's event envelope down to
+            // The Worker normalises the provider's event envelope down to
             // `data: {"text": "..."}`, so there is only one shape to parse.
             for try await line in stream.lines {
                 guard AIDataDisclosure.hasBeenAcknowledged else { throw ProviderError.consentRequired }
@@ -308,7 +305,7 @@ final class WorkerAIProvider: AIProvider {
         let request = try request(path: path, body: body)
 
         do {
-            let (stream, response) = try await URLSession.shared.bytes(for: request)
+            let (stream, response) = try await URLSession.shared.bytesNoticing(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
             }
@@ -369,7 +366,7 @@ final class WorkerAIProvider: AIProvider {
     private func post(path: String, body: [String: Any]) async throws -> Data {
         let request = try request(path: path, body: body)
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.dataNoticing(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
             }

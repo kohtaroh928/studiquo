@@ -98,7 +98,7 @@ private final class RecordingUsageEventProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        XCTAssertEqual(request.url?.host, "studiquo-mcp.studiquo-mcp-server.workers.dev", "Unexpected test request host")
+        XCTAssertEqual(request.url?.host, "api.studiquo.app", "Unexpected test request host")
         Self.lock.lock()
         Self.requests.append(request)
         let shouldFail = Self.shouldFailNext

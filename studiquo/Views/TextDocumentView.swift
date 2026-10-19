@@ -1865,6 +1865,7 @@ private struct LinkEditSheet: View {
                     Button("リンクを削除", role: .destructive, action: onRemove)
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("リンク")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -2358,6 +2359,7 @@ private struct CommentThreadSheet: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .overlay {
                 if allComments.isEmpty {
                     ContentUnavailableView("コメントはまだありません", systemImage: "bubble.left")
@@ -2500,6 +2502,7 @@ private struct FootnoteEditSheet: View {
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("脚注")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -2585,6 +2588,7 @@ private struct ChangeHistorySheet: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .overlay {
                 if sortedRecords.isEmpty {
                     ContentUnavailableView("変更履歴はまだありません", systemImage: "clock.arrow.circlepath")
@@ -2678,6 +2682,7 @@ private struct CollabSheet: View {
     @State private var isStarting = false
     @State private var isSyncing = false
     @State private var participants: [DocumentCollabService.Participant] = []
+    @State private var inviteNotice = ""
     @State private var selectedFriendCode = ""
     @State private var selectedRole = "editor"
     @State private var errorMessage: String?
@@ -2759,6 +2764,9 @@ private struct CollabSheet: View {
                     }
                     Button("招待する") { Task { await invite(roomID: roomID) } }
                         .disabled(selectedFriendCode.isEmpty)
+                    if !inviteNotice.isEmpty {
+                        Text(inviteNotice).font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
             }
             Section {
@@ -2773,6 +2781,7 @@ private struct CollabSheet: View {
                 }
             }
         }
+            .themeScreenBackground()
     }
 
     private func roleLabel(_ role: String) -> String {
@@ -2821,6 +2830,8 @@ private struct CollabSheet: View {
         do {
             _ = try await DocumentCollabService.invite(roomID: roomID, code: selectedFriendCode, role: selectedRole)
             selectedFriendCode = ""
+            // The friend is added to the participants only after they accept.
+            await MainActor.run { inviteNotice = L("招待を送りました。相手が承諾すると、参加者に追加されます。") }
             await refreshParticipants()
         } catch {
             await MainActor.run { errorMessage = "招待に失敗しました。相手が友達登録されているか確認してください。" }

@@ -31,7 +31,7 @@ test("GET /privacy serves the privacy policy without a bearer token", async () =
   assert.match(response.headers.get("content-type") ?? "", /text\/html/);
   const body = await response.text();
   assert.match(body, /プライバシーポリシー/);
-  assert.match(body, /Google Gemini/);
+  assert.match(body, /OpenAI/);
   assert.match(body, /Google Calendar API/);
   assert.match(body, /yabukohtaroh@gmail\.com/);
   assert.doesNotMatch(body, /【/);
@@ -109,9 +109,117 @@ test("the privacy policy discloses the automatic diagnostic reports and how to t
   const body = await response.text();
   assert.match(body, /任意の診断情報/);
   assert.match(body, /初期状態では送信しません/);
-  assert.match(body, /現在の送信先はGoogleのみ/);
+  assert.match(body, /現在の送信先はOpenAIのみ/);
   assert.match(body, /保存期間/);
   assert.match(body, /本文・画像の閲覧には管理者ログインが必要/);
   assert.match(body, /ノートやチャットの本文は含めません/);
   assert.match(body, /いつでも停止できます/);
+});
+
+test("the policy and terms describe reports, blocks and what the operator can do about them", async () => {
+  const privacy = await (await worker.fetch(new Request("https://example.test/privacy"), {}, { waitUntil() {} })).text();
+  assert.match(privacy, /通報・ブロック・利用停止に関する情報/);
+  assert.match(privacy, /通報は90日で削除/);
+  assert.match(privacy, /取り消しても、通報の時点の内容は保存/);
+  const terms = await (await worker.fetch(new Request("https://example.test/terms"), {}, { waitUntil() {} })).text();
+  assert.match(terms, /メッセージの削除、通知による注意、チャット機能の停止、アカウントの利用停止/);
+  assert.match(terms, /利用を停止された場合でも、アカウントの削除はできます/);
+});
+
+// The policy must name every outside party the Worker really talks to, and every
+// kind of data it really keeps about a request. This list is built from the
+// Worker's source on purpose: a new host added to the code without a line in the
+// policy fails here. A host that is deliberately NOT in the policy is listed
+// below with the reason, so that leaving it out is a decision and not an accident.
+//
+// What this scan can and cannot see: it finds hosts written as a literal
+// `https://host` in the source. The APNs host (built in push.js) and the Slack
+// webhook (a secret URL) are not literals, so they are named by hand in the
+// MUST_NAME list below instead.
+import { readdirSync, readFileSync } from "node:fs";
+
+const HOST_TO_POLICY_TERM = {
+  "api.openai.com": "OpenAI",
+  "api.resend.com": "Resend",
+  "api.revenuecat.com": "RevenueCat",
+  "api.pwnedpasswords.com": "Pwned Passwords",
+  "appleid.apple.com": "Sign in with Apple",
+  "accounts.google.com": "Google Sign-In",
+  "www.googleapis.com": "Google Sign-In",
+};
+const HOSTS_DELIBERATELY_NOT_IN_THE_POLICY = {
+  // Wired in handleChat but listed for no plan (ai.js PLAN_MODELS), so no student data goes there.
+  // Add it to the policy together with the plan entry (docs/releases/ai-credit-plans.md).
+  "api.anthropic.com": "no plan uses it",
+  // Links shown in pages and docs, and the MCP clients' own origins; the Worker sends them nothing.
+  "claude.ai": "an allowed OAuth redirect origin, not a destination",
+  "chatgpt.com": "an allowed OAuth redirect origin, not a destination",
+  "apps.apple.com": "a link",
+  "community.cloudflare.com": "a link in a comment",
+  // Where the embedded App Attest root certificate comes from (app-attest.js comment); the Worker never fetches it.
+  "www.apple.com": "a link in a comment",
+};
+
+test("every outside host the Worker contacts is named in the privacy policy, or left out on purpose", async () => {
+  const sources = readdirSync(new URL(".", import.meta.url)).filter(name => name.endsWith(".js") && !name.endsWith(".test.js"));
+  const hosts = new Set();
+  for (const name of sources) {
+    for (const match of readFileSync(new URL(name, import.meta.url), "utf8").matchAll(/https:\/\/([a-z0-9.-]+\.[a-z]{2,})/g)) hosts.add(match[1]);
+  }
+  const body = await (await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx)).text();
+  const unaccounted = [...hosts].filter(host =>
+    !(host in HOST_TO_POLICY_TERM) && !(host in HOSTS_DELIBERATELY_NOT_IN_THE_POLICY)
+    && !/(^|\.)(example|test|evil\.example|invalid)(\.[a-z]+)?$/.test(host) && !host.endsWith("w3.org"));
+  assert.deepEqual(unaccounted, [], "a host the code contacts is neither in the policy nor listed as left out on purpose");
+  for (const [host, term] of Object.entries(HOST_TO_POLICY_TERM)) {
+    if (hosts.has(host)) assert.ok(body.includes(term), `${host} is contacted, so the policy must mention ${term}`);
+  }
+  // Destinations the scan cannot see (see the comment above).
+  const MUST_NAME = ["Apple Push Notification service", "Slack", "RevenueCat", "Cloudflare", "Resend", "OpenAI"];
+  for (const term of MUST_NAME) assert.ok(body.includes(term), `the policy must name ${term}`);
+});
+
+test("the privacy policy states what is kept about a request, a device and an email", async () => {
+  const body = await (await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx)).text();
+  // Provider-side facts of the code in login-throttle.js, login-monitor.js, devices.js, push.js.
+  assert.match(body, /IPアドレス/);
+  assert.match(body, /ハッシュ値/);
+  assert.match(body, /国・地域・ネットワーク/);
+  assert.match(body, /最大20件を90日間/);
+  assert.match(body, /プッシュ通知トークン/);
+  assert.match(body, /インストールID/);
+  assert.match(body, /端末名/);
+  assert.match(body, /Apple Push Notification service/);
+  assert.match(body, /最大120文字/);
+  assert.match(body, /ハッシュ値の先頭5文字だけ/);
+  assert.match(body, /アプリを開いた日時を、利用者数の集計/);
+  assert.match(body, /MCP連携/);
+  assert.match(body, /90日で自動的に削除/);
+  // What the MCP copy really holds (makeMCPSnapshotData in ContentView.swift).
+  assert.match(body, /文書の題名と本文/);
+  assert.match(body, /学習記録/);
+  assert.match(body, /Googleカレンダーから取り込んだ予定を含みます/);
+  assert.match(body, /取り込んだ予定は、MCP連携の「今すぐ同期」を行った場合に限り/);
+  // RevenueCat gets the account identifier, which is the email address for email accounts.
+  assert.match(body, /メールアドレスそのもの/);
+  // The hashes are pseudonymous, and the policy says so.
+  assert.match(body, /仮名化であり、匿名化ではありません/);
+});
+
+test("the policy and the terms say the same thing about age", async () => {
+  const privacy = await (await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx)).text();
+  const terms = await (await worker.fetch(new Request("https://example.test/terms"), {}, noopCtx)).text();
+  for (const body of [privacy, terms]) {
+    assert.match(body, /登録時に年齢を確認する仕組みはありません/);
+    assert.match(body, /AI機能に限り、初回の送信前に年齢区分を確認/);
+    assert.match(body, /13歳未満の方にはAI機能を提供せず/);
+    assert.doesNotMatch(body, /現時点で年齢確認の仕組みはありません/);
+  }
+});
+
+test("the policy does not yet claim what the legal review has not settled", async () => {
+  // Cross-border transfer, the outside-transmission rule and the commerce-law notice
+  // wait for a legal check (Notion: 法務確認). Nothing here pretends they are done.
+  const body = await (await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx)).text();
+  assert.doesNotMatch(body, /越境|外国にある第三者|特定商取引/);
 });

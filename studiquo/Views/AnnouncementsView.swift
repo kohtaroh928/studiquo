@@ -39,6 +39,7 @@ struct AnnouncementsView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle(Text("announcements.title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

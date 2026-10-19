@@ -19,6 +19,9 @@ enum NotebookBackupService {
         var title: String
         var paperColorHex: String?
         var recognizedText: String
+        /// Absent in archives written before PDF word lookup existed.
+        /// Absent in archives written before PDF pages were kept as PDFs.
+        var backgroundPDFData: Data?
         var flashcardQuestion: String?
         var flashcardAnswer: String?
         var flashcardMastery: Int?
@@ -61,6 +64,7 @@ enum NotebookBackupService {
                     title: page.title,
                     paperColorHex: page.paperColorHex,
                     recognizedText: page.recognizedText,
+                    backgroundPDFData: page.backgroundPDFData,
                     flashcardQuestion: page.flashcardQuestion,
                     flashcardAnswer: page.flashcardAnswer,
                     flashcardMastery: page.flashcardMastery,
@@ -77,8 +81,8 @@ enum NotebookBackupService {
         let archive = makeArchive(notebook)
         guard let data = try? JSONEncoder().encode(archive) else { return nil }
         let safeName = notebook.title.replacingOccurrences(of: "/", with: "-")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).gnbackup.json")
-        try? data.write(to: url, options: .atomic)
+        let url = StudiquoWorkFiles.file(named: "\(safeName).gnbackup.json")
+        try? data.write(to: url, options: [.atomic, .completeFileProtection])
         return url
     }
 
@@ -96,11 +100,17 @@ enum NotebookBackupService {
         let manager = FileManager.default
         guard let root = try? manager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("studiquo/AutoBackups", isDirectory: true) else { return }
-        try? manager.createDirectory(at: root, withIntermediateDirectories: true)
+        try? manager.createDirectory(
+            at: root, withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.completeUnlessOpen]
+        )
         let identifier = backupIdentifier(for: notebook)
         let stamp = ISO8601DateFormatter().string(from: .now).replacingOccurrences(of: ":", with: "-")
         let url = root.appendingPathComponent("\(identifier)-\(stamp).json")
-        guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+        // These are written when the app goes to the background and the iPad
+        // may lock a moment later: "unless open" lets the write finish, and
+        // keeps the file unreadable once it is closed and the iPad is locked.
+        guard (try? data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])) != nil else { return }
 
         let matching = (try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey]))?
             .filter { $0.lastPathComponent.hasPrefix(identifier + "-") }
@@ -147,7 +157,8 @@ enum NotebookBackupService {
     static func restore(from url: URL) -> Notebook? {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: url),
+        guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxBackupFileBytes) == nil,
+              let data = try? Data(contentsOf: url),
               let archive = try? JSONDecoder().decode(Archive.self, from: data) else { return nil }
         let notebook = Notebook(title: archive.title)
         notebook.folderName = archive.folderName
@@ -160,6 +171,7 @@ enum NotebookBackupService {
             page.title = storedPage.title
             page.paperColorHex = storedPage.paperColorHex ?? "#FFFFFF"
             page.recognizedText = storedPage.recognizedText
+            page.backgroundPDFData = storedPage.backgroundPDFData
             page.flashcardQuestion = storedPage.flashcardQuestion ?? ""
             page.flashcardAnswer = storedPage.flashcardAnswer ?? ""
             page.flashcardMastery = storedPage.flashcardMastery ?? 0

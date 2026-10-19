@@ -25,7 +25,7 @@ const validToken = await sign();
 
 function environment(extra = {}) {
   const db = new DatabaseSync(":memory:");
-  for (const file of ["0001_admin_dashboard.sql", "0003_announcements.sql"]) {
+  for (const file of ["0001_admin_dashboard.sql", "0003_announcements.sql", "0007_moderation.sql"]) {
     db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
   }
   return {

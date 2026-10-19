@@ -3,12 +3,13 @@ import { resolveChatUserKey } from "./chat-identity.js";
 import { isExpired } from "./token.js";
 import { checkRateLimit } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
-import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
-import { realSession } from "./session.js";
+import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { realSession, hasModerationMark, CHAT_SUSPENSION_PREFIX } from "./session.js";
 import { handleGroupRoutes } from "./groups.js";
 import { sendPush } from "./push.js";
 import { chatMessageNotification } from "./message-notification.js";
 import { handleDeviceRoutes } from "./devices.js";
+import { fileChatReport } from "./chat-reports.js";
 
 const MAX_BODY = 16_000;
 // Attachment uploads carry base64-encoded image/file bytes (up to
@@ -28,6 +29,9 @@ const MAX_FRIENDS = 500;
 // A report's free-text reason — generous for context, but bounded so a
 // report can't be used to smuggle an oversized payload into storage.
 const MAX_REPORT_REASON_LENGTH = 1_000;
+// Kept as long as an in-app problem report is (issue-reports.js), then dropped:
+// without an expiry every report stayed in KV for good.
+const REPORT_TTL_SECONDS = 90 * 24 * 60 * 60;
 // Matches the format the client itself generates and validates (see
 // FriendStore.codePattern in ProfileAndFriendsView.swift). Rejecting anything
 // else here — rather than only trimming/uppercasing — keeps a malformed
@@ -208,6 +212,10 @@ export async function handleChat(url, request, env, ctx) {
   // A session changes on each sign-in, but a person's chat identity must not.
   // Preserve the old token-derived key when upgrading an existing account so
   // its friend codes and room participants remain usable after token rotation.
+  // An operator turned chat off for this person (moderation-actions.js).
+  if (await hasModerationMark(env, session, CHAT_SUSPENSION_PREFIX)) {
+    return json({ error: "Chat is unavailable for this account.", code: "chat_suspended" }, 403);
+  }
   const key = await resolveChatUserKey(env, session.sub, tokenKey);
 
   const devices = await handleDeviceRoutes(url, request, env, key, ctx);
@@ -219,6 +227,11 @@ export async function handleChat(url, request, env, ctx) {
       return json({ error: "Bio must be a string of at most 500 characters." }, 400);
     }
     const user = await env.USER_REGISTRY.getByName(key).ensureUser(key, body?.name, parseStudyStats(body), body?.bio);
+    // So a report about this chat user can be traced to the account an operator
+    // may suspend (moderation-actions.js); the chat key alone can't be reversed.
+    const identityLink = `chat-identity-of:${key}`;
+    const identityHash = await sha256Hex(`chat-account:${session.sub}`);
+    if ((await env.STUDIQUO_DATA.get(identityLink)) !== identityHash) await env.STUDIQUO_DATA.put(identityLink, identityHash);
     return json({ code: user.code, name: user.name, linkToken: user.linkToken, avatarUpdatedAt: user.avatarUpdatedAt ?? null });
   }
 
@@ -240,7 +253,7 @@ export async function handleChat(url, request, env, ctx) {
     const body = await readBody(request, MAX_AVATAR_UPLOAD_BODY);
     const contentType = String(body?.contentType ?? "");
     const data = String(body?.data ?? "");
-    if (!ALLOWED_AVATAR_CONTENT_TYPES.has(contentType) || !data) {
+    if (!ALLOWED_AVATAR_CONTENT_TYPES.has(contentType) || !data || !isWellFormedBase64(data)) {
       return json({ error: "Invalid avatar." }, 400);
     }
     if (Math.floor(data.length * 3 / 4) > MAX_AVATAR_BYTES) {
@@ -254,7 +267,10 @@ export async function handleChat(url, request, env, ctx) {
   }
 
   if (url.pathname === "/api/chat/friends" && request.method === "GET") {
-    const user = await ensureUser(env, key);
+    // Read through the user's Durable Object, not straight from KV: a KV read
+    // can be a minute old, and the friends list is where a removal has to show
+    // at once. A user the object has never seen is registered as before.
+    const user = (await env.USER_REGISTRY.getByName(key).getUser(key)) ?? await ensureUser(env, key);
     // Each friend's own current name and study stats are looked up live
     // (rather than trusting this user's stored friends entry, a snapshot
     // frozen at accept time) so a friend renaming themselves later doesn't
@@ -361,7 +377,7 @@ export async function handleChat(url, request, env, ctx) {
     const bytes = Uint8Array.from(atob(avatar.data), c => c.charCodeAt(0));
     return new Response(bytes, {
       status: 200,
-      headers: { "content-type": avatar.contentType, "cache-control": "private, max-age=60" },
+      headers: binaryHeaders(avatar.contentType, "private, max-age=60"),
     });
   }
 
@@ -627,7 +643,7 @@ export async function handleChat(url, request, env, ctx) {
       const bytes = Uint8Array.from(atob(attachment.data), c => c.charCodeAt(0));
       return new Response(bytes, {
         status: 200,
-        headers: { "content-type": attachment.contentType, "cache-control": "private, max-age=31536000, immutable" },
+        headers: binaryHeaders(attachment.contentType, "private, max-age=31536000, immutable", { download: true }),
       });
     } catch (error) {
       const forbidden = roomForbiddenResponse(error);
@@ -659,10 +675,8 @@ export async function handleChat(url, request, env, ctx) {
     return roomResponse(env.CHAT_ROOM.getByName(blockStatusMatch[1]).blockStatus(key));
   }
 
-  // Records a report for manual review — there's no in-app moderation
-  // queue or admin role yet, so this is written to STUDIQUO_DATA under a
-  // listable prefix (`report:...`) rather than into the room's own
-  // Durable Object storage, which has no external inspection tool at all.
+  // Records a report for the operator (chat-reports.js: a D1 row holding a
+  // snapshot of the message, a Slack ping, and the admin API to work it).
   // Verifying the reporter is an actual room participant (not just anyone
   // with a valid token) still goes through the room itself.
   const reportMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/messages\/(\d+)\/report$/.exec(url.pathname);
@@ -679,11 +693,16 @@ export async function handleChat(url, request, env, ctx) {
       if (forbidden) return forbidden;
       throw error;
     }
-    const reportKey = `report:chat:${Date.now()}:${crypto.randomUUID()}`;
-    await env.STUDIQUO_DATA.put(reportKey, JSON.stringify({
-      roomID: reportMatch[1], messageID, reporterKey: key, reason, createdAt: Date.now(),
-    }));
-    return json({ status: "reported" });
+    if (!env.ADMIN_DB) {
+      // No operator inbox to write to (a deployment without D1): keep the old
+      // write-only record rather than losing the report.
+      const reportKey = `report:chat:${Date.now()}:${crypto.randomUUID()}`;
+      await env.STUDIQUO_DATA.put(reportKey, JSON.stringify({
+        roomID: reportMatch[1], messageID, reporterKey: key, reason, createdAt: Date.now(),
+      }), { expirationTtl: REPORT_TTL_SECONDS });
+      return json({ status: "reported" });
+    }
+    return fileChatReport(env, ctx, url, { roomID: reportMatch[1], messageID, reporterKey: key, reason });
   }
 
   // Group chat routes share this file's /api/chat/ prefix and auth gate

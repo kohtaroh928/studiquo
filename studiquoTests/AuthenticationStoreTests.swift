@@ -373,6 +373,14 @@ final class AuthenticationStoreTests: XCTestCase {
         XCTAssertFalse(store.passkeyEnrollmentFailed)
     }
 
+    func testAPrivateRelayAddressIsNotAskedForAPasskey() async {
+        let store = makeSignedInStore(email: "abc123@privaterelay.appleid.com", registered: false)
+        await store.checkPasskeyRequirement()
+        XCTAssertFalse(store.needsPasskeyEnrollment, "the server cannot tie a passkey to a relay address")
+        XCTAssertTrue(AuthenticationStore.isPrivateRelayAddress("X@PrivateRelay.AppleID.com"))
+        XCTAssertFalse(AuthenticationStore.isPrivateRelayAddress("student@example.com"))
+    }
+
     func testSigningOutClearsTheRequest() async {
         let store = makeSignedInStore(registered: false)
         await store.checkPasskeyRequirement()
@@ -602,7 +610,7 @@ private final class StubAuthNetworkProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        XCTAssertEqual(request.url?.host, "studiquo-mcp.studiquo-mcp-server.workers.dev", "Unexpected test request host")
+        XCTAssertEqual(request.url?.host, "api.studiquo.app", "Unexpected test request host")
         let path = request.url?.path ?? ""
         Self.lock.lock()
         let forbidden = Self.forbidden.first { path.hasSuffix($0) }

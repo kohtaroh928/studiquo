@@ -1,3 +1,4 @@
+import PDFKit
 import UIKit
 
 @MainActor
@@ -11,6 +12,7 @@ enum PageRotationService {
         let elementEntries = page.allElements.map { (ElementSlot($0), PageElementSnapshot($0)) }
         let beforeDrawingData = page.drawingData
         let beforeBackgroundImageData = page.backgroundImageData
+        let beforeBackgroundPDFData = page.backgroundPDFData
         let beforePageWidth = page.pageWidth
         let beforePageHeight = page.pageHeight
 
@@ -25,6 +27,13 @@ enum PageRotationService {
                 image.draw(at: .zero)
             }
             page.backgroundImageData = rotated.jpegData(compressionQuality: 0.92)
+        }
+
+        // The one-page PDF describes the same background; left alone it would
+        // keep the old orientation while the bitmap turned, so the printed
+        // text and the ink drawn over it would no longer line up.
+        if let pdf = page.backgroundPDFData {
+            page.backgroundPDFData = rotatedPDF(pdf)
         }
 
         if let data = page.drawingData, let drawing = InkDrawing.load(from: data) {
@@ -51,6 +60,7 @@ enum PageRotationService {
         }
         let afterDrawingData = page.drawingData
         let afterBackgroundImageData = page.backgroundImageData
+        let afterBackgroundPDFData = page.backgroundPDFData
         let afterPageWidth = page.pageWidth
         let afterPageHeight = page.pageHeight
 
@@ -59,6 +69,7 @@ enum PageRotationService {
                 guard let page = pageSlot.page else { return }
                 page.drawingData = beforeDrawingData
                 page.backgroundImageData = beforeBackgroundImageData
+                page.backgroundPDFData = beforeBackgroundPDFData
                 page.pageWidth = beforePageWidth
                 page.pageHeight = beforePageHeight
                 for (slot, snapshot) in elementEntries { guard let element = slot.element else { continue }; snapshot.apply(to: element) }
@@ -68,11 +79,21 @@ enum PageRotationService {
                 guard let page = pageSlot.page else { return }
                 page.drawingData = afterDrawingData
                 page.backgroundImageData = afterBackgroundImageData
+                page.backgroundPDFData = afterBackgroundPDFData
                 page.pageWidth = afterPageWidth
                 page.pageHeight = afterPageHeight
                 for (slot, snapshot) in afterElementEntries { guard let element = slot.element else { continue }; snapshot.apply(to: element) }
                 page.notebook?.updatedAt = .now
             }
         )
+    }
+
+    /// A one-page PDF turned a quarter clockwise, or `nil` when it cannot be
+    /// read — the caller then keeps the unturned PDF out of sight rather
+    /// than showing it sideways against the turned bitmap.
+    static func rotatedPDF(_ data: Data) -> Data? {
+        guard let document = PDFDocument(data: data), let page = document.page(at: 0) else { return nil }
+        page.rotation = (page.rotation + 90) % 360
+        return document.dataRepresentation()
     }
 }

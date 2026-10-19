@@ -1,39 +1,48 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import * as z from "zod/v4";
-import { handleAI } from "./ai.js";
+import { handleAI, subscriptionRequiredResponse } from "./ai.js";
+import { accountCounterKey } from "./ai-credits.js";
 import { aiPrivacyRejection } from "./ai-privacy.js";
-import { getPlan } from "./entitlements.js";
+import { getPlan, paywallEnabled } from "./entitlements.js";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
-import { associationFile, handlePasskeys } from "./passkeys.js";
-import { gatePasskeyAccount, requireRecentPasskey } from "./passkey-policy.js";
+import { associationFile, handlePasskeys, revokePasskeysForAccount } from "./passkeys.js";
+import { libraryIdObjectName } from "./library-id.js";
+import { gatePasskeyAccount, requireRecentPasskey, resolveAccountKey } from "./passkey-policy.js";
 import { handleChat } from "./chat.js";
 import { handleIssueReports } from "./issue-reports.js";
 import { handleAppErrors } from "./app-errors.js";
 import { handleAdminReports } from "./admin-reports.js";
+import { handleModerationActions } from "./moderation-actions.js";
 import { handleAnnouncements, handleAnnouncementsPage } from "./announcements.js";
 import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats } from "./admin.js";
 import { handleInvitePage } from "./invite.js";
-import { accessAllowed, isAccessGuardedPath } from "./access.js";
+import { accessAllowed, isAccessGuardedPath, isCrossSiteWrite } from "./access.js";
+import { appGateRejection } from "./app-gate.js";
+import { handleAppAttest, appAttestGate } from "./app-attest.js";
+import { plainHttpResponse, withTransportHeaders } from "./transport.js";
+import { disabledFeatures } from "./features.js";
+import { idTokenNonceRefused } from "./id-token-nonce.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired, remainingValiditySeconds } from "./token.js";
 import { resolveChatUserKey } from "./chat-identity.js";
 import { realSession } from "./session.js";
-import { handleMCPOAuth, externalSession, pairingInfo, approvePairing, listConnections, revokeConnection, revokeAllConnections } from "./mcp-oauth.js";
+import { handleMCPOAuth, externalSession, issueOwnerCode, listConnections, revokeConnection, revokeAllConnections } from "./mcp-oauth.js";
 import { verifyAppleIdentityToken } from "./apple-auth.js";
 import { verifyGoogleIdentityToken } from "./google-auth.js";
 import { linkVerifiedEmail, identityKey } from "./oauth-links.js";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
 import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError } from "./local-auth.js";
 import { startAccountDeletion } from "./account-deletion.js";
-import { mintSession, hasRealSession, revokeSessionsIssuedBefore } from "./session.js";
+import { hasModerationMark, CHAT_SUSPENSION_PREFIX, mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted, accountIsUnavailable } from "./session.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { beginLoginAttempt, finishLoginAttempt, abandonLoginAttempt } from "./login-throttle.js";
 import { isBreachedPassword } from "./pwned-passwords.js";
 import { recordLoginOutcome, noteSignInContext } from "./login-monitor.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readTextLimited, readJSONLimited, securityHeaders } from "./http.js";
+import { sealSnapshot, openSnapshot } from "./snapshot-crypto.js";
 
 function toolResult(value) {
   return {
@@ -42,10 +51,15 @@ function toolResult(value) {
   };
 }
 
+// The account-level snapshot copy (read by connected MCP apps) outlives any
+// session, so it is given its own lifetime: 90 days after the last sync.
+const ACCOUNT_SNAPSHOT_TTL_SECONDS = 90 * 24 * 60 * 60;
+
 async function loadSnapshot(env, key) {
-  const value = await env.STUDIQUO_DATA.get(`snapshot:${key}`, "json");
-  if (!value) throw new Error("No Studiquo data has been synced for this account yet.");
-  return value;
+  const storageKey = `snapshot:${key}`;
+  const text = await openSnapshot(env, storageKey, await env.STUDIQUO_DATA.get(storageKey));
+  if (!text) throw new Error("No Studiquo data has been synced for this account yet.");
+  return JSON.parse(text);
 }
 
 async function queueAction(env, key, action, ttlSeconds = null) {
@@ -255,6 +269,25 @@ function createServer(env, key, accountHash = null, source = "MCP", canWrite = t
  */
 const MAX_MCP_BODY = 8_000_000;
 
+// Every call to /mcp builds a server and runs a tool, and nothing else limited
+// how often a connected client (or a stolen token) could do that. Counted per
+// credential: the account for an app connected through OAuth, the token for one
+// connected by hand.
+const MCP_CALLS_PER_MINUTE = 120;
+
+// The synced snapshot is up to 8MB and each upload writes it to KV twice; the
+// app only uploads when the person taps the sync button.
+const SNAPSHOT_UPLOADS_PER_HOUR = 30;
+
+// Every AI request is refused or let through by the credit windows in
+// ai-credits.js, but only after its body (up to 20MB) has been read. This
+// bounds how many bodies one account can make the Worker read.
+const AI_REQUESTS_PER_MINUTE = 60;
+
+function tooManyRequests(seconds = 60) {
+  return Response.json({ error: "Too many requests. Please slow down." }, { status: 429, headers: securityHeaders({ "retry-after": String(seconds) }) });
+}
+
 async function handleMCP(request, env) {
   const token = bearerToken(request);
   const external = token ? await externalSession(env, request) : null;
@@ -265,6 +298,7 @@ async function handleMCP(request, env) {
   if (!external && await isRevoked(env, deviceKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
   const accountHash = external ? await sha256Hex(`mcp-account:${external.sub}`) : null;
   const key = accountHash ?? deviceKey;
+  if (!(await env.RATE_COUNTER.getByName(`mcp-call:${key}`).bump(MCP_CALLS_PER_MINUTE, 60))) return tooManyRequests();
   if (!external && !(await env.STUDIQUO_DATA.get(`snapshot:${key}`))) {
     return json({ error: "Run sync in Studiquo before connecting an AI client." }, 401);
   }
@@ -288,17 +322,26 @@ async function handleMCP(request, env) {
   return transport.handleRequest(request);
 }
 
-export default {
+const handler = {
   async fetch(request, env, ctx) {
     try {
       const url = new URL(request.url);
-      if (url.pathname === "/health") return json({ ok: true, service: "studiquo-mcp" });
+      if (url.pathname === "/health") {
+        // Stopped features are listed so a typo in DISABLED_FEATURES shows here.
+        const stopped = [...disabledFeatures(env)];
+        return json({ ok: true, service: "studiquo-mcp", ...(stopped.length ? { disabledFeatures: stopped } : {}) });
+      }
+      const gate = appGateRejection(request, env, url);
+      if (gate) return gate;
       // /api/admin/* is not reliably behind Cloudflare Access at the edge, so
       // verify the Access login here, once, for every admin route.
-      if (isAccessGuardedPath(url.pathname) && !(await accessAllowed(request, env))) {
-        return json({ error: "Forbidden." }, 403);
+      if (isAccessGuardedPath(url.pathname)) {
+        // The login may be a cookie, so a write another site's page triggered
+        // must not be taken for the owner's own action (access.js).
+        if (isCrossSiteWrite(request, url)) return json({ error: "Forbidden." }, 403);
+        if (!(await accessAllowed(request, env))) return json({ error: "Forbidden." }, 403);
       }
-      const oauth = await handleMCPOAuth(url, request, env);
+      const oauth = await handleMCPOAuth(url, request, env, ctx);
       if (oauth) return oauth;
       if (url.pathname === "/.well-known/apple-app-site-association") return associationFile();
       const invitePage = handleInvitePage(url);
@@ -307,6 +350,15 @@ export default {
       const legal = handleLegal(url);
       if (legal) return legal;
 
+      // App Attest (src/app-attest.js): the two routes that register an app
+      // instance, then the check on the AI and sign-in routes. Off unless
+      // APP_ATTEST_MODE is set. Before the passkey routes, which sign people in too.
+      if (url.pathname.startsWith("/api/")) {
+        const attest = await handleAppAttest(url, request, env);
+        if (attest) return attest;
+        const attestRefusal = await appAttestGate(request, env, url);
+        if (attestRefusal) return attestRefusal;
+      }
       const passkeys = await handlePasskeys(url, request, env);
       if (passkeys) return passkeys;
       const chat = await handleChat(url, request, env, ctx);
@@ -323,6 +375,8 @@ export default {
       if (adminWebhook) return adminWebhook;
       const adminStats = await handleAdminStats(url, request, env);
       if (adminStats) return adminStats;
+      const moderationActions = await handleModerationActions(url, request, env);
+      if (moderationActions) return moderationActions;
       const adminReports = await handleAdminReports(url, request, env);
       if (adminReports) return adminReports;
       const appErrors = await handleAppErrors(url, request, env);
@@ -339,10 +393,10 @@ export default {
       // every other /api/* route — they must run before the bearer-token
       // gate below.
       if (url.pathname === "/api/auth/apple" && request.method === "POST") {
-        return handleAppleSignIn(request, env);
+        return handleAppleSignIn(request, env, ctx);
       }
       if (url.pathname === "/api/auth/google" && request.method === "POST") {
-        return handleGoogleSignIn(request, env);
+        return handleGoogleSignIn(request, env, ctx);
       }
       if (url.pathname === "/api/auth/email/send-code" && request.method === "POST") {
         return handleSendEmailVerification(request, env);
@@ -357,7 +411,9 @@ export default {
       const token = bearerToken(request);
       if (!token) return json({ error: "A valid bearer token is required." }, 401);
       if (isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
-      if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
+      // Leaving stays possible for a suspended account (App Store requirement).
+      const mayBeSuspended = url.pathname === "/api/account" && request.method === "DELETE";
+      if (!(await hasRealSession(env, token, { allowSuspended: mayBeSuspended }))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
       const key = await sha256Hex(token);
       if (await isRevoked(env, key)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
 
@@ -366,11 +422,36 @@ export default {
         return json({ revoked: true });
       }
 
-      const session = await realSession(env, token);
+      const session = await realSession(env, token, { allowSuspended: mayBeSuspended });
       if (url.pathname === "/api/session/refresh" && request.method === "POST") {
         return handleSessionRefresh(request, env, token, session);
       }
       const accountHash = session ? await sha256Hex(`mcp-account:${session.sub}`) : null;
+      // A stable, opaque id for the person's account, so the app can keep one
+      // library per account on a device (it is the same whichever sign-in
+      // method is used, because it follows the account's canonical identity).
+      // Random, kept per account (UserRegistry.libraryID): it says nothing about
+      // the account and cannot be worked out from an e-mail address.
+      if (url.pathname === "/api/account/library-id" && request.method === "GET") {
+        if (!session) return json({ error: "Sign in again." }, 401);
+        const canonical = await resolveAccountKey(env, session.sub);
+        if (!env.USER_REGISTRY) return json({ error: "Not available." }, 503);
+        const registry = env.USER_REGISTRY.getByName(libraryIdObjectName(await sha256Hex(canonical)));
+        let libraryID;
+        try {
+          libraryID = await registry.libraryID();
+          // A deletion may have started after the session was checked and erased
+          // this id before it was asked for: the id just made would outlive the
+          // account (and a new sign-up would get it back). Take it away again.
+          if (await accountIsUnavailable(env, session.sub)) {
+            await registry.eraseLibraryID();
+            return json({ error: "Sign in again." }, 401);
+          }
+        } catch {
+          return json({ error: "Not available." }, 503);
+        }
+        return json({ libraryID });
+      }
       if (url.pathname === "/api/account" && request.method === "DELETE") {
         if (!session) return json({ error: "Sign in again." }, 401);
         const needsPasskey = await requireRecentPasskey(env, token, session, "delete-account");
@@ -380,16 +461,14 @@ export default {
         const result = await startAccountDeletion(env, session.sub);
         return json(result, result.cleanupPending || result.externalDeletionPending ? 202 : 200);
       }
-      if (url.pathname === "/api/mcp/pair" && request.method === "GET") {
-        return json(await pairingInfo(env, url.searchParams.get("code") ?? "") ?? { error: "Code expired or invalid." });
-      }
-      if (url.pathname === "/api/mcp/pair" && request.method === "POST") {
+      if (url.pathname === "/api/mcp/pairing-code" && request.method === "POST") {
         if (!session) return json({ error: "Sign in again." }, 401);
         const needsPasskey = await requireRecentPasskey(env, token, session, "approve-app");
         if (needsPasskey) return needsPasskey;
         if (!(await checkRateLimit(env.RATE_LIMIT_MCP_PAIR, accountHash))) return json({ error: "Too many attempts." }, 429);
         const body = await readJSONLimited(request, 1000);
-        return json({ approved: await approvePairing(env, String(body?.code ?? "").trim().toUpperCase(), session.sub) });
+        const issued = await issueOwnerCode(env, session.sub, String(body?.kind ?? ""));
+        return issued ? json(issued) : json({ error: "Unknown kind." }, 400);
       }
       if (url.pathname === "/api/mcp/connections" && request.method === "GET") {
         return session ? json(await listConnections(env, session.sub)) : json({ error: "Sign in again." }, 401);
@@ -407,6 +486,7 @@ export default {
       }
 
       if (url.pathname === "/api/snapshot" && request.method === "PUT") {
+        if (!(await env.RATE_COUNTER.getByName(`snapshot-upload:${key}`).bump(SNAPSHOT_UPLOADS_PER_HOUR, 3_600))) return tooManyRequests(600);
         const declaredSize = Number(request.headers.get("content-length") ?? 0);
         if (declaredSize > 8_000_000) return json({ error: "Snapshot is too large." }, 413);
         const body = await readTextLimited(request, 8_000_000);
@@ -421,10 +501,19 @@ export default {
           return json({ error: "Invalid Studiquo snapshot." }, 400);
         }
         // Under the token's hash, so it expires with the token's session. The
-        // account-level copy below has no expiry: it lives until the account
-        // is deleted.
-        await env.STUDIQUO_DATA.put(`snapshot:${key}`, body, { expirationTtl: remainingValiditySeconds(token) });
-        if (accountHash) await env.STUDIQUO_DATA.put(`snapshot:${accountHash}`, body);
+        // account-level copy below lives 90 days past the last sync (or until
+        // the account is deleted).
+        // Each copy is sealed under its own key name, so one cannot be moved
+        // to another key and still open (see snapshot-crypto.js).
+        try {
+          await env.STUDIQUO_DATA.put(`snapshot:${key}`, await sealSnapshot(env, `snapshot:${key}`, body), { expirationTtl: remainingValiditySeconds(token) });
+          // Re-written on every sync, so this only lets go of the copy of an
+          // account that has stopped syncing.
+          if (accountHash) await env.STUDIQUO_DATA.put(`snapshot:${accountHash}`, await sealSnapshot(env, `snapshot:${accountHash}`, body), { expirationTtl: ACCOUNT_SNAPSHOT_TTL_SECONDS });
+        } catch (error) {
+          console.error(JSON.stringify({ message: "snapshot could not be stored", error: error instanceof Error ? error.message : String(error) }));
+          return json({ error: "The snapshot could not be stored." }, 503);
+        }
         return json({ synced: true, exportedAt: parsed.exportedAt });
       }
 
@@ -437,6 +526,14 @@ export default {
         return json({ cleared: true });
       }
 
+      // The plan the app should act on. The app can see purchases through
+      // RevenueCat but not the server-only legacy-account grant, so it asks
+      // here; `paywallRequired` stays false until PAYWALL_ENABLED is set.
+      if (url.pathname === "/api/plan" && request.method === "GET") {
+        const plan = session ? await getPlan(env, [session.sub, session.originalSub]) : "standard";
+        return json({ plan, paywallRequired: paywallEnabled(env) });
+      }
+
       // AI proxy (Gemini/Anthropic/OpenAI, gated and rate-limited by plan).
       // Deliberately not gated on a synced snapshot the way /mcp is — the AI
       // features work on a fresh install, before the user has ever run a
@@ -445,9 +542,17 @@ export default {
       // a D1 read (entitlements.js's getPlan) that every other route here
       // has no use for.
       if (url.pathname.startsWith("/api/ai/")) {
+        // Cheapest refusals first, so that none of them costs a body read: the
+        // per-account request budget, then an account with no plan to spend.
+        if (request.method === "POST") {
+          const account = await accountCounterKey(session?.sub, key);
+          if (!(await env.RATE_COUNTER.getByName(`ai-request:${account}`).bump(AI_REQUESTS_PER_MINUTE, 60))) return tooManyRequests();
+        }
+        const plan = session ? await getPlan(env, [session.sub, session.originalSub]) : "standard";
+        const subscriptionRequired = subscriptionRequiredResponse(plan, url, request);
+        if (subscriptionRequired) return subscriptionRequired;
         const privacyFailure = await aiPrivacyRejection(request, env);
         if (privacyFailure) return privacyFailure;
-        const plan = session ? await getPlan(env, session.sub) : "standard";
         const ai = await handleAI(url, request, env, key, ctx, session, plan);
         if (ai) return ai;
       }
@@ -456,6 +561,10 @@ export default {
       // hash changes on every sign-in, and invitations are addressed to the
       // friend code's account key (the same key chat uses).
       // Resolved only for these routes: it is a Durable Object call.
+      // Turning chat off for someone turns off sharing documents with friends too.
+      if (url.pathname.startsWith("/api/document/") && session && await hasModerationMark(env, session, CHAT_SUSPENSION_PREFIX)) {
+        return json({ error: "Chat is unavailable for this account.", code: "chat_suspended" }, 403);
+      }
       const documentUserKey = url.pathname.startsWith("/api/document/") ? await resolveChatUserKey(env, session?.sub, key) : key;
       const documentCollab = await handleDocumentCollab(url, request, env, documentUserKey, ctx);
       if (documentCollab) return documentCollab;
@@ -497,21 +606,25 @@ export default {
  * deliberately no absolute lifetime.
  */
 const REFRESH_MIN_AGE_SECONDS = 7 * 24 * 60 * 60;
+// A login that is exchanged again and again used to last for ever. Each new
+// token now remembers when the login it descends from began, and a login older
+// than this is no longer renewed: the token it holds runs out (at most 90 days
+// later) and the person signs in again. Adjustable with SESSION_MAX_DAYS.
+const DEFAULT_SESSION_MAX_DAYS = 365;
 const REFRESH_OLD_TOKEN_GRACE_SECONDS = 14 * 24 * 60 * 60;
 
 async function handleSessionRefresh(request, env, token, session) {
   if (!session) return json({ error: "Sign in again." }, 401);
   const parsed = await readJSONLimited(request, 1_000);
-  const randomValue = parsed?.randomValue;
-  if (typeof randomValue !== "string" || !/^[0-9A-Za-z_-]{16,200}$/.test(randomValue)) {
-    return json({ error: "randomValue is required." }, 400);
-  }
   const issuedAt = Number(token.slice(0, token.indexOf(".")));
   if (Date.now() / 1000 - issuedAt < REFRESH_MIN_AGE_SECONDS) return json({ refreshed: false });
   const oldKey = await sha256Hex(token);
   if (await env.STUDIQUO_DATA.get(`session-refreshed:${oldKey}`)) return json({ refreshed: false });
-  const refreshed = await mintSession(env, session.originalSub ?? session.sub, randomValue);
-  if (!refreshed) return json({ error: "Invalid randomValue." }, 400);
+  const originMs = session.originIssuedAtMs ?? session.issuedAtMs ?? issuedAt * 1000;
+  const maxDays = Number(env.SESSION_MAX_DAYS) > 0 ? Number(env.SESSION_MAX_DAYS) : DEFAULT_SESSION_MAX_DAYS;
+  if (Date.now() - originMs > maxDays * 24 * 60 * 60 * 1000) return json({ refreshed: false, reason: "session_too_old" });
+  const refreshed = await mintSession(env, session.originalSub ?? session.sub, undefined, { originIssuedAtMs: originMs });
+  if (!refreshed) return json({ error: "Signing in is not available for this account right now." }, 400);
   const newKey = await sha256Hex(refreshed);
   const oldRemaining = remainingValiditySeconds(token);
   await env.STUDIQUO_DATA.put(`session-refreshed:${oldKey}`, "1", { expirationTtl: oldRemaining });
@@ -530,7 +643,7 @@ async function handleSessionRefresh(request, env, token, session) {
 // POST /api/auth/apple: exchanges a Sign in with Apple identityToken for a
 // studiquo bearer token, in the same "<issued-at epoch>.<random>" format
 // token.js already expects everywhere else.
-async function handleAppleSignIn(request, env) {
+async function handleAppleSignIn(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_APPLE_AUTH, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -546,12 +659,9 @@ async function handleAppleSignIn(request, env) {
     return json({ error: "Invalid JSON." }, 400);
   }
 
-  const { identityToken, randomValue } = parsed ?? {};
+  const { identityToken, nonce } = parsed ?? {};
   if (typeof identityToken !== "string" || !identityToken) {
     return json({ error: "identityToken is required." }, 400);
-  }
-  if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
-    return json({ error: "randomValue is required." }, 400);
   }
 
   let payload;
@@ -560,6 +670,8 @@ async function handleAppleSignIn(request, env) {
   } catch {
     return json({ error: "Invalid Apple identity token." }, 401);
   }
+  // The token must have been made for this very sign-in (id-token-nonce.js).
+  if (await idTokenNonceRefused(env, payload, nonce, "apple")) return json({ error: "Invalid Apple identity token." }, 401);
 
   const sub = payload.sub;
   if (typeof sub !== "string" || !sub) return json({ error: "Invalid Apple identity token." }, 401);
@@ -600,8 +712,11 @@ async function handleAppleSignIn(request, env) {
     identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
-  const token = await mintSession(env, identityKey, randomValue);
-  if (!token) return json({ error: "Invalid randomValue." }, 400);
+  // An account with a passkey signs in with that instead (passkey-policy.js).
+  const passkeyGate = await gatePasskeyAccount(env, identityKey, accountEmail && accountEmailVerified && !accountUsesPrivateRelay ? accountEmail : null, { notify: work => inBackground(ctx, work) });
+  if (passkeyGate) return passkeyGate;
+  const token = await mintSession(env, identityKey);
+  if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
   return json({ token });
 }
 
@@ -610,7 +725,7 @@ async function handleAppleSignIn(request, env) {
 // rate-limit shape, same account-record pattern — except Google resends
 // `email`/`email_verified` on every sign-in (not just the first), so those
 // are refreshed each time rather than written once.
-async function handleGoogleSignIn(request, env) {
+async function handleGoogleSignIn(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_GOOGLE_AUTH, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -626,12 +741,9 @@ async function handleGoogleSignIn(request, env) {
     return json({ error: "Invalid JSON." }, 400);
   }
 
-  const { idToken, randomValue } = parsed ?? {};
+  const { idToken, nonce } = parsed ?? {};
   if (typeof idToken !== "string" || !idToken) {
     return json({ error: "idToken is required." }, 400);
-  }
-  if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
-    return json({ error: "randomValue is required." }, 400);
   }
 
   let payload;
@@ -640,6 +752,7 @@ async function handleGoogleSignIn(request, env) {
   } catch {
     return json({ error: "Invalid Google identity token." }, 401);
   }
+  if (await idTokenNonceRefused(env, payload, nonce, "google")) return json({ error: "Invalid Google identity token." }, 401);
 
   const sub = payload.sub;
   if (typeof sub !== "string" || !sub) return json({ error: "Invalid Google identity token." }, 401);
@@ -661,8 +774,11 @@ async function handleGoogleSignIn(request, env) {
     identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
-  const token = await mintSession(env, identityKey, randomValue);
-  if (!token) return json({ error: "Invalid randomValue." }, 400);
+  // An account with a passkey signs in with that instead (passkey-policy.js).
+  const passkeyGate = await gatePasskeyAccount(env, identityKey, email && emailVerified ? email : null, { notify: work => inBackground(ctx, work) });
+  if (passkeyGate) return passkeyGate;
+  const token = await mintSession(env, identityKey);
+  if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
 
   return json({ token });
 }
@@ -738,7 +854,7 @@ async function handleSendEmailVerification(request, env) {
 // covering both initial signup and "forgot password" with the same
 // endpoint, since proving control of the email is the same prerequisite
 // either way — and mints a real session, same as Apple/Google do on their
-// own exchange. `password` and `randomValue` are required for this reason:
+// own exchange. `password` is required for this reason:
 // this is the only place a local account's password is ever set.
 async function handleConfirmEmailVerification(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_EMAIL_VERIFY_CONFIRM, clientKey(request));
@@ -753,14 +869,11 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     return json({ error: "Invalid JSON." }, 400);
   }
 
-  const { email, code, password, randomValue } = parsed ?? {};
+  const { email, code, password } = parsed ?? {};
   if (typeof email !== "string" || !email) return json({ error: "email is required." }, 400);
   if (typeof code !== "string" || !code) return json({ error: "code is required." }, 400);
   if (typeof password !== "string" || password.length < 8 || password.length > 1_024) {
     return json({ error: "password is required." }, 400);
-  }
-  if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
-    return json({ error: "randomValue is required." }, 400);
   }
 
   // Checked before the code is: a refused password costs the caller no code
@@ -803,6 +916,15 @@ async function handleConfirmEmailVerification(request, env, ctx) {
   // (which would sign in): checked before anything is changed.
   const passkeyGate = await gatePasskeyAccount(env, accountKey, normalizedEmail, { notify: work => inBackground(ctx, work) });
   if (passkeyGate) return passkeyGate;
+  // A passkey registered for any address of this account signs in as the
+  // account, so all of them go with a reset (see revokePasskeysForAccount).
+  const accountEmails = [normalizedEmail, ...(link.linkedIdentities ?? []).map(identityKey).filter(key => key.startsWith("email:")).map(key => key.slice("email:".length))];
+  // Nothing is stored for an account whose deletion is still running: the
+  // password would be saved and then the sign-in below refused with a message
+  // that says nothing about why. Say so, before anything changes.
+  if (await accountIsBeingDeleted(env, accountKey)) {
+    return json({ error: "このアカウントは削除の処理中です。しばらくしてからもう一度お試しください。", code: "account_deleting" }, 409);
+  }
   if (replacedPassword) {
     // A reset signs out whoever held the old password — the new session below
     // is minted after the cut-off — and so disconnects the apps (MCP) they
@@ -814,9 +936,12 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     // still works, so the owner simply asks for a new code. Done after, a
     // failure here would leave the new password in place while the stolen
     // session (the very thing a reset is for) stayed alive.
+    // The steps run in order (sign-out, apps, passkeys); one that fails stops the
+    // reset, but the ones before it have been done and stay done.
     try {
       await revokeSessionsIssuedBefore(env, accountKey);
       await revokeAllConnections(env, [accountKey, ...(link.linkedIdentities ?? []).map(identityKey)]);
+      await revokePasskeysForAccount(env, { accountKey, emails: accountEmails });
     } catch {
       return json({ error: "Could not complete the password reset. Please try again." }, 503);
     }
@@ -841,9 +966,21 @@ async function handleConfirmEmailVerification(request, env, ctx) {
     } catch {
       console.warn("password reset: second sign-out pass failed");
     }
+    // Passkeys are removed on their own, and tried a few times: unlike a
+    // session, one does not expire, so a pass that only the sessions' failure
+    // skipped would leave a way in that lasts. This is the pass that removes a
+    // passkey registered while the new password was being stored.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await revokePasskeysForAccount(env, { accountKey, emails: accountEmails });
+        break;
+      } catch {
+        if (attempt === 3) console.warn("password reset: second passkey pass failed");
+      }
+    }
   }
-  const token = await mintSession(env, accountKey, randomValue);
-  if (!token) return json({ error: "Invalid randomValue." }, 400);
+  const token = await mintSession(env, accountKey);
+  if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
   // The owner just proved they hold this mailbox from here, so this is the
   // baseline context: remember it without sending a notice.
   inBackground(ctx, noteSignInContext(env, request, normalizedEmail, { notify: false }));
@@ -870,12 +1007,9 @@ async function handleLocalLogin(request, env, ctx) {
     return json({ error: "Invalid JSON." }, 400);
   }
 
-  const { email, password, randomValue } = parsed ?? {};
+  const { email, password } = parsed ?? {};
   if (typeof email !== "string" || !email) return json({ error: "email is required." }, 400);
   if (typeof password !== "string" || !password) return json({ error: "password is required." }, 400);
-  if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
-    return json({ error: "randomValue is required." }, 400);
-  }
 
   // Not a deliverable address: refuse without creating throttle state for it.
   if (email.length > 254) return json({ error: "メールアドレスまたはパスワードが違います。" }, 401);
@@ -934,8 +1068,8 @@ async function handleLocalLogin(request, env, ctx) {
   // site: an account with a passkey signs in with that instead.
   const passkeyGate = await gatePasskeyAccount(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, normalizedEmail, { notify: work => inBackground(ctx, work) });
   if (passkeyGate) return passkeyGate;
-  const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`, randomValue);
-  if (!token) return json({ error: "Invalid randomValue." }, 400);
+  const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`);
+  if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
   // A sign-in from a country+network this account hasn't used lately emails
   // the owner (login-monitor.js); the outcome also feeds the spike alerts.
   inBackground(ctx, (async () => {
@@ -944,3 +1078,14 @@ async function handleLocalLogin(request, env, ctx) {
   })());
   return json({ token });
 }
+
+// Every response gets the transport headers, and plain-http requests are answered
+// before the handler reads anything (transport.js).
+export default {
+  ...handler,
+  async fetch(request, env, ctx) {
+    const plain = plainHttpResponse(request, new URL(request.url));
+    if (plain) return plain;
+    return withTransportHeaders(await handler.fetch(request, env, ctx));
+  },
+};

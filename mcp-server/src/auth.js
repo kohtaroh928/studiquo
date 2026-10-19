@@ -11,6 +11,16 @@ export function bearerToken(request) {
   return token.length >= 32 && token.length <= 256 ? token : null;
 }
 
+// Compares two secrets without the comparison time depending on how many
+// leading characters match. Both sides are hashed first so the strings can be
+// any length, and the digests are compared over their full length.
+export async function secretsEqual(a, b) {
+  const [left, right] = await Promise.all([sha256Hex(String(a)), sha256Hex(String(b))]);
+  let difference = 0;
+  for (let i = 0; i < left.length; i++) difference |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  return difference === 0;
+}
+
 export async function sha256Hex(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");

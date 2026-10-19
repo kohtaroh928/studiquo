@@ -68,9 +68,18 @@ private struct MCPInboxItem: Decodable, Identifiable {
 private struct MCPConnection: Decodable, Identifiable {
     let id: String
     let clientName: String
+    let kind: MCPConnectionKind?
+
+    private enum CodingKeys: String, CodingKey { case id, clientName, kind }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        clientName = try container.decode(String.self, forKey: .clientName)
+        // A connection made before kinds existed, or one of a kind this build
+        // does not know, simply has none.
+        kind = (try? container.decodeIfPresent(String.self, forKey: .kind)).flatMap(MCPConnectionKind.init(rawValue:))
+    }
 }
-private struct MCPPairingInfo: Decodable { let clientName: String?; let scope: String?; let error: String? }
-private struct MCPApprovalResult: Decodable { let approved: Bool }
 
 /// Not `private`: `aiReviewStudyNotifications(from:now:)` below builds these
 /// from `AIReviewItem`s and is exercised directly by `AIReviewNotificationFeedTests`.
@@ -374,6 +383,7 @@ private struct StudyNotificationList: View {
                                 }
                         }
                     }
+                        .themeScreenBackground()
                     .listStyle(.plain)
 
                     if notifications.count > Self.previewCount {
@@ -819,6 +829,7 @@ private struct AppSettingsForm: View {
                 }
             }
         }
+            .themeScreenBackground()
     }
 
     private func categoryForm(_ category: SettingsCategory) -> some View {
@@ -832,6 +843,7 @@ private struct AppSettingsForm: View {
             case .app: appSections
             }
         }
+            .themeScreenBackground()
         .navigationTitle(category.title)
         .navigationBarTitleDisplayMode(.inline)
         .modifier(settingsSheets)
@@ -857,6 +869,9 @@ private struct AppSettingsForm: View {
                 Text("Plus・Proへの変更や購入履歴の復元ができます。")
             }
 
+            #if DEBUG
+            PaywallDebugSection()
+            #endif
 
             Section {
                 Button(AccountDeletionUI.accountButtonTitle, role: .destructive) { showsAccountDeletion = true }
@@ -947,7 +962,7 @@ private struct AppSettingsForm: View {
             } header: {
                 Text("プライバシー")
             } footer: {
-                Text("許可後にAIを使うと、質問・会話履歴と、送信対象として選択した資料・答案画像がGoogleへ送信されます。許可はいつでも取り消せます。")
+                Text("許可後にAIを使うと、質問・会話履歴と、送信対象として選択した資料・答案画像がOpenAIへ送信されます。許可はいつでも取り消せます。")
             }
 
             Section {
@@ -1002,8 +1017,8 @@ private struct SettingsSheets: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $showsAIDataDisclosure) {
-                AIDataDisclosureView(onAcknowledge: {
-                    AIDataDisclosure.acknowledge()
+                AIDataDisclosureView(onAcknowledge: { ageBand in
+                    AIDataDisclosure.acknowledge(ageBand: ageBand)
                     showsAIDataDisclosure = false
                 }, onDecline: {
                     AIDataDisclosure.revoke()
@@ -1281,6 +1296,7 @@ private struct NotificationSettingsView: View {
                 NotificationPreferenceToggle(kind: .newDeviceLogin, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
             }
         }
+            .themeScreenBackground()
         .navigationTitle("通知")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -1420,7 +1436,7 @@ private struct NotificationPreferenceToggle: View {
     }
 }
 
-private struct DeleteAccountView: View {
+struct DeleteAccountView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -1458,6 +1474,7 @@ private struct DeleteAccountView: View {
                     .disabled(!AccountDeletionUI.canSubmit(confirmation: confirmation, isBusy: authentication.isAccountDeletionBusy))
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("アカウントを削除")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(!AccountDeletionUI.canDismiss(isBusy: authentication.isAccountDeletionBusy))
@@ -1592,7 +1609,7 @@ enum MCPCloudCredentials {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["randomValue": makeRandomValue()])
-        guard let (data, response) = try? await session.data(for: request),
+        guard let (data, response) = try? await session.dataNoticing(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let body = try? JSONDecoder().decode(RefreshResponse.self, from: data),
               body.refreshed, let replacement = body.token,
@@ -1715,20 +1732,15 @@ enum MCPCloudCredentials {
         request.httpMethod = "POST"
         request.timeoutInterval = 10
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        _ = try? await URLSession.shared.data(for: request)
+        _ = try? await URLSession.shared.dataNoticing(for: request)
     }
 
     /// The Worker endpoint every cloud request (sync, AI, sign-in, revoke)
     /// should target: the user's custom endpoint from settings if they've set
     /// one and it's a valid https URL, otherwise the built-in default.
     static func configuredEndpoint() -> URL? {
-        var raw = (UserDefaults.standard.string(forKey: "mcpCloudEndpoint") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if raw.isEmpty { raw = WorkerAIProvider.defaultEndpoint }
-        raw = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: raw), url.scheme?.lowercased() == "https",
-              url.host?.isEmpty == false, url.user == nil, url.password == nil else { return nil }
-        return url
+        // A released build only talks to the production Worker (WorkerEndpointPolicy).
+        WorkerEndpointPolicy.resolve(UserDefaults.standard.string(forKey: "mcpCloudEndpoint"))
     }
 }
 
@@ -1778,14 +1790,25 @@ private struct AppNotificationRoutingModifier: ViewModifier {
 /// (`AIDataDisclosureGate`) and the always-available explanation in
 /// 設定 → プライバシー — there was previously no disclosure anywhere in the
 /// app that note text, answer photos, or chat questions leave the device
-/// for Google's Gemini (and, for the separate opt-in bring-your-own-key
+/// for OpenAI (and, for the separate opt-in bring-your-own-key
 /// features, Anthropic).
+///
+/// It also records the student's age band. OpenAI's terms exclude children
+/// under 13 and expect a guardian's consent for minors, so AI is offered only
+/// to "adult" (18+) and "teen" (13–17, with a guardian's consent); the Worker
+/// refuses a request that doesn't carry one of the two.
+enum AIAgeBand: String {
+    case adult
+    case teen
+}
+
 enum AIDataDisclosure {
+    static let ageBandDefaultsKey = "aiAgeBand"
     static let acknowledgedDefaultsKey = "hasAcknowledgedAIDataDisclosure"
     static let consentVersionDefaultsKey = "aiDataConsentVersion"
     static let decisionVersionDefaultsKey = "aiDataDecisionVersion"
     static let chatDeclinedVersionDefaultsKey = "aiChatConsentDeclinedVersion"
-    static let currentVersion = "google-v2"
+    static let currentVersion = "openai-v1"
     static let allowsDirectProviders = false
 
     /// Swappable so tests can point this at an isolated suite instead of
@@ -1798,7 +1821,11 @@ enum AIDataDisclosure {
     /// install updating to the version that first added this screen, since
     /// nobody has acknowledged anything yet either way.
     static var hasBeenAcknowledged: Bool {
-        defaults.string(forKey: consentVersionDefaultsKey) == currentVersion
+        defaults.string(forKey: consentVersionDefaultsKey) == currentVersion && ageBand != nil
+    }
+
+    static var ageBand: AIAgeBand? {
+        defaults.string(forKey: ageBandDefaultsKey).flatMap(AIAgeBand.init(rawValue:))
     }
 
     static var hasMadeDecision: Bool {
@@ -1813,7 +1840,8 @@ enum AIDataDisclosure {
         defaults.string(forKey: chatDeclinedVersionDefaultsKey) == currentVersion
     }
 
-    static func acknowledge() {
+    static func acknowledge(ageBand: AIAgeBand) {
+        defaults.set(ageBand.rawValue, forKey: ageBandDefaultsKey)
         defaults.set(currentVersion, forKey: consentVersionDefaultsKey)
         defaults.set(currentVersion, forKey: decisionVersionDefaultsKey)
         defaults.removeObject(forKey: chatDeclinedVersionDefaultsKey)
@@ -1827,6 +1855,7 @@ enum AIDataDisclosure {
     static func revoke() {
         defaults.removeObject(forKey: chatDeclinedVersionDefaultsKey)
         defaults.removeObject(forKey: consentVersionDefaultsKey)
+        defaults.removeObject(forKey: ageBandDefaultsKey)
         defaults.set(currentVersion, forKey: decisionVersionDefaultsKey)
         defaults.set(false, forKey: AIReviewService.isEnabledDefaultsKey)
     }
@@ -1845,8 +1874,8 @@ private struct AIDataDisclosureGate: ViewModifier {
             get: { !hasMadeDecision },
             set: { _ in }
         )) {
-            AIDataDisclosureView(onAcknowledge: {
-                AIDataDisclosure.acknowledge()
+            AIDataDisclosureView(onAcknowledge: { ageBand in
+                AIDataDisclosure.acknowledge(ageBand: ageBand)
                 hasMadeDecision = true
             }, onDecline: {
                 AIDataDisclosure.revoke()
@@ -1859,8 +1888,19 @@ private struct AIDataDisclosureGate: ViewModifier {
 /// The first-launch (and update-time, for an existing install that never
 /// saw this) explanation of what AI features send off-device, and to whom.
 private struct AIDataDisclosureView: View {
-    let onAcknowledge: () -> Void
+    let onAcknowledge: (AIAgeBand) -> Void
     let onDecline: () -> Void
+
+    private enum AgeChoice { case adult, teen, child }
+    @State private var ageChoice: AgeChoice?
+
+    private var chosenBand: AIAgeBand? {
+        switch ageChoice {
+        case .adult: return .adult
+        case .teen: return .teen
+        default: return nil
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -1869,7 +1909,7 @@ private struct AIDataDisclosureView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("AI機能について", systemImage: "sparkles")
                             .font(.title2.bold())
-                        Text("studiquoのAIトーク・添削・翌日復習は、Googleの生成AI「Gemini」を使っています。これらの機能を使うと、次の内容がGeminiに送信されます。")
+                        Text("studiquoのAIトーク・添削・翌日復習は、OpenAIの生成AI(ChatGPTのモデル)を使っています。これらの機能を使うと、次の内容がOpenAIに送信されます。")
                             .foregroundStyle(.secondary)
                     }
 
@@ -1882,9 +1922,27 @@ private struct AIDataDisclosureView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("送信先と利用の選択", systemImage: "hand.raised")
                             .font(.headline)
-                        Text("現在の送信先はGoogleのみです。許可しなくてもノートなどの基本機能は使えます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。")
+                        Text("現在の送信先はOpenAIのみです。許可しなくてもノートなどの基本機能は使えます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .background(Theme.Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("年齢の確認", systemImage: "person.badge.shield.checkmark")
+                            .font(.headline)
+                        Text("AI機能は13歳以上の方が利用できます。13〜17歳の方は、保護者の同意を得てからご利用ください。")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        ageOption(.adult, "18歳以上です")
+                        ageOption(.teen, "13〜17歳で、保護者の同意を得ています")
+                        ageOption(.child, "13歳未満です")
+                        if ageChoice == .child {
+                            Text("13歳未満の方はAI機能を利用できません。ノートなどの基本機能はそのままお使いいただけます。")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
                     }
                     .padding(14)
                     .background(Theme.Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
@@ -1899,8 +1957,11 @@ private struct AIDataDisclosureView: View {
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 10) {
-                    Button("GoogleへのAI送信を許可する", action: onAcknowledge)
-                        .buttonStyle(.themePrimary)
+                    Button("OpenAIへのAI送信を許可する") {
+                        if let band = chosenBand { onAcknowledge(band) }
+                    }
+                    .buttonStyle(.themePrimary)
+                    .disabled(chosenBand == nil)
                     Button("許可しない・許可を取り消す", action: onDecline)
                         .buttonStyle(.themeSecondary)
                 }
@@ -1910,6 +1971,19 @@ private struct AIDataDisclosureView: View {
             }
         }
         .interactiveDismissDisabled()
+    }
+
+    private func ageOption(_ choice: AgeChoice, _ title: String) -> some View {
+        Button {
+            ageChoice = choice
+        } label: {
+            HStack {
+                Image(systemName: ageChoice == choice ? "largecircle.fill.circle" : "circle")
+                Text(title).foregroundStyle(.primary)
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private func disclosureRow(icon: String, title: String, detail: String) -> some View {
@@ -1963,7 +2037,7 @@ struct TermsOfUseView: View {
                     }
 
                     policySection(title: "4. AI機能について") {
-                        Text("AIトーク・添削・翌日復習などの機能は、外部のAIサービスを利用して応答を生成します。AIの回答は誤りを含む可能性があり、学習の参考情報として提供されるものであって、正確性・完全性を保証するものではありません。成績や試験結果等に関する判断は、利用者自身の責任で行ってください。")
+                        Text("AIトーク・添削・翌日復習などの機能は、外部のAIサービスを利用して応答を生成します。AIの回答は誤りを含む可能性があり、学習の参考情報として提供されるものであって、正確性・完全性を保証するものではありません。AI機能は13歳以上の方のみご利用いただけます。13歳以上18歳未満の方は、保護者の同意を得たうえでご利用ください。成績や試験結果等に関する判断は、利用者自身の責任で行ってください。")
                             .font(.subheadline)
                     }
 
@@ -2062,8 +2136,9 @@ struct PrivacyPolicyView: View {
                     policySection(title: "第三者サービスとの連携") {
                         bullet("Sign in with Apple / Google Sign-In", "アカウント作成・ログインのために使用します。")
                         bullet("Google Calendar API", "許可を得たうえで、選択されているカレンダーの予定を読み取り専用で同期します。取得した情報を広告、行動追跡、第三者への販売には使用しません。")
-                        bullet("Google Gemini", "AIトーク・添削・翌日復習機能で、既定の生成AIとして使用します。これらの機能を使うたびに、上記の内容がGoogleに送信されます。")
-                        bullet("AI送信の許可", "初回送信前に内容と送信先を確認し、許可した場合のみ利用できます。現在の送信先はGoogleのみです。資料は送信対象として選択したものだけが送信されます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。許可は設定から取り消せます。")
+                        bullet("OpenAI", "AIトーク・添削・翌日復習機能で、生成AIとして使用します。これらの機能を使うたびに、上記の内容がOpenAIに送信されます。送信する内容は、OpenAI側での学習・保存を行わない設定(store無効)で送り、送信前の文章は不適切な内容の確認のためOpenAIのモデレーション機能にも渡します。利用者の特定にはアカウントを元にしたハッシュ識別子のみを添えます。")
+                        bullet("年齢の確認", "AI機能は13歳以上の方のみご利用いただけます。13歳以上18歳未満の方は、保護者の同意を得たうえでご利用ください。初回送信前に年齢区分の確認を行い、13歳未満の方にはAI機能を提供しません。")
+                        bullet("AI送信の許可", "初回送信前に内容と送信先を確認し、許可した場合のみ利用できます。現在の送信先はOpenAIのみです。資料は送信対象として選択したものだけが送信されます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。許可は設定から取り消せます。")
                         bullet("Cloudflare", "本アプリのサーバーインフラとして使用しており、アカウント情報・学習コンテンツ・チャット内容の保管場所です。")
                         bullet("Apple iCloud", "「iCloudで同期する」をオンにした端末では、ノート・暗記帳・文書・フォルダ・カレンダーの予定(連携して取得した予定を含む)・AIトークの履歴・学習記録など、アプリ内に保存されるデータが、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。この設定は端末ごとの任意の設定で、新しくインストールした場合は初期状態でオフです(以前のバージョンから引き続き利用している場合は、これまでどおりオンです)。同期されたデータは利用者ご自身のiCloudに保存され、iCloudの保存容量を使用します。")
                         bullet("Slack", "問題報告・診断の通知に使用します。問題報告の本文・画像は送らず、報告ID・端末情報と管理画面へのリンクだけを送ります。本文・画像の閲覧には管理者ログインが必要です。")
@@ -2162,6 +2237,10 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var isImportingFiles = false
     @State private var docxImportFailed = false
+    /// Why a file was refused for its size (see `ImportLimits`); nil shows the
+    /// generic "broken or unsupported" text.
+    @State private var importRejectionMessage: String?
+    @State private var notebookProtectionFailed = false
     @State private var docxImportReport: String?
     @State private var isImportingBackup = false
     /// A locked PDF waiting for its password before it can be imported.
@@ -2261,9 +2340,9 @@ struct ContentView: View {
     @State private var mcpCloudStatus = ""
     @State private var isMCPCloudSyncing = false
     @State private var isMCPCloudTokenVisible = false
-    @State private var mcpPairCode = ""
-    @State private var mcpPairClientName = ""
-    @State private var mcpPairScope = ""
+    @State private var mcpPairKind: MCPConnectionKind = .claude
+    @State private var mcpIssuedCode: MCPPairingCode?
+    @State private var mcpCodeExpiresAt: Date?
     @State private var mcpConnections: [MCPConnection] = []
     @State private var mcpInboxCount = 0
     @State private var mcpInboxError = ""
@@ -2728,10 +2807,15 @@ struct ContentView: View {
                 isImportingFiles = false
             }
         }
+        .alert("保護できませんでした", isPresented: $notebookProtectionFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("暗号鍵を使えなかったため、このノートは保護されていません。端末のロックを解除して、もう一度お試しください。")
+        }
         .alert("読み込めませんでした", isPresented: $docxImportFailed) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("このファイルは開けませんでした。壊れているか、対応していない形式の可能性があります。")
+            Text(importRejectionMessage ?? L("このファイルは開けませんでした。壊れているか、対応していない形式の可能性があります。"))
         }
         .alert("一部の要素は変換できませんでした", isPresented: Binding(
             get: { docxImportReport != nil },
@@ -2750,6 +2834,11 @@ struct ContentView: View {
         .fileImporter(isPresented: $isImportingBackup, allowedContentTypes: [.json], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
                 for url in urls {
+                    if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxBackupFileBytes) {
+                        importRejectionMessage = L(rejection.message)
+                        docxImportFailed = true
+                        continue
+                    }
                     if let notebook = NotebookBackupService.restore(from: url) {
                         modelContext.insert(notebook)
                         openNotebookTab(notebook)
@@ -2829,13 +2918,17 @@ struct ContentView: View {
                     Section("Cloudflare MCP") {
                         LabeledContent("サーバーURL") {
                             HStack {
-                                TextField("https://studiquo-mcp.example.workers.dev", text: $mcpCloudEndpoint)
+                                TextField("https://api.studiquo.app", text: $mcpCloudEndpoint)
                                     .multilineTextAlignment(.trailing)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
+                                    // A released build always uses the production Worker.
+                                    .disabled(!WorkerEndpointPolicy.allowsCustomHosts)
+                                    .onAppear {
+                                        if !WorkerEndpointPolicy.allowsCustomHosts { mcpCloudEndpoint = WorkerAIProvider.defaultEndpoint }
+                                    }
                                 Button {
-                                    let endpoint = mcpCloudEndpoint
-                                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let endpoint = (WorkerEndpointPolicy.resolve(mcpCloudEndpoint)?.absoluteString ?? WorkerAIProvider.defaultEndpoint)
                                         .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                                     UIPasteboard.general.string = endpoint.hasSuffix("/mcp")
                                         ? endpoint
@@ -2872,8 +2965,9 @@ struct ContentView: View {
                                 .accessibilityLabel(isMCPCloudTokenVisible ? L("トークンを隠す") : L("トークンを表示"))
 
                                 Button {
-                                    UIPasteboard.general.string = mcpCloudToken
-                                    mcpCloudStatus = L("接続トークンをコピーしました。")
+                                    // This device only, and gone after a minute.
+                                    SecretPasteboard.copy(mcpCloudToken)
+                                    mcpCloudStatus = L("接続トークンをコピーしました。60秒でクリップボードから消えます。")
                                 } label: {
                                     Image(systemName: "doc.on.doc")
                                 }
@@ -2882,6 +2976,8 @@ struct ContentView: View {
                                 .disabled(mcpCloudToken.count < 32)
                             }
                         }
+                        // A revealed token must not show in the app switcher.
+                        .hidesInAppSwitcher(when: isMCPCloudTokenVisible)
                         Button("新しいトークンを生成", systemImage: "arrow.clockwise") {
                             mcpCloudToken = MCPCloudCredentials.generateAndSaveNewToken()
                         }
@@ -2897,28 +2993,46 @@ struct ContentView: View {
                         if isMCPCloudSyncing { ProgressView() }
                         if !mcpCloudStatus.isEmpty { Text(mcpCloudStatus).foregroundStyle(.secondary) }
                     } footer: {
-                        Text("資料の参照には先に同期が必要です。Claude・ChatGPTにはMCP URLを登録し、表示された接続コードを下で承認してください。接続トークンは他人へ共有しないでください。")
+                        Text("資料の参照には先に同期が必要です。Claude・ChatGPTなどにはMCP URLを登録し、下の「AIアプリを接続する」で発行したコードをAIアプリの画面に入力してください。接続トークンは他人へ共有しないでください。")
                     }
-                    Section("Claude・ChatGPTから接続") {
-                        TextField("接続コード", text: $mcpPairCode)
-                            .textInputAutocapitalization(.characters)
-                            .autocorrectionDisabled()
-                        Button("接続先を確認") { Task { await inspectMCPPairing() } }
-                            .disabled(mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        if !mcpPairClientName.isEmpty {
-                            Text("接続先：\(mcpPairClientName)")
-                            Text(mcpPairScope.contains("studiquo.write")
-                                 ? "このアプリに資料の参照と作成を許可します。"
-                                 : "このアプリに資料の参照を許可します。")
-                                .font(.footnote).foregroundStyle(.secondary)
-                            Button("この接続を許可") { Task { await approveMCPPairing() } }
+                    Section {
+                        Picker("接続するAIアプリ", selection: $mcpPairKind) {
+                            ForEach(MCPConnectionKind.allCases) { kind in Text(kind.displayName).tag(kind) }
                         }
+                        Button("コードを発行") { Task { await issueMCPPairingCode() } }
+                        if let issued = mcpIssuedCode, let expiresAt = mcpCodeExpiresAt {
+                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                                if context.date < expiresAt {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(issued.groupedCode)
+                                            .font(.system(.title, design: .monospaced).weight(.semibold))
+                                            .textSelection(.enabled)
+                                        Text("\(issued.kind.displayName)用・あと\(Int(expiresAt.timeIntervalSince(context.date)) / 60)分\(Int(expiresAt.timeIntervalSince(context.date)) % 60)秒")
+                                            .font(.footnote).foregroundStyle(.secondary)
+                                        Button("コードをコピー", systemImage: "doc.on.doc") {
+                                            UIPasteboard.general.string = issued.code
+                                        }
+                                    }
+                                } else {
+                                    Text("コードの期限が切れました。必要なら発行し直してください。").foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("AIアプリを接続する")
+                    } footer: {
+                        Text("発行したコードは、接続したいAIアプリの画面にご自身で入力してください。他の人から頼まれても、コードを教えたり入力したりしないでください。コードは5分間、1回だけ使えます。")
                     }
                     Section("接続済みのアプリ") {
                         if mcpConnections.isEmpty { Text("接続はありません").foregroundStyle(.secondary) }
                         ForEach(mcpConnections) { connection in
                             HStack {
-                                Text(connection.clientName)
+                                VStack(alignment: .leading) {
+                                    Text(connection.clientName)
+                                    if let kind = connection.kind {
+                                        Text(kind.displayName).font(.footnote).foregroundStyle(.secondary)
+                                    }
+                                }
                                 Spacer()
                                 Button("解除", role: .destructive) {
                                     Task { await disconnectMCP(connection) }
@@ -2940,6 +3054,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                    .themeScreenBackground()
                 .navigationTitle("MCPクラウド連携")
                 .task {
                     // The token may have been exchanged for a newer one (or the
@@ -2995,6 +3110,19 @@ struct ContentView: View {
                     case .document: pendingTabPickerCreation = .document
                     }
                     showsTabPicker = false
+                },
+                onSelectAIChat: { id in
+                    showsTabPicker = false
+                    openAIChatFromTabPicker(id)
+                },
+                friendStore: friendStore,
+                onSelectFriend: { friend in
+                    showsTabPicker = false
+                    openChatFromTabPicker(.friend(friend.id))
+                },
+                onSelectGroup: { group in
+                    showsTabPicker = false
+                    openChatFromTabPicker(.group(group.roomID))
                 }
             )
         }
@@ -3112,6 +3240,8 @@ struct ContentView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
+            // A revealed token is hidden again as soon as the app leaves the front.
+            if phase != .active { isMCPCloudTokenVisible = false }
             StudyTimeTracker.shared.handle(scenePhase: phase)
             friendStore.handle(scenePhase: phase)
             if phase == .active {
@@ -3150,7 +3280,9 @@ struct ContentView: View {
                 sharedImport.refresh()
                 return
             }
-            friendStore.add(url: url)
+            // Only an invite link of ours takes the student to the friends screen; any
+            // other address someone else's app opens us with changes nothing.
+            guard friendStore.add(url: url) else { return }
             returnToHome()
             homeSection = .friends
         }
@@ -3549,6 +3681,25 @@ struct ContentView: View {
         )
     }
 
+    /// Gives the conversation a tab, then shows it the way a tap on that tab would.
+    private func openAIChatFromTabPicker(_ id: PersistentIdentifier) {
+        guard let thread = modelContext.model(for: id) as? AIChatThread else { return }
+        let tab = AIChatTabInfo(id: id, title: thread.title)
+        if !openAIChatTabs.contains(where: { $0.id == id }) { openAIChatTabs.append(tab) }
+        selectAIChatTab(tab)
+    }
+
+    /// Friend and group chats have no tab: they open in the editor's pane. With
+    /// no editor on screen the friends home is the closest place to land.
+    private func openChatFromTabPicker(_ target: PaneSwitchTarget) {
+        guard selectedNotebook != nil else {
+            returnToHome()
+            homeSection = .friends
+            return
+        }
+        NotificationCenter.default.post(name: Notification.Name("StudiquoSwitchPaneTarget"), object: target)
+    }
+
     private func selectAIChatTab(_ tab: AIChatTabInfo) {
         selectedAIChatTabID = tab.id
         guard selectedNotebook != nil else {
@@ -3600,6 +3751,33 @@ struct ContentView: View {
             openTextDocuments.append(document)
         }
         columnVisibility = .detailOnly
+    }
+
+    /// After a document is created or imported, show the folder it landed in
+    /// instead of opening it. Folders are only browsable in the "すべて"
+    /// mode, so that mode is always used.
+    private func revealInLibrary(folderPath: String) {
+        clearOpenSelection()
+        homeSection = .notes
+        selectedFolder = folderPath.isEmpty ? nil : folderPath
+        libraryMode = .documents
+        searchText = ""
+        columnVisibility = .detailOnly
+    }
+
+    private var isEditorOpen: Bool {
+        selectedNotebook != nil || selectedFlashcardDeck != nil || selectedTextDocument != nil
+    }
+
+    /// A newly created item is shown in its folder from the home screen. When
+    /// it was created from inside an open editor (the "タブを追加" picker), the
+    /// student is working in tabs, so it opens as a tab instead.
+    private func finishCreation(folderPath: String? = nil, open: () -> Void) {
+        if isEditorOpen {
+            open()
+        } else if !sharedImport.isImporting {
+            revealInLibrary(folderPath: folderPath ?? importDestinationPath ?? selectedFolder ?? "")
+        }
     }
 
     /// The detail pane shows exactly one thing, so opening any of the three
@@ -4874,6 +5052,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                    .themeScreenBackground()
             }
         }
     }
@@ -5702,7 +5881,7 @@ struct ContentView: View {
         modelContext.insert(document)
         try? modelContext.save()
         newDocumentName = ""
-        openTextDocument(document)
+        finishCreation { openTextDocument(document) }
     }
 
     private func createFlashcardDeck() {
@@ -5711,7 +5890,7 @@ struct ContentView: View {
         assignToCurrentFolder(deck)
         modelContext.insert(deck)
         newFlashcardDeckName = ""
-        openFlashcardDeck(deck)
+        finishCreation { openFlashcardDeck(deck) }
     }
 
     private var createMenu: some View {
@@ -5777,6 +5956,7 @@ struct ContentView: View {
         } label: {
             Image(systemName: "plus")
         }
+        .accessibilityIdentifier("home-create-menu")
     }
 
     /// "PDFのパスワードを削除": shown only when `notebook` retains the
@@ -5843,9 +6023,11 @@ struct ContentView: View {
         assignToCurrentFolder(notebook)
         modelContext.insert(notebook)
         newNotebookName = ""
-        openNotebookTab(notebook)
-        selectedNotebook = notebook
-        libraryMode = .documents
+        finishCreation {
+            openNotebookTab(notebook)
+            selectedNotebook = notebook
+            libraryMode = .documents
+        }
     }
 
     @discardableResult
@@ -5856,6 +6038,13 @@ struct ContentView: View {
         let destinationPath = importDestinationPath ?? selectedFolder ?? ""
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
+
+        // Before anything reads the file: an oversized PDF must not be copied
+        // for the password prompt or read whole into memory.
+        if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxPDFFileBytes) {
+            pdfPrepareError = L(rejection.message)
+            return nil
+        }
 
         // A password-protected PDF opens to blank pages unless it is unlocked
         // first. Hold it aside and ask for the password, exactly as PDF
@@ -5881,9 +6070,14 @@ struct ContentView: View {
         let lockedPDFData = password != nil ? try? Data(contentsOf: url) : nil
 
         let coordinator = sharedImport
-        let extractedPages = await PDFImportService.extractPagesAsync(from: url, password: password) { done, total in
+        let extraction = await PDFImportService.extractPagesCheckedAsync(from: url, password: password) { done, total in
             Task { @MainActor in coordinator.advancePage(done: done, of: total) }
         }
+        if let rejection = extraction.rejection {
+            pdfPrepareError = L(rejection.message)
+            return nil
+        }
+        let extractedPages = extraction.pages
         guard !extractedPages.isEmpty else {
             // Broken or unsupported PDF. Saying so matters most in a batch,
             // where silence used to count it as imported.
@@ -5896,6 +6090,7 @@ struct ContentView: View {
         for (index, pageData) in extractedPages.enumerated() {
             let page = NotePage(order: index, backgroundImageData: pageData.imageData, pageWidth: pageData.width, pageHeight: pageData.height)
             page.recognizedText = pageData.text
+            page.backgroundPDFData = pageData.pagePDF
             page.textRecognitionDate = .now
             page.notebook = notebook
             notebook.addPage(page)
@@ -5906,9 +6101,11 @@ struct ContentView: View {
         // The password was just verified for this import; don't ask again
         // when the gate sees the notebook open for the first time.
         if password != nil { ImportedPDFPasswordSession.markVerified(notebook.persistentModelID) }
-        openNotebookTab(notebook)
-        selectedNotebook = notebook
-        libraryMode = .documents
+        finishCreation(folderPath: destinationPath) {
+            openNotebookTab(notebook)
+            selectedNotebook = notebook
+            libraryMode = .documents
+        }
         return notebook
     }
 
@@ -5964,12 +6161,11 @@ struct ContentView: View {
                 pdfPendingNotebookUnlock = nil
                 return
             }
-            let tempFolder = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let tempFolder = StudiquoWorkFiles.makeFolder()
             do {
                 try FileManager.default.createDirectory(at: tempFolder, withIntermediateDirectories: true)
                 let sourceURL = tempFolder.appendingPathComponent("\(notebook.title).pdf")
-                try data.write(to: sourceURL)
+                try data.write(to: sourceURL, options: .completeFileProtection)
                 let output = try PDFPasswordService.removePassword(
                     from: sourceURL,
                     password: password,
@@ -6048,8 +6244,9 @@ struct ContentView: View {
                 // 28 files should not leave 28 notebooks open as tabs.
                 openNotebooks = tabsBefore
                 selectedNotebook = selectedBefore
-                selectedFolder = destination.isEmpty ? nil : destination
-                libraryMode = .documents
+            }
+            if !isEditorOpen {
+                revealInLibrary(folderPath: destination)
             }
         }
     }
@@ -6066,6 +6263,12 @@ struct ContentView: View {
     /// Imports files chosen with the file picker, one at a time, showing the
     /// same progress card as a shared batch.
     private func importPickedFiles(_ urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        let destination = selectedFolder ?? ""
+        importDestinationPath = destination
+        let isBatch = urls.count > 1
+        let tabsBefore = openNotebooks
+        let selectedBefore = selectedNotebook
         let showsProgress = !sharedImport.isImporting
         if showsProgress { sharedImport.begin(total: urls.count) }
         for (index, url) in urls.enumerated() {
@@ -6074,6 +6277,15 @@ struct ContentView: View {
             await waitForPDFPromptsToSettle()
         }
         if showsProgress { sharedImport.end(attempted: []) }
+        try? modelContext.save()
+        importDestinationPath = nil
+        if isBatch {
+            openNotebooks = tabsBefore
+            selectedNotebook = selectedBefore
+        }
+        if !isEditorOpen {
+            revealInLibrary(folderPath: destination)
+        }
     }
 
     private func importFile(from url: URL) async {
@@ -6081,6 +6293,12 @@ struct ContentView: View {
         defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
         let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
         let fileExtension = url.pathExtension.lowercased()
+        if ["json", "txt", "tsv", "csv"].contains(fileExtension),
+           let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxTextFileBytes) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
         if fileExtension == "json", importMCPActions(from: url) {
             return
         }
@@ -6096,9 +6314,25 @@ struct ContentView: View {
             return
         }
         let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "tif", "tiff", "gif", "webp"]
-        guard type?.conforms(to: .image) == true || imageExtensions.contains(fileExtension),
-              let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-              let image = UIImage(data: data) else { return }
+        guard type?.conforms(to: .image) == true || imageExtensions.contains(fileExtension) else { return }
+        // The size on disk and the pixel size in the header are both checked
+        // before `UIImage(data:)` decodes anything: a small PNG can declare
+        // billions of pixels.
+        importRejectionMessage = nil
+        if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxImageFileBytes) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
+        // Read once and use these same bytes for the check and the decode, so
+        // the file cannot change in between.
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return }
+        if let rejection = ImportLimits.checkImage(data: data) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
+        guard let image = UIImage(data: data) else { return }
         let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
         assignToCurrentFolder(notebook)
         let page = NotePage(
@@ -6111,9 +6345,11 @@ struct ContentView: View {
         notebook.addPage(page)
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
-        openNotebookTab(notebook)
-        selectedNotebook = notebook
-        libraryMode = .documents
+        finishCreation {
+            openNotebookTab(notebook)
+            selectedNotebook = notebook
+            libraryMode = .documents
+        }
     }
 
     /// Imports a `.docx` file as a `TextDocument` — per the design's own
@@ -6122,8 +6358,24 @@ struct ContentView: View {
     /// (`DocxReader`), so this works offline the same as the existing PDF
     /// import above.
     private func importDocx(from url: URL) {
-        guard let data = try? Data(contentsOf: url),
-              let result = try? DocxReader.read(from: data) else {
+        importRejectionMessage = nil
+        if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxDocxFileBytes) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            docxImportFailed = true
+            return
+        }
+        let result: DocxReader.Result
+        do {
+            result = try DocxReader.read(from: data)
+        } catch DocxReader.ReadError.archiveTooLarge {
+            importRejectionMessage = L(ImportLimits.Rejection.archiveTooLarge.message)
+            docxImportFailed = true
+            return
+        } catch {
             docxImportFailed = true
             return
         }
@@ -6148,14 +6400,14 @@ struct ContentView: View {
             let counts = Dictionary(grouping: result.droppedElementKinds, by: { $0 }).mapValues(\.count)
             docxImportReport = counts.sorted(by: { $0.key < $1.key }).map { "\($0.key) \($0.value)件" }.joined(separator: "、")
         }
-        openTextDocument(document)
+        finishCreation { openTextDocument(document) }
     }
 
     private func exportMCPSnapshot() -> URL? {
         guard let data = makeMCPSnapshotData() else { return nil }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("studiquo-mcp-snapshot.json")
+        let url = StudiquoWorkFiles.file(named: "studiquo-mcp-snapshot.json")
         do {
-            try data.write(to: url, options: .atomic)
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
             return url
         } catch {
             return nil
@@ -6221,7 +6473,8 @@ struct ContentView: View {
 
     @discardableResult
     private func importMCPActions(from url: URL) -> Bool {
-        guard let data = try? Data(contentsOf: url) else { return false }
+        guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxTextFileBytes) == nil,
+              let data = try? Data(contentsOf: url) else { return false }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let actions = try? decoder.decode([MCPPendingAction].self, from: data), !actions.isEmpty else {
@@ -6343,7 +6596,7 @@ struct ContentView: View {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard 200..<300 ~= http.statusCode else {
             if PasskeyReauth.isRequired(status: http.statusCode, body: data) { throw PasskeyError.reauthRequired }
@@ -6353,44 +6606,24 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func inspectMCPPairing() async {
-        let code = mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !code.isEmpty else { return }
+    private func issueMCPPairingCode() async {
+        mcpIssuedCode = nil
+        mcpCodeExpiresAt = nil
         do {
-            let data = try await mcpRequest(path: "api/mcp/pair?code=\(code)")
-            let info = try JSONDecoder().decode(MCPPairingInfo.self, from: data)
-            mcpPairClientName = info.clientName ?? ""
-            mcpPairScope = info.scope ?? ""
-            mcpCloudStatus = info.clientName == nil ? L("接続コードを確認してください。") : ""
-        } catch {
-            mcpPairClientName = ""
-            mcpPairScope = ""
-            mcpCloudStatus = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func approveMCPPairing() async {
-        guard !mcpPairClientName.isEmpty else { return }
-        let code = mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        do {
-            let approval = try JSONEncoder().encode(["code": code])
+            let request = try JSONEncoder().encode(["kind": mcpPairKind.rawValue])
             let data: Data
             do {
-                data = try await mcpRequest(path: "api/mcp/pair", method: "POST", body: approval)
+                data = try await mcpRequest(path: "api/mcp/pairing-code", method: "POST", body: request)
             } catch PasskeyError.reauthRequired {
                 // Letting an app into the account is a step a stolen session
                 // must not be able to take alone.
                 try await PasskeyService.shared.reauthenticate(token: MCPCloudCredentials.loadOrCreateToken(), action: "approve-app")
-                data = try await mcpRequest(path: "api/mcp/pair", method: "POST", body: approval)
+                data = try await mcpRequest(path: "api/mcp/pairing-code", method: "POST", body: request)
             }
-            let result = try JSONDecoder().decode(MCPApprovalResult.self, from: data)
-            guard result.approved else { mcpCloudStatus = L("接続コードの期限が切れました。"); return }
-            mcpCloudStatus = L("接続を許可しました。")
-            mcpPairCode = ""
-            mcpPairClientName = ""
-            mcpPairScope = ""
-            await loadMCPConnections()
+            let issued = try JSONDecoder().decode(MCPPairingCode.self, from: data)
+            mcpIssuedCode = issued
+            mcpCodeExpiresAt = Date().addingTimeInterval(TimeInterval(issued.expiresInSeconds))
+            mcpCloudStatus = ""
         } catch { mcpCloudStatus = error.localizedDescription }
     }
 
@@ -6457,12 +6690,7 @@ struct ContentView: View {
 
     @MainActor
     private func syncMCPCloud() async {
-        let rawEndpoint = mcpCloudEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let baseURL = URL(string: rawEndpoint),
-              baseURL.scheme?.lowercased() == "https",
-              baseURL.host?.isEmpty == false,
-              baseURL.user == nil, baseURL.password == nil,
+        guard let baseURL = WorkerEndpointPolicy.resolve(mcpCloudEndpoint),
               let snapshotData = makeMCPSnapshotData(),
               mcpCloudToken.count >= 32 else {
             mcpCloudStatus = L("URLまたはトークンを確認してください。")
@@ -6477,7 +6705,7 @@ struct ContentView: View {
             upload.httpBody = snapshotData
             upload.setValue("application/json", forHTTPHeaderField: "Content-Type")
             upload.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
-            let (uploadData, uploadResponse) = try await URLSession.shared.data(for: upload)
+            let (uploadData, uploadResponse) = try await URLSession.shared.dataNoticing(for: upload)
             guard let uploadHTTP = uploadResponse as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
             }
@@ -6487,7 +6715,7 @@ struct ContentView: View {
 
             var download = URLRequest(url: baseURL.appending(path: "api/actions"))
             download.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
-            let (actionData, actionResponse) = try await URLSession.shared.data(for: download)
+            let (actionData, actionResponse) = try await URLSession.shared.dataNoticing(for: download)
             guard let actionHTTP = actionResponse as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
             }
@@ -6505,7 +6733,7 @@ struct ContentView: View {
                 var clear = URLRequest(url: baseURL.appending(path: "api/actions"))
                 clear.httpMethod = "DELETE"
                 clear.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
-                _ = try await URLSession.shared.data(for: clear)
+                _ = try await URLSession.shared.dataNoticing(for: clear)
             }
             mcpCloudStatus = actions.isEmpty
                 ? L("同期しました。新しいAI変更はありません。")
@@ -6517,7 +6745,8 @@ struct ContentView: View {
 
     @discardableResult
     private func importFlashcards(from url: URL) -> Bool {
-        guard let data = try? Data(contentsOf: url),
+        guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxTextFileBytes) == nil,
+              let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else {
             return false
         }
@@ -6543,8 +6772,10 @@ struct ContentView: View {
         }
         modelContext.insert(deck)
         try? modelContext.save()
-        libraryMode = .studyCards
-        openFlashcardDeck(deck)
+        finishCreation {
+            libraryMode = .studyCards
+            openFlashcardDeck(deck)
+        }
         return true
     }
 
@@ -6778,7 +7009,13 @@ struct ContentView: View {
                 notebook.updatedAt = .now
             }
         } else {
-            NotebookEncryptionService.lock(notebook)
+            // Marked protected only once the content really is sealed. If the key
+            // could not be read or made (the device is locked, the Keychain is
+            // unavailable), the notebook stays as it was and the student is told.
+            guard NotebookEncryptionService.lock(notebook) else {
+                notebookProtectionFailed = true
+                return
+            }
             notebook.isLocked = true
             notebook.updatedAt = .now
             NotebookBackupService.deleteAutomaticBackups(for: notebook)

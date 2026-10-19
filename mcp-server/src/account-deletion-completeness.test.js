@@ -169,6 +169,11 @@ function fakeRegistry(values) {
           if (!keys.has(hash)) keys.set(hash, values.has(`chat:user:${legacyTokenHash}`) ? legacyTokenHash : hash);
           return keys.get(hash);
         },
+        async getUser(key) {
+          const stored = values.get(`chat:user:${key}`);
+          return stored ? JSON.parse(stored) : null;
+        },
+        async eraseLibraryID() {},
       };
     },
   };
@@ -239,8 +244,14 @@ async function shareWithBob(env) {
   const bob = await signIn(env, "apple:bob");
   assert.equal((await initRoom(env, alice.token)).status, 200);
   const bobKey = await registerFriend(env, bob, "apple:bob", "BOBCODE01");
+  // Only a friend can be invited to a document, so Bob must be on Alice's list.
+  const aliceKey = await registerFriend(env, alice, "apple:alice", "ALICECODE1");
+  env._values.set(`chat:user:${aliceKey}`, JSON.stringify({ key: aliceKey, name: "apple:alice", code: "ALICECODE1", friends: [{ code: "BOBCODE01", name: "apple:bob" }] }));
   const invited = await call(env, `/api/document/rooms/${ROOM}/invite`, { method: "POST", token: alice.token, body: { code: "BOBCODE01", role: "editor" } });
   assert.equal(invited.status, 200);
+  // The invitation seats Bob only once he accepts it.
+  const accepted = await call(env, `/api/document/rooms/${ROOM}/invite/accept`, { method: "POST", token: bob.token, body: {} });
+  assert.equal(accepted.status, 200);
   return { alice, bob, bobKey };
 }
 
@@ -298,6 +309,14 @@ test("deleting an invited friend removes them and their open proposals, not the 
   assert.equal((await roomState(env, bob.token)).status, 401, "the deleted account's own session is gone");
   assert.equal(env._values.has(roomMembershipKey(bobKey, ROOM)), false);
   assert.ok(env._values.has(roomMembershipKey(aliceKey, ROOM)), "the owner's entry stays");
+});
+
+test("deleting an account removes the invitations still waiting for its answer", async () => {
+  const env = environment();
+  const { bobKey } = await shareWithBob(env);
+  env._values.set(`doc-invite:${bobKey}:${"7".repeat(64)}`, JSON.stringify({ inviterKey: "x", role: "editor", createdAt: 1 }));
+  await deleteAccount(env, "apple:bob");
+  assert.equal([...env._values.keys()].some(key => key.startsWith(`doc-invite:${bobKey}:`)), false);
 });
 
 test("deletion that failed part-way finishes when it is run again", async () => {
@@ -479,7 +498,7 @@ test("a token's remaining validity is what is left of its 90 days, never less th
   assert.equal(remainingValiditySeconds(`${Math.floor(now / 1000) + 30 * DAY}.secret`, now), VALIDITY_SECONDS, "a clock running ahead cannot extend it");
 });
 
-test("the snapshot kept under a session expires with that session; the account copy does not", async () => {
+test("the snapshot kept under a session expires with that session; the account copy lasts 90 days after the last sync", async () => {
   const env = environment();
   const session = await signIn(env, "apple:alice", { ageSeconds: 80 * DAY });
 
@@ -493,5 +512,5 @@ test("the snapshot kept under a session expires with that session; the account c
   const accountKey = await sha256Hex("mcp-account:apple:alice");
   const accountCopy = env._puts.find(put => put.key === `snapshot:${accountKey}`);
   assert.ok(accountCopy, "the account-level copy is written");
-  assert.equal(accountCopy.options, undefined, "and lives until the account is deleted");
+  assert.equal(accountCopy.options?.expirationTtl, 90 * DAY, "and is let go 90 days after the last sync");
 });

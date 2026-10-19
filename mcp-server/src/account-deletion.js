@@ -2,6 +2,9 @@ import { sha256Hex } from "./auth.js";
 import { queueRevenueCatDeletion } from "./privacy-retention.js";
 import { roomMembershipKey } from "./document-room-store.js";
 import { generationOf } from "./session.js";
+import { libraryIdObjectName } from "./library-id.js";
+import { tokenIndexCoversEverything } from "./mcp-oauth.js";
+import { indexedPasskeyIds, passkeyAccountKeys, passkeyIndexComplete } from "./passkey-policy.js";
 
 // How long the retired password generation outlives the deletion. KV can serve
 // a stale record for about a minute; a week is a wide margin on top of that.
@@ -45,6 +48,8 @@ async function stillDeleting(env, deletionStateKey, generation) {
 const MAX_ROOMS_PER_RUN = 40;
 
 async function removeDocumentRooms(env, chatKey) {
+  // Invitations still waiting for this account's answer (document-collab.js).
+  for (const key of await entries(env, `doc-invite:${chatKey}:`)) await env.STUDIQUO_DATA.delete(key);
   const prefix = roomMembershipKey(chatKey, "");
   const keys = await entries(env, prefix);
   let failure = null;
@@ -258,17 +263,33 @@ export async function deleteAccount(env, canonicalSub) {
     }
   }
 
-  const passkeyCredentialKeys = await entries(env, "passkeys:credential:");
+  // The account's passkeys are found through its own list (passkey-policy.js)
+  // rather than by reading every passkey there is. While that list does not yet
+  // cover passkeys from before it existed, or has reached its limit (and so may
+  // have dropped some), every record is read as before.
   const ownedCredentialKeys = [];
-  for (const key of passkeyCredentialKeys) {
-    const credential = await env.STUDIQUO_DATA.get(key, "json");
-    if (emails.includes(String(credential?.email ?? "").toLowerCase())) ownedCredentialKeys.push(key);
-  }
-  const passkeyUserKeys = await entries(env, "passkeys:user:");
   const ownedPasskeyUserKeys = [];
-  for (const key of passkeyUserKeys) {
-    const credentials = await env.STUDIQUO_DATA.get(key, "json") ?? [];
-    if (credentials.some(item => emails.includes(String(item.email ?? "").toLowerCase()))) ownedPasskeyUserKeys.push(key);
+  const listKeys = new Set();
+  for (const identity of new Set([...identityKeys, canonicalSub])) for (const key of await passkeyAccountKeys(env, identity, null)) listKeys.add(key);
+  for (const email of emails) for (const key of await passkeyAccountKeys(env, `email:${String(email).trim().toLowerCase()}`, email)) listKeys.add(key);
+  const listed = (await passkeyIndexComplete(env)) ? await indexedPasskeyIds(env, [...listKeys]) : null;
+  if (listed && !listed.full) {
+    const userKeys = new Set();
+    for (const id of listed.ids) {
+      ownedCredentialKeys.push(`passkeys:credential:${id}`);
+      const credential = await env.STUDIQUO_DATA.get(`passkeys:credential:${id}`, "json");
+      if (credential?.userKey) userKeys.add(`passkeys:user:${credential.userKey}`);
+    }
+    ownedPasskeyUserKeys.push(...userKeys);
+  } else {
+    for (const key of await entries(env, "passkeys:credential:")) {
+      const credential = await env.STUDIQUO_DATA.get(key, "json");
+      if (emails.includes(String(credential?.email ?? "").toLowerCase())) ownedCredentialKeys.push(key);
+    }
+    for (const key of await entries(env, "passkeys:user:")) {
+      const credentials = await env.STUDIQUO_DATA.get(key, "json") ?? [];
+      if (credentials.some(item => emails.includes(String(item.email ?? "").toLowerCase()))) ownedPasskeyUserKeys.push(key);
+    }
   }
 
   const chatIdentityHash = await sha256Hex(`chat-account:${canonicalSub}`);
@@ -306,10 +327,20 @@ export async function deleteAccount(env, canonicalSub) {
   const mcpAccountHashes = await Promise.all([...identityKeys].map(identity => sha256Hex(`mcp-account:${identity}`)));
   const grantPrefixes = await Promise.all([...identityKeys].map(async identity => `mcp:grant:${await sha256Hex(identity)}:`));
   const mcpKeys = [];
-  for (const prefix of ["mcp:grant:", "mcp:access:", "mcp:refresh:"]) {
-    for (const key of await entries(env, prefix)) {
-      if (grantPrefixes.some(grantPrefix => key.startsWith(grantPrefix))) mcpKeys.push(key);
-      else if (prefix !== "mcp:grant:") {
+  // A grant's key starts with its account's hash, so each identity's grants are
+  // listed by prefix rather than found among everyone's.
+  for (const prefix of grantPrefixes) mcpKeys.push(...await entries(env, prefix));
+  // Tokens are listed per account too (mcp-oauth.js). Until every token that
+  // could exist has been issued under that list, the old scan also runs.
+  for (const identity of identityKeys) {
+    const indexPrefix = `mcp:token-index:${await sha256Hex(identity)}:`;
+    for (const indexKey of await entries(env, indexPrefix)) {
+      mcpKeys.push(indexKey, `mcp:${indexKey.slice(indexPrefix.length)}`);
+    }
+  }
+  if (!(await tokenIndexCoversEverything(env))) {
+    for (const prefix of ["mcp:access:", "mcp:refresh:"]) {
+      for (const key of await entries(env, prefix)) {
         const value = await env.STUDIQUO_DATA.get(key, "json");
         if (identityKeys.has(value?.sub)) mcpKeys.push(key);
       }
@@ -326,6 +357,13 @@ export async function deleteAccount(env, canonicalSub) {
     await env.ADMIN_DB.prepare("DELETE FROM app_error_users WHERE user_key = ?").bind(usageHash).run();
     for (const identity of identityKeys) {
       const accountKey = await sha256Hex(`usage-account:${identity}`);
+      // The usage record is made from the identity a session was issued for, which
+      // may be any identity linked to the account, not only the canonical one. An
+      // identity that has begun a new account keeps its own records.
+      if (!activeAliases.has(identity) && accountKey !== usageHash) {
+        await env.ADMIN_DB.prepare("DELETE FROM usage_events WHERE user_key = ?").bind(accountKey).run();
+        await env.ADMIN_DB.prepare("DELETE FROM users_first_seen WHERE user_key = ?").bind(accountKey).run();
+      }
       // An identity that has already begun a new account (markAliases leaves it
       // alone) must not be marked as a deleted customer or have its provider
       // record erased: nothing would ever clear the mark, and the person would
@@ -353,6 +391,22 @@ export async function deleteAccount(env, canonicalSub) {
     for (const tokenHash of ownedTokenHashes) {
       await env.ADMIN_DB.prepare("DELETE FROM issue_reports WHERE reporter_key = ?").bind(tokenHash).run();
     }
+    // Chat reports: ones about this person's messages go with them; ones they
+    // filed about others stay (the moderator still needs them) minus who filed.
+    // The room rewrites a deleted sender to this marker, so a report filed
+    // after the deletion carries it instead of the key.
+    const marker = `deleted:${await sha256Hex(chatKey)}`;
+    await env.ADMIN_DB.prepare("DELETE FROM chat_reports WHERE reported_key IN (?, ?)").bind(chatKey, marker).run();
+    // A per-row placeholder (not a shared blank) keeps the one-report-per-person
+    // index satisfied when several people who reported the same message leave.
+    // The copied surrounding messages aren't known to be the reporter's or
+    // another member's, so their text is dropped; the reported message stays.
+    const filed = await env.ADMIN_DB.prepare("SELECT id, snapshot FROM chat_reports WHERE reporter_key = ?").bind(chatKey).all();
+    for (const row of filed.results ?? []) {
+      const kept = JSON.parse(row.snapshot).map(item => item.reported ? item : { ...item, text: "" });
+      await env.ADMIN_DB.prepare("UPDATE chat_reports SET reporter_key = ?, snapshot = ?, reason = '' WHERE id = ?")
+        .bind(`deleted:${row.id}`, JSON.stringify(kept), row.id).run();
+    }
   }
 
   // KV also covers historical reports whose dashboard mirror failed. The
@@ -374,20 +428,35 @@ export async function deleteAccount(env, canonicalSub) {
   const passkeyPolicyKeys = [];
   for (const identity of new Set([...identityKeys, canonicalSub, ...emails.map(email => `email:${String(email).trim().toLowerCase()}`)])) {
     const hash = await sha256Hex(identity);
-    passkeyPolicyKeys.push(`passkey-account:${hash}`, `passkey-recovery:${hash}`);
+    passkeyPolicyKeys.push(`passkey-account:${hash}`, `passkey-recovery:${hash}`, `passkey-valid-from:${hash}`);
   }
   const deletionKeys = [
     ...checkpointKeys, ...ownedSessionKeys, ...accountKeys, ...ownedCredentialKeys, ...ownedPasskeyUserKeys, ...passkeyPolicyKeys, ...mcpKeys, ...cutoffKeys,
     ...emails.flatMap(email => [`email-account-owner:${email}`, `email-accounts:${email}`, `email-verify:${email}`]),
     ...[...identityKeys].map(key => `identity-canonical:${key}`),
     ...ownedTokenHashes.flatMap(hash => [`snapshot:${hash}`, `actions:${hash}`]),
-    ...mcpAccountHashes.map(hash => `snapshot:${hash}`), `chat:user:${chatKey}`, `chat:devices:${chatKey}`,
+    ...mcpAccountHashes.map(hash => `snapshot:${hash}`), `chat:user:${chatKey}`, `chat:devices:${chatKey}`, `chat-identity-of:${chatKey}`,
     ...devices.map(device => `chat:device-owner:${device.token}`),
   ];
   if (chatUser) deletionKeys.push(`chat:code:${chatUser.code}`, `chat:linktoken:${chatUser.linkToken}`, `chat:avatar:${chatUser.code}`);
   if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ ...checkpoint, deletionKeys: [...new Set(deletionKeys)] }));
   await deleteKeys(env, deletionKeys);
+
+  // The id the app keeps this account's on-device library under is erased too, so
+  // signing up again gives a new one and an earlier library is not handed to the
+  // new account (library-id.js). Idempotent, so a retry repeats it harmlessly.
+  // The names that could have been used: every identity of the account, and the
+  // e-mail identities (as for the passkey lists), since the id is kept under the
+  // account's canonical identity and the one an address resolved to.
+  const eraseLibraryIDs = async () => {
+    if (!env.USER_REGISTRY) return;
+    const identities = new Set([...identityKeys, canonicalSub, ...emails.map(email => `email:${String(email).trim().toLowerCase()}`)]);
+    for (const identity of identities) {
+      await env.USER_REGISTRY.getByName(libraryIdObjectName(await sha256Hex(identity))).eraseLibraryID();
+    }
+  };
+  await eraseLibraryIDs();
 
   // The rest of the per-account RATE_COUNTER state goes only after the account
   // itself is gone, so a Durable Object hiccup here can't hold the real
@@ -407,6 +476,11 @@ export async function deleteAccount(env, canonicalSub) {
   // Last of the data steps: if a room cannot be removed, everything else is
   // already gone and the retry only has the rooms left.
   if (env.DOCUMENT_ROOM) await removeDocumentRooms(env, chatKey);
+
+  // Once more just before the account counts as deleted: an id request that was
+  // already past its session check when the first erase ran may have made a new
+  // one since (app.js rechecks too; this closes what is left).
+  await eraseLibraryIDs();
 
   // The finished marker keeps only hashes of the identities: an email address
   // must not outlive the account it belonged to (sign-in only needs the hashes

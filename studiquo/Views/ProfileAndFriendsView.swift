@@ -101,6 +101,7 @@ struct UserProfileView: View {
             } message: {
                 Text("心当たりのないパスキーが追加されたときに使います。削除後、新しいパスキーの設定をお願いします。")
             }
+            .themeScreenBackground()
             .navigationTitle("プロフィール")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { dismiss() } } }
             .onAppear { bioDraft = bio }
@@ -1599,19 +1600,26 @@ final class FriendStore: ObservableObject {
     /// `studiquo://friend/add?token=…` custom-scheme link — kept working so
     /// a link someone already sent through Mail/Messages before this change
     /// still redeems.
-    func add(url: URL) {
+    /// Whether `url` was one of our invite links. An address that is not (a stray
+    /// `studiquo://` link, or an https link for another host or path) changes nothing,
+    /// and the caller should not move the student anywhere for it.
+    @discardableResult
+    func add(url: URL) -> Bool {
         let isLegacyCustomSchemeLink = url.scheme?.lowercased() == "studiquo"
             && url.host?.lowercased() == "friend" && url.path == "/add"
         let isUniversalLink = url.scheme?.lowercased() == "https"
             && url.host?.lowercased() == URL(string: WorkerAIProvider.defaultEndpoint)?.host?.lowercased()
             && url.path == "/invite"
         guard isLegacyCustomSchemeLink || isUniversalLink,
-              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return }
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return false }
         if let token = items.first(where: { $0.name == "token" })?.value {
             pendingLinkToken = token
+            return true
         } else if let code = items.first(where: { $0.name == "code" })?.value {
             pendingDeepLinkCode = code
+            return true
         }
+        return false
     }
 
     func confirmPendingDeepLinkRequest() {
@@ -2606,6 +2614,7 @@ struct FriendsHomeView: View {
             }
 
         }
+            .themeScreenBackground()
     }
 
     private var isSidebarVisible: Bool {
@@ -2760,6 +2769,7 @@ private struct MyFriendCardPopover: View {
                     .textSelection(.enabled)
             }
         }
+            .themeScreenBackground()
         .navigationTitle("自分のカード")
     }
 }
@@ -2802,6 +2812,7 @@ private struct FriendRequestsPopover: View {
             }
             groupInvites
         }
+            .themeScreenBackground()
         .navigationTitle("申請・招待")
         .task {
             await store.refreshIncomingRequests()
@@ -2901,6 +2912,7 @@ private struct FriendChatListView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle("メッセージ")
         .overlay {
             if summaries.isEmpty && groupSummaries.isEmpty {
@@ -3079,6 +3091,7 @@ private struct FriendProfileView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle(profile.name)
         .confirmationDialog(
             "\(profile.name)さんをブロックしますか?",
@@ -3162,6 +3175,7 @@ private struct GroupProfileView: View {
                 .disabled(store.pendingGroupActions.contains(group.roomID))
             }
         }
+            .themeScreenBackground()
         .navigationTitle(group.name)
         .sheet(isPresented: $showsInvite) {
             InviteToGroupView(
@@ -3221,6 +3235,7 @@ struct FriendPrivacySettingsView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle("フレンド設定")
     }
 }
@@ -3252,6 +3267,7 @@ private struct BlockedContactsView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle("ブロック一覧")
         .overlay {
             if store.blockedContacts.isEmpty {
@@ -3341,6 +3357,7 @@ private struct AddFriendView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("フレンドを追加")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .task {
@@ -3450,6 +3467,7 @@ private struct CreateGroupView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("グループを作成")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .alert("エラー", isPresented: Binding(
@@ -4064,6 +4082,7 @@ private struct GroupMembersView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("メンバー")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .sheet(isPresented: $showsInvite) {
@@ -4098,6 +4117,7 @@ private struct InviteToGroupView: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("友達を招待")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
             .alert("エラー", isPresented: Binding(
@@ -4922,6 +4942,7 @@ private struct ReportMessageSheet: View {
                     Text("通報の内容は運営側の確認用に記録されます。相手には通知されません。")
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("通報する")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

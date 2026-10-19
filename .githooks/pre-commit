@@ -1,0 +1,31 @@
+#!/bin/sh
+# 1) メインのチェックアウトでは直接コミットさせない(作業は git worktree で行う)。
+# 2) エージェントが他エージェントの接頭辞のブランチにコミットするのを防ぐ。
+. "$(dirname "$0")/lib.sh"
+
+[ "$STUDIQUO_ALLOW_SHARED_CHECKOUT" = "1" ] && exit 0
+
+branch=$(current_branch)
+agent=$(agent_name)
+
+if is_main_checkout; then
+  cat >&2 <<MSG
+[blocked] メインのチェックアウトでは編集内容をコミットできません(ブランチ: ${branch:-detached})。
+ClaudeとCodexの作業が混ざるのを防ぐため、作業は専用のworktreeで行ってください。
+  git worktree add .worktrees/<task> -b <claude|codex>/<task> main
+意図的にここでコミットする場合: STUDIQUO_ALLOW_SHARED_CHECKOUT=1 git commit ...
+MSG
+  exit 1
+fi
+
+if [ -n "$agent" ]; then
+  case "$branch" in
+    "$agent"/*) ;;
+    *)
+      echo "[blocked] ${agent} は ${agent}/ で始まるブランチにだけコミットできます(現在: ${branch:-detached})。" >&2
+      echo "他エージェントのブランチは触らず、自分用のブランチを worktree で作ってください。" >&2
+      exit 1
+      ;;
+  esac
+fi
+exit 0

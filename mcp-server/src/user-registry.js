@@ -1,10 +1,15 @@
 import { DurableObject } from "cloudflare:workers";
+import { eraseLibraryID, getOrCreateLibraryID } from "./library-id.js";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const MAX_FRIENDS = 500;
 
+// New codes are 10 characters (about 50 bits). They used to be 7 (about 35 bits),
+// which is few enough to be guessed at scale by many accounts each trying a few
+// codes. Existing 7-character codes stay valid: nothing here or in the app
+// checks for an exact length, only the 6-32 character pattern.
 function generateCode() {
-  const bytes = new Uint8Array(7);
+  const bytes = new Uint8Array(10);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, value => CODE_ALPHABET[value % 32]).join("");
 }
@@ -14,6 +19,21 @@ function generateCode() {
 // concurrent "this user doesn't exist yet" registrations for the same key
 // can no longer each mint and persist a different friend code for it.
 export class UserRegistry extends DurableObject {
+  // The opaque id the app keeps one on-device library per account under
+  // (GET /api/account/library-id). Made at random the first time it is asked
+  // for and kept here, in an object named for the account; nothing about the
+  // account can be worked out from it. This object is single-threaded and its
+  // storage is strongly consistent, so two first requests at once get the same
+  // id. Erased with the account (eraseLibraryID), so signing up again gives a
+  // new id and a previous library is not handed to the new account.
+  async libraryID() {
+    return getOrCreateLibraryID(this.ctx);
+  }
+
+  async eraseLibraryID() {
+    await eraseLibraryID(this.ctx);
+  }
+
   async resolveChatKey(identityHash, legacyTokenHash) {
     const existing = await this.ctx.storage.get("chatIdentityKey");
     if (existing) return existing;
@@ -26,6 +46,14 @@ export class UserRegistry extends DurableObject {
       await this.ctx.storage.put("chatIdentityKey", key);
       return key;
     });
+  }
+
+  // Reads a user's record through the Durable Object that also writes it. A
+  // KV read from elsewhere can return a value up to a minute old, so a friend
+  // who was just removed could still be listed; the writes (removeFriend and
+  // the like) happen in this object's location, where a read sees them at once.
+  async getUser(key) {
+    return await this.env.STUDIQUO_DATA.get(`chat:user:${key}`, "json");
   }
 
   async ensureUser(key, name, studyStats = null, bio = undefined) {

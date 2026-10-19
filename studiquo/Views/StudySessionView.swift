@@ -96,6 +96,7 @@ struct StudySessionView: View {
                 }
             }
         }
+            .themeScreenBackground()
     }
 
     private var reviewArea: some View {

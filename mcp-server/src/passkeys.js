@@ -9,30 +9,141 @@ import { isExpired } from "./token.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
 import { json, readJSONLimited } from "./http.js";
+import { confirmVerificationCode, sendVerificationCode } from "./email-verification.js";
 import { mintSession, hasRealSession, realSession } from "./session.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 import {
-  REAUTH_ACTIONS, cancelPasskeyRecovery, indexAccountPasskey, isEstablishedPasskey, listAccountPasskeys,
+  REAUTH_ACTIONS, accountHasPasskey, cancelPasskeyRecovery, dropPasskeyIndex, indexAccountPasskey, indexedPasskeyIds, passkeyAccountKeys,
+  passkeyIndexComplete, passkeyRevokedByReset, setPasskeyValidFrom, isEstablishedPasskey, listAccountPasskeys,
   listEstablishedPasskeys, markRecentPasskey, removeAllPasskeys, requireRecentPasskey, sendPasskeyNotice,
 } from "./passkey-policy.js";
 
-const RP_ID = "studiquo-mcp.studiquo-mcp-server.workers.dev";
+const RP_ID = "api.studiquo.app";
 const ORIGIN = `https://${RP_ID}`;
 const APP_ID = "972G4VGUA6.com.yabuko.studiquo";
 
-export async function mintPasskeySession(env, email, randomValue) {
+export async function mintPasskeySession(env, email) {
   const link = await linkVerifiedEmail(env, {
     provider: "email", sub: email, email, emailVerified: true,
   });
-  return mintSession(env, link.canonicalIdentityKey ?? `email:${email}`, randomValue);
+  return mintSession(env, link.canonicalIdentityKey ?? `email:${email}`);
 }
 
 async function body(request) {
   return readJSONLimited(request, 100_000);
 }
 
+// The first passkey of an account is what locks every other way in, so a
+// session alone (a stolen one, or one made through a relayed password or code)
+// must not be enough to register it: the person also reads a code sent to the
+// account's own address. The proof lasts three minutes and is used up by the
+// registration it was given for.
+const EMAIL_PROOF_SECONDS = 3 * 60;
+const emailProofKey = tokenHash => `passkey-email-proof:${tokenHash}`;
+
 function transactionID() {
   return crypto.randomUUID();
+}
+
+async function keysWithPrefix(env, prefix) {
+  const names = [];
+  let cursor;
+  do {
+    const page = await env.STUDIQUO_DATA.list({ prefix, cursor });
+    for (const item of page.keys ?? []) names.push(item.name);
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return names;
+}
+
+// Removes every passkey that signs in as this account, so none can sign in
+// again. Used when a password is reset: a passkey counts as proof of its
+// e-mail address (mintPasskeySession), so one registered by whoever held the
+// old password would otherwise keep working after the owner took the account
+// back. The owner can register new ones once signed in.
+//
+// A passkey belongs to the account when its address is one of `emails`, or when
+// that address is recorded as owned by `accountKey`: an account can own several
+// addresses (the registration check is `email-account-owner:<address>` equals
+// the session's account), and the reset is for one of them.
+//
+// Throws when it cannot finish, leaving the caller to stop the reset rather
+// than carry on with a passkey that still works. It reads only this account's
+// passkeys (the per-account list), so the cost does not grow with the service.
+export async function revokePasskeysForAccount(env, { accountKey, emails = [] }) {
+  const wanted = [...new Set(emails.map(email => String(email).trim().toLowerCase()).filter(Boolean))];
+  // Nothing registered before this moment counts any more, whether or not the
+  // sweeps below find it (see passkeyRevokedByReset).
+  const keys = new Set();
+  if (accountKey) for (const key of await passkeyAccountKeys(env, accountKey, null)) keys.add(key);
+  for (const email of wanted) for (const key of await passkeyAccountKeys(env, accountKey || `email:${email}`, email)) keys.add(key);
+  await setPasskeyValidFrom(env, [...keys]);
+
+  // The account's own list finds them without reading every passkey there is.
+  // Until the list covers passkeys from before it existed, the full scan is the
+  // only way to be sure.
+  const scanned = async () => {
+    const result = await scanAndRevoke(env, { accountKey, wanted });
+    await setPasskeyValidFrom(env, [...keys]);
+    return result;
+  };
+  if (!(await passkeyIndexComplete(env))) return scanned();
+  const { ids, full } = await indexedPasskeyIds(env, [...keys]);
+  // A list at its limit has dropped its oldest ids (more than that many passkeys
+  // were registered), so the passkeys it names are not all there are.
+  if (full) return scanned();
+  let removed = 0;
+  const userKeys = new Set();
+  for (const id of ids) {
+    const record = await env.STUDIQUO_DATA.get(`passkeys:credential:${id}`, "json");
+    if (!record) continue;
+    if (record.userKey) userKeys.add(record.userKey);
+    await env.STUDIQUO_DATA.delete(`passkeys:credential:${id}`);
+    removed += 1;
+  }
+  const gone = new Set(ids);
+  for (const userKey of userKeys) {
+    const list = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
+    const kept = list.filter(item => !gone.has(item.id));
+    if (kept.length === list.length) continue;
+    if (kept.length === 0) await env.STUDIQUO_DATA.delete(`passkeys:user:${userKey}`);
+    else await env.STUDIQUO_DATA.put(`passkeys:user:${userKey}`, JSON.stringify(kept));
+  }
+  await dropPasskeyIndex(env, [...keys]);
+  // Again, so a passkey registered while the sweep ran (after the time written
+  // at the start, but missed by the sweep) is older than this one.
+  await setPasskeyValidFrom(env, [...keys]);
+  return { removed };
+}
+
+// The original sweep, kept for the time before the per-account list is complete.
+async function scanAndRevoke(env, { accountKey, wanted }) {
+  const emails = new Set(wanted);
+  const owners = new Map();
+  const belongs = async item => {
+    const email = String(item?.email ?? "").trim().toLowerCase();
+    if (!email) return false;
+    if (emails.has(email)) return true;
+    if (!accountKey) return false;
+    if (!owners.has(email)) owners.set(email, await env.STUDIQUO_DATA.get(`email-account-owner:${email}`));
+    return owners.get(email) === accountKey;
+  };
+  let removed = 0;
+  for (const key of await keysWithPrefix(env, "passkeys:credential:")) {
+    if (await belongs(await env.STUDIQUO_DATA.get(key, "json"))) {
+      await env.STUDIQUO_DATA.delete(key);
+      removed += 1;
+    }
+  }
+  for (const key of await keysWithPrefix(env, "passkeys:user:")) {
+    const list = await env.STUDIQUO_DATA.get(key, "json") ?? [];
+    const kept = [];
+    for (const item of list) if (!(await belongs(item))) kept.push(item);
+    if (kept.length === list.length) continue;
+    if (kept.length === 0) await env.STUDIQUO_DATA.delete(key);
+    else await env.STUDIQUO_DATA.put(key, JSON.stringify(kept));
+  }
+  return { removed };
 }
 
 export function associationFile() {
@@ -51,6 +162,53 @@ export function associationFile() {
 
 export async function handlePasskeys(url, request, env) {
   if (!url.pathname.startsWith("/api/passkeys/")) return null;
+
+  if (url.pathname === "/api/passkeys/email-code/send" && request.method === "POST") {
+    const auth = await authenticatedSession(request, env);
+    if (auth.response) return auth.response;
+    const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_REGISTER_OPTIONS, auth.tokenHash);
+    if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
+    const email = String((await body(request))?.email ?? "").trim().toLowerCase();
+    if (email.length > 254 || !email.includes("@")) return json({ error: "Invalid request." }, 400);
+    // Only the account's own address: this must not mail arbitrary people.
+    if (await env.STUDIQUO_DATA.get(`email-account-owner:${email}`) !== auth.session.sub) {
+      return json({ error: "This e-mail address does not belong to the signed-in account." }, 403);
+    }
+    // An account that has a passkey proves it with that, not with mail.
+    if (await accountHasPasskey(env, auth.session.sub, email)) return json({ error: "A passkey is already registered." }, 409);
+    // Per-address budget, whichever session asks (same shape as the sign-in codes in app.js).
+    if (env.RATE_COUNTER && !(await env.RATE_COUNTER.getByName(`email-code-passkey:${await sha256Hex(email)}`).bump(5, 3_600))) {
+      return json({ error: "Too many attempts. Please try again later." }, 429);
+    }
+    try {
+      await sendVerificationCode(env, email);
+    } catch {
+      return json({ error: "Could not send the verification email." }, 502);
+    }
+    return json({ sent: true });
+  }
+
+  if (url.pathname === "/api/passkeys/email-code/confirm" && request.method === "POST") {
+    const auth = await authenticatedSession(request, env);
+    if (auth.response) return auth.response;
+    const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_REGISTER_VERIFY, auth.tokenHash);
+    if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
+    const payload = await body(request);
+    const email = String(payload?.email ?? "").trim().toLowerCase();
+    const code = String(payload?.code ?? "");
+    if (email.length > 254 || !email.includes("@") || !code) return json({ error: "Invalid request." }, 400);
+    if (await env.STUDIQUO_DATA.get(`email-account-owner:${email}`) !== auth.session.sub) {
+      return json({ error: "This e-mail address does not belong to the signed-in account." }, 403);
+    }
+    // Per-address budget for guesses, whichever session asks (as for the sign-in codes in app.js).
+    if (env.RATE_COUNTER && !(await env.RATE_COUNTER.getByName(`email-code-passkey-confirm:${await sha256Hex(email)}`).bump(10, 3_600))) {
+      return json({ error: "Too many attempts. Please try again later." }, 429);
+    }
+    const result = await confirmVerificationCode(env, email, code);
+    if (!result.verified) return json({ error: "Incorrect or expired code.", attemptsRemaining: result.attemptsRemaining }, 401);
+    await env.STUDIQUO_DATA.put(emailProofKey(auth.tokenHash), email, { expirationTtl: EMAIL_PROOF_SECONDS });
+    return json({ verified: true });
+  }
 
   if (url.pathname === "/api/passkeys/register/options" && request.method === "POST") {
     const token = bearerToken(request);
@@ -77,6 +235,10 @@ export async function handlePasskeys(url, request, env) {
     // a stolen session could otherwise add the thief's own.
     const needsPasskey = await requireRecentPasskey(env, token, session, "add-passkey");
     if (needsPasskey) return needsPasskey;
+    // The first passkey also needs a fresh proof of the mailbox (see above).
+    if (!(await accountHasPasskey(env, session.sub, email)) && await env.STUDIQUO_DATA.get(emailProofKey(userKey)) !== email) {
+      return json({ error: "メールで届いたコードの確認が必要です。", code: "email_code_required" }, 403);
+    }
     const existing = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
     const options = await generateRegistrationOptions({
       rpName: "Studiquo",
@@ -116,6 +278,7 @@ export async function handlePasskeys(url, request, env) {
     if (!(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
     if (await isRevoked(env, pending.userKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
     await env.STUDIQUO_DATA.delete(`passkeys:challenge:${transaction}`);
+    await env.STUDIQUO_DATA.delete(emailProofKey(pending.userKey));
     try {
       const verification = await verifyRegistrationResponse({
         response: payload.credential,
@@ -134,21 +297,24 @@ export async function handlePasskeys(url, request, env) {
         transports: credential.transports ?? ["internal"],
         email: pending.email,
         userKey: pending.userKey,
-        // Counts as protection only once it is 24 hours old (passkey-policy.js).
+        // Protects the account from the moment it is registered (passkey-policy.js).
         createdAt: Date.now(),
       };
       const updated = [...saved.filter(item => item.id !== record.id), record].slice(-10);
+      // Listed BEFORE the record exists, and always (at least under the address):
+      // deleting an account finds its passkeys through this list, so a record
+      // must never exist without an entry in it.
+      const owner = await realSession(env, token);
+      await indexAccountPasskey(env, owner?.sub ?? `email:${pending.email}`, pending.email, record.id);
       await Promise.all([
         env.STUDIQUO_DATA.put(`passkeys:user:${pending.userKey}`, JSON.stringify(updated)),
         env.STUDIQUO_DATA.put(`passkeys:credential:${record.id}`, JSON.stringify(record)),
       ]);
-      const owner = await realSession(env, token);
-      if (owner) await indexAccountPasskey(env, owner.sub, pending.email, record.id);
       await sendPasskeyNotice(env, pending.email, "Studiquoにパスキーが追加されました", [
         "お使いのStudiquoアカウントに、パスキーが追加されました。",
         "",
-        "このパスキーは、24時間後から有効になります。それ以降、パスワードやメールのコードによるログインはできなくなります(パスキーを使えない場合の復旧手続きを除く)。",
-        "心当たりがない場合は、24時間以内にStudiquoを開き、プロフィールの「パスキーをすべて削除」を実行してください。その後、パスワードも変更してください。",
+        "このパスキーは登録した時点から有効です。以降、パスワード、メールのコード、Apple、Googleによるログインはできなくなります(パスキーを使えない場合の復旧手続きを除く)。",
+        "心当たりがない場合は、メールアカウントのパスワードを変更してください。そのうえで、Studiquoでパスワードやメールのコードによるログインを試みると、復旧の手続きが始まります。48時間後にもう一度ログインすると、すべてのパスキーが削除され、すべての端末がログアウトされます。",
       ]);
       return json({ registered: true });
     } catch {
@@ -179,10 +345,6 @@ export async function handlePasskeys(url, request, env) {
     const payload = await body(request);
     const transaction = String(payload?.transaction ?? "");
     const credentialID = String(payload?.credential?.id ?? "");
-    const randomValue = payload?.randomValue;
-    if (typeof randomValue !== "string" || randomValue.length < 16 || randomValue.length > 200) {
-      return json({ error: "randomValue is required." }, 400);
-    }
     const [pending, record] = await Promise.all([
       env.STUDIQUO_DATA.get(`passkeys:challenge:${transaction}`, "json"),
       env.STUDIQUO_DATA.get(`passkeys:credential:${credentialID}`, "json"),
@@ -204,14 +366,17 @@ export async function handlePasskeys(url, request, env) {
         requireUserVerification: true,
       });
       if (!verification.verified) return json({ error: "Passkey verification failed." }, 401);
+      // A reset cuts off every passkey registered before it, including one the
+      // reset's own sweep did not find.
+      if (await passkeyRevokedByReset(env, record)) return json({ error: "Passkey verification failed." }, 401);
       record.counter = verification.authenticationInfo.newCounter;
       await env.STUDIQUO_DATA.put(`passkeys:credential:${record.id}`, JSON.stringify(record));
       // A successful passkey assertion is itself the proof of identity, same
       // as a verified Apple/Google token — mint a real session the same way
       // those exchanges do, rather than leaving the client to keep reusing
       // whatever bearer token it happened to already hold.
-      const token = await mintPasskeySession(env, record.email, randomValue);
-      if (!token) return json({ error: "Invalid randomValue." }, 400);
+      const token = await mintPasskeySession(env, record.email);
+      if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
       // Passkeys registered before the per-account list existed are listed
       // the first time they are used, and a recovery someone else started
       // is called off.
@@ -219,7 +384,16 @@ export async function handlePasskeys(url, request, env) {
       if (owner) {
         await indexAccountPasskey(env, owner.sub, record.email, record.id);
         // Only a passkey that has had time to be trusted calls a recovery off.
-        if (isEstablishedPasskey(record)) await cancelPasskeyRecovery(env, owner.sub, record.email);
+        if (isEstablishedPasskey(record) && await cancelPasskeyRecovery(env, owner.sub, record.email)) {
+          // Whoever started the recovery is told it came to nothing, so a
+          // passkey that is not the owner's does not keep it off in silence.
+          await sendPasskeyNotice(env, record.email, "Studiquoのパスキーを使わない復旧が取り消されました", [
+            "パスキーを使わずにログインするための復旧手続きが、パスキーでのログインによって取り消されました。",
+            "",
+            record.createdAt ? `使われたパスキーの登録日時: ${new Date(record.createdAt).toISOString()}` : "使われたパスキーの登録日時: 不明",
+            "ご自身のログインでない場合は、メールアカウントのパスワードを変更し、復旧の手続きをもう一度行ってください。",
+          ]);
+        }
       }
       // Having just used the passkey, this session need not be asked again
       // for the next few minutes.
@@ -237,9 +411,8 @@ export async function handlePasskeys(url, request, env) {
     return json({ registered: ids.length > 0, count: ids.length });
   }
 
-  // Removes every passkey of the account. With an established passkey it needs
-  // that passkey's check first; while all of them are still new, it does not,
-  // which is how the owner undoes a passkey a thief added with a stolen session.
+  // Removes every passkey of the account, after that passkey's own check. The
+  // app no longer offers this; it stays for apps released before that.
   if (url.pathname === "/api/passkeys/remove-all" && request.method === "POST") {
     const auth = await authenticatedSession(request, env);
     if (auth.response) return auth.response;
@@ -254,7 +427,8 @@ export async function handlePasskeys(url, request, env) {
   // session then counts as freshly verified for a few minutes (see
   // requireRecentPasskey). Only the account's own passkeys are offered.
   if (url.pathname === "/api/passkeys/reauth/options" && request.method === "POST") {
-    const auth = await authenticatedSession(request, env);
+    // Deleting the account asks for this, and a suspended person may still delete.
+    const auth = await authenticatedSession(request, env, { allowSuspended: true });
     if (auth.response) return auth.response;
     const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_LOGIN_OPTIONS, auth.tokenHash);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
@@ -276,7 +450,8 @@ export async function handlePasskeys(url, request, env) {
   }
 
   if (url.pathname === "/api/passkeys/reauth/verify" && request.method === "POST") {
-    const auth = await authenticatedSession(request, env);
+    // Deleting the account asks for this, and a suspended person may still delete.
+    const auth = await authenticatedSession(request, env, { allowSuspended: true });
     if (auth.response) return auth.response;
     const allowed = await checkRateLimit(env.RATE_LIMIT_PASSKEY_LOGIN_VERIFY, auth.tokenHash);
     if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
@@ -323,11 +498,11 @@ export async function handlePasskeys(url, request, env) {
 
 // The checks every signed-in passkey route shares: a well-formed, unexpired,
 // server-issued, unrevoked token. Returns the session, or the response to send.
-async function authenticatedSession(request, env) {
+async function authenticatedSession(request, env, options) {
   const token = bearerToken(request);
   if (!token) return { response: json({ error: "A valid bearer token is required." }, 401) };
   if (isExpired(token)) return { response: json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401) };
-  const session = await realSession(env, token);
+  const session = await realSession(env, token, options);
   if (!session) return { response: json({ error: "Reconnect from Studiquo to get a new token." }, 401) };
   const tokenHash = await sha256Hex(token);
   if (await isRevoked(env, tokenHash)) return { response: json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401) };

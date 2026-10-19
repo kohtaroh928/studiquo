@@ -21,7 +21,7 @@ const accessToken = await new SignJWT({}).setProtectedHeader({ alg: "ES256" })
 
 async function fixture(extra = {}) {
   const db = new DatabaseSync(":memory:");
-  for (const file of ["0001_admin_dashboard.sql", "0003_announcements.sql", "0004_announcement_push.sql"]) {
+  for (const file of ["0001_admin_dashboard.sql", "0003_announcements.sql", "0004_announcement_push.sql", "0007_moderation.sql"]) {
     db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
   }
   const values = new Map();
@@ -203,4 +203,21 @@ test("long bodies are shortened in the notification", async () => {
   await pushAll(env, id, apns(calls));
   assert.equal(Array.from(calls[0].body).length, 141);
   assert.ok(calls[0].body.endsWith("…"));
+});
+
+test("while the push switch is stopped an announcement is refused, not counted as sent, and can be pushed once it is back", async () => {
+  const { env, values } = await fixture();
+  seedUser(values, "u1", [{ token: token(1), environment: "production" }]);
+  const id = await create(env);
+  const calls = [];
+
+  const stopped = await call({ ...env, DISABLED_FEATURES: "push" }, `/api/admin/announcements/${id}/push`, { fetchImpl: apns(calls) });
+  assert.equal(stopped.status, 503);
+  assert.equal((await stopped.json()).code, "feature_disabled");
+  assert.equal(calls.length, 0);
+  const list = await (await call(env, "/api/admin/announcements", { method: "GET" })).json();
+  assert.equal(list.announcements[0].pushState, null, "nothing was recorded");
+
+  await pushAll(env, id, apns(calls));
+  assert.equal(calls.length, 1);
 });

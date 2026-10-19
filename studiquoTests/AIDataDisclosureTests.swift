@@ -2,7 +2,7 @@ import XCTest
 @testable import studiquo
 
 /// Regression coverage for a real gap: the app sends note content, answer
-/// photos, and chat questions to Google's Gemini (and, for the optional
+/// photos, and chat questions to OpenAI (and, for the optional
 /// bring-your-own-key features, Anthropic) with no disclosure anywhere in
 /// the app. `AIDataDisclosure` backs both the first-launch consent screen
 /// (`AIDataDisclosureGate`) and the always-available explanation in
@@ -34,7 +34,7 @@ final class AIDataDisclosureTests: XCTestCase {
     }
 
     func testAcknowledgingPersistsSoItIsNotShownAgain() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         XCTAssertTrue(AIDataDisclosure.hasBeenAcknowledged)
     }
 

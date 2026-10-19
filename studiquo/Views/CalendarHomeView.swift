@@ -1275,6 +1275,7 @@ struct CalendarHomeView: View {
                         }
                     }
                 }
+                    .themeScreenBackground()
                 .navigationTitle("カレンダー連携")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -1568,6 +1569,7 @@ struct CalendarHomeView: View {
                         }
                     }
                 }
+                    .themeScreenBackground()
                 .listStyle(.plain)
             }
         }
@@ -2109,6 +2111,7 @@ private struct CalendarEventEditor: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle(event == nil ? L("予定を追加") : L("予定を編集"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
