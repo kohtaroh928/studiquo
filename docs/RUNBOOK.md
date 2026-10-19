@@ -150,6 +150,12 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
 
 現行の保持処理は毎時・各種類100件まで。`privacy retention backlog requires attention`警告は対応が必要な滞留を示すが、通知先への自動連携が整備済みとは限らない。`PRIVACY_RETENTION_ENABLED=false`は期限削除だけでなく、サーバー／外部削除ジョブの定期再試行も止める。異常な削除を抑えるため停止する場合は、滞留・再開・利用者への影響を必ず管理する。詳細は[プライバシー公開条件](PRIVACY_RELEASE_CHECKLIST.md)を参照する。
 
+**退会1件の処理量(2026-10-18時点の見積もり)**: `deleteAccount`はKVを次の単位で読む。
+- 接続アプリの許可・トークン、パスキー: アカウントごとの一覧から引く(全体の数に比例しない)。MCPトークンの一覧は、最初のトークンを一覧つきで発行してから約91日後(`mcp:token-index-since`)に、旧トークンの全件走査をやめる。
+- まだ全件走査: `email-account-owner:`、`email-accounts:`、`identity-canonical:`(各ユーザー数N)、`session:`(セッション数S)、`issue-report:`(通報数R)。読み取りの回数は、おおよそ **3N + S + R**。
+- 目安: N=1,000、S=2,000なら約5,000回。Cloudflare Workersの1回の実行あたりのsubrequest上限(Free 50、有料 1,000〜、設定で拡張可。KV・Durable Object・D1の呼び出しも数える)を超えると、その回の退会は失敗し、毎時の再試行も同じ所で失敗し続ける(`console.error`のみ)。Nが数百を超える前に、残りの走査も一覧化する(Notionの『退会の処理量』カード)。
+- 本番のプランと実際の上限は、Cloudflareのダッシュボード(Workers & Pages → Plans)で確認する。
+
 ### RB-09: チャット・共同編集・MCP・通知
 
 - **使う症状**: 特定roomだけ使えない、MCP取り込み失敗、通知が届かない。
