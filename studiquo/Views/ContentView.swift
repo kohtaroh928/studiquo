@@ -2240,6 +2240,7 @@ struct ContentView: View {
     /// Why a file was refused for its size (see `ImportLimits`); nil shows the
     /// generic "broken or unsupported" text.
     @State private var importRejectionMessage: String?
+    @State private var notebookProtectionFailed = false
     @State private var docxImportReport: String?
     @State private var isImportingBackup = false
     /// A locked PDF waiting for its password before it can be imported.
@@ -2805,6 +2806,11 @@ struct ContentView: View {
             } onCancel: {
                 isImportingFiles = false
             }
+        }
+        .alert("保護できませんでした", isPresented: $notebookProtectionFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("暗号鍵を使えなかったため、このノートは保護されていません。端末のロックを解除して、もう一度お試しください。")
         }
         .alert("読み込めませんでした", isPresented: $docxImportFailed) {
             Button("OK", role: .cancel) {}
@@ -6913,7 +6919,13 @@ struct ContentView: View {
                 notebook.updatedAt = .now
             }
         } else {
-            NotebookEncryptionService.lock(notebook)
+            // Marked protected only once the content really is sealed. If the key
+            // could not be read or made (the device is locked, the Keychain is
+            // unavailable), the notebook stays as it was and the student is told.
+            guard NotebookEncryptionService.lock(notebook) else {
+                notebookProtectionFailed = true
+                return
+            }
             notebook.isLocked = true
             notebook.updatedAt = .now
             NotebookBackupService.deleteAutomaticBackups(for: notebook)
