@@ -23,7 +23,8 @@ const digitsOf = (text) => text.replace(/\D/gu, "");
 // the same shape but the wrong digit count, and is left alone.
 const phoneOk = (match) => {
   // "+81 (0)90-1234-5678": the (0) is the trunk prefix written in brackets, not a digit of the number.
-  match = match.replace(/\(0\)/u, "");
+  // Domestic "(0)90…" keeps its 0; "+81 (0)90…" drops it (the country code replaces the trunk 0).
+  match = match.replace(/\(0\)/u, match.startsWith("+") ? "" : "0");
   const d = digitsOf(match);
   return match.startsWith("+") ? d.startsWith("81") && d.length >= 11 && d.length <= 12 : d.startsWith("0") && (d.length === 10 || d.length === 11);
 };
@@ -43,6 +44,9 @@ const RULES = [
   { kind: "phone", label: "[電話番号]", re: new RegExp(`(?<![\\d${NOT_BEFORE_OR_AFTER}])(?:\\+81[${DASH}\\s]?(?:\\(0\\)[${DASH}\\s]?)?\\d[\\d\\s${DASH}]{7,12}\\d|0\\d{1,4}[${DASH}\\s]\\d{1,4}[${DASH}\\s]\\d{3,4})(?![\\d${NOT_BEFORE_OR_AFTER}])`, "gu"), accept: phoneOk },
   // (03)1234-5678, (090)1234-5678: the area code in brackets first
   { kind: "phone", label: "[電話番号]", re: new RegExp(`(?<![\\d${NOT_BEFORE_OR_AFTER}])\\(0\\d{1,4}\\)[${DASH}\\s]?\\d{1,4}[${DASH}\\s]\\d{3,4}(?![\\d${NOT_BEFORE_OR_AFTER}])`, "gu"), accept: phoneOk },
+  // (0)90-1234-5678 and 0(90)1234-5678: the trunk 0 or the area code in brackets
+  { kind: "phone", label: "[電話番号]", re: new RegExp(`(?<![\\d${NOT_BEFORE_OR_AFTER}])\\(0\\)\\d{1,4}[${DASH}\\s]\\d{1,4}[${DASH}\\s]\\d{3,4}(?![\\d${NOT_BEFORE_OR_AFTER}])`, "gu"), accept: phoneOk },
+  { kind: "phone", label: "[電話番号]", re: new RegExp(`(?<![\\d${NOT_BEFORE_OR_AFTER}])0\\(\\d{1,4}\\)\\d{1,4}[${DASH}\\s]\\d{3,4}(?![\\d${NOT_BEFORE_OR_AFTER}])`, "gu"), accept: phoneOk },
   // 090.1234.5678
   { kind: "phone", label: "[電話番号]", re: /(?<![\d.-])0\d{1,4}\.\d{1,4}\.\d{3,4}(?![\d.-])/gu, accept: phoneOk },
   // 03(1234)5678
