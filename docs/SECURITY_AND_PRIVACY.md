@@ -384,6 +384,8 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 
 ## 18. 検証要件
 
+標準の要件(MASVS・ASVS)との対応と、満たす/満たさないの記録は[SECURITY_VERIFICATION.md](SECURITY_VERIFICATION.md)、攻撃者の目線の整理は[THREAT_MODEL.md](THREAT_MODEL.md)。この章の一覧は、変更のたびに確認する項目で、その根拠を上の2つに記録する。
+
 変更に応じて、次を自動テストまたは手動検証する。
 
 - 正常なlogin、期限切れ、失効、偽造token、削除中account
@@ -468,6 +470,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 - [ ] migration、旧app、旧Worker、rollbackを確認した
 - [ ] 関連するunit、integration、negative testを追加した
 - [ ] security/privacy観点の独立レビューを受けた
+- [ ] 脅威モデル(`THREAT_MODEL.md`)と検証チェックリスト(`SECURITY_VERIFICATION.md`)の該当箇所を更新した
 - [ ] release後の監視とincident ownerを決めた
 
 ## 22. 実装上の参照先
