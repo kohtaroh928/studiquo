@@ -65,6 +65,9 @@ struct AccountGateView: View {
         .environmentObject(authentication)
         // Why the server is paused, or that this build must be updated (ServerNotice.swift).
         .safeAreaInset(edge: .top, spacing: 0) { ServerNoticeBanner() }
+        // The sign-in, verification and onboarding screens show an email address
+        // and take a password or a code: not for the app switcher.
+        .hidesInAppSwitcher(when: authentication.state != .authenticated)
         .animation(.easeInOut(duration: 0.2), value: authentication.state)
         .task(id: authentication.state) {
             guard !cleanupPending, authentication.state == .authenticated else { return }
