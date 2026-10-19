@@ -20,12 +20,17 @@ const HIDDEN = /[\p{Cf}\p{Cc}ㅤᅟᅠ⠀͏ﾠ឴឵]/gu;
 const KEEP = new Set(["\n", "\t", "\r", "‌", "‍"]);
 const SELECTOR_RUN = /\p{Variation_Selector}{2,}/gu;
 const SELECTOR_AFTER_NON_HAN = /(?<!\p{Script=Han})[\u{E0100}-\u{E01EF}]/gu;
-const IDEOGRAPHIC_SELECTOR = /[\u{E0100}-\u{E01EF}]/gu;
+// Selectors that carry a variant form of a character: the supplementary set and the
+// standard FE00-FE0D (FE0E/FE0F choose text or emoji style and are handled separately).
+const IDEOGRAPHIC_SELECTOR = /[\u{E0100}-\u{E01EF}\uFE00-\uFE0D]/gu;
 // The three subdivision flags (England, Scotland, Wales) are an emoji followed by tag
 // characters; the tags are part of the picture, so exactly these sequences are kept.
 const SUBDIVISION_FLAG = /(\u{1F3F4}(?:\u{E0067}\u{E0062}(?:\u{E0065}\u{E006E}\u{E0067}|\u{E0073}\u{E0063}\u{E0074}|\u{E0077}\u{E006C}\u{E0073}))\u{E007F})/gu;
 // A name list may carry a few variant forms; one selector after most characters is a code.
 const IDEOGRAPHIC_SELECTOR_SHARE = 0.1;
+// ...and never more than this many in one text, however long: the share alone would let a
+// long text carry a longer message.
+const IDEOGRAPHIC_SELECTOR_MAX = 20;
 const SELECTOR_AFTER_NON_EMOJI = /(?<![\p{Emoji}\p{Script=Han}])[︀-️]/gu;
 const MONGOLIAN_SELECTOR = /[᠋-᠍᠏]/gu;
 const PICTOGRAPH = "\\p{Extended_Pictographic}\\uFE0F\\u{1F3FB}-\\u{1F3FF}";
@@ -42,7 +47,7 @@ export function stripInvisible(value) {
   // a message can be written one byte per character in them (about eight bits each).
   const han = (text.match(/\p{Script=Han}/gu) ?? []).length;
   const selectors = (text.match(IDEOGRAPHIC_SELECTOR) ?? []).length;
-  const tooMany = selectors > Math.max(2, Math.floor(han * IDEOGRAPHIC_SELECTOR_SHARE));
+  const tooMany = selectors > Math.min(IDEOGRAPHIC_SELECTOR_MAX, Math.max(2, Math.floor(han * IDEOGRAPHIC_SELECTOR_SHARE)));
   const clean = (part) => part
     .replace(HIDDEN, (c) => (KEEP.has(c) ? c : drop(c)))
     .replace(SELECTOR_RUN, drop)
