@@ -79,3 +79,56 @@ test("a forced cut never splits a surrogate pair", () => {
   assert.equal(out, text);
   assert.ok(!/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u.test(out));
 });
+
+const pieces = (text, size) => text.match(new RegExp(`[\\s\\S]{1,${size}}`, "gu"));
+
+test("links the way the app reads them: nested labels, newlines, escapes and 'https:' without slashes", () => {
+  const stillLinks = [
+    "[a [b] c](https:e.com?d=1)", "[a [b] c](https:/e.com?d=1)", "[a\nb](https:e.com?d=1)", "[a \\] b](https:e.com?d=1)",
+    "[a [b] c](HTTPS:E.COM?d=1)", "[[x](https://in.example)](https://out.example)", "[x](www.evil.example/p)",
+  ];
+  for (const text of stillLinks) {
+    const out = redactLinks(`前 ${text} 後`);
+    assert.ok(!/e\.com|in\.example|out\.example|evil/iu.test(out), `${JSON.stringify(text)} -> ${JSON.stringify(out)}`);
+    assert.ok(out.startsWith("前 ") && out.endsWith(" 後"), JSON.stringify(out));
+    for (const size of [1, 2, 3, 7]) {
+      const streamed = stream(pieces(`前 ${text} 後`, size));
+      assert.ok(!/e\.com|in\.example|out\.example|evil/iu.test(streamed), `size ${size}: ${JSON.stringify(streamed)}`);
+    }
+  }
+  assert.equal(redactLinks("https:e.com?d=1 を見て"), "（リンクは表示されません） を見て");
+  assert.equal(redactLinks("[a](javascript:alert(1))x"), "ax");
+});
+
+test("brackets that are not links are left alone, also across pieces", () => {
+  const text = "区間 [0, 1) と a[i](2) と [注: 参照] の話。\\[escaped](https://x.example) は括弧のまま。";
+  assert.equal(redactLinks("区間 [0, 1) と a[i](2) と [注: 参照] の話。"), "区間 [0, 1) と a[i](2) と [注: 参照] の話。");
+  for (const size of [1, 4, 9]) {
+    const out = stream(pieces("区間 [0, 1) と a[i](2) と [注: 参照] の話。", size));
+    assert.equal(out, "区間 [0, 1) と a[i](2) と [注: 参照] の話。", `size ${size}`);
+  }
+  assert.ok(!text.includes("undefined"));
+});
+
+test("many brackets do not make the scan quadratic", () => {
+  const started = Date.now();
+  redactLinks("[".repeat(50000));
+  redactLinks("[a](".repeat(5000));
+  assert.ok(Date.now() - started < 1000, `${Date.now() - started} ms`);
+});
+
+test("a value that itself ends in 'source' or 'chunk' is removed whole, however the pieces fall", () => {
+  for (const text of ["出典は sourceId: other-user-source です。", "出典は sourceId: abc-chunk です。", "chunk_id = my-resource, 次へ"]) {
+    for (const size of [1, 2, 3, 5]) {
+      const out = stream(pieces(text, size));
+      assert.ok(!/other-user|abc-|my-resource|-source|-chunk/.test(out), `size ${size}: ${JSON.stringify(out)}`);
+    }
+  }
+});
+
+test("URLs with a non-ASCII host or path are removed without eating the sentence", () => {
+  assert.equal(redactLinks("https://例え.com/a?d=1 を見て"), "（リンクは表示されません） を見て");
+  assert.equal(redactLinks("先は https://e.com/日本語?d=1 です"), "先は （リンクは表示されません） です");
+  assert.equal(redactLinks("https://例えば、これです"), "（リンクは表示されません）、これです");
+  assert.equal(redactLinks("https://example.com/を参照してください。"), "（リンクは表示されません）を参照してください。");
+});
