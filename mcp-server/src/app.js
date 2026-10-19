@@ -21,6 +21,7 @@ import { handleInvitePage } from "./invite.js";
 import { accessAllowed, isAccessGuardedPath, isCrossSiteWrite } from "./access.js";
 import { appGateRejection } from "./app-gate.js";
 import { handleAppAttest, appAttestGate } from "./app-attest.js";
+import { plainHttpResponse, withTransportHeaders } from "./transport.js";
 import { idTokenNonceRefused } from "./id-token-nonce.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired, remainingValiditySeconds } from "./token.js";
@@ -320,7 +321,7 @@ async function handleMCP(request, env) {
   return transport.handleRequest(request);
 }
 
-export default {
+const handler = {
   async fetch(request, env, ctx) {
     try {
       const url = new URL(request.url);
@@ -1072,3 +1073,14 @@ async function handleLocalLogin(request, env, ctx) {
   })());
   return json({ token });
 }
+
+// Every response gets the transport headers, and plain-http requests are answered
+// before the handler reads anything (transport.js).
+export default {
+  ...handler,
+  async fetch(request, env, ctx) {
+    const plain = plainHttpResponse(request, new URL(request.url));
+    if (plain) return plain;
+    return withTransportHeaders(await handler.fetch(request, env, ctx));
+  },
+};

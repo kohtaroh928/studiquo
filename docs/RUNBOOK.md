@@ -220,6 +220,7 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
   - `MAINTENANCE_MODE="true"`: アプリ・MCP・OAuthの経路が`503`(`code: "maintenance"`、`Retry-After: 300`)を返す。`/health`、アプリ関連づけファイル、法務・招待ページ、お知らせの一覧、管理画面は動き続ける。止めたあとの再開は、値を消して(または`"false"`にして)再配備する。
   - `MIN_APP_BUILD="<ビルド番号>"`: それより古いアプリのAPIが`426`(`code: "app_update_required"`)を返す。ビルド番号は、User-Agent(`studiquo/<ビルド> CFNetwork/…`)から読む。アプリ以外のクライアントは対象外。数値でない値は無効として扱う。**配布済みの最新ビルドより大きい値を入れない**(全員が使えなくなる)。
   - `SESSION_MAX_DAYS`: ログインを更新できる期間の上限(既定365)。
+- **https**(`mcp-server/src/transport.js`): 全レスポンスに`Strict-Transport-Security: max-age=31536000`(`includeSubDomains`・`preload`なし)を付ける。`http://`で届いた要求は、何も読まずに、GET・HEADは`308`でhttpsへ、それ以外は`403`(`code: "https_required"`)で断る(ローカル開発の`http://localhost`は対象外)。Cloudflareの「Always Use HTTPS」がエッジで同じことをするので、**ダッシュボードで有効にする**(Workerの分は二重の備え)。httpで来たクライアントは、Bearerトークンを平文で送ったことになるので、httpsに直し、そのトークンは見られたものとして扱う。**有効にする前に確認**: RevenueCatのWebhookの登録URL、死活監視、MCPクライアントの接続先が`https://`であること(`http://`だとPOSTは403、GET・HEADは308になる)。
 - **最初の確認**: 症状が出た時刻と、直前の配備・設定変更。`/health`が200か。`api.studiquo.app`のDNSとカスタムドメインがCloudflareで有効か。
 - **変更せず調べる**: Cloudflareの「セキュリティ」→「概要」・Analyticsで、WAFがブロックした記録(件数、対象のパス)。Workers Logsの`429`・`503`・`426`の件数。`curl`での`/health`・関連づけファイルの確認。
 - **判断の目安**:
