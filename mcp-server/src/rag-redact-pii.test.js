@@ -71,3 +71,21 @@ test("hostile input stays fast (no quadratic scans)", () => {
     redactPII(text);
   assert.ok(Date.now() - started < 1500, `${Date.now() - started} ms`);
 });
+
+test("a number right after katakana (long-vowel mark) is still masked", () => {
+  for (const text of ["サーバー090-1234-5678", "コンピューター03-1234-5678", "連絡先：03-1234-5678ー", "メーター090‐1234‐5678"]) {
+    const out = redactPII(text);
+    assert.equal(out.total, 1, text);
+    assert.ok(!/1234/.test(out.text), `${text} -> ${out.text}`);
+  }
+  assert.equal(redactPII("サーバー090-1234-5678").text, "サーバー[電話番号]");
+});
+
+test("area code in brackets first, dotted groups, and +81 (0) are masked; dates with dots are not", () => {
+  for (const text of ["(03)1234-5678", "（03）1234－5678", "(090)1234-5678", "+81 (0)90-1234-5678", "090.1234.5678", "03.1234.5678"]) {
+    const out = redactPII(text);
+    assert.equal(out.total, 1, text);
+    assert.ok(!/1234|5678/.test(out.text), `${text} -> ${out.text}`);
+  }
+  for (const text of ["2026.10.20", "03.14.2023", "v1.2.3456", "(03)14-2023"]) assert.equal(redactPII(text).text, text, text);
+});
