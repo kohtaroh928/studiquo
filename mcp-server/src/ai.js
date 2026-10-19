@@ -2,6 +2,7 @@ import { structuredOutputJSONSchema, parseStructuredOutput, MAX_STRUCTURED_OUTPU
 import { retrieve } from "./rag/index.js";
 import { revalidateRetrieval } from "./rag/authorization.js";
 import { ragAnswerPolicy } from "./rag/answer-policy.js";
+import { normalizeRetrieval } from "./rag/contract.js";
 /**
  * AI proxy (OpenAI is the base provider).
  *
@@ -253,8 +254,7 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
     ragRequested = true;
     const retrievalStartedAt = Date.now();
     try {
-      rag = await retrieve(env, session, payload);
-      rag.status ??= "fallback";
+      rag = normalizeRetrieval(await retrieve(env, session, payload));
     } catch {
       // Fail open only to ordinary chat; never expose provider errors or text.
       rag = { context: "", citations: [], status: "fallback" };
@@ -263,6 +263,9 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
       event: "rag_retrieval",
       used: rag.citations.length > 0,
       citationCount: rag.citations.length,
+      status: rag.status,
+      reason: rag.reason ?? null,
+      truncated: rag.truncated ?? null,
       elapsedMs: Date.now() - retrievalStartedAt,
     }));
   }

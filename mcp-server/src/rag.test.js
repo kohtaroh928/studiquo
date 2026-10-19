@@ -695,3 +695,21 @@ test("malformed chat scope never broadens to the library", async () => {
   }
   assert.equal(env.embedCalls, 0);
 });
+
+test("retrieval reports truncated=false for normal and very long pages (chunking keeps excerpts far below the budgets)", async () => {
+  const env = environment();
+  await indexSource(env, await accountKey("alice"), source());
+  const ask = () => retrieve(env, { sub: "alice" }, { messages: [{ role: "user", text: "細胞" }], rag: { scope: { type: "library" } } });
+  const small = await ask();
+  assert.equal(small.citations.length, 1);
+  assert.equal(small.truncated, false);
+  assert.equal(small.reason, undefined);
+  assert.equal(Object.keys(small).includes("truncated"), false); // log-only, not part of the enumerable shape
+
+  const big = environment();
+  await indexSource(big, await accountKey("alice"), source({ pages: [{ pageNumber: 1, text: "細胞".repeat(9000) }] }));
+  const long = await retrieve(big, { sub: "alice" }, { messages: [{ role: "user", text: "細胞" }], rag: { scope: { type: "library" } } });
+  assert.equal(long.citations.length, 1);
+  assert.equal(long.truncated, false);
+  assert.ok(long.context.length < 6000);
+});

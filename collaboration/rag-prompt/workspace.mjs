@@ -18,13 +18,28 @@ export function validateCandidate(value) {
   }
   return value;
 }
+// Smoke check, not proof: it catches an appended instruction that openly tells
+// the model to drop the frozen safety rules. A human review still decides.
+const UNSAFE_INSTRUCTION = [
+  /\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier|system|safety)\b/i,
+  /\boverride\s+(?:the\s+)?(?:rules?|polic(?:y|ies)|instructions?|safety)\b/i,
+  /(?:指示|ルール|規則|方針|制約|安全).{0,12}(?:無視|破棄|上書き|解除)/u,
+  /従わ(?:なくて|なく)(?:も)?(?:よい|良い|いい|構いません)/u,
+  /(?:資料|参考データ|抜粋).{0,12}(?:指示|命令).{0,8}(?:に従って|に従い|を実行)/u,
+];
+export function assertSafeInstructions(candidate) {
+  if (UNSAFE_INSTRUCTION.some(pattern => pattern.test(candidate.additionalInstructions))) throw Error('unsafe_candidate');
+}
 export function preparePacket(candidate) {
   validateCandidate(candidate);
+  assertSafeInstructions(candidate);
   const {manifest, contexts} = loadPromptBaseline();
   const pairs = contexts.flatMap(row => ['source_only', 'explain'].map(style => {
     const baseline = baselinePolicyPair(row.key, style).original;
     const proposed = {...structuredClone(baseline),
       instructions: baseline.instructions + '\n\n' + candidate.additionalInstructions};
+    // The frozen rules stay byte-for-byte first; a candidate may only append.
+    if (!proposed.instructions.startsWith(baseline.instructions)) throw Error('unsafe_candidate');
     return {caseKey:row.key, style, status:row.status,
       baseline, candidate:proposed, citations:structuredClone(row.citations),
       baselineHash:hash(baseline), candidateHash:hash(proposed)};
