@@ -89,3 +89,12 @@ test("area code in brackets first, dotted groups, and +81 (0) are masked; dates 
   }
   for (const text of ["2026.10.20", "03.14.2023", "v1.2.3456", "(03)14-2023"]) assert.equal(redactPII(text).text, text, text);
 });
+
+test("(0)90-1234-5678 and 0(90)1234-5678 are masked; short bracketed numbers are not", () => {
+  for (const text of ["(0)90-1234-5678", "(０)９０－１２３４－５６７８", "0(90)1234-5678", "0（３）１２３４－５６７８"]) {
+    const out = redactPII(text);
+    assert.equal(out.total, 1, text);
+    assert.ok(!/1234|５６７８|5678/.test(out.text), `${text} -> ${out.text}`);
+  }
+  for (const text of ["(0)12-34-56", "0(1)23-4567", "f(0)90-12-34"]) assert.equal(redactPII(text).text, text, text);
+});
