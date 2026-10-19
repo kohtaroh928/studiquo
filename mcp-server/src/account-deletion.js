@@ -106,6 +106,12 @@ export async function deleteAccount(env, canonicalSub) {
   // this account even though those session rows are already gone.
   checkpoint = { status: "deleting", deletionKeys: [...checkpointKeys], emails, identityKeys: [...identityKeys], tokenHashes: [...new Set(ownedTokenHashes)] };
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(checkpoint));
+  // Keep an erasure-only alias map after deleting login identity mappings.
+  // Otherwise one provider job could finish first and allow re-registration
+  // while a different alias's customer deletion is still pending.
+  for (const identity of identityKeys) {
+    await env.STUDIQUO_DATA.put(`privacy-deletion-group:${await sha256Hex(identity)}`, await sha256Hex(canonicalSub));
+  }
   await deleteKeys(env, ownedSessionKeys);
 
   const accountKeys = [];
