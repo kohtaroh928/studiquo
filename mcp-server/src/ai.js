@@ -3,6 +3,7 @@ import { retrieve } from "./rag/index.js";
 import { revalidateRetrieval } from "./rag/authorization.js";
 import { ragAnswerPolicy } from "./rag/answer-policy.js";
 import { normalizeRetrieval } from "./rag/contract.js";
+import { linkRedactor } from "./rag/output-filter.js";
 /**
  * AI proxy (OpenAI is the base provider).
  *
@@ -296,7 +297,11 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
         safetyId: account,
         ...(ragRequested ? { beforeDispatch: async () => {
           rag = await revalidateRetrieval(env, session, rag);
-          return baseSystem + (rag.context ? "\n\n" + rag.context : "") + ragAnswerPolicy(rag.status, payload.rag.answerStyle);
+          const policy = ragAnswerPolicy(rag.status, payload.rag.answerStyle);
+          // Off by default: moving the excerpts changes what the model sees, so
+          // it is compared against the current layout (docs/RAG_PROMPT_CONTRACT.md §7) first.
+          if (env.RAG_CONTEXT_AS_INPUT === "true" && rag.context) return { instructions: baseSystem + policy, reference: rag.context };
+          return baseSystem + (rag.context ? "\n\n" + rag.context : "") + policy;
         } } : {}),
       });
       if (ragRequested) rag = await revalidateRetrieval(env, session, rag);
@@ -316,7 +321,7 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
 
   return streamNormalizedText(upstream, extractText, ctx, env, key, {
     "x-studiquo-images-received": String(images.length),
-  }, gate.refund, rag.citations, rag.status);
+  }, gate.refund, rag.citations, rag.status, rag.context !== "");
 }
 
 /**
@@ -333,7 +338,7 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
  * runtime cancelled it. Here the buffer is an ordinary local and the
  * response is returned immediately while the pump runs behind it.
  */
-function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders = {}, refund = async () => {}, citations = [], ragStatus) {
+function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders = {}, refund = async () => {}, citations = [], ragStatus, redactRagLinks = false) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
@@ -347,6 +352,9 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
     let produced = 0;
     let providerCompleted = false;
     const requiresCompletion = extractText === openaiDeltaText;
+
+    // Only an answer built from retrieved documents has its links removed.
+    const redactor = redactRagLinks ? linkRedactor() : null;
 
     // Every write is guarded. Once the app has the answer it closes the
     // connection, and a write into a stream nobody is reading rejects — the
@@ -392,9 +400,14 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
           }
           if (text) {
             produced += text.length;
-            await send(text);
+            const safe = redactor ? redactor.push(text) : text;
+            if (safe) await send(safe);
           }
         }
+      }
+      if (redactor) {
+        const rest = redactor.flush();
+        if (rest) await send(rest);
       }
       completed = true;
       // A stream that ends in failure, or without a single character, is not an
