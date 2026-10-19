@@ -22,11 +22,17 @@ const digitsOf = (text) => text.replace(/\D/gu, "");
 // or 9-10 digits after +81. A date such as 03-14-2023 or a run such as 05 10 100 has
 // the same shape but the wrong digit count, and is left alone.
 const phoneOk = (match) => {
+  // "+81 (0)90-1234-5678": the (0) is the trunk prefix written in brackets, not a digit of the number.
+  match = match.replace(/\(0\)/u, "");
   const d = digitsOf(match);
   return match.startsWith("+") ? d.startsWith("81") && d.length >= 11 && d.length <= 12 : d.startsWith("0") && (d.length === 10 || d.length === 11);
 };
 
+// Separators between the groups of a number. The long-vowel mark ー is one of them (notes
+// write 03ー1234ー5678), but it is NOT a boundary: "サーバー090-1234-5678" is a number
+// that follows a katakana word, not the continuation of a longer digit run.
 const DASH = "\\-\u2010-\u2015\u2212\u30FC";
+const NOT_BEFORE_OR_AFTER = "\\-\u2010-\u2015\u2212";
 const RULES = [
   { kind: "key", label: "[鍵・トークン]", re: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/gu },
   { kind: "key", label: "[鍵・トークン]", re: /\b(?:sk-[A-Za-z0-9_-]{20,}|sk_(?:live|test)_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|gh[pousr]_[A-Za-z0-9]{30,}|xox[abprs]-[A-Za-z0-9-]{20,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/gu },
@@ -34,7 +40,11 @@ const RULES = [
   { kind: "key", label: "[鍵・トークン]", re: /(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|auth[_-]?token|passw(?:or)?d|パスワード|秘密鍵)\s*[=:]\s*["']?[A-Za-z0-9._~+/=!@#$%^&*-]{8,}["']?/giu },
   { kind: "email", label: "[メールアドレス]", re: /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/gu },
   // Separators: hyphen, spaces and the dash-like marks that notes mix in (‐ ‑ ‒ – — ― − ー).
-  { kind: "phone", label: "[電話番号]", re: new RegExp(`(?<![\\d${DASH}])(?:\\+81[${DASH}\\s]?\\d[\\d\\s${DASH}]{7,12}\\d|0\\d{1,4}[${DASH}\\s]\\d{1,4}[${DASH}\\s]\\d{3,4})(?![\\d${DASH}])`, "gu"), accept: phoneOk },
+  { kind: "phone", label: "[電話番号]", re: new RegExp(`(?<![\\d${NOT_BEFORE_OR_AFTER}])(?:\\+81[${DASH}\\s]?(?:\\(0\\)[${DASH}\\s]?)?\\d[\\d\\s${DASH}]{7,12}\\d|0\\d{1,4}[${DASH}\\s]\\d{1,4}[${DASH}\\s]\\d{3,4})(?![\\d${NOT_BEFORE_OR_AFTER}])`, "gu"), accept: phoneOk },
+  // (03)1234-5678, (090)1234-5678: the area code in brackets first
+  { kind: "phone", label: "[電話番号]", re: new RegExp(`(?<![\\d${NOT_BEFORE_OR_AFTER}])\\(0\\d{1,4}\\)[${DASH}\\s]?\\d{1,4}[${DASH}\\s]\\d{3,4}(?![\\d${NOT_BEFORE_OR_AFTER}])`, "gu"), accept: phoneOk },
+  // 090.1234.5678
+  { kind: "phone", label: "[電話番号]", re: /(?<![\d.-])0\d{1,4}\.\d{1,4}\.\d{3,4}(?![\d.-])/gu, accept: phoneOk },
   // 03(1234)5678
   { kind: "phone", label: "[電話番号]", re: /(?<![\d-])0\d{1,4}\(\d{1,4}\)\d{3,4}(?!\d)/gu, accept: phoneOk },
   { kind: "phone", label: "[電話番号]", re: /(?<![\d-])0[789]0\d{8}(?!\d)/gu },
