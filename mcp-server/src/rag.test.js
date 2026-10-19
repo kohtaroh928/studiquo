@@ -765,3 +765,24 @@ test("hidden characters are counted but never stored in the index or logged as t
   });
   assert.equal(typeof result.sanitized, "number");
 });
+
+test("cross-tenant: a vector store that ignores the account filter still yields only the caller's excerpts", async () => {
+  const env = environment();
+  await indexSource(env, await accountKey("alice"), source({ sourceId: "alice-src", pages: [{ pageNumber: 1, text: "細胞の説明。ALICE専用の記述" }] }));
+  await indexSource(env, await accountKey("bob"), source({ sourceId: "bob-src", pages: [{ pageNumber: 1, text: "細胞の説明。BOB専用の秘密の記述" }] }));
+  // A broken or compromised index: returns every vector and drops the filter.
+  env.RAG_VECTORIZE.query = async () => ({ matches: [...env.vector.values()].map((v) => ({ id: v.id })) });
+  const result = await retrieve(env, { sub: "alice" }, { messages: [{ role: "user", text: "細胞" }], rag: { scope: { type: "library" } } });
+  assert.deepEqual(result.citations.map((c) => c.sourceId), ["alice-src"]);
+  assert.ok(!result.context.includes("BOB"));
+});
+
+test("cross-tenant: a failing vector store never widens the search to another account", async () => {
+  const env = environment();
+  await indexSource(env, await accountKey("alice"), source({ sourceId: "alice-src", pages: [{ pageNumber: 1, text: "細胞の説明。ALICE専用の記述" }] }));
+  await indexSource(env, await accountKey("bob"), source({ sourceId: "bob-src", pages: [{ pageNumber: 1, text: "細胞の説明。BOB専用の秘密の記述" }] }));
+  env.RAG_VECTORIZE.query = async () => { throw new Error("vectorize down"); };
+  const result = await retrieve(env, { sub: "alice" }, { messages: [{ role: "user", text: "細胞" }], rag: { scope: { type: "library" } } });
+  assert.ok(result.citations.every((c) => c.sourceId === "alice-src"));
+  assert.ok(!result.context.includes("BOB"));
+});

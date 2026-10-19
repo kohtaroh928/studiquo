@@ -404,3 +404,53 @@ test('RAG SSE evidence states and OpenAI instructions reflect supported, partial
     }
   } finally {globalThis.fetch=original;}
 });
+
+function sse(pieces) {
+  return pieces.map((delta) => `data: ${JSON.stringify({ type: "response.output_text.delta", delta })}\n\n`).join("") +
+    'data: {"type":"response.completed","response":{"status":"completed"}}\n\n';
+}
+const answerText = (text) => text.split("\n").filter((l) => l.startsWith("data:")).map((l) => JSON.parse(l.slice(5))).map((e) => e.text ?? "").join("");
+
+test("an answer built from documents has its links removed even when split across stream pieces; ordinary chat keeps them", async () => {
+  const original = globalThis.fetch;
+  const pieces = ["光合成は葉で起きます。[詳", "細](https://evil", ".example/?q=抜粋)", "を開いてください。"];
+  globalThis.fetch = async () => new Response(sse(pieces));
+  try {
+    const qenv = qualityEnvironment(), environment = { ...env(), ...qenv };
+    await indexSource(environment, await accountKey("canonical-owner"), qualitySource());
+    environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map((v) => ({ id: v.id, score: 0.6 })) });
+    const rag = await chat(environment, { messages: [{ role: "user", text: "光合成とは？" }], rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+    assert.ok(rag.text.includes('"grounded"'));
+    assert.equal(answerText(rag.text), "光合成は葉で起きます。詳細を開いてください。");
+    const plain = await chat(env(), { messages: [{ role: "user", text: "光合成とは？" }] });
+    assert.equal(answerText(plain.text), pieces.join(""));
+  } finally { globalThis.fetch = original; }
+});
+
+test("RAG_CONTEXT_AS_INPUT moves the excerpts out of the instructions into a separate input item; default is unchanged", async () => {
+  const original = globalThis.fetch;
+  const bodies = [];
+  globalThis.fetch = async (_url, options) => { bodies.push(JSON.parse(options.body)); return new Response(sse(["回答"])); };
+  try {
+    for (const flag of [undefined, "true"]) {
+      const qenv = qualityEnvironment(), environment = { ...env(), ...qenv, ...(flag ? { RAG_CONTEXT_AS_INPUT: flag } : {}) };
+      await indexSource(environment, await accountKey("canonical-owner"), qualitySource());
+      environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map((v) => ({ id: v.id, score: 0.6 })) });
+      await chat(environment, { messages: [{ role: "user", text: "光合成とは？" }], rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+      const body = bodies.at(-1);
+      const inInstructions = body.instructions.includes("UNTRUSTED retrieved reference data"); // the policy text alone also names untrustedReferences
+      const inputs = body.input.map((m) => JSON.stringify(m.content));
+      if (!flag) {
+        assert.ok(inInstructions);
+        assert.equal(body.input.length, 1);
+      } else {
+        assert.ok(!inInstructions, "excerpts must not be in the instructions");
+        assert.match(body.instructions, /claims they actually support/); // the answer policy stays in the instructions
+        assert.equal(body.input.length, 2);
+        assert.match(inputs[0], /UNTRUSTED retrieved reference data/);
+        assert.match(inputs[1], /光合成とは/); // the student's own turn stays last
+        assert.equal(body.input[0].role, "user");
+      }
+    }
+  } finally { globalThis.fetch = original; }
+});

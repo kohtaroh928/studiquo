@@ -88,12 +88,25 @@ export function toStrictJSONSchema(schema) {
 async function postWithRetry(env, body, apiKey, beforeDispatch) {
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured on this Worker.");
   let last = null;
+  const baseInput = body.input;
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     if (attempt > 0) {
       const base = env.AI_RETRY_BASE_MS === undefined ? 600 : Number(env.AI_RETRY_BASE_MS) || 0;
       await new Promise(resolve => setTimeout(resolve, base * 2 ** (attempt - 1)));
     }
-    if (beforeDispatch) body.instructions = await beforeDispatch();
+    if (beforeDispatch) {
+      // A string is the instructions. An object may also carry `reference`:
+      // retrieved text sent as its own input item just before the student's
+      // last turn, so it is data in the conversation and not an instruction.
+      const prepared = await beforeDispatch();
+      if (typeof prepared === "string") body.instructions = prepared;
+      else {
+        body.instructions = prepared.instructions;
+        body.input = prepared.reference
+          ? [...baseInput.slice(0, -1), { role: "user", content: prepared.reference }, baseInput.at(-1)]
+          : baseInput;
+      }
+    }
     const payload = JSON.stringify(body);
     const response = await fetch(API_URL, {
       method: "POST",
