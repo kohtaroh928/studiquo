@@ -45,13 +45,24 @@ const UNSAFE_INSTRUCTION = [
   /\b(?:print|repeat|output|recite|display)\s+(?:everything|all\s+text|all|the\s+text|your\s+(?:instructions|prompt))\s+(?:above|before|so\s+far)\b/iu,
   /(?:新しい|別の)役割.{0,10}(?:制限なく|制限のない|何でも|自由に)|制限(?:なく|のない|を外|を解除)/u,
   /(?:指示|ルール|規則|方針|制約|安全規則|安全ルール).{0,12}(?:忘れ|外し|外して|取り払|なくし)/u,
+  // Third security review: more ways to say "stop checking the references".
+  /\b(?:may|can|could|are\s+allowed\s+to|feel\s+free\s+to)\s+(?:ignore|disregard|skip)\s+(?:the\s+)?(?:references?|sources?|excerpts?|documents?)\b/iu,
+  /\bignore\s+(?:everything|all|anything)\b/iu,
+  /\bact\s+without\s+(?:any\s+)?(?:restrictions?|limits?|rules)\b/iu,
+  /\bnever\s+(?:say|admit|state)\s+(?:that\s+)?you\s+(?:don'?t|do\s+not)\s+know\b/iu,
+  /\balways\s+answer\b.{0,30}\b(?:even\s+when|even\s+if|regardless)\b/iu,
+  /\bno\s+longer\s+in\s+effect\b/iu,
+  // A double negative that permits what the rules forbid.
+  /(?:リンク|URL|ＵＲＬ|出典\s*ID|ソース\s*ID).{0,6}(?:禁止|制限|規制)しない/iu,
+  /(?:資料|参考資料|抜粋).{0,6}(?:に頼らず|を無視|を見ずに|なしで).{0,16}(?:答え|回答)/u,
+  /(?:ルール|規則|方針|指示).{0,6}(?:守らなく|従わなく)(?:て|ても)?(?:構いません|よい|いい)/u,
 ];
 // More ways to weaken the frozen rules that the list above misses: permitting links,
 // writing citations or ids into the answer, revealing the prompt, letting the model
 // fill gaps from general knowledge, and fake role lines. Still a smoke check.
 const WEAKENING_INSTRUCTION = [
   /\b(?:add|include|append|output|insert|provide|attach)\s+(?:a\s+|an\s+|the\s+|any\s+|some\s+)?(?:reference\s+|source\s+)?(?:hyper)?links?\b/iu,
-  /(?:リンク|URL|ＵＲＬ|ハイパーリンク|link|hyperlink)s?.{0,16}(?:付け|付与|出力|表示|含め|貼|案内|書い|入れ|挿入|記載|示し|include|add|output|append)/iu,
+  /(?:リンク|URL|ＵＲＬ|ハイパーリンク|link|hyperlink)s?.{0,16}(?:付け|付与|出力|表示|含め|貼|案内|書い|入れ|挿入|記載|示し|添え|併記|include|add|output|append)/iu,
   /(?:出典|ページ番号|chunk\s*id|source\s*id|ソースID).{0,16}(?:本文|回答|文中).{0,8}(?:書|出力|入れ|示|含め)/iu,
   /(?:本文|回答|文中).{0,12}(?:出典|ページ番号|chunk\s*id|source\s*id|ソースID).{0,12}(?:書|出力|入れ|示|含め)/iu,
   /(?:システムプロンプト|system\s*prompt|内部の指示|隠れた指示|凍結規則).{0,16}(?:表示|出力|教え|開示|見せ|reveal|print|show|output)/iu,
@@ -63,11 +74,14 @@ const WEAKENING_INSTRUCTION = [
   // Own knowledge to fill gaps, links/addresses, ids, and asking for the hidden prompt.
   /\b(?:fill|make)\s+(?:in|up)\b.{0,30}\b(?:own|your)\s+(?:knowledge|training)|\buse\s+your\s+(?:own\s+)?(?:training\s+data|knowledge|memory)\b.{0,40}\b(?:fill|instead|when|if|beyond|outside|supplement|to\s+answer)\b/iu,
   /(?:URL|ＵＲＬ|サイト|アドレス|リンク|link|url)s?.{0,12}(?:必ず|かならず|always)?.{0,6}(?:含め|書|付け|載せ|貼|案内|include|add|write|append)/iu,
-  /\b(?:quote|include|write|cite|print|add)\b.{0,24}\b(?:chunk|source)\s*(?:id|identifier)s?\b|(?:出典|ソース|チャンク)\s*ID.{0,10}(?:付け|書|含め|載せ|入れ)/iu,
+  /\b(?:quote|include|write|cite|print|add)\b.{0,24}\b(?:chunk|source)\s*(?:id|identifier)s?\b|(?:出典|ソース|チャンク)\s*ID.{0,10}(?:付け|書|含め|載せ|入れ|添え|併記)/iu,
   /\b(?:reference|source)\s+(?:link|url)s?\b/iu,
   /\b(?:answer|respond)\s+freely\b|\bfrom\s+(?:your\s+)?(?:background|general|prior)\s+knowledge\b/iu,
   /\b(?:respond\s+with|append|add|put|include|write)\b.{0,24}\b(?:urls?|web\s*address|document\s*id|page\s*number|identifier)\b/iu,
   /(?:元の|最初の|初期の|内部の|隠れた|システムの)指示.{0,10}(?:全文|そのまま)?.{0,4}(?:表示|出力|教え|見せ|開示)/u,
+  /\b(?:reveal|show|print|display|disclose|repeat)\s+(?:me\s+)?(?:your|the|all|these)\s+(?:instructions?|prompt|rules)\b/iu,
+  /(?:開発者|システム|developer)\s*メッセージ.{0,6}(?:表示|出力|教え|見せ)/iu,
+  /(?:上|前|先)(?:の|記の)?(?:テキスト|文章|内容|指示).{0,8}(?:繰り返|復唱|そのまま出力|表示)/u,
   /\b(?:tell|show|give)\s+me\b.{0,24}\b(?:hidden|initial|original|system|first)\s+instructions?\b|(?:最初|初め|はじめ)に(?:受けた|与えられた)指示.{0,12}(?:教え|表示|出力|見せ|そのまま)/iu,
 ];
 // A weakening pattern must not reach across a sentence or a clause: a prohibition in one
@@ -98,7 +112,7 @@ export function assertSafeInstructions(candidate) {
   // above match both, so a negation in the same sentence clears the match. "must" or
   // "必ず" are not negations, and "do not forget" asks for the thing, it does not forbid it.
   const negated = /ない|(?<!必)ず(?:に|、)?|禁止|避け|ません|いけ|てはなら|(?:do|does|must|should|shall|will|can)\s*not\b|\bnever\b|n't|\bwithout\b|\bno\s+(?:links?|urls?|ids?)\b/iu;
-  const notAnObjection = /(?:do\s*not|don't)\s+forget/giu;
+  const notAnObjection = /(?:do\s*not|don't)\s+(?:forget|hesitate)|not\s+be\s+shy|never\s+refuse|refuse\s+to|禁止しない|避けない|控えない|ためらわ/giu;
   // "資料にない…" names the gap the instruction wants filled, it is not a prohibition.
   const gapPhrase = /(?:資料|抜粋|参考データ)(?:に|には)?(?:ない|無い|なくても)|記載のない/gu;
   // A clause ends at a sentence mark, a comma or semicolon, or "but"/"ただし"/"しかし".
