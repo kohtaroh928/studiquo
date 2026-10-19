@@ -132,3 +132,55 @@ test("URLs with a non-ASCII host or path are removed without eating the sentence
   assert.equal(redactLinks("https://例えば、これです"), "（リンクは表示されません）、これです");
   assert.equal(redactLinks("https://example.com/を参照してください。"), "（リンクは表示されません）を参照してください。");
 });
+
+// Invariant: a reply built from untrusted input never keeps an http(s) address or a
+// "www." address, whatever wrapper it sits in and however the stream is cut. The app only
+// opens http and https links, so this is the property that matters; it does not depend on
+// reproducing the app's Markdown parser exactly.
+const SECRET = "SECRETDATA";
+const TARGETS = [
+  (n) => `https://e.com/?d=${SECRET.repeat(n)}`, (n) => `https:e.com?d=${SECRET.repeat(n)}`, (n) => `https:/e.com?d=${SECRET.repeat(n)}`,
+  (n) => `https:\\\\e.com?d=${SECRET.repeat(n)}`, (n) => `HtTps:/e.com?d=${SECRET.repeat(n)}`, (n) => `https:%65.com?d=${SECRET.repeat(n)}`,
+  (n) => `www.e.com/?d=${SECRET.repeat(n)}`, (n) => `https:例え.com?d=${SECRET.repeat(n)}`, (n) => `h​ttps:​e.com?d=${SECRET.repeat(n)}`,
+];
+const WRAPPERS = [
+  (t) => `[x](${t})`, (t) => `[a [b] c](${t})`, (t) => `![i](${t})`, (t) => `**[x](${t})**`, (t) => `[x](${t} "title")`, (t) => `[x]( ${t} )`,
+  (t) => `[x](${t.replace("?d=", "?d=`a b`")})`, (t) => `[x](${t}$a b$)`, (t) => t, (t) => `<${t}>`, (t) => `[${"あ".repeat(590)}](${t})`,
+  (t) => `\\\\[x](${t})`, (t) => `[x]\n(${t})`,
+];
+
+test("no http(s) or www address survives in any wrapper, target form or stream cut", () => {
+  const sizes = [1, 2, 3, 7, 40, 599, 600, 601, 5000];
+  let checked = 0;
+  for (const n of [1, 120]) for (const target of TARGETS) for (const wrap of WRAPPERS) {
+    const text = `前 ${wrap(target(n))} 後。`;
+    for (const size of sizes) {
+      const out = stream(pieces(text, size));
+      checked++;
+      assert.ok(!out.includes(SECRET) && !/https?:|www\./iu.test(out), `n=${n} size=${size}: ${JSON.stringify(text.slice(0, 80))} -> ${JSON.stringify(out.slice(0, 120))}`);
+    }
+  }
+  assert.ok(checked > 2000);
+});
+
+test("ordinary prose is unchanged whatever the cut (including very long text)", () => {
+  const prose = "細胞は生物の基本単位です。区間 [0, 1) と a[i][j]、【資料】(p.3)、\\[ x^2 \\] を使う。www という語、http のプロトコル、https の話。".repeat(30);
+  for (const size of [1, 2, 3, 7, 40, 599, 601, 5000]) assert.equal(stream(pieces(prose, size)), prose, `size ${size}`);
+});
+
+test("output does not depend on how the stream was cut (a tiny parenthesis case)", () => {
+  for (const text of ["[a](javascript:alert(1))x", "[a](https://(evil))x"]) {
+    const whole = stream([text]);
+    for (const size of [1, 2, 3, 5]) assert.equal(stream(pieces(text, size)), whole, `${JSON.stringify(text)} size ${size}`);
+  }
+});
+
+test("an escaped backslash before a link does not hide it from the stream", () => {
+  const text = "前 \\\\[a](https:/e.com/x) 後";
+  for (const size of [1, 2, 3, 7]) assert.ok(!/e\.com/.test(stream(pieces(text, size))), `size ${size}`);
+});
+
+test("words that merely start like an address are not mangled", () => {
+  assert.equal(redactLinks("www.という略語は、ドメインの先頭。"), "www.という略語は、ドメインの先頭。");
+  assert.equal(redactLinks("ウェブ(www)の話"), "ウェブ(www)の話");
+});
