@@ -19,3 +19,7 @@
 - 回答生成は未実施。有料API0回。このクラウド環境からはapi.openai.comへ接続できない（ネットワーク設定で拒否）。
 - 次の一手: 生成手段（Luna/実行場所/予算）を決め、36回答を保存してscore.mjsで予備判定→人が確定。
 - Notion: この作業環境にNotion接続がなく未記録。
+- 追加: run-luna.mjs（有料生成。明示opt-in、同時1、再試行なし、初回失敗で停止、送信前に費用予約、journalで再開、回答は.localに0600）とテスト4件。モックのみで確認し、実APIは未送信。
+  実行例（Node 24、キーは環境変数のみ）:
+  `STUDIQUO_RAG_PROMPT_REMOTE=true STUDIQUO_RAG_EVAL_OPENAI_KEY=... node collaboration/rag-prompt/run-luna.mjs trial-01 example,requirement-coverage-v1 --max-calls 36 --budget-usd 0.5`
+  採点: `node collaboration/rag-prompt/score.mjs collaboration/rag-prompt/.local/trial-01/answers.json [manual.json]`
