@@ -3,7 +3,7 @@ import PDFKit
 import UIKit
 
 enum PDFImportService {
-    typealias RenderedPage = (imageData: Data, width: Double, height: Double, text: String)
+    typealias RenderedPage = (imageData: Data, width: Double, height: Double, text: String, pagePDF: Data?)
 
     /// Pixels per PDF point. 2 is sharp on an iPad at normal zoom and leaves
     /// room to zoom in without the page going soft.
@@ -99,8 +99,10 @@ enum PDFImportService {
                     page.draw(with: .mediaBox, to: ctx.cgContext)
                 }
                 if let data = encodedPageData(image) {
-                    renderedBytes += data.count
-                    results.append((data, pageSize.width, pageSize.height, page.string ?? ""))
+                    let pagePDF = singlePagePDF(page)
+                    // The single-page PDF is kept in memory next to the image, so it counts toward the same limit.
+                    renderedBytes += data.count + (pagePDF?.count ?? 0)
+                    results.append((data, pageSize.width, pageSize.height, page.string ?? "", pagePDF))
                 }
             }
             onPage?(index + 1, total)
@@ -108,6 +110,15 @@ enum PDFImportService {
         // The last page can be the one that crossed the line.
         if renderedBytes > maxRenderedBytes { return Extraction(rejection: .renderedPagesTooLarge) }
         return Extraction(pages: results)
+    }
+
+    /// This page as a one-page PDF, or `nil` when it has no text to select
+    /// (a scan) — a bitmap in a PDF wrapper gains nothing over the image.
+    static func singlePagePDF(_ page: PDFPage) -> Data? {
+        guard let text = page.string, !text.isEmpty, let copy = page.copy() as? PDFPage else { return nil }
+        let single = PDFDocument()
+        single.insert(copy, at: 0)
+        return single.dataRepresentation()
     }
 
     /// `extractPages` on a background thread, so a long PDF does not freeze the

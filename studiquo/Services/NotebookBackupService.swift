@@ -19,6 +19,9 @@ enum NotebookBackupService {
         var title: String
         var paperColorHex: String?
         var recognizedText: String
+        /// Absent in archives written before PDF word lookup existed.
+        /// Absent in archives written before PDF pages were kept as PDFs.
+        var backgroundPDFData: Data?
         var flashcardQuestion: String?
         var flashcardAnswer: String?
         var flashcardMastery: Int?
@@ -61,6 +64,7 @@ enum NotebookBackupService {
                     title: page.title,
                     paperColorHex: page.paperColorHex,
                     recognizedText: page.recognizedText,
+                    backgroundPDFData: page.backgroundPDFData,
                     flashcardQuestion: page.flashcardQuestion,
                     flashcardAnswer: page.flashcardAnswer,
                     flashcardMastery: page.flashcardMastery,
@@ -167,6 +171,7 @@ enum NotebookBackupService {
             page.title = storedPage.title
             page.paperColorHex = storedPage.paperColorHex ?? "#FFFFFF"
             page.recognizedText = storedPage.recognizedText
+            page.backgroundPDFData = storedPage.backgroundPDFData
             page.flashcardQuestion = storedPage.flashcardQuestion ?? ""
             page.flashcardAnswer = storedPage.flashcardAnswer ?? ""
             page.flashcardMastery = storedPage.flashcardMastery ?? 0

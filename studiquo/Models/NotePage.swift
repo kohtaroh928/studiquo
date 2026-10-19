@@ -6,6 +6,14 @@ final class NotePage {
     var order: Int = 0
     @Attribute(.externalStorage) var drawingData: Data?
     @Attribute(.externalStorage) var backgroundImageData: Data?
+    /// An imported PDF page on its own, as a one-page PDF with its real text
+    /// layer. The page is shown in a `PDFView` so its words can be selected
+    /// and looked up; `backgroundImageData` is kept beside it for thumbnails,
+    /// export and the AI. `nil` for a page without text (a scan), a plain
+    /// note page, and every page imported before this existed. It describes
+    /// `backgroundImageData`: clear it whenever that image is replaced or
+    /// removed.
+    @Attribute(.externalStorage) var backgroundPDFData: Data?
     var pageWidth: Double = 612
     var pageHeight: Double = 792
     var notebook: Notebook?
@@ -61,6 +69,23 @@ final class NotePage {
         self.backgroundImageData = backgroundImageData
         self.pageWidth = pageWidth
         self.pageHeight = pageHeight
+    }
+
+    /// Drops everything that describes an imported PDF page's look: the
+    /// bitmap and the one-page PDF. They describe the same page, so one going
+    /// stale next to the other would show text that is not on the image.
+    func removeBackground() {
+        backgroundImageData = nil
+        backgroundPDFData = nil
+    }
+
+    /// Puts a plain image in place of whatever the page showed, and clears
+    /// the PDF that described the old background.
+    func replaceBackground(imageData: Data?, width: Double, height: Double) {
+        backgroundImageData = imageData
+        backgroundPDFData = nil
+        pageWidth = width
+        pageHeight = height
     }
 
     var pageTemplate: PageTemplate {

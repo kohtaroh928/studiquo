@@ -3110,6 +3110,19 @@ struct ContentView: View {
                     case .document: pendingTabPickerCreation = .document
                     }
                     showsTabPicker = false
+                },
+                onSelectAIChat: { id in
+                    showsTabPicker = false
+                    openAIChatFromTabPicker(id)
+                },
+                friendStore: friendStore,
+                onSelectFriend: { friend in
+                    showsTabPicker = false
+                    openChatFromTabPicker(.friend(friend.id))
+                },
+                onSelectGroup: { group in
+                    showsTabPicker = false
+                    openChatFromTabPicker(.group(group.roomID))
                 }
             )
         }
@@ -3666,6 +3679,25 @@ struct ContentView: View {
             name: Notification.Name("StudiquoSwitchPaneTarget"),
             object: PaneSwitchTarget.web(title: tab.title, homeURL: tab.homeURL)
         )
+    }
+
+    /// Gives the conversation a tab, then shows it the way a tap on that tab would.
+    private func openAIChatFromTabPicker(_ id: PersistentIdentifier) {
+        guard let thread = modelContext.model(for: id) as? AIChatThread else { return }
+        let tab = AIChatTabInfo(id: id, title: thread.title)
+        if !openAIChatTabs.contains(where: { $0.id == id }) { openAIChatTabs.append(tab) }
+        selectAIChatTab(tab)
+    }
+
+    /// Friend and group chats have no tab: they open in the editor's pane. With
+    /// no editor on screen the friends home is the closest place to land.
+    private func openChatFromTabPicker(_ target: PaneSwitchTarget) {
+        guard selectedNotebook != nil else {
+            returnToHome()
+            homeSection = .friends
+            return
+        }
+        NotificationCenter.default.post(name: Notification.Name("StudiquoSwitchPaneTarget"), object: target)
     }
 
     private func selectAIChatTab(_ tab: AIChatTabInfo) {
@@ -6058,6 +6090,7 @@ struct ContentView: View {
         for (index, pageData) in extractedPages.enumerated() {
             let page = NotePage(order: index, backgroundImageData: pageData.imageData, pageWidth: pageData.width, pageHeight: pageData.height)
             page.recognizedText = pageData.text
+            page.backgroundPDFData = pageData.pagePDF
             page.textRecognitionDate = .now
             page.notebook = notebook
             notebook.addPage(page)
