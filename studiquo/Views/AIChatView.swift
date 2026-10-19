@@ -76,6 +76,7 @@ struct AIChatPanel: View {
             onDeleteThread: { store.delete($0) },
             onRenameThread: { store.rename($0, to: $1) },
             onSend: { store.send(noteContext: noteContext()) },
+            onResend: { store.resend($0, noteContext: noteContext()) },
             respondingThreadIDs: store.respondingThreadIDs,
             onCancel: { store.cancelResponse() },
             onGradeProof: { store.submitProof($0) },
@@ -240,6 +241,7 @@ struct AIChatPane: View {
     let onDeleteThread: (AIChatThread) -> Void
     let onRenameThread: (AIChatThread, String) -> Void
     let onSend: () -> Void
+    let onResend: (String) -> Bool
     let respondingThreadIDs: Set<String>
     let onCancel: () -> Void
     /// Runs the two-stage marker over whatever the marking box collected.
@@ -264,6 +266,7 @@ struct AIChatPane: View {
         onDeleteThread: @escaping (AIChatThread) -> Void,
         onRenameThread: @escaping (AIChatThread, String) -> Void,
         onSend: @escaping () -> Void,
+        onResend: @escaping (String) -> Bool,
         respondingThreadIDs: Set<String>,
         onCancel: @escaping () -> Void,
         onGradeProof: @escaping (ProofSubmission) -> Void,
@@ -282,6 +285,7 @@ struct AIChatPane: View {
         self.onDeleteThread = onDeleteThread
         self.onRenameThread = onRenameThread
         self.onSend = onSend
+        self.onResend = onResend
         self.respondingThreadIDs = respondingThreadIDs
         self.onCancel = onCancel
         self.onGradeProof = onGradeProof
@@ -326,6 +330,11 @@ struct AIChatPane: View {
     @State private var markingAnswerSnippet: PageSnippet?
     @State private var showsCameraScanner = false
     @State private var usage: AIUsage?
+    /// Only one historical prompt can be edited at a time. Keeping this in
+    /// the pane (rather than each bubble) avoids two inline editors competing
+    /// for attention on a touch-first screen.
+    @State private var editingMessageID: PersistentIdentifier?
+    @State private var editedPrompt = ""
 
     private enum AttachmentPickerMode: Identifiable {
         case files
@@ -422,6 +431,19 @@ struct AIChatPane: View {
                                         message: message,
                                         onInsertOnPage: onInsertAssistantMessage.map { insert in
                                             { insert(message.text) }
+                                        },
+                                        isEditing: editingMessageID == message.persistentModelID,
+                                        editedText: $editedPrompt,
+                                        canEdit: !isResponding,
+                                        onBeginEditing: {
+                                            editingMessageID = message.persistentModelID
+                                            editedPrompt = message.text
+                                        },
+                                        onCancelEditing: cancelMessageEditing,
+                                        onResend: { text in
+                                            let didSend = onResend(text)
+                                            if didSend { cancelMessageEditing() }
+                                            return didSend
                                         }
                                     )
                                         .id(message.persistentModelID)
@@ -609,6 +631,9 @@ struct AIChatPane: View {
         .onPreferenceChange(AIChatPaneWidthKey.self) { width in
             if width > 0, width != measuredWidth { measuredWidth = width }
         }
+        .onChange(of: selectedThread?.persistentModelID) { _, _ in
+            cancelMessageEditing()
+        }
         // The whole pane accepts crops, not just the composer — aiming a
         // drag at a text field on a split screen is fiddly, and there is
         // nothing else here a page snippet could mean. It also accepts a tab,
@@ -695,6 +720,11 @@ struct AIChatPane: View {
     @MainActor
     private func refreshUsage() async {
         usage = await AI.provider.usage()
+    }
+
+    private func cancelMessageEditing() {
+        editingMessageID = nil
+        editedPrompt = ""
     }
 
     private func isPaneSwitchDrop(_ value: String) -> Bool {
@@ -1153,9 +1183,16 @@ struct AIChatBubble: View {
     let message: AIChatMessage
     /// `nil` where there is no page to paste onto (the home AI screen).
     let onInsertOnPage: (() -> Void)?
+    let isEditing: Bool
+    @Binding var editedText: String
+    let canEdit: Bool
+    let onBeginEditing: () -> Void
+    let onCancelEditing: () -> Void
+    let onResend: (String) -> Bool
 
     /// Follows Dynamic Type like the `.body` text it replaces.
     @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 17
+    @State private var didCopy = false
 
     var body: some View {
         if message.role == .assistant {
@@ -1176,18 +1213,92 @@ struct AIChatBubble: View {
                     }
                 }
         } else {
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 Spacer(minLength: 40)
 
-                Text(message.text)
-                    .font(.body)
-                    .foregroundStyle(Theme.Palette.onAccent)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Theme.Palette.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
-                    .frame(maxWidth: 520, alignment: .trailing)
+                VStack(alignment: .trailing, spacing: 2) {
+                    if isEditing {
+                        editPanel
+                    } else {
+                        Text(message.text)
+                            .font(.body)
+                            .foregroundStyle(Theme.Palette.onAccent)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(Theme.Palette.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+                            .accessibilityIdentifier("ai-chat-user-message")
+
+                        HStack(spacing: 0) {
+                            Button(action: copyMessage) {
+                                Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(didCopy ? Color.green : .secondary)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(didCopy ? L("コピーしました") : L("コピー"))
+                            .accessibilityIdentifier("ai-chat-copy-message")
+
+                            Button(action: onBeginEditing) {
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!canEdit)
+                            .accessibilityLabel(L("書き直す"))
+                            .accessibilityIdentifier("ai-chat-edit-message")
+                        }
+                        .frame(height: 36)
+                    }
+                }
+                .frame(maxWidth: 520, alignment: .trailing)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+
+    private var editPanel: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            TextField(L("メッセージを書き直す"), text: $editedText, axis: .vertical)
+                .lineLimit(1...10)
+                .font(.body)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+                }
+                .accessibilityIdentifier("ai-chat-edit-field")
+
+            HStack(spacing: 8) {
+                Button(L("キャンセル"), action: onCancelEditing)
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("ai-chat-edit-cancel")
+
+                Button(L("送信")) {
+                    _ = onResend(editedText)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !canEdit)
+                .accessibilityIdentifier("ai-chat-edit-send")
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func copyMessage() {
+        UIPasteboard.general.string = message.text
+        didCopy = true
+        UIAccessibility.post(notification: .announcement, argument: L("コピーしました"))
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            didCopy = false
         }
     }
 }
