@@ -293,3 +293,20 @@ final class RichTextParserTests: XCTestCase {
         XCTAssertLessThan(ms, 20)
     }
 }
+
+/// A reply built from retrieved documents or an attached note must not offer a
+/// tappable link: a document can plant one that carries other text in its address.
+final class RichReplyLinkTests: XCTestCase {
+    func testLinksAreOffWhenTheReplyWasBuiltFromDocuments() {
+        XCTAssertNil(RichInlineText.openableURL("https://example.com/a", allowLinks: false))
+    }
+
+    func testOnlyWebAddressesOpenWhenLinksAreAllowed() {
+        XCTAssertEqual(RichInlineText.openableURL("https://example.com/a", allowLinks: true)?.absoluteString, "https://example.com/a")
+        XCTAssertNotNil(RichInlineText.openableURL("HTTP://example.com", allowLinks: true))
+        for unsafe in ["javascript:alert(1)", "tel:0312345678", "mailto:a@example.com", "file:///etc/hosts", "studiquo://x", "not a url", ""] {
+            XCTAssertNil(RichInlineText.openableURL(unsafe, allowLinks: true), unsafe)
+        }
+        XCTAssertNil(RichInlineText.openableURL(nil, allowLinks: true))
+    }
+}
