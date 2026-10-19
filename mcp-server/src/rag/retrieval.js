@@ -10,7 +10,7 @@ import { boundedSearch } from "./search-branches.js";
 import { missingEvidence, selectEvidence } from "./evidence-selection.js";
 import {organizeComparisonEvidence,assessComparisonEvidence} from './comparison-evidence.js';
 import { sourceQualification, sourceContextColumn, referencesAuthorized } from "./authorization.js";
-import { LIMITS } from "./limits.js";
+import { LIMITS, MODELS } from "./limits.js";
 import { stripInvisible } from "./sanitize.js";
 import { countInjectionHints } from "./injection-hints.js";
 import { redactPII } from "./redact-pii.js";
@@ -42,6 +42,7 @@ async function retrieveInternal(env, session, payload, deadline) {
   )
     return emptyRetrieval("invalid_scope");
   const key = await accountKey(session.sub);
+  let aiCalls = 0; // Workers AI calls this question causes (docs/RAG_PROMPT_CONTRACT.md §4)
   const rate = env.RATE_LIMIT_RAG_SEARCH;
   if (!rate || (await rate.limit({ key })).success !== true) return emptyRetrieval("rate_limited");
   try {
@@ -64,6 +65,7 @@ async function retrieveInternal(env, session, payload, deadline) {
       plan.queries.map(async (q) => {
         const [vectorResult, keywordResult] = await Promise.allSettled([
           boundedSearch(async () => {
+            aiCalls++;
             const [v] = await embeddings(env, [q]);
             return env.RAG_VECTORIZE.query(v, {
               topK: LIMITS.searchTopK,
@@ -125,11 +127,11 @@ async function retrieveInternal(env, session, payload, deadline) {
       let result;
       try {
         result = await Promise.race([
-          env.AI.run("@cf/baai/bge-reranker-base", {
+          (aiCalls++, env.AI.run(MODELS.rerank, {
             query: plan.canonicalQuery,
             contexts: candidates.map((c) => ({ text: JSON.stringify({ title: c.title, headings: c.heading_context ?? "", text: c.text }) })),
             top_k: candidates.length,
-          }),
+          })),
           new Promise((_, reject) => {
             rerankTimer = setTimeout(
               () => reject(new Error("rerank_timeout")),
@@ -231,6 +233,7 @@ async function retrieveInternal(env, session, payload, deadline) {
     Object.defineProperty(result, "sanitized", { value: sanitized });
     Object.defineProperty(result, "injectionHints", { value: hints });
     Object.defineProperty(result, "redacted", { value: redacted });
+    Object.defineProperty(result, "aiCalls", { value: aiCalls });
     return result;
   } catch {
     return emptyRetrieval("error");
