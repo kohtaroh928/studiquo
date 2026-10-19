@@ -32,4 +32,4 @@ OWASP LLM Top 10（2025）で洗い出した弱点への対応を、ブランチ
 ## 再現
 
 - 実API: `mcp-server/scripts/rag-quality/injection-live.mjs`、`grounding-live.mjs`（`STUDIQUO_RAG_OPENAI_KEY_FILE`でキーの場所を渡す。1回の実行は最大24／6呼び出し）。
-- 合計の実API使用: 約48＋48＋6＋6呼び出し、約300,000トークン（`gpt-6-luna`）。
+- 実API使用の合計: 72呼び出し（動作確認12＋インジェクション評価48＋根拠確認12）、約27万トークン（`gpt-6-luna`）。
