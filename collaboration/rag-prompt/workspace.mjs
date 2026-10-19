@@ -22,6 +22,8 @@ export function validateCandidate(value) {
 // the model to drop the frozen safety rules. A human review still decides.
 const UNSAFE_INSTRUCTION = [
   /\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier|system|safety)\b/i,
+  /\b(?:ignore|disregard)\s+(?:all\s+|any\s+|the\s+|these\s+|those\s+)?(?:rules?|instructions?|guidelines?|polic(?:y|ies))\b/i,
+  /\bignore\s+what\s+(?:the\s+)?(?:documents?|references?|sources?|excerpts?)\s+(?:say|state|contain|show)\b/i,
   /\boverride\s+(?:the\s+)?(?:rules?|polic(?:y|ies)|instructions?|safety)\b/i,
   /(?:指示|ルール|規則|方針|制約|安全).{0,12}(?:無視|破棄|上書き|解除)/u,
   /従わ(?:なくて|なく)(?:も)?(?:よい|良い|いい|構いません)/u,
@@ -76,6 +78,8 @@ const WEAKENING_INSTRUCTION = [
   /(?:URL|ＵＲＬ|サイト|アドレス|リンク|link|url)s?.{0,12}(?:必ず|かならず|always)?.{0,6}(?:含め|書|付け|載せ|貼|案内|include|add|write|append)/iu,
   /\b(?:quote|include|write|cite|print|add)\b.{0,24}\b(?:chunk|source)\s*(?:id|identifier)s?\b|(?:出典|ソース|チャンク)\s*ID.{0,10}(?:付け|書|含め|載せ|入れ|添え|併記)/iu,
   /\b(?:reference|source)\s+(?:link|url)s?\b/iu,
+  /\b(?:outside|external|your\s+own)\s+knowledge\b/iu,
+  /\b(?:offer|give|share|list|show|provide)\s+(?:the\s+|any\s+|some\s+)?(?:links?|urls?)\b/iu,
   /\b(?:answer|respond)\s+freely\b|\bfrom\s+(?:your\s+)?(?:background|general|prior)\s+knowledge\b/iu,
   /\b(?:respond\s+with|append|add|put|include|write)\b.{0,24}\b(?:urls?|web\s*address|document\s*id|page\s*number|identifier)\b/iu,
   /(?:元の|最初の|初期の|内部の|隠れた|システムの)指示.{0,10}(?:全文|そのまま)?.{0,4}(?:表示|出力|教え|見せ|開示)/u,
@@ -99,6 +103,7 @@ function variants(text) {
 const SQUASHED_UNSAFE = [
   /(?:ignore|disregard|forget)(?:all|any|the)?(?:previous|prior|above|earlier|system|safety)/i,
   /override(?:the)?(?:rules?|policy|policies|instructions?|safety)/i,
+  /(?:ignore|disregard)(?:all|any|the|these|those)?(?:rules?|instructions?|guidelines?)/i,
 ];
 export function assertSafeInstructions(candidate) {
   const text = candidate.additionalInstructions;
