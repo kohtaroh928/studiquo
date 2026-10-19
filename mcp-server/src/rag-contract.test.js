@@ -69,7 +69,7 @@ test("retrieval budgets match the documented contract", () => {
   assert.deepEqual({ ...LIMITS }, {
     queryChars: 4000, searchTopK: 20, fusedLimit: 120, candidateLimit: 15, referenceLimit: 5,
     excerptChars: 6000, contextChars: 24000, neighborRows: 3, reserveReads: 5,
-    retrievalTimeoutMs: 10000, rerankTimeoutMs: 2000, hydrateTimeoutMs: 2000,
+    maxEmbeddingCalls: 3, maxRerankCalls: 1, retrievalTimeoutMs: 10000, rerankTimeoutMs: 2000, hydrateTimeoutMs: 2000,
     reserveReadTimeoutMs: 2000, finalAssemblyMs: 2200,
   });
   assert.deepEqual({ ...RELEVANCE }, {

@@ -52,6 +52,7 @@
 | 1抜粋の最大／合計の最大 | 6000文字／24000文字 |
 | 前後の隣接チャンク | 1抜粋につき最大3行 |
 | 不足を補う追加読み込み | 最大5回 |
+| 1質問あたりのWorkers AI呼び出し | 埋め込み最大3回（検索クエリごと）、リランク最大1回。3つを超える比較対象は1クエリに戻る（`limits.js`の`maxEmbeddingCalls`/`maxRerankCalls`、`rag.test.js`で確認） |
 | 全体／リランク／取得補完／追加読み込みの時間 | 10000／2000／2000／2000ミリ秒 |
 | 関連判定の閾値 | `limits.js`の`RELEVANCE`（0.34／0.35／0.08／0.55／0.72／上位5） |
 
@@ -89,4 +90,4 @@
 - 文字数基準からトークン基準への変更。ログで実測してから判断する。
 - `truncated`をLLMに伝えるか。文面が変わるため、旧版・新版の比較評価が先。
 - 閾値の較正。独立した日本語／OCR／否定の評価セットが要る。
-- 回答生成後の根拠検証（`RAG_PROMPT_DESIGN_PLAN.md`の第4段階）。
+- 回答生成後の根拠検証（`RAG_PROMPT_DESIGN_PLAN.md`の第4段階）と閾値の較正。設計案は[RAG_GROUNDING_VERIFICATION_PLAN.md](RAG_GROUNDING_VERIFICATION_PLAN.md)。

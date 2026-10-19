@@ -11,6 +11,8 @@ export const LIMITS = Object.freeze({
   contextChars: 24000,        // all excerpts together
   neighborRows: 3,            // chunk plus its previous/next neighbor
   reserveReads: 5,            // extra page reads for missing evidence
+  maxEmbeddingCalls: 3,       // Workers AI embeddings per question (one per search query)
+  maxRerankCalls: 1,          // Workers AI reranks per question
   retrievalTimeoutMs: 10000,  // whole retrieval
   rerankTimeoutMs: 2000,
   hydrateTimeoutMs: 2000,
