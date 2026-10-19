@@ -1,0 +1,2318 @@
+{
+  "schemaVersion": 1,
+  "baselineId": "rag-local-candidate-20261019-01",
+  "dateJST": "2026-10-19",
+  "branch": "codex/rag-wip",
+  "baseCommit": "c6faf5d9fd0a5014a661e4533a1dfdc22e696523",
+  "purpose": "Local verification candidate inventory, not an immutable source archive or deployment approval",
+  "selectionScopes": [
+    "mcp-server",
+    "services/docling-container",
+    "services/docling-processor",
+    "services/docling-worker",
+    "tools/docling"
+  ],
+  "selectionExtensions": [
+    ".cjs",
+    ".css",
+    ".html",
+    ".js",
+    ".json",
+    ".jsonc",
+    ".mjs",
+    ".py",
+    ".sql",
+    ".toml",
+    ".ts",
+    ".txt",
+    ".yaml",
+    ".yml"
+  ],
+  "selectionSpecialNames": [
+    "Dockerfile",
+    "Dockerfile.dockerignore"
+  ],
+  "excludedDirectories": [
+    ".wrangler",
+    "node_modules",
+    "provisioned",
+    "__pycache__",
+    ".local",
+    ".git"
+  ],
+  "files": [
+    {
+      "path": "mcp-server/migrations/0001_admin_dashboard.sql",
+      "bytes": 1492,
+      "sha256": "8078a9f48551b7544e283d6ed06007a16ceb37f88ba91915c9615796b1e22b26",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/migrations/0002_issue_reports_and_app_errors.sql",
+      "bytes": 2327,
+      "sha256": "0a0ed8dde685529e1eb33c35c02857cb5ea1a30b3114eb3725ffce86fa311865",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/migrations/0003_announcements.sql",
+      "bytes": 1420,
+      "sha256": "90a789313b2fbad77fd4817d99238342fdc82d0b753104b6d7befa6848626cfa",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/migrations/0004_announcement_push.sql",
+      "bytes": 1153,
+      "sha256": "66865877613f2cb07fa24de2847551eb8b0a4990b64eb167b9aa4b7ac0e1d5e3",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/migrations/0005_privacy_retention.sql",
+      "bytes": 615,
+      "sha256": "18b12f15f8172c2e34ca1e46602d932b7de923ad6d09dc7cca025039eb91a7ac",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/migrations/0006_rag.sql",
+      "bytes": 2067,
+      "sha256": "2909108a079f2bc5037bc62e5273be38cef84761ea23144f4bd4b943f072dcef",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/migrations/0007_rag_context.sql",
+      "bytes": 677,
+      "sha256": "dcf76fd5f668dcad7e8ce688de0013aae39baefc9076c77b26b57c8f487377fb",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/migrations/0008_rag_control.sql",
+      "bytes": 1385,
+      "sha256": "78a3a528b831fc8fc6a54bfc7b27b8f6ed8d7c61160850e9ecc88a9bca0bb045",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/migrations/0009_rag_metadata.sql",
+      "bytes": 216,
+      "sha256": "a0088de81ac16adc659d93ce488f5d5a209b870c8ddee3af8532f0fb18510f74",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/migrations/0010_rag_raw_pdf_consent.sql",
+      "bytes": 1680,
+      "sha256": "a89dbd94be4335d6a9d49e1d3e5a9dfd5c21d89d5248be51aea30032c292cb2b",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/migrations/0011_rag_pdf_intakes.sql",
+      "bytes": 2516,
+      "sha256": "8147807f5465a27912a463678af5d40955ca064eccfc1475ebf2581f905c8c9d",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/migrations/0012_rag_pdf_jobs.sql",
+      "bytes": 1843,
+      "sha256": "f704c82e2330be7902de3ef6043c5fb54eefe00b906c3751b46491a40dcacf70",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/migrations/0013_rag_pdf_job_recovery.sql",
+      "bytes": 779,
+      "sha256": "f050aed6e39b574b75caebf97d858b73c9aea685ed67d71033757c3e7a89983b",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/package-lock.json",
+      "bytes": 103045,
+      "sha256": "29f4a3baad043b3d1fa9b484e71b97bb3c19f0be9b5ac66e7e5a5db3e5303f68",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/package.json",
+      "bytes": 568,
+      "sha256": "a2d38aa54874de5745fef7e865f8210850841c8a8032d45690a47569fa35db78",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/answer-coverage-replay.mjs",
+      "bytes": 4741,
+      "sha256": "cae902199e65f955f713ab410305c29db0ccf95b04e1b111669bf5ba1d7e453d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/answer-coverage-reviews.json",
+      "bytes": 2837,
+      "sha256": "9c4ecdeff3d8966451c1555128c709b150959f915aa71751a99e6b3cc486e973",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/answer-coverage.mjs",
+      "bytes": 8585,
+      "sha256": "cf04ec767de1b0fd076dbe8d409a327a0646ada4412eb02a5b509a853b3f7f61",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/answerability-replay.mjs",
+      "bytes": 2768,
+      "sha256": "44a1d516b2f8761f6b745b1bfc9304e70d491399c486c283de3d1839e52b4764",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/baselines/20261014-policy-v1/answer-policy.mjs",
+      "bytes": 21762,
+      "sha256": "dcefcc9016025af1d994bbd496952fad94da1f80ccf3cba58995be7accc94ec4",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/baselines/20261014-policy-v1/manifest.json",
+      "bytes": 6293,
+      "sha256": "2602bc742e06528424ccaa1fa08054d03f526a29607be3f5708aeb185ae6616b",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/baselines/20261014-policy-v1/production-contexts.json",
+      "bytes": 22804,
+      "sha256": "bc7518bcca0e10773a3fee085d312f2470e6f81c7336efadb9989734ea9ed67e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/baselines/20261015-before-granular-diagnostic/paired-task-planner-live.mjs.txt",
+      "bytes": 11749,
+      "sha256": "743e9063c0247876efcb629317a3004d22de7c7db8a9475a47b06da82be18337",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/baselines/20261015-before-granular-diagnostic/paired-task-planner-response.mjs.txt",
+      "bytes": 3484,
+      "sha256": "0a399114bb75960a484da42d99897b229e33a2be0c07d4550ecb7b010e6af7ff",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/baselines/20261015-paired-first-attempt/paired-task-planner-live.mjs.txt",
+      "bytes": 10883,
+      "sha256": "df8f176a34f725aa2ce23efdce25262bf389c49ad81244f6965416836d8bcc9e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/baselines/20261015-quoted-journal-offline/quoted-task-planner-journal.mjs.txt",
+      "bytes": 10618,
+      "sha256": "2dca330325202d9ea06baee99d50d749690c3659b0e168f62a975c75e2480169",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/baselines/20261015-quoted-journal-offline/rag-quoted-task-planner-journal.test.js.txt",
+      "bytes": 10088,
+      "sha256": "5b4e9a9c2e3d06ec24e8d959afcb4ee4f0142acae916bc6004341c388bca8aca",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/build-fixture.py",
+      "bytes": 14913,
+      "sha256": "57a87a0b7c8673e8f47cfd42cc80fa1e827fa93873b570da3b7e547284d6efed",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/citation-intent-evaluate.mjs",
+      "bytes": 6221,
+      "sha256": "f4967bd35aa9fdd6733cfe8e64118236934400de4a497792bfa654134b6c00e5",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/citation-intent-fixture.json",
+      "bytes": 57416,
+      "sha256": "069732b30d50c443ce39ac52eafe5edc49e2bf0b225322ea4ac83f2154f56048",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/clarification-candidate.mjs",
+      "bytes": 7577,
+      "sha256": "a8e27fde2420066a5d6b1a21380b91d66007d3e79e1b0c85135c475b5fcd1229",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/clarification-decision.mjs",
+      "bytes": 6657,
+      "sha256": "b1d94f84725a0890efbdbc1188be181dfced85b1c081205aecd869ceab31cc6d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/clarification-inputs-v1.json",
+      "bytes": 19051,
+      "sha256": "dd86f03c11435d7217a85cb5dfa63dc308b79d9eec030961cc399d59de668769",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/clarification-oracle-v1.json",
+      "bytes": 20971,
+      "sha256": "8304058bd42d375c3bcf840005907fb99000e05db097c5d04278b2e2240a8b40",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/clarification-semantic-review.mjs",
+      "bytes": 7919,
+      "sha256": "a2f29a963f800f956534112972ed633b72a84aa004cf7f494c43b0e6665ce618",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/comparison-boundary-fixture.mjs",
+      "bytes": 2174,
+      "sha256": "7a31f41d9b623eefad82e0f57e41ea07494359e97bd9a02f6015837f61a6a39f",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/complete-final-answer.mjs",
+      "bytes": 8506,
+      "sha256": "1e166cea5939f4083ec6751fbafa55954284ba3dbf100ab3e148930baf8a9c33",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/evaluate.mjs",
+      "bytes": 7128,
+      "sha256": "214d30b3723f82009297b9016a8b4d2248f90674dbf2fde9495337d43d3cc446",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/evaluation-50-explicit-rule.mjs",
+      "bytes": 508,
+      "sha256": "f50138c39448c01c53d0e7ff0d8bbfad13bc9d90de6495ab40ee79f53f34d802",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/evaluation-50-live.mjs",
+      "bytes": 12060,
+      "sha256": "113a03b9dbace57bba661523b806eef37dd29cc45a26a350f7c1af8c5f04d00d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/evaluation-50-production-live.mjs",
+      "bytes": 1248,
+      "sha256": "4234e13f0c869ce11ed5de7420ca503e870d9da22f2cb7438cc7d3c5410426b6",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/evaluation-50-production.mjs",
+      "bytes": 7551,
+      "sha256": "524a143f01cb35a1ac28cba1dd0e6d365cdb21452c6108c960f351673d44695c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/evaluation-50.json",
+      "bytes": 65863,
+      "sha256": "684b71c0905d4d16f54b5308bc955c0014c9a4ab8cab170508663fca744743e3",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/evaluation-50.mjs",
+      "bytes": 5186,
+      "sha256": "48a4d812eaaec88f331ad0f75a8d126d6fd16946f30a3f003e772bbec6652a54",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/evidence-selection-evaluate.mjs",
+      "bytes": 3168,
+      "sha256": "93d1d0241551787cfccac41f55220111d4c2fca5478c40149d15abea80b91ff5",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/evidence-selection-fixture.json",
+      "bytes": 9691,
+      "sha256": "ddd96d6ccd36346b1a22ebc1d7f16b21f6b5b299b20a50ef1566f6a3ee0ec8f0",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/extract-material-pdf.mjs",
+      "bytes": 1318,
+      "sha256": "4a135e1d4ab3563ff3152aa3e69bbaea72e00e818afeee72ce1f299e7c0640b1",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/final-answer-evaluate.mjs",
+      "bytes": 11403,
+      "sha256": "d6eabab9550a2daaeb79ced659bdeed948660788e5545817ed8b31a8dd86022e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/final-answer-fixture.json",
+      "bytes": 8841,
+      "sha256": "99db40079e2aab92c5179b3679199b18120a8b5c079413b25eb07892e148776d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/final-answer-holdout.json",
+      "bytes": 3819,
+      "sha256": "be4c74f1661826c3067d42d860dcc04c22c58728f4c5f70b948bdfd827f12033",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/fixture.json",
+      "bytes": 145721,
+      "sha256": "436d8c9d8bb03cc90b71911c01b20c80876f82c408710f41a68964e187116628",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/gemini-diagnose.mjs",
+      "bytes": 4883,
+      "sha256": "23a542b3833f6e8d6d7ef68f1cac531042efe25ec5552a6a529f927d6097df0a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/gemini-isolate.mjs",
+      "bytes": 6896,
+      "sha256": "ebc454ec07e42c748dd88c40a974f920b04c34721341864cc393834d1362b812",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/holdout-fixture.json",
+      "bytes": 142471,
+      "sha256": "7e6bfc69389253523da00905eece1f1bd18406395a30ba7d25c49ead3be1817c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/learning-fixture.mjs",
+      "bytes": 13456,
+      "sha256": "ecc43312e7e1ae0fd3d876bf713df400fca4ad83cff391d954b72792e4d8c472",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/learning-live.mjs",
+      "bytes": 4487,
+      "sha256": "95c5cbb89d29ae3ce911910a9d14aa469759e4513632a680eec264e2499d4247",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/learning-openai-live.mjs",
+      "bytes": 10768,
+      "sha256": "32d7b63ba1b720e24e9708fe0eece2be7514760e90fcda21c5e752e712f2dc14",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/learning-rubric.mjs",
+      "bytes": 1209,
+      "sha256": "14d77330816514815bb2892eee11bd308ead4500de9839974e98196e79f0f45d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/math-ocr-metrics.mjs",
+      "bytes": 1522,
+      "sha256": "b9944fd4218a3d5c3cdb2010a58060270be67b5bbe345deaaa2e500649f9c26c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/multiparagraph-fixture.mjs",
+      "bytes": 8591,
+      "sha256": "fea2aea79ee256e59511575d9c906cffc9db074516d6f93fee69e7d14775d0b8",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/ocr-metrics.py",
+      "bytes": 1436,
+      "sha256": "8324cf7a3ab832b4c9dd77e5c0080fb22d42d9425c8bd68fc11c02c779a45fd1",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/paired-task-planner-live.mjs",
+      "bytes": 12778,
+      "sha256": "a243cc3ccd9713fd3926d50616d83ea5a2421a2e965cb967efbda19f964d51ef",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/paired-task-planner-request.mjs",
+      "bytes": 3337,
+      "sha256": "5c7bd5708ff670e5f9630dc4c89d690ab1d0b79eefc8f809da2c162af724098b",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/paired-task-planner-response.mjs",
+      "bytes": 3640,
+      "sha256": "6bd876ab87b589ee4d0924d13838b2018a1d54359a09c56cd71277d0e66657e1",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/paragraph-proposal-live.mjs",
+      "bytes": 4453,
+      "sha256": "a545a8828bf059662577742687a8062e6bd7a384b1a1fa7d7f59f23c508fa2da",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/paragraph-proposal.mjs",
+      "bytes": 7119,
+      "sha256": "a73bd7e9b559fca1f6dbd00bd58440aea270084dbad1941fe4aa0cb81ead08ab",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/paragraph-resume.mjs",
+      "bytes": 8295,
+      "sha256": "3f9f69c3a97e8cd8ce1d72b67c5281436dd89aef913c17e1685e5f391963b2d5",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/paragraph-timeout-diagnose.mjs",
+      "bytes": 3551,
+      "sha256": "76e6057f7780e3293b6bcd5145c5612c49810c7dec9b5a2517d9d4237bcb979c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/paragraph-witness-evaluate.mjs",
+      "bytes": 4358,
+      "sha256": "04a7a6673fdd3204f81dd6379891de9a13270ac3241abcadcff0025f78a2189c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/prompt-baseline.mjs",
+      "bytes": 3530,
+      "sha256": "46b1e7ecfb31489c405be5794dd3299d6c53d49ff1dbc00ea077c3b23f7f8e58",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/prompt-policy-live.mjs",
+      "bytes": 1100,
+      "sha256": "8d7ae2e13e158c1c48291e8b9f1b03af58e7b12eea0f0a16307d7d760bf32e6d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/prompt-policy-variants.mjs",
+      "bytes": 2126,
+      "sha256": "ccbf506f6070f329644a66e99daee744a4b4ff894f35ff9a0a35196bbf30f87a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/question-task-fixture.mjs",
+      "bytes": 2096,
+      "sha256": "5faba8476b6a84338b8d1d465b809eef0328fbfc8192f946ca3b5842b2363310",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/question-task-probe.mjs",
+      "bytes": 2241,
+      "sha256": "4f971ad2234e0de9db2775580d962540750afdddcf71fbf1a7c81dffada0256a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/question-units.mjs",
+      "bytes": 1837,
+      "sha256": "00781da530a7f6c27c5e586caebc3ce5795b784cae27f2734386c2a3408f3a25",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/quoted-task-planner-journal.mjs",
+      "bytes": 11640,
+      "sha256": "75d88ea134475ddb21b2041d60050e724bbe5ae2085384b718e998be1406c045",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/quoted-task-planner-live.mjs",
+      "bytes": 5460,
+      "sha256": "3f9894ebd065aedae5a5e41c65c3ed89147bebd6bd70c04464add451bef51751",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/quoted-task-planner-request.mjs",
+      "bytes": 3902,
+      "sha256": "ae4ed207e235ccab1d001787c0f12e7b206979f95061fe81807e500367f5f101",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/quoted-task-planner-response.mjs",
+      "bytes": 3762,
+      "sha256": "20be1f11e937036a119d9e38787657af77a9d302ce5676b37f1c197f9e31509e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/quoted-task-planner-review.mjs",
+      "bytes": 665,
+      "sha256": "dcfc7fa1bc624b239a6ca18e9770ba5e16dab49f9eb1e0924389680bdb31ebac",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/real-material-evaluate.mjs",
+      "bytes": 19236,
+      "sha256": "d36f14df73a23a1d865b0c595e599e4fcd711db4c54c1fa7cefc82f4fc60db77",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/role-preservation-oracle-v1.json",
+      "bytes": 11886,
+      "sha256": "77eabb99802363c2a910e4e98981058f7bf63beae76ec1c9f7084266ad6fb08a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/role-preservation-questions-v1.json",
+      "bytes": 2227,
+      "sha256": "8c4cf2e469624fed70222297bc56d8e838f0aa515c92c923dc6e9e25b12032e8",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/selection-proposal-evaluate.mjs",
+      "bytes": 2395,
+      "sha256": "798862b651a45a8b20294caa58a4460a7630ebe8dab2806a0280842bd69cad65",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/selection-proposal-gemini.mjs",
+      "bytes": 3832,
+      "sha256": "eff158c081f7d02bfd95216dc472611a5a14dbb29a76ea91820be4fbc1ecde6c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/selection-proposal-live.mjs",
+      "bytes": 4128,
+      "sha256": "7e495b791cad3a53d8d84391b6861f17f62cdd11e4703ecef0ed1d6bf6b018d2",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/selection-proposal.mjs",
+      "bytes": 6076,
+      "sha256": "ba88556779c5b4a2c2897d4407e259717ff1cebc7435e997422997485b3688b9",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-comparison-journal.mjs",
+      "bytes": 15384,
+      "sha256": "eff6a9f0e675cff5a196986d58c9f218ad26394d385ac6fd4923a6ddf9e675c0",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-comparison-live-contract.mjs",
+      "bytes": 9676,
+      "sha256": "767bb59f3be4d6e6d99692a11f1d043f6f18521e9db4096821905405bfeac60d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-comparison-live-journal.mjs",
+      "bytes": 16253,
+      "sha256": "c52918591777b4cae6e24c0e40c18132f9726c92fb5642168e5d2a7e96fb8e4e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-comparison-live.mjs",
+      "bytes": 7080,
+      "sha256": "bdfdc24dabdb31aaffeb1340f2498f64d60d65014dd0a97ad6d65efa05d8b5f7",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-comparison.mjs",
+      "bytes": 9580,
+      "sha256": "a35df8707a466430da808623ca4a1fc5d9ca9d0ac10b5b7596b6704af454e8e2",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-paired-journal.mjs",
+      "bytes": 7355,
+      "sha256": "5510103d67e7fad13cf9b256a501afd640993bde2f1b0a474a40e6c27cc82192",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-paired-ledger.mjs",
+      "bytes": 8657,
+      "sha256": "46a30e553ec65a28a08e42529fc30f9294e2f31b2de02564a0057755d27c52d1",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-review-artifact.mjs",
+      "bytes": 4222,
+      "sha256": "681af4a51b0f2f71b5a860743eb0a634736d751b0e7370fa6a70ae0231f516ab",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-review-control.mjs",
+      "bytes": 10849,
+      "sha256": "e24c23144128b1cffcd7ab67d3fd0bdc2d089dcf9fb7548f546e52cc12c3f4bc",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-review-packets.mjs",
+      "bytes": 4205,
+      "sha256": "bdcafc9b7be8d4cdd2ca72bb08669bc6441d2381d3adc442833a20174a4ce04c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-task-planner-request.mjs",
+      "bytes": 4265,
+      "sha256": "b630c89cbf7e60a80de3e932d3460f0d7a4267efea9fd27b4a8f366687d580ff",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/subject-role-task-planner-response.mjs",
+      "bytes": 4258,
+      "sha256": "59293ecd9c6ce9774103319be274d78e225d5a6b067e53beaa452c0b6047b802",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/task-plan-diagnostic.mjs",
+      "bytes": 4257,
+      "sha256": "a824eda66e3d2aa0e6ac6755354ec3a9d4344bd408b68da967983d098b8325ea",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/task-plan-oracle-v2.mjs",
+      "bytes": 2564,
+      "sha256": "5f6f0174c49a6066b132b1b04bfa77ecea2f947e0a9d71dc39731e1086cd207a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/task-plan-paired-draft.json",
+      "bytes": 4723,
+      "sha256": "da62542b60cc32a348faad176a71bc11266829e9220d1d5659561cc026d2bf43",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/task-plan-paired-oracle-v1.json",
+      "bytes": 10301,
+      "sha256": "4a96d663d4c2637fdae97495509fd55c60c4beadd9596d587f0484b73db9eebc",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/task-plan-quoted-v3.mjs",
+      "bytes": 5959,
+      "sha256": "86307dc0cbdc51ec3b0dd1486b8a7b379e085b846bd1e19f3134d82209d2213c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/task-plan-units-v4.mjs",
+      "bytes": 4856,
+      "sha256": "9e0db8c891204044ff94d75e4cd82dd25ec0cd4fdd2cee67541b23075f22e2aa",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/task-plan-v2.mjs",
+      "bytes": 5939,
+      "sha256": "124e6bd5324d4a8bbe6781aa3b52e2b6529eab09886535b4bf993cdbe1fe3dec",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/task-planner-live.mjs",
+      "bytes": 6440,
+      "sha256": "fd737ea36e5b3448397ec4034031c782e82007908aaf833ea73407b606288e30",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/task-planner-request.mjs",
+      "bytes": 4657,
+      "sha256": "2ff7714e7140c7e6a1390a0d8a714d646ffe07e7c3f912f73d6407d375b23637",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/task-planner-response.mjs",
+      "bytes": 3346,
+      "sha256": "dfdb1adfc572ff8318a9f233696abe6ff93eb344f33f4721be9496a55747caf4",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/transfer-final-answer.mjs",
+      "bytes": 5416,
+      "sha256": "7dd46c4b989034933564543636b89c4724a0c7ed47f4a35766bec65d80ddaa16",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/transfer-fixture.mjs",
+      "bytes": 4522,
+      "sha256": "eff1d51eaadf3da5ecf4c11ccd92d18a276cfe48384428b57b506768aef99e17",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/unit-plan-semantic-review.mjs",
+      "bytes": 6976,
+      "sha256": "92be84e0468181d165e6e940c11f77f38a2e91af45c02eeede3b97a2f1c57865",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/unit-task-planner-artifact.mjs",
+      "bytes": 3117,
+      "sha256": "977dbab28bc41a84030bc56bfd251f605aeaf59cdb4c12b4cd52282d9bd7b73c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/unit-task-planner-journal.mjs",
+      "bytes": 15143,
+      "sha256": "fa7420fbc753797d2de16176501b6ed4b069f159325925631e8a9e7c09ae250b",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/unit-task-planner-live-journal.mjs",
+      "bytes": 15357,
+      "sha256": "5b805ae2d88c38273484bfd5da1d63551639dfe37fb305c5ccf6998435fb0d63",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/unit-task-planner-live-review.mjs",
+      "bytes": 672,
+      "sha256": "f4b4681c75b4555d834271dcff2e8b05237427c5cf527a290f23a9106ab9203f",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/unit-task-planner-live.mjs",
+      "bytes": 5795,
+      "sha256": "c37ee6c53fa2a673aeb86cf95d1978de0bc5281dcf6779dda59a6d854e76f7d4",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/unit-task-planner-request.mjs",
+      "bytes": 4476,
+      "sha256": "18c77817330d37f9e708127f6e7ae514b2a39009d1eeeac8923b71cb507d316a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/unit-task-planner-response.mjs",
+      "bytes": 3888,
+      "sha256": "9199ea1070df96f4494b180621728d11ace58edcdb87fb2f3824afec1eee0e6e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/unit-task-planner-review.mjs",
+      "bytes": 655,
+      "sha256": "23f9b2a4c599e95c516e625257de5753e5b8591e962e72c909ec7ad365dfeac7",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/unit-task-planner-secret-guard.mjs",
+      "bytes": 1137,
+      "sha256": "adbea8c375e1a90441a6eace4259599cb72d813fe488956b49d30c78275972d6",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/scripts/rag-quality/validation-fixture.json",
+      "bytes": 138629,
+      "sha256": "996c1fb365c3a38c0200bfadb86e97df2897ad52d46ff82d61a1c8d3f0a624bc",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/access.js",
+      "bytes": 1580,
+      "sha256": "4b3df0b472800ae520470b9653dabbeafc842742652a92c28e799023d2f36e94",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/account-deletion.js",
+      "bytes": 14754,
+      "sha256": "dda25378baba610c40046ac1799baa6ef5be14409f1608d3285c3d62438f9d94",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/account-deletion.test.js",
+      "bytes": 38048,
+      "sha256": "3c17100597c7075e6de08c7f29607ba93fb0aab1e9264c884d2163aeec2f277b",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/admin-inbox-ui.js",
+      "bytes": 9229,
+      "sha256": "ed06c8c82e731b47149f4bb7a2a361ab6eb51800b0f28cccd70cd4e10b8dd342",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/admin-inbox.test.js",
+      "bytes": 21931,
+      "sha256": "71cc2e0642a237fcdafb115fba98057d39bf966b68cfd0da04cbaf4b5cd16e94",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/admin-reports.js",
+      "bytes": 8216,
+      "sha256": "76d21618f3f7b73dac1543cf32011b20c29750bd90f9a55c6212442376c97a40",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/admin.js",
+      "bytes": 19945,
+      "sha256": "eb83a67809e3d934417bc9f6e98d8d511bbe5efef03406c108ee23200ba861e4",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/admin.test.js",
+      "bytes": 17078,
+      "sha256": "756126687adae386928f11adea05a30f571caa2ad4b16a463db87a3b6134c7a4",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/ai-credits.js",
+      "bytes": 5747,
+      "sha256": "a0648a7b665d0697b4b8801af160d6729bd3ace462dfe55f8bafc8dac8181eef",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/ai-credits.test.js",
+      "bytes": 8489,
+      "sha256": "c11958b714c18490f4ae414e7e75ee0ef41eacd9d0aa9cd6535d6fcc013e2b82",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/ai-output-validation.js",
+      "bytes": 1987,
+      "sha256": "b1404f755c563b633909933bf2465738e0d2a890b5a545ab4ef13e3e7cd633f0",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/ai-output-validation.test.js",
+      "bytes": 8151,
+      "sha256": "ef9527555d1503472cfde1e700fe71774b0a2e09122d0df79ab00f59d03279cd",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/ai-privacy.js",
+      "bytes": 2733,
+      "sha256": "9d3b3a89e4d31c2e276218e6ffae6507d1ac59a75c0f957c5906793c1e787d98",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/ai-privacy.test.js",
+      "bytes": 4092,
+      "sha256": "641e3f8a40587e9c41fd389a1b7be3c73c4467c4ad01b07e45f8d04cc93e6195",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/ai.js",
+      "bytes": 37713,
+      "sha256": "0b6d5dce3dcf9dc91a2fc7e8c990d8875af92d2a7cae690021571b6060b7202f",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/ai.test.js",
+      "bytes": 28681,
+      "sha256": "02fab608c2d56ca1bb025edcd9d79ed89f9da9c7270c54312f7e89c3d2f7ff20",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/announcements-push.test.js",
+      "bytes": 10792,
+      "sha256": "657180c885f218aa3fc4a8ccdb8009757df26e6f83474dc79bc825fcca1f2d21",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/announcements.js",
+      "bytes": 29620,
+      "sha256": "c29533de7878b9cfc66baddcdb049f1f9149a138d2755ccabdfc50202a101293",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/announcements.test.js",
+      "bytes": 9771,
+      "sha256": "64679fe1bd839b5cb01a1725ece7945892a4d32307e7f3340b16399ef20987da",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/anthropic.js",
+      "bytes": 3096,
+      "sha256": "c53c8a81a3d705451a8c60e2dee9065df95334e09beb4972e4cccac96797b940",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/app-errors.js",
+      "bytes": 8459,
+      "sha256": "2f7e0758861e49aa9ce9f2ab8e6d5a280e79e2664f37a87b70c4ffdaaa0ee9b2",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/app.js",
+      "bytes": 40969,
+      "sha256": "0eb023c324887e7735b3708cf4c6f97fcff33612dd87f07c6a4c23a879887e69",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/app.test.js",
+      "bytes": 89687,
+      "sha256": "5c0ff1e9c54bad059132ebfb2c1e392c9e7dd25420b3462dc5fa1ee7c539fa0e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/apple-auth.js",
+      "bytes": 747,
+      "sha256": "174dc63b52871daf5151b7fed0b0145cffece24aa5d75734f2c8fe5979e482e4",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/apple-auth.test.js",
+      "bytes": 5070,
+      "sha256": "b2af4f4230891e715ec2842c23fbcd5ec7032f5730add17a408a847014a14164",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/auth.js",
+      "bytes": 894,
+      "sha256": "0943e5ba7df1ca6045cef24316a202b3e3171a9d528cb0b66683d79f9d727675",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/chat-room.js",
+      "bytes": 23583,
+      "sha256": "26bcbbdea0e5e141b9c4655ebb87df227cbd1a0fcabfe1604883eeabfae14fa1",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/chat.js",
+      "bytes": 36433,
+      "sha256": "2aa7627c45848de0bf0654d809930f32e19016a08f2e4e891487d0204f0c7b6d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/chat.test.js",
+      "bytes": 178903,
+      "sha256": "1dafb6f2f67866ff277586c4cb819c3c8635f678691cbe712a3818c2334efaf1",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/counter-state.js",
+      "bytes": 1388,
+      "sha256": "1f53912fc5c4f983b56fed8ded4c22315d64b2df09e7dbc8d88cc4ab747477f6",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/counter-state.test.js",
+      "bytes": 2286,
+      "sha256": "925c234098991467e0aeb2c325c902926b6ff503caf7a7ca0d890784de69e82d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/devices.js",
+      "bytes": 6062,
+      "sha256": "248e079b344fed0f2e60a3fe2154a9b3a568604c3f8573757e7656ac279d34f8",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/devices.test.js",
+      "bytes": 7534,
+      "sha256": "e8dd2e420cc0c92852c081fd54b486d80bede5baf1771bfa1624780280f954bc",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/document-collab.js",
+      "bytes": 9200,
+      "sha256": "38e550a34ade9441812eca2ae9671d0a36d06dad8d242e1014b65a5640921f98",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/document-collab.test.js",
+      "bytes": 17778,
+      "sha256": "db7bbaf71450f2cac851ab1bbf08742440b6056628bf93e9763eaaa7992d3065",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/document-room.js",
+      "bytes": 7104,
+      "sha256": "55ac1f7018bf53d0435c35bc334a0da6c4f4405a2263d691e93bbb31c625cb73",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/email-verification.js",
+      "bytes": 4605,
+      "sha256": "95aff11970dc6642c43ee9d58096d095250310994a0a37e5601458d8753bca62",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/email-verification.test.js",
+      "bytes": 6060,
+      "sha256": "01dd1b2ccd78da901d5acc895ca8833e8fab8c528038a39335adf8b23aae6a01",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/entitlements.js",
+      "bytes": 3876,
+      "sha256": "e93ff90c4df93907fc0f255a750264c1268251d5d74fb837801453ce24e0f3fc",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/entitlements.test.js",
+      "bytes": 4864,
+      "sha256": "97e277e68f26b02297b40dc3e6d5ac0ab4bda03036f69b825b29f2ff6d99829b",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/google-auth.js",
+      "bytes": 1134,
+      "sha256": "4ec21ab4bf21e9b62e43ced6ce97e5818ef14aad02e230bac7fe6d0f67d55ad3",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/google-auth.test.js",
+      "bytes": 5655,
+      "sha256": "acd062de902171525f3008e8234a8c2bbaf27f460374d8bc1c0347c372e2923f",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/groups.js",
+      "bytes": 17010,
+      "sha256": "735d3eda2ebeb5ab5be5335e6868a7e2db4a2f8cef68ade898f3eca2ccff8475",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/http.js",
+      "bytes": 2137,
+      "sha256": "74231446f22412ddc3e9672ebfc021d5fd64b8f491f231e6eb6d8b9e84cf04e5",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/index.js",
+      "bytes": 4425,
+      "sha256": "904de6362b10b153997ae28b4ce2e5d14abef9bead466b54c0513f056ea17ef2",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/invite.js",
+      "bytes": 2185,
+      "sha256": "6dc49dc3786e7633bb79f0fb6f44dfb4f4b5ffb151c7cb976e2e1c4ac80ea783",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/invite.test.js",
+      "bytes": 1918,
+      "sha256": "373d49fe559bc15d153267a2a5c0dec2cf946c7a9cc53aa38d674100c49929e2",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/issue-reports.js",
+      "bytes": 7494,
+      "sha256": "ee4b787d9256f2c3497ae94b4aa7f9910420c842f4d61c57851ef39e4c6dac49",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/jwks-verify.js",
+      "bytes": 1983,
+      "sha256": "dd047f2098dfe230f4b02e3b6d022eac08f04826d9856868d5e42eaffb5bf968",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/legal.js",
+      "bytes": 22309,
+      "sha256": "6c15f06333d4dc01a0a75ba85349d5929100fe5491ceb57ade7e035dfe1a0388",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/legal.test.js",
+      "bytes": 5727,
+      "sha256": "48f2ca143320fdc7e4750eb13682ac56c1c985e931da3a87f704158e26dd74ae",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/local-auth.js",
+      "bytes": 13928,
+      "sha256": "e1d62802c97690654d957e8b73074f711bc4377383d024058e9a364970234c3e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/local-auth.test.js",
+      "bytes": 28043,
+      "sha256": "4512f5e8d7ce439e67b74608ef7a02a0bf3fd699487dec22fda4721994aed868",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/login-monitor.js",
+      "bytes": 10086,
+      "sha256": "495fbbb34cd75d7dd02a88d65e989b9757daf5834b7c4af10a4b08bcedfc57f9",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/login-monitor.test.js",
+      "bytes": 12362,
+      "sha256": "60f9a8c6d1f093ff3121d4cce517fbbaa8761ec3814841a494d039c2179e446f",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/login-throttle.js",
+      "bytes": 8560,
+      "sha256": "1a92f57c8b57279722fb0496abd2e0f5805bbe5e4dd839d39de45e4ea3108982",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/login-throttle.test.js",
+      "bytes": 4870,
+      "sha256": "16f3d109723cdcaf565d7661e91cf51c8d75fa0b04f0bdb51a2873f2db9a486c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/mcp-inbox.js",
+      "bytes": 2459,
+      "sha256": "9feb44f856ac4e20716540cbae10313736a1b9d4538136a2edf00a408509604e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/mcp-inbox.test.js",
+      "bytes": 8895,
+      "sha256": "b434b348f918ede94330199dc7794d67db682d86c2cbf6244697f212cf88fd55",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/mcp-oauth.js",
+      "bytes": 12275,
+      "sha256": "66afc30106954e6ac0c22673f05a08df1a6b237c025791095280eb4bda29e890",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/mcp-oauth.test.js",
+      "bytes": 8947,
+      "sha256": "418fc9c1eb489746896b3a7eaad580c9d563a9553879e202648fa8e11c374abb",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/mcp-tools.test.js",
+      "bytes": 10221,
+      "sha256": "f7180576140327cc4daf20e0b9f303be7d86e15b7c6506049878ddac0fbf4e56",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/message-notification.js",
+      "bytes": 750,
+      "sha256": "c8759366deb73142fcb202cc64524ef191fee0b5c9fabd8468b5541db74c9aad",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/message-notification.test.js",
+      "bytes": 1011,
+      "sha256": "e439c1692f6059fbad4f6d9ec7f404d94354a03f37673b35f918ece630566727",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/oauth-links.js",
+      "bytes": 6622,
+      "sha256": "97afe31834f5966b1f759b711ef186fc8d4f2660f6e6cb995e7c89227a8b68fd",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/oauth-links.test.js",
+      "bytes": 20916,
+      "sha256": "59644df49d477c3f6ee978d4ada6d3cb9bc2ffcb5835c868118f3f6c8a58063d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/openai.js",
+      "bytes": 8331,
+      "sha256": "fa8039983b57f32a5987eeb1a5c17b77525dfa29448dc9b2e000b45cb3023457",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/openai.test.js",
+      "bytes": 3428,
+      "sha256": "5a2c666f920c90bd3f80da5061fe8acd1addd26da186af5c6de68f9e7ee9312a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/passkeys.js",
+      "bytes": 9846,
+      "sha256": "6103c15808ea581502d4c41c3be8f83a1a469bd8e2559747e50edb5dfeae6892",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/passkeys.test.js",
+      "bytes": 13797,
+      "sha256": "d24fdc7e7925da19f0b3a24f46482e8e784cf5ddfc2efc76c26d10389dfd6da1",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/privacy-retention.js",
+      "bytes": 4587,
+      "sha256": "c972d46435528ca868c9da2543305652cef2e0ab29a5003744e0a4448c0a49bd",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/privacy-retention.test.js",
+      "bytes": 10941,
+      "sha256": "6bf92f113bdf700a6b9222cdd1e2bcf9998822acc3e1ef79c120b863aa450bf5",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/push.js",
+      "bytes": 5751,
+      "sha256": "66254529f13a1c94f5ce33d3a23288c83b949b897b54a7b9269af825b844ac59",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/push.test.js",
+      "bytes": 10475,
+      "sha256": "9264f94c7d5c26c7ce2ed23509e7af18c4ab79e6c8d04fa646cc1bcac8e0babf",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/pwned-passwords.js",
+      "bytes": 2192,
+      "sha256": "f387d0aa424aefc54dbb32f7a7b2eaf3d7421de15ee504016b87da3164ac56e7",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/pwned-passwords.test.js",
+      "bytes": 3258,
+      "sha256": "0524fb6bfe60367f0e09a900c73a66ad0b5c7b2073caca55ca19c2b2009cfac6",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-answer-coverage.test.js",
+      "bytes": 8899,
+      "sha256": "26624ac9553627afd6f31ffa77aff444205c775a3c30855d0c40d757f9638254",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-answer-presentation.test.js",
+      "bytes": 4044,
+      "sha256": "1c5abc5794faccd91322084b046e78bb6b80ed0fe1a8b98f37ac142a9bb32fd7",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-answer-style.test.js",
+      "bytes": 20940,
+      "sha256": "4af5d7febb16aba4a31a2c4cf2f5e84d1c232952c9ca44569c7fe9eb4dcea21a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-answerability.test.js",
+      "bytes": 11011,
+      "sha256": "1c4c1f1d6ade98cd09d6f2a8cd83fdfb2776d6f7c114e4b27067befe42c64baa",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-citation-intent.test.js",
+      "bytes": 5684,
+      "sha256": "30bba700d614af01e7f2513338471c4fe0a7c78ca5efc48195c9b400bfe7e5fd",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-citation-stability.test.js",
+      "bytes": 7938,
+      "sha256": "fbcfc1507fe65fba13e1617a3bb5e5286a804b346425c92a4311d159f93d37f1",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-clarification-candidate.test.js",
+      "bytes": 7339,
+      "sha256": "1331985afa93f71be3c5a681684a3280d496531a983f3bb7e0fe8bacde04406c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-clarification-decision.test.js",
+      "bytes": 9570,
+      "sha256": "431abeb05e0de6808661d3f35300c98d0f5f83add5dcc1ce190b8cef9294cc07",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-clarification-fixture.test.js",
+      "bytes": 7707,
+      "sha256": "a65e7e46e55185969727225d07e9d9774e341b3c3b183150c90ac817ac29f6dd",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-clarification-semantic-review.test.js",
+      "bytes": 8979,
+      "sha256": "73291d16db19b42dd06e7d9a57350ca2bfd34cab017e6ea6ef7c986e069dc590",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-comparison-evidence.test.js",
+      "bytes": 8015,
+      "sha256": "c00cf99babcb0042c9f8b438a4bf85dcee951f4711f2e44a6459e8973baa1fe1",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-comparison.test.js",
+      "bytes": 5494,
+      "sha256": "dc926351b09b430e1d9c2f2bcd796cc55204c6928add06e2fc5860767b61f313",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-complete-final-answer.test.js",
+      "bytes": 7403,
+      "sha256": "b2082251447e8fdbed2914a4638120877640751ebc8993f6915192e814fdd69e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-complete-witness.test.js",
+      "bytes": 5734,
+      "sha256": "eb420ccf79abbc7e7f4868770acc4f13c005ed7c3419cc4196382ce1d52ccba7",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-condition-reference.test.js",
+      "bytes": 2540,
+      "sha256": "7a0fba80d7e9a52be73f3b7dca22e11ef816d015145bb35f2201ca1d792a4d01",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-control.test.js",
+      "bytes": 7920,
+      "sha256": "27a1705da78141432a29d370794a72b36831149ad15b45406843641a2dc9f9f4",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-evaluation-50-live.test.js",
+      "bytes": 10105,
+      "sha256": "ec9f9e8bce5361ae416f4d5a518cd3d8f2281f39596308448bfd2f77e035bd91",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-evaluation-50.test.js",
+      "bytes": 3795,
+      "sha256": "8b2d42756261d00459d6edf13711354edc9067634a46a31295ecbc9b872a87d6",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-evaluation-production.test.js",
+      "bytes": 10348,
+      "sha256": "383e163dfabdd619c1ebbb3f7761a4177f4275a6475ee2e46f0554cbe8f705a7",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-evidence-selection.test.js",
+      "bytes": 14579,
+      "sha256": "43d9cac997009b33974baad04977dc3d2690b8931a7f217c4387703788315cb2",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-explicit-rule-diagnostic.test.js",
+      "bytes": 1362,
+      "sha256": "878afbdfc17e827b2ee0816c68128d4dc341c24c1b63c6645d3c70c4162047f7",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-final-answer-evaluation.test.js",
+      "bytes": 9429,
+      "sha256": "d45517e76a312d164ff38c287202c55c421588750ede1997afab84f7da37c5db",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-followup-relevance.test.js",
+      "bytes": 1790,
+      "sha256": "000bcef7a83dc5be9082ca0d6d51d88b2f250fb66ccd800b912c9a4023c04fea",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-gemini-diagnose.test.js",
+      "bytes": 4102,
+      "sha256": "a15da4ee1c3e006be7b9a97d2e88ce3635e241f303585f95b1a98c128a2d6579",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-gemini-isolate.test.js",
+      "bytes": 3456,
+      "sha256": "3fc4a882b75b0acdd8a7dc7f9f038f4d36a3152eaa28bf3d6b4a5577ef93cb04",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-identifiers.test.js",
+      "bytes": 6286,
+      "sha256": "ea063de20a7695e654ec1c617700c8dc0baeae8e217f19b1e112c54dcb965100",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-integration.test.js",
+      "bytes": 14577,
+      "sha256": "1f7200b9aed324e790fcbf29692c21211939e60c5e669e95f8d66768962f6849",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-learning-live.test.js",
+      "bytes": 6894,
+      "sha256": "9b3b020d7a5e5090515c859baa3b17e26f9d36fd5f2249ab1a9d5021e638fb48",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-learning-openai-live.test.js",
+      "bytes": 5952,
+      "sha256": "67f94d4b8e49851ccdea45dcd0c4e32e1cf1c1f4f30d9ad81e674355536dd33a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-learning-rubric.test.js",
+      "bytes": 2528,
+      "sha256": "fa6330a67b3f8f528440efe86e084fbeda246d55b3340ae3e84010b0151ad190",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-math-ocr-metrics.test.js",
+      "bytes": 1274,
+      "sha256": "d1caf56f16ade0958fceadaa3b4796d6b4feb2d81eeb119ee75b562fc7f4cb78",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-metadata-citations.test.js",
+      "bytes": 6738,
+      "sha256": "8ae00ebd824987e1aab38bda5d952e7cef6cbcef5cb498c7dfafe529cec22c35",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-metadata.test.js",
+      "bytes": 8038,
+      "sha256": "cfc9dc821baf5604386842a8ab243963aa41f1ba1958e480e2ce82dfff1d786e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-mixed-script.test.js",
+      "bytes": 4486,
+      "sha256": "71086dc009f44998407f7b2e4428fea706847eaff657e3ddc45c2ee0a22db3e3",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-multiparagraph-fixture.test.js",
+      "bytes": 5489,
+      "sha256": "d486b55a665ad14d4f13e050c1618eb838b3759cffb40627df88a70f69e6ef04",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-paired-task-planner-live.test.js",
+      "bytes": 16225,
+      "sha256": "b25231f56325601fd374a0cbca9db4cbd3c2b3f6cd8d08b8ea61adad2ab47c1c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-paired-task-planner-request.test.js",
+      "bytes": 3503,
+      "sha256": "1952d9db497c22c63cee0983e608ec6041febbbbb37c04335f842c14c343c4b2",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-paired-task-planner-response.test.js",
+      "bytes": 5124,
+      "sha256": "7f3fcdcebdaf945c218702127ef6f7be34c00aa08983ce272b4ffd1731d59094",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-paragraph-proposal.test.js",
+      "bytes": 10220,
+      "sha256": "9270928f7f54ae5e3a65a1571a7a3d4b2c1ad6859340fa3e0fa2e48520469109",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-paragraph-resume.test.js",
+      "bytes": 6937,
+      "sha256": "a788750ab96320797b0618dedfb4a60838a6bd88800559cbc3736e8f4dad3202",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-paragraph-timeout.test.js",
+      "bytes": 4813,
+      "sha256": "d59c33c8b2013c76649f5d2d78a2837748546f2b834e4014ae63a2818b968e57",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-paragraph-witness.test.js",
+      "bytes": 6688,
+      "sha256": "2b7e4408d7a30d717674f275a1055252e8ad2c8eb441c9342fcfb5e80de42b13",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-app.test.js",
+      "bytes": 9299,
+      "sha256": "7f2c032abd5f80abcf2dcb308938b89a774ac5411fc09c6e86bb7b5e7a390360",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-authorization.test.js",
+      "bytes": 13404,
+      "sha256": "57d0c64b4182675dc86d8b731befbbdf7403e516c714a3ca036c53bd4d168e7b",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-http.test.js",
+      "bytes": 14657,
+      "sha256": "30c1ccc1de2073bc637e96a0f9814117b7b3cc29807686f6c82f35acad8f78f3",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-intake.test.js",
+      "bytes": 17343,
+      "sha256": "79c695b726540a1aa7597e72f1942100cf040ff4e194f0f482943490a78809b4",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-job-recovery.test.js",
+      "bytes": 10219,
+      "sha256": "39bf0957e6c4ebc1ffc87cf406e74b9f6c553938ab40f4baad139b81c7a9c867",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-jobs.test.js",
+      "bytes": 13664,
+      "sha256": "09b6ac318ffb718b4cefc7eced704c8fa476956027771f0e405db200eaff393c",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-migration.test.js",
+      "bytes": 932,
+      "sha256": "56038523cee183d1889f61d4cd788d6a3b4ad3ceb347b1b324973f1d9e139536",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-preflight.test.js",
+      "bytes": 8120,
+      "sha256": "3ed684328ad46c9aa2cad2c1a38f09abdd5e97835d49cef15cdcc09c49428aee",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-process.test.js",
+      "bytes": 12383,
+      "sha256": "4fa362bce3324b3d9975125ccc78387d34216393979a8f0552a58e56173819d0",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag-prompt-baseline.test.js",
+      "bytes": 7567,
+      "sha256": "d8096d59d1aa1b00101160716bcd52ad307eeee677a0d542436f8fe78dd14ee8",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-quality-fixture.js",
+      "bytes": 2277,
+      "sha256": "96792ff75ac4499c90aa225d9bf2421ba2b6afb52a48d02623b1d7cad9d643ac",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-quality.test.js",
+      "bytes": 15245,
+      "sha256": "df0cd91c18630fd0ca4751744b0ba7b41b93a2267be62b1608c0d0b932c38626",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-question-task.test.js",
+      "bytes": 2292,
+      "sha256": "e60a4dba0be9941bd330481d1856ca9bc9d7e35134f179fd3f5105f8d23ca3b8",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-question-units.test.js",
+      "bytes": 5052,
+      "sha256": "eccc5e25b2630e7db23550c06f010df09b3987097d288d5f328864610f84e61d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-quoted-task-planner-io.test.js",
+      "bytes": 8547,
+      "sha256": "1ad5eb727c92630e24a7ea409543a9aee1570e1a168ddd0168710b8e0d0468cb",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-quoted-task-planner-journal.test.js",
+      "bytes": 10126,
+      "sha256": "1ce970142e70e0871212544ea1b824a9b542528c985ba6c0607533d710f9da78",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-quoted-task-planner-live.test.js",
+      "bytes": 10693,
+      "sha256": "2a2303a222500ee3716101c0476e58355a8fb15a81ec73ea1b50a00b1fad1950",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-readiness.test.js",
+      "bytes": 6629,
+      "sha256": "99abb097f6881b29fab50baeb72ca419ac02a04b52339933360f848a121187db",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-real-material-evaluation.test.js",
+      "bytes": 15391,
+      "sha256": "1deceb87251b3bcc55cfab9eab2aea3e757828435f84cf250d591112966a12ad",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-relevance.test.js",
+      "bytes": 6221,
+      "sha256": "ee940c774ad0b1b128531cab363b57883fe71781785c2be5896c5500791f3847",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-safety.test.js",
+      "bytes": 18866,
+      "sha256": "d792c2bf3390c92c2d766dc9c402eae9dc246d0eb012ffa59a3e7eef932fa2cf",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-selection-proposal-live.test.js",
+      "bytes": 6129,
+      "sha256": "ab740bf9247c089ebda99335d4af3be379c424edf5596a3d338b67eccb612400",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-selection-proposal.test.js",
+      "bytes": 7180,
+      "sha256": "936beb1c76afb27ac9624a18936a3d18cb8133bf99e5418478c4632c0ed62bfd",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-structured-gate.test.js",
+      "bytes": 5767,
+      "sha256": "a63e5afc42740027a62fb22dc5ddc18272bc657f96cf75ab0e8f384e79a0f235",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-citation.test.js",
+      "bytes": 1600,
+      "sha256": "09a05c04a8be64581f1e1a4209c0edda8e9d4b2005f6e6fa47f54a5cf00240c1",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-artifact.test.js",
+      "bytes": 5507,
+      "sha256": "6b01c6563b62ae27216133b343f4f1e0628cffdde8a73cfe6ec0e722a799b001",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-comparison-journal.test.js",
+      "bytes": 15076,
+      "sha256": "cfa1cbaedea0c307dbdaa38d336b49c63a64dc35daa28db75c82e56fd3118e51",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-comparison-live-journal.test.js",
+      "bytes": 6154,
+      "sha256": "6c25a5c27e298d323fe360dbdf380fb29ec52a28b2b0fafe6dc219d9b17949e3",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-comparison-live.test.js",
+      "bytes": 14042,
+      "sha256": "f30ac00f10156f2c45f92a54b8b63aeb686d1f3f852db541825585e1ac17fc7a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-comparison.test.js",
+      "bytes": 6814,
+      "sha256": "d3a819ad8e8a567d9ecba4be6d2be958b3cacca6343c0351e9f00d1084c4d521",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-control.test.js",
+      "bytes": 12483,
+      "sha256": "d17a2086600b1a256920524a49c892ff256d561fc4f0a7eb96170969e33625d3",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-journal.test.js",
+      "bytes": 10809,
+      "sha256": "a26fca85049366822ce5e0a464f3e48b058f306a1c3bf715b099fd234440071b",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-ledger.test.js",
+      "bytes": 10687,
+      "sha256": "8d21a52e4f70827a9bddeee182e9603940b2b37e6a8bd9e8ae0b7353f2e44ab0",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-oracle.test.js",
+      "bytes": 5481,
+      "sha256": "3f653832558984351ac980a678407d16ef4c987758486b01468384f33921816e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-packets.test.js",
+      "bytes": 7277,
+      "sha256": "925b19986ab6543c5c955987b593cac45319c589d2a4abff1ebc47f384fbe4fa",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-request.test.js",
+      "bytes": 3678,
+      "sha256": "f4ee85a9922282f05649e70957b8d8cd75b7b8ceafd33f5d60782c7ff77c2dfb",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-subject-role-response.test.js",
+      "bytes": 6606,
+      "sha256": "785f60adc2ec76a3381147aa2ebf34e4a424098f2c5365121d97a3b2b5c97cc0",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-symbolic-evidence.test.js",
+      "bytes": 5784,
+      "sha256": "d56b8710794c029c0fec74e87554d5457ce3037d10bd23d370de1777c4b9e63f",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-task-plan-diagnostic.test.js",
+      "bytes": 2934,
+      "sha256": "4867bbfad39458ab6a0601a38571102f4d3f4bd07409fa7fe3a2d976a946282e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-task-plan-quoted-v3.test.js",
+      "bytes": 8840,
+      "sha256": "c25b166211c8b9d3ca4454bca6d22fd12f05275bec91ccdc92b89fd2e0d88bfb",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-task-plan-v2.test.js",
+      "bytes": 4979,
+      "sha256": "4488369d551645ac0adb3dfdde8b064c39497283a7938518989eb846c1264faf",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-task-planner-live.test.js",
+      "bytes": 8404,
+      "sha256": "5d9c7b84371644f306dccdea3ea0210b00fca2094fddf85e230c754bf1e9799d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-task-planner-request.test.js",
+      "bytes": 4247,
+      "sha256": "72ba430167c6da9c6fb61bfebbf367ceb0ba641904b4c226c629368dc9bd30a4",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-task-planner-response.test.js",
+      "bytes": 5307,
+      "sha256": "77d95f47c6956df90d86517369a23ca35f12fb12643b150a670f5f1c86940fee",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-topic-citation.test.js",
+      "bytes": 5930,
+      "sha256": "759fdfcbe5062fc8d7774763c15943f5a3a8b92dbe5059b91e2eb7cfc5683647",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-transfer-pilot.test.js",
+      "bytes": 6806,
+      "sha256": "8e2a8220a1c5b11b27f496a46d52a866a853227c21c5e378f1d22b39d872f953",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-unit-plan-semantic-review.test.js",
+      "bytes": 8315,
+      "sha256": "e5d9a16714a783577f135be00ed4d1cb60947b8c0589efb6ad5e9fca5b721b81",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-unit-task-plan-v4.test.js",
+      "bytes": 7762,
+      "sha256": "0f1d3659479d6565587274f428c3ed0e8e02f5552250f7f67ebb9993c5a2fcde",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-unit-task-planner-io.test.js",
+      "bytes": 9260,
+      "sha256": "4b6a8f9351d17278167f9d20b8e22ef046003ec0dc522e903ba1aa68379dd919",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-unit-task-planner-journal.test.js",
+      "bytes": 17158,
+      "sha256": "1eab5d5b25835520f379090aae959abf4b07af80ac545fb0ac93c7342bd5b96d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-unit-task-planner-live-journal.test.js",
+      "bytes": 17183,
+      "sha256": "729f38829dbc123a27a852cf1eda1307358e73232177854921aa26ec1898e63c",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-unit-task-planner-live.test.js",
+      "bytes": 14213,
+      "sha256": "18d1e43348640ce5fb9c36292577fc445172d467b8c020f5c070db7ee515a4db",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag-unit-task-planner-secret-guard.test.js",
+      "bytes": 2774,
+      "sha256": "606763c4d4bedde5c62a1b8b2bdc5de310b02e12669b586b6ae84028f91f1ee0",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag.test.js",
+      "bytes": 22138,
+      "sha256": "9fe262f63a264bc23a945544a0ca98d84f6ffedae914570a86dc9b5861b8af2b",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/answer-policy.js",
+      "bytes": 22128,
+      "sha256": "1436afb2acc92a75c03acdc377053df564ac97eb0db9d0de812dac548ead026d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/answerability.js",
+      "bytes": 17293,
+      "sha256": "dabc97f3e3edfba5fe746d2818e8ee7e55b90c2ef149b0ad041b7bf7a40e63dc",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/authorization.js",
+      "bytes": 4892,
+      "sha256": "809efeefeebb3d8c5069da5ce76af7d54f5eab1f3e73a1052f572cecca910630",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/chunking.js",
+      "bytes": 4567,
+      "sha256": "c27022c13f91aa51223df50ad5021880e17e4b54c50edebf663125480d052091",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/comparison-evidence.js",
+      "bytes": 6212,
+      "sha256": "69166d44e6da6e09c83e4f47419ce6710780dc414350a340f716df8d8748dbbb",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/control.js",
+      "bytes": 10357,
+      "sha256": "aa4100070f950c6a888ced9eb4949468073abe894482d8c6f91dac77ba102e0a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/evidence-selection.js",
+      "bytes": 4446,
+      "sha256": "24a2603bf9f17d30065087d6440ca97b5e56939420ebe0a62f6b0cd39c0d9277",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/identifiers.js",
+      "bytes": 1743,
+      "sha256": "a8677153afb68fafcf3e766b99faf582931b736526ce10eeda3fdbb8972b6774",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/index.js",
+      "bytes": 8284,
+      "sha256": "1b56072226680965aae28e0be8ed5241e3235b61a87331ffee896cc0cd50ad8b",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-authorization.js",
+      "bytes": 7249,
+      "sha256": "ad763bbfbdb48b500a07ca3bb4e9075231d43186f7da699eb1ab3875c97990a6",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-http.js",
+      "bytes": 7263,
+      "sha256": "a8fedb261c12e77f7e008e5b62389a7032cf86c4adb8f9091c6c01c5b2350b3c",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-intake.js",
+      "bytes": 11065,
+      "sha256": "9fed2ab1e341a13104dd86870eaecec241b81a73baac323b1d398c6dfee597d7",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-job-recovery.js",
+      "bytes": 6644,
+      "sha256": "0e415017a52cb60451ad062fa8e014cc76b1ec4eabf3029c5dfd09e00ae2bd3a",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-jobs.js",
+      "bytes": 12096,
+      "sha256": "d6c3ee6545bf5e14232fd0657f3d829ada74335a3afa4729949e9cd9b1a769bf",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-manifest.js",
+      "bytes": 2012,
+      "sha256": "131efc2aa32ad7f0c655456509274c5e6bbfbab1cec2f9f173eece688f59172d",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-preflight.js",
+      "bytes": 5867,
+      "sha256": "d1886f93f8e88aec947b81daec542e642640aa8b72c87ce6992c0150d3f5aad3",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-process.js",
+      "bytes": 7515,
+      "sha256": "eb407af71c2bd813678457ec32ac2e899b42b9f1caa765ba39025bb5f783c18c",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-response.js",
+      "bytes": 4745,
+      "sha256": "43a073e29d2debf8b73dfc6c388c7484efe3b9ffe37bdaece810c8f992092417",
+      "headTracked": false
+    },
+    {
+      "path": "mcp-server/src/rag/query.js",
+      "bytes": 7846,
+      "sha256": "7c65c6be824584c5f0822fd895e3b1a928e7b73f3f938baa305b9ed04037047a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/ranking.js",
+      "bytes": 2983,
+      "sha256": "9e7aac6c9491162209200e2a24f0245e3bc7d06e534bf399a284770a34a5ef0f",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/readiness.js",
+      "bytes": 3668,
+      "sha256": "632c0ec6ae6d6fdcd6203181845ec4cfd6940a952d3317694e721b4efa613489",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/reference-selection.js",
+      "bytes": 3001,
+      "sha256": "0afb2a3bc31dc367d557b2ce06c0a8cb2e44546cf58c78e933a481f554ca94fa",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/relevance.js",
+      "bytes": 4125,
+      "sha256": "bd4654f687c2ea39fdde5001f1b72261de0c6c4276c9e369dd5c0ef886d2e024",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/retrieval.js",
+      "bytes": 12690,
+      "sha256": "06af72f4af143fbeb67f9e385c214b09e6a59398757c943bfb97d54d46b4a278",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/search-branches.js",
+      "bytes": 477,
+      "sha256": "88c6c6517994df348a57a59c9e5ea00670467fe49e97435a4504a5d3d74d916b",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/storage.js",
+      "bytes": 26302,
+      "sha256": "5cacc16e39671b31a8dfea2fa0cdf1698642d3472de48cd26f8690f8b2ce26ac",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rag/structured-input.js",
+      "bytes": 8389,
+      "sha256": "146562f215b1277144d01c308672bc34b052a9c5c91344977d1b4319741139eb",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rate-counter.js",
+      "bytes": 7122,
+      "sha256": "e0fdb718ca9fbfd82c4d61a9ee4e37e1f048745cb6d2ec75a2402a2218c51905",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rate-limit.js",
+      "bytes": 1619,
+      "sha256": "4e6e746fc165fe27dcaf5a248be6602c90f9a2ddf729ea4033aab65b1b7c8abb",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/rate-limit.test.js",
+      "bytes": 2202,
+      "sha256": "d77957c8f5def8b3087ef97aaa7f22f9ac5cb596b9b75cd63d165972beccf64e",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/revocation.js",
+      "bytes": 522,
+      "sha256": "dcc17b5f54424ab3b4e3383c1d09dc53cd10c5e5e999be80019e54c1ab95517a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/revocation.test.js",
+      "bytes": 824,
+      "sha256": "30baf1bb38591bbcb6de0363db0815ce202478e372a0e9f93136648552335cf3",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/session.js",
+      "bytes": 3430,
+      "sha256": "25ba39e07200a267ae30c5c198d9fa4fcb82b7a556a39e6c5c4a51be104041ab",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/session.test.js",
+      "bytes": 2122,
+      "sha256": "e1857bcb9adb5b08977b9078879d8395532afc43dcdc6d08a50918901620a66f",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/slack.js",
+      "bytes": 861,
+      "sha256": "bdcd258dc085146063bbbc11c53c08635f319a8b239806f9915aa57371712214",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/smoke.js",
+      "bytes": 899,
+      "sha256": "a273865c8dcbe7119a67874e58edf69b10b2b83f436bd87a1d6d13c423d9de4a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/test-access.js",
+      "bytes": 938,
+      "sha256": "c3b0583cd1836ce453fb8da699c8469bb82807acc3c7fa50363863ed983f252d",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/test-account-generations.js",
+      "bytes": 1006,
+      "sha256": "ee7a787cd9b5496e285808d8af6c2100572461e6431c347a1c39f45735f936af",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/test-support/rag-subject-role-comparison-live.mjs",
+      "bytes": 1131,
+      "sha256": "0c3737cbf31ddd8f80d76f9f05c522cc771b944e467235297975f9c031325d2f",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/test-support/rag-subject-role-comparison.mjs",
+      "bytes": 2328,
+      "sha256": "9578afbec3495202bdda66fd3f498b4d420e1cbc7a18673b90679c7b2ce97fe0",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/test-support/rag-subject-role-review.mjs",
+      "bytes": 3780,
+      "sha256": "b6561e1506ecce42c09b764992af0d5fe947e83178de17f54ef15e7715d44df7",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/token.js",
+      "bytes": 557,
+      "sha256": "cd99a7b0ecf3cfa55a52c537cb50fdefae33b612148b730557b8a8d3f1205163",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/token.test.js",
+      "bytes": 1038,
+      "sha256": "dddad63e2ed674e6761bcac05338439d9465c9145bb9fd8f88f9a33b37fdc0a8",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/user-registry.js",
+      "bytes": 18451,
+      "sha256": "58459ff4089ec7a8c21e436f64374d93ccf07687e6d7d1d578b15f7619a971c4",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/src/worker.js",
+      "bytes": 1285,
+      "sha256": "e7569a3fbecd4c63460e765bbd5994c182b168fb211558186516654b5f3f5c5a",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/test-fixture.json",
+      "bytes": 449,
+      "sha256": "40725d863d01a20a56b70e93117101326323901cca45fdf930bd8fa51fb36129",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/wrangler.jsonc",
+      "bytes": 15459,
+      "sha256": "69778ef8f5b8d0b05e68f2ff058fb4972b8716c81b231f6f72e4534edf844bc3",
+      "headTracked": true
+    },
+    {
+      "path": "mcp-server/wrangler.pdf-local.example.jsonc",
+      "bytes": 1412,
+      "sha256": "e1fe5ce62e1585c68dc5200b4d7a97b780c4c13e3b1d2ec827c3173b0d810abe",
+      "headTracked": false
+    },
+    {
+      "path": "services/docling-container/Dockerfile",
+      "bytes": 2340,
+      "sha256": "c4edb95e064252af3035bd5bcc2ed57cfc3a2587a765d69802d742f9e0e543ab",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-container/Dockerfile.dockerignore",
+      "bytes": 918,
+      "sha256": "9f698cf04e9178efa4097332ecbaebc46a4b0a30f34887d59a74196f3a0a3c49",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-container/provision_linux.py",
+      "bytes": 3907,
+      "sha256": "e0245e81313be323bca78083ec8fb2c15972bd2ecb2701f9552472f2e9b9eb6e",
+      "headTracked": false
+    },
+    {
+      "path": "services/docling-container/test_provision_linux.py",
+      "bytes": 3098,
+      "sha256": "733eb804692e801a7d00f4dc0e089cbfea58b73d6a26aba4351dd76a6742c7ad",
+      "headTracked": false
+    },
+    {
+      "path": "services/docling-processor/child_entry.py",
+      "bytes": 1708,
+      "sha256": "ca1a17a37266004ec2bd9f05ef9f21610d7865dc158980ed9e5ec3d3d84973c0",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-processor/container_entry.py",
+      "bytes": 7592,
+      "sha256": "2b02cf40b5ab0d985c3323703823edcabb4573c857f0d36e937eadc996f89208",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-processor/private_http.py",
+      "bytes": 12566,
+      "sha256": "2587e6af7d73a60d00c3f3774716847facac12ab0437725b3e9c776a1f77311a",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-processor/runner.py",
+      "bytes": 5683,
+      "sha256": "5a2473d41789bc9537d0a10353b8c95ba901216c1d0e9022047813f0de245054",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-processor/test_child_entry.py",
+      "bytes": 3424,
+      "sha256": "c0beb622855d2ff08e22c5413c98f38306ceeb3f61b27d53eb1968b1558eb2b0",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-processor/test_container_entry.py",
+      "bytes": 10745,
+      "sha256": "55ab15d93859b437cf3c7fc3770cd1bf4cebf67c933cfab321bf116d7babd813",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-processor/test_private_http.py",
+      "bytes": 20765,
+      "sha256": "38afbe656da3a600bddcb532b0536800e67b0d111986cc010dbeb849ab67754c",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-processor/test_runner.py",
+      "bytes": 12614,
+      "sha256": "b9c31de7cff8e92519e041647de1551ad290fd97143873a2662269f1889da480",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-processor/validation.py",
+      "bytes": 9518,
+      "sha256": "8b31c3ea988e06a6ad9b9606c6a2777ec95a5f90665d4570fcae05af41e7e886",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-worker/index.js",
+      "bytes": 14694,
+      "sha256": "4300fcc00b5d6be21844f0f40483049d4683fb36b497f498166be6079dd03ceb",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-worker/index.test.js",
+      "bytes": 16885,
+      "sha256": "afde3cc3aeb4592e62c7e8c38a9d305c57f02a56490fc2c9f9b9ab908c3b2a27",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-worker/package.json",
+      "bytes": 117,
+      "sha256": "b3ffd575118e21c301034b49a7e0fb62c21e8aa2de6057352490a7819e973d54",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-worker/wrangler.example.jsonc",
+      "bytes": 809,
+      "sha256": "0ece1f358854b185b262053b4442f7c8149287e696395bac3bbf09641d79cdc5",
+      "headTracked": true
+    },
+    {
+      "path": "services/docling-worker/wrangler.staging.jsonc",
+      "bytes": 1045,
+      "sha256": "5ec4cc08921e9c635f7d21d9c78c50bcd8caa12e50a04cc1cb765c0e5fa09bc5",
+      "headTracked": false
+    },
+    {
+      "path": "tools/docling/extract_pdf.py",
+      "bytes": 15442,
+      "sha256": "3bb4ee7bdd9d08e065ee34634060940bc40ed771ddcff0541cc980b47dd4e2b7",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/index_payload.py",
+      "bytes": 6645,
+      "sha256": "528ef1e790d4daac114edfc071301bb9499a42e43ca1cb8e7c6a87e273fe8737",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/linux_smoke.py",
+      "bytes": 6046,
+      "sha256": "c5d2841460a81e8dcf2faf7f3eeaacdaa8cd313c951dfd28c9190a5f35658448",
+      "headTracked": false
+    },
+    {
+      "path": "tools/docling/metadata.py",
+      "bytes": 13736,
+      "sha256": "1afed6b4e0a78b7103705f3671649280e3edfa5bc52a042c7b1e4b45d197a8ff",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/prepare_manifest.py",
+      "bytes": 1315,
+      "sha256": "49055430806e1f268dd69fcf3f93fd4b77ff9ca7da03476695a79922d97bcd14",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/requirements.lock.txt",
+      "bytes": 1852,
+      "sha256": "36d3e26b6f3657340896d616d3d1c828dafbad7297a8d5329b679746eb018c49",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/requirements.txt",
+      "bytes": 104,
+      "sha256": "da25e920090fc82c2907b7b978260126f334e814d2a6e32168d79dafc85e05cf",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/semantic_manifest.py",
+      "bytes": 2146,
+      "sha256": "b9427f1cfa3e61a984c7aead12f3f10f6bd5840e6fb973fe53b610cf8a6baf94",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/smoke.py",
+      "bytes": 4722,
+      "sha256": "74f76873126338700397f738581aacd1d71263ff783b9ab216af7ed684d9ff9e",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/structured_chunking.py",
+      "bytes": 13111,
+      "sha256": "74ff9b97e88bb047e8d6258c2579bd76b0bdff4d0aef9e5a2114ec17080aaf66",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/test_extract_pdf.py",
+      "bytes": 12988,
+      "sha256": "69735d47e713996f7feef97ca8135cd4e384051a859a8fdeea8fe87acd53416e",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/test_index_payload.py",
+      "bytes": 4502,
+      "sha256": "4103e8e397ca6344c561465d0dfa8f79210588fb25e48e0bc1496af5a444dac1",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/test_metadata.py",
+      "bytes": 6710,
+      "sha256": "e0205ae228595119f7351d300f7edf6496999009e0da3e05e5532a8531dca35f",
+      "headTracked": true
+    },
+    {
+      "path": "tools/docling/test_structured_chunking.py",
+      "bytes": 9321,
+      "sha256": "b2037944238ab6a495a3162fd7e6d203f7a2675b38a2b61bbf80fa4d01625493",
+      "headTracked": true
+    }
+  ],
+  "sourceSetSha256": "826b845b0633666b4ba53ae5284ce57443eee7a23bc21797e2db53d6e1a0a5c4",
+  "localProvisioningMetadata": [
+    {
+      "path": "services/docling-container/provisioned/requirements-linux.lock.txt",
+      "bytes": 9918,
+      "sha256": "ba790af02c5e364cf47822654bbdfa14fe93631b3b06719d933cd21ce15efeb2"
+    },
+    {
+      "path": "services/docling-container/provisioned/wheel-inventory.json",
+      "bytes": 144335,
+      "sha256": "53a5be4eda13badefcce9fa0ab6b62298c0de41cd2e8e57fa174c4c26dede8b3"
+    },
+    {
+      "path": "services/docling-container/provisioned/models/studiquo-artifacts.json",
+      "bytes": 10294,
+      "sha256": "1b454ee9ae543a8b6eeed8c005c9dc8be4922a2d9d559d32a0b4cde773ece4ac"
+    }
+  ],
+  "observedNodeVersion": "v24.15.0",
+  "priorTestResults": {
+    "dateJST": "2026-10-18",
+    "serverPassed": 1851,
+    "processorPassed": 61,
+    "provisionPassed": 6,
+    "rerunThisStep": false,
+    "relation": "Historical evidence only; not a new attestation for every selected file"
+  },
+  "remoteDeployed": false,
+  "sourceArchived": false
+}

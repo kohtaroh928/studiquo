@@ -1,6 +1,157 @@
 # Studiquo RAG：Codex / Claude 共通の引き継ぎ
 
-最終更新: 2026-10-18。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
+最終更新: 2026-10-19。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
+
+## Step5-B完了：処理済み台帳の有限整理（2026-10-19、最新）
+
+追加0015、内部pdf-purge、writer版条件付出力とA集計の更新、専用23テスト、実local D1再現scriptを追加。初期無効でHTTP/cron/config未接続。0010〜0014は不変、0014のphysical_purge=0とは別制御。新reserveはschemaがあればfloor-v2、既存legacyは保持。初回成功pass後の旧writer拒否はpurge停止後も永続。job identity/window/writerの移動も拒否。
+
+削除はknown created/settled順序、48h、過去UTC窓、intake同世代cancelled/別UUID新世代、registryなし、recovery不在またはdone/lease完全解除のみ。unknown時刻/停止不明/legacy/registry文書/欠落intakeは保持。4stmt D1batchでclocklease/writerfence→coarse partial-index最大10件MATERIALIZEDとnextcursor→範囲内だけeligibility点照合/親DELETE（trigger内floor更新/child削除）→cursor前進/解除。emptyprobeでcursorを巻き戻して保持対象を再確認。child/parent/後続candidate/解除失敗は全rollback。
+
+独立レビューの走査上限Mediumをcoarse候補＋cursorへ修正。DB次秒でlease判定し、初回DBclock＋monotonic残時間とcaller期限のMINで正方向skew延長も防ぐ。後退/24h超gap/5sec超skew/未知契約で閉じ、長期停止後の再anchorは別の運用確認が必要。pre-adoption-v1専用、未知PDF/receipt tableでも閉じる。将来adoption migrationは参照を書き始める前に契約版を変更することが必須。AのphysicalPurgeEnabled診断は両flagをANDするLow修正済み。Code/Security最終再レビュー残所見なし（独立テスト再実行なし）。
+
+最終server1888 pass/0fail/0skip（新purge23含む）。10000held backlogでもcoarse10件/cursor前進/後続ready到達、EXPLAIN index/PK、会計/未精算memory保持、clock/同秒短lease/正方向skew/途中契約参照変更/全rollbackを検証。実local workerd/D1で15migration、同時2pass計3件の一度だけ整理/floor/child削除、parent失敗時全rollbackと未知receipt拒否成功。一時合成DB破棄、今回起動process終了。詳細RAG_PDF_PURGE_IMPLEMENTATION_REPORT/RESULTS。新7ソースhash、古いStep1/Step5A記録は歴史的版として維持。
+
+次はStep6の停止不明claimed/executor token紛失の証拠付き復旧を独立設計/実装し、その契約にStep5-Cのaccount削除phaseを合わせる。A/Bだけで全retention完了としない。DO finite purge/receipt/自動運用/公開/iPad、staging別系統照合/backup/承認・license/OS CVEも未完。rollbackはpurge入口を閉じ、0015/writer fence/floor/失効intakeを保持。旧writerや旧active backupへ戻さない。remote migration/deploy/実ユーザーデータ削除/有料API/commit/pushなし、automation PAUSED。Notion既存カードを更新。Project対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG、複製/upload未変更、従来リリース00_残タスク表残件保持。
+
+## Step5-A完了：精算時刻・期限切れ受付の詳細削減（2026-10-19、最新）
+
+追加0014、pdf-jobs/recovery/processの時刻連携、内部pdf-retentionと専用14テスト、再現可能なlocal workerd smokeを追加。旧schemaの停止/精算は互換維持、旧settled時刻NULLは推測/backfillなし。全3精算経路の初回時刻はMAX(captured server time, DB次秒)で記録して再送で変更しない。retention用flag/schema/policy gate、expiry partial index＋単一UPDATEで最大10 intakeのcancelled/digest/bytes/request削減、世代/拒否fenceとjob/会計保持。10秒共通待機期限、遅いSQLが後から完了し得ることを明記。集計は固定非識別値のみ、全件走査費用に注意。
+
+controlのphysical purgeはCHECKで0固定、floorは初期0かつ更新入口なし、単調UPDATE/DELETE禁止/INSERT OR REPLACE拒否と旧reserveへのINSERT floor triggerを追加。現Aにjob行削除/48h判定/DO/account/receipt/schedulerはない。RAG_PDF_RETENTION_ENABLEDはconfig未追加、HTTP/cron未接続。
+
+独立Planner/Code/Securityで時刻起算とfloor置換の懸念を修正、再レビュー残所見なし（独立テスト再実行なし）。実local D1でmeta.changesがtrigger更新も数える差を発見し、RETURNING定数の結果件数へ修正して追加レビュー済み。最終server1865 pass/0fail/0skip、実local workerdで0001〜0014とexpiry/trigger/job保持/時刻/aggregate/ORREPLACE拒否成功。runtime検証はsandbox loopback権限不足後に承認済みlocal実行で成功。全検証process終了、一時D1破棄。詳細REPORT/RESULTS。過去374hash baselineは不変、今回8ソースのhashをRESULTSで区別。
+
+次はStep5-Bのclosed-window/48h/永続失効/参照lease/全writer互換を揃えたterminal job＋recovery原子的purgeと失敗試験。先に設計条件と旧writer排除/rollbackを再確認し、Aだけで全retention完了としない。remote配備承認/別系統staging照合/backup・license/OS CVEと停止不明の証拠回復、receipt/iPadは残件。remote migration/deploy/実ユーザーデータ操作/有料API/commit/pushなし、automation PAUSED。Notion既存カード更新。Project資料更新はDATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG、従来リリース00_残タスク表残件保持、複製/upload未変更。
+
+## Step 4設計完了：保存期間と削除順（2026-10-19、最新）
+
+High/full手順、独立Planner/Code/SecurityでRAG_PDF_RETENTION_DESIGN.mdを作成。intake期限切れを永続cancelledにしてdigest/長さ等を落とす、世代/失効fence保持、未精算/停止不明claimed保持、settled_atから暫定48h＋過去UTC窓＋参照なしだけ詳細整理、recovery child→job parentを原子的削除する設計。単調min_admission_windowと旧writer排除前は物理purge禁止。DOは現2引数RPCで全消去せずspent marker、有限purgeにはimmutable notAfter付きv2/旧RPC排除が必要。
+
+CodeのMedium2件を修正し再レビューで解消: notAfterは実行/採用期限で、期限後の既存VM停止/証拠取得は禁止しない。期限後空DOはdestroy確認しmarker新設/延長なし。PDF pendingを例外にして他account消去phaseまでblockせず、identity消去前のcheckpointと最終全phase判定へ接続する。現deleteAccountRAGはPDF終了を待たないため公開前残件。将来receipt/バックアップ復元による失効巻戻りと停止後再有効化条件も明記。
+
+Security再レビュー含め未解決所見なし（設計のみ）。全migrationを適用したin-memory合成SQLiteで、0unitsのsettled行を削除すると当日COUNTが1→0になる反例を再現。実DB/DO削除、新実装回帰/全サーバー再実行は未実施。固定374source hash一致、diff check成功、機能コード/設定/キー変更なし。計画Step4・DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAGと採用設計の現在地補正、Notion既存カード更新。
+
+次はStep5-Aの追加schema/精算時刻/互換gate/期限切れintake詳細削減/集計と合成回帰。Bのjob purge、Cのaccount pending、Dのv2 DO/receiptは前提を満たしてから。全retention実装済みとしない。実行中の今回processなし、automation PAUSED、commit/push/配備/remote更新なし。Project更新対象はDATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAGとリリース00_残タスク表、複製/upload未変更。
+
+## Step 3調査完了：OS・モデル利用条件（2026-10-19、最新）
+
+保存済みLinux imageのIDを照合し、network none/host共有なし/read-only/非rootで管理情報だけ読み取った。Debian12 OS429全copyright fileあり、CPython licenseあり。102wheel hashと268license/notice文書、モデル3repo/66artifact hashを照合。UNKNOWN metadata8件を同梱文と公式同版tokenizers LICENSEで補足。Docling MIT、Heron/ONNX Apache2、TableFormer CDLA-Permissive2を固定README revisionで確認。実資料/新モデル取得/再build/配備なし。
+
+RAG_LICENSE_REVIEW_20261019.mdとRAG_LICENSE_INVENTORY_20261019.json、計画を更新。調査完了だがdistributionReady=false。モデルのlicense本文同梱なし、5wheelに独立license本文fileなし（METADATA記載とは別）、GEOS LGPLやOS GPL/LGPL等のnative配布条件履行/第三者noticeレビュー、OS CVE照合が残る。これらをStep8〜9のimage upload/配備前gateとして記録。全体を商用配布可/法的適合/OS安全と断定しない。次はStep4保存期間と削除順の設計。
+
+固定374 source hash一致、件数/hash検証とdiff check実施、機能コード/モデル/依存変更・機能テスト再実行なし。調査container自動削除、VMの正常停止を確認済み。今回実行中processなし。今回新しい有料API/remote変更/commit/pushなし、automation PAUSED。Notion既存カードに結果/残件を追記。Project資料: リリース00_残タスク表へ配布条件gateの反映が必要、複製/upload未変更。
+
+## Step 2調査完了：staging実状態（2026-10-19、最新）
+
+read-only照会とDashboardで現状確認。studiquo-mcp-staging現在version83/660d8caa-f695-4dd0-bddb-4a4aad50995b、100%、2026-10-18 14:42:42 JST。AI_PROVIDER_APPROVED false、RAG flagsなし、AI/Vectorize/RAG rate/private bindingなし。Container一覧0。ADMIN_DBは設定staging DBと一致。schema/既存migration SELECTのrows_written0/changed_db false。未適用0008_rag_control〜0013。remoteにはこの基底にない0006_legacy_standard_accounts/0007_moderationの履歴があるため、後の配備前に別系統更新/remoteソースを照合し保持する。履歴数字で適用済みを推測しない。
+
+Workers Paid契約済み（月$5＋使用量）を現在のプラン表示で確認、公式Containers料金も確認。プラン/設定変更、DB書込、backup、Container起動、deploy/有料LLMなし。D1 migrations listは内部でtable初期化するため使用せずSELECTのみ。初回sandbox通信失敗のエラーJSONは成功/空一覧と区別し、正規権限の再照会成功結果を記録。CLI disk log/telemetry off、連絡先/秘密値は非保存。
+
+RAG_STAGING_PREFLIGHT_20261019.md/jsonと計画更新。固定374 source hash不一致0、機能コード変更/テスト再実行なし。今回実行processは完了、ブラウザ参照のみ。Notion既存RAGカードへ結果追記。次はStep 3のOS依存/モデル利用条件の確認。remote承認、backup/復旧点、アカウントquota/同梱枠残量と配備版の照合は後段の残件。automation PAUSED、commit/pushなし。Project資料の更新が必要: リリース00_残タスク表（staging現状調査の反映、置き場/uploadは未変更）。
+
+## Step 1完了：検証候補の版固定（2026-10-19、最新）
+
+一つずつ進める指示でStep 1だけ実施。既存dirtyを本体/説明資料/共同担当/別アプリ/生成領域に分類、ソースは移動・破棄・stageせず保持。RAG_VERIFICATION_BASELINE_20261019.jsonにサーバー/Docling374ファイル（新規27）と集合SHA256 826b845b0633666b4ba53ae5284ce57443eee7a23bc21797e2db53d6e1a0a5c4を記録、Linux provisioning inventory3点もhash記録。別照合で集合・欠落・サイズ/hash/除外と模擬不一致検出を確認。不変ソースarchiveやcommitではない。前工程成功結果へhashを合わせる改変はしていない。
+
+詳細RAG_VERIFICATION_BASELINE_20261019.md、計画Step 1を完了へ。機能コード/設定/キー/DB/配備変更なし、機能テスト再実行なし、前回1851等の成功は過去記録。今回起動した検証processは完了。Notion既存RAGカードに着手/結果を追記。次はStep 2のstaging既存版/DB適用状況/利用条件の読み取り確認。remote配備承認とは区別。automation PAUSED維持、commit/pushなし。Projectの資料の更新: なし。
+
+## 残件を37単位へ整理（2026-10-19、最新）
+
+ユーザーの依頼で最新コード状態/既存Notion/計画/採用設計を照合し、RAG_REMAINING_IMPLEMENTATION_PLANの先頭へ残件37単位を追記。運用/保持/停止不明回復→staging実環境→receipt/registry採用→iPad→基本版総合評価→意味分割/検索/回答品質→限定公開の順。友人のprompt固定context評価は並行可能。Linuxとlocal workerd/NDJSONは既に済み、remote・iPad採用は未完と区別。古い転送未確定記述は最新のNDJSON実装で更新される。今回コード/設定/キー/費用/配備変更とテスト再実行なし。既存dirty保持。remote配備と有料評価は未承認、automation PAUSED。Notion既存RAGカードに整理結果を追記。今回Project資料の追加更新: なし。次の本体実装は版整理/運用残件調査、remote待ちでもreceiptのローカル実装を進められる。
+
+## 友人への招待送信済み（2026-10-18、最新）
+
+ユーザーの再指示を受け組織表示名をPersonal→Studiquoに保存。組織Reader・対象projectはstudiquo-rag-evaluationだけで招待送信、Invitations一覧で対象を確認。初期Default project選択は解除を確認済み。現在は本人の招待承諾待ち。承諾後に評価projectのMember権限・本人キー・PC設定・モデル/予算を確認する。キー/予算変更や有料APIは未実施。招待先メールは会話だけに保持。Notion共同担当カードとAPI_ACCESS更新。画面証跡はprivate tmp（個人連絡先を含むためcommit不可）。実装/テストprocessなし、commit/push/deployなし、Project資料の更新: なし。過去の招待未送信/表示名承認待ちはこの記録で更新。
+
+## 友人招待の進捗（2026-10-18、最新）
+
+ユーザーから招待送信の明示依頼を受領。評価専用project studiquo-rag-evaluationを新規作成し、画面で存在を確認。project単独追加は「No user found in organization」で不成立。組織招待には表示名Personalの変更が必須とUIに表示された。Studiquoへの保存は自動承認レビューに拒否されたため未変更、明示確認を提示し回答待ち。招待は未送信。APIキー作成/共有、予算変更、有料APIなし。友人メールはユーザー会話だけを参照する。Notion共同担当カードにも現在地を記録。ブラウザは組織名入力dialogでhandoff、今回新しい検証processなし。Project資料の更新: なし（共同担当アクセス準備のみ）。
+
+## 2026-10-18 実Linux・公開HTTP接続（最新）
+
+実Linux amd64コンテナで合成2ページを解析（22.908秒）、通信遮断・UID10001・非書込コード/モデル・取消・期限切れ・SIGTERM・job削除を確認。認証済みローカルworkerd→private RPC→同Linux Docling→最終complete/精算も21.045秒で成功した。Cloudflareへの配備・remote migration・公開URL有効化は未実施で、ローカル成功をremote完了とは扱わない。
+
+公開HTTP handlerは認証後に同意/intake/process/cancelを処理する。受信前認可・予約、転送中の再認可、停止精算後のcompleteを維持。早すぎるResponse返却によるworkerdの入力破棄、isolated Pythonの兄弟import、WranglerのCASE分割を実環境で修正。受付/cleanup/private実行flagsはfalse。本番private bindingなし。staging設定とdry-runを準備済み。
+
+検証: サーバー全1,851件、processor61件、provision6件、HTTP/app/process42件成功。Python102依存のauditは既知脆弱性0・skip0（OS/モデルライセンスの保証ではない）。独立Code/Securityレビューの未解決所見なし。回答品質の有料評価・実資料・未使用20問は使っていない。
+
+詳細・制約・ロールバック: [実Linuxと公開接続の検証](RAG_LINUX_PUBLIC_CONNECTION_REPORT.md)。staging専用のWorker/接続設定/DB更新と合成PDF1件のremote疎通について確認を提示済み、回答待ち。本番変更・プラン変更・追加購入は対象外。次はstagingの既存配備/DB状態と利用条件を確認し、承認後に段階適用・疎通する。iPad正式採用、claimed停止不明の復旧、retentionは残る。
+
+友人用メールは受領済み。現在のDefault projectはprod/stagingと混在しているため、評価専用project新規作成とMember招待を提案したが、作成操作が自動承認レビューで拒否された。明示承認の質問は回答待ち。招待・project作成・キー共有/作成・予算設定は未実施。個人メールはリポジトリ/Notionに複写しない。詳細はcollaboration/rag-prompt/API_ACCESS.md。
+
+今回起動したローカルworkerdと依存準備containerは停止済み。専用Colima VMも正常停止を確認済み。今回実行中の検証process: なし。Linuxイメージとignored provisionedを保持。自動スケジュールはPAUSED。Notionの既存RAGカードと共同担当カードへ結果・残件を追記済み。今回commit/push/deployなし。過去節の「Dockerなし/未build/公開handlerなし」は今回記録で更新される。Project複製/uploadは未変更。
+
+
+## 停止再試行・集計と次の正式採用設計（2026-10-18、最新）
+
+- 続行指示でfull High/独立Planner→実装→Code/Security観点レビュー。0013_rag_pdf_job_recovery.sql、rag/pdf-job-recovery.js、専用test、docs/RAG_PDF_RECOVERY.mdを追加。各DB段階/停止RPC候補最大10件、pass10秒、cancel待機2秒、lease30秒、最大3試行/固定backoff。期限切れをstop_requestedへ、未claimだけ安全に0精算。claimedはremote ackでも枠/units保持、元executor精算後だけdoneへ。遅いRPCから台帳更新/精算を再開しない。監視は集計だけ。
+- 専用13/全サーバー1,825成功（fail/skip0、全体50.468秒）。DB claim SQLの10秒停止/遅い完了、件数上限、競合lease、失敗backoff/上限、遅いRPC、不正ack、executor精算競合を検証。独立Code/Security観点レビューに未解決所見なし（独立再実行なし）。全test process完了、今回実行中なし。ログprivate tmp: studiquo-recovery-focused.log / studiquo-recovery-final-full.log。実D1/VMは未検証。
+- reaperは内部未接続。公開route/scheduler/binding設定なし。0010〜0013 remote未適用、token紛失/ローカル停止不明のclaimed自動解放とretentionは未実装。物理台帳削除/attempt巻戻しによる復旧はしない。rollbackは入口を閉じ台帳保持。
+- 正常区切りに続いて独立Plannerで次の新Notebook採用を調査し、RAG_PDF_ADOPTION_DESIGN.mdへ設計のみ記録。次の実装は本文保存を増やさないmetadata/receipt/原子的registry移行＋合成状態試験。intake document IDとNotebook.ragDocumentIDを固定、trusted manifest/text hashをbind、registry INSERTのintake取消triggerを維持し移行後は文書/receipt guardへ切替。receiptとregistryの片側成功をDB内でabortする。既存LibrarySyncの通常prepareで別世代へ上書きしない受渡しも必要。
+- 本文staging/転送方式は未確定。現在consumeResult終了時にmanifest参照を捨てるため、settle後の再取得はできない。通信中だけ保持（転送中の受付枠/期限/切断対応）か暗号化短期保管（保持/鍵/削除/認可/費用）が別設計境界。設計文書を実装済みとしない。iPad/公開送信は未接続。
+- Linux環境の用意/指定質問は回答未受領。Docker/Podman導入を続行指示から推測しない。一方metadata unitなど独立作業は継続可能。Notion既存カードに着手/結果/残件を追記済み、状態進行中。keys/有料API/追加download/commit/push/deployなし、自動スケジュールPAUSED。Project差替え対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG、Desktop/upload未変更。
+
+## 内部orchestrator・受付上限・実Docling接続（2026-10-18）
+
+- ユーザー指示に従い正常な区切りでは止めず次unitへ。pdf-process.js/pdf-manifest.js追加、jobにtoken付き実行guard、readerにcancel完了観測、intakeにserver policy必須のbounded登録を追加。公開route/config/bindingやiPad採用は未接続。
+- header→reserve/receiveclaim→有限reader/digest→dispatch1回→private parse→strict structure→非公開trusted consumer→停止確認精算→最終小状態再認可。consumerはstaging専用で参照を解放し、正式採用は別guard/commitが必須。結果manifestを直接返さない。
+- 独立reviewで未完了verifyによる早期slot解放High、cleanup期限再作成Medium、readerTask/manifest参照残存を修正。開始実taskを追跡し、不明なら枠保持。大結果/readerTask/Request参照は精算前に解放。consumer pendingも枠保持。最終Code/Security観点reviewに未解決所見なし（独立再テストなし）。
+- 全サーバー1,812/処理17/intake24成功、差分確認成功。最初の一時shadowingテスト失敗は修正済み。新MCP→実DoclingJob(Node shim)→実loopback HTTP→実offline Doclingの合成2pageを確認、parsePOST1回/7.642秒/非公開testconsumer/job精算/一時領域削除/helper停止。通常sandbox listener権限失敗後、127.0.0.1限定・許可されたlocal試験で成功。VM lifecycleはmockで実OS隔離ではない。本文/manifestはrepo/Notionへ保存せず、docs/RAG_PDF_ORCHESTRATION_REPORT.md/RESULTS.jsonへmetadata記録。
+- 次の計画Step3実Linux/Cloudflare VM確認に必要なDocker/PodmanがこのMacにない。実行環境の用意/指定が必要。実基盤未確認のままStep3完了/公開とはしない。続く残件: 実binding/D1、停止不明/token紛失復旧・監視/reaper/retention、heap/実費policy校正、公開rate limit、result staging→新Notebook採用/iPad。
+- 今回起動した全test/helperは完了・停止確認済み、実行中なし。keys/新有料API/追加モデル/commit/push/deploy/remote migrationなし、0010〜0012未適用、自動スケジュールPAUSED維持。
+- Notionは着手/結果/次の一手を更新済み、実Linux環境の用意/指定をあなた待ち。非同期質問で「このMacにDocker環境を用意する/利用できるLinuxを指定」を提示中。回答は未受領、通常判断や公開操作の許可を推測しない。Project差し替え対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG、Desktop/upload未変更。
+
+## Step1〜2のjob/admission基盤（2026-10-18）
+
+- 計画通りの継続指示でfull High/独立Planner・Code・Security観点レビュー。新0012_rag_pdf_jobs.sql、rag/pdf-jobs.js、専用testを追加。intake一意job、owner/global active/memory/day件数/unitsを単一SQLで予約。server policy必須、64MiB/件の保守的weight（heap実測保証なし）、UTC日窓、保存済み予約/精算値で計算。
+- reserve retryはID/stateのみ、receive claim勝者だけexecution token（DBはhash）、同token dispatch CAS一度/ever_dispatched不可逆。intake取消/差替え/失効→stop_requested、期限も停止要求のみ。未停止active枠は窓を越えても保持。未claimはstop後0でclose、claim済みはtrusted executor token＋実停止確認で精算（未dispatch0/dispatch済みfullreserve）、再精算冪等。既存AI credits/実請求は変更なし。
+- job17＋既存PDF52=関連69test成功、独立review残指摘なし。サーバー全体回帰1,792件成功（失敗/skip 0）。今回テストprocessは全て完了、実行中なし。独立再テストなし。実D1・実VM・heap測定は未実施。0010/0011/0012すべてremote未適用。
+- 次はこの状態機械を使う有限受信/verify/明示cancelの内部orchestratorと実停止契約の接続。公開前にintake予約API自体の行数/rate上限、reaper/cleanup retry、停止不明/token紛失の証拠付き復旧、retention、memory/実費policy校正が必要。今回をStep1/2全体完成としない。Docling実dispatch/iPad/採用は続く工程。
+- 本文/原PDF/原digest/タイトル/生tokenをjob台帳へ保存せず、固定error。policy/stopConfirmedをclientから作らない。token紛失・DB障害は枠保持で閉じる。keys/有料API/commit/push/deploy/自動スケジュール再開なし、既存dirty保持。
+- Notion既存カードへ着手/結果/次の一手を更新済み。Project差し替え対象: DATA_AND_MIGRATIONS.md、SECURITY_AND_PRIVACY.md、HYBRID_RAG.md。Desktop置き場/upload未変更。
+
+## 今後の本体ロードマップを整理（2026-10-18、計画のみ）
+
+- ユーザー依頼でRAG_REMAINING_IMPLEMENTATION_PLAN.mdに現行9段階と各完了基準を追加、過去計画は履歴として保持。独立Plannerの順序確認を反映。今回はコード/設定/モデル/課金変更なし、テスト再実行なし。直近1,775成功は前工程の結果。
+- 順序: 評価基準を最初に固定→1受付枠/並列メモリ/費用予約/once-only claim→2取消削除/停止/lease/retention→3実Linux基盤とprivate Docling接続→4iPad/結果採用/構造索引→5初回総合試験→6意味分割/抽出改善→7検索rewrite/rerank比較→8回答漏れ/補足境界/限定validator→9最終総合試験と限定公開。1〜2は一体設計、Linux準備は並行可能。停止不明の枠解放/再送を禁止する設計を先に決める。
+- 友人の固定contextでのprompt候補作業は今から並行可。本体検索が安定してから統合再評価。本番v1/凍結評価/未使用20問を維持、全変更同時比較をしない。OCR/図/数式・精密bbox・RAG利用エージェントは能力別の追加段階。
+- 次のコード作業は従来どおりStep1〜2のadmission/job状態遷移設計。今回は計画を公開/新有料評価の許可と扱わず、自動スケジュールPAUSED維持。今回実行processなし。Notion既存カードへ計画の着手・結果を追記済み。
+- 今回のProject複製の追加更新: なし（RAG計画/引き継ぎだけ）。前工程DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAGの差し替え必要記録は保持。置き場変更なし。
+
+## 新規PDFのintake予約・bytes同一性を実装（2026-10-18）
+
+- 前工程に続きfull手順/独立Planner・Code・Security観点レビューを実施。新0011_rag_pdf_intakes.sql、rag/pdf-intake.js、専用testを追加。text hash前の新規Notebook用に別intake owner/doc/current generation/server UUID/request/rawSHA256/bytes長/両同意epoch/10分期限を保存し、本文・PDF・タイトルは保存しない。
+- prepare CASと厳密current request retry（期限延長なし）、flags offでも取消、単一SQL再認可とbytes copy/長さ/signature/実SHA256/再認可を実装。既存rag_documentsは予約できず、同table変更やraw同意・account失効でpendingを取り消しdigest/長さを消す。intake世代はtext文書世代とは別。行を破棄して世代を巻き戻さない。
+- 関連52test成功（intake21＋認可18＋preflight13）。独立reviewに未解決所見なし。全体回帰1,775件成功（失敗/skip 0）。今回テストprocessは全て完了、実行中なし。実D1のtrigger連鎖/競合・実PDF/実iPadは未検証。
+- reader接続を含めず、verifierは有限readerの後だけを想定。admission未完成なのでbody reader/公開route/Doclingへ未接続。snapshotはlease/費用予約/once-only claimではなく同時verify成功を防がない。過去全request ID履歴は保存せず元期待世代の再送拒否を保証。TTLは自動DB物理消去ではない。
+- 次は受信前の受付数/並列メモリ・費用の予約と一度限りjob claim、job取消/削除・送信/採用前再認可。以降にDocling dispatchと新Notebookへの採用/iPad接続。intakeをtext registryへ安全に対応付ける必要がある。retention/受付上限は公開前必須残件。
+- 0010/0011はremote未適用。keys/有料API/commit/push/deploy/自動スケジュール再開なし、既存dirty保持。Notion既存RAGカードへ着手・結果・次の一手を更新済み、進行中を維持。
+- Project資料差し替え対象: DATA_AND_MIGRATIONS.md、SECURITY_AND_PRIVACY.md、HYBRID_RAG.md。置き場やclaude.ai uploadは未実施。
+
+## 原PDFの永続同意・文書認可を実装（2026-10-18）
+
+- 前回の次工程をfull手順で継続し、独立Planner/Code/Securityレビューを実施。0010_rag_raw_pdf_consent.sqlとrag/pdf-authorization.js、専用テストを追加。認証済みsession.subからcanonical ownerを計算、raw同意のCAS epochと親RAG epochへのbind、既存登録文書のsource ID/generation/text hash/両同意epochを単一SQLで確認する。
+- RAG同意変更/削除とaccount tombstoneのtriggerにより、旧Worker経由でもraw同意を原子的に無効化する。削除の途中失敗→再開や同意ABAで復活させない。safe integer最大epochは再付与不可、失効は可能。raw撤回で既存text RAGや索引は消さない。任意owner入力は拒否、payload/proofは非同期処理前コピー、DB例外は固定エラーにする。
+- 対象30件成功、Security独立18件成功、独立レビュー未解決指摘なし。全サーバー回帰1,752件成功（失敗/skip 0）。全体runの開始後に追加した2件は最終対象30件の方で成功、実装コードは同一。今回テストprocessは全て完了、実行中なし。実D1の競合/trigger運用は未確認。新0010はファイルとローカルSQLiteのみでremote適用なし。
+- このguardは既存registered文書に対するSQL時点snapshotのみ。新規Notebookでは解析前のtext sourceHashがないので、そのまま接続不可。次は新規intake文書/generation/rawPDF digestの予約と同一性確認、admission/費用予約/job取消削除、送信/採用前再認可の順で設計・実装する。公開routes/binding/iPad/Docling実送信は未接続、JWT検証は将来の呼出元で既存realSessionを使う。
+- 既存dirtyは保持、キー読取/有料API/commit/push/deploy/migration適用なし、スケジュールPAUSED。Notion既存RAGカードへ着手・結果・次の一手を更新済み、進行中を維持。
+- Projectの資料はDATA_AND_MIGRATIONS.md、SECURITY_AND_PRIVACY.md、HYBRID_RAG.mdの複製差し替えが必要。Desktop置き場/claude.aiアップロードは未実施。
+
+## 原PDF受信の前処理を実装（2026-10-18）
+
+- 友人のOpenAI追加はメール返信待ちで保留。ユーザー担当のRAG本体へ戻り、full手順で独立Planner/Code/Security確認を実施。
+- ai-privacy.jsからヘッダー専用判定を抽出し、既存JSON/model/取消削除の挙動を保持。新規rag/pdf-preflight.jsはflag/AI年齢・同意/RAG同意/別rawPDF同意と形式を本文取得前に確認。10MiB・10秒・65,536 read操作・PDF signature・宣言長一致、abort/失敗/cancelを扱う。共通未解決Promiseへのreaction累積をreviewで修正し現在read一件のみ保持。
+- 新primitiveは未接続。公開route/binding/config/DB/アプリ/Docling送信なし。ヘッダーは自己申告で認可ではない。次は本人・文書generation・永続rawPDF consent epoch・admission/費用予約/取消削除を接続前に実装する。最大約20MiB/呼出しのbuffer＋返却コピーと並列制限も考慮する。
+- 対象23件成功、Security独立23件成功、最終Code/Security未解決所見なし。最終サーバー全体1,736件成功（失敗/skip 0）。今回起動したテストprocessは全て完了、実行中なし。実Workers受信/切断、Linux/実VM、実資料精度は未検証。テスト成功を回答品質改善とみなさない。
+- コミット/push/deploy/migration/有料API/キー読取なし。スケジュールPAUSED維持、既存dirty保持。Projectの資料の今回追加更新: なし（未接続の内部部品とRAG設計記録）。Notionは既存RAGカードへ着手・結果を追記し、進行中を維持して次の一手を更新済み。
+
+## 評価用キーの共同利用準備（2026-10-18）
+
+- ユーザーは今の評価用キーを友人の担当にも使うことを依頼。OpenAI Docsの公式model/権限/spend limitを確認。元キーを使う秘密共有か同じ評価projectの友人専用キーか、共有経路を非同期質問中。秘密値は読取・表示・複製していない。友人のPCやOpenAI権限を設定済みとしない。
+- collaboration/rag-prompt/API_ACCESS.mdへ共有手順と予算提案。Luna通常入力$0.10/出力$0.50 per million。入力20k/出力8192仮定で24calls約$0.15、72calls約$0.44、360calls約$2.20。初回run$1/友人月$5は未承認の提案。USD管理で実為替価格とは混同しない。
+- 現kitはofflineのみ。API実行adapter/予算予約/取消再開の独立確認と実疎通は未実施。有料API0回、既存キー/本番/課金Dashboard変更なし。共有キーでは友人だけの費用上限・利用者別追跡を保証できない。hard limitとalertの違い、project上限があなた側の評価にも影響する点を明記。
+- 次の一手は共有経路の回答、友人側の秘密設定、実行adapter/予算承認。今回の資料は未commit/push。追加のProject複製更新はなし。実行中のAPI評価processなし。Notionの友人タスクへ準備と未完を追記する。
 
 ## 共同開発キットのGitHub保存（2026-10-18）
 

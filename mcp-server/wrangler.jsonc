@@ -45,6 +45,7 @@
   "ratelimits": [
     { "name": "RATE_LIMIT_RAG_INDEX", "namespace_id": "1025", "simple": { "limit": 30, "period": 60 } },
     { "name": "RATE_LIMIT_RAG_SEARCH", "namespace_id": "1026", "simple": { "limit": 20, "period": 60 } },
+    { "name": "RATE_LIMIT_RAG_PDF", "namespace_id": "1027", "simple": { "limit": 10, "period": 60 } },
     { "name": "RATE_LIMIT_APPLE_AUTH", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
     { "name": "RATE_LIMIT_GOOGLE_AUTH", "namespace_id": "1007", "simple": { "limit": 5, "period": 60 } },
     { "name": "RATE_LIMIT_EMAIL_VERIFY_SEND", "namespace_id": "1008", "simple": { "limit": 5, "period": 60 } },
@@ -109,6 +110,8 @@
   "vars": {
     "RAG_ENABLED": "false",
     "RAG_AUTO_INDEX_ENABLED": "false",
+    "RAG_PDF_PROCESSING_ENABLED": "false",
+    "RAG_PDF_CLEANUP_ENABLED": "false",
     // Enable only after migration 0005 and staging verification.
     "PRIVACY_RETENTION_ENABLED": "false",
     // Approve the provider's audience/contract before enabling AI requests.
@@ -148,6 +151,7 @@
   "env": {
     "staging": {
       "name": "studiquo-mcp-staging",
+      "services": [{"binding":"DOCLING_PROCESSOR","service":"studiquo-private-docling-staging","entrypoint":"DoclingProcessor"}],
       "ai": { "binding": "AI" },
       "vectorize": [{ "binding": "RAG_VECTORIZE", "index_name": "studiquo-rag-v1-staging" }],
       // No hourly retention job on staging.
@@ -187,6 +191,7 @@
       "ratelimits": [
         { "name": "RATE_LIMIT_RAG_INDEX", "namespace_id": "2025", "simple": { "limit": 30, "period": 60 } },
         { "name": "RATE_LIMIT_RAG_SEARCH", "namespace_id": "2026", "simple": { "limit": 20, "period": 60 } },
+        { "name": "RATE_LIMIT_RAG_PDF", "namespace_id": "2027", "simple": { "limit": 10, "period": 60 } },
         { "name": "RATE_LIMIT_APPLE_AUTH", "namespace_id": "2001", "simple": { "limit": 5, "period": 60 } },
         { "name": "RATE_LIMIT_GOOGLE_AUTH", "namespace_id": "2007", "simple": { "limit": 5, "period": 60 } },
         { "name": "RATE_LIMIT_EMAIL_VERIFY_SEND", "namespace_id": "2008", "simple": { "limit": 5, "period": 60 } },
@@ -215,6 +220,10 @@
       "vars": {
         "RAG_ENABLED": "false",
         "RAG_AUTO_INDEX_ENABLED": "false",
+        "RAG_PDF_PROCESSING_ENABLED": "false",
+        "RAG_PDF_CLEANUP_ENABLED": "false",
+        "RAG_PDF_ADMISSION_POLICY": "{\"perOwnerActive\":1,\"globalActive\":1,\"globalMemoryBytes\":67108864,\"perOwnerDailyUnits\":10,\"globalDailyUnits\":20,\"reservationUnits\":1,\"perOwnerDailyRequests\":10,\"globalDailyRequests\":20}",
+        "RAG_PDF_INTAKE_LIMITS": "{\"ownerRows\":10,\"globalRows\":100,\"ownerPending\":1,\"globalPending\":2}",
         "PRIVACY_RETENTION_ENABLED": "false",
         "AI_PROVIDER_APPROVED": "false",
         "OPENAI_LUNA_MODEL": "gpt-6-luna",

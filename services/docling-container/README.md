@@ -1,8 +1,8 @@
-# Unbuilt Docling container recipe
+# Docling container recipe (Linux verified, not deployed)
 
-This is a disconnected, disabled preparation unit. Docker/Podman is unavailable on the development host, so the image has **not** been built or started. No image was uploaded and no Cloudflare resource was provisioned. Do not mark Linux compatibility, filesystem isolation, retained-data deletion or production readiness as verified.
+2026-10-18: Built and tested linux/amd64 in a dedicated local Linux VM. Synthetic parse, offline execution, non-root/read-only code and models, cancellation, deadlines and cleanup passed. Local workerd → private RPC → this image also passed. Actual Cloudflare deployment/isolation and public URL remain unverified. See [report](../../docs/RAG_LINUX_PUBLIC_CONNECTION_REPORT.md).
 
-The recipe requires a separately reviewed **Python 3.12 Linux base image by SHA256 digest**, including the native shared libraries required by Docling/PyTorch. No base digest is selected here. An empty build argument intentionally prevents accidental builds. `RUN` installation is network-disabled; model acquisition and dependency acquisition never happen during serving.
+The recipe requires a separately reviewed **Python 3.12 Linux base image by SHA256 digest**, including the native shared libraries required by Docling/PyTorch. The selected tested base digest is recorded in the report and staging configuration. An empty build argument intentionally prevents accidental builds. `RUN` installation is network-disabled; model acquisition and dependency acquisition never happen during serving.
 
 An operator must separately prepare the ignored `provisioned/` folder with:
 

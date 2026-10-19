@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-18",
+  "scope": "internal_not_public",
+  "tests": {
+    "server": 1812,
+    "serverFailures": 0,
+    "serverSkipped": 0,
+    "process": 17,
+    "intake": 24
+  },
+  "review": {
+    "blockingFindings": 0,
+    "fixed": [
+      "unfinished_local_task_released_admission",
+      "cleanup_grace_reset",
+      "large_result_retained_after_settlement"
+    ],
+    "independentTestsRun": false
+  },
+  "interop": {
+    "syntheticPages": 2,
+    "parseCalls": 1,
+    "elapsedSeconds": 7.642,
+    "jobSettled": true,
+    "helperStopped": true,
+    "temporaryJobRemoved": true,
+    "docling": "real_offline",
+    "transport": "real_loopback_node_fetch",
+    "vmLifecycle": "mock",
+    "resultSink": "private_test_only"
+  },
+  "notVerified": [
+    "linux_build",
+    "real_cloudflare_vm",
+    "real_d1_triggers_and_concurrency",
+    "ipad_automatic_flow",
+    "heap_profiling",
+    "public_result_delivery_and_adoption"
+  ],
+  "notPerformed": [
+    "deployment",
+    "remote_migration",
+    "paid_api",
+    "key_read",
+    "push",
+    "model_download"
+  ],
+  "sourceHashes": {
+    "mcp-server/src/rag/pdf-process.js": "17fa08e6299b8518072646c4ed31b93b9ad71ecd14f36227c774e093450d6b73",
+    "mcp-server/src/rag/pdf-manifest.js": "131efc2aa32ad7f0c655456509274c5e6bbfbab1cec2f9f173eece688f59172d",
+    "mcp-server/src/rag/pdf-preflight.js": "d1886f93f8e88aec947b81daec542e642640aa8b72c87ce6992c0150d3f5aad3",
+    "mcp-server/src/rag/pdf-jobs.js": "d6c3ee6545bf5e14232fd0657f3d829ada74335a3afa4729949e9cd9b1a769bf",
+    "mcp-server/src/rag/pdf-intake.js": "9fed2ab1e341a13104dd86870eaecec241b81a73baac323b1d398c6dfee597d7"
+  }
+}

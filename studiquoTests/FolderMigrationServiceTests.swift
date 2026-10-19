@@ -178,3 +178,35 @@ final class FolderMigrationServiceTests: XCTestCase {
         return container
     }
 }
+
+final class FolderPathMetadataTests: XCTestCase {
+    func testRenamingMovesTheFolderAndItsChildren() {
+        let result = FolderPathMetadata.renamingKeys(["A": 1, "A/B": 2, "C": 3], from: "A", to: "X")
+
+        XCTAssertEqual(result, ["X": 1, "X/B": 2, "C": 3])
+    }
+
+    func testRenamingOntoAnExistingPathDoesNotTrapAndKeepsTheExistingEntry() {
+        // Renaming "A" to "B" while "B" already has an entry used to crash on
+        // the duplicate key.
+        let result = FolderPathMetadata.renamingKeys(["A": 1, "B": 2], from: "A", to: "B")
+
+        XCTAssertEqual(result, ["B": 2])
+    }
+
+    func testRenamingChildCollisionKeepsTheUntouchedEntry() {
+        let result = FolderPathMetadata.renamingKeys(["A/x": 1, "B/x": 2], from: "A", to: "B")
+
+        XCTAssertEqual(result, ["B/x": 2])
+    }
+
+    func testSimilarPrefixIsNotTreatedAsAChild() {
+        let result = FolderPathMetadata.renamingKeys(["AB": 1, "A": 2], from: "A", to: "X")
+
+        XCTAssertEqual(result, ["AB": 1, "X": 2])
+    }
+
+    func testEmptyInputStaysEmpty() {
+        XCTAssertTrue(FolderPathMetadata.renamingKeys([String: Int](), from: "A", to: "B").isEmpty)
+    }
+}

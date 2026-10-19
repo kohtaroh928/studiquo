@@ -12,6 +12,9 @@ import signal
 import stat
 import sys
 
+# -I deliberately removes the script directory from sys.path. Only restore the
+# deployment-owned code directory, never cwd/PYTHONPATH or a request path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from private_http import PrivateHTTPProcessor
 from runner import PDFProcessor
 

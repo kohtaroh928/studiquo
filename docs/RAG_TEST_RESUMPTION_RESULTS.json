@@ -1,0 +1,150 @@
+{
+  "date": "2026-10-17",
+  "baseCommit": "09e2a7eb3a3e72112224d1be9475bca4abe176cf",
+  "scope": "project_copies_and_local_rag_test_resumption",
+  "project": {
+    "updatedFiles": [
+      {
+        "file": "1-product-design/ARCHITECTURE.md",
+        "sha256": "cfaa48e1212520666cc2b0e3add6cf9129216960de62c82434f5d42fe663aa42",
+        "source": "docs/ARCHITECTURE.md"
+      },
+      {
+        "file": "1-product-design/DATA_AND_MIGRATIONS.md",
+        "sha256": "5fe3fc5a647880aa182f1d7f90069108e8596b224bcfd4a42c3c37e1b6683a77",
+        "source": "docs/DATA_AND_MIGRATIONS.md"
+      },
+      {
+        "file": "1-product-design/SECURITY_AND_PRIVACY.md",
+        "sha256": "7577e0268718a84c60ba3c94a5aee2adbbcc3b158e640e81d277f4e596697237",
+        "source": "docs/SECURITY_AND_PRIVACY.md"
+      },
+      {
+        "file": "1-product-design/HYBRID_RAG.md",
+        "sha256": "c7fe7263b48d646c8cef6c95f8d78d39d828f263556ce519fe79f6e75e77c880",
+        "source": "docs/HYBRID_RAG.md"
+      },
+      {
+        "file": "1-product-design/INDEX.md",
+        "sha256": "8cbaa30c677c249d9e2bd9bd234e84b269f232e4d879de34737f2acfc6b18255",
+        "source": "docs/INDEX.md"
+      },
+      {
+        "file": "2-release-store/SECURITY_AND_PRIVACY.md",
+        "sha256": "7577e0268718a84c60ba3c94a5aee2adbbcc3b158e640e81d277f4e596697237",
+        "source": "docs/SECURITY_AND_PRIVACY.md"
+      },
+      {
+        "file": "2-release-store/legal-pages-source.js.txt",
+        "sha256": "6c15f06333d4dc01a0a75ba85349d5929100fe5491ceb57ade7e035dfe1a0388",
+        "source": "mcp-server/src/legal.js"
+      },
+      {
+        "file": "2-release-store/release-2026-10-09-rag-citation-staging-recheck.md",
+        "sha256": "c703f4a7ae53dd0add332ece6c1fa1b2e4a0937e8472db7a42a1b4cc4c953526",
+        "source": "docs/releases/2026-10-09-rag-citation-staging-recheck.md"
+      },
+      {
+        "file": "2-release-store/release-2026-10-09-rag-staging-validation.md",
+        "sha256": "39b8f41d6ac9420c0c6674f2a5a6378e26f0eadedd24cfc04f8cb679a641f5cd",
+        "source": "docs/releases/2026-10-09-rag-staging-validation.md"
+      },
+      {
+        "file": "2-release-store/release-2026-10-10-rag-evidence-staging-validation.md",
+        "sha256": "0418f4efbd1010c66acd44006dfcc70f42c47a93bb4fdc5cd08a2473e2489b26",
+        "source": "docs/releases/2026-10-10-rag-evidence-staging-validation.md"
+      },
+      {
+        "file": "2-release-store/release-2026-10-10-rag-reserve-recovery.md",
+        "sha256": "15249b4612448c3d65b437b59653315e396ab188009b749babf08fff38403bc3",
+        "source": "docs/releases/2026-10-10-rag-reserve-recovery.md"
+      },
+      {
+        "file": "1-product-design/00_機能一覧と現状.md",
+        "sha256": "927322d763b5d673439a4f4c1c8fa9097645ff95d6b5d941a2a76976c69c982d",
+        "source": null
+      },
+      {
+        "file": "1-product-design/01_意思決定ログ.md",
+        "sha256": "af766884909c5e5d772e5f825d8c6912083dd2c9aa81cd492bee700bcd82b799",
+        "source": null
+      },
+      {
+        "file": "2-release-store/00_残タスク表.md",
+        "sha256": "e96e721168754c11cf820cbe9719a55a410e6dadda7523b3a43a2b85a8b2de1c",
+        "source": null
+      },
+      {
+        "file": "2-release-store/01_ストアメタデータ原稿.md",
+        "sha256": "b7b0f4c3e28a090bd2df5b7b159737423507b78f1a9cc9e0459a38d98593d35c",
+        "source": null
+      },
+      {
+        "file": "2-release-store/02_審査メモ.md",
+        "sha256": "246594d140a9cd2cca6f8728bfc7223c828db1c7ffc2494fbc0a0ef931d37245",
+        "source": null
+      },
+      {
+        "file": "2-release-store/03_サブスク商品定義.md",
+        "sha256": "ab52cad76ac01395e418fd22eab8210c8d8bfd4cbaa542fc6c881345566e2efc",
+        "source": null
+      },
+      {
+        "file": "README.md",
+        "sha256": "41d358686b1a9bc55ad07f40235dfbcca7fcaf453ece04ea197c1e85fb2f6407",
+        "source": null
+      }
+    ],
+    "sourceCopiesVerified": 11,
+    "uploadedToClaude": false,
+    "rollbackBackupRetainedPrivately": true
+  },
+  "iosUnit": {
+    "passed": 134,
+    "failed": 0,
+    "environment": "signed iPad Pro 13-inch M5 / iOS 26.5 simulator",
+    "cloudKitDeviceMigrationVerified": false,
+    "workingTree": "includes preserved unrelated local edits in ContentView/StudiquoApp; no application source changed during this task"
+  },
+  "coverageReplay": {
+    "syntheticOnly": true,
+    "externalCalls": 0,
+    "developmentQuestions": 30,
+    "styleContracts": 60,
+    "reusedAnswers": 24,
+    "reviewedDeltaAnswers": 8,
+    "counts": {
+      "satisfied": 5,
+      "omitted": 3,
+      "explicitCandidates": 3,
+      "omissionCandidates": 3,
+      "needsReview": 2
+    },
+    "allEmittedFieldsMatchPrior": true,
+    "limitation": "fixed historical four-variant answers and existing review annotations; no new generation, no current production pass-rate estimate, no unused holdout tuning"
+  },
+  "newPaidAPICalls": 0,
+  "deployment": false,
+  "remoteMigration": false,
+  "scheduledAutomation": "PAUSED",
+  "testSourceHashes": {
+    "studiquoTests/RAGCitationMetadataTests.swift": "338b42d25a5da61a90b65282d777c38a3b9945d4e33563b60f20878629ee3633",
+    "studiquoTests/RAGClientTests.swift": "8096d822614560f66dbede6d7feb7368ca897920909dc8b71c29e086080c17fe",
+    "studiquoTests/RAGDocumentTextExtractionTests.swift": "5511c888f9e3f9fb161dc67a4fd12ffa69530d35179e76eb52d219ed6b185021",
+    "studiquoTests/RAGLibrarySyncTests.swift": "cb2d28d0326bf678ca8190da1ba77c61cf1601c6ae688bb924a94ce01a8f7ead",
+    "studiquoTests/RAGStructuredAttachmentTests.swift": "a4df9fbc0bcdff8fceb034997821da9b1c6c58411a27fa5590792955c1f44010",
+    "studiquoTests/RAGStructuredDocumentTests.swift": "5a46e293a1f4bb0f5bbc3fa0bb9c475c5e01def5f6ef228535cd871d2deae186",
+    "studiquoUITests/RAGCitationNavigationTests.swift": "1e0aa3653215ff27eeb4e2047086c24a86acc1853b0fab7a7157fd790ca6f91b",
+    "mcp-server/scripts/rag-quality/answer-coverage-replay.mjs": "cae902199e65f955f713ab410305c29db0ccf95b04e1b111669bf5ba1d7e453d"
+  },
+  "iosUI": {
+    "passed": 3,
+    "failed": 0,
+    "checks": [
+      "stored_search_data_management",
+      "retrieval_status_and_unknown_status",
+      "citation_opens_page_3"
+    ]
+  },
+  "qualityImprovementProven": false
+}

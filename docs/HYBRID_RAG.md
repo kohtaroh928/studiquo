@@ -569,3 +569,43 @@ Doclingの本文chunkと保護要素を受け取るoptional structure入力、st
 ## Doclingのprivate Container実行境界（2026-10-17、未配備）
 
 独立services/docling-workerにprivate RPC/default flag false、単発jobの期限・取消・非本文状態・destroy後返却を実装。Container専用Python入口、ready前版/model検証、有限no-follow orphan cleanup、offline/nonroot Docker recipeとsample configを追加。既存MCP/iPadは未接続。JS28・Python関連60/既存49成功、型生成/bundleと合成2pageの実Nodefetch→Docling接続を確認（VMlifecycleはmock）。Docker不在でLinux build/実Cloudflare起動・隔離・停止は未検証。原PDF別同意/認可/admission・削除/予算・運用監視と依存監査を満たす前に有効化しない。DO stateはopaque ID/status/deadline/cleanup回数のみで本文なし、tombstone retentionは未設計。storage障害でpoison/alarm保存できない場合は運用停止確認が必要。詳細 [RAG_DOCLING_CONTAINER_BOUNDARY_REPORT.md](RAG_DOCLING_CONTAINER_BOUNDARY_REPORT.md)。公開操作・追加購入なし、自動スケジュールPAUSED。
+
+### 原PDFの受信・同意・文書認可部品（2026-10-18、未接続）
+
+rawPDF用header-only preflightと有限10MiB/10秒readerに続き、独立した永続同意epoch/CASと既存登録文書のowner/generation/text sourceHash/両同意epochを照合する内部guardを追加。RAG同意変更やaccount tombstoneでraw同意がDB内失効する。新migration0010はファイル追加・ローカル検証のみ、既存routeやbindingは変更せず原PDF自動解析全経路はまだ未接続。text sourceHashをrawPDF digestと混同しない。新規Notebookの事前intake、PDF bytesの同一性検証、admission/費用予約・取消削除・再認可・iPad導線が次工程。詳細: [段階設計](RAG_DOCLING_AUTOMATIC_PROCESSING_DESIGN.md)。
+
+### 新規原PDFの受付予約・同一性確認（2026-10-18、未接続）
+
+解析前の受付は既存text文書registryと別のintakeで管理する。期待世代CAS、server UUID/10分期限、両同意epoch、原PDF SHA256/長さをbindし、同一再送は期限を延ばさない。取消・同意失効・旧文書経路との競合で受付を無効化する。有限reader後bytes用のコピー/実SHA256/再認可verifierを追加したが、受信前admission・重複job claim・Docling dispatch・結果採用は次工程。0011はファイル追加とローカル検証のみで未適用。原PDF自動解析の公開経路/iPadは未接続。詳細: [段階設計](RAG_DOCLING_AUTOMATIC_PROCESSING_DESIGN.md)。
+
+### 原PDF jobの利用枠・重複防止（2026-10-18、未接続）
+
+0012にserver policy必須のowner/global active数・memory weight・日次受付数/予約unitsを単一SQLで制限するjob台帳を追加。reserve再送は同じjob ID、受信claim勝者だけexecution token、解析dispatchも一度のCASとする。intake失効・差替え・取消と期限切れは停止要求にし、実停止確認まで枠を保持。trusted executorのtoken精算は冪等、未dispatch0/dispatch済み予約全unitsを記録する。既存AI credits/実請求は変更なし。今回reader/Docling/公開routeは未接続で、実停止・自動監視復旧/保持整理・運用policyの校正が次工程。詳細: [段階設計](RAG_DOCLING_AUTOMATIC_PROCESSING_DESIGN.md)。
+
+2026-10-18 更新: 内部orchestratorのDocling接続に続き、0013/停止再試行reaper/集計を追加。各DB段階と停止RPC候補は最大10件、pass最大10秒、remote cancel最大3回。未claimだけ自動0精算、claimedはremote停止後も枠を保持し、ローカル終了確認は元executorの責務。公開route/scheduler/iPad採用へは未接続、実Linux/D1確認・retentionは未完。詳細: [停止と復旧](RAG_PDF_RECOVERY.md)。
+
+### 原PDFの内部受信・解析接続（2026-10-18、未公開）
+
+admission/receive claim/有限reader/digest/dispatch/private parse/strict manifest/非公開consumer/停止確認精算を接続。jobのみの取消も監視する。大きい結果を精算後に保持せず、trusted consumer完了まで枠を保持。bounded intakeはowner/global行数とpending上限を条件付きSQLで確認する。最終全Worker1,812成功、実offline Docling合成2page/実loopback/解析1回を確認（VMlifecycleはmock）。実Linux/Cloudflare/D1とiPad採用・公開経路は未確認/未接続。詳細: [記録](RAG_PDF_ORCHESTRATION_REPORT.md)。
+
+## 2026-10-18 実Linux・公開HTTP接続（最新）
+
+実Linux amd64コンテナで合成2ページを解析（22.908秒）、通信遮断・UID10001・非書込コード/モデル・取消・期限切れ・SIGTERM・job削除を確認。認証済みローカルworkerd→private RPC→同Linux Docling→最終complete/精算も21.045秒で成功した。Cloudflareへの配備・remote migration・公開URL有効化は未実施で、ローカル成功をremote完了とは扱わない。
+
+公開HTTP handlerは認証後に同意/intake/process/cancelを処理する。受信前認可・予約、転送中の再認可、停止精算後のcompleteを維持。早すぎるResponse返却によるworkerdの入力破棄、isolated Pythonの兄弟import、WranglerのCASE分割を実環境で修正。受付/cleanup/private実行flagsはfalse。本番private bindingなし。staging設定とdry-runを準備済み。
+
+検証: サーバー全1,851件、processor61件、provision6件、HTTP/app/process42件成功。Python102依存のauditは既知脆弱性0・skip0（OS/モデルライセンスの保証ではない）。独立Code/Securityレビューの未解決所見なし。回答品質の有料評価・実資料・未使用20問は使っていない。
+
+詳細・制約・ロールバック: [実Linuxと公開接続の検証](RAG_LINUX_PUBLIC_CONNECTION_REPORT.md)。次はstagingの既存配備/DB状態と利用条件を確認し、remote配備の承認範囲を確定してから段階適用・疎通する。iPad正式採用、claimed停止不明の復旧、retentionは残る。
+
+## 2026-10-19 原PDF記録の保存・削除設計（未実装）
+
+[保存期間・整理順](RAG_PDF_RETENTION_DESIGN.md)を追加。期限切れintakeは永続取消/詳細削減、停止不明jobは保持、精算済み詳細は暫定48時間＋過去UTC窓＋参照なしでのみ整理候補とする。世代/失効fenceと現DO spent markerは単純削除しない。settled_at/単調会計floor/原子的削除/旧writer互換が追加実装の前提。account削除callerのPDF停止pending接続、将来receiptと期限付きv2 RPC/DO purgeは残る。これは稼働中の保持保証ではなく設計で、実データ削除・設定変更は行っていない。
+
+## 原PDF Step5-Aのローカル実装（2026-10-19）
+
+追加0014にnullable精算時刻/control/index。旧schema停止互換、旧時刻NULL保持。内部期限整理はflag/schema gate下で最大10受付を永続取消し、PDF指紋/長さ/requestを削減、世代fenceと停止不明job/利用枠を維持する。非識別集計のみ、scheduler/公開接続なし。物理job/DO削除・account PDF pending・receiptは未完。最終server1865件＋実local D1成功、独立レビュー指摘修正済み。remote未適用。詳細: [Step5-A報告](RAG_PDF_RETENTION_IMPLEMENTATION_REPORT.md)。
+
+## 原PDF Step5-Bの処理済み台帳整理（2026-10-19）
+
+追加0015で初期無効の内部purgeを実装。精算から48h・過去UTC窓・永続失効/置換・既知時刻・復旧done/leaseなしだけ、粗い候補10件とcursorで有限整理。floor/child/parent/leaseは原子的rollback、writer fenceは停止後も維持。legacy/停止不明/registry参照は保持、将来採用migrationはpre-adoption契約を先に変更して旧purgeを閉じる。server1888件と実local D1同時pass/rollback検証成功。remote未適用、HTTP/cron/flag未有効化。詳細: [Step5-B報告](RAG_PDF_PURGE_IMPLEMENTATION_REPORT.md)。

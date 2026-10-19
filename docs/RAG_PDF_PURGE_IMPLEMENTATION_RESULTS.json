@@ -1,0 +1,60 @@
+{
+  "scope": "Step5-B local pre-adoption purge only",
+  "date": "2026-10-19",
+  "files": [
+    {
+      "path": "mcp-server/migrations/0015_rag_pdf_purge.sql",
+      "sha256": "b6315791d92aa050054aefbe5932347d576b0129db640a9cbcd6ef8dfd9fa14a"
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-purge.js",
+      "sha256": "b143394adff3d6137d0bdd39b8f2a7d2608db1bbb0af2fc0324196f30801aa0f"
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-jobs.js",
+      "sha256": "5d73db93e6f04ea205357211c1026f0181059cc088fcee261c4aa3171f5dc183"
+    },
+    {
+      "path": "mcp-server/src/rag/pdf-retention.js",
+      "sha256": "751563655d9e51408a027a156e2f297ff96c67fd0f952a799e3665f4b40e1d72"
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-purge.test.js",
+      "sha256": "dc4e04c4cec215ae8e8b2c7a81fee8e27b2a66678d9f55b38864f71d879f4b3d"
+    },
+    {
+      "path": "mcp-server/src/rag-pdf-migration.test.js",
+      "sha256": "e8ea561fcdc07eb815a7338904f4a85fdba9fb3ce5f97e5d63d27c481545bc39"
+    },
+    {
+      "path": "mcp-server/tools/rag-pdf-purge-local-smoke.mjs",
+      "sha256": "c291e57d96ccae5abbd279b8a637fcb5601c33693aa1903be9a1031246d64db2"
+    }
+  ],
+  "serverTests": {
+    "pass": 1888,
+    "fail": 0,
+    "skip": 0
+  },
+  "purgeTests": 23,
+  "localWorkerdD1": {
+    "localWorkerd": true,
+    "migrations": 15,
+    "purgeAtomic": true,
+    "floorAdvanced": true,
+    "rollbackChildParentFloor": true,
+    "concurrentPasses": true,
+    "unknownReceiptDenied": true,
+    "remoteChanges": false
+  },
+  "runtimeEnabled": false,
+  "remoteChanges": false,
+  "receiptAccountDOPurgeImplemented": false,
+  "answerQualityEvaluated": false,
+  "independentReviews": {
+    "planner": true,
+    "code": "no unresolved findings",
+    "security": "no unresolved findings",
+    "independentTestRerun": false
+  }
+}

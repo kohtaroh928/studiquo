@@ -4116,12 +4116,7 @@ struct ContentView: View {
         folderNamesStorage = Array(Set(renamedPaths)).sorted().joined(separator: "\n")
 
         let created = folderCreatedAt
-        let renamedCreated = Dictionary(uniqueKeysWithValues: created.map { path, value in
-            let newPath = (path == oldRoot || path.hasPrefix(oldRoot + "/"))
-                ? replacingFolderPrefix(in: path, oldRoot: oldRoot, newRoot: newRoot)
-                : path
-            return (newPath, value)
-        })
+        let renamedCreated = FolderPathMetadata.renamingKeys(created, from: oldRoot, to: newRoot)
         if let data = try? JSONEncoder().encode(renamedCreated),
            let text = String(data: data, encoding: .utf8) {
             folderCreatedAtStorage = text
@@ -7636,5 +7631,25 @@ extension ContentView {
                 )
             }
         )
+    }
+}
+
+
+/// Folder-path keyed metadata (e.g. creation dates) when a folder is renamed.
+enum FolderPathMetadata {
+    /// Renaming into a path that already has an entry makes two keys collide;
+    /// that must not trap. The entry that was already at the new path wins.
+    static func renamingKeys<V>(_ values: [String: V], from oldRoot: String, to newRoot: String) -> [String: V] {
+        func renamed(_ path: String) -> String {
+            guard path == oldRoot || path.hasPrefix(oldRoot + "/") else { return path }
+            return path == oldRoot ? newRoot : newRoot + String(path.dropFirst(oldRoot.count))
+        }
+        // Visit untouched keys first so they win over renamed ones.
+        let ordered = values.sorted { lhs, rhs in
+            let lhsMoved = renamed(lhs.key) != lhs.key
+            let rhsMoved = renamed(rhs.key) != rhs.key
+            return lhsMoved == rhsMoved ? lhs.key < rhs.key : !lhsMoved
+        }
+        return Dictionary(ordered.map { (renamed($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
     }
 }

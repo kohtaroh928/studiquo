@@ -1,4 +1,5 @@
 import { handleRAG } from "./rag/index.js";
+import { handleRawPDFHTTP } from "./rag/pdf-http.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import * as z from "zod/v4";
@@ -433,6 +434,8 @@ export default {
 
       if (url.pathname.startsWith("/api/rag/")) {
         if (!session) return json({ error: "Sign in again." }, 401);
+        const pdf = await handleRawPDFHTTP(url, request, env, session);
+        if (pdf) return pdf;
         const privacyFailure = await ragPrivacyRejection(request, env, url.pathname);
         if (privacyFailure) return privacyFailure;
         return await handleRAG(url, request, env, session);

@@ -301,7 +301,10 @@ private struct FriendChatUITestRoot: View {
     )
     private let friend = FriendRecord(
         id: UUID(), name: "Test friend", code: "TEST01",
-        todayStudySeconds: 0, roomID: nil, isDemo: false
+        todayStudySeconds: 0, roomID: nil,
+        // Scroll regression needs a successful local send; the separate
+        // rejected-send fixture retains its unavailable room behavior.
+        isDemo: ProcessInfo.processInfo.arguments.contains("--friend-chat-scroll-test")
     )
 
     var body: some View {

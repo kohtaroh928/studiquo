@@ -4,6 +4,7 @@ import importlib.metadata
 import os
 from pathlib import Path
 import signal
+import subprocess
 import sys
 import tempfile
 import types
@@ -13,6 +14,17 @@ from unittest.mock import patch
 import container_entry as entry
 from private_http import PrivateHTTPProcessor
 from test_private_http import MockProcessor
+
+
+class IsolatedBootstrapTests(unittest.TestCase):
+    def test_isolated_entry_imports_fixed_siblings_and_ignores_cwd(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / 'private_http.py').write_text("raise RuntimeError('untrusted cwd imported')")
+            script = Path(entry.__file__).resolve()
+            result = subprocess.run([sys.executable, '-I', '-B', '-c',
+                                     'import runpy,sys;runpy.run_path(sys.argv[1],run_name="bootstrap_test")', str(script)],
+                                    cwd=directory, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, 'isolated bootstrap failed')
 
 
 class CleanupTests(unittest.TestCase):
