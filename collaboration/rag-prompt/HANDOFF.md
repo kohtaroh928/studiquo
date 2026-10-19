@@ -12,3 +12,10 @@
 ## 2026-10-18: 評価キー共有の準備
 
 ユーザーが既存評価キーを友人の担当作業でも使用することを依頼。API_ACCESS.mdへ料金・共有方法・予算/停止条件を整理。Luna入力$0.10/出力$0.50 per million、入力20k/出力8192仮定で24/72/360callsは約$0.15/$0.44/$2.20。初回$1/友人月$5は提案のみ。共有経路/友人PC設定/実行adapter/予算承認は未完了。秘密値は読取・複製せず、有料API0回。
+
+## 2026-10-19: 採点表と採点スクリプト（Claude）
+
+- 追加: candidates/requirement-coverage-v1.json、rubric-fixed6.json、score.mjs、score.test.mjs。Node 24で score/workspace の9テスト成功。
+- 回答生成は未実施。有料API0回。このクラウド環境からはapi.openai.comへ接続できない（ネットワーク設定で拒否）。
+- 次の一手: 生成手段（Luna/実行場所/予算）を決め、36回答を保存してscore.mjsで予備判定→人が確定。
+- Notion: この作業環境にNotion接続がなく未記録。
