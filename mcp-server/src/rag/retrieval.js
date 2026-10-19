@@ -10,23 +10,24 @@ import { boundedSearch } from "./search-branches.js";
 import { missingEvidence, selectEvidence } from "./evidence-selection.js";
 import {organizeComparisonEvidence,assessComparisonEvidence} from './comparison-evidence.js';
 import { sourceQualification, sourceContextColumn, referencesAuthorized } from "./authorization.js";
-const EMPTY = { context: "", citations: [] };
+import { LIMITS } from "./limits.js";
+import { emptyRetrieval } from "./contract.js";
 async function retrieveInternal(env, session, payload, deadline) {
-  if (env.RAG_ENABLED !== "true") return EMPTY;
+  if (env.RAG_ENABLED !== "true") return emptyRetrieval("disabled");
   if (
     typeof session?.sub !== "string" ||
     !env.ADMIN_DB ||
     !env.AI ||
     !env.RAG_VECTORIZE
   )
-    return EMPTY;
+    return emptyRetrieval("not_configured");
   const query =
     payload.query ??
     payload.message ??
     payload.messages?.filter((m) => m.role === "user").at(-1)?.text ??
     payload.messages?.filter((m) => m.role === "user").at(-1)?.content;
-  if (typeof query !== "string" || !query.trim() || query.length > 4000)
-    return EMPTY;
+  if (typeof query !== "string" || !query.trim() || query.length > LIMITS.queryChars)
+    return emptyRetrieval("invalid_query");
   // A malformed requested scope must never silently broaden to the library.
   if (
     payload.rag != null &&
@@ -36,10 +37,10 @@ async function retrieveInternal(env, session, payload, deadline) {
       typeof payload.rag.scope !== "object" ||
       Array.isArray(payload.rag.scope))
   )
-    return EMPTY;
+    return emptyRetrieval("invalid_scope");
   const key = await accountKey(session.sub);
   const rate = env.RATE_LIMIT_RAG_SEARCH;
-  if (!rate || (await rate.limit({ key })).success !== true) return EMPTY;
+  if (!rate || (await rate.limit({ key })).success !== true) return emptyRetrieval("rate_limited");
   try {
     const qualification = await sourceQualification(env.ADMIN_DB);
     const contextColumn = await sourceContextColumn(env.ADMIN_DB);
@@ -55,14 +56,14 @@ async function retrieveInternal(env, session, payload, deadline) {
     const explicitPageContext = Number.isInteger(scope.metadata.pageNumber) &&
       (plan.ambiguous || importantTokens(plan.canonicalQuery).length === 0);
     if (explicitPageContext) plan = { ...plan, needsClarification: false, canonicalQuery: query, queries: [query], coverageGroups: [] };
-    if (plan.needsClarification) return { ...EMPTY, status: "clarification" };
+    if (plan.needsClarification) return emptyRetrieval("clarification", { status: "clarification" });
     const lists = await Promise.all(
       plan.queries.map(async (q) => {
         const [vectorResult, keywordResult] = await Promise.allSettled([
           boundedSearch(async () => {
             const [v] = await embeddings(env, [q]);
             return env.RAG_VECTORIZE.query(v, {
-              topK: 20,
+              topK: LIMITS.searchTopK,
               filter: { accountKey: key, ...scope.metadata },
               returnMetadata: "none",
             });
@@ -72,7 +73,7 @@ async function retrieveInternal(env, session, payload, deadline) {
             if (!term) return [];
             return all(
               env.ADMIN_DB,
-              `SELECT c.*,s.title,s.kind,s.folder_id,s.source_hash,${contextColumn} FROM rag_chunks_fts JOIN rag_chunks c ON c.rowid=rag_chunks_fts.rowid JOIN rag_sources s ON s.account_key=c.account_key AND s.source_id=c.source_id JOIN rag_accounts a ON a.account_key=c.account_key WHERE rag_chunks_fts MATCH ? AND c.account_key=? AND c.ready=1 AND s.deleted=0 AND s.complete=1 AND a.deleted=0${qualification}${scope.sql} ORDER BY bm25(rag_chunks_fts) LIMIT 20`,
+              `SELECT c.*,s.title,s.kind,s.folder_id,s.source_hash,${contextColumn} FROM rag_chunks_fts JOIN rag_chunks c ON c.rowid=rag_chunks_fts.rowid JOIN rag_sources s ON s.account_key=c.account_key AND s.source_id=c.source_id JOIN rag_accounts a ON a.account_key=c.account_key WHERE rag_chunks_fts MATCH ? AND c.account_key=? AND c.ready=1 AND s.deleted=0 AND s.complete=1 AND a.deleted=0${qualification}${scope.sql} ORDER BY bm25(rag_chunks_fts) LIMIT ${LIMITS.searchTopK}`,
               term,
               key,
               ...scope.args,
@@ -86,7 +87,7 @@ async function retrieveInternal(env, session, payload, deadline) {
         const ids = (vectors?.matches ?? [])
           .map((v) => v.id)
           .filter((id) => typeof id === "string")
-          .slice(0, 20);
+          .slice(0, LIMITS.searchTopK);
         // Never trust vector metadata or returned IDs. D1 independently enforces owner + scope.
         const hydrated = ids.length
           ? await boundedSearch(() => all(
@@ -95,24 +96,24 @@ async function retrieveInternal(env, session, payload, deadline) {
               key,
               ...ids,
               ...scope.args,
-            ), 2000).catch(() => []) // Failed/stalled hydration cannot erase keyword hits.
+            ), LIMITS.hydrateTimeoutMs).catch(() => []) // Failed/stalled hydration cannot erase keyword hits.
           : [];
         const byId = new Map(hydrated.map((c) => [c.chunk_id, c]));
         const scoreById = new Map((vectors?.matches ?? []).map(v => [v.id, v.score]));
         return [ids.map((id, rank) => byId.has(id) ? { ...byId.get(id), vectorRank: rank + 1, vectorScore: scoreById.get(id) } : null).filter(Boolean), keywords.map((c, rank) => ({ ...c, keywordRank: rank + 1 }))];
       }),
     );
-    if (Date.now() >= deadline) return EMPTY;
+    if (Date.now() >= deadline) return emptyRetrieval("deadline");
     const eligible = c => explicitPageContext || relevanceEvidence(c, plan.canonicalQuery).accepted ||
       plan.coverageGroups.some(subject => coversSubject(c, subject) && relevanceEvidence(c, subject).accepted);
-    const candidates = selectDiverse(rrf(lists.flat(), 120), plan.coverageGroups, 15, eligible, true);
-    if (!candidates.length) return EMPTY; // No relevant hits: preserve ordinary chat fallback.
+    const candidates = selectDiverse(rrf(lists.flat(), LIMITS.fusedLimit), plan.coverageGroups, LIMITS.candidateLimit, eligible, true);
+    if (!candidates.length) return emptyRetrieval("no_match"); // No relevant hits: preserve ordinary chat fallback.
     const referenceEligible = referenceEligibility(plan.canonicalQuery, plan);
-    let selected = selectDiverse(candidates, plan.coverageGroups, 5, referenceEligible);
+    let selected = selectDiverse(candidates, plan.coverageGroups, LIMITS.referenceLimit, referenceEligible);
     let ordered = candidates;
     const requirements = detailRequirements(plan.canonicalQuery, plan.coverageGroups);
     try {
-      if (!await referencesAuthorized(env, key, candidates.map(c => ({ citation: { sourceId: c.source_id, pageNumber: c.page_number, chunkId: c.chunk_id }, sourceSnapshot: { title: c.title, source_hash: c.source_hash, context_hash: c.context_hash, folder_id: c.folder_id } })))) return EMPTY;
+      if (!await referencesAuthorized(env, key, candidates.map(c => ({ citation: { sourceId: c.source_id, pageNumber: c.page_number, chunkId: c.chunk_id }, sourceSnapshot: { title: c.title, source_hash: c.source_hash, context_hash: c.context_hash, folder_id: c.folder_id } })))) return emptyRetrieval("auth_failed");
       let rerankTimer;
       let result;
       try {
@@ -125,7 +126,7 @@ async function retrieveInternal(env, session, payload, deadline) {
           new Promise((_, reject) => {
             rerankTimer = setTimeout(
               () => reject(new Error("rerank_timeout")),
-              2000,
+              LIMITS.rerankTimeoutMs,
             );
           }),
         ]);
@@ -134,16 +135,17 @@ async function retrieveInternal(env, session, payload, deadline) {
       }
       ordered = fuseRanks(candidates, result?.response);
       selected = singleRankedReference(candidates, result?.response, plan.canonicalQuery, plan, requirements) ??
-        selectDiverse(ordered, plan.coverageGroups, 5, referenceEligible);
+        selectDiverse(ordered, plan.coverageGroups, LIMITS.referenceLimit, referenceEligible);
     } catch {
       /* RRF remains usable if reranking is unavailable; no content logs. */
     }
     const references = [];
-    const expand = async (hit, budget = 6000) => {
+    let truncated = false; // an excerpt was cut, or a selected one skipped, by a size budget
+    const expand = async (hit, budget = LIMITS.excerptChars) => {
       // Same-page parent/neighbor expansion retains every owner and scope constraint.
       const neighbors = await all(
         env.ADMIN_DB,
-        `SELECT c.*,s.title,s.kind,s.folder_id,s.source_hash,${contextColumn} FROM rag_chunks c JOIN rag_sources s ON s.account_key=c.account_key AND s.source_id=c.source_id JOIN rag_accounts a ON a.account_key=c.account_key WHERE c.account_key=? AND c.source_id=? AND c.page_number=? AND c.ready=1 AND s.deleted=0 AND s.complete=1 AND a.deleted=0${qualification} AND c.ordinal BETWEEN ? AND ?${scope.sql} ORDER BY c.ordinal LIMIT 3`,
+        `SELECT c.*,s.title,s.kind,s.folder_id,s.source_hash,${contextColumn} FROM rag_chunks c JOIN rag_sources s ON s.account_key=c.account_key AND s.source_id=c.source_id JOIN rag_accounts a ON a.account_key=c.account_key WHERE c.account_key=? AND c.source_id=? AND c.page_number=? AND c.ready=1 AND s.deleted=0 AND s.complete=1 AND a.deleted=0${qualification} AND c.ordinal BETWEEN ? AND ?${scope.sql} ORDER BY c.ordinal LIMIT ${LIMITS.neighborRows}`,
         key,
         hit.source_id,
         hit.page_number,
@@ -152,10 +154,10 @@ async function retrieveInternal(env, session, payload, deadline) {
         ...scope.args,
       );
       if (!neighbors.some((n) => n.chunk_id === hit.chunk_id)) return null; // Deletion during retrieval.
-      const text = neighbors
-        .map((n) => n.text)
-        .join("\n")
-        .slice(0, Math.min(6000, budget));
+      const joined = neighbors.map((n) => n.text).join("\n");
+      const cut = Math.min(LIMITS.excerptChars, budget);
+      if (joined.length > cut) truncated = true;
+      const text = joined.slice(0, cut);
       if (!text) return null;
       // Recheck the excerpt actually sent: expansion/truncation can remove
       // the subject even though the originally selected child contained it.
@@ -174,32 +176,32 @@ async function retrieveInternal(env, session, payload, deadline) {
       Object.defineProperty(reference, "proof", { value: { citation, chunkIds: neighbors.map(n => n.chunk_id), sourceSnapshot: { title: neighbors[0].title, source_hash: neighbors[0].source_hash, context_hash: neighbors[0].context_hash, folder_id: neighbors[0].folder_id } } });
       return reference;
     };
-    let budget = 24000;
+    let budget = LIMITS.contextChars;
     for (const hit of selected) {
-      if (!budget) break;
+      if (!budget) { truncated = true; break; }
       const reference = await expand(hit, budget);
       if (reference) { references.push(reference); budget -= reference.text.length; }
     }
-    if (!references.length) return EMPTY; // Hits disappeared or had no usable text.
+    if (!references.length) return emptyRetrieval("no_match"); // Hits disappeared or had no usable text.
     // Only recognized missing information triggers extra reads, never another
     // search or model call. At most five reserves, with the original auth/scope
     // query, a two-second per-read bound and time left for final assembly.
     const pool = [...references], seenPages = new Set(selected.map(c => JSON.stringify([c.source_id, c.page_number])));
     let attempted = 0;
     for (const hit of ordered) {
-      if (!missingEvidence(pool, plan, requirements).length || attempted >= 5 || deadline - Date.now() <= 2200) break;
+      if (!missingEvidence(pool, plan, requirements).length || attempted >= LIMITS.reserveReads || deadline - Date.now() <= LIMITS.finalAssemblyMs) break;
       const page = JSON.stringify([hit.source_id, hit.page_number]);
       if (seenPages.has(page) || !referenceEligible(hit)) continue;
       seenPages.add(page); attempted++;
-      const reference = await boundedSearch(() => expand(hit), 2000).catch(() => null);
+      const reference = await boundedSearch(() => expand(hit), LIMITS.reserveReadTimeoutMs).catch(() => null);
       if (reference) pool.push(reference);
     }
-    const compact = selectEvidence(pool, plan, requirements, 5, 24000, references);
+    const compact = selectEvidence(pool, plan, requirements, LIMITS.referenceLimit, LIMITS.contextChars, references);
     const evidence = assessReferences(compact, requirements);
-    if (!evidence.accepted) return { ...EMPTY, status: "insufficient" };
+    if (!evidence.accepted) return emptyRetrieval("insufficient", { status: "insufficient" });
     const supported = evidence.references;
     const proofs = supported.map(r => pool.find(original => original.citation.chunkId === r.citation.chunkId)?.proof);
-    if (proofs.some(p => !p) || !await referencesAuthorized(env, key, proofs)) return EMPTY;
+    if (proofs.some(p => !p) || !await referencesAuthorized(env, key, proofs)) return emptyRetrieval("auth_failed");
     const comparisonAssessment=assessComparisonEvidence(organizeComparisonEvidence(supported,plan.coverageGroups),plan.coverageGroups);
     // JSON escaping prevents retrieved text from closing delimiters. This is data, never a message role.
     const result = {
@@ -210,9 +212,10 @@ async function retrieveInternal(env, session, payload, deadline) {
       citations: supported.map(r => r.citation),
     };
     Object.defineProperty(result, "authorization", { value: { key, references: proofs } });
+    Object.defineProperty(result, "truncated", { value: truncated });
     return result;
   } catch {
-    return EMPTY;
+    return emptyRetrieval("error");
   }
 }
 
@@ -220,9 +223,9 @@ export async function retrieve(env, session, payload) {
   let timer;
   try {
     return await Promise.race([
-      retrieveInternal(env, session, payload, Date.now() + 10000),
+      retrieveInternal(env, session, payload, Date.now() + LIMITS.retrievalTimeoutMs),
       new Promise((resolve) => {
-        timer = setTimeout(() => resolve(EMPTY), 10000);
+        timer = setTimeout(() => resolve(emptyRetrieval("timeout")), LIMITS.retrievalTimeoutMs);
       }),
     ]);
   } finally {

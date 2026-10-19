@@ -1,5 +1,6 @@
 import { searchTokens } from './chunking.js';
 import { identifierQuery } from './identifiers.js';
+import { RELEVANCE } from './limits.js';
 
 // Keep the real question unchanged: this cleanup is only for keyword/lexical search.
 function searchableQuestion(text) {
@@ -46,8 +47,8 @@ export function relevanceEvidence(candidate, query) {
     localNames.some(other => other[2] === m[2] && other[1] !== m[1]));
   // Initial multi-signal operating point, not a probability of factual correctness.
   // Validate/calibrate on independent Japanese/OCR/negative sets before enabling production.
-  const accepted = !conflicting && ((anchored && overlap >= 0.34 && (score === null || score >= 0.35)) ||
-    (overlap >= 0.08 && score !== null && score >= 0.55) ||
-    (score !== null && score >= 0.72 && candidate.vectorRank <= 5));
+  const accepted = !conflicting && ((anchored && overlap >= RELEVANCE.anchoredOverlap && (score === null || score >= RELEVANCE.anchoredScore)) ||
+    (overlap >= RELEVANCE.looseOverlap && score !== null && score >= RELEVANCE.looseScore) ||
+    (score !== null && score >= RELEVANCE.topRankScore && candidate.vectorRank <= RELEVANCE.topRank));
   return { accepted, lexicalCoverage: overlap, vectorScore: score };
 }
