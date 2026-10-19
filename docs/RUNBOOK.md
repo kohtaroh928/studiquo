@@ -174,7 +174,7 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
 - **最初の確認**: 発見時刻、対象経路、情報分類、影響が続いているか。意図的に追加の他人データを取得しない。
 - **変更せず調べる**: 最小限の証拠保全、アクセス境界、配布物・履歴、利用履歴。調査結果はアクセス制限された場所へ保存する。
 - **避ける操作**: 証拠の公開、履歴・ログの広範削除、漏えいキーを削除しただけで解決扱い、通知義務をAIだけで断定すること。
-- **承認が必要な復旧**: 対象機能・アクセスの制限、キーrotation・失効、修正版。緊急操作も事前に定めた権限または明示的な承認の範囲で行う。
+- **承認が必要な復旧**: 対象機能・アクセスの制限、キーrotation・失効、修正版。緊急操作も事前に定めた権限または明示的な承認の範囲で行う。キーごとの失効の手順は[付録A](#付録a-シークレットの台帳ローテーション漏えい時の失効)。
 - **復旧の判定**: 同じ経路で再取得できず、旧資格情報が使えず、正当な利用が成立する。影響範囲・通知・残存コピーの扱いは責任者の確認が必要。
 - **未解決時の引継ぎ**: 限定された証拠の参照、影響候補・期間・対策、未確認事項。法令・契約・提供者への連絡は責任者が判断する。
 
@@ -389,3 +389,52 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
 - 通知メールとSlackの実送信、応答時間の均一化、`ARGON2_WRITE="true"`の挙動の、本番に近い環境での確認。
 
 これらは文書を書くだけで実装・設定されたことにはならない。公開前に必要性と担当を決め、[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)で確認する。
+
+## 付録A: シークレットの台帳・ローテーション・漏えい時の失効
+
+コードが読む秘密の値(`env.*`)と、入れ替えの手順の一覧。値そのものはここにもGitにも書かない。Workerの秘密は`npx wrangler secret put <名前> --env=""`(ステージングは`--env staging`)で設定する。**値は引数に書かず、対話入力か標準入力で渡す**(シェルの履歴に残さない)。`npx wrangler secret list`で名前だけ確認できる。`secret put`は新しい版を配備するので、別の再配備は要らない。**値は手元でだけ扱い、チャットやGitに載せない。**
+
+### A-1. 台帳
+
+「併用」は、旧い値を残したまま新しい値に替えられるか。「前回更新」は、記録がないものを空にしてある。入れ替えたら日付を書く。
+
+| 名前 | 発行元 | 使い道(コード) | 漏れたときの影響 | 併用 | 失効・入れ替え |
+|---|---|---|---|---|---|
+| `OPENAI_API_KEY` | OpenAI | AIの呼び出し(`ai.js`、`openai.js`) | 他人にAI料金を使われる | 不可(差し替え) | OpenAIで鍵を無効化→新規発行→`secret put`。OpenAI側の利用上限も設定する |
+| `ANTHROPIC_API_KEY` | Anthropic | AIの呼び出し(`anthropic.js`)。未使用なら設定しない | 同上 | 不可 | Anthropicで無効化→新規発行→`secret put` |
+| `REVENUECAT_SECRET_API_KEY` | RevenueCat | 退会時のRevenueCat上の顧客の削除(`privacy-retention.js`) | 顧客の削除、鍵の権限によっては購読情報の読み取り | 不可 | RevenueCatで鍵を取り消し→新規発行→`secret put` |
+| `REVENUECAT_WEBHOOK_SECRET` | RevenueCat(Webhookの認証ヘッダ) | 購入イベントの受信認証(`admin.js`) | 偽の購入イベントを送られ、プランを偽装される | 不可 | RevenueCatのWebhookの`Authorization`ヘッダの値と、`secret put`する値は、**`Bearer `などの接頭辞も含めて完全に同じ**にする(違うとすべて401)。**同時に**入れ替える。間のイベントはRevenueCatが再送する |
+| `TOKEN_SIGNING_KEY` / `_OLD` | 自分で作る(`openssl rand -base64 32`) | セッション・MCPトークンの署名(`token-signature.js`) | 偽のトークンの洪水をKVで受けてしまう(署名がなくてもKVに実在するセッションが要るので、これ単独ではなりすませない) | 可(`_OLD`) | RB-14。旧い値を`_OLD`へ、新しい値を`TOKEN_SIGNING_KEY`へ。旧いトークンが使われなくなるまで(端末のトークンは90日、更新で延び、ログインの絶対期限は既定365日)`_OLD`を残す。**漏えいが確実な場合は`_OLD`に入れない**(漏れた鍵が検査に通り続ける)。全員の再ログインを許容して、新しい鍵だけにする |
+| `SNAPSHOT_ENCRYPTION_KEY` / `_ID` / `_OLD` / `_OLD_ID` | 自分で作る | MCPスナップショットのAES-256-GCM(`snapshot-crypto.js`) | KVを読める人が、スナップショットを復号できる | 可(`_OLD`) | **鍵のIDに注意**: `_ID`が未設定の現行鍵のIDは暗黙の`1`で、保存済みのデータはこのIDで入っている。入れ替えは、旧い値を`_OLD`に、`_OLD_ID`を**必ず`1`**に、新しい値を`KEY`に、`_ID`を**`1`以外**(例: `2`)にする。`_OLD_ID`を空にすると`0`になり、保存済みが復号できなくなる。先にステージングで書き込みと読み出しを1回確かめる。再同期で新しい鍵に替わる。スナップショットは最終同期から90日で消える |
+| `APNS_PRODUCTION_AUTH_KEY` / `APNS_SANDBOX_AUTH_KEY` / `APNS_AUTH_KEY` | Apple Developer(APNsの鍵 .p8) | プッシュ通知の送信(`push.js`) | `.p8`だけでは送れない(端末のデバイストークンも要る)が、持っていれば、トークンを知っている端末に偽の通知を送れる | Apple側は2本まで持てる。**Workerは環境ごとに鍵とKeyIDを1組しか読まない**ので、WorkerでAPNsの鍵を新旧並べることはできない | 新しい鍵を発行→鍵とKeyIDを`npx wrangler secret bulk`で**同時に**入れる(別々に`put`すると、間の数十秒は組が合わず通知が失敗する)→通知を確認→旧い鍵をAppleで取り消す |
+| `APNS_KEY_ID` / `APNS_*_KEY_ID` / `APNS_TEAM_ID` | Apple Developer | 上の鍵の識別子 | 秘密ではない | - | 鍵を替えるときに一緒に替える |
+| `RESEND_API_KEY` | Resend | 確認コード・新しい環境の通知のメール(`email-verification.js`、`login-monitor.js`、`passkey-policy.js`) | 自分の名前でメールを送られる(確認コードの偽装、迷惑メール) | 不可 | Resendで無効化→新規発行→`secret put`。入れ替えの間は確認コードが届かずログインできない(RB-04) |
+| `SLACK_ISSUE_REPORT_WEBHOOK_URL` | Slack | 問題報告・ログインのアラート(`issue-reports.js`、`slack.js`) | 偽の通知を投稿される | 不可 | SlackでWebhookを作り直す→`secret put`。旧いURLを消す |
+| `ACCESS_AUD` / `ACCESS_TEAM_DOMAIN` / `ACCESS_JWKS` | Cloudflare Access | 管理画面のログイン検証(`access.js`) | 秘密ではない(公開鍵と識別子)。書き換えられると管理画面の保護が壊れる | - | Accessのアプリを作り直したときだけ替える。Cloudflareのアカウントの保護(二要素認証)が前提 |
+
+使っていない名前が残っていたら消す: `GEMINI_API_KEY`(コードに参照がない。2026-10-08の更新で登録された記録がある)、`LIBRARY_ID_SECRET`(RB-16。`npx wrangler secret delete LIBRARY_ID_SECRET --env=""`)。`CSRF_SECRET`はコードに無い(`STAGING_SETUP.md`の手順が古い)。設定してあれば消し、手順の記述も直す。
+
+このほかコードが読む設定: `RESEND_FROM_EMAIL`(メールの送信元。秘密ではないが、本番に設定されていること)、`SNAPSHOT_ENCRYPTION_REQUIRED`(スナップショットの暗号化を必須にする旗。値ではなく設定)。
+
+秘密ではないもの(ソースに出てよい): Google・AppleのサインインのクライアントID、RevenueCatの公開SDKキー、`APNS_TOPIC`、`wrangler.jsonc`のKV・D1のID。サーバーはAppleとGoogleのIDトークンを公開鍵で検証するので、その発行元の秘密鍵はサーバーに無い。
+
+人や端末に紐づく資格情報: `wrangler login`のOAuth(開発機。漏れたら`wrangler logout`とCloudflareの「API Tokens」画面での取り消し)、`gh`のログイン(`gh auth logout`とGitHubの「Personal access tokens」画面)、GitHub・Cloudflare・Appleなど各アカウント(二要素認証と回復手段の確認は別に行う)。
+
+### A-2. ローテーションの定期
+
+- 年に1回、台帳のすべて(`ACCESS_*`と識別子を除く)を入れ替える。入れ替えたら「前回更新」を書く。
+- 次の場合は、定期を待たず入れ替える: 開発機・端末の紛失や譲渡、共同作業者の入れ替え、秘密を載せた可能性のあるチャット・ログ・コミットが出たとき。
+
+### A-3. 漏えいの疑いがあるときの失効の順序
+
+1. **影響を止める判断**(RB-10、必要ならRB-13の運用スイッチ)。承認を得てから、本番に触る。
+2. **お金とデータに近い順に失効する**: ①`OPENAI_API_KEY`・`ANTHROPIC_API_KEY`・`REVENUECAT_SECRET_API_KEY`、②`TOKEN_SIGNING_KEY`・`SNAPSHOT_ENCRYPTION_KEY`・`REVENUECAT_WEBHOOK_SECRET`、③APNs・Resend・Slack。
+3. 各鍵について: **提供元で旧い鍵を無効化**し(漏えいが確実なら先に無効化。機能が一時止まるのは許容する)、新しい鍵を発行し、`secret put`する。併用できる鍵(`TOKEN_SIGNING_KEY`、`SNAPSHOT_ENCRYPTION_KEY`、APNs)は、疑いの段階なら新旧を並べて切り替えてよい。
+4. 確認: `npx wrangler secret list`で名前がある、`/health`が通る、その鍵を使う機能(AI、購入の反映、通知、メール、署名つきトークンでのAPI)が1回ずつ成功する。旧い鍵が使えないことを提供元の画面で確認する。
+5. 旧い値を手元から消し、対応記録(8章)に、いつ・何を・なぜ替えたかを書く(値は書かない)。
+6. **Gitに入った秘密**: このリポジトリは公開なので、押した時点で漏れたものとして扱う。**履歴の書き換えより失効が先**。履歴の書き換え(force push)は、フォークやキャッシュには効かないので、失効の代わりにならない。GitHubのsecret scanningのアラートも確認する。
+
+### A-4. 検出の自動化
+
+- `scripts/secret-scan.sh`は、全履歴をgitleaksとtrufflehogで調べる(手動)。同じ検査は`.github/workflows/ci.yml`でも、プルリクエストとmainへのpush、毎週月曜に動く。
+- 誤検知を除外するときは、`.gitleaks.toml`または`.trufflehog-exclude-paths`に、**なぜ秘密ではないか**を書く。

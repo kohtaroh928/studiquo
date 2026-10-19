@@ -1,0 +1,111 @@
+# CI: the Worker's tests, a dependency audit, and a secret scan of the whole history.
+#
+# Rules this file keeps (docs/RUNBOOK.md, appendix A; docs/notes/ci-setup.md):
+#  - It holds no secrets. Nothing here reads `secrets.*`, so a pull request from a
+#    fork cannot be used to get at one. The built-in GITHUB_TOKEN is read-only.
+#  - Every action is pinned to a full commit SHA (the version is in the comment).
+#    Dependabot proposes the update to a newer one.
+#  - The two scanners are downloaded as release files and checked against a fixed
+#    SHA-256 before they run, instead of piping an install script into a shell.
+#  - Nothing is deployed from here, and no cloud key is stored in GitHub.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # The audit also runs weekly, so a new advisory shows up without a commit.
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Only a pull request's older run is cancelled by a newer push. A run on main
+  # (push or the weekly schedule) is never cancelled, so a required check cannot
+  # be left as "cancelled".
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+  TRUFFLEHOG_VERSION: "3.99.2"
+  TRUFFLEHOG_SHA256: "3c7b0d1dc4278294269bfdd7594bca8bb28c78da0a4a06ad202ded37b48deca4"
+
+jobs:
+  worker:
+    name: Worker tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: mcp-server/package-lock.json
+      # No install scripts: the tests need none, and a dependency's script would
+      # otherwise run on the runner.
+      - run: npm ci --ignore-scripts
+      - run: npm test
+
+  # Its own job so a new advisory, which has nothing to do with a pull request,
+  # does not stop an unrelated change: do not make this one a required check.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      # Production dependencies only; fails on any known advisory.
+      - run: npm audit --omit=dev
+
+  secrets:
+    name: Secret scan (full history)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (checked against a fixed SHA-256)
+        run: |
+          set -euo pipefail
+          curl --proto "=https" --tlsv1.2 -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf gitleaks.tar.gz -C "$RUNNER_TEMP/bin" gitleaks
+          rm gitleaks.tar.gz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Install trufflehog (checked against a fixed SHA-256)
+        run: |
+          set -euo pipefail
+          curl --proto "=https" --tlsv1.2 -sSfL -o trufflehog.tar.gz "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_linux_amd64.tar.gz"
+          echo "${TRUFFLEHOG_SHA256}  trufflehog.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf trufflehog.tar.gz -C "$RUNNER_TEMP/bin" trufflehog
+          rm trufflehog.tar.gz
+      # Same two commands as scripts/secret-scan.sh, for the history that was checked out.
+      - name: gitleaks
+        run: gitleaks git --redact --no-banner --config .gitleaks.toml
+      # --no-verification: a detected value is never sent to the service that issued it.
+      - name: trufflehog
+        run: |
+          "$RUNNER_TEMP/bin/trufflehog" git "file://$PWD" --no-verification --no-update --fail \
+            --exclude-detectors=Eraser --exclude-paths=.trufflehog-exclude-paths
