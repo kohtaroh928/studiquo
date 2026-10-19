@@ -184,3 +184,47 @@ test("words that merely start like an address are not mangled", () => {
   assert.equal(redactLinks("www.という略語は、ドメインの先頭。"), "www.という略語は、ドメインの先頭。");
   assert.equal(redactLinks("ウェブ(www)の話"), "ウェブ(www)の話");
 });
+
+// System A: only the judging uses a view with every invisible character removed; text that
+// is not being filtered goes out exactly as the model wrote it, whatever the cut.
+test("emoji, Persian, Hindi and variant forms survive any stream cut unchanged", () => {
+  const samples = ["👨‍👩‍👧", "❤️", "می‌خواهم", "क्‍ष", "葛\u{E0100}飾", "🏴\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}", "1️⃣", "🏳️‍🌈"];
+  for (const sample of samples) {
+    const text = `前 ${sample} 後。`;
+    for (const size of [1, 2, 3, 4, 7]) assert.equal(stream(pieces(text, size)), text, `${JSON.stringify(sample)} size ${size}`);
+  }
+});
+
+test("any invisible character cannot split an address that the app still reads whole", () => {
+  for (const hidden of ["​", "‍", "‌", "️", "\u{E0041}", "­", "⁠", "﻿", "‮"]) {
+    const text = `[x](h${hidden}ttps:${hidden}//e.com/?d=SECRETDATA)と h${hidden}ttps://e.com/?d=SECRETDATA も`;
+    for (const size of [1, 2, 3, 7, 600]) {
+      const out = stream(pieces(text, size));
+      assert.ok(!out.includes("SECRETDATA"), `${JSON.stringify(hidden)} size ${size}: ${JSON.stringify(out)}`);
+    }
+  }
+});
+
+// System B: a long "[x](" or an address must not swallow the ordinary text after it.
+test("a long unclosed '[注](' followed by Japanese prose does not delete the prose", () => {
+  const prose = "これは通常の説明文です。".repeat(90); // ~1000 characters, no space, no ")"
+  const text = `導入。[注](${prose} END`;
+  for (const size of [1, 3, 50, 700]) {
+    const out = stream(pieces(text, size));
+    assert.ok(out.includes("END") && out.includes(prose.slice(0, 40)) && out.includes(prose.slice(-40)), `size ${size}: ${out.length} chars`);
+  }
+});
+
+test("a code span in a long address does not make the suppression eat the sentence after it", () => {
+  const text = "https://e.com/`" + "x".repeat(700) + "` 以降の文章。さらに続く。";
+  for (const size of [1, 3, 50, 700]) {
+    const out = stream(pieces(text, size));
+    assert.ok(!out.includes("xxxx") && out.includes("以降の文章。さらに続く。"), `size ${size}: ${JSON.stringify(out)}`);
+  }
+});
+
+test("a '$' inside an address followed by a space is not the start of a math span", () => {
+  assert.equal(redactLinks("詳細は https://x.com/a$ の価格は $5 です"), "詳細は （リンクは表示されません） の価格は $5 です");
+  assert.equal(stream(pieces("詳細は https://x.com/a$ の価格は $5 です", 1)), "詳細は （リンクは表示されません） の価格は $5 です");
+  assert.equal(redactLinks("価格は$5と$10です"), "価格は$5と$10です");
+});

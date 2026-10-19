@@ -14,20 +14,18 @@
 // the tail that could still turn into a link or an identifier and releases it once it
 // cannot (or on `flush`). Held text is bounded, so a stray "[" or a long run of letters
 // delays output a little but never blocks it.
-import { stripInvisible } from "./sanitize.js";
-
 const URL_CHARS = "A-Za-z0-9\\-._~:/?#\\[\\]@!$&'*+,;=%\\\\";
 // A scheme-ful URL or a "www." host. The address is ASCII, but non-ASCII characters are part
 // of it when more address follows ("https://例え.com/a", ".../日本語?d=1"), so a sentence
 // that merely continues after the URL in Japanese is not swallowed. The app swaps a
 // `code span` or a $math$ span for a one-character marker before it reads a link, so a
 // span inside an address is part of the address, whatever is written between its marks.
-const URL_BODY = `(?:\`[^\`\\n]*\`|\\$[^$\\n]*\\$|[${URL_CHARS}]|[^\\x00-\\x7F\\s]+(?=[${URL_CHARS}\`]))+`;
+const URL_BODY = `(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|[${URL_CHARS}]|[^\\x00-\\x7F\\s]+(?=[${URL_CHARS}\`]))+`;
 const URL_RE = new RegExp(`(?:https?:\\/\\/|https?:(?=[A-Za-z0-9])|www\\.(?=[A-Za-z0-9]))${URL_BODY}`, "giu");
 // What is left of a malformed scheme: "https:/e.com", "https:\\e.com", "https:例え.com". The
 // browser reads many of these as a normal address, so everything after "http(s):" up to a
 // space or a sentence mark goes, whichever form it takes.
-const URL_LOOSE_RE = /https?:(?:`[^`\n]*`|\$[^$\n]*\$|[^\s、。！？)）」』】`$])+/giu;
+const URL_LOOSE_RE = /https?:(?:`[^`\n]*`|\$(?!\s)[^$\n]*(?<!\s)\$|\$|[^\s、。！？)）」』】`$])+/giu;
 // A target with any scheme (https:, javascript:, mailto:, tel:, data:, "https:e.com", ...),
 // a leading // or www. is a link; a plain "[0](添字)" is not.
 const LINK_TARGET_RE = /^\s*(?:[a-z][a-z0-9+.-]*:|\/\/|www\.)/iu;
@@ -42,6 +40,25 @@ const HEX_ID_RE = /\b[a-f0-9]{64}\b/gu;
 const ID_PREFIXES = ["sourceid", "source_id", "source-id", "source id", "chunkid", "chunk_id", "chunk-id", "chunk id"];
 
 const isSpace = (code) => code === 32 || (code >= 9 && code <= 13) || code === 0xa0 || code === 0x3000 || (code >= 0x2000 && code <= 0x200a) || code === 0x2028 || code === 0x2029 || code === 0x202f || code === 0x205f || code === 0x1680 || code === 0xfeff;
+
+// Every invisible character, for judging only. The app reads an address through zero-width
+// spaces, joiners, variation selectors and tag characters, so the filter must too; but the
+// text it lets through is the model's own, unchanged (an emoji sequence or a Persian word
+// that happens to be cut mid-way must not lose its joiner).
+const INVISIBLE_ONE = /^[\p{Cf}\p{Cc}\p{Variation_Selector}\u3164\u115F\u1160\u2800\u034F\uFFA0\u17B4\u17B5]$/u;
+function makeView(raw) {
+  let text = "";
+  const map = []; // map[i] = index in `raw` of view character i; map[text.length] = raw.length
+  for (let i = 0; i < raw.length;) {
+    const ch = String.fromCodePoint(raw.codePointAt(i));
+    if (INVISIBLE_ONE.test(ch) && ch !== "\n" && ch !== "\t" && ch !== "\r") { i += ch.length; continue; }
+    text += ch;
+    for (let k = 0; k < ch.length; k++) map.push(i + k);
+    i += ch.length;
+  }
+  map.push(raw.length);
+  return { text, map };
+}
 
 // For every "[" the index of the "]" that closes it (nesting counted, a backslash skips
 // the next character), and for every position the next ")" or whitespace at or after it
@@ -117,10 +134,10 @@ export function redactLinks(text) {
   return filterSegment(text).text;
 }
 
-const URL_REACHES_END = new RegExp(`(?:https?:|www\\.)${URL_BODY.replace(/\)\+$/u, ")*")}(?:\`[^\`\\n]*|\\$[^$\\n]*)?$`, "iuy");
+const URL_REACHES_END = new RegExp(`(?:https?:|www\\.)${URL_BODY.replace(/\)\+$/u, ")*")}(?:\`[^\`\\n]*|\\$(?!\\s)[^$\\n]*)?$`, "iuy");
 
 // The same for the loose form ("https:例え.com"): anything but a space or a sentence mark continues it.
-const URL_LOOSE_REACHES_END = /https?:(?:`[^`\n]*`|\$[^$\n]*\$|[^\s、。！？)）」』】`$])*(?:`[^`\n]*|\$[^$\n]*)?$/iuy;
+const URL_LOOSE_REACHES_END = /https?:(?:`[^`\n]*`|\$(?!\s)[^$\n]*(?<!\s)\$|\$|[^\s、。！？)）」』】`$])*(?:`[^`\n]*|\$(?!\s)[^$\n]*)?$/iuy;
 
 // Whether the "[" at `i` is escaped: an odd number of backslashes right before it.
 function escaped(text, i) {
@@ -179,16 +196,26 @@ function holdStart(text) {
 // what can be held. It follows the same shapes the filter removes, so the rest of the
 // construct disappears with its start instead of leaking out in small pieces.
 function suppressor(mode) {
-  let depth = 1, skip = false, span = "";
+  let depth = 1, skip = false, span = "", pendingDollar = false;
   return {
     // Returns the text after the construct; `done` says the construct has ended.
     feed(text) {
       for (let i = 0; i < text.length; i++) {
         const ch = text[i];
         if (mode === "url") {
+          if (pendingDollar) {
+            pendingDollar = false;
+            // "$" followed by a space is a plain character, not the start of a math span
+            if (isSpace(ch.charCodeAt(0))) { this.done = true; return text.slice(i); }
+            span = "$";
+          }
           if (span) { if (ch === span || ch === "\n") span = ""; continue; }
-          if (ch === "`" || ch === "$") { span = ch; continue; }
-          if (/[A-Za-z0-9\-._~:/?#[\]@!$&'*+,;=%\\]/u.test(ch)) continue;
+          if (ch === "`") { span = ch; continue; }
+          if (ch === "$") { pendingDollar = true; continue; }
+          // Same end as the loose form of an address: a space or a sentence mark. A long address
+          // may carry non-ASCII characters inside it ("https:例え.com?d=…"), and what follows
+          // them is still part of what the browser opens.
+          if (!isSpace(ch.charCodeAt(0)) && !"、。！？)）」』】".includes(ch)) continue;
           this.done = true; return text.slice(i);
         }
         if (mode === "label") {
@@ -214,48 +241,62 @@ function suppressor(mode) {
 
 export function linkRedactor() {
   let held = "", owed = 0, suppress = null;
+  // The text to send for a segment: the model's own text when nothing in it was filtered,
+  // otherwise the filtered view.
+  const emit = (view, rawSegment) => {
+    const segment = filterSegment(view);
+    owed = segment.owed;
+    return segment.text === view ? rawSegment : segment.text;
+  };
   return {
     push(piece) {
-      // Invisible characters would split an address ("https:" + zero-width space + "e.com")
-      // that the app still reads whole.
-      let text = stripInvisible(piece).text;
+      let text = piece;
       if (suppress) {
-        text = suppress.feed(text);
+        text = suppress.feed(makeView(text).text);
         if (!suppress.done) return "";
         suppress = null;
       }
       while (owed > 0 && text.startsWith(")")) { text = text.slice(1); owed--; }
       const all = held + text;
-      let cut = holdStart(all);
-      if (all.length - cut > MAX_HOLD) {
-        const heldPart = all.slice(cut);
+      const view = makeView(all);
+      let cut = holdStart(view.text);
+      if (view.text.length - cut > MAX_HOLD) {
+        const heldPart = view.text.slice(cut);
         const isUrl = /^(?:https?:|www\.)/iu.test(heldPart);
-        // A stray "[" (an interval like [0, 1)) is ordinary text and is released as such; only
-        // a link whose label has closed and whose target is still open is dropped.
-        const openTarget = heldPart[0] === "[" && linkAt(heldPart, 0, scan(heldPart))?.phase === "target";
-        if (isUrl || openTarget) {
+        // A stray "[" (an interval like [0, 1)) or a bracket followed by ordinary prose is text
+        // and is released as such. Only a link that has a scheme in its target is dropped.
+        let schemeTarget = false;
+        if (heldPart[0] === "[") {
+          const tables = scan(heldPart);
+          const close = tables.pairs.get(0);
+          schemeTarget = linkAt(heldPart, 0, tables)?.phase === "target" && LINK_TARGET_RE.test(heldPart.slice(close + 2));
+        }
+        if (isUrl || schemeTarget) {
           // A link or address longer than anything real: drop it, and keep dropping what
           // follows of the same construct. Releasing it in pieces would let it through.
-          const segment = filterSegment(all.slice(0, cut));
-          owed = segment.owed;
-          suppress = suppressor(isUrl ? "url" : "target");
+          const kept = emit(view.text.slice(0, cut), all.slice(0, view.map[cut]));
+          const dropping = suppressor(isUrl ? "url" : "label");
+          // The dropped part may have opened a code span or a link label; the suppressor
+          // must start in the state it left off in.
+          const rest = dropping.feed(isUrl ? heldPart : heldPart.slice(1));
           held = "";
-          return segment.text + REMOVED;
+          if (dropping.done) { held = rest; } else suppress = dropping;
+          return kept + REMOVED;
         }
-        cut = all.length - MAX_HOLD;
+        cut = view.text.length - MAX_HOLD;
         // Never split a surrogate pair (an emoji or a rare kanji) at the forced cut.
-        const unit = all.charCodeAt(cut);
+        const unit = view.text.charCodeAt(cut);
         if (unit >= 0xdc00 && unit <= 0xdfff) cut--;
       }
-      held = all.slice(cut);
-      const segment = filterSegment(all.slice(0, cut));
-      owed = segment.owed;
-      return segment.text;
+      held = all.slice(view.map[cut]);
+      return emit(view.text.slice(0, cut), all.slice(0, view.map[cut]));
     },
     flush() {
       const rest = held;
       held = "";
-      return suppress ? "" : filterSegment(rest).text;
+      if (suppress) return "";
+      const view = makeView(rest).text;
+      return emit(view, rest);
     },
   };
 }
