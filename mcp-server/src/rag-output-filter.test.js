@@ -39,3 +39,13 @@ test("held text is bounded: a very long unbroken run is released", () => {
   assert.ok(out.length >= 5000 - 600);
   assert.equal(out + r.flush(), long);
 });
+
+test("internal identifiers are removed, also when split across pieces", () => {
+  const hex = "a1b2c3d4".repeat(8);
+  const text = `出典は sourceId=other-user-source と chunk_id: ${hex} です。通常の文章 abc123 は残る。`;
+  for (const size of [1, 2, 5, 11, 200]) {
+    const out = stream(text.match(new RegExp(`[\\s\\S]{1,${size}}`, "gu")));
+    assert.ok(!/other-user-source|a1b2c3d4/.test(out), `size ${size}: ${out}`);
+    assert.ok(out.includes("通常の文章 abc123 は残る。"), `size ${size}: ${out}`);
+  }
+});

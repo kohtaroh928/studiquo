@@ -68,7 +68,11 @@
 - 目に見えない文字（ゼロ幅・双方向制御・Unicodeタグ文字・制御文字）は、取り込み時と抜粋の組み立て時の両方で`rag/sanitize.js`が除く。除いた数だけが`sanitized`としてログに出る（文字は出さない）。構造化入力は本文のハッシュで固定されているため、取り込み時は除かず、検索時に除く。
 - RAGを使った回答（`ragStatus`あり）では、アプリがMarkdownのリンクをタップ不可にする（`RichMessageView.allowLinks`）。資料に仕込まれたリンクで抜粋が持ち出される経路を断つため。
 - 参考データを使った回答（`context`あり）のストリームから、サーバーが`rag/output-filter.js`でリンク（Markdownのリンクと裸のURL）を除く。リンクが複数の断片に分かれても除ける。アプリのタップ不可と二重の防御。
-- 環境変数`RAG_CONTEXT_AS_INPUT=true`にすると、抜粋（`context`）を`instructions`ではなく、利用者の最後の発話の直前の別の入力項目として送る（回答方針の文面は`instructions`に残る）。**既定は未設定（従来の配置）**。LLMの見え方が変わるため、§7に従い旧版・新版を同じ入力で比較評価してから有効にする。評価は未実施。
+- 添付ノート（`noteContext`、友達の共有ノートを含む）がある通常チャットでも、同じリンク除去をかける。
+- 内部の識別子（64桁のchunk ID、`sourceId=…`・`chunk_id: …`の形）も回答から除く。出典はサーバーが構造化データとして別に付けるため。
+- 年齢帯が`teen`のOpenAI回答は、完成した後にモデレーションにかけ、該当すれば回答の末尾に注意文を足してログに1行出す（本文は出さない）。すでに画面に出た文字は取り消せない。成人は対象外。
+- 抜粋に命令らしい語句があれば`injectionHints`としてログに数だけ出す（`rag/injection-hints.js`）。本文は変えない。
+- 環境変数`RAG_CONTEXT_AS_INPUT=true`にすると、抜粋（`context`）を`instructions`ではなく、利用者の最後の発話の直前の別の入力項目として送る（回答方針の文面は`instructions`に残る）。**既定は未設定（従来の配置）**。LLMの見え方が変わるため、§7に従い旧版・新版を同じ入力で比較評価してから有効にする。実API評価は[RAG_INJECTION_LIVE_REPORT.md](RAG_INJECTION_LIVE_REPORT.md)。両配置とも攻撃への服従は0/44で差は検出できず、既定は現行のまま。
 - 送信直前の再認可（`revalidateRetrieval`）はRAG本体の担当で、プロンプト側に影響しない。
 - 通常チャットの`noteContext`は別経路（`<note>`タグ＋`escapeForPromptTag`）。RAGの経路とは方式が違う。
 
