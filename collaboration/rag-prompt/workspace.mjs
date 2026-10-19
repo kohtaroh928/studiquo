@@ -34,13 +34,24 @@ const UNSAFE_INSTRUCTION = [
   /\byou\s+are\s+now\s+(?:an?\s+)?(?:unrestricted|unfiltered|jailbroken|different|new)\b/iu,
   /(?:これまで|以前|上記|前|先)の(?:ルール|規則|方針|指示|制約).{0,10}(?:適用しない|適用外|無効|効力を失|なかったこと)/u,
   /(?:資料|抜粋|参考データ)(?:内|中)の(?:依頼|要求|指示|命令).{0,12}(?:実行|従)/u,
+  // Dropping or forgetting the rules in other words (found by the second security review).
+  /\b(?:don'?t|do not|never)\s+(?:follow|obey|respect)\s+(?:the\s+)?(?:rules?|instructions?|guidelines?|polic(?:y|ies))\s+(?:above|given|before|earlier|previous|prior|so far)\b/iu,
+  /\bforget\s+(?:the\s+|your\s+|all\s+|any\s+)?(?:guidelines?|rules?|instructions?|polic(?:y|ies)|safety)\b/iu,
+  /\b(?:drop|bypass|circumvent|disable|remove|lift|turn\s+off|switch\s+off|get\s+around)\s+(?:the\s+|all\s+|your\s+)?(?:safety\s+|safe\s+)?(?:rules?|guardrails?|safeguards?|filters?|restrictions?|guidelines?|polic(?:y|ies))\b/iu,
+  /\b(?:rules?|instructions?|guidelines?)\b[^.]{0,30}\b(?:obsolete|superseded|deprecated|outdated|overridden|replaced|void|moot)\b/iu,
+  /\bpretend\b[^.]{0,30}\b(?:rules?|instructions?|guidelines?)\b[^.]{0,20}\b(?:do(?:es)?\s+not|don'?t|never)\s+exist/iu,
+  /\bact\s+as\s+(?:an?\s+)?(?:unrestricted|unfiltered|jailbroken|evil)\b/iu,
+  /\bDAN\b/u,
+  /\b(?:print|repeat|output|recite|display)\s+(?:everything|all\s+text|all|the\s+text|your\s+(?:instructions|prompt))\s+(?:above|before|so\s+far)\b/iu,
+  /(?:新しい|別の)役割.{0,10}(?:制限なく|制限のない|何でも|自由に)|制限(?:なく|のない|を外|を解除)/u,
+  /(?:指示|ルール|規則|方針|制約|安全規則|安全ルール).{0,12}(?:忘れ|外し|外して|取り払|なくし)/u,
 ];
 // More ways to weaken the frozen rules that the list above misses: permitting links,
 // writing citations or ids into the answer, revealing the prompt, letting the model
 // fill gaps from general knowledge, and fake role lines. Still a smoke check.
 const WEAKENING_INSTRUCTION = [
-  /\b(?:add|include|append|output|insert|provide|attach)\s+(?:a\s+|an\s+|the\s+)?(?:hyper)?links?\b/iu,
-  /(?:リンク|URL|ＵＲＬ|ハイパーリンク|link|hyperlink)s?.{0,16}(?:付け|付与|出力|表示|含め|貼|案内|書い|include|add|output|append)/iu,
+  /\b(?:add|include|append|output|insert|provide|attach)\s+(?:a\s+|an\s+|the\s+|any\s+|some\s+)?(?:reference\s+|source\s+)?(?:hyper)?links?\b/iu,
+  /(?:リンク|URL|ＵＲＬ|ハイパーリンク|link|hyperlink)s?.{0,16}(?:付け|付与|出力|表示|含め|貼|案内|書い|入れ|挿入|記載|示し|include|add|output|append)/iu,
   /(?:出典|ページ番号|chunk\s*id|source\s*id|ソースID).{0,16}(?:本文|回答|文中).{0,8}(?:書|出力|入れ|示|含め)/iu,
   /(?:本文|回答|文中).{0,12}(?:出典|ページ番号|chunk\s*id|source\s*id|ソースID).{0,12}(?:書|出力|入れ|示|含め)/iu,
   /(?:システムプロンプト|system\s*prompt|内部の指示|隠れた指示|凍結規則).{0,16}(?:表示|出力|教え|開示|見せ|reveal|print|show|output)/iu,
@@ -50,12 +61,19 @@ const WEAKENING_INSTRUCTION = [
   /^\s*(?:system|assistant|developer|システム|管理者)\s*[:：]/imu,
   /(?:developer|debug|jailbreak)\s+mode|開発者モード|デバッグモード/iu,
   // Own knowledge to fill gaps, links/addresses, ids, and asking for the hidden prompt.
-  /\b(?:fill|make)\s+(?:in|up)\b.{0,30}\b(?:own|your)\s+(?:knowledge|training)|\buse\s+your\s+(?:own\s+)?(?:training\s+data|knowledge|memory)\b/iu,
+  /\b(?:fill|make)\s+(?:in|up)\b.{0,30}\b(?:own|your)\s+(?:knowledge|training)|\buse\s+your\s+(?:own\s+)?(?:training\s+data|knowledge|memory)\b.{0,40}\b(?:fill|instead|when|if|beyond|outside|supplement|to\s+answer)\b/iu,
   /(?:URL|ＵＲＬ|サイト|アドレス|リンク|link|url)s?.{0,12}(?:必ず|かならず|always)?.{0,6}(?:含め|書|付け|載せ|貼|案内|include|add|write|append)/iu,
   /\b(?:quote|include|write|cite|print|add)\b.{0,24}\b(?:chunk|source)\s*(?:id|identifier)s?\b|(?:出典|ソース|チャンク)\s*ID.{0,10}(?:付け|書|含め|載せ|入れ)/iu,
   /\b(?:reference|source)\s+(?:link|url)s?\b/iu,
+  /\b(?:answer|respond)\s+freely\b|\bfrom\s+(?:your\s+)?(?:background|general|prior)\s+knowledge\b/iu,
+  /\b(?:respond\s+with|append|add|put|include|write)\b.{0,24}\b(?:urls?|web\s*address|document\s*id|page\s*number|identifier)\b/iu,
+  /(?:元の|最初の|初期の|内部の|隠れた|システムの)指示.{0,10}(?:全文|そのまま)?.{0,4}(?:表示|出力|教え|見せ|開示)/u,
   /\b(?:tell|show|give)\s+me\b.{0,24}\b(?:hidden|initial|original|system|first)\s+instructions?\b|(?:最初|初め|はじめ)に(?:受けた|与えられた)指示.{0,12}(?:教え|表示|出力|見せ|そのまま)/iu,
 ];
+// A weakening pattern must not reach across a sentence or a clause: a prohibition in one
+// clause ("リンクは付けず、") must not excuse a permission in the next, and the reverse.
+const CLAUSE_BREAK = '。.!?！？\\n、,;；';
+const bounded = pattern => new RegExp(pattern.source.replace(/(?<!\\)\.\{(\d+),(\d+)\}/gu, `[^${CLAUSE_BREAK}]{$1,$2}`), pattern.flags);
 const INVISIBLE = /[\p{Cf}\p{Cc}]/gu;
 // A candidate is checked as written, as NFKC-normalized text, and with spaces removed,
 // so full-width forms and "i g n o r e" style spacing do not slip past the patterns.
@@ -83,20 +101,23 @@ export function assertSafeInstructions(candidate) {
   const notAnObjection = /(?:do\s*not|don't)\s+forget/giu;
   // "資料にない…" names the gap the instruction wants filled, it is not a prohibition.
   const gapPhrase = /(?:資料|抜粋|参考データ)(?:に|には)?(?:ない|無い|なくても)|記載のない/gu;
-  const sentenceEnd = /[。.!?！？\n]/u;
+  // A clause ends at a sentence mark, a comma or semicolon, or "but"/"ただし"/"しかし".
+  const clauseEnd = /[。.!?！？\n、,;；]|\bbut\b|\bhowever\b|ただし|しかし/giu;
   const weakens = v => WEAKENING_INSTRUCTION.some(pattern => {
-    const global = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g');
+    const global = bounded(new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g'));
     return [...v.matchAll(global)].some(m => {
       const from = m.index, matchEnd = m.index + m[0].length;
-      const tail = v.slice(matchEnd);
-      const stop = tail.search(sentenceEnd);
-      // The whole sentence the match sits in: "Never add a link" negates from before the match.
-      const before = v.slice(0, from).split(sentenceEnd).at(-1) ?? '';
-      const clause = (before + v.slice(from, stop < 0 ? v.length : matchEnd + stop)).replace(gapPhrase, '').replace(notAnObjection, '');
+      // The clause the match sits in: "Never add a link" negates from before the match.
+      const breaks = [...v.matchAll(clauseEnd)];
+      const startAt = breaks.filter(b => b.index + b[0].length <= from).at(-1);
+      const endAt = breaks.find(b => b.index >= matchEnd);
+      const clause = v.slice(startAt ? startAt.index + startAt[0].length : 0, endAt ? endAt.index : v.length)
+        .replace(gapPhrase, '').replace(notAnObjection, '');
       return !negated.test(clause);
     });
   });
-  if (variants(text).some(weakens)) throw Error('unsafe_candidate');
+  // Not the whitespace-free variant: "Neverreveal" has no word boundary, so a prohibition would not be seen.
+  if (variants(text).slice(0, 2).some(weakens)) throw Error('unsafe_candidate');
 }
 export function preparePacket(candidate) {
   validateCandidate(candidate);
