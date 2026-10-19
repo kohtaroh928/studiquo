@@ -795,13 +795,14 @@ test("worst-case question costs at most three embeddings and one rerank (LIMITS)
   const run = env.AI.run;
   env.AI.run = async (m, p) => { calls[m.includes("reranker") ? "rerank" : "embed"]++; return run(m, p); };
   // Three named subjects is the widest plan; more subjects fall back to one query.
-  await retrieve(env, { sub: "alice" }, {
+  const result = await retrieve(env, { sub: "alice" }, {
     messages: [{ role: "user", text: "細胞と組織と器官の違いを比較して" }],
     rag: { scope: { type: "library" } },
   });
   assert.ok(calls.embed >= 2, `the multi-query path was not exercised: ${calls.embed}`);
   assert.ok(calls.embed <= LIMITS.maxEmbeddingCalls, `embeddings: ${calls.embed}`);
   assert.ok(calls.rerank <= LIMITS.maxRerankCalls, `rerank: ${calls.rerank}`);
+  assert.equal(result.aiCalls, calls.embed + calls.rerank, "the logged count matches the real calls");
 });
 
 test("rows already stored with hidden characters (older index, structured input) are cleaned at retrieval, and hostile phrases are only counted", async () => {

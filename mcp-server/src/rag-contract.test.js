@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { retrieve } from "./rag/index.js";
-import { LIMITS, RELEVANCE } from "./rag/limits.js";
+import { LIMITS, RELEVANCE, MODELS } from "./rag/limits.js";
 import { RAG_STATUSES, EMPTY_REASONS, emptyRetrieval, normalizeRetrieval } from "./rag/contract.js";
 
 const session = { sub: "contract-test-user" };
@@ -77,4 +77,11 @@ test("retrieval budgets match the documented contract", () => {
     topRankScore: 0.72, topRank: 5,
   });
   assert.ok(Object.isFrozen(LIMITS) && Object.isFrozen(RELEVANCE));
+});
+
+// Cloudflare cannot pin these ids to a version. Changing one changes retrieval (and,
+// for the embedding, the meaning of every stored vector), so it must be deliberate.
+test("Workers AI model ids are named once and frozen", () => {
+  assert.deepEqual({ ...MODELS }, { embedding: "@cf/baai/bge-m3", rerank: "@cf/baai/bge-reranker-base" });
+  assert.ok(Object.isFrozen(MODELS));
 });

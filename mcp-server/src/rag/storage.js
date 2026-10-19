@@ -1,5 +1,6 @@
 import { sha256Hex } from "../auth.js";
 import { stripInvisible } from "./sanitize.js";
+import { MODELS } from "./limits.js";
 import { contextualChildren, INDEX_FORMAT_VERSION, searchText } from "./chunking.js";
 import { prepareStructuredInput } from "./structured-input.js";
 import { validId } from "./query.js";
@@ -21,7 +22,7 @@ export async function getVectors(env, ids) {
   return vectors;
 }
 export async function embeddings(env, text) {
-  const response = await env.AI.run("@cf/baai/bge-m3", { text });
+  const response = await env.AI.run(MODELS.embedding, { text });
   const values = response?.data;
   if (
     !Array.isArray(values) ||

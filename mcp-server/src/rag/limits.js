@@ -27,3 +27,11 @@ export const RELEVANCE = Object.freeze({
   looseOverlap: 0.08, looseScore: 0.55,
   topRankScore: 0.72, topRank: 5,
 });
+
+// Workers AI models. Cloudflare serves these ids without a version, so a silent change
+// on its side cannot be pinned here; the ids are named once, frozen by a test, and the
+// embedding id is part of every stored vector's meaning (a change needs a re-index).
+export const MODELS = Object.freeze({
+  embedding: "@cf/baai/bge-m3",
+  rerank: "@cf/baai/bge-reranker-base",
+});
