@@ -4,6 +4,7 @@ import { revalidateRetrieval } from "./rag/authorization.js";
 import { ragAnswerPolicy } from "./rag/answer-policy.js";
 import { normalizeRetrieval } from "./rag/contract.js";
 import { linkRedactor } from "./rag/output-filter.js";
+import { groundingCheck } from "./rag/grounding-check.js";
 /**
  * AI proxy (OpenAI is the base provider).
  *
@@ -329,7 +330,9 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
     // note). Either can plant a link, so neither reply keeps links.
     rag.context !== "" || (typeof payload?.noteContext === "string" && payload.noteContext.trim() !== ""),
     // A teen's reply is also screened once it is complete (see streamNormalizedText).
-    provider === "openai" && request.headers.get("X-Studiquo-Age") === "teen");
+    provider === "openai" && request.headers.get("X-Studiquo-Age") === "teen",
+    // What the model was shown, for the shadow grounding check (counts only).
+    rag.context ? `${rag.context}\n${turns.at(-1)?.text ?? ""}` : null, rag.status);
 }
 
 /**
@@ -346,7 +349,7 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
  * runtime cancelled it. Here the buffer is an ordinary local and the
  * response is returned immediately while the pump runs behind it.
  */
-function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders = {}, refund = async () => {}, citations = [], ragStatus, redactRagLinks = false, moderateOutput = false) {
+function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders = {}, refund = async () => {}, citations = [], ragStatus, redactRagLinks = false, moderateOutput = false, groundingSource = null, groundingStatus) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
@@ -427,6 +430,10 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
       if (moderateOutput && !failed && answer && await moderationRejection(env, [answer])) {
         console.error(JSON.stringify({ message: "teen output flagged by moderation" }));
         await send("\n\n（この回答には学習アプリで扱えない内容が含まれている可能性があります。内容を信じすぎず、保護者や先生に相談してください）");
+      }
+      if (groundingSource && !failed && answer) {
+        // Shadow mode: counts go to the log, the answer is untouched.
+        console.log(JSON.stringify({ event: "rag_grounding", status: groundingStatus, ...groundingCheck(answer, groundingSource) }));
       }
       completed = true;
       // A stream that ends in failure, or without a single character, is not an

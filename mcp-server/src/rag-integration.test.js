@@ -495,3 +495,18 @@ test("a teen's finished reply is screened by moderation: a flagged reply gets a 
     assert.ok(!/保護者や先生/.test(answerText(adult.text)));
   } finally { globalThis.fetch = original; }
 });
+
+test("the shadow grounding check logs counts for a document-based answer and never changes the answer", async () => {
+  const original = globalThis.fetch, log = console.log, lines = [];
+  globalThis.fetch = async () => new Response(sse(["電流計の価格は8000円です。"]));
+  console.log = (...args) => { lines.push(args.join(" ")); };
+  try {
+    const qenv = qualityEnvironment(), environment = { ...env(), ...qenv };
+    await indexSource(environment, await accountKey("canonical-owner"), qualitySource({ pages: [{ pageNumber: 1, text: "電流計の価格は5000円です。" }] }));
+    environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map((v) => ({ id: v.id, score: 0.6 })) });
+    const result = await chat(environment, { messages: [{ role: "user", text: "電流計の価格を教えて" }], rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+    assert.equal(answerText(result.text), "電流計の価格は8000円です。"); // unchanged even though 8000 is not in the excerpt
+    const event = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((e) => e?.event === "rag_grounding");
+    assert.deepEqual(event, { event: "rag_grounding", status: "grounded", checkedNumbers: 1, ungroundedNumbers: 1, checkedTokens: 0, ungroundedTokens: 0 });
+  } finally { globalThis.fetch = original; console.log = log; }
+});
