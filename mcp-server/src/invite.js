@@ -6,6 +6,12 @@
 // tapped inside another app's in-app browser (LINE, Snapchat, …), which
 // generally won't route a studiquo:// custom-scheme link to iOS but will
 // load a real https:// page like this one.
+//
+// The page does NOT forward to the studiquo:// scheme by itself. The token in
+// the link lets whoever holds it become the inviter's friend at once, and any app
+// can register the same custom scheme; a script that hands the token over without
+// a tap would give it to whichever app iOS picks. The button below is the way
+// into the app from those in-app browsers, and it needs a tap.
 import { json, htmlHeaders } from "./http.js";
 
 function htmlEscape(value) {
@@ -23,6 +29,6 @@ export function handleInvitePage(url) {
   }
 
   const appLink = `studiquo://friend/add?token=${encodeURIComponent(token)}`;
-  const page = `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Studiquoに接続</title><style>body{font:18px system-ui;max-width:28rem;margin:4rem auto;padding:1rem;line-height:1.6;text-align:center}a.button{display:inline-block;margin-top:1.5rem;padding:0.9rem 2rem;background:#0a7cff;color:#fff;text-decoration:none;border-radius:999px;font-weight:600}small{color:#777;display:block;margin-top:2rem}</style><h1>studiquo</h1><p>フレンド招待リンクです。「Studiquoで開く」をタップしてください。</p><a class="button" href="${htmlEscape(appLink)}">Studiquoで開く</a><small>アプリが自動で開かない場合は、上のボタンをもう一度タップしてください。studiquoアプリがインストールされている必要があります。</small><script>location.replace(${JSON.stringify(appLink)})</script></html>`;
-  return new Response(page, { headers: htmlHeaders() });
+  const page = `<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Studiquoに接続</title><style>body{font:18px system-ui;max-width:28rem;margin:4rem auto;padding:1rem;line-height:1.6;text-align:center}a.button{display:inline-block;margin-top:1.5rem;padding:0.9rem 2rem;background:#0a7cff;color:#fff;text-decoration:none;border-radius:999px;font-weight:600}small{color:#777;display:block;margin-top:2rem}</style><h1>studiquo</h1><p>フレンド招待リンクです。「Studiquoで開く」をタップしてください。</p><a class="button" href="${htmlEscape(appLink)}">Studiquoで開く</a><small>アプリが開かない場合は、Studiquoアプリがインストールされているか確認してください。</small></html>`;
+  return new Response(page, { headers: htmlHeaders({ scripts: false }) });
 }
