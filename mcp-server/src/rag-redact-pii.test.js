@@ -54,3 +54,20 @@ test("named secrets and bearer tokens are masked", () => {
   for (const leaked of ["abcdefghijklmnopqrstuvwxyz012345", "Zx9-aaaa", "hunter2hunter2", "AIzaAAAA", "sk_live_a1b2"]) assert.ok(!out.includes(leaked), leaked);
   assert.equal(redactPII("このtokenは短い。password は大事。key: 値").total, 0);
 });
+
+test("dash-like separators, circled digits next to a number, and 03(1234)5678", () => {
+  for (const text of ["090‐1234‐5678", "090‑1234‑5678", "090−1234−5678", "03–1234–5678", "03ー1234ー5678", "03(1234)5678", "①090-1234-5678"]) {
+    const out = redactPII(text);
+    assert.equal(out.total, 1, text);
+    assert.ok(!/1234/.test(out.text), `${text} -> ${out.text}`);
+  }
+  assert.equal(redactPII("①090-1234-5678").text, "①[電話番号]");
+  assert.equal(redactPII("03(14)2023").total, 0); // 8 digits: not a phone number
+});
+
+test("hostile input stays fast (no quadratic scans)", () => {
+  const started = Date.now();
+  for (const text of ["1".repeat(50000), "0-".repeat(20000), "-----BEGIN PRIVATE KEY-----" + "a".repeat(50000), "a".repeat(30000) + "@", "a@" + "b".repeat(30000), "-".repeat(50000)])
+    redactPII(text);
+  assert.ok(Date.now() - started < 1500, `${Date.now() - started} ms`);
+});

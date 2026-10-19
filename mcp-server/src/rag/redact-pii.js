@@ -26,13 +26,17 @@ const phoneOk = (match) => {
   return match.startsWith("+") ? d.startsWith("81") && d.length >= 11 && d.length <= 12 : d.startsWith("0") && (d.length === 10 || d.length === 11);
 };
 
+const DASH = "\\-\u2010-\u2015\u2212\u30FC";
 const RULES = [
   { kind: "key", label: "[鍵・トークン]", re: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/gu },
   { kind: "key", label: "[鍵・トークン]", re: /\b(?:sk-[A-Za-z0-9_-]{20,}|sk_(?:live|test)_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|gh[pousr]_[A-Za-z0-9]{30,}|xox[abprs]-[A-Za-z0-9-]{20,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/gu },
   { kind: "key", label: "[鍵・トークン]", re: /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}/giu },
   { kind: "key", label: "[鍵・トークン]", re: /(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?token|auth[_-]?token|passw(?:or)?d|パスワード|秘密鍵)\s*[=:]\s*["']?[A-Za-z0-9._~+/=!@#$%^&*-]{8,}["']?/giu },
-  { kind: "email", label: "[メールアドレス]", re: /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/gu },
-  { kind: "phone", label: "[電話番号]", re: /(?<![\d-])(?:\+81[-\s]?\d[\d\s-]{7,12}\d|0\d{1,4}[-\s]\d{1,4}[-\s]\d{3,4})(?![\d-])/gu, accept: phoneOk },
+  { kind: "email", label: "[メールアドレス]", re: /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/gu },
+  // Separators: hyphen, spaces and the dash-like marks that notes mix in (‐ ‑ ‒ – — ― − ー).
+  { kind: "phone", label: "[電話番号]", re: new RegExp(`(?<![\\d${DASH}])(?:\\+81[${DASH}\\s]?\\d[\\d\\s${DASH}]{7,12}\\d|0\\d{1,4}[${DASH}\\s]\\d{1,4}[${DASH}\\s]\\d{3,4})(?![\\d${DASH}])`, "gu"), accept: phoneOk },
+  // 03(1234)5678
+  { kind: "phone", label: "[電話番号]", re: /(?<![\d-])0\d{1,4}\(\d{1,4}\)\d{3,4}(?!\d)/gu, accept: phoneOk },
   { kind: "phone", label: "[電話番号]", re: /(?<![\d-])0[789]0\d{8}(?!\d)/gu },
   { kind: "myNumber", label: "[個人番号]", re: /(?:マイナンバー|個人番号)[^\n\d]{0,12}\d{4}[- ]?\d{4}[- ]?\d{4}/gu },
   // A long digit run is a card number only if it is plausible (13-19 digits, Luhn).
@@ -47,7 +51,9 @@ export function redactPII(value) {
   let view = "";
   const origin = []; // origin[i] = index into `chars` of the character that produced view[i]
   chars.forEach((ch, index) => {
-    const n = ch.normalize("NFKC");
+    // A circled or superscript digit (①, ²) is not a digit of a number: left as it is, it
+    // cannot glue itself to the digits beside it.
+    const n = /\p{No}/u.test(ch) ? ch : ch.normalize("NFKC");
     for (let k = 0; k < n.length; k++) origin.push(index);
     view += n;
   });
