@@ -27,8 +27,51 @@ const UNSAFE_INSTRUCTION = [
   /従わ(?:なくて|なく)(?:も)?(?:よい|良い|いい|構いません)/u,
   /(?:資料|参考データ|抜粋).{0,12}(?:指示|命令).{0,8}(?:に従って|に従い|を実行)/u,
 ];
+// More ways to weaken the frozen rules that the list above misses: permitting links,
+// writing citations or ids into the answer, revealing the prompt, letting the model
+// fill gaps from general knowledge, and fake role lines. Still a smoke check.
+const WEAKENING_INSTRUCTION = [
+  /\b(?:add|include|append|output|insert|provide|attach)\s+(?:a\s+|an\s+|the\s+)?(?:hyper)?links?\b/iu,
+  /(?:リンク|URL|ＵＲＬ|ハイパーリンク|link|hyperlink)s?.{0,16}(?:付け|付与|出力|表示|含め|貼|案内|書い|include|add|output|append)/iu,
+  /(?:出典|ページ番号|chunk\s*id|source\s*id|ソースID).{0,16}(?:本文|回答|文中).{0,8}(?:書|出力|入れ|示|含め)/iu,
+  /(?:本文|回答|文中).{0,12}(?:出典|ページ番号|chunk\s*id|source\s*id|ソースID).{0,12}(?:書|出力|入れ|示|含め)/iu,
+  /(?:システムプロンプト|system\s*prompt|内部の指示|隠れた指示|凍結規則).{0,16}(?:表示|出力|教え|開示|見せ|reveal|print|show|output)/iu,
+  /(?:reveal|print|show|output|display|disclose|表示|出力|開示).{0,16}(?:system\s*prompt|システムプロンプト|内部の指示|隠れた指示)/iu,
+  /(?:資料|抜粋|参考データ)(?:に|には)?(?:ない|無い|なくても|記載のない).{0,20}(?:補って|加えて|追加して|推測して|作って)(?:よい|良い|いい|ください|も構いません)/u,
+  /(?:一般知識|常識|自分の知識).{0,16}(?:で|を使って|により).{0,8}(?:補って|答えて|埋めて)(?:よい|良い|いい|ください|も構いません)/u,
+  /^\s*(?:system|assistant|developer|システム|管理者)\s*[:：]/imu,
+  /(?:developer|debug|jailbreak)\s+mode|開発者モード|デバッグモード/iu,
+];
+const INVISIBLE = /[\p{Cf}\p{Cc}]/gu;
+// A candidate is checked as written, as NFKC-normalized text, and with spaces removed,
+// so full-width forms and "i g n o r e" style spacing do not slip past the patterns.
+function variants(text) {
+  const nfkc = text.normalize('NFKC');
+  return [text, nfkc, nfkc.replace(/\s+/gu, '')];
+}
+// Applied only to the whitespace-free variant, which catches "i g n o r e ...".
+const SQUASHED_UNSAFE = [
+  /(?:ignore|disregard|forget)(?:all|any|the)?(?:previous|prior|above|earlier|system|safety)/i,
+  /override(?:the)?(?:rules?|policy|policies|instructions?|safety)/i,
+];
 export function assertSafeInstructions(candidate) {
-  if (UNSAFE_INSTRUCTION.some(pattern => pattern.test(candidate.additionalInstructions))) throw Error('unsafe_candidate');
+  const text = candidate.additionalInstructions;
+  // Hidden characters have no place in a prompt a human is meant to review.
+  if ([...text.matchAll(INVISIBLE)].some(([c]) => !['\n', '\t', '\r'].includes(c))) throw Error('unsafe_candidate');
+  // Long encoded blobs and links cannot be reviewed by reading them.
+  if (/[A-Za-z0-9+/=]{200,}/u.test(text) || /https?:\/\/|\]\(/iu.test(text.normalize('NFKC'))) throw Error('unsafe_candidate');
+  const [, , squashed] = variants(text);
+  if (variants(text).some(v => UNSAFE_INSTRUCTION.some(pattern => pattern.test(v))) || SQUASHED_UNSAFE.some(pattern => pattern.test(squashed))) throw Error('unsafe_candidate');
+  // "Do not write links" tightens the rules; "write links" loosens them. The patterns
+  // above match both, so a negation in or right after the match clears it.
+  const negated = /ない|ず(?:に)?|禁止|避け|\bnot\b|\bnever\b|n't|\bwithout\b|\bno\b/iu;
+  // "資料にない…" names the gap the instruction wants filled, it is not a prohibition.
+  const gapPhrase = /(?:資料|抜粋|参考データ)(?:に|には)?(?:ない|無い|なくても)|記載のない/gu;
+  const weakens = v => WEAKENING_INSTRUCTION.some(pattern => {
+    const m = pattern.exec(v);
+    return m && !negated.test(v.slice(m.index, m.index + m[0].length + 12).replace(gapPhrase, ''));
+  });
+  if (variants(text).some(weakens)) throw Error('unsafe_candidate');
 }
 export function preparePacket(candidate) {
   validateCandidate(candidate);
