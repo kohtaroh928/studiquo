@@ -138,11 +138,20 @@ struct RichInlineText: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// The address a span may open. Nil when links are off for this reply, or the
+    /// address is not a web link: a reply built from documents or notes could carry
+    /// a planted link, and only https or http ones are ever worth opening.
+    static func openableURL(_ link: String?, allowLinks: Bool) -> URL? {
+        guard allowLinks, let link, let url = URL(string: link),
+              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return nil }
+        return url
+    }
+
     private func text(for span: RichSpan) -> Text {
         var result: Text
         switch span.content {
         case .text(let string):
-            if style.allowLinks, let link = span.link, let url = URL(string: link) {
+            if let url = Self.openableURL(span.link, allowLinks: style.allowLinks) {
                 var attributed = AttributedString(string)
                 attributed.link = url
                 attributed.underlineStyle = .single
