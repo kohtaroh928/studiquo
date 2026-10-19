@@ -250,6 +250,10 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
   const baseSystem = system;
   let rag = { context: "", citations: [] };
   let ragRequested = false;
+  // What the model was actually sent on the last attempt. The final re-check below can
+  // empty `rag` (a timeout, a deleted source) after the excerpts have already gone out,
+  // and the reply built from them must still have its links removed.
+  let referencesSent = "";
   // Explicit renewed consent authorizes retrieval for OpenAI.
   if (provider === "openai" && env.RAG_ENABLED === "true" && payload?.rag && session &&
       request.headers.get("X-Studiquo-RAG-Consent") === "rag-openai-v1") {
@@ -301,6 +305,7 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
         safetyId: account,
         ...(ragRequested ? { beforeDispatch: async () => {
           rag = await revalidateRetrieval(env, session, rag);
+          referencesSent = rag.context;
           const policy = ragAnswerPolicy(rag.status, payload.rag.answerStyle);
           // Off by default: moving the excerpts changes what the model sees, so
           // it is compared against the current layout (docs/RAG_PROMPT_CONTRACT.md §7) first.
@@ -323,17 +328,17 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
     throw error;
   }
 
+  // Text the student did not write reaches the model through retrieved excerpts and
+  // through an attached note (which may be a friend's shared note). Either can plant a
+  // link or an instruction, so a reply built from them keeps no links and, for a teen,
+  // is screened once complete (see streamNormalizedText).
+  const untrustedInput = referencesSent !== "" || (typeof payload?.noteContext === "string" && payload.noteContext.trim() !== "");
   return streamNormalizedText(upstream, extractText, ctx, env, key, {
     "x-studiquo-images-received": String(images.length),
-  }, gate.refund, rag.citations, rag.status,
-    // Text the student did not write reaches the model through retrieved
-    // excerpts and through an attached note (which may be a friend's shared
-    // note). Either can plant a link, so neither reply keeps links.
-    rag.context !== "" || (typeof payload?.noteContext === "string" && payload.noteContext.trim() !== ""),
-    // A teen's reply is also screened once it is complete (see streamNormalizedText).
-    provider === "openai" && request.headers.get("X-Studiquo-Age") === "teen",
+  }, gate.refund, rag.citations, rag.status, untrustedInput,
+    untrustedInput && provider === "openai" && request.headers.get("X-Studiquo-Age") === "teen",
     // What the model was shown, for the shadow grounding check (counts only).
-    rag.context ? `${rag.context}\n${turns.at(-1)?.text ?? ""}` : null, rag.status);
+    referencesSent ? `${referencesSent}\n${turns.at(-1)?.text ?? ""}` : null, rag.status);
 }
 
 /**
@@ -428,7 +433,7 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
       }
       // The text is already on the student's screen and cannot be taken back, so a
       // flagged reply gets a plain notice after it and a log line (no text).
-      if (moderateOutput && !failed && answer && await moderationRejection(env, [answer])) {
+      if (moderateOutput && !failed && answer && await moderationRejection(env, [answer], undefined, { timeoutMs: 4000 })) {
         console.error(JSON.stringify({ message: "teen output flagged by moderation" }));
         await send("\n\n（この回答には学習アプリで扱えない内容が含まれている可能性があります。内容を信じすぎず、保護者や先生に相談してください）");
       }

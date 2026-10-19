@@ -32,3 +32,25 @@ test("study content is left alone", () => {
 test("tolerates non-strings", () => {
   assert.equal(redactPII(undefined).text, "");
 });
+
+test("dates and number runs that only look like phone numbers are left alone", () => {
+  for (const text of ["03-14-2023に開催", "05 10 100", "2023-10-20", "第03-12-2021版", "座標 12-34-5678", "0.5-1.2-3456"])
+    assert.equal(redactPII(text).text, text, text);
+  assert.equal(redactPII("03-1234-5678").total, 1);
+  assert.equal(redactPII("0120-123-456").total, 1);
+  assert.equal(redactPII("03 1234 5678").total, 1);
+  assert.equal(redactPII("+81 90 1234 5678").total, 1);
+});
+
+test("full-width forms are masked and the text around them is untouched", () => {
+  const text = "連絡: ０９０－１２３４－５６７８ / ａ＠ｂ.ｃｏｍ / ４１１１　１１１１　１１１１　１１１１ / マイナンバー：１２３４５６７８９０１２ です。Ａ組の５０００円。";
+  const { text: out, counts } = redactPII(text);
+  assert.equal(out, "連絡: [電話番号] / [メールアドレス] / [カード番号] / [個人番号] です。Ａ組の５０００円。");
+  assert.deepEqual(counts, { key: 0, email: 1, phone: 1, myNumber: 1, card: 1 });
+});
+
+test("named secrets and bearer tokens are masked", () => {
+  const out = redactPII("Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345\napi_key=Zx9-aaaa-bbbb-cccc\npassword: hunter2hunter2\nAIza" + "A".repeat(35) + "\nsk_live_" + "a1b2c3d4e5f6g7h8i9").text;
+  for (const leaked of ["abcdefghijklmnopqrstuvwxyz012345", "Zx9-aaaa", "hunter2hunter2", "AIzaAAAA", "sk_live_a1b2"]) assert.ok(!out.includes(leaked), leaked);
+  assert.equal(redactPII("このtokenは短い。password は大事。key: 値").total, 0);
+});

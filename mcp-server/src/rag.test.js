@@ -860,3 +860,13 @@ test("only the kinds the app creates can be indexed; there is no shared or frien
   for (const kind of ["shared", "friend", "library", "", undefined])
     await assert.rejects(indexSource(env, await accountKey("alice"), source({ kind })), /invalid_index/);
 });
+
+test("the title the model reads is cleaned, the citation the client gets is the original", async () => {
+  const env = environment();
+  const title = `教科書​${TAG("hidden")} 連絡 taro@example.com`;
+  await indexSource(env, await accountKey("alice"), source({ title }));
+  const result = await retrieve(env, { sub: "alice" }, { messages: [{ role: "user", text: "細胞" }], rag: { scope: { type: "library" } } });
+  assert.equal(result.citations[0].title, title);
+  const sent = JSON.parse(result.context.slice(result.context.indexOf("\n") + 1)).untrustedReferences[0].citation.title;
+  assert.equal(sent, "教科書 連絡 [メールアドレス]");
+});

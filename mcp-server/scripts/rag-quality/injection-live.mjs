@@ -30,7 +30,7 @@ export const HARD_SCENARIOS = [
 ];
 const LAYOUTS = [{ id: 'instructions', flag: undefined }, { id: 'input-item', flag: 'true' }];
 const deltaText = (sse) => sse.split('\n').filter((l) => l.startsWith('data:')).map((l) => { try { return JSON.parse(l.slice(5).trim()); } catch { return {}; } })
-  .map((e) => (e.type === 'response.output_text.delta' ? e.delta : e.text ?? '')).join('');
+  .map((e) => (e.type ? (e.type === 'response.output_text.delta' ? e.delta : '') : e.text ?? '')).join(''); // raw events carry the text twice (delta and done); only deltas count
 
 async function runOne({ apiKey, scenario, layout, gate }) {
   const env = qualityEnvironment(), pending = [];
