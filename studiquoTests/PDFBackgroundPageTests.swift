@@ -92,7 +92,9 @@ final class PDFBackgroundPageTests: XCTestCase {
         {"pages":[{"drawingData":null,"backgroundImageData":"\(Data("bg".utf8).base64EncodedString())",
         "title":"旧","recognizedText":"本文","flashcardQuestion":"","flashcardAnswer":"","elements":[]}]}
         """
-        let key = NotebookEncryptionKeyStore.loadOrCreateKey(service: service)
+        // A payload from before key ids has no id, so it is opened with the original (id-less) key.
+        let key = SymmetricKey(size: .bits256)
+        XCTAssertTrue(NotebookEncryptionKeyStore.addKey(id: nil, key: key, service: service))
         notebook.encryptedContent = try XCTUnwrap(AES.GCM.seal(Data(legacyJSON.utf8), using: key).combined)
 
         XCTAssertTrue(NotebookEncryptionService.unlock(notebook, keyService: service))

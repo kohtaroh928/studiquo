@@ -89,7 +89,9 @@ final class NotebookEncryptionPDFPageAndTamperTests: XCTestCase {
           ]
         }
         """
-        let key = NotebookEncryptionKeyStore.loadOrCreateKey(service: service)
+        // A payload from before key ids has no id, so it is opened with the original (id-less) key.
+        let key = SymmetricKey(size: .bits256)
+        XCTAssertTrue(NotebookEncryptionKeyStore.addKey(id: nil, key: key, service: service))
         let sealed = try AES.GCM.seal(Data(legacyJSON.utf8), using: key)
         notebook.encryptedContent = try XCTUnwrap(sealed.combined)
 
