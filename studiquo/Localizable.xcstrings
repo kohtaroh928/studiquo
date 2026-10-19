@@ -11009,6 +11009,39 @@
         }
       }
     },
+    "閲覧データを消去" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear browsing data"
+          }
+        }
+      }
+    },
+    "消去する" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        }
+      }
+    },
+    "このブラウザに保存されたCookie・ログイン状態・サイトのデータをすべて消します。Studiquoのノートには影響しません。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This removes all cookies, sign-ins and site data saved by this browser. Your Studiquo notes are not affected."
+          }
+        }
+      }
+    },
     "AI機能は一時的に停止しています。しばらくしてからもう一度お試しください。" : {
       "extractionState" : "manual",
       "localizations" : {

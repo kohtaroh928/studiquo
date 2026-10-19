@@ -75,6 +75,8 @@ final class AuthenticationStore: ObservableObject {
     private let revokeCloudCredentials: () async -> Void
     private let deleteAccountOnServer: () async throws -> Void
     private let authenticationSession: URLSession
+    /// What the in-app browser keeps must not outlive the sign-out or the account.
+    private let eraseBrowserData: @MainActor () async -> Void
     private let passkeyRegistered: () async -> Bool?
     private var authenticationEndpoint: URL {
         MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)!
@@ -106,6 +108,7 @@ final class AuthenticationStore: ObservableObject {
         revokeCloudCredentials: @escaping () async -> Void = { await MCPCloudCredentials.revoke() },
         deleteAccountOnServer: @escaping () async throws -> Void = { try await AccountDeletionService.deleteAccount() },
         authenticationSession: URLSession = .shared,
+        eraseBrowserData: @escaping @MainActor () async -> Void = { await BrowserDataEraser.eraseAll() },
         passkeyRegistered: @escaping () async -> Bool? = {
             guard let token = MCPCloudCredentials.currentToken(), let endpoint = MCPCloudCredentials.configuredEndpoint() else { return nil }
             return await PasskeyService.hasPasskey(token: token, endpoint: endpoint)
@@ -118,6 +121,7 @@ final class AuthenticationStore: ObservableObject {
         self.revokeCloudCredentials = revokeCloudCredentials
         self.deleteAccountOnServer = deleteAccountOnServer
         self.authenticationSession = authenticationSession
+        self.eraseBrowserData = eraseBrowserData
         self.passkeyRegistered = passkeyRegistered
         restore()
         authFailureSubscription = NotificationCenter.default.publisher(for: .studiquoAuthFailed)
@@ -255,6 +259,7 @@ final class AuthenticationStore: ObservableObject {
         // different person on a shared device), and RevenueCat must not
         // keep attributing their purchases to whoever signed out.
         Task { _ = try? await Purchases.shared.logOut() }
+        Task { await eraseBrowserData() }
     }
 
     func requestAccountDeletion() async -> Bool {
@@ -297,6 +302,7 @@ final class AuthenticationStore: ObservableObject {
         // should the provider allow it) starts from a clean entitlement
         // slate rather than inheriting the deleted account's purchases.
         Task { _ = try? await Purchases.shared.logOut() }
+        Task { await eraseBrowserData() }
     }
 
     /// A definitive 401 from any authenticated server call (see
