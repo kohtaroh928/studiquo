@@ -15,6 +15,7 @@
 // ctx.waitUntil, and every failure is only logged.
 import { sha256Hex } from "./auth.js";
 import { postSlackBlocks } from "./slack.js";
+import { featureDisabled } from "./features.js";
 
 export const MONITOR = {
   windowSeconds: 3_600,
@@ -136,6 +137,8 @@ export async function recordLoginOutcome(env, request, outcome, { newContext = f
 }
 
 async function sendSignInNotice(env, email, context, when) {
+  // The "email" kill switch (features.js). Callers treat a notice as best effort.
+  if (featureDisabled(env, "email")) return;
   const place = [context.country, context.region].filter(Boolean).join(" / ");
   const jst = new Date(when.getTime() + 9 * 3_600_000).toISOString().replace("T", " ").slice(0, 16);
   const response = await fetch(RESEND_API_URL, {

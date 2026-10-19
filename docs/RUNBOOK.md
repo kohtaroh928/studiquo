@@ -220,6 +220,22 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
   - `MAINTENANCE_MODE="true"`: アプリ・MCP・OAuthの経路が`503`(`code: "maintenance"`、`Retry-After: 300`)を返す。`/health`、アプリ関連づけファイル、法務・招待ページ、お知らせの一覧、管理画面は動き続ける。止めたあとの再開は、値を消して(または`"false"`にして)再配備する。
   - `MIN_APP_BUILD="<ビルド番号>"`: それより古いアプリのAPIが`426`(`code: "app_update_required"`)を返す。ビルド番号は、User-Agent(`studiquo/<ビルド> CFNetwork/…`)から読む。アプリ以外のクライアントは対象外。数値でない値は無効として扱う。**配布済みの最新ビルドより大きい値を入れない**(全員が使えなくなる)。
   - `SESSION_MAX_DAYS`: ログインを更新できる期間の上限(既定365)。
+  - `DISABLED_FEATURES="chat,email"`: **機能を1つずつ止める**(カンマ区切り。未設定なら何も変わらない。大文字小文字・空白は無視し、知らない名前は無視する)。止めた機能の経路は`503`(`code: "feature_disabled"`、`feature`に機能名、`Retry-After: 300`)を返す。`MAINTENANCE_MODE`が先に効く。設定後は`/health`の`disabledFeatures`に**効いた名前だけ**が出るので、綴りの間違いはここで分かる。
+    | 名前 | 止まるもの |
+    |---|---|
+    | `ai` | `/api/ai/*`(AIの呼び出しと使用量) |
+    | `chat` | `/api/chat/*`(友達・グループ・チャット・端末登録) |
+    | `collab` | `/api/document/*`(共同編集) |
+    | `mcp` | `/mcp`、`/oauth/*`、`/api/mcp/*` |
+    | `signin` | 新しいログイン全部: `/api/auth/*`(メール送信を除く)と`/api/passkeys/login/*` |
+    | `email` | メール送信の全部: 確認コードの送信(`/api/auth/email/send-code`は503)、新しい環境でのサインイン通知、パスキーの通知 |
+    | `push` | プッシュ通知の送信(送らないだけで、エラーにはしない) |
+    - **止めないもの**: `/health`、法務・招待ページ、お知らせ、管理画面、**退会(`DELETE /api/account`)、ログアウト、セッション更新**、ログイン済みの端末の通常のAPI(上の表に無いもの)。
+    - 使い分け: 確認コードの連打なら`email`(メールの料金と評判を守る)。AIの料金の暴走なら`ai`(キーの失効はA-3)。チャットの悪用なら`chat`。全体の障害は`MAINTENANCE_MODE`。`AI_PROVIDER_APPROVED`(AIを出すか決める承認の旗)とは別で、どちらかが止めていればAIは止まる。
+    - 例外と注意: `mcp`を止めても、AIアプリの接続の解除(`DELETE /api/mcp/connections/:id`)は止まらない(不正な接続を自分で切れるように)。`push`を止めている間は、お知らせのプッシュ送信が`503`で断られる(「送信済み」にはならない)。名前を間違えると何も止まらないので、設定後は`/health`の`disabledFeatures`と、Workers Logsの`DISABLED_FEATURES has a name that stops nothing`を確認する。
+    - 規約: アカウントの出口(退会、ログアウト、セッション更新)は`/api/account`と`/api/session`の下に置き、`/api/auth/`や機能の接頭辞の下に置かない(置くと、その機能の停止で出口まで止まる)。
+    - 設定の置き場: `wrangler.jsonc`の`vars`に書いて配備する。ダッシュボードで直接変えた値は、次の`wrangler deploy`で`vars`の内容に戻る。緊急にダッシュボードで入れたら、あとで`vars`にも反映する(または、反映するまで配備しない)。
+    - 戻し方: 値から名前を消して(または空にして)配備する。
 - **https**(`mcp-server/src/transport.js`): 全レスポンスに`Strict-Transport-Security: max-age=31536000`(`includeSubDomains`・`preload`なし)を付ける。`http://`で届いた要求は、何も読まずに、GET・HEADは`308`でhttpsへ、それ以外は`403`(`code: "https_required"`)で断る(ローカル開発の`http://localhost`は対象外)。Cloudflareの「Always Use HTTPS」がエッジで同じことをするので、**ダッシュボードで有効にする**(Workerの分は二重の備え)。httpで来たクライアントは、Bearerトークンを平文で送ったことになるので、httpsに直し、そのトークンは見られたものとして扱う。**有効にする前に確認**: RevenueCatのWebhookの登録URL、死活監視、MCPクライアントの接続先が`https://`であること(`http://`だとPOSTは403、GET・HEADは308になる)。
 - **最初の確認**: 症状が出た時刻と、直前の配備・設定変更。`/health`が200か。`api.studiquo.app`のDNSとカスタムドメインがCloudflareで有効か。
 - **変更せず調べる**: Cloudflareの「セキュリティ」→「概要」・Analyticsで、WAFがブロックした記録(件数、対象のパス)。Workers Logsの`429`・`503`・`426`の件数。`curl`での`/health`・関連づけファイルの確認。

@@ -5,6 +5,7 @@
 // cross-provider linking — exactly the same "only a verified email may join
 // two accounts" rule Apple and Google already get from their own tokens.
 import { sha256Hex } from "./auth.js";
+import { featureDisabled } from "./features.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 
 const CODE_PREFIX = "email-verify:";
@@ -36,6 +37,8 @@ function generateCode() {
  * call itself fails — callers should treat either as "could not send".
  */
 export async function sendVerificationCode(env, email) {
+  // The "email" kill switch (features.js). Checked before a code is stored.
+  if (featureDisabled(env, "email")) throw new Error("Email sending is paused.");
   const normalized = normalizeEmail(email);
   if (!normalized) throw new Error("Invalid email address.");
 
