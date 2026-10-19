@@ -214,3 +214,34 @@ test("removeAllPasskeys clears the records, the lists and a recovery in progress
     assert.equal(await env.STUDIQUO_DATA.get(`passkey-recovery:${await sha256Hex(ACCOUNT)}`), null);
   } finally { mail.restore(); }
 });
+
+test("removeAllPasskeys also takes the passkeys out of the per-person list, and keeps other people's", async () => {
+  const env = environment();
+  const mail = captureMail();
+  try {
+    await env.STUDIQUO_DATA.put("passkeys:credential:mine", JSON.stringify({ id: "mine", email: EMAIL, userKey: "dev-mine" }));
+    await indexAccountPasskey(env, ACCOUNT, EMAIL, "mine");
+    await env.STUDIQUO_DATA.put("passkeys:user:dev-mine", JSON.stringify([{ id: "mine", email: EMAIL }]));
+    await env.STUDIQUO_DATA.put("passkeys:credential:theirs", JSON.stringify({ id: "theirs", email: "other@example.com", userKey: "dev-theirs" }));
+    await env.STUDIQUO_DATA.put("passkeys:user:dev-theirs", JSON.stringify([{ id: "theirs", email: "other@example.com" }]));
+    await removeAllPasskeys(env, ACCOUNT, EMAIL);
+    assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:mine"), null);
+    assert.equal(await env.STUDIQUO_DATA.get("passkeys:user:dev-mine"), null, "nothing is left that names the removed passkey");
+    assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:user:dev-theirs"), null);
+    assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:theirs"), null);
+  } finally { mail.restore(); }
+});
+
+test("removeAllPasskeys also removes a passkey a password reset had already cut off", async () => {
+  const env = environment();
+  const mail = captureMail();
+  try {
+    await env.STUDIQUO_DATA.put("passkeys:credential:old", JSON.stringify({ id: "old", email: EMAIL, userKey: "dev-old", createdAt: 1000 }));
+    await indexAccountPasskey(env, ACCOUNT, EMAIL, "old");
+    await env.STUDIQUO_DATA.put("passkeys:user:dev-old", JSON.stringify([{ id: "old", email: EMAIL }]));
+    await env.STUDIQUO_DATA.put(`passkey-valid-from:${await sha256Hex(ACCOUNT)}`, "5000");
+    await removeAllPasskeys(env, ACCOUNT, EMAIL);
+    assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:old"), null);
+    assert.equal(await env.STUDIQUO_DATA.get("passkeys:user:dev-old"), null);
+  } finally { mail.restore(); }
+});
