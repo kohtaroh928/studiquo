@@ -20,6 +20,7 @@ import { handleAdminPage, handleAdminWebhook, handleUsageEvent, handleAdminStats
 import { handleInvitePage } from "./invite.js";
 import { accessAllowed, isAccessGuardedPath, isCrossSiteWrite } from "./access.js";
 import { appGateRejection } from "./app-gate.js";
+import { handleAppAttest, appAttestGate } from "./app-attest.js";
 import { idTokenNonceRefused } from "./id-token-nonce.js";
 import { isRevoked, revoke } from "./revocation.js";
 import { isExpired, remainingValiditySeconds } from "./token.js";
@@ -343,6 +344,15 @@ export default {
       const legal = handleLegal(url);
       if (legal) return legal;
 
+      // App Attest (src/app-attest.js): the two routes that register an app
+      // instance, then the check on the AI and sign-in routes. Off unless
+      // APP_ATTEST_MODE is set. Before the passkey routes, which sign people in too.
+      if (url.pathname.startsWith("/api/")) {
+        const attest = await handleAppAttest(url, request, env);
+        if (attest) return attest;
+        const attestRefusal = await appAttestGate(request, env, url);
+        if (attestRefusal) return attestRefusal;
+      }
       const passkeys = await handlePasskeys(url, request, env);
       if (passkeys) return passkeys;
       const chat = await handleChat(url, request, env, ctx);
