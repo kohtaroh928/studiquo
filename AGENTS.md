@@ -13,6 +13,18 @@
 - 認証・認可、課金、個人情報、データ削除・移行、本番設定などのHighリスク変更では、モードにかかわらず安全確認、ロールバック検討、独立レビューを省略しない。
 - 設計・構成・公開状態に関わる変更の完了報告には、`docs/PROJECT_SYNC.md`に照らして、claude.ai Projectへ渡している資料の更新が必要なファイルを添える。該当がなければ「Projectの資料の更新: なし」と書く。置き場のファイルの更新は、依頼があったときだけ行う。
 
+## 作業ブランチと作業フォルダの分離
+
+ClaudeとCodexなど複数のエージェントの作業が被らないよう、次を守る。
+
+- メインのチェックアウト(`~/studiquo`)では編集・コミットしない。読み取りと統合専用とする。
+- 作業は必ず`git worktree`で行う。`git worktree add .worktrees/<task> -b <claude|codex>/<task> main`
+  - Codexのアプリが作る`~/.codex/worktrees/`配下も可。
+- ブランチ名は`claude/<task>`または`codex/<task>`とする。他エージェントの接頭辞のブランチはcheckout・コミットしない。
+- 着手前に`git worktree list`で同じ`<task>`や同じ対象ファイルが使われていないか確認する。被る場合はユーザーに確認する。
+- 作業が終わり統合したら、worktreeとブランチを片付ける。
+- `.githooks/`が上記を機械的に強制する。有効化は初回に`git config core.hooksPath .githooks`。人が意図的に回避する場合のみ`STUDIQUO_ALLOW_SHARED_CHECKOUT=1`を付ける。エージェントが勝手に付けてはならない。
+
 ## 開発手順モード
 
 ユーザーはチャットの最初または途中で、次のいずれかを指定できる。
