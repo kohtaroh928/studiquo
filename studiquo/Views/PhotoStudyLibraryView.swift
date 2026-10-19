@@ -314,6 +314,8 @@ enum PhotoStudyImageError: LocalizedError {
 struct PhotoStudyLibraryView: View {
     let onSelect: (String) -> Void
     let onClose: () -> Void
+    /// The pane's material switch button, drawn just left of the close button.
+    var headerAccessory: AnyView?
 
     @StateObject private var model = PhotoStudyLibraryModel()
 
@@ -327,6 +329,7 @@ struct PhotoStudyLibraryView: View {
                     Button("選択を管理") { model.manageLimitedAccess() }
                         .font(.subheadline)
                 }
+                if let headerAccessory { headerAccessory }
                 Button(action: onClose) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
@@ -594,6 +597,7 @@ final class PhotoStudyVideoPlayback: ObservableObject {
 struct PhotoStudyPaneViewer: View {
     let assetIdentifier: String
     let onClose: () -> Void
+    var headerAccessory: AnyView?
 
     @State private var image: UIImage?
     @State private var progress = 0.0
@@ -645,6 +649,7 @@ struct PhotoStudyPaneViewer: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.white)
                     Spacer()
+                    if let headerAccessory { headerAccessory }
                 }
                 .padding()
                 Spacer()

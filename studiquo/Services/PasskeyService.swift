@@ -6,8 +6,11 @@ import UIKit
 final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     static let shared = PasskeyService()
 
-    private let relyingPartyIdentifier = "studiquo-mcp.studiquo-mcp-server.workers.dev"
-    private let endpoint = URL(string: "https://studiquo-mcp.studiquo-mcp-server.workers.dev")!
+    // The Worker has one address (WorkerAIProvider.defaultEndpoint). The relying party
+    // identifier is its host: it must match both the associated domain in the
+    // entitlements and what the Worker checks (passkeys.js).
+    private let endpoint = URL(string: WorkerAIProvider.defaultEndpoint)!
+    private var relyingPartyIdentifier: String { endpoint.host ?? "api.studiquo.app" }
     private var continuation: CheckedContinuation<ASAuthorization, Error>?
 
     func register(email: String, token: String) async throws {
@@ -40,6 +43,19 @@ final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAutho
             path: "api/passkeys/register/verify",
             body: RegistrationVerification(transaction: envelope.transaction, credential: response),
             bearer: token
+        )
+    }
+
+    /// The first passkey of an account needs the mailbox confirmed first: the
+    /// server mails a code to the account's address, and `confirmEmailCode`
+    /// hands it back. Without this a session alone could register one.
+    func sendEmailCode(email: String, token: String) async throws {
+        let _: EmailCodeSent = try await post(path: "api/passkeys/email-code/send", body: EmailCodeSendBody(email: email), bearer: token)
+    }
+
+    func confirmEmailCode(email: String, code: String, token: String) async throws {
+        let _: EmailCodeConfirmed = try await post(
+            path: "api/passkeys/email-code/confirm", body: EmailCodeConfirmBody(email: email, code: code), bearer: token
         )
     }
 
@@ -149,7 +165,7 @@ final class PasskeyService: NSObject, ASAuthorizationControllerDelegate, ASAutho
         var request = URLRequest(url: endpoint.appending(path: "api/passkeys/status"))
         request.timeoutInterval = 15
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        guard let (data, response) = try? await session.data(for: request),
+        guard let (data, response) = try? await session.dataNoticing(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let status = try? JSONDecoder().decode(PasskeyStatus.self, from: data) else { return nil }
         return status.registered
@@ -209,11 +225,14 @@ enum PasskeyHTTPClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let bearer { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         request.httpBody = try JSONEncoder().encode(body)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
-            if PasskeyReauth.isRequired(status: (response as? HTTPURLResponse)?.statusCode, body: data) {
+            let status = (response as? HTTPURLResponse)?.statusCode
+            if PasskeyReauth.isRequired(status: status, body: data) {
                 throw PasskeyError.reauthRequired
             }
+            if PasskeyEmailCode.isRequired(status: status, body: data) { throw PasskeyError.emailCodeRequired }
+            if status == 401, path.hasSuffix("email-code/confirm") { throw PasskeyError.wrongEmailCode }
             throw PasskeyError.serverRejected
         }
         return try JSONDecoder().decode(Response.self, from: data)
@@ -229,8 +248,21 @@ enum PasskeyReauth {
     }
 }
 
+/// The server answers 403 with `code: "email_code_required"` when the first
+/// passkey of an account is registered without the mailbox confirmed.
+enum PasskeyEmailCode {
+    static func isRequired(status: Int?, body: Data) -> Bool {
+        struct Body: Decodable { let code: String? }
+        return status == 403 && (try? JSONDecoder().decode(Body.self, from: body))?.code == "email_code_required"
+    }
+}
+
 enum PasskeyError: LocalizedError {
     case invalidResponse, notVerified, serverRejected
+    /// The mailbox has to be confirmed with a code before the first passkey.
+    case emailCodeRequired
+    /// The code typed in was wrong or has expired.
+    case wrongEmailCode
     /// The action needs a passkey check first; see `PasskeyService.reauthenticate`.
     case reauthRequired
     /// The person dismissed the Face ID / passkey sheet.
@@ -238,6 +270,8 @@ enum PasskeyError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .cancelled: "パスキーの確認をキャンセルしました。"
+        case .emailCodeRequired: "メールで届いたコードの確認が必要です。"
+        case .wrongEmailCode: "コードが違うか、期限が切れています。コードを再送してお試しください。"
         case .reauthRequired: "パスキーでの確認が必要です。"
         case .invalidResponse: "パスキーの応答を読み取れませんでした。"
         case .notVerified: "パスキーを確認できませんでした。"
@@ -247,6 +281,10 @@ enum PasskeyError: LocalizedError {
 }
 
 private struct EmptyBody: Codable {}
+private struct EmailCodeSendBody: Codable { let email: String }
+private struct EmailCodeConfirmBody: Codable { let email: String; let code: String }
+private struct EmailCodeSent: Codable { let sent: Bool }
+private struct EmailCodeConfirmed: Codable { let verified: Bool }
 private struct PublicKeyUser: Codable { let id: String }
 private struct PublicKeyOptions: Codable { let challenge: String; let user: PublicKeyUser }
 private struct AuthenticationPublicKeyOptions: Codable { let challenge: String }

@@ -1,6 +1,6 @@
 # Studiquo Security and Privacy
 
-最終更新: 2026-10-07  
+最終更新: 2026-10-17  
 状態: 現行実装を基準にした内部設計・運用基準
 
 読み方: 「現行」「現在」は開発ブランチの実装を指し、本番へ反映済みとは限らない。独立レビューを実施し、指摘に基づく修正を進めている。公開手順と未完了項目は`PRIVACY_RELEASE_CHECKLIST.md`を参照する。
@@ -49,7 +49,7 @@ iPadアプリ ── SwiftData / CloudKit / Keychain / 端末ファイル
 Cloudflare Worker ── KV / D1 / Durable Objects
   │
   ├─ Apple / Google / Passkeys / Resend
-  ├─ Gemini / Anthropic / OpenAI
+  ├─ OpenAI(Anthropicはコードにあるが、どのプランにも載せておらず無効)
   ├─ RevenueCat / APNs
   └─ Slack / Cloudflare Access
 
@@ -77,12 +77,12 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 | ログインの結果ログ | Workers Logs | 送らない | 結果・国・ASNだけ。メールとIPは含めない。保持はCloudflareの設定による |
 | チャット、友達、グループ、添付 | KV、`USER_REGISTRY`、`CHAT_ROOM` | 参加者、APNs | アカウント削除時に参照を除去し、過去発言は匿名化され得る。期間による自動削除は未定義 |
 | 共同編集状態 | `DOCUMENT_ROOM` | 許可された参加者(アカウントごとのキー) | 持ち主の削除で部屋ごと消去。招待されただけの人の削除では、その人の席と、未決・却下の提案を消去し、承認済みの提案は書いた人のキーを外して残す(ADR-0004) |
-| MCPスナップショット | KV | 接続を許可したMCP client | アカウント削除対象。再同期まで古い内容が残り得る |
+| MCPスナップショット | KV(`SNAPSHOT_ENCRYPTION_KEY`を設定するとAES-256-GCMで暗号化) | 接続を許可したMCP client | アカウント削除対象。アカウント単位の写しは最終同期から90日で自動削除、端末ごとの写しはセッションと同時に削除。再同期まで古い内容が残り得る |
 | MCP grant、access token、refresh token | KV | MCP client | access tokenは1時間、refresh tokenは90日。grantは取消しまたはアカウント削除まで |
 | MCPからの作成要求 | `MCP_INBOX` | iPadへ取り込み | アカウント削除時にpurge。取り込み後は端末データとして管理 |
 | AIへの質問、選択資料、画像 | 原則として要求中だけWorkerを通過 | 初期提供先はGoogleのみ | バージョン付き同意必須。提供条件の確認までサーバー既定停止。provider側保持は契約確認が必要 |
 | 課金・購読状態 | RevenueCat、D1 | RevenueCat | 購読者情報は退会時削除。購入イベント90日。外部顧客削除は永続ジョブで再試行 |
-| 利用量 | D1、`RATE_COUNTER` | 運営集計 | アカウント削除時にD1の利用イベント・初回利用記録を削除。短期counterは期間終了で失効 |
+| 利用量 | D1、`RATE_COUNTER` | 運営集計 | アカウント削除時にD1の利用イベント・初回利用記録を削除。短期counterは期間終了で失効。AIの1日の上限は、アカウントのハッシュ単位で数える(サインインし直しても、退会と再登録をしても、最初の利用から24時間は上限がリセットされない。ADR-0005) |
 | APNs device tokenと通知設定 | 端末Keychain、KV | Apple APNs | ログアウト、端末登録解除、所有者変更、アカウント削除で削除 |
 | 自動エラー診断 | 端末UserDefaults queue、D1 | Worker、Slackへ通知のみ | 既定OFF。個人関連90日、匿名集約180日。OFF時queue削除 |
 | 手動の問題報告 | D1、KV | SlackへID・端末情報・管理リンクのみ | 本文・画像90日。閲覧はAccess認証必須。退会時に本人分を削除 |
@@ -99,7 +99,9 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 - メール登録は6桁確認コードによる所有確認を完了してから有効化する。
 - パスワードは平文で保存しない。保存はArgon2id(6.4)で、旧PBKDF2のレコードは検証でき、正しいパスワードでログインしたときに書き換える。
 - 登録・再設定のパスワードは、長さ8〜1024文字と、漏えいパスワードの照合(6.4)だけで判断する。大文字・記号の必須や、定期変更の強制はしない(NIST SP 800-63Bの方針)。
-- Passkey challengeは使い捨てかつ短命とし、origin、RP ID、challenge、counterを検証する。
+- Passkey challengeは使い捨てかつ短命とし、origin、RP ID、challenge、counterを検証する。RP IDは`api.studiquo.app`で、ドメインを変えると登録済みのPasskeyは使えなくなる(2026-10-17に旧アドレスから移行した。Passkeyを持つアカウントはパスワードで入れないため、移行時は、復旧の待ち時間(48時間)か、該当Passkeyの削除が要る)。
+- **パスキーは、登録した時点から有効で、アプリから削除できない。** パスキーを持つアカウントは、パスワード・メールのコード・Apple・Googleではログインできない(例外は、メールで通知して48時間待つ復旧手続きだけ。完了するとパスキーはすべて削除され、全端末がログアウトされる)。最初のサインイン後、アプリは全画面でパスキーの設定を求める。**最初の1つは、アカウントのメールアドレスに届くコードの確認が要る**(`/api/passkeys/email-code/*`)。セッションだけでは登録できない。設定が失敗した端末にだけ「今回はスキップ」を出し、Appleの非公開メール(`@privaterelay.appleid.com`)のアカウントは、パスキーを結び付けられないため対象外とする。既知の限界: メールの受信箱を握られている場合は、コードの確認と復旧手続きが突破口になる。
+- **パスワードの再設定は、アカウントを取り戻す操作として扱う**(ADR-0005)。再設定すると、そのアカウントのすべての端末がサインアウトされる(Apple・Google・Passkeyで入った端末も含む。サインイン方式ではなく、アカウント単位で切る)。連携アプリ(MCP)の接続と、そのアカウントが所有するメールアドレスに登録されたPasskeyもすべて失効する。本人は再設定後にサインインし、Passkeyを登録し直せる。これらの失効が完了しない場合、新しいパスワードは保存せず、再試行を案内する。最初のパスワード設定(再設定でない)では、何も失効しない。
 - 同じ確認済みメールに属するidentityはcanonical accountへ統合する。統合前後の既存sessionにもcanonical identityを適用する。
 
 ### 6.2 Studiquoセッション
@@ -184,6 +186,9 @@ Keychain itemのserviceとaccountを固定し、tokenやkeyをUserDefaultsへ複
 - importしたファイル名、PDF、画像、生成物には個人情報が含まれる前提で扱う。
 - temporary/cache上の生成物は用途終了後に削除し、共有先へ渡した後の管理は利用者へ明示する。
 - 自動backupは平文JSONを含む。OSのData Protectionに依存するだけで、保護ノート相当の暗号化ではない。
+- 自動backupは「使用中は可」(`completeUnlessOpen`)で書く。閉じていてiPadがロック中のときは読めない。バックグラウンド移行直後の書き込みを、ロックと競合しても完了させるため。
+- 一時的に平文を書き出すファイル(PDFのパスワード確認、書き出し、MCPスナップショット)は、専用フォルダ(`StudiquoWork`)に置く。フォルダと中のファイルは「完全」(`complete`、ロック解除中だけ読める)で、起動のたびに空にする(`StudiquoWorkFiles`)。
+- 未対応: SwiftDataのストア本体と共有受信箱(App Group)の保護段階は、実機で確認してから決める。保護ノートを開いている間の復号済みデータの露出も同様。
 - アカウント削除ではSwiftDataだけでなくApplication Support、Documents、Caches、temporary、共有添付の残存も確認する。
 - 副ペインの「ファイルアプリと2分割」は、選んだファイルをコピーせず元の場所のまま読み取り専用で開く。表示中だけsecurity-scopedアクセスを保持し、ペインを閉じる・別の内容へ切り替える・分割を畳む時に解放する。
 - 開いたファイルの履歴（表示名とブックマーク）は`Library/Application Support/studiquo/ExternalFileBookmarks.json`に保存する。端末固有のためバックアップ対象から外し、ログ・エラーレポート・識別子へパスやファイル名を出さない。アカウント削除ではこの履歴を消すが、元のファイルは消さない。
@@ -196,6 +201,13 @@ Keychain itemのserviceとaccountを固定し、tokenやkeyをUserDefaultsへ複
 - JSON応答には原則`no-store`、`nosniff`、`frame-ancestors 'none'`、`no-referrer`を付ける。
 - エラー応答にstack trace、secret、存在確認に不要な内部ID、上流providerの機密情報を含めない。
 - Rate Limitは認証、Passkey、チャット、AI、MCP、報告、Webhookごとに目的に合う単位で設定する。
+- セッショントークンのランダムな部分は、Workerが自分の乱数源(256ビット)で作る。アプリが送る`randomValue`は使わない。
+- Apple・GoogleのIDトークンは、そのサインインのために作られたnonceを含むことを確かめ、同じnonceを2回使わせない(`id-token-nonce.js`。`REQUIRE_ID_TOKEN_NONCE="true"`で、nonceのないサインインを拒否する)。
+- Workerが発行するトークン(セッション、MCPアクセス)には、署名(HMAC-SHA256)を付ける。署名が合わないトークンは、KVを読まずに拒否する(`token-signature.js`)。署名の鍵は`TOKEN_SIGNING_KEY`(Worker secret)で、鍵がなければ、従来どおり署名も確認もしない。署名のない従来のトークンは、`REQUIRE_SIGNED_TOKENS="true"`にするまで受け付ける。
+- 本番の入口は独自ドメイン`api.studiquo.app`だけとし、`workers.dev`とプレビューURLは無効にする。ゾーンのWAFのレート制限(IPごと、10秒に200件)で、認証より前の連打を止める。
+- AIはリクエストの入口(アカウントごとに1分60件)と、クレジットの確認を、本文を読む前・外部のモデレーションを呼ぶ前に行う。`/mcp`は資格情報ごとに1分120回、スナップショット保存はトークンごとに1時間30回、共同編集の部屋作成はアカウントごとに1時間20件に制限する。
+- 保存するデータは、形式と期限を決める(アイコンのBase64の検証、通報・失効記録・MCPクライアント登録の期限、自動エラーの新規行の1日あたりの上限)。
+- 招待ページ・管理画面などのHTMLには、CSP(`default-src 'none'`、`frame-ancestors 'none'`など)と`X-Frame-Options: DENY`を付ける。
 - retryは冪等性を確認し、課金、送信、取り込み、削除で重複作用を起こさない。
 
 ## 10. AI機能のプライバシー
@@ -218,16 +230,19 @@ AI機能では、操作に応じて次の情報が端末外へ出る。
 - 画像は長辺を制限し、最大枚数とrequest sizeを制限する。
 - AIへのsystem instructionと利用者コンテンツを区切り、prompt delimiterを無害化する。
 - AI出力は信頼せず、JSON schema、型、文字数を検証してから保存・表示する。
-- AI要求本文、画像、API keyをアプリログ、Workerログ、エラーreportへ記録しない。
+- AI要求本文、画像、API keyをアプリログ、Workerログ、エラーreportへ記録しない。(例外: OpenAIがエラーを返したとき、そのエラー応答の本文を最大300文字までWorkerログに出す箇所がある(`ai.js`)。応答は要求本文の再掲を含まない想定だが、含まないことは確認していない。)
 - provider、model、送信項目を増やす変更では、アプリ内開示、プライバシーポリシー、App Store申告を同時に更新する。
 
-同意は`google-v2`として端末に保存し、APIヘッダーにも付与する。旧booleanの確認済み状態は同意とみなさない。取消し時に翌日復習も停止する。`AI_PROVIDER_APPROVED`は既定falseで、対象年齢・訓練利用・保持条件の承認がない限り送信を拒否する。
+同意は`openai-v1`として端末に保存し、APIヘッダーにも付与する。旧booleanの確認済み状態は同意とみなさない。取消し時に翌日復習も停止する。`AI_PROVIDER_APPROVED`は既定falseで、対象年齢・訓練利用・保持条件の承認がない限り送信を拒否する。
 
 ## 11. MCP連携
 
 - 外部clientはOAuth 2.0 Authorization Code + PKCEで接続する。
 - redirect URIは事前登録値と完全一致させる。HTTPSを原則とし、HTTPはlocalhostだけに限定する。
-- pairing codeは12文字、認可待ちは10分、authorization codeは5分、access tokenは1時間、refresh tokenは90日とする。
+- 接続コードはアプリ(所有者の認証済みセッション+Passkey再認証)が発行し、AIアプリの認可画面に所有者が入力する。12文字、5分、1回だけ有効、アカウントごとに有効なのは最新の1つ。
+- コードは接続先の種類(claude/chatgpt/codex/other)に結びつく。種類はクライアントが登録したredirect URIのホストで判定し、名前は信用しない。種類が違うコードは受け付けず、消費もしない。
+- 認可画面の誤入力は画面ごとに5回、IPごとに10分で20回まで。超えた画面は閉じる。接続が完了したら所有者の端末へ通知する。
+- 認可待ちは10分、authorization codeは5分、access tokenは1時間、refresh tokenは90日とする。
 - scopeは`studiquo.read`と`studiquo.write`を分け、各toolで必要scopeを検証する。
 - iOSが明示的に同期したsnapshotだけをread対象とし、CloudKitや端末DBへ直接アクセスさせない。
 - writeは`MCP_INBOX`へ入れ、iOSが検証・取り込みする。外部clientからSwiftDataへ直接書かない。
@@ -333,7 +348,7 @@ Workerは削除状態を`deleting`として先に記録し、途中失敗後も�
 
 ## 16. 外部サービス変更時の確認
 
-Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic、OpenAI、APNs、Slackなどを追加・変更するときは、次を記録する。
+Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Anthropic、OpenAI、APNs、Slack、Have I Been Pwnedなどを追加・変更するときは、次を記録する。
 
 - 送るデータと目的
 - 保存地域、保持期間、再委託、モデル訓練への利用有無
@@ -369,6 +384,8 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 
 ## 18. 検証要件
 
+標準の要件(MASVS・ASVS)との対応と、満たす/満たさないの記録は[SECURITY_VERIFICATION.md](SECURITY_VERIFICATION.md)、攻撃者の目線の整理は[THREAT_MODEL.md](THREAT_MODEL.md)。この章の一覧は、変更のたびに確認する項目で、その根拠を上の2つに記録する。
+
 変更に応じて、次を自動テストまたは手動検証する。
 
 - 正常なlogin、期限切れ、失効、偽造token、削除中account
@@ -391,7 +408,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 ### P0: 公開前に判断が必要
 
 1. Privacy Manifestにデータ分類を追加したが、App Store Connect申告・責任者照合は未実施。
-2. Google一社に制限し、同意・承認gateを実装した。学生・未成年者への提供可否、契約、訓練利用・保存条件の承認は未完了。承認までAIは停止する。
+2. OpenAI一社に制限し、同意・承認gateを実装した。学生・未成年者への提供可否、契約、訓練利用・保存条件の承認は未完了。承認までAIは停止する。
 3. D1/KV削除・90日/180日保持・RevenueCat削除ジョブを実装した。本番migration・secret設定・定期処理有効化・監視は未実施。詳細は`PRIVACY_RELEASE_CHECKLIST.md`。
 4. 再登録時の課金顧客世代管理、Apple認可取消し、共同編集データ削除範囲を公開前に確定する。
 
@@ -412,7 +429,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 
 - ログインに成功する経路が、KVの遅さのために、約3〜6秒かかる(ステージングの実測。失敗の経路は約0.9秒)。`linkVerifiedEmail`の無駄な書き込みは減らした。残る主な原因は、`mintSession`のKVの操作を、順番に3回行っていること(最初の2つの読み取りは、並列にできる)と、KVの読み取りそのものの遅延。Apple・Google・メールのすべてのサインインが通る処理で、本番の現行コードにも、同じ遅さがある可能性が高い。
 
-- メール(確認コード・新しい環境の通知)の送信元が、`RESEND_FROM_EMAIL`未設定のとき、Resendの共通の送信元(`onboarding@resend.dev`)になる。この送信元は、Resendのアカウントの持ち主のアドレスにだけ配送できる(ステージングで、`example.com`宛が422になった)。本番に、`RESEND_FROM_EMAIL`が設定されているかは、CLIからは確認できていない(ダッシュボードで確認する)。本番の前に、Resendで自分のドメインを認証し、そのドメインのアドレスを設定する。
+- メール(確認コード・新しい環境の通知)の送信元が、`RESEND_FROM_EMAIL`未設定のとき、Resendの共通の送信元(`onboarding@resend.dev`)になる。この送信元は、Resendのアカウントの持ち主のアドレスにだけ配送できる(ステージングで、`example.com`宛が422になった)。本番に`RESEND_FROM_EMAIL`が秘密情報として設定されていることは、2026-10-17に`wrangler secret list`で確認した(値と、Resendでのドメイン認証の状態は未確認)。本番の前に、Resendで自分のドメインを認証し、そのドメインのアドレスを設定する。
 
 ### P2: 設計改善
 
@@ -420,6 +437,10 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 10. チャットpushが本文previewをロック画面へ表示する。利用者がpreviewを隠せる設定を検討する。
 11. 保持期間と削除対象を機械可読な台帳にし、定期purgeと削除testへ接続する。
 12. 年齢確認がなく、学生利用を想定している。対象年齢、保護者同意、ストア上の年齢区分、未成年者dataの扱いをproduct・legalとして決定する。
+
+### 2026-10-16のサーバーAPI診断
+
+静的な診断で見つけた指摘のうち、招待・AI・レート制限・保存領域・HTMLのヘッダ・エラー応答などの小さな修正は、2026-10-17に本番へ反映した(`api-hardening.test.js`ほか)。入口の独自ドメイン化と`workers.dev`の停止も、同日に反映した(5.0)。設計の見直しを伴う残りの項目は、運営のタスク管理(Notionの「Studiquo タスク」)で管理する。
 
 課題を解消したら、コードとtestの参照を残してこの節を更新する。
 
@@ -449,6 +470,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Gemini、Anthropic�
 - [ ] migration、旧app、旧Worker、rollbackを確認した
 - [ ] 関連するunit、integration、negative testを追加した
 - [ ] security/privacy観点の独立レビューを受けた
+- [ ] 脅威モデル(`THREAT_MODEL.md`)と検証チェックリスト(`SECURITY_VERIFICATION.md`)の該当箇所を更新した
 - [ ] release後の監視とincident ownerを決めた
 
 ## 22. 実装上の参照先

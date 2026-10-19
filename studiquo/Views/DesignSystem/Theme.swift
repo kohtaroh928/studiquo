@@ -111,6 +111,11 @@ extension View {
         modifier(ThemeAnimationModifier(value: value, large: large))
     }
 
+    /// Replaces the system grouped-list gray behind a List/Form with the canvas color.
+    func themeScreenBackground() -> some View {
+        scrollContentBackground(.hidden).background(Theme.Palette.canvas)
+    }
+
     func floatingShadow() -> some View {
         shadow(
             color: Theme.floatingShadow.color,

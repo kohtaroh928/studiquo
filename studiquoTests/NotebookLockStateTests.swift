@@ -43,7 +43,7 @@ final class NotebookLockStateTests: XCTestCase {
         var state = NotebookLockState()
         XCTAssertFalse(state.recordFaceID(success: true, decrypted: false))
         XCTAssertEqual(state.requirement(isLocked: true, hasLockedPDF: false), .faceID)
-        XCTAssertEqual(state.faceIDMessage, "ノートの内容を復号できませんでした")
+        XCTAssertEqual(state.faceIDMessage, "ノートの内容を復号できませんでした。別の端末で保護したノートの鍵は、届くまでしばらくかかることがあります。時間をおいてもう一度お試しください。")
     }
 
     func testChangingNotebookResetsEveryUnlock() {

@@ -12,6 +12,46 @@ export function securityHeaders(extra = {}) {
   };
 }
 
+/**
+ * Headers for a response that is just stored bytes (a profile photo, a chat
+ * attachment, a report screenshot). The content type was chosen by whoever
+ * uploaded it, so the browser is told not to guess a different one and the
+ * body is sandboxed: even if it is really HTML, it cannot run script.
+ * `download` also marks it as a file to save rather than a page to show.
+ */
+export function binaryHeaders(contentType, cacheControl, { download = false } = {}) {
+  return {
+    "content-type": contentType,
+    "cache-control": cacheControl,
+    "content-security-policy": "default-src 'none'; sandbox",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+    ...(download ? { "content-disposition": "attachment" } : {}),
+  };
+}
+
+/**
+ * Headers for the Worker's own HTML pages (the invite landing page, the admin
+ * dashboard). Their scripts and styles are inline, so those stay allowed; what
+ * this adds is that none of them can be framed (clickjacking), take a `<base>`,
+ * submit a form elsewhere or load anything from another origin.
+ * `connect` lets the page's own script call the Worker's API.
+ */
+export function htmlHeaders({ connect = false, scripts = true } = {}) {
+  // `scripts: false` for a page that has none: nothing can run there even if markup is injected.
+  const policy = ["default-src 'none'", scripts ? "script-src 'unsafe-inline'" : "script-src 'none'", "style-src 'unsafe-inline'"];
+  if (connect) policy.push("connect-src 'self'");
+  policy.push("base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'");
+  return {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "content-security-policy": policy.join("; "),
+    "x-frame-options": "DENY",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+  };
+}
+
 export function json(value, status = 200) {
   return Response.json(value, { status, headers: securityHeaders() });
 }
@@ -57,4 +97,13 @@ export async function readJSONLimited(request, maximumBytes) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether `value` is well-formed standard base64 (what `atob` accepts). Stored
+ * photos are decoded when they are served, so one that is not would make every
+ * later download of it fail with a 500.
+ */
+export function isWellFormedBase64(value) {
+  return typeof value === "string" && value.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(value);
 }

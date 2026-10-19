@@ -1,5 +1,6 @@
+import { blockedBetween } from "./block-check.js";
 import { checkRateLimit } from "./rate-limit.js";
-import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { sendPush } from "./push.js";
 
 /**
@@ -183,6 +184,13 @@ export async function handleGroupRoutes(url, request, env, key, ctx) {
     if (!memberCodes.every(code => friendsByCode.has(code))) {
       return json({ error: "You can only invite your own friends." }, 400);
     }
+    // A pair that has blocked each other (either way round) can't be put in a
+    // group together. Worded so it doesn't say which side blocked.
+    for (const code of memberCodes) {
+      if (await blockedBetween(env, key, friendsByCode.get(code))) {
+        return json({ error: "This friend cannot be invited right now." }, 403);
+      }
+    }
 
     const roomID = await mintRoomID();
     await env.CHAT_ROOM.getByName(roomID).initialize(
@@ -221,8 +229,12 @@ export async function handleGroupRoutes(url, request, env, key, ctx) {
     const code = parseFriendCode(body);
     if (!code) return json({ error: "Invalid code." }, 400);
     const user = await currentUser(env, key);
-    if (!user || !(user.friends ?? []).some(friend => friend.code === code)) {
+    const invitee = (user?.friends ?? []).find(friend => friend.code === code);
+    if (!user || !invitee) {
       return json({ error: "You can only invite your own friends." }, 400);
+    }
+    if (await blockedBetween(env, key, invitee)) {
+      return json({ error: "This friend cannot be invited right now." }, 403);
     }
     let info;
     try {
@@ -257,6 +269,13 @@ export async function handleGroupRoutes(url, request, env, key, ctx) {
   const acceptMatch = /^\/api\/chat\/groups\/([a-f0-9]{64})\/invites\/accept$/.exec(url.pathname);
   if (acceptMatch && request.method === "POST") {
     const roomID = acceptMatch[1];
+    // Blocking the inviter after being invited must stop the join too.
+    const me = await currentUser(env, key);
+    const pending = (me?.incomingGroupInvites ?? []).find(invite => invite.roomID === roomID);
+    const inviter = (me?.friends ?? []).find(friend => friend.code === pending?.inviterCode);
+    if (inviter && await blockedBetween(env, key, inviter)) {
+      return json({ error: "This invitation can't be accepted right now." }, 403);
+    }
     const result = await env.USER_REGISTRY.getByName(key).resolveIncomingGroupInvite(key, "accept", roomID);
     if (result.status === "not_found") return json({ error: "Invitation not found." }, 404);
     try {
@@ -333,7 +352,7 @@ export async function handleGroupRoutes(url, request, env, key, ctx) {
     const body = await readBody(request, MAX_AVATAR_UPLOAD_BODY);
     const contentType = String(body?.contentType ?? "");
     const data = String(body?.data ?? "");
-    if (!["image/jpeg", "image/png"].includes(contentType) || !data) {
+    if (!["image/jpeg", "image/png"].includes(contentType) || !data || !isWellFormedBase64(data)) {
       return json({ error: "Invalid avatar." }, 400);
     }
     // 300KB raw, same cap as a profile photo (chat.js's MAX_AVATAR_BYTES) —
@@ -365,7 +384,7 @@ export async function handleGroupRoutes(url, request, env, key, ctx) {
     const bytes = Uint8Array.from(atob(avatar.data), c => c.charCodeAt(0));
     return new Response(bytes, {
       status: 200,
-      headers: { "content-type": avatar.contentType, "cache-control": "private, max-age=60" },
+      headers: binaryHeaders(avatar.contentType, "private, max-age=60"),
     });
   }
 

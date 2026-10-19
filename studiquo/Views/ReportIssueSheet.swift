@@ -147,6 +147,7 @@ struct ReportIssueSheet: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("問題を報告")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

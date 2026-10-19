@@ -26,7 +26,7 @@ final class AIReviewServiceTests: XCTestCase {
         AIReviewService.scheduleNotification = { _ in }
         consentSuiteName = "AIReviewConsent-\(UUID().uuidString)"
         AIDataDisclosure.defaults = UserDefaults(suiteName: consentSuiteName)!
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         UserDefaults.standard.set(true, forKey: AIReviewService.isEnabledDefaultsKey)
     }
 

@@ -278,6 +278,7 @@ private struct HomeMoveDestinationLevel: View {
                 Text("\(host.selectedCount)件の移動先を選んでください")
             }
         }
+            .themeScreenBackground()
         .navigationTitle(location.map(displayName) ?? L("ホーム"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

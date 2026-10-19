@@ -158,6 +158,35 @@ test("an INITIAL_PURCHASE webhook is logged and makes the subscriber active", as
   assert.equal(data.monthToDate.revenue, 9.99);
 });
 
+test("a SANDBOX purchase is logged but does not make the subscriber active", async () => {
+  const env = environment();
+  const response = await sendWebhook(env, purchaseEvent({ app_user_id: "sandbox-user", environment: "SANDBOX" }));
+  assert.equal(response.status, 200);
+  assert.equal((await stats(env)).activeSubscribers, 0);
+  const logged = await env.ADMIN_DB.prepare("SELECT environment FROM revenuecat_events WHERE app_user_id = ?").bind("sandbox-user").first();
+  assert.equal(logged.environment, "SANDBOX");
+  const row = await env.ADMIN_DB.prepare("SELECT 1 AS found FROM subscribers WHERE app_user_id = ?").bind("sandbox-user").first();
+  assert.equal(row, null);
+});
+
+test("a SANDBOX purchase grants a plan when ALLOW_SANDBOX_PURCHASES is true", async () => {
+  const env = { ...environment(), ALLOW_SANDBOX_PURCHASES: "true" };
+  await sendWebhook(env, purchaseEvent({ app_user_id: "sandbox-user", environment: "SANDBOX" }));
+  assert.equal((await stats(env)).activeSubscribers, 1);
+});
+
+test("an older event delivered late does not overwrite a newer one", async () => {
+  const env = environment();
+  const now = Date.now();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "late-user", event_timestamp_ms: now }));
+  // An EXPIRATION that RevenueCat generated before the purchase above arrives afterwards.
+  await sendWebhook(env, purchaseEvent({ app_user_id: "late-user", type: "EXPIRATION", event_timestamp_ms: now - 60_000 }));
+  assert.equal((await stats(env)).activeSubscribers, 1);
+  // A newer EXPIRATION still applies.
+  await sendWebhook(env, purchaseEvent({ app_user_id: "late-user", type: "EXPIRATION", event_timestamp_ms: now + 60_000 }));
+  assert.equal((await stats(env)).activeSubscribers, 0);
+});
+
 test("the same event id delivered twice is only recorded once", async () => {
   const env = environment();
   const event = purchaseEvent();
@@ -396,4 +425,39 @@ test("every /api/admin/* route except RevenueCat's webhook needs a verified Acce
   // The webhook is not behind Access: it answers with its own secret check.
   const webhook = await worker.fetch(request("/api/admin/revenuecat-webhook", { method: "POST", authorization: "wrong", body: { event: {} } }), env, noopCtx);
   assert.equal(webhook.status, 401);
+});
+
+// --- PRODUCT_CHANGE: which product the subscriber is on afterwards ----------
+
+async function subscriberProduct(env, appUserId) {
+  const row = await env.ADMIN_DB.prepare("SELECT product_id FROM subscribers WHERE app_user_id = ?").bind(appUserId).first();
+  return row?.product_id;
+}
+
+test("an upgrade PRODUCT_CHANGE moves the subscriber to the new product at once", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ product_id: "com.yabuko.studiquo.standard.yearly" }));
+  await sendWebhook(env, purchaseEvent({
+    type: "PRODUCT_CHANGE",
+    product_id: "com.yabuko.studiquo.standard.yearly",
+    new_product_id: "com.yabuko.studiquo.plus.yearly",
+  }));
+  assert.equal(await subscriberProduct(env, "user-1"), "com.yabuko.studiquo.plus.yearly");
+});
+
+test("a downgrade PRODUCT_CHANGE keeps the current product until the period ends", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ product_id: "com.yabuko.studiquo.pro.yearly" }));
+  await sendWebhook(env, purchaseEvent({
+    type: "PRODUCT_CHANGE",
+    product_id: "com.yabuko.studiquo.pro.yearly",
+    new_product_id: "com.yabuko.studiquo.standard.yearly",
+  }));
+  assert.equal(await subscriberProduct(env, "user-1"), "com.yabuko.studiquo.pro.yearly");
+});
+
+test("a PRODUCT_CHANGE without new_product_id behaves as before", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ type: "PRODUCT_CHANGE", product_id: "com.yabuko.studiquo.plus.monthly" }));
+  assert.equal(await subscriberProduct(env, "user-1"), "com.yabuko.studiquo.plus.monthly");
 });

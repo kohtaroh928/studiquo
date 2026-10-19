@@ -150,6 +150,9 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
     }
 }
 
+/// The iCloud container in `studiquo.entitlements`.
+private let cloudKitContainerIdentifier = "iCloud.com.yabuko.studiquo"
+
 /// Only fall back after the cloud attempt has actually returned an error.
 /// A deadline cannot cancel ModelContainer.init; opening another container
 /// on the same store while migration is still running can contend for its lock.
@@ -164,7 +167,10 @@ private func makeStudiquoModelContainer() throws -> ModelContainer {
     }
     startupLogger.info("Opening persistent store with CloudKit")
     do {
-        let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .automatic)
+        // Named, not `.automatic`: automatic takes the first container in the
+        // entitlements, so adding another container later could silently send the
+        // library to the wrong one. Only the private database is ever used.
+        let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .private(cloudKitContainerIdentifier))
         let container = try ModelContainer(for: studiquoSchema, configurations: configuration)
         startupLogger.info("Persistent store ready (CloudKit)")
         return container
@@ -200,6 +206,8 @@ struct StudiquoApp: App {
     /// `init()` above makes its first `Purchases.shared` call, so it can't
     /// simply live inside `body`'s `.task` alongside `startup.start()`.
     init() {
+        // Files left in the work folder by the last run (StudiquoWorkFiles).
+        StudiquoWorkFiles.sweep()
         // Before anything can create the store file — see `ICloudSyncPreference`.
         ICloudSyncPreference.resolveAtLaunch()
         // Listen from the start: a "full" report can arrive right after launch.
@@ -207,6 +215,8 @@ struct StudiquoApp: App {
         SubscriptionStore.configureSDK()
         CrashDiagnosticsSubscriber.shared.start()
         CloudKitErrorReporting.start()
+        // Covers sensitive screens in the app switcher (AppSwitcherPrivacy.swift).
+        AppSwitcherPrivacyCover.shared.start()
     }
 
     private var resolvedLocale: Locale {
@@ -225,6 +235,8 @@ struct StudiquoApp: App {
                     StartupUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test") {
                     LibraryDropUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--paywall-ui-test") {
+                    PaywallUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test") {
                     FriendChatUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test") {
@@ -251,10 +263,14 @@ struct StudiquoApp: App {
                 #endif
             }
             .preferredColorScheme(.light)
+            // On the whole tree (not just normalRoot) so toggles, links and
+            // controls share the accent in every root, including the test fixtures.
+            .tint(Theme.Palette.accent)
             .task {
                 #if DEBUG
                 guard !ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--startup-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--paywall-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--split-source-picker-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test"),
@@ -384,7 +400,7 @@ private struct NoteSnippetFriendUITestRoot: View {
     @StateObject private var friendStore: FriendStore
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         let store = FriendStore(
             defaults: UserDefaults(suiteName: "NoteSnippetFriendUITest-\(UUID().uuidString)")!,
             autoRefresh: false
@@ -563,7 +579,7 @@ private struct NoteAIChatUITestRoot: View {
     @StateObject private var friendStore: FriendStore
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         AI.provider = UITestAIProvider()
         // Stored settings (toolbar layout, tool choice, ...) would carry one
         // UI test's state into the next, so start from nothing. The floating
@@ -718,7 +734,7 @@ private struct StartupUITestRoot: View {
     @StateObject private var subscriptionStore = SubscriptionStore()
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         UserDefaults.standard.set("", forKey: "libraryFolderNames")
         UserDefaults.standard.set(true, forKey: "didMigrateFoldersToHierarchy")
     }
@@ -735,6 +751,33 @@ private struct StartupUITestRoot: View {
             }
         }
         .task { loader.start() }
+    }
+}
+
+/// DEBUG-only: shows the blocking paywall on its own, with a paywall-enabled
+/// store and a throwaway keychain service, so the screen (and its exits) can
+/// be looked at without signing in or any App Store products.
+private struct PaywallUITestRoot: View {
+    @StateObject private var authentication = AuthenticationStore(service: "com.yabuko.studiquo.paywall-ui-tests")
+    @StateObject private var subscriptionStore = SubscriptionStore(
+        automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { .free }
+    )
+    private let container = try? ModelContainer(
+        for: studiquoSchema,
+        configurations: ModelConfiguration(schema: studiquoSchema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+    )
+
+    var body: some View {
+        if let container {
+            SubscriptionPlansView(
+                isBlocking: !ProcessInfo.processInfo.arguments.contains("--paywall-ui-test-settings"),
+                sampleOptions: ProcessInfo.processInfo.arguments.contains("--paywall-ui-test-sample-prices")
+                    ? SamplePurchaseOption.appStoreConnectProducts : []
+            )
+                .modelContainer(container)
+                .environmentObject(authentication)
+                .environmentObject(subscriptionStore)
+        }
     }
 }
 
@@ -764,10 +807,13 @@ private struct LibraryDropUITestRoot: View {
     private let gatesOnLogin = ProcessInfo.processInfo.arguments.contains("--ui-test-login-gate")
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         if ProcessInfo.processInfo.arguments.contains("--ui-test-login-gate") {
             LibraryDropUITestStore.authentication.ignoresAuthFailures = true
             LibraryDropUITestStore.authentication.finishOnboarding()
+        }
+        if ProcessInfo.processInfo.arguments.contains(SharedInboxUITestSeed.clearArgument) {
+            SharedInboxUITestSeed.clear()
         }
         if ProcessInfo.processInfo.arguments.contains(SharedInboxUITestSeed.argument) {
             SharedInboxUITestSeed.seed()
@@ -1144,7 +1190,7 @@ private struct TabPickerCreateUITestRoot: View {
     @StateObject private var subscriptionStore = SubscriptionStore()
 
     init() {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         UserDefaults.standard.set("", forKey: "libraryFolderNames")
         UserDefaults.standard.set(true, forKey: "didMigrateFoldersToHierarchy")
         _ = TabPickerCreateUITestStore.container

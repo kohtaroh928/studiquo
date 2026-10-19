@@ -10,11 +10,12 @@
 // Text and screenshots remain in the Access-protected dashboard. Slack
 // receives only metadata and a dashboard link, never private report content.
 import { accessAllowed } from "./access.js";
+import { auditAdmin } from "./audit.js";
 import { isRevoked } from "./revocation.js";
 import { isExpired } from "./token.js";
 import { checkRateLimit } from "./rate-limit.js";
 import { bearerToken, sha256Hex } from "./auth.js";
-import { json, readJSONLimited } from "./http.js";
+import { json, binaryHeaders, readJSONLimited } from "./http.js";
 import { realSession } from "./session.js";
 import { postSlackBlocks } from "./slack.js";
 
@@ -84,10 +85,12 @@ export async function handleIssueReports(url, request, env) {
     if (!report || report.createdAt + REPORT_TTL_SECONDS * 1000 <= Date.now()) return json({ error: "Not found" }, 404);
     const screenshot = await env.STUDIQUO_DATA.get(`issue-report-screenshot:${screenshotMatch[1]}`, "json");
     if (!screenshot) return json({ error: "Not found" }, 404);
+    if (!env.ADMIN_DB) return json({ error: "Unavailable." }, 503);
+    await auditAdmin(env, request, "issue_report.screenshot_view", screenshotMatch[1]);
     const bytes = Uint8Array.from(atob(screenshot.data), c => c.charCodeAt(0));
     return new Response(bytes, {
       status: 200,
-      headers: { "content-type": screenshot.contentType, "cache-control": "private, max-age=300" },
+      headers: binaryHeaders(screenshot.contentType, "private, max-age=300"),
     });
   }
 

@@ -5,6 +5,7 @@ import { deleteAccount } from "./account-deletion.js";
 import { linkVerifiedEmail } from "./oauth-links.js";
 import worker from "./app.js";
 import { mintSession } from "./session.js";
+import { indexAccountPasskey } from "./passkey-policy.js";
 import { accountGenerationMethods } from "./test-account-generations.js";
 
 function environment() {
@@ -105,8 +106,9 @@ test("4. Apple・Google・ローカル・パスキーを統合したアカウン
   await env.STUDIQUO_DATA.put("account:apple-all", "{}");
   await env.STUDIQUO_DATA.put("account:google:google-all", "{}");
   await env.STUDIQUO_DATA.put("account:local:all@example.com", "{}");
-  const credential = { id: "credential-1", email: "all@example.com" };
+  const credential = { id: "credential-1", email: "all@example.com", userKey: "user-1" };
   await env.STUDIQUO_DATA.put("passkeys:credential:credential-1", JSON.stringify(credential));
+  await indexAccountPasskey(env, "apple-all", "all@example.com", "credential-1");
   await env.STUDIQUO_DATA.put("passkeys:user:user-1", JSON.stringify([credential]));
   await deleteAccount(env, "apple-all");
   for (const key of ["account:apple-all", "account:google:google-all", "account:local:all@example.com", "passkeys:credential:credential-1", "passkeys:user:user-1"]) {
@@ -228,10 +230,12 @@ test("16. パスキーCredentialとユーザー索引がすべて削除される
   await seedLinked(env, "email:passkeys@example.com", "passkeys@example.com", [
     { provider: "email", sub: "passkeys@example.com" },
   ]);
-  const first = { id: "passkey-a", email: "passkeys@example.com" };
-  const second = { id: "passkey-b", email: "passkeys@example.com" };
+  const first = { id: "passkey-a", email: "passkeys@example.com", userKey: "device-a" };
+  const second = { id: "passkey-b", email: "passkeys@example.com", userKey: "device-b" };
   await env.STUDIQUO_DATA.put("passkeys:credential:passkey-a", JSON.stringify(first));
   await env.STUDIQUO_DATA.put("passkeys:credential:passkey-b", JSON.stringify(second));
+  await indexAccountPasskey(env, "email:passkeys@example.com", "passkeys@example.com", "passkey-a");
+  await indexAccountPasskey(env, "email:passkeys@example.com", "passkeys@example.com", "passkey-b");
   await env.STUDIQUO_DATA.put("passkeys:user:device-a", JSON.stringify([first]));
   await env.STUDIQUO_DATA.put("passkeys:user:device-b", JSON.stringify([second]));
   await deleteAccount(env, "email:passkeys@example.com");
@@ -401,6 +405,24 @@ test("47b. 自動エラーの「影響ユーザー」の記録が削除される
   assert.equal(env._appErrorUsers.has(usageHash), false);
 });
 
+test("47c. 紐づく別のidentityで記録された利用状況も削除される(新しいアカウントを始めたidentityは残る)", async () => {
+  const env = environment();
+  const identities = [
+    { provider: "apple", sub: "apple-47c" },
+    { provider: "google", sub: "google-47c" },
+  ];
+  await seedLinked(env, "apple-47c", "usage47c@example.com", identities);
+  const linkedHash = hash("usage-account:google:google-47c");
+  const canonicalHash = hash("usage-account:apple-47c");
+  env._usageEvents.add(linkedHash);
+  env._usageEvents.add(canonicalHash);
+  env._usersFirstSeen.add(linkedHash);
+  await deleteAccount(env, "apple-47c");
+  assert.equal(env._usageEvents.has(linkedHash), false, "usage recorded under a linked identity");
+  assert.equal(env._usageEvents.has(canonicalHash), false);
+  assert.equal(env._usersFirstSeen.has(linkedHash), false);
+});
+
 test("48. 別アカウントのMCP・同期・利用状況データは残る", async () => {
   const env = environment();
   const deleted = "account-delete-48";
@@ -465,7 +487,7 @@ test("50. Durable Objectの削除処理が途中で失敗しても再実行で�
   const roomID = "room-retry-50";
   await env.STUDIQUO_DATA.put(`chat:user:${chatKey}`, JSON.stringify({ code: "RETRY50", linkToken: "LINK50", groups: [{ roomID }] }));
   let attempts = 0;
-  env.USER_REGISTRY = { getByName() { return { async resolveChatKey() { return chatKey; } }; } };
+  env.USER_REGISTRY = { getByName() { return { async resolveChatKey() { return chatKey; }, async eraseLibraryID() {} }; } };
   env.CHAT_ROOM = { getByName() { return {
     async removeDeletedAccount() {
       attempts += 1;
@@ -1021,4 +1043,92 @@ test("退会するとパスキーの索引と復旧手続きも消え、同じ�
   assert.equal(await env.STUDIQUO_DATA.get(`passkey-account:${await hash("email:pk@example.com")}`), null);
   assert.equal(await env.STUDIQUO_DATA.get(`passkey-recovery:${await hash("apple-pk")}`), null);
   assert.equal(await accountHasPasskey(env, "apple-pk", "pk@example.com"), false);
+});
+
+test("deleting an account erases its library id, so signing up again gives a new one", async () => {
+  const env = environment();
+  const erased = [];
+  env.USER_REGISTRY = { getByName(name) { return { async resolveChatKey(hash) { return hash; }, async getUser() { return null; }, async eraseLibraryID() { erased.push(name); } }; } };
+  await seedLinked(env, "apple:alice", "alice@example.com", [{ provider: "apple", sub: "alice" }, { provider: "google", sub: "alice-g" }]);
+  await deleteAccount(env, "apple:alice");
+  const named = identity => `library-id:${hash(identity)}`;
+  assert.ok(erased.includes(named("apple:alice")), "the account's own object");
+  assert.ok(erased.includes(named("google:alice-g")) || erased.includes(named("alice")), "and the linked identities' too, in case an id was made under one");
+  assert.ok(erased.includes(named("email:alice@example.com")), "and the e-mail identity, as for the passkey lists");
+  assert.ok(erased.filter(name => name === named("apple:alice")).length >= 2, "erased again at the end, in case one was made meanwhile");
+});
+
+// ---- Finding an account's data without reading everyone's ------------------------
+
+function recordListings(env) {
+  const prefixes = [];
+  const list = env.STUDIQUO_DATA.list;
+  env.STUDIQUO_DATA.list = async options => { prefixes.push(options.prefix); return list.call(env.STUDIQUO_DATA, options); };
+  return prefixes;
+}
+
+test("connected-app grants are found by the account's own prefix, not by listing every grant", async () => {
+  const env = environment();
+  await seedLinked(env, "apple:alice", "alice@example.com", [{ provider: "apple", sub: "alice" }]);
+  const grant = `mcp:grant:${hash("apple:alice")}:${hash("client")}`;
+  const others = `mcp:grant:${hash("apple:bob")}:${hash("client")}`;
+  await env.STUDIQUO_DATA.put(grant, "{}");
+  await env.STUDIQUO_DATA.put(others, "{}");
+  const listed = recordListings(env);
+  await deleteAccount(env, "apple:alice");
+  assert.equal(await env.STUDIQUO_DATA.get(grant), null);
+  assert.notEqual(await env.STUDIQUO_DATA.get(others), null, "another account's grant stays");
+  assert.ok(!listed.includes("mcp:grant:"), "the whole grant list was not read");
+});
+
+test("tokens issued under the per-account list are deleted with it, and once it covers everything nobody scans all tokens", async () => {
+  const env = environment();
+  await seedLinked(env, "apple:alice", "alice@example.com", [{ provider: "apple", sub: "alice" }]);
+  const sub = "apple:alice";
+  const accessHash = "a".repeat(64);
+  const refreshHash = "b".repeat(64);
+  await env.STUDIQUO_DATA.put(`mcp:access:${accessHash}`, JSON.stringify({ sub }));
+  await env.STUDIQUO_DATA.put(`mcp:refresh:${refreshHash}`, JSON.stringify({ sub }));
+  await env.STUDIQUO_DATA.put(`mcp:token-index:${hash(sub)}:access:${accessHash}`, "1");
+  await env.STUDIQUO_DATA.put(`mcp:token-index:${hash(sub)}:refresh:${refreshHash}`, "1");
+  // The list has been in use for longer than any token lives.
+  await env.STUDIQUO_DATA.put("mcp:token-index-since", String(Date.now() - 100 * 24 * 3600 * 1000));
+  const listed = recordListings(env);
+  await deleteAccount(env, sub);
+  for (const key of [`mcp:access:${accessHash}`, `mcp:refresh:${refreshHash}`, `mcp:token-index:${hash(sub)}:access:${accessHash}`]) {
+    assert.equal(await env.STUDIQUO_DATA.get(key), null, key);
+  }
+  assert.ok(!listed.includes("mcp:access:") && !listed.includes("mcp:refresh:"));
+});
+
+test("until the per-account token list covers everything, an unlisted older token is still found by scanning", async () => {
+  const env = environment();
+  await seedLinked(env, "apple:alice", "alice@example.com", [{ provider: "apple", sub: "alice" }]);
+  const sub = "apple:alice";
+  await env.STUDIQUO_DATA.put(`mcp:access:${"c".repeat(64)}`, JSON.stringify({ sub }));
+  await env.STUDIQUO_DATA.put(`mcp:refresh:${"d".repeat(64)}`, JSON.stringify({ sub: "apple:bob" }));
+  // The list started recently: tokens older than it are in no list.
+  await env.STUDIQUO_DATA.put("mcp:token-index-since", String(Date.now() - 1000));
+  await deleteAccount(env, sub);
+  assert.equal(await env.STUDIQUO_DATA.get(`mcp:access:${"c".repeat(64)}`), null);
+  assert.notEqual(await env.STUDIQUO_DATA.get(`mcp:refresh:${"d".repeat(64)}`), null, "someone else's token stays");
+});
+
+test("passkeys are found through the account's list when it covers them, without reading every passkey", async () => {
+  const env = environment();
+  await seedLinked(env, "email:pk@example.com", "pk@example.com", [{ provider: "email", sub: "pk@example.com" }]);
+  const mine = { id: "mine", email: "pk@example.com", userKey: "dev-mine" };
+  const other = { id: "other", email: "someone@example.com", userKey: "dev-other" };
+  for (const record of [mine, other]) {
+    await env.STUDIQUO_DATA.put(`passkeys:credential:${record.id}`, JSON.stringify(record));
+    await env.STUDIQUO_DATA.put(`passkeys:user:${record.userKey}`, JSON.stringify([record]));
+    await indexAccountPasskey(env, `email:${record.email}`, record.email, record.id);
+  }
+  await env.STUDIQUO_DATA.put("passkey-index-backfilled", "1");
+  const listed = recordListings(env);
+  await deleteAccount(env, "email:pk@example.com");
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:mine"), null);
+  assert.equal(await env.STUDIQUO_DATA.get("passkeys:user:dev-mine"), null);
+  assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:other"), null, "another person's passkey stays");
+  assert.ok(!listed.includes("passkeys:credential:") && !listed.includes("passkeys:user:"));
 });

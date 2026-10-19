@@ -558,6 +558,7 @@ struct FlashcardEditorContent: View {
                 }
             }
         }
+            .themeScreenBackground()
     }
 
     private var cardList: some View {
@@ -578,6 +579,7 @@ struct FlashcardEditorContent: View {
                 .onMove(perform: moveCards)
             }
         }
+            .themeScreenBackground()
     }
 
     private func createCard() {
@@ -642,6 +644,7 @@ private struct FlashcardEditView: View {
                 TextField("問題", text: $question, axis: .vertical)
                 TextField("答え", text: $answer, axis: .vertical)
             }
+                .themeScreenBackground()
             .navigationTitle("カードを編集")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }

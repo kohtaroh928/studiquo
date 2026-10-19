@@ -1,3 +1,4 @@
+import { blockedBetween } from "./block-check.js";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
 import { sendPush } from "./push.js";
 import { roomMembershipKey } from "./document-room-store.js";
@@ -14,6 +15,33 @@ const PROPOSE_LIMIT_PER_MINUTE = 30;
 // higher one meant for ordinary editing.
 const INVITE_LIMIT_PER_MINUTE = 5;
 const WINDOW_SECONDS = 60;
+// An invitation is only an offer: the person is seated in the room when they
+// accept it. Left unanswered it lapses, and one person can only be holding so
+// many at once (a stranger's spam cannot pile up without bound).
+const INVITE_TTL_SECONDS = 14 * 24 * 3_600;
+const MAX_PENDING_INVITES = 20;
+const RESPOND_LIMIT_PER_MINUTE = 20;
+
+export function pendingInviteKey(userKey, roomID) {
+  return `doc-invite:${userKey}:${roomID}`;
+}
+
+async function pendingInviteNames(env, userKey) {
+  const prefix = pendingInviteKey(userKey, "");
+  const names = [];
+  let cursor;
+  do {
+    const page = await env.STUDIQUO_DATA.list({ prefix, cursor });
+    for (const item of page.keys ?? []) names.push(item.name);
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return names;
+}
+// Creating a room is a rare action (turning collaboration on for a document),
+// and every room is a Durable Object that stays in storage, so it gets an
+// hourly budget rather than the per-minute one the other actions use.
+const INIT_LIMIT_PER_HOUR = 20;
+const INIT_WINDOW_SECONDS = 3_600;
 // Matches chat.js's own FRIEND_CODE_PATTERN — the client only ever knows a
 // collaborator by their friend code (as shown in the existing friend list),
 // never their raw userKey, so invite resolves a code the same way chat.js
@@ -39,8 +67,15 @@ async function readBody(request, maxBytes = MAX_BODY) {
 // checkRateLimit()/the Cloudflare Rate Limiting binding those use, since
 // that binding is provisioned per endpoint in the Cloudflare dashboard and
 // this endpoint doesn't have one of its own yet.
-async function withinLimit(env, keyPrefix, key, limit) {
-  return env.RATE_COUNTER.getByName(`${keyPrefix}:${key}`).bump(limit, WINDOW_SECONDS);
+async function withinLimit(env, keyPrefix, key, limit, windowSeconds = WINDOW_SECONDS) {
+  return env.RATE_COUNTER.getByName(`${keyPrefix}:${key}`).bump(limit, windowSeconds);
+}
+
+// The caller's own record, read through their registry object when there is
+// one (a plain KV read can be a minute behind a friend removal).
+async function chatUser(env, userKey) {
+  const registered = env.USER_REGISTRY ? await env.USER_REGISTRY.getByName(userKey).getUser(userKey) : null;
+  return registered ?? await env.STUDIQUO_DATA.get(`chat:user:${userKey}`, "json");
 }
 
 // DocumentRoom.requireParticipant/requireReviewer throw a plain
@@ -90,6 +125,8 @@ export async function handleDocumentCollab(url, request, env, key, ctx) {
 
   const initMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/init$/.exec(url.pathname);
   if (initMatch && request.method === "POST") {
+    const allowed = await withinLimit(env, "document-init", key, INIT_LIMIT_PER_HOUR, INIT_WINDOW_SECONDS);
+    if (!allowed) return json({ error: "Too many rooms created. Please try again later." }, 429);
     const body = await readBody(request);
     const blocks = Array.isArray(body?.blocks) ? body.blocks : [];
     const room = env.DOCUMENT_ROOM.getByName(initMatch[1]);
@@ -118,40 +155,108 @@ export async function handleDocumentCollab(url, request, env, key, ctx) {
     const body = await readBody(request);
     const code = parseFriendCode(body);
     const role = String(body?.role ?? "");
-    // Returning a distinct 404 (rather than folding this into the generic
-    // 400 below) lets the client tell "that's not a friend code" apart from
-    // "that friend code isn't registered to anyone" in its own UI copy.
     if (!code) return json({ error: "Invalid code." }, 400);
+    // Only a friend can be added to a document. Without this, anyone who knew a
+    // friend code could seat a stranger in a room whose content they control
+    // and send them a push; it also made this route an oracle for which codes
+    // exist. A blocked pair cannot be invited either way round.
+    const owner = await chatUser(env, key);
+    const friend = (owner?.friends ?? []).find(item => item.code === code);
+    if (!friend) return json({ error: "You can only invite your own friends." }, 400);
+    if (await blockedBetween(env, key, friend)) {
+      return json({ error: "This friend cannot be invited right now." }, 403);
+    }
+    // A friend whose account has since gone.
     const userKey = await env.STUDIQUO_DATA.get(`chat:code:${code}`);
     if (!userKey) return json({ error: "No user found for that code." }, 404);
     try {
       const room = env.DOCUMENT_ROOM.getByName(inviteMatch[1]);
-      const result = await room.invite(key, userKey, role);
-      await recordRoomMembership(env, userKey, inviteMatch[1], role);
-      // The friend code was resolved before this ran. If that account was
-      // deleted in between, its deletion has already passed the point where it
-      // collects the rooms it is in, and the seat just made would stay behind
-      // under a key that nothing can name again (and come back as a
-      // participant if the same sign-in registers anew). Take it out again.
-      if (!(await env.STUDIQUO_DATA.get(`chat:user:${userKey}`))) {
-        await room.removeAccount(userKey);
-        await env.STUDIQUO_DATA.delete(roomMembershipKey(userKey, inviteMatch[1]));
-        return json({ error: "No user found for that code." }, 404);
+      if ((await room.roleOf(key)) !== "owner") return roomForbiddenResponse(new Error("Forbidden"));
+      if (role !== "editor" && role !== "reviewer") return json({ error: "role must be \"editor\" or \"reviewer\"." }, 400);
+      if (userKey === key) return json({ error: "role must be \"editor\" or \"reviewer\"." }, 400);
+      // Someone who already took part has said yes before: a new role for them
+      // is applied as it was.
+      if (await room.roleOf(userKey)) {
+        const result = await room.invite(key, userKey, role);
+        await recordRoomMembership(env, userKey, inviteMatch[1], role);
+        return json(result);
+      }
+      const inviteKey = pendingInviteKey(userKey, inviteMatch[1]);
+      if (!(await env.STUDIQUO_DATA.get(inviteKey)) && (await pendingInviteNames(env, userKey)).length >= MAX_PENDING_INVITES) {
+        return json({ error: "This friend has too many pending invitations." }, 429);
       }
       const inviterName = await friendDisplayName(env, key);
+      await env.STUDIQUO_DATA.put(inviteKey, JSON.stringify({ inviterKey: key, inviterName, role, createdAt: Date.now() }), { expirationTtl: INVITE_TTL_SECONDS });
+      // The friend code was resolved before this ran. If that account was
+      // deleted in between, its deletion has already passed the point where it
+      // collects its invitations, and the offer would stay behind under a key
+      // nothing can name again. Take it back.
+      if (!(await env.STUDIQUO_DATA.get(`chat:user:${userKey}`))) {
+        await env.STUDIQUO_DATA.delete(inviteKey);
+        return json({ error: "No user found for that code." }, 404);
+      }
       const delivery = sendPush(env, userKey, {
         category: "shareInvite",
         title: "共有招待",
-        body: `${inviterName || "フレンド"}さんからノートの共有招待が届きました。`,
+        body: `${inviterName || "フレンド"}さんからノートの共有招待が届きました。承諾すると参加します。`,
         data: { route: "shareInvite", roomID: inviteMatch[1] },
       });
       if (ctx?.waitUntil) ctx.waitUntil(delivery);
       else await delivery;
-      return json(result);
+      return json({ status: "pending" });
     } catch (error) {
       const forbidden = roomForbiddenResponse(error);
       if (forbidden) return forbidden;
       if (error instanceof Error && error.message === "InvalidRole") return json({ error: "role must be \"editor\" or \"reviewer\"." }, 400);
+      throw error;
+    }
+  }
+
+  // The invitations waiting for this person's answer.
+  if (url.pathname === "/api/document/invites" && request.method === "GET") {
+    const invites = [];
+    for (const name of await pendingInviteNames(env, key)) {
+      const invite = await env.STUDIQUO_DATA.get(name, "json");
+      if (!invite) continue;
+      invites.push({ roomID: name.slice(pendingInviteKey(key, "").length), role: invite.role, inviterName: invite.inviterName ?? null, createdAt: invite.createdAt });
+    }
+    return json(invites.sort((left, right) => right.createdAt - left.createdAt));
+  }
+
+  const respondMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/invite\/(accept|decline)$/.exec(url.pathname);
+  if (respondMatch && request.method === "POST") {
+    if (!(await withinLimit(env, "document-respond", key, RESPOND_LIMIT_PER_MINUTE))) {
+      return json({ error: "Too many attempts. Please slow down." }, 429);
+    }
+    const roomID = respondMatch[1];
+    const inviteKey = pendingInviteKey(key, roomID);
+    const invite = await env.STUDIQUO_DATA.get(inviteKey, "json");
+    if (!invite) return json({ error: "This invitation is no longer available." }, 404);
+    if (respondMatch[2] === "decline") {
+      await env.STUDIQUO_DATA.delete(inviteKey);
+      return json({ status: "declined" });
+    }
+    try {
+      // The seat is given on the inviter's authority at this moment: if they
+      // are no longer the room's owner (or are gone), the offer is void.
+      const room = env.DOCUMENT_ROOM.getByName(roomID);
+      await room.invite(invite.inviterKey, key, invite.role);
+      await recordRoomMembership(env, key, roomID, invite.role);
+      // Same race as when the offer was made: an account deleted meanwhile must
+      // not be left in the room.
+      if (!(await env.STUDIQUO_DATA.get(`chat:user:${key}`))) {
+        await room.removeAccount(key);
+        await env.STUDIQUO_DATA.delete(roomMembershipKey(key, roomID));
+        await env.STUDIQUO_DATA.delete(inviteKey);
+        return json({ error: "This invitation is no longer available." }, 404);
+      }
+      await env.STUDIQUO_DATA.delete(inviteKey);
+      return json({ status: "joined", role: invite.role });
+    } catch (error) {
+      if (error instanceof Error && (error.message === "Forbidden" || error.message === "InvalidRole")) {
+        await env.STUDIQUO_DATA.delete(inviteKey);
+        return json({ error: "This invitation is no longer available." }, 410);
+      }
       throw error;
     }
   }

@@ -34,9 +34,10 @@ final class AIPrivacyConsentTests: XCTestCase {
     }
 
     func testConsentIsVersionedAndRevocationDisablesAutomaticReview() throws {
-        AIDataDisclosure.acknowledge()
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         let request = try WorkerAIProvider().request(path: "api/ai/chat", body: [:])
-        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Studiquo-AI-Consent"), "google-v2")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Studiquo-AI-Consent"), "openai-v1")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Studiquo-Age"), "adult")
         AIDataDisclosure.defaults.set(true, forKey: AIReviewService.isEnabledDefaultsKey)
         AIDataDisclosure.revoke()
         XCTAssertFalse(AIDataDisclosure.hasBeenAcknowledged)
@@ -45,14 +46,29 @@ final class AIPrivacyConsentTests: XCTestCase {
     }
 
     func testOlderVersionRequiresFreshPermission() {
-        AIDataDisclosure.defaults.set("google-v1", forKey: AIDataDisclosure.consentVersionDefaultsKey)
-        AIDataDisclosure.defaults.set("google-v1", forKey: AIDataDisclosure.decisionVersionDefaultsKey)
+        AIDataDisclosure.defaults.set("google-v2", forKey: AIDataDisclosure.consentVersionDefaultsKey)
+        AIDataDisclosure.defaults.set("google-v2", forKey: AIDataDisclosure.decisionVersionDefaultsKey)
         XCTAssertFalse(AIDataDisclosure.hasBeenAcknowledged)
         XCTAssertFalse(AIDataDisclosure.hasMadeDecision)
     }
 
-    func testInitialReleaseOffersOnlyOneProcessorAndDisablesDirectIntegrations() {
-        XCTAssertEqual(AIModelCatalog.offered.map(\.providerName), ["Google"])
+    func testTeenBandIsSentAndAConsentWithoutAnAgeBandIsNotValid() throws {
+        AIDataDisclosure.acknowledge(ageBand: .teen)
+        let request = try WorkerAIProvider().request(path: "api/ai/chat", body: [:])
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Studiquo-Age"), "teen")
+        AIDataDisclosure.defaults.removeObject(forKey: AIDataDisclosure.ageBandDefaultsKey)
+        XCTAssertFalse(AIDataDisclosure.hasBeenAcknowledged)
+        XCTAssertThrowsError(try WorkerAIProvider().request(path: "api/ai/chat", body: [:]))
+    }
+
+    func testRevokingForgetsTheAgeBand() {
+        AIDataDisclosure.acknowledge(ageBand: .teen)
+        AIDataDisclosure.revoke()
+        XCTAssertNil(AIDataDisclosure.ageBand)
+    }
+
+    func testOnlyOneProcessorIsOfferedAndDirectIntegrationsAreDisabled() {
+        XCTAssertEqual(Set(AIModelCatalog.offered.map(\.providerName)), ["OpenAI"])
         XCTAssertFalse(AIDataDisclosure.allowsDirectProviders)
     }
 }

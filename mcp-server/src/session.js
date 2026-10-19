@@ -5,6 +5,7 @@
 // trusting the token's own embedded timestamp as proof it's genuine.
 import { sha256Hex } from "./auth.js";
 import { VALIDITY_SECONDS } from "./token.js";
+import { sessionTokenAcceptable, signSessionToken } from "./token-signature.js";
 
 // Which life of the account a record belongs to. Each time a deleted account
 // is signed into again (mintSession) the count goes up by one, and jobs and
@@ -39,19 +40,30 @@ async function clearDeletedCustomerRecords(env, hashes) {
   }
 }
 
+// 32 random bytes as 64 hex characters. The secret half of a token is made HERE,
+// by the Worker, from its own random source. It used to be a value the app sent
+// and the Worker stored as it came, so a token was only as unguessable as the
+// app's own randomness.
+function newSecretHalf() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
 /**
- * Mints a "<issued-at epoch>.<randomValue>" token for `identityKey`, records
- * it as a real, server-issued session (so requireRealSession can recognize
- * it later), and returns the token — or `null` if the resulting token falls
- * outside bearerToken()'s own 32-256 length window (auth.js). Every caller
- * already validates `randomValue`'s own length, but not the combined length
- * once the issued-at prefix is added, so this is the one place that check
- * can't be skipped.
+ * Mints a "<issued-at epoch>.<random>[.<signature>]" token for `identityKey`,
+ * records it as a real, server-issued session (so requireRealSession can
+ * recognize it later), and returns the token — or `null` if the account's
+ * deletion is in progress and nobody may sign in to it yet.
+ *
+ * The third argument is accepted for compatibility with apps that still send a
+ * `randomValue` and is ignored: the secret half of the token always comes from the
+ * Worker (256 random bits, so two logins never share one in practice).
  */
-export async function mintSession(env, identityKey, randomValue) {
+export async function mintSession(env, identityKey, _suppliedByTheApp, { originIssuedAtMs } = {}) {
   const issuedAt = Math.floor(Date.now() / 1000);
-  const token = `${issuedAt}.${randomValue}`;
-  if (token.length < 32 || token.length > 256) return null;
+  // Signed when a signing key is configured (token-signature.js), so that an
+  // invented token can be refused later without a KV read.
+  const token = await signSessionToken(env, `${issuedAt}.${newSecretHalf()}`);
   const deletionStateKey = `account-deletion:${await sha256Hex(identityKey)}`;
   const deletionState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
   if (deletionState?.status === "deleting") return null;
@@ -103,7 +115,11 @@ export async function mintSession(env, identityKey, randomValue) {
   // Read first: an ordinary sign-in has no job, and must not pay for a write.
   if (await env.STUDIQUO_DATA.get(providerJobKey)) await env.STUDIQUO_DATA.delete(providerJobKey);
   const key = await sha256Hex(token);
-  await env.STUDIQUO_DATA.put(`${SESSION_PREFIX}${key}`, JSON.stringify({ sub: identityKey, issuedAt, issuedAtMs: Date.now() }), {
+  await env.STUDIQUO_DATA.put(`${SESSION_PREFIX}${key}`, JSON.stringify({
+    sub: identityKey, issuedAt, issuedAtMs: Date.now(),
+    // When the login this token descends from began (see handleSessionRefresh).
+    originIssuedAtMs: Number.isFinite(originIssuedAtMs) ? originIssuedAtMs : Date.now(),
+  }), {
     expirationTtl: VALIDITY_SECONDS,
   });
   return token;
@@ -115,11 +131,46 @@ export async function mintSession(env, identityKey, randomValue) {
  * timestamp) returns false even though isExpired(token) alone would accept
  * it.
  */
-export async function hasRealSession(env, token) {
-  return (await realSession(env, token)) !== null;
+export async function hasRealSession(env, token, options) {
+  return (await realSession(env, token, options)) !== null;
 }
 
-export async function realSession(env, token) {
+// An operator suspends an account (moderation-actions.js) by writing this key;
+// it is named by the same hash the chat identity uses, so a reported chat user
+// can be traced to it (see chat.js, which records chat key -> this hash).
+export const SUSPENSION_PREFIX = "account-suspended:";
+export async function suspensionKey(canonicalSub) {
+  return `${SUSPENSION_PREFIX}${await sha256Hex(`chat-account:${canonicalSub}`)}`;
+}
+
+// Looked up under the canonical account and, for a session issued before two
+// sign-in methods were linked, under the identity it was issued to as well: an
+// operator's mark made against either one must hold.
+async function isSuspended(env, session) {
+  return hasModerationMark(env, session, SUSPENSION_PREFIX);
+}
+
+// An operator's mark of the given kind on this person (account-suspended: or
+// chat-suspended:), under the canonical account and the identity the session
+// was issued to.
+export async function hasModerationMark(env, session, prefix) {
+  const subs = session.originalSub && session.originalSub !== session.sub ? [session.sub, session.originalSub] : [session.sub];
+  const marks = await Promise.all(subs.map(async item =>
+    env.STUDIQUO_DATA.get(`${prefix}${await sha256Hex(`chat-account:${item}`)}`)));
+  return marks.some(Boolean);
+}
+
+export const CHAT_SUSPENSION_PREFIX = "chat-suspended:";
+
+/**
+ * `allowSuspended` is for the few things a suspended person must still be able
+ * to do — leaving (deleting the account, and the passkey check that deletion
+ * asks for). Everything else treats a suspended account like a signed-out one.
+ */
+export async function realSession(env, token, { allowSuspended = false } = {}) {
+  // First, before anything is read: a token whose signature is wrong (or missing
+  // while signatures are required) cannot be a real session.
+  if (!(await sessionTokenAcceptable(env, token))) return null;
   const key = await sha256Hex(token);
   const session = await env.STUDIQUO_DATA.get(`${SESSION_PREFIX}${key}`, "json");
   if (typeof session?.sub !== "string" || session.sub.length === 0) return null;
@@ -132,10 +183,12 @@ export async function realSession(env, token) {
     ? { ...session, originalSub: session.sub, sub: canonical }
     : session;
   // Independent reads, so the cut-off adds no waiting on top of the state.
-  const [deletionState, cutoff] = await Promise.all([
+  const [deletionState, cutoff, suspended] = await Promise.all([
     env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(resolved.sub)}`, "json"),
     sessionCutoff(env, resolved.sub),
+    allowSuspended ? null : isSuspended(env, resolved),
   ]);
+  if (suspended) return null;
   // "deleted" refuses too: a session minted just before the deletion read its
   // state can outlive the cleanup, and left usable it would let the person
   // keep working in a deleted account (and ask for a second deletion that,
@@ -149,6 +202,18 @@ export async function realSession(env, token) {
 }
 
 /**
+ * Whether the account behind `sub` is partway through its deletion. Unlike
+ * `accountIsUnavailable`, an already-deleted account is not counted: a person
+ * who has left may register again.
+ */
+export async function accountIsBeingDeleted(env, sub) {
+  const canonical = await env.STUDIQUO_DATA.get(`${IDENTITY_CANONICAL_PREFIX}${sub}`);
+  const subs = canonical && canonical !== sub ? [sub, canonical] : [sub];
+  const states = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(item)}`, "json")));
+  return states.some(state => state?.status === "deleting");
+}
+
+/**
  * Whether the account behind `sub` is being deleted or has been deleted, for
  * credentials that are not sessions (connected-app tokens). `sub` may be a
  * linked identity rather than the canonical account, so both are looked at.
@@ -157,7 +222,10 @@ export async function accountIsUnavailable(env, sub) {
   const canonical = await env.STUDIQUO_DATA.get(`${IDENTITY_CANONICAL_PREFIX}${sub}`);
   const subs = canonical && canonical !== sub ? [sub, canonical] : [sub];
   const states = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(item)}`, "json")));
-  return states.some(state => state?.status === "deleting" || state?.status === "deleted");
+  if (states.some(state => state?.status === "deleting" || state?.status === "deleted")) return true;
+  // A suspended account's connected apps stop working too.
+  const suspensions = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get(await suspensionKey(item))));
+  return suspensions.some(Boolean);
 }
 
 const CUTOFF_PREFIX = "session-valid-from:";

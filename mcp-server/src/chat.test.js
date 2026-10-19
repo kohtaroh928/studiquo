@@ -3,6 +3,9 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 import worker from "./app.js";
 import { mintSession } from "./session.js";
+import { readFileSync, readdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, exportPKCS8 } from "jose";
 
 // Regression coverage for "friend requests are approved, not instant": adding
 // a friend by code must create a one-directional pending request instead of
@@ -170,6 +173,27 @@ function fakeChatRoomBinding() {
           message.text = "";
           message.isCanceled = true;
           return { status: "canceled" };
+        },
+        async moderatorRemoveMessage(messageID) {
+          const message = state.messages.find(item => item.id === messageID);
+          if (!message) return { status: "not_found" };
+          const was = message.isCanceled;
+          message.text = ""; message.isCanceled = true;
+          return { status: was ? "already_removed" : "removed" };
+        },
+        // Mirrors chat-room.js's real reportSnapshot.
+        async reportSnapshot(userKey, messageID) {
+          if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          const target = state.messages.find(item => item.id === messageID);
+          if (!target) return null;
+          const near = state.messages.filter(item => item.id >= messageID - 3 && item.id <= messageID + 2);
+          return {
+            reportedKey: target.senderKey,
+            messages: near.map(item => ({
+              id: item.id, fromReported: item.senderKey === target.senderKey, text: item.text,
+              sentAt: item.sentAt, isCanceled: item.isCanceled, reported: item.id === messageID,
+            })),
+          };
         },
         // Mirrors chat-room.js's real editMessage: only the original sender
         // may edit, and a canceled message can never be resurrected by one.
@@ -520,6 +544,7 @@ function fakeUserRegistryBinding(studiquoData) {
   return {
     getByName(key) {
       return {
+        async eraseLibraryID() {},
         resolveChatKey(identityHash, legacyTokenHash) {
           return enqueue(key, async () => {
             if (chatIdentityKeys.has(identityHash)) return chatIdentityKeys.get(identityHash);
@@ -531,6 +556,9 @@ function fakeUserRegistryBinding(studiquoData) {
         },
         ensureUser(k, name, studyStats, bio) {
           return enqueue(key, () => ensureUserAtomic(k, name, studyStats, bio));
+        },
+        getUser(k) {
+          return enqueue(key, () => studiquoData.get(`chat:user:${k}`, "json"));
         },
         addIncomingRequest(k, requesterCode, requesterName) {
           return enqueue(key, () => addIncomingRequestAtomic(k, requesterCode, requesterName));
@@ -2235,6 +2263,9 @@ test("a friend can download an uploaded avatar, and sees it reflected in friends
   const downloadResponse = await downloadAvatar(env, bobToken, alice.code);
   assert.equal(downloadResponse.status, 200);
   assert.equal(downloadResponse.headers.get("content-type"), "image/jpeg");
+  // Stored bytes must not be sniffed into another type or run as a page.
+  assert.equal(downloadResponse.headers.get("x-content-type-options"), "nosniff");
+  assert.match(downloadResponse.headers.get("content-security-policy"), /sandbox/);
   assert.equal(Buffer.from(await downloadResponse.arrayBuffer()).toString(), "fake jpeg bytes");
 });
 
@@ -2871,12 +2902,33 @@ test("an attachment uploaded by one friend can be downloaded by the other, with 
   const downloadResponse = await downloadAttachment(env, bobToken, roomID, id);
   assert.equal(downloadResponse.status, 200);
   assert.equal(downloadResponse.headers.get("content-type"), "image/jpeg");
+  assert.equal(downloadResponse.headers.get("x-content-type-options"), "nosniff");
+  assert.match(downloadResponse.headers.get("content-security-policy"), /sandbox/);
+  assert.equal(downloadResponse.headers.get("content-disposition"), "attachment");
   const downloaded = Buffer.from(await downloadResponse.arrayBuffer());
   assert.ok(downloaded.equals(original), "the recipient must get back the exact bytes the sender uploaded");
 
   // The sender can also fetch their own upload back (e.g. after reinstalling).
   const selfDownload = await downloadAttachment(env, aliceToken, roomID, id);
   assert.equal(selfDownload.status, 200);
+});
+
+test("an attachment that claims to be a web page is served as a sandboxed download, not something a browser would run", async () => {
+  const env = environment();
+  const aliceToken = freshToken("z12");
+  const bobToken = freshToken("z13");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const { roomID } = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const upload = await uploadAttachment(env, aliceToken, roomID, "text/html", Buffer.from("<script>alert(1)</script>").toString("base64"));
+  assert.equal(upload.status, 201);
+  const { id } = await upload.json();
+
+  const response = await downloadAttachment(env, bobToken, roomID, id);
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.match(response.headers.get("content-security-policy"), /default-src 'none'; sandbox/);
+  assert.equal(response.headers.get("content-disposition"), "attachment");
 });
 
 test("someone outside the friendship cannot upload to or download from the room", async () => {
@@ -3641,6 +3693,35 @@ function interleaveAfterNextUserRead(env, after) {
   };
 }
 
+test("the friends list is read through the user's own object, so a stale KV read cannot bring a removed friend back", async () => {
+  const env = environment();
+  const aliceToken = freshToken("st1");
+  const bobToken = freshToken("st2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  await acceptRequest(env, bobToken, alice.code);
+  assert.equal((await friends(env, aliceToken)).length, 1);
+
+  // From here on, plain KV reads of Alice's record return what it held before
+  // the removal (as a read served from another location can for about a
+  // minute). The registry object reads the up-to-date copy.
+  const aliceKey = await env.STUDIQUO_DATA.get(`chat:code:${alice.code}`);
+  const beforeRemoval = await env.STUDIQUO_DATA.get(`chat:user:${aliceKey}`);
+  assert.ok(beforeRemoval, "Alice's record is stored under her key");
+  const fresh = env.STUDIQUO_DATA;
+  const removed = await worker.fetch(request(`/api/chat/friends/${bob.code}`, { method: "DELETE", token: aliceToken }), env, noopCtx);
+  assert.equal(removed.status, 200);
+  env.STUDIQUO_DATA = {
+    ...fresh,
+    get: async (key, type) => (key === `chat:user:${aliceKey}`
+      ? (type === "json" ? JSON.parse(beforeRemoval) : beforeRemoval)
+      : fresh.get(key, type)),
+  };
+
+  assert.equal((await friends(env, aliceToken)).length, 0, "the removal shows at once");
+});
+
 test("a profile photo upload racing a friend removal cannot bring the removed friend back", async () => {
   const env = environment();
   const aliceToken = freshToken("rr1");
@@ -3679,4 +3760,319 @@ test("accepting a request cannot overwrite a removal made on the requester's own
   const accepted = await acceptRequest(env, bobToken, carol.code);
   assert.equal(accepted.status, 200);
   assert.deepEqual((await friends(env, carolToken)).map(item => item.code), [bob.code]);
+});
+
+test("a profile photo that is not valid base64 is refused, so a friend's download can never fail on it", async () => {
+  const env = environment();
+  const aliceToken = freshToken("b1");
+  await registerUser(env, aliceToken, "Alice");
+  for (const data of ["!!!not base64!!!", "aGVsbG8", "aGV sbG8=", "a===", "é"]) {
+    assert.equal((await uploadAvatar(env, aliceToken, "image/jpeg", data)).status, 400, JSON.stringify(data));
+  }
+  assert.equal((await uploadAvatar(env, aliceToken, "image/jpeg", "aGVsbG8=")).status, 200);
+});
+
+test("a group icon that is not valid base64 is refused", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "gb1");
+  const created = await (await createGroup(env, alice.token, "Study Group", [bob.code, carol.code])).json();
+  assert.equal((await uploadGroupAvatar(env, alice.token, created.roomID, "image/png", "%%%%")).status, 400);
+  assert.equal((await uploadGroupAvatar(env, alice.token, created.roomID, "image/png", "aGVsbG8=")).status, 200);
+});
+
+test("a chat report is stored with a 90-day expiry", async () => {
+  const env = environment();
+  const aliceToken = freshToken("t1");
+  const bobToken = freshToken("t2");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const sent = await (await sendMessage(env, bobToken, accepted.roomID, "hi")).json();
+  const ttls = new Map();
+  const put = env.STUDIQUO_DATA.put;
+  env.STUDIQUO_DATA.put = async (key, value, options) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
+  assert.equal((await reportMessage(env, aliceToken, accepted.roomID, sent.id, "spam")).status, 200);
+  const reportKeys = [...ttls.keys()].filter(key => key.startsWith("report:chat:"));
+  assert.equal(reportKeys.length, 1);
+  assert.equal(ttls.get(reportKeys[0]), 90 * 24 * 60 * 60);
+});
+
+
+// ---- Moderation: reports reach the operator, blocks cover group invites ----
+
+function withAdminDB(env) {
+  const db = new DatabaseSync(":memory:");
+  for (const file of readdirSync(new URL("../migrations/", import.meta.url)).sort()) {
+    db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  }
+  env.ADMIN_DB = {
+    prepare: sql => {
+      const make = (params = []) => ({
+        bind: (...next) => make(next),
+        async run() { const r = db.prepare(sql).run(...params); return { success: true, meta: { changes: Number(r.changes) } }; },
+        async all() { return { results: db.prepare(sql).all(...params) }; },
+        async first() { return db.prepare(sql).get(...params) ?? null; },
+      });
+      return make();
+    },
+  };
+  env._d1 = db;
+  return env;
+}
+
+async function befriended(env, suffixA, suffixB) {
+  const aliceToken = freshToken(suffixA);
+  const bobToken = freshToken(suffixB);
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  return { aliceToken, bobToken, alice, bob, roomID: accepted.roomID };
+}
+
+test("a report is kept in D1 with the message as it was, even if the sender retracts afterwards", async () => {
+  const env = withAdminDB(environment());
+  const { aliceToken, bobToken, roomID } = await befriended(env, "m1", "m2");
+  await sendMessage(env, aliceToken, roomID, "こんにちは");
+  const sent = await (await sendMessage(env, bobToken, roomID, "不適切な発言")).json();
+
+  assert.equal((await reportMessage(env, aliceToken, roomID, sent.id, "いやがらせ")).status, 200);
+  await cancelMessage(env, bobToken, roomID, sent.id);
+
+  const rows = env._d1.prepare("SELECT * FROM chat_reports").all();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, "open");
+  assert.equal(rows[0].reason, "いやがらせ");
+  assert.notEqual(rows[0].reported_key, rows[0].reporter_key);
+  const snapshot = JSON.parse(rows[0].snapshot);
+  assert.equal(snapshot.find(item => item.reported).text, "不適切な発言");
+  assert.equal(snapshot.find(item => !item.reported).fromReported, false);
+  assert.equal([...env._kv.keys()].filter(k => k.startsWith("report:chat:")).length, 0);
+});
+
+test("reporting the same message twice adds one report; your own message and unknown messages are refused", async () => {
+  const env = withAdminDB(environment());
+  const { aliceToken, bobToken, roomID } = await befriended(env, "m3", "m4");
+  const mine = await (await sendMessage(env, aliceToken, roomID, "mine")).json();
+  const theirs = await (await sendMessage(env, bobToken, roomID, "theirs")).json();
+
+  assert.equal((await reportMessage(env, aliceToken, roomID, theirs.id, "a")).status, 200);
+  assert.equal((await reportMessage(env, aliceToken, roomID, theirs.id, "b")).status, 200);
+  assert.equal(env._d1.prepare("SELECT COUNT(*) AS n FROM chat_reports").get().n, 1);
+  assert.equal((await reportMessage(env, aliceToken, roomID, mine.id, "x")).status, 400);
+  assert.equal((await reportMessage(env, aliceToken, roomID, 999, "x")).status, 404);
+  assert.equal(env._d1.prepare("SELECT COUNT(*) AS n FROM chat_reports").get().n, 1);
+});
+
+test("an outsider cannot file a chat report into D1", async () => {
+  const env = withAdminDB(environment());
+  const { bobToken, roomID } = await befriended(env, "m5", "m6");
+  const sent = await (await sendMessage(env, bobToken, roomID, "hi")).json();
+  const eveToken = freshToken("m7");
+  await registerUser(env, eveToken, "Eve");
+  assert.equal((await reportMessage(env, eveToken, roomID, sent.id, "x")).status, 403);
+  assert.equal(env._d1.prepare("SELECT COUNT(*) AS n FROM chat_reports").get().n, 0);
+});
+
+test("a filed report pings Slack with the id and a link, never the message text or reason", async () => {
+  const env = withAdminDB(environment());
+  env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.example.test/x";
+  const { aliceToken, bobToken, roomID } = await befriended(env, "m8", "m9");
+  const sent = await (await sendMessage(env, bobToken, roomID, "SECRET-BODY")).json();
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { calls.push({ url, body: String(init?.body ?? "") }); return new Response("ok"); };
+  try {
+    await reportMessage(env, aliceToken, roomID, sent.id, "SECRET-REASON");
+    await reportMessage(env, aliceToken, roomID, sent.id, "SECRET-REASON");
+  } finally { globalThis.fetch = realFetch; }
+  assert.equal(calls.length, 1, "a repeat report must not ping again");
+  const id = env._d1.prepare("SELECT id FROM chat_reports").get().id;
+  assert.ok(calls[0].body.includes(id));
+  assert.ok(!calls[0].body.includes("SECRET"));
+});
+
+test("a blocked pair cannot be put in a group together, in either direction, and the answer doesn't say who blocked", async () => {
+  const env = environment();
+  const { aliceToken, bobToken, alice, bob, roomID } = await befriended(env, "g1", "g2");
+  await blockOtherParticipant(env, bobToken, roomID); // Bob blocks Alice
+
+  const byBlocked = await createGroup(env, aliceToken, "G", [bob.code]); // Alice (blocked) invites Bob
+  assert.equal(byBlocked.status, 403);
+  const byBlocker = await createGroup(env, bobToken, "G", [alice.code]);
+  assert.equal(byBlocker.status, 403);
+  assert.deepEqual(await byBlocked.clone().json(), await byBlocker.clone().json());
+  assert.equal((await byBlocked.json()).error, "This friend cannot be invited right now.");
+  assert.equal((await createGroup(env, aliceToken, "Solo", [])).status, 201);
+});
+
+test("inviting a blocked friend to an existing group is refused; unblocking restores it", async () => {
+  const env = environment();
+  const { aliceToken, bobToken, bob, roomID } = await befriended(env, "g3", "g4");
+  const group = await (await createGroup(env, aliceToken, "G", [])).json();
+  await blockOtherParticipant(env, aliceToken, roomID);
+  assert.equal((await inviteToGroup(env, aliceToken, group.roomID, bob.code)).status, 403);
+  await unblockOtherParticipant(env, aliceToken, roomID);
+  assert.equal((await inviteToGroup(env, aliceToken, group.roomID, bob.code)).status, 200);
+  void bobToken;
+});
+
+test("a group invitation can't be accepted after the invitee blocks the inviter", async () => {
+  const env = environment();
+  const { aliceToken, bobToken, bob, roomID } = await befriended(env, "g5", "g6");
+  const group = await (await createGroup(env, aliceToken, "G", [bob.code])).json();
+  await blockOtherParticipant(env, bobToken, roomID); // Bob blocks Alice after being invited
+  const accept = await acceptGroupInvite(env, bobToken, group.roomID);
+  assert.equal(accept.status, 403);
+  await unblockOtherParticipant(env, bobToken, roomID);
+  assert.equal((await acceptGroupInvite(env, bobToken, group.roomID)).status, 200);
+});
+
+// ---- Operator actions on a report: remove the message, suspend the account ----
+
+const adminKeys = await generateKeyPair("ES256", { extractable: true });
+const adminJWT = await new SignJWT({ email: "owner@example.test" }).setProtectedHeader({ alg: "ES256" })
+  .setIssuer("https://team.cloudflareaccess.com").setAudience("aud").setIssuedAt().setExpirationTime("1h").sign(adminKeys.privateKey);
+
+function asOperator(env) {
+  env.ACCESS_AUD = "aud";
+  env.ACCESS_TEAM_DOMAIN = "team.cloudflareaccess.com";
+  return env;
+}
+async function admin(env, path, { method = "POST", body = {} } = {}) {
+  env.ACCESS_JWKS = createLocalJWKSet({ keys: [{ ...(await exportJWK(adminKeys.publicKey)), alg: "ES256", use: "sig" }] });
+  return worker.fetch(new Request(`https://example.test${path}`, {
+    method,
+    headers: { "cf-access-jwt-assertion": adminJWT, ...(method === "POST" ? { "content-type": "application/json" } : {}) },
+    body: method === "POST" ? JSON.stringify(body) : undefined,
+  }), env, noopCtx);
+}
+async function reportedSetup(suffixA, suffixB) {
+  const env = asOperator(withAdminDB(environment()));
+  const pair = await befriended(env, suffixA, suffixB);
+  const sent = await (await sendMessage(env, pair.bobToken, pair.roomID, "不適切な発言")).json();
+  await reportMessage(env, pair.aliceToken, pair.roomID, sent.id, "いやがらせ");
+  const report = env._d1.prepare("SELECT id FROM chat_reports").get();
+  return { env, ...pair, sent, reportID: report.id };
+}
+
+test("an operator can remove a reported message: it is blanked for everyone, the copy is kept, the report is closed and logged", async () => {
+  const { env, aliceToken, roomID, sent, reportID } = await reportedSetup("s1", "s2");
+  const response = await admin(env, `/api/admin/chat-reports/${reportID}/remove-message`);
+  assert.deepEqual(await response.json(), { status: "removed" });
+  const seen = (await (await readMessages(env, aliceToken, roomID)).json()).find(item => item.id === sent.id);
+  assert.equal(seen.text, "");
+  assert.equal(seen.isCanceled, true);
+  const row = env._d1.prepare("SELECT status, admin_note, snapshot FROM chat_reports WHERE id = ?").get(reportID);
+  assert.equal(row.status, "resolved");
+  assert.match(row.admin_note, /メッセージを削除/);
+  assert.ok(row.snapshot.includes("不適切な発言"));
+  assert.deepEqual(env._d1.prepare("SELECT action, target FROM admin_audit_log").all().map(r => ({ ...r })), [{ action: "chat_report.remove_message", target: reportID }]);
+  // Doing it again is harmless; an unknown report is a 404.
+  assert.deepEqual(await (await admin(env, `/api/admin/chat-reports/${reportID}/remove-message`)).json(), { status: "already_removed" });
+  assert.equal((await admin(env, `/api/admin/chat-reports/${crypto.randomUUID()}/remove-message`)).status, 404);
+});
+
+test("suspending the reported account signs them out of everything; the reporter is unaffected; unsuspending restores it", async () => {
+  const { env, aliceToken, bobToken, reportID } = await reportedSetup("s3", "s4");
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 200);
+
+  const suspended = await admin(env, "/api/admin/accounts/suspend", { body: { reportID } });
+  assert.equal(suspended.status, 200);
+  const { suspensionID } = await suspended.json();
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 401);
+  assert.equal((await sendMessage(env, bobToken, "a".repeat(64), "x")).status, 401);
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: aliceToken }), env, noopCtx)).status, 200);
+  assert.equal(env._d1.prepare("SELECT status FROM chat_reports WHERE id = ?").get(reportID).status, "resolved");
+  const listed = await (await admin(env, "/api/admin/accounts/suspended", { method: "GET" })).json();
+  assert.deepEqual(listed.suspended.map(item => item.suspensionID), [suspensionID]);
+
+  assert.equal((await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID, scope: "account" } })).status, 200);
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 200);
+  assert.deepEqual(env._d1.prepare("SELECT action FROM admin_audit_log ORDER BY id").all().map(r => r.action),
+    ["account.suspend_account", "account.list_suspended", "account.unsuspend"]);
+});
+
+test("suspension needs a report about an identifiable account; bad input is refused; the operator login is required", async () => {
+  const { env, reportID } = await reportedSetup("s5", "s6");
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: {} })).status, 400);
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID: crypto.randomUUID() } })).status, 404);
+  for (const key of [...env._kv.keys()].filter(k => k.startsWith("chat-identity-of:"))) env._kv.delete(key);
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID } })).status, 409);
+  env._d1.prepare("UPDATE chat_reports SET reported_key = 'deleted:abc'").run();
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID } })).status, 410);
+  const noLogin = await worker.fetch(new Request("https://example.test/api/admin/accounts/suspend", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reportID }),
+  }), env, noopCtx);
+  assert.equal(noLogin.status, 403);
+});
+
+test("a suspended person can still delete their account, and nothing else", async () => {
+  const env = environment();
+  const token = freshToken("s7");
+  const identityHash = await seedAccountSession(env, token, "apple-suspended");
+  await registerUser(env, token, "Sam");
+  env._kv.set(`account-suspended:${identityHash}`, JSON.stringify({ at: 1 }));
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token }), env, noopCtx)).status, 401);
+  const deleted = await deleteAccount(env, token);
+  assert.ok([200, 202].includes(deleted.status), `delete answered ${deleted.status}`);
+  // Leaving removes the person's data but not the suspension, so signing up
+  // again with the same account is still suspended.
+  assert.ok(env._kv.has(`account-suspended:${identityHash}`));
+  assert.ok(![...env._kv.keys()].some(key => key.startsWith("chat-identity-of:")));
+});
+
+test("chat-only suspension blocks chat but not the rest of the account; lifting it restores chat", async () => {
+  const { env, aliceToken, bobToken, reportID } = await reportedSetup("s8", "s9");
+  const response = await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "chat" } });
+  assert.equal(response.status, 200);
+  const { suspensionID } = await response.json();
+  const chat = await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx);
+  assert.equal(chat.status, 403);
+  assert.equal((await chat.json()).code, "chat_suspended");
+  // The session itself is still good (this route is not chat).
+  assert.equal((await worker.fetch(request("/api/account/library-id", { token: bobToken }), env, noopCtx)).status !== 401, true);
+  // Sharing documents with friends is part of chat.
+  env.DOCUMENT_ROOM = { getByName() { throw new Error("must not be reached"); } };
+  const document = await worker.fetch(request(`/api/document/rooms/${"d".repeat(64)}/invite`, { method: "POST", token: bobToken, body: { code: "ABC123" } }), env, noopCtx);
+  assert.equal(document.status, 403);
+  assert.equal((await document.json()).code, "chat_suspended");
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: aliceToken }), env, noopCtx)).status, 200);
+  const listed = (await (await admin(env, "/api/admin/accounts/suspended", { method: "GET" })).json()).suspended;
+  assert.deepEqual(listed.map(item => item.scope), ["chat"]);
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "bogus" } })).status, 400);
+  assert.equal((await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID } })).status, 400);
+  assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "toString" } })).status, 400);
+  await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID, scope: "chat" } });
+  assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 200);
+});
+
+test("a warning is pushed to the reported person's devices with fixed wording, ignoring their notification settings", async () => {
+  const { env, reportID } = await reportedSetup("sa", "sb");
+  const pair = await generateKeyPair("ES256", { extractable: true });
+  Object.assign(env, { APNS_AUTH_KEY: await exportPKCS8(pair.privateKey), APNS_KEY_ID: "KEY1234567", APNS_TEAM_ID: "TEAM123456", APNS_TOPIC: "com.yabuko.studiquo" });
+  const reported = env._d1.prepare("SELECT reported_key FROM chat_reports").get().reported_key;
+  env._kv.set(`chat:devices:${reported}`, JSON.stringify([{ token: "c".repeat(64), environment: "production", preferences: { friendMessage: false } }]));
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => { sent.push({ url: String(url), body: String(init?.body ?? "") }); return new Response("", { status: 200 }); };
+  let response;
+  try { response = await admin(env, `/api/admin/chat-reports/${reportID}/warn`); } finally { globalThis.fetch = realFetch; }
+  assert.deepEqual(await response.json(), { warned: true, devices: 1, delivered: 1 });
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0].body.includes("利用規約"));
+  assert.ok(!sent[0].body.includes("不適切な発言"), "the message text isn't in the push");
+  const row = env._d1.prepare("SELECT status, admin_note FROM chat_reports WHERE id = ?").get(reportID);
+  assert.deepEqual({ ...row }, { status: "resolved", admin_note: "注意を送信" });
+  assert.equal((await admin(env, `/api/admin/chat-reports/${crypto.randomUUID()}/warn`)).status, 404);
+});
+
+test("the audit log can be read by the operator, newest first, and reading it is itself logged", async () => {
+  const { env, reportID } = await reportedSetup("sc", "sd");
+  await admin(env, `/api/admin/chat-reports/${reportID}/remove-message`);
+  const { entries } = await (await admin(env, "/api/admin/audit-log", { method: "GET" })).json();
+  assert.equal(entries[0].action, "audit_log.view");
+  assert.equal(entries[1].action, "chat_report.remove_message");
+  assert.equal(entries[0].actor, "owner@example.test");
 });

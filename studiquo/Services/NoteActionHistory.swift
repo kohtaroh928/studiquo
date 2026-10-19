@@ -178,6 +178,7 @@ struct NotePageSnapshot {
     var drawingData: Data?
     var backgroundImageData: Data?
     var recognizedText: String
+    var backgroundPDFData: Data?
     var inkReferenceWidth: Double
     var elements: [PageElementSnapshot]
 
@@ -191,6 +192,7 @@ struct NotePageSnapshot {
         drawingData = page.drawingData
         backgroundImageData = page.backgroundImageData
         recognizedText = page.recognizedText
+        backgroundPDFData = page.backgroundPDFData
         inkReferenceWidth = page.inkReferenceWidth
         elements = page.allElements.map(PageElementSnapshot.init)
     }
@@ -205,6 +207,7 @@ struct NotePageSnapshot {
         page.drawingData = drawingData
         page.backgroundImageData = backgroundImageData
         page.recognizedText = recognizedText
+        page.backgroundPDFData = backgroundPDFData
         page.inkReferenceWidth = inkReferenceWidth
         page.notebook = notebook
         context.insert(page)

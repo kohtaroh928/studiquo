@@ -22,6 +22,8 @@ enum AccountFlowLogic {
 struct AccountGateView: View {
     @StateObject private var authentication = AuthenticationStore()
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AccountDeletionWorkflow.pendingLocalDeletionKey) private var cleanupPending = false
     @State private var cleanupError = ""
 
@@ -48,7 +50,7 @@ struct AccountGateView: View {
             case .onboarding:
                 OnboardingView()
             case .authenticated:
-                ContentView()
+                ContentView().modifier(PaywallGate())
             }
             }
         }
@@ -61,6 +63,11 @@ struct AccountGateView: View {
             }
         }
         .environmentObject(authentication)
+        // Why the server is paused, or that this build must be updated (ServerNotice.swift).
+        .safeAreaInset(edge: .top, spacing: 0) { ServerNoticeBanner() }
+        // The sign-in, verification and onboarding screens show an email address
+        // and take a password or a code: not for the app switcher.
+        .hidesInAppSwitcher(when: authentication.state != .authenticated)
         .animation(.easeInOut(duration: 0.2), value: authentication.state)
         .task(id: authentication.state) {
             guard !cleanupPending, authentication.state == .authenticated else { return }
@@ -69,6 +76,30 @@ struct AccountGateView: View {
         .task(id: authentication.state) {
             guard !cleanupPending else { return }
             await authentication.checkPasskeyRequirement()
+        }
+        // Remembers which account this device is signed in as (LibraryLedger).
+        // Nothing depends on it yet; it only starts the record.
+        .task(id: authentication.state) {
+            guard !cleanupPending, authentication.state == .authenticated else { return }
+            await LibraryIdentityService.refresh()
+        }
+        // The Worker can only answer "which plan?" once there is a session.
+        .task(id: authentication.state) {
+            guard !cleanupPending else { return }
+            guard authentication.state == .authenticated else {
+                subscriptionStore.resetForSignOut()
+                return
+            }
+            // The store waits for RevenueCat to know who this is before asking
+            // what they own, on every path (launch, sign-in, foreground).
+            subscriptionStore.waitForIdentity = { await authentication.waitForRevenueCatIdentity() }
+            await subscriptionStore.refresh()
+        }
+        // A trial that lapsed, or a purchase made on another device, shows up
+        // when the app comes back to the front.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, !cleanupPending, authentication.state == .authenticated else { return }
+            Task { await subscriptionStore.refreshIfStale() }
         }
         .task(id: cleanupPending) {
             if cleanupPending { await finishLocalCleanup() }
@@ -135,7 +166,8 @@ struct LoginView: View {
                             email: email, password: password, isBusy: authentication.isSignInBusy
                         ))
                     SignInWithAppleButton(.signIn) { request in
-                        request.requestedScopes = [.email]
+                        // The scopes, and a nonce whose hash Apple puts in the ID token.
+                        AppleSignInService.prepare(request)
                     } onCompletion: { result in
                         Task { await authentication.loginWithApple(result: result) }
                     }
@@ -316,6 +348,7 @@ private struct OnboardingView: View {
                     calendarURLSection(title: "Googleカレンダーを連携", detail: "Googleカレンダーの非公開iCal URLを入力してください。", text: $googleURL)
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("はじめの設定")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -356,6 +389,7 @@ private struct OnboardingView: View {
 /// Face ID / Touch ID is what confirms it is the owner.
 struct PasskeyEnrollmentView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
+    @State private var emailCode = ""
 
     var body: some View {
         ZStack {
@@ -370,7 +404,7 @@ struct PasskeyEnrollmentView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: 480)
-                Text("設定の24時間後から、パスワードやメールのコードではログインできなくなります。iCloudキーチェーンがオンになっている必要があります。")
+                Text("設定すると、次回からはパスキーでのみログインできます(パスワード、メールのコード、Apple、Googleでは入れなくなります)。最初の設定では、メールに届くコードで本人確認をします。iCloudキーチェーンがオンになっている必要があります。")
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -381,16 +415,43 @@ struct PasskeyEnrollmentView: View {
                         .foregroundStyle(Theme.Palette.danger)
                         .multilineTextAlignment(.center)
                 }
-                Button {
-                    Task { _ = await authentication.addPasskey() }
-                } label: {
-                    Label("パスキーを設定する", systemImage: "faceid")
-                        .frame(maxWidth: 320)
+                if authentication.passkeyNeedsEmailCode {
+                    Text("本人確認のため、\(authentication.email)にコードを送りました。コードを入力してください。")
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 480)
+                    TextField("6桁のコード", text: $emailCode)
+                        .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
+                        .multilineTextAlignment(.center)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 240)
+                        .accessibilityIdentifier("passkey-email-code")
+                    Button {
+                        Task { _ = await authentication.confirmPasskeyEmailCode(emailCode) }
+                    } label: {
+                        Label("確認してパスキーを設定する", systemImage: "faceid")
+                            .frame(maxWidth: 320)
+                    }
+                    .buttonStyle(.themePrimary)
+                    .controlSize(.large)
+                    .disabled(authentication.isPasskeyBusy || emailCode.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("passkey-confirm-code")
+                    Button("コードを再送する") { Task { await authentication.sendPasskeyEmailCode() } }
+                        .disabled(authentication.isPasskeyBusy)
+                        .accessibilityIdentifier("passkey-resend-code")
+                } else {
+                    Button {
+                        Task { _ = await authentication.addPasskey() }
+                    } label: {
+                        Label("パスキーを設定する", systemImage: "faceid")
+                            .frame(maxWidth: 320)
+                    }
+                    .buttonStyle(.themePrimary)
+                    .controlSize(.large)
+                    .disabled(authentication.isPasskeyBusy)
+                    .accessibilityIdentifier("passkey-enroll")
                 }
-                .buttonStyle(.themePrimary)
-                .controlSize(.large)
-                .disabled(authentication.isPasskeyBusy)
-                .accessibilityIdentifier("passkey-enroll")
                 if authentication.passkeyEnrollmentFailed {
                     Button("今回はスキップ") { authentication.skipPasskeyEnrollmentForNow() }
                         .accessibilityIdentifier("passkey-skip")

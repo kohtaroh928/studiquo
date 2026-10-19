@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>   
+<rdf:RDF 
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+xmlns="http://purl.org/rss/1.0/" 
+xmlns:rss="http://purl.org/rss/1.0/" 
+xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" 
+xmlns:dc="http://purl.org/dc/elements/1.1/" 
+xmlns:dcterms="http://purl.org/dc/terms/" 
+xmlns:sec="http://jvn.jp/rss/mod_sec/3.0/" 
+xmlns:marking="http://data-marking.mitre.org/Marking-1" 
+xmlns:tlpMarking="http://data-marking.mitre.org/extensions/MarkingStructure#TLP-1" 
+xmlns:status="http://jvndb.jvn.jp/myjvn/Status" 
+xsi:schemaLocation="http://purl.org/rss/1.0/ https://jvndb.jvn.jp/schema/jvnrss_3.2.xsd http://jvndb.jvn.jp/myjvn/Status https://jvndb.jvn.jp/schema/status_3.3.xsd" 
+xml:lang="ja">
+    <channel rdf:about="https://jvndb.jvn.jp/apis/myjvn">
+      <title>JVNDB　脆弱性対策情報</title>
+      <link>https://jvndb.jvn.jp/apis/myjvn</link>
+      <description>JVNDB　脆弱性対策情報</description>
+      <dc:date>2026-10-18T14:59:30+09:00</dc:date>
+      <dcterms:issued/>
+      <dcterms:modified>2026-10-18T14:59:30+09:00</dcterms:modified>
+      <sec:handling>
+        <marking:Marking>
+          <marking:Marking_Structure xsi:type="tlpMarking:TLPMarkingStructureType" marking_model_name="TLP" marking_model_ref="http://www.us-cert.gov/tlp/" color="WHITE"/>
+        </marking:Marking>
+      </sec:handling>
+      <items>
+        <rdf:Seq>
+          <rdf:li rdf:resource="https://jvndb.jvn.jp/ja/contents/2026/JVNDB-2026-014026.html"/>
+          <rdf:li rdf:resource="https://jvndb.jvn.jp/ja/contents/2026/JVNDB-2026-010276.html"/>
+        </rdf:Seq>
+      </items>
+    </channel>
+    <item rdf:about="https://jvndb.jvn.jp/ja/contents/2026/JVNDB-2026-014026.html">
+      <title>Go JOSE projectのGo JOSEにおけるキャッチされない例外に関する脆弱性</title>
+      <link>https://jvndb.jvn.jp/ja/contents/2026/JVNDB-2026-014026.html</link>
+      <description>Go JOSEは、GoでJavaScriptのオブジェクト署名および暗号化の標準セットを実装しており、JSON Web Encryption（JWE）、JSON Web Signature（JWS）、およびJSON Web Token（JWT）の各標準をサポートしています。バージョン4.1.4および3.0.5より前では、algフィールドがキーラッピングアルゴリズム（A128GCMKW、A192GCMKW、A256GCMKWを除くKWで終わるもの）を示し、encrypted_keyフィールドが空の場合にJSON Web Encryption（JWE）オブジェクトの復号時にパニックが発生します。このパニックは、key_wrap.go内のcipher.KeyUnwrap()がencrypted_keyの長さに基づいて長さゼロまたは負のスライスを割り当てようとするときに発生します。このコードパスには、ParseEncrypted()、ParseEncryptedJSON()、ParseEncryptedCompact()のいずれかで解析し、その後に生成されたオブジェクトでDecrypt()を呼び出すことで到達できます。なお、解析関数は許容されるキーアルゴリズムのリストを受け取ります。もし許容されるキーアルゴリズムにキーラッピングアルゴリズムが含まれていなければ、解析は失敗し、アプリケーションに影響はありません。このパニックはまた、16バイト未満の任意の暗号文パラメータでcipher.KeyUnwrap()を直接呼び出すことでも発生しますが、この関数を直接呼び出すことはあまり一般的ではありません。このパニックはサービス拒否（DoS）につながる可能性があります。この脆弱性はバージョン4.1.4および3.0.5で修正されています。 </description>
+      <dc:creator>Information-technology Promotion Agency, Japan</dc:creator>
+      <sec:identifier>JVNDB-2026-014026</sec:identifier>
+      <sec:references source="CVE" id="CVE-2026-34986">https://www.cve.org/CVERecord?id=CVE-2026-34986</sec:references>
+      <sec:references source="NVD" id="CVE-2026-34986">https://nvd.nist.gov/vuln/detail/CVE-2026-34986</sec:references>
+      <sec:references source="関連文書" id="jose package - github.com/go-jose/go-jose/v4 - Go Packages">https://pkg.go.dev/github.com/go-jose/go-jose/v4#pkg-constants</sec:references>
+      <sec:references id="CWE-248" title="キャッチされない例外(CWE-248)">https://cwe.mitre.org/data/definitions/248.html</sec:references>
+      <sec:cpe version="2.2" vendor="Go JOSE project" product="Go JOSE">cpe:/a:go-jose_project:go-jose</sec:cpe>
+      <sec:cvss score="7.5" severity="High" vector="CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H" version="3.0" type="Base"/>
+      <dc:date>2026-05-07T11:27:14+09:00</dc:date>
+      <dcterms:issued>2026-05-07T11:27:14+09:00</dcterms:issued>
+      <dcterms:modified>2026-05-07T11:27:14+09:00</dcterms:modified>
+    </item>
+    <item rdf:about="https://jvndb.jvn.jp/ja/contents/2026/JVNDB-2026-010276.html">
+      <title>appsup-dartのJavascript Object Signing and Encryption (JOSE)におけるデジタル署名の検証に関する脆弱性</title>
+      <link>https://jvndb.jvn.jp/ja/contents/2026/JVNDB-2026-010276.html</link>
+      <description>JOSEはJavaScript Object Signing and Encryption（JOSE）ライブラリです。バージョン0.3.5+1以前のjoseには、認証されていないリモート攻撃者がJOSEヘッダー（jwk）に埋め込まれたキーを使用して有効なJWS/JWTトークンを偽造できる脆弱性が存在します。この脆弱性は、信頼できるキーストアに存在しないキーであっても、キー選択がヘッダー提供のjwkを検証候補として扱う可能性があるため発生します。JOSEヘッダーは信頼されていない入力であるため、攻撃者はトークンのペイロードを作成し、攻撃者が制御する公開鍵をヘッダーに埋め込み、それに対応する秘密鍵で署名することでこれを悪用できます。影響を受けるバージョンをトークン検証に使用しているアプリケーションは影響を受けます。この問題はバージョン0.3.5+1で修正されています。この問題の回避策としては、ヘッダーにjwkが存在するトークンを、当該jwkがアプリケーションの信頼できるキーストアに既に存在するキーと一致しない限り拒否する方法を取ることが推奨されます。 </description>
+      <dc:creator>Information-technology Promotion Agency, Japan</dc:creator>
+      <sec:identifier>JVNDB-2026-010276</sec:identifier>
+      <sec:references source="CVE" id="CVE-2026-34240">https://www.cve.org/CVERecord?id=CVE-2026-34240</sec:references>
+      <sec:references source="NVD" id="CVE-2026-34240">https://nvd.nist.gov/vuln/detail/CVE-2026-34240</sec:references>
+      <sec:references source="関連文書" id="fix: improved key resolution in JsonWebKeyStore  appsup-dart/jose@b07799a  GitHub">https://github.com/appsup-dart/jose/commit/b07799aac1f56a9a21483feac026272aab30cc5d</sec:references>
+      <sec:references id="CWE-347" title="デジタル署名の不適切な検証(CWE-347)">https://cwe.mitre.org/data/definitions/347.html</sec:references>
+      <sec:cpe version="2.2" vendor="appsup-dart" product="Javascript Object Signing and Encryption (JOSE)">cpe:/a:appsup-dart:jose</sec:cpe>
+      <sec:cvss score="7.5" severity="High" vector="CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N" version="3.0" type="Base"/>
+      <dc:date>2026-04-08T10:56:57+09:00</dc:date>
+      <dcterms:issued>2026-04-08T10:56:57+09:00</dcterms:issued>
+      <dcterms:modified>2026-04-08T10:56:57+09:00</dcterms:modified>
+    </item>
+    <status:Status version="3.3" method="getVulnOverviewList" lang="ja" retCd="0" retMax="50" errCd="" errMsg="" totalRes="43" totalResRet="2" firstRes="1" feed="hnd" keyword="jose" rangeDatePublic="n" rangeDatePublished="n" rangeDateFirstPublished="n" maxCountItem="2" startItem="1"/>
+  </rdf:RDF>
+

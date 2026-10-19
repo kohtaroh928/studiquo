@@ -12,9 +12,11 @@
 // Adding a language: add one entry to SUPPORTED_LANGUAGES. Nothing else —
 // storage, the admin form and the app's fallback logic are all driven by
 // language codes, not by a fixed pair.
+import { featureDisabled } from "./features.js";
 import { accessAllowed } from "./access.js";
+import { auditAdmin } from "./audit.js";
 import { checkRateLimit, clientKey } from "./rate-limit.js";
-import { json, readJSONLimited, securityHeaders } from "./http.js";
+import { json, readJSONLimited, securityHeaders, htmlHeaders } from "./http.js";
 import { deviceStorageKey, loadDevices } from "./devices.js";
 import { sendPush } from "./push.js";
 
@@ -257,7 +259,13 @@ function pushResponse(row) {
 // resume after a closed tab: the batch counter's compare-and-set means a
 // batch is only ever claimed by one request.
 async function pushBatch(env, id, options, now) {
-  let row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ?`).bind(id).first();
+  // The "push" kill switch (features.js). Refused before anything is recorded:
+  // sendPush sends nothing while it is on, and a batch counted as sent could not
+  // be pushed again once the switch is off.
+  if (featureDisabled(env, "push")) {
+    return json({ error: "プッシュ通知は停止中です。解除してから送信してください。", code: "feature_disabled", feature: "push" }, 503);
+  }
+  let row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first();
   if (!row) return json({ error: "Not found." }, 404);
   if (!PUSHABLE_KINDS.includes(row.kind)) return json({ error: "This kind is not pushed." }, 400);
   if (row.status !== "published" || !row.publish_at || row.publish_at > now || (row.expires_at && row.expires_at <= now)) {
@@ -303,7 +311,7 @@ async function pushBatch(env, id, options, now) {
     `UPDATE announcements SET push_users = push_users + ?, push_delivered = push_delivered + ?, push_failed = push_failed + ?,
        push_state = ?, push_sent_at = ? WHERE id = ?`
   ).bind(users, delivered, failed, complete ? "sent" : "sending", complete ? now : null, id).run();
-  row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ?`).bind(id).first();
+  row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first();
   return json(pushResponse(row));
 }
 
@@ -314,7 +322,7 @@ async function pushTest(env, id, request, options) {
   const body = await readJSONLimited(request, 1_000);
   const code = String(body?.friendCode ?? "").trim().toUpperCase();
   if (!FRIEND_CODE_PATTERN.test(code)) return json({ error: "Invalid friend code." }, 400);
-  const row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ?`).bind(id).first();
+  const row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first();
   if (!row) return json({ error: "Not found." }, 404);
   const userKey = await env.STUDIQUO_DATA.get(`chat:code:${code}`);
   if (!userKey) return json({ error: "No user has that friend code." }, 404);
@@ -334,12 +342,13 @@ async function handleAdminAnnouncements(url, request, env, options) {
 
   if (id && match[2]) {
     if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
+    await auditAdmin(env, request, match[2] === "push" ? "announcement.push" : "announcement.push_test", id);
     return match[2] === "push" ? pushBatch(env, id, options, now) : pushTest(env, id, request, options);
   }
 
   if (!id && request.method === "GET") {
     const rows = await env.ADMIN_DB.prepare(
-      `SELECT * FROM announcements ORDER BY COALESCE(publish_at, created_at) DESC LIMIT 200`
+      `SELECT * FROM announcements WHERE deleted_at IS NULL ORDER BY COALESCE(publish_at, created_at) DESC LIMIT 200`
     ).all();
     const results = rows.results ?? [];
     const translations = await loadTranslationMap(env, results.map(row => row.id));
@@ -356,6 +365,7 @@ async function handleAdminAnnouncements(url, request, env, options) {
     if (parsed.error) return json({ error: parsed.error }, 400);
     const a = parsed.value;
     const newID = crypto.randomUUID();
+    await auditAdmin(env, request, "announcement.create", newID, a.status);
     await env.ADMIN_DB.prepare(
       `INSERT INTO announcements (id, kind, status, link, min_app_version, max_app_version, publish_at, expires_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -365,11 +375,12 @@ async function handleAdminAnnouncements(url, request, env, options) {
   }
 
   if (id && request.method === "PUT") {
-    const existing = await env.ADMIN_DB.prepare(`SELECT id FROM announcements WHERE id = ?`).bind(id).first();
+    const existing = await env.ADMIN_DB.prepare(`SELECT id FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first();
     if (!existing) return json({ error: "Not found." }, 404);
     const parsed = parseAnnouncement(await readJSONLimited(request, MAX_ADMIN_BODY), now);
     if (parsed.error) return json({ error: parsed.error }, 400);
     const a = parsed.value;
+    await auditAdmin(env, request, "announcement.update", id, a.status);
     await env.ADMIN_DB.prepare(
       `UPDATE announcements SET kind = ?, status = ?, link = ?, min_app_version = ?, max_app_version = ?,
          publish_at = ?, expires_at = ?, updated_at = ? WHERE id = ?`
@@ -379,8 +390,13 @@ async function handleAdminAnnouncements(url, request, env, options) {
   }
 
   if (id && request.method === "DELETE") {
-    await env.ADMIN_DB.prepare(`DELETE FROM announcement_translations WHERE announcement_id = ?`).bind(id).run();
-    await env.ADMIN_DB.prepare(`DELETE FROM announcements WHERE id = ?`).bind(id).run();
+    // Hidden, not erased: the text and push totals stay for the record. A
+    // second delete (or one for an id that never existed) is a quiet no-op.
+    const live = await env.ADMIN_DB.prepare(`SELECT id FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first();
+    if (live) {
+      await auditAdmin(env, request, "announcement.delete", id);
+      await env.ADMIN_DB.prepare(`UPDATE announcements SET deleted_at = ?, updated_at = ? WHERE id = ?`).bind(now, now, id).run();
+    }
     return json({ deleted: true });
   }
 
@@ -402,7 +418,7 @@ async function handlePublicAnnouncements(url, request, env) {
 
   const rows = await env.ADMIN_DB.prepare(
     `SELECT * FROM announcements
-     WHERE status = 'published' AND publish_at <= ? AND (expires_at IS NULL OR expires_at > ?)
+     WHERE deleted_at IS NULL AND status = 'published' AND publish_at <= ? AND (expires_at IS NULL OR expires_at > ?)
      ORDER BY publish_at DESC LIMIT ?`
   ).bind(now, now, PUBLIC_LIMIT).all();
   const results = (rows.results ?? []).filter(row =>
@@ -590,7 +606,7 @@ $('list').onclick = async e => {
     }
   }
   if (edit) { fillForm(items.find(a => a.id === edit)); scrollTo(0, 0); }
-  if (del && confirm('削除しますか?(元に戻せません)')) {
+  if (del && confirm('削除しますか?(一覧から消えます。内容と操作の記録は残ります)')) {
     await fetch('/api/admin/announcements/' + del, { method: 'DELETE' }); await load();
   }
 };
@@ -600,7 +616,5 @@ load().catch(() => { $('error').textContent = '読み込みに失敗しました
 
 export function handleAnnouncementsPage(url) {
   if (url.pathname !== "/admin/announcements") return null;
-  return new Response(ADMIN_PAGE_HTML, {
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-  });
+  return new Response(ADMIN_PAGE_HTML, { headers: htmlHeaders({ connect: true }) });
 }
