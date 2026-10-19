@@ -5280,8 +5280,12 @@ func webBrowserNavigationPolicy(for url: URL?) -> WKNavigationActionPolicy {
 }
 
 @MainActor
-private final class WebBrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
-    lazy var webView: WKWebView = {
+final class WebBrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
+    /// Made on first use, and made again after the browser's data is erased: a new
+    /// web view has no page, no back/forward list and no cached pages of the old one.
+    private var storedWebView: WKWebView?
+    var webView: WKWebView {
+        if let storedWebView { return storedWebView }
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
@@ -5292,8 +5296,40 @@ private final class WebBrowserModel: NSObject, ObservableObject, WKNavigationDel
         view.allowsBackForwardNavigationGestures = true
         view.allowsLinkPreview = true
         view.scrollView.decelerationRate = .normal
+        storedWebView = view
         return view
-    }()
+    }
+    /// Changes when the web view is replaced; the view uses it to build a new container.
+    @Published private(set) var generation = 0
+    private var erasedObserver: NSObjectProtocol?
+
+    override init() {
+        super.init()
+        // The data was erased (sign-out, account deletion, "閲覧データを消去"): do not leave
+        // the page the student was signed in on showing.
+        erasedObserver = NotificationCenter.default.addObserver(forName: .studiquoBrowserDataErased, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.discardWebView() }
+        }
+    }
+
+    deinit {
+        if let erasedObserver { NotificationCenter.default.removeObserver(erasedObserver) }
+    }
+
+    /// Drops the web view with whatever it was showing, loading or remembering. A page
+    /// still loading would otherwise write its cookies again after they were erased.
+    func discardWebView() {
+        guard let old = storedWebView else { return }
+        old.stopLoading()
+        old.navigationDelegate = nil
+        storedWebView = nil
+        address = ""
+        canGoBack = false
+        canGoForward = false
+        isLoading = false
+        generation += 1
+    }
+
     @Published var address = ""
     @Published var canGoBack = false
     @Published var canGoForward = false
@@ -5386,6 +5422,7 @@ private final class WebBrowserModel: NSObject, ObservableObject, WKNavigationDel
 
 private struct WebSearchPane: View {
     @ObservedObject var browser: WebBrowserModel
+    @State private var isConfirmingErase = false
     /// A tab dropped on the page: asks the editor to show that material here instead.
     var onTabDrop: ((String) -> Bool)? = nil
 
@@ -5418,8 +5455,23 @@ private struct WebSearchPane: View {
                 } label: {
                     Image(systemName: "magnifyingglass")
                 }
+
+                Button {
+                    isConfirmingErase = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .accessibilityLabel("閲覧データを消去")
             }
             .padding(8)
+            .confirmationDialog("閲覧データを消去", isPresented: $isConfirmingErase, titleVisibility: .visible) {
+                Button("消去する", role: .destructive) {
+                    Task { await BrowserDataEraser.eraseAll() }
+                }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("このブラウザに保存されたCookie・ログイン状態・サイトのデータをすべて消します。Studiquoのノートには影響しません。")
+            }
             .background(.regularMaterial)
 
             if browser.isLoading {
@@ -5428,6 +5480,7 @@ private struct WebSearchPane: View {
             }
 
             WebViewContainer(webView: browser.webView)
+                .id(browser.generation)
                 .overlay {
                     // The web view takes drops for itself; see `TabDropShield`.
                     if let onTabDrop { TabDropShield(onTab: onTabDrop) }

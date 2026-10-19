@@ -3438,6 +3438,23 @@ final class FriendStoreTests: XCTestCase {
     // tapped. add(url:) now only stages the code; the request goes out
     // only through confirmPendingDeepLinkRequest().
 
+    /// The caller moves the student to the friends screen only for a link of ours.
+    func testAddURLReportsWhetherTheLinkWasOneOfOurInvites() {
+        let client = MockFriendChatClient(friends: [])
+        let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
+
+        XCTAssertTrue(store.add(url: URL(string: "studiquo://friend/add?token=LINKTOKEN1")!))
+        XCTAssertTrue(store.add(url: URL(string: "studiquo://friend/add?code=ALICE1")!))
+        XCTAssertTrue(store.add(url: URL(string: "https://api.studiquo.app/invite?token=LINKTOKEN1")!))
+
+        XCTAssertFalse(store.add(url: URL(string: "studiquo://anything")!))
+        XCTAssertFalse(store.add(url: URL(string: "studiquo://friend/add")!), "right place, no token or code")
+        XCTAssertFalse(store.add(url: URL(string: "studiquo://friend/add?other=1")!))
+        XCTAssertFalse(store.add(url: URL(string: "https://evil.example/invite?token=LINKTOKEN1")!), "another host")
+        XCTAssertFalse(store.add(url: URL(string: "https://api.studiquo.app/other?token=LINKTOKEN1")!), "another path")
+        XCTAssertFalse(store.add(url: URL(string: "http://api.studiquo.app/invite?token=LINKTOKEN1")!), "plain http is not our link")
+    }
+
     func testAddURLStagesTheCodeWithoutSendingARequestImmediately() async {
         let client = MockFriendChatClient(friends: [.init(code: "ALICE1", name: "Alice", roomID: "room-a")])
         let store = FriendStore(client: client, defaults: defaults, autoRefresh: false)
