@@ -182,8 +182,31 @@ export async function indexAccountPasskey(env, accountKey, email, credentialID) 
 
 /** Removes every passkey of the account (records, lists and any recovery in progress). */
 export async function removeAllPasskeys(env, accountKey, email) {
-  const ids = await listAccountPasskeys(env, accountKey, email);
-  await Promise.all(ids.map(id => env.STUDIQUO_DATA.delete(`passkeys:credential:${id}`)));
+  // Every id on the account's lists, including passkeys a password reset has
+  // already cut off (listAccountPasskeys leaves those out): the lists are
+  // dropped below, so anything not removed here could no longer be found.
+  const ids = new Set();
+  for (const key of await passkeyAccountKeys(env, accountKey, email)) {
+    for (const id of (await env.STUDIQUO_DATA.get(await indexKey(key), "json")) ?? []) ids.add(id);
+  }
+  // The per-person list (passkeys:user:) names these passkeys too, with the
+  // e-mail address. Once the records and this account's list are gone nothing
+  // leads back to it, so an account deletion would leave it behind: take the
+  // entries out here, while the records still say which list they are in.
+  const userKeys = new Set();
+  for (const id of ids) {
+    const record = await env.STUDIQUO_DATA.get(`passkeys:credential:${id}`, "json");
+    if (record?.userKey) userKeys.add(record.userKey);
+  }
+  const gone = ids;
+  for (const userKey of userKeys) {
+    const list = (await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json")) ?? [];
+    const kept = list.filter(item => !gone.has(item?.id));
+    if (kept.length === list.length) continue;
+    if (kept.length === 0) await env.STUDIQUO_DATA.delete(`passkeys:user:${userKey}`);
+    else await env.STUDIQUO_DATA.put(`passkeys:user:${userKey}`, JSON.stringify(kept));
+  }
+  await Promise.all([...ids].map(id => env.STUDIQUO_DATA.delete(`passkeys:credential:${id}`)));
   for (const key of await passkeyAccountKeys(env, accountKey, email)) {
     await env.STUDIQUO_DATA.delete(await indexKey(key));
     await env.STUDIQUO_DATA.delete(await recoveryKey(key));
