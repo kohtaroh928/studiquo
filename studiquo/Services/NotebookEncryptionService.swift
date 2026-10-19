@@ -94,6 +94,8 @@ enum NotebookEncryptionService {
             var backgroundImageData: Data?
             var title: String
             var recognizedText: String
+            /// Optional so content sealed before this field existed still opens.
+            var backgroundPDFData: Data?
             var flashcardQuestion: String
             var flashcardAnswer: String
             var elements: [Element]
@@ -123,6 +125,7 @@ enum NotebookEncryptionService {
                 backgroundImageData: page.backgroundImageData,
                 title: page.title,
                 recognizedText: page.recognizedText,
+                backgroundPDFData: page.backgroundPDFData,
                 flashcardQuestion: page.flashcardQuestion,
                 flashcardAnswer: page.flashcardAnswer,
                 elements: page.allElements.map {
@@ -140,6 +143,7 @@ enum NotebookEncryptionService {
             page.backgroundImageData = nil
             page.title = ""
             page.recognizedText = ""
+            page.backgroundPDFData = nil
             page.flashcardQuestion = ""
             page.flashcardAnswer = ""
             for element in page.allElements {
@@ -170,6 +174,7 @@ enum NotebookEncryptionService {
             page.backgroundImageData = pageContent.backgroundImageData
             page.title = pageContent.title
             page.recognizedText = pageContent.recognizedText
+            page.backgroundPDFData = pageContent.backgroundPDFData
             page.flashcardQuestion = pageContent.flashcardQuestion
             page.flashcardAnswer = pageContent.flashcardAnswer
             let elements = page.allElements
