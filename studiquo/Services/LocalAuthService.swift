@@ -32,7 +32,7 @@ enum LocalAuthService {
         request.httpBody = try JSONEncoder().encode(LoginRequest(
             email: email, password: password, randomValue: randomValue
         ))
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             if let http = response as? HTTPURLResponse {
                 let retryAfter = Self.retryAfterSeconds(http, body: data)
@@ -41,7 +41,14 @@ enum LocalAuthService {
                 // busy to check this one, and did not count it against anyone.
                 // Neither says anything about whether the password was right.
                 if http.statusCode == 429 { throw LocalAuthError.tooManyAttempts(retryAfter: retryAfter) }
-                if http.statusCode == 503 { throw LocalAuthError.serverBusy(retryAfter: retryAfter) }
+                if http.statusCode == 503 {
+                    // The operator has paused the service or sign-in on purpose: the banner says so,
+                    // and retrying in a few seconds (what a busy server gets) would only repeat it.
+                    if let notice = ServerNotice.parse(statusCode: 503, retryAfterHeader: http.value(forHTTPHeaderField: "Retry-After"), body: data) {
+                        throw LocalAuthError.servicePaused(message: notice.message)
+                    }
+                    throw LocalAuthError.serverBusy(retryAfter: retryAfter)
+                }
                 if http.statusCode == 403, PasskeyRequired.isIn(body: data) { throw LocalAuthError.passkeyRequired }
             }
             throw LocalAuthError.rejected
@@ -72,9 +79,12 @@ enum LocalAuthError: LocalizedError, Equatable {
     case serverBusy(retryAfter: TimeInterval?)
     /// The account has a passkey, so a password is no longer accepted.
     case passkeyRequired
+    /// The operator paused the service (maintenance) or sign-in. Not retried.
+    case servicePaused(message: String)
 
     var errorDescription: String? {
         switch self {
+        case .servicePaused(let message): message
         case .passkeyRequired: PasskeyRequired.message
         case .rejected:
             "メールアドレスまたはパスワードが違います。"

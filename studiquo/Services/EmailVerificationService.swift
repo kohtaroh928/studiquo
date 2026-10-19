@@ -20,7 +20,7 @@ enum EmailVerificationService {
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(SendCodeRequest(email: email))
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             // 429: this address (or network) has had too many codes sent for now.
             if let http = response as? HTTPURLResponse, http.statusCode == 429 {
@@ -61,7 +61,7 @@ enum EmailVerificationService {
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(ConfirmCodeRequest(email: email, code: code, password: password, randomValue: randomValue))
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse else { throw EmailVerificationError.confirmFailed }
         if 200..<300 ~= http.statusCode {
             guard let payload = try? JSONDecoder().decode(ConfirmSuccessResponse.self, from: data) else {

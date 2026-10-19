@@ -142,7 +142,7 @@ enum LibraryIdentityService {
         store: LibraryLedgerStore = .default,
         now: Date = Date(),
         currentToken: () -> String? = { MCPCloudCredentials.currentToken() },
-        fetch: Fetch = { try await URLSession.shared.data(for: $0) }
+        fetch: Fetch = { try await URLSession.shared.dataNoticing(for: $0) }
     ) async -> String? {
         guard let token, !token.isEmpty, let endpoint else { return nil }
         var request = URLRequest(url: endpoint.appending(path: "api/account/library-id"))
