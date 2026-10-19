@@ -62,6 +62,8 @@ prepareは `.local/trial-01/pairs.json` と `review.json` を新規生成する�
 
 ## 4. 回答生成・評価に進むとき
 
+既存評価キーの共有方法・Lunaの料金試算・予算案は[API_ACCESS.md](../collaboration/rag-prompt/API_ACCESS.md)。予算や共有経路はまだ未確定で、offline kitは引き続きAPIを呼ばない。
+
 最初はAPIを使わず、要求項目と候補指示のレビューまで進められる。有料生成は次を合意してから、既存の評価用runnerの適切なadapterを別工程で確認する。このキットにはネットワーク実行機能を入れていない。
 
 - 資料/質問/根拠/基準promptのhash、候補hash、モデルと生成設定

@@ -117,6 +117,7 @@ struct FlashcardDeckView: View {
             if mode == .edit { editor }
             else { study }
         }
+        .toolbar(.hidden, for: .navigationBar)
     }
 
     private var editor: some View {

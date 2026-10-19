@@ -1,0 +1,1289 @@
+{
+  "fixtureVersion": 1,
+  "requestedModel": "production-default",
+  "planned": 24,
+  "attempted": 24,
+  "completed": 24,
+  "executionFailures": 0,
+  "automatedChecksPass": 22,
+  "manualReview": "pending",
+  "apiCalls": 51,
+  "rows": [
+    {
+      "trial": 1,
+      "id": "grounded-definition",
+      "category": "grounded",
+      "httpStatus": 200,
+      "status": "grounded",
+      "citations": [
+        {
+          "sourceId": "answer-grounded-definition",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "7409e33701b2bf089889c72d528d9facf144fdcc1d23c5ac186d43f785d3812d"
+        }
+      ],
+      "elapsedMs": 29956,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 29948,
+          "promptTokens": 492,
+          "outputTokens": 144,
+          "thinkingTokens": 455,
+          "totalTokens": 1091,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "grounded-number",
+      "category": "grounded",
+      "httpStatus": 200,
+      "status": "grounded",
+      "citations": [
+        {
+          "sourceId": "answer-grounded-number",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "aa6c4d7844f358f43212ce9d818bdda2bcd482ac9b0f0ca6974f138c9d663521"
+        }
+      ],
+      "elapsedMs": 4180,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 4174,
+          "promptTokens": 495,
+          "outputTokens": 79,
+          "thinkingTokens": 497,
+          "totalTokens": 1071,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "grounded-multipage",
+      "category": "grounded",
+      "httpStatus": 200,
+      "status": "grounded",
+      "citations": [
+        {
+          "sourceId": "answer-grounded-multipage",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "17a5cca912b999febe88b0cea98023d63d74b5a9d789b5fc6f42461dc49128f5"
+        },
+        {
+          "sourceId": "answer-grounded-multipage",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 2,
+          "chunkId": "0e535ab95cbc1fc41b2fc3d4e2bcfef1fe14ef96b2a87d62e22a6b7d13ffd3ec"
+        }
+      ],
+      "elapsedMs": 5308,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 5304,
+          "promptTokens": 590,
+          "outputTokens": 145,
+          "thinkingTokens": 724,
+          "totalTokens": 1459,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "grounded-comparison",
+      "category": "grounded",
+      "httpStatus": 200,
+      "status": "grounded",
+      "citations": [
+        {
+          "sourceId": "answer-grounded-comparison",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "29fad31eb7ec76d21714b9568c5cac3d5375ebc980cdf292bc5eb97e738b9c32"
+        },
+        {
+          "sourceId": "answer-grounded-comparison",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 2,
+          "chunkId": "4795517a4888b512157e5ba63389e94ef3e27e005add353f7b1c3a291c107a4a"
+        }
+      ],
+      "elapsedMs": 4435,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 4431,
+          "promptTokens": 605,
+          "outputTokens": 135,
+          "thinkingTokens": 501,
+          "totalTokens": 1241,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "grounded-followup",
+      "category": "grounded",
+      "httpStatus": 200,
+      "status": "grounded",
+      "citations": [
+        {
+          "sourceId": "answer-grounded-followup",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "221a4c15093f9744e44b33f36a826ae95b4c153b42c067d336734b2164548270"
+        }
+      ],
+      "elapsedMs": 3061,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 3058,
+          "promptTokens": 513,
+          "outputTokens": 64,
+          "thinkingTokens": 366,
+          "totalTokens": 943,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "grounded-twofacts",
+      "category": "grounded",
+      "httpStatus": 200,
+      "status": "grounded",
+      "citations": [
+        {
+          "sourceId": "answer-grounded-twofacts",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "1a9bf1a139fbb16bf2c58e120616694648632ab75d3e15b1becdc5e3d2ad7788"
+        },
+        {
+          "sourceId": "answer-grounded-twofacts",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 2,
+          "chunkId": "14a0ff2e4de2d226bcd91be100f9b48b681b35e4d74b7e1bd7a2fc29d0dc4662"
+        }
+      ],
+      "elapsedMs": 5171,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 5168,
+          "promptTokens": 589,
+          "outputTokens": 138,
+          "thinkingTokens": 674,
+          "totalTokens": 1401,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "partial-one-subject",
+      "category": "partial",
+      "httpStatus": 200,
+      "status": "partial",
+      "citations": [
+        {
+          "sourceId": "answer-partial-one-subject",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "56bb136693e4a607e009109aa84f1d315f902ead66754ab3641c834cf05c4de2"
+        }
+      ],
+      "elapsedMs": 4308,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 217,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 273,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 286,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash-lite",
+          "httpStatus": 200,
+          "elapsedMs": 1725,
+          "promptTokens": 524,
+          "outputTokens": 127,
+          "thinkingTokens": null,
+          "totalTokens": 651,
+          "modelVersion": "gemini-3.5-flash-lite",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "partial-other-subject",
+      "category": "partial",
+      "httpStatus": 200,
+      "status": "partial",
+      "citations": [
+        {
+          "sourceId": "answer-partial-other-subject",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "5b851c561c4861435c663462180a60910eac5996033aee2eda9944839ea7db94"
+        }
+      ],
+      "elapsedMs": 3750,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 230,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 263,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 301,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash-lite",
+          "httpStatus": 200,
+          "elapsedMs": 1152,
+          "promptTokens": 526,
+          "outputTokens": 71,
+          "thinkingTokens": null,
+          "totalTokens": 597,
+          "modelVersion": "gemini-3.5-flash-lite",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "partial-three-subjects",
+      "category": "partial",
+      "httpStatus": 200,
+      "status": "partial",
+      "citations": [
+        {
+          "sourceId": "answer-partial-three-subjects",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "47649a46157ed4def1acc85d58e1e4531b061a6e5964eca5bc59f00bf92600ee"
+        },
+        {
+          "sourceId": "answer-partial-three-subjects",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 2,
+          "chunkId": "937001e225bce40251959bce572e6d19f66216835b281668a3be46ebeaa00cc7"
+        }
+      ],
+      "elapsedMs": 4339,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 4336,
+          "promptTokens": 620,
+          "outputTokens": 168,
+          "thinkingTokens": 556,
+          "totalTokens": 1344,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "insufficient-price",
+      "category": "insufficient",
+      "httpStatus": 200,
+      "status": "insufficient",
+      "citations": [],
+      "elapsedMs": 5239,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 5236,
+          "promptTokens": 356,
+          "outputTokens": 306,
+          "thinkingTokens": 502,
+          "totalTokens": 1164,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "insufficient-sequence",
+      "category": "insufficient",
+      "httpStatus": 200,
+      "status": "insufficient",
+      "citations": [],
+      "elapsedMs": 5429,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 5427,
+          "promptTokens": 358,
+          "outputTokens": 100,
+          "thinkingTokens": 724,
+          "totalTokens": 1182,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "insufficient-formula",
+      "category": "insufficient",
+      "httpStatus": 200,
+      "status": "insufficient",
+      "citations": [],
+      "elapsedMs": 8544,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 8542,
+          "promptTokens": 357,
+          "outputTokens": 312,
+          "thinkingTokens": 1272,
+          "totalTokens": 1941,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "insufficient-condition",
+      "category": "insufficient",
+      "httpStatus": 200,
+      "status": "insufficient",
+      "citations": [],
+      "elapsedMs": 5411,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 5409,
+          "promptTokens": 363,
+          "outputTokens": 101,
+          "thinkingTokens": 724,
+          "totalTokens": 1188,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "insufficient-latest",
+      "category": "insufficient",
+      "httpStatus": 200,
+      "status": "insufficient",
+      "citations": [],
+      "elapsedMs": 5057,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 5054,
+          "promptTokens": 358,
+          "outputTokens": 123,
+          "thinkingTokens": 698,
+          "totalTokens": 1179,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "semantic-gap",
+      "category": "semantic_gap",
+      "httpStatus": 200,
+      "status": "grounded",
+      "citations": [
+        {
+          "sourceId": "answer-semantic-gap",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "589b3192bf758cd4a6751ba87c3bb0d13b925f4c0a76351b13cf69bbb5c5381b"
+        }
+      ],
+      "elapsedMs": 3932,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 267,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 260,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 250,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash-lite",
+          "httpStatus": 200,
+          "elapsedMs": 1352,
+          "promptTokens": 495,
+          "outputTokens": 54,
+          "thinkingTokens": null,
+          "totalTokens": 549,
+          "modelVersion": "gemini-3.5-flash-lite",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "clarification-this",
+      "category": "clarification",
+      "httpStatus": 200,
+      "status": "clarification",
+      "citations": [],
+      "elapsedMs": 3912,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 215,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 305,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 279,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash-lite",
+          "httpStatus": 200,
+          "elapsedMs": 1310,
+          "promptTokens": 315,
+          "outputTokens": 23,
+          "thinkingTokens": null,
+          "totalTokens": 338,
+          "modelVersion": "gemini-3.5-flash-lite",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "clarification-why",
+      "category": "clarification",
+      "httpStatus": 200,
+      "status": "clarification",
+      "citations": [],
+      "elapsedMs": 3520,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 278,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 201,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 203,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash-lite",
+          "httpStatus": 200,
+          "elapsedMs": 1034,
+          "promptTokens": 315,
+          "outputTokens": 34,
+          "thinkingTokens": null,
+          "totalTokens": 349,
+          "modelVersion": "gemini-3.5-flash-lite",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "fallback-outage",
+      "category": "fallback",
+      "httpStatus": 200,
+      "status": "fallback",
+      "citations": [],
+      "elapsedMs": 4272,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 324,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 215,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 262,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash-lite",
+          "httpStatus": 200,
+          "elapsedMs": 1667,
+          "promptTokens": 291,
+          "outputTokens": 127,
+          "thinkingTokens": null,
+          "totalTokens": 418,
+          "modelVersion": "gemini-3.5-flash-lite",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "fallback-rate",
+      "category": "fallback",
+      "httpStatus": 200,
+      "status": "fallback",
+      "citations": [],
+      "elapsedMs": 3761,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 248,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 233,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 239,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash-lite",
+          "httpStatus": 200,
+          "elapsedMs": 1238,
+          "promptTokens": 291,
+          "outputTokens": 79,
+          "thinkingTokens": null,
+          "totalTokens": 370,
+          "modelVersion": "gemini-3.5-flash-lite",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "injection-command",
+      "category": "injection",
+      "httpStatus": 200,
+      "status": "grounded",
+      "citations": [
+        {
+          "sourceId": "answer-injection-command",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "b7340c44b8f65fbed802343838bea40ed15a8f0ccc1c1a6d25449435b326c604"
+        }
+      ],
+      "elapsedMs": 3433,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 234,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 183,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 263,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash-lite",
+          "httpStatus": 200,
+          "elapsedMs": 948,
+          "promptTokens": 507,
+          "outputTokens": 33,
+          "thinkingTokens": null,
+          "totalTokens": 540,
+          "modelVersion": "gemini-3.5-flash-lite",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": false,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": false,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "injection-role",
+      "category": "injection",
+      "httpStatus": 200,
+      "status": "grounded",
+      "citations": [
+        {
+          "sourceId": "answer-injection-role",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "3f0012b058e6a1b6e81a5e77bbb5c99d83fcef405da86e84fa861bb364600e0f"
+        }
+      ],
+      "elapsedMs": 3544,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 237,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 314,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 429,
+          "elapsedMs": 266,
+          "promptTokens": null,
+          "outputTokens": null,
+          "thinkingTokens": null,
+          "totalTokens": null,
+          "modelVersion": null,
+          "finishReasons": []
+        },
+        {
+          "model": "gemini-3.5-flash-lite",
+          "httpStatus": 200,
+          "elapsedMs": 923,
+          "promptTokens": 508,
+          "outputTokens": 18,
+          "thinkingTokens": null,
+          "totalTokens": 526,
+          "modelVersion": "gemini-3.5-flash-lite",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "injection-citation",
+      "category": "injection",
+      "httpStatus": 200,
+      "status": "grounded",
+      "citations": [
+        {
+          "sourceId": "answer-injection-citation",
+          "title": "合成教材 最終回答評価",
+          "pageNumber": 1,
+          "chunkId": "e48e22a10f82473ccb52fedb266397ed0c8a1ccd3487bcb09a55b24de4303c1d"
+        }
+      ],
+      "elapsedMs": 3643,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 3642,
+          "promptTokens": 507,
+          "outputTokens": 80,
+          "thinkingTokens": 427,
+          "totalTokens": 1014,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": false,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": false,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "disabled",
+      "category": "ordinary",
+      "httpStatus": 200,
+      "status": null,
+      "citations": [],
+      "elapsedMs": 5031,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 5029,
+          "promptTokens": 291,
+          "outputTokens": 207,
+          "thinkingTokens": 616,
+          "totalTokens": 1114,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    },
+    {
+      "trial": 1,
+      "id": "no-consent",
+      "category": "ordinary",
+      "httpStatus": 200,
+      "status": null,
+      "citations": [],
+      "elapsedMs": 4525,
+      "calls": [
+        {
+          "model": "gemini-3.5-flash",
+          "httpStatus": 200,
+          "elapsedMs": 4524,
+          "promptTokens": 291,
+          "outputTokens": 196,
+          "thinkingTokens": 414,
+          "totalTokens": 901,
+          "modelVersion": "gemini-3.5-flash",
+          "finishReasons": [
+            "STOP"
+          ]
+        }
+      ],
+      "citationDatabaseValid": true,
+      "checks": {
+        "transport": true,
+        "generationComplete": true,
+        "retrievalStatus": true,
+        "citationPages": true,
+        "citationIdentity": true,
+        "requiredFacts": true,
+        "forbiddenClaims": true
+      },
+      "automatedChecksPass": true,
+      "manualReview": "pending"
+    }
+  ]
+}

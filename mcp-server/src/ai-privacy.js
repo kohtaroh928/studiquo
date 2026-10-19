@@ -8,16 +8,22 @@ import { allowedModelIds } from "./ai.js";
 export const AI_CONSENT_VERSION = "openai-v1";
 export const AI_AGE_BANDS = new Set(["adult", "teen"]);
 
-export async function aiPrivacyRejection(request, env) {
+export function aiPrivacyHeadersRejection(headers, env) {
   if (env.AI_PROVIDER_APPROVED !== "true") {
     return json({ error: "AI機能は公開準備中です。学習資料は送信されません。" }, 503);
   }
-  if (request.headers.get("X-Studiquo-AI-Consent") !== AI_CONSENT_VERSION) {
+  if (headers.get("X-Studiquo-AI-Consent") !== AI_CONSENT_VERSION) {
     return json({ error: "設定のプライバシーでAIへのデータ送信を許可してください。" }, 403);
   }
-  if (!AI_AGE_BANDS.has(request.headers.get("X-Studiquo-Age") ?? "")) {
+  if (!AI_AGE_BANDS.has(headers.get("X-Studiquo-Age") ?? "")) {
     return json({ error: "AIをご利用になるには、年齢の確認(13歳以上・18歳未満は保護者の同意)が必要です。" }, 403);
   }
+  return null;
+}
+
+export async function aiPrivacyRejection(request, env) {
+  const rejection = aiPrivacyHeadersRejection(request.headers, env);
+  if (rejection) return rejection;
   // Inspect a bounded clone so the existing handler can read its own body.
   const body = await readJSONLimited(request.clone(), 20_000_000);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
