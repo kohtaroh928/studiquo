@@ -11,6 +11,7 @@ import { missingEvidence, selectEvidence } from "./evidence-selection.js";
 import {organizeComparisonEvidence,assessComparisonEvidence} from './comparison-evidence.js';
 import { sourceQualification, sourceContextColumn, referencesAuthorized } from "./authorization.js";
 import { LIMITS } from "./limits.js";
+import { stripInvisible } from "./sanitize.js";
 import { emptyRetrieval } from "./contract.js";
 async function retrieveInternal(env, session, payload, deadline) {
   if (env.RAG_ENABLED !== "true") return emptyRetrieval("disabled");
@@ -140,6 +141,7 @@ async function retrieveInternal(env, session, payload, deadline) {
       /* RRF remains usable if reranking is unavailable; no content logs. */
     }
     const references = [];
+    let sanitized = 0; // hidden characters removed from excerpts (count only, for the log)
     let truncated = false; // an excerpt was cut, or a selected one skipped, by a size budget
     const expand = async (hit, budget = LIMITS.excerptChars) => {
       // Same-page parent/neighbor expansion retains every owner and scope constraint.
@@ -154,7 +156,9 @@ async function retrieveInternal(env, session, payload, deadline) {
         ...scope.args,
       );
       if (!neighbors.some((n) => n.chunk_id === hit.chunk_id)) return null; // Deletion during retrieval.
-      const joined = neighbors.map((n) => n.text).join("\n");
+      const cleaned = stripInvisible(neighbors.map((n) => n.text).join("\n"));
+      sanitized += cleaned.removed;
+      const joined = cleaned.text;
       const cut = Math.min(LIMITS.excerptChars, budget);
       if (joined.length > cut) truncated = true;
       const text = joined.slice(0, cut);
@@ -213,6 +217,7 @@ async function retrieveInternal(env, session, payload, deadline) {
     };
     Object.defineProperty(result, "authorization", { value: { key, references: proofs } });
     Object.defineProperty(result, "truncated", { value: truncated });
+    Object.defineProperty(result, "sanitized", { value: sanitized });
     return result;
   } catch {
     return emptyRetrieval("error");

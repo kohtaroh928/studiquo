@@ -11,6 +11,9 @@ struct RichMessageView: View {
     let source: String
     var fontSize: CGFloat = 17
     var color: UIColor = .label
+    /// False for a reply built from retrieved documents: a link there could
+    /// have been planted by a document and would carry its text out when tapped.
+    var allowLinks = true
 
     private final class ParseCache {
         var source = ""
@@ -27,7 +30,7 @@ struct RichMessageView: View {
     }
 
     var body: some View {
-        RichBlocksView(blocks: blocks, style: RichStyle(fontSize: fontSize, color: color))
+        RichBlocksView(blocks: blocks, style: RichStyle(fontSize: fontSize, color: color, allowLinks: allowLinks))
             .frame(maxWidth: .infinity, alignment: .leading)
             // One element read as plain words: the typeset formulas are images with no text of their own.
             .accessibilityRepresentation { Text(MathTextFormatter.plainText(from: source)) }
@@ -37,9 +40,10 @@ struct RichMessageView: View {
 struct RichStyle {
     var fontSize: CGFloat
     var color: UIColor
+    var allowLinks = true
 
     var swiftUIColor: Color { Color(uiColor: color) }
-    func scaled(_ factor: CGFloat) -> RichStyle { RichStyle(fontSize: fontSize * factor, color: color) }
+    func scaled(_ factor: CGFloat) -> RichStyle { RichStyle(fontSize: fontSize * factor, color: color, allowLinks: allowLinks) }
 }
 
 private struct RichBlocksView: View {
@@ -138,7 +142,7 @@ struct RichInlineText: View {
         var result: Text
         switch span.content {
         case .text(let string):
-            if let link = span.link, let url = URL(string: link) {
+            if style.allowLinks, let link = span.link, let url = URL(string: link) {
                 var attributed = AttributedString(string)
                 attributed.link = url
                 attributed.underlineStyle = .single

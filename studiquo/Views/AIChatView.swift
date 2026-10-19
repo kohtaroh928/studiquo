@@ -1199,7 +1199,7 @@ struct AIChatBubble: View {
 
     var body: some View {
         if message.role == .assistant {
-            RichMessageView(source: message.text, fontSize: bodySize)
+            RichMessageView(source: message.text, fontSize: bodySize, allowLinks: message.ragStatus == nil)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .contextMenu {
