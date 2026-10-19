@@ -16,6 +16,7 @@ import {
   deleteAccountRAG,
 } from "./rag/storage.js";
 import { retrieve, handleRAG } from "./rag/index.js";
+import { LIMITS } from "./rag/limits.js";
 function database() {
   const db = new DatabaseSync(":memory:");
   db.exec(
@@ -785,4 +786,20 @@ test("cross-tenant: a failing vector store never widens the search to another ac
   const result = await retrieve(env, { sub: "alice" }, { messages: [{ role: "user", text: "細胞" }], rag: { scope: { type: "library" } } });
   assert.ok(result.citations.every((c) => c.sourceId === "alice-src"));
   assert.ok(!result.context.includes("BOB"));
+});
+
+test("worst-case question costs at most three embeddings and one rerank (LIMITS)", async () => {
+  const env = environment();
+  await indexSource(env, await accountKey("alice"), source({ pages: [{ pageNumber: 1, text: "細胞は生物の基本単位です。\n\n組織は細胞の集まりです。\n\n器官は組織が集まったものです。" }] }));
+  const calls = { embed: 0, rerank: 0 };
+  const run = env.AI.run;
+  env.AI.run = async (m, p) => { calls[m.includes("reranker") ? "rerank" : "embed"]++; return run(m, p); };
+  // Three named subjects is the widest plan; more subjects fall back to one query.
+  await retrieve(env, { sub: "alice" }, {
+    messages: [{ role: "user", text: "細胞と組織と器官の違いを比較して" }],
+    rag: { scope: { type: "library" } },
+  });
+  assert.ok(calls.embed >= 2, `the multi-query path was not exercised: ${calls.embed}`);
+  assert.ok(calls.embed <= LIMITS.maxEmbeddingCalls, `embeddings: ${calls.embed}`);
+  assert.ok(calls.rerank <= LIMITS.maxRerankCalls, `rerank: ${calls.rerank}`);
 });
