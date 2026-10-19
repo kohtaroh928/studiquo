@@ -14,6 +14,7 @@
 // way back after losing it is the e-mailed recovery below.
 import { sha256Hex } from "./auth.js";
 import { json } from "./http.js";
+import { featureDisabled } from "./features.js";
 import { revokeAllConnections } from "./mcp-oauth.js";
 import { revokeSessionsIssuedBefore } from "./session.js";
 
@@ -226,6 +227,8 @@ export async function cancelPasskeyRecovery(env, accountKey, email) {
 
 export async function sendPasskeyNotice(env, email, subject, lines) {
   if (!env.RESEND_API_KEY || !email) return;
+  // The "email" kill switch (features.js).
+  if (featureDisabled(env, "email")) return;
   try {
     const response = await fetch(RESEND_API_URL, {
       method: "POST",
