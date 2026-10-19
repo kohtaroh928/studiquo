@@ -503,7 +503,11 @@ struct NoteEditorView: View {
                 textDocuments: textDocuments.filter { !$0.isTrashed },
                 onSelectNotebook: { chooseSplitMaterial(.notebook($0)) },
                 onSelectDeck: { chooseSplitMaterial(.flashcardDeck($0)) },
-                onSelectDocument: { chooseSplitMaterial(.document($0)) }
+                onSelectDocument: { chooseSplitMaterial(.document($0)) },
+                onSelectAIChat: { chooseSplitMaterial(.ai($0)) },
+                friendStore: friendStore,
+                onSelectFriend: { chooseSplitMaterial(.friend($0.id)) },
+                onSelectGroup: { chooseSplitMaterial(.group($0.roomID)) }
             )
         }
         .sheet(isPresented: Binding(
@@ -518,7 +522,11 @@ struct NoteEditorView: View {
                     title: "資料を入れ替える",
                     onSelectNotebook: { replacePaneMaterial(.notebook($0), in: pane) },
                     onSelectDeck: { replacePaneMaterial(.flashcardDeck($0), in: pane) },
-                    onSelectDocument: { replacePaneMaterial(.document($0), in: pane) }
+                    onSelectDocument: { replacePaneMaterial(.document($0), in: pane) },
+                    onSelectAIChat: { replacePaneMaterial(.ai($0), in: pane) },
+                    friendStore: friendStore,
+                    onSelectFriend: { replacePaneMaterial(.friend($0.id), in: pane) },
+                    onSelectGroup: { replacePaneMaterial(.group($0.roomID), in: pane) }
                 )
             }
         }
@@ -581,7 +589,7 @@ struct NoteEditorView: View {
             )
         }
         .sheet(isPresented: $showsImagePicker) {
-            PhotoPickerSheet { data in
+            PhotoPasteSheet { data in
                 showsImagePicker = false
                 guard let data else { return }
                 Task { await addImageElement(from: data) }
@@ -1225,7 +1233,7 @@ struct NoteEditorView: View {
         switch splitMode {
         case .single:
             primaryPane
-                .overlay(alignment: .topTrailing) { paneReplaceButton(for: .primary) }
+                .overlay(alignment: .topTrailing) { paneReplaceOverlay(for: .primary) }
 
         case .horizontal, .vertical:
             let isHorizontal = splitMode == .horizontal
@@ -1265,7 +1273,7 @@ struct NoteEditorView: View {
             Group {
                 if pane == .primary { primaryPane } else { secondaryPane }
             }
-            .overlay(alignment: .topTrailing) { paneReplaceButton(for: pane) }
+            .overlay(alignment: .topTrailing) { paneReplaceOverlay(for: pane) }
             .overlay { panePickOverlay(for: pane) }
         }
     }
@@ -1299,23 +1307,98 @@ struct NoteEditorView: View {
         }
     }
 
-    private func paneReplaceButton(for pane: ActivePane) -> some View {
-        Button {
-            paneReplaceTarget = pane
-        } label: {
-            Image(systemName: "arrow.left.arrow.right.square")
-                .font(.body.weight(.semibold))
-                .frame(width: 32, height: 32)
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
+    /// What a pane is showing, in the order `primaryPane` / `secondaryPane`
+    /// pick their content. It decides where the material switch button sits.
+    private enum PaneBodyKind { case photoStudy, aiSwap, material, web, aiChat, friend, group, flashcard, note, empty }
+
+    private func paneBodyKind(_ pane: ActivePane) -> PaneBodyKind {
+        if photoStudyPane == pane { return .photoStudy }
+        if aiSwapPane == pane { return .aiSwap }
+        if pane == .primary {
+            if primaryTemporaryChatMaterial != nil { return .material }
+            if primaryShowsWeb { return .web }
+            if primaryShowsAIChat { return .aiChat }
+            if primaryFriendChat != nil { return .friend }
+            if primaryGroupChat != nil { return .group }
+            if primaryFlashcardDeck != nil { return .flashcard }
+            return .note
         }
-        .buttonStyle(.plain)
-        // Sits in the 38pt title bar, left of the PDF summary (sparkles) button
-        // that occupies the trailing 12 + 32pt.
-        .padding(.top, 3)
-        .padding(.trailing, 12 + 32 + 6)
-        .accessibilityLabel("このペインの資料を入れ替える")
-        .accessibilityIdentifier("pane-replace-\(pane == .primary ? "primary" : "secondary")")
+        if secondaryTemporaryChatMaterial != nil { return .material }
+        if secondaryShowsWeb { return .web }
+        if secondaryShowsAIChat { return .aiChat }
+        if secondaryFriendChat != nil { return .friend }
+        if secondaryGroupChat != nil { return .group }
+        if secondaryFlashcardDeck != nil { return .flashcard }
+        return secondaryNotebook != nil ? .note : .empty
+    }
+
+    /// Panes whose own header carries the switch button (left of its close
+    /// button), so no floating copy is drawn over them.
+    private func paneEmbedsReplaceButton(_ pane: ActivePane) -> Bool {
+        switch paneBodyKind(pane) {
+        case .photoStudy, .material, .web, .flashcard: return true
+        default: return false
+        }
+    }
+
+    @ViewBuilder
+    private func paneReplaceOverlay(for pane: ActivePane) -> some View {
+        if !paneEmbedsReplaceButton(pane) {
+            let insets = paneReplaceInsets(for: pane)
+            paneReplaceButton(for: pane)
+                .padding(.top, insets.top)
+                .padding(.trailing, insets.trailing)
+        }
+    }
+
+    /// Notes with no title bar put the button as far from the right edge as
+    /// the page-list toggle is from the left one. With a title bar it sits
+    /// in the bar, beside the PDF summary button when there is one.
+    private func paneReplaceInsets(for pane: ActivePane) -> (top: CGFloat, trailing: CGFloat) {
+        switch paneBodyKind(pane) {
+        case .note:
+            let shown = pane == .primary ? displayedPrimaryNotebook : secondaryNotebook
+            let hasTitleBar = pane == .secondary || splitMode != .single || shown?.containsPDF == true
+            guard hasTitleBar else { return (8, 8) }
+            return (3, shown?.containsPDF == true ? 12 + 32 + 6 : 12)
+        case .empty:
+            return (8, 8)
+        default:
+            // Sits in the 38pt title bar, left of the PDF summary (sparkles)
+            // button that occupies the trailing 12 + 32pt.
+            return (3, 12 + 32 + 6)
+        }
+    }
+
+    private func paneReplaceButton(for pane: ActivePane) -> some View {
+        PaneReplaceButton(pane: pane == .primary ? "primary" : "secondary") {
+            paneReplaceTarget = pane
+        }
+    }
+
+    /// The same switch button for a header that has its own close button.
+    private func paneHeaderReplaceButton(for pane: ActivePane) -> AnyView {
+        AnyView(paneReplaceButton(for: pane))
+    }
+
+    /// Closes a flashcard pane. In a split, the other pane's material stays
+    /// as the single screen; with one pane there is nothing to close.
+    private func closeFlashcardPane(_ pane: ActivePane) {
+        guard splitMode != .single else { return }
+        if pane == .primary { swapSplitPanes() }
+        dismissPhotoStudy(restorePreviousLayout: false)
+        pendingPaneTarget = nil
+        discardExternalFile(in: .secondary)
+        secondaryNotebook = nil
+        secondaryFlashcardDeck = nil
+        secondaryShowsWeb = false
+        secondaryShowsAIChat = false
+        secondaryChatTarget = nil
+        secondaryTemporaryChatMaterial = nil
+        splitMode = .single
+        splitRatio = 0.5
+        pendingSplitMode = nil
+        activePane = .primary
     }
 
     /// Swaps `pane`'s material for the picked one and gives it a tab in the
@@ -1325,8 +1408,16 @@ struct NoteEditorView: View {
         // One pane: the home screen owns what is open, so let it switch the
         // material (and add its tab) the way a tab tap does.
         if splitMode == .single {
-            recordSingleMaterialReplacement(to: target)
-            NotificationCenter.default.post(name: Notification.Name("StudiquoReplaceSingleMaterial"), object: target)
+            switch target {
+            case .notebook, .flashcardDeck, .document:
+                recordSingleMaterialReplacement(to: target)
+                NotificationCenter.default.post(name: Notification.Name("StudiquoReplaceSingleMaterial"), object: target)
+            default:
+                // Chats are not tabs of the home screen, so this editor
+                // shows them itself.
+                applyPaneTarget(target, to: .primary)
+                activePane = .primary
+            }
             return
         }
         applyPaneTarget(target, to: pane)
@@ -1453,7 +1544,7 @@ struct NoteEditorView: View {
             } else if let material = primaryTemporaryChatMaterial {
                 temporaryChatMaterialView(material, pane: .primary)
             } else if primaryShowsWeb {
-                WebSearchPane(browser: webBrowser, onTabDrop: { handlePaneDrop($0, target: .primary) })
+                WebSearchPane(browser: webBrowser, onReplace: { paneReplaceTarget = .primary }, onTabDrop: { handlePaneDrop($0, target: .primary) })
             } else if primaryShowsAIChat {
                 AIChatPanel(
                     store: aiChat,
@@ -1493,6 +1584,8 @@ struct NoteEditorView: View {
                 FlashcardPaneView(
                     deck: primaryFlashcardDeck,
                     onHome: onHome,
+                    onReplace: { paneReplaceTarget = .primary },
+                    onClose: splitMode == .single ? nil : { closeFlashcardPane(.primary) },
                     startsWithMistakeReview: primaryFlashcardDeck === initialFlashcardDeck && initialFlashcardStartsWithMistakeReview
                 )
                 .simultaneousGesture(TapGesture().onEnded { activePane = .primary })
@@ -1548,7 +1641,7 @@ struct NoteEditorView: View {
                     return handlePaneDrop(value, target: .secondary)
                 }
         } else if secondaryShowsWeb {
-            WebSearchPane(browser: webBrowser, onTabDrop: { handlePaneDrop($0, target: .secondary) })
+            WebSearchPane(browser: webBrowser, onReplace: { paneReplaceTarget = .secondary }, onTabDrop: { handlePaneDrop($0, target: .secondary) })
                 .dropDestination(for: String.self) { items, _ in
                     guard let value = items.first else { return false }
                     return handlePaneDrop(value, target: .secondary)
@@ -1589,7 +1682,12 @@ struct NoteEditorView: View {
             )
             .id("note-group-\(secondaryGroup.roomID)")
         } else if let secondaryFlashcardDeck {
-            FlashcardPaneView(deck: secondaryFlashcardDeck, onHome: onHome)
+            FlashcardPaneView(
+                deck: secondaryFlashcardDeck,
+                onHome: onHome,
+                onReplace: { paneReplaceTarget = .secondary },
+                onClose: { closeFlashcardPane(.secondary) }
+            )
                 .simultaneousGesture(TapGesture().onEnded { activePane = .secondary })
             .dropDestination(for: String.self) { items, _ in
                 guard let value = items.first else { return false }
@@ -1658,13 +1756,15 @@ struct NoteEditorView: View {
         if let assetIdentifier = selectedPhotoStudyAssetID {
             PhotoStudyPaneViewer(
                 assetIdentifier: assetIdentifier,
-                onClose: { selectedPhotoStudyAssetID = nil }
+                onClose: { selectedPhotoStudyAssetID = nil },
+                headerAccessory: photoStudyPane.map { paneHeaderReplaceButton(for: $0) }
             )
             .transition(.opacity)
         } else {
             PhotoStudyLibraryView(
                 onSelect: { selectedPhotoStudyAssetID = $0 },
-                onClose: { dismissPhotoStudy(restorePreviousLayout: true) }
+                onClose: { dismissPhotoStudy(restorePreviousLayout: true) },
+                headerAccessory: photoStudyPane.map { paneHeaderReplaceButton(for: $0) }
             )
         }
     }
@@ -1679,6 +1779,7 @@ struct NoteEditorView: View {
                     .font(.headline)
                     .lineLimit(1)
                 Spacer()
+                paneReplaceButton(for: pane)
                 Button {
                     if case .externalFile = material, pane == .secondary {
                         // The file was the only thing in the right pane, so
@@ -1819,7 +1920,7 @@ struct NoteEditorView: View {
                 }
                 if let page = currentPrimaryPage, page.backgroundImageData != nil {
                     Button {
-                        page.backgroundImageData = nil
+                        page.removeBackground()
                         page.notebook?.refreshLibraryMetadata()
                         notebook.updatedAt = .now
                     } label: {
@@ -2080,9 +2181,6 @@ struct NoteEditorView: View {
                 toolStripButton("時間", icon: "timer") {
                     showsTimeTool = true
                 }
-                toolStripButton("関数電卓", icon: "123.rectangle.fill", isActive: showsCalculator) {
-                    showsCalculator.toggle()
-                }
                 if timeToolModel.showsToolbarTime {
                     TimelineView(.periodic(from: .now, by: 0.1)) { context in
                         Button {
@@ -2100,6 +2198,9 @@ struct NoteEditorView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                }
+                toolStripButton("関数電卓", icon: "123.rectangle.fill", isActive: showsCalculator) {
+                    showsCalculator.toggle()
                 }
                 Menu {
                     ForEach([PageElementKind.rectangle, .ellipse]) { kind in
@@ -4060,9 +4161,11 @@ struct NoteEditorView: View {
         guard let image = UIImage(data: data),
               let page = currentPrimaryPage else { return }
         let encoded = image.jpegData(compressionQuality: 0.92)
-        page.backgroundImageData = encoded
-        page.pageWidth = max(100, image.size.width)
-        page.pageHeight = max(100, image.size.height)
+        page.replaceBackground(
+            imageData: encoded,
+            width: max(100, image.size.width),
+            height: max(100, image.size.height)
+        )
         page.notebook?.refreshLibraryMetadata()
         notebook.updatedAt = .now
     }
@@ -4269,6 +4372,62 @@ private struct PhotoPickerSheet: UIViewControllerRepresentable {
             }
             provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
                 DispatchQueue.main.async { self.onPick(data) }
+            }
+        }
+    }
+}
+
+/// Switches the material a pane shows. In a header it sits just left of the
+/// close button; `pane` only names the accessibility identifier.
+private struct PaneReplaceButton: View {
+    let pane: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.left.arrow.right.square")
+                .font(.body.weight(.semibold))
+                .frame(width: 32, height: 32)
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("このペインの資料を入れ替える")
+        .accessibilityIdentifier("pane-replace-\(pane)")
+    }
+}
+
+/// Photo tool flow: picking a photo only previews it; it reaches the note
+/// when the user taps 貼り付ける. "選び直す" returns to the library.
+private struct PhotoPasteSheet: View {
+    /// Called with the image data to paste, or nil if the user cancelled.
+    let onFinish: (Data?) -> Void
+    @State private var pickedData: Data?
+
+    var body: some View {
+        if let pickedData, let image = UIImage(data: pickedData) {
+            NavigationStack {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .navigationTitle("この写真を貼り付けますか?")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("選び直す") { self.pickedData = nil }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("貼り付ける") { onFinish(pickedData) }
+                                .fontWeight(.semibold)
+                                .accessibilityIdentifier("note-photo-paste-button")
+                        }
+                    }
+            }
+        } else {
+            PhotoPickerSheet { data in
+                if let data { pickedData = data } else { onFinish(nil) }
             }
         }
     }
@@ -5387,10 +5546,23 @@ private final class WebBrowserModel: NSObject, ObservableObject, WKNavigationDel
 private struct WebSearchPane: View {
     @ObservedObject var browser: WebBrowserModel
     /// A tab dropped on the page: asks the editor to show that material here instead.
+    var onReplace: (() -> Void)? = nil
     var onTabDrop: ((String) -> Bool)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Label("Google検索", systemImage: "globe")
+                    .font(.headline)
+                Spacer()
+                if let onReplace {
+                    PaneReplaceButton(pane: "web", action: onReplace)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(.regularMaterial)
+
             HStack(spacing: 8) {
                 Button(action: browser.goBack) {
                     Image(systemName: "chevron.left")
@@ -5803,12 +5975,22 @@ private struct PaneLayout {
 private struct FlashcardPaneView: View {
     @Bindable var deck: FlashcardDeck
     let onHome: () -> Void
+    var onReplace: (() -> Void)?
+    var onClose: (() -> Void)?
     var startsWithMistakeReview = false
     @State private var mode: FlashcardPaneMode
 
-    init(deck: FlashcardDeck, onHome: @escaping () -> Void, startsWithMistakeReview: Bool = false) {
+    init(
+        deck: FlashcardDeck,
+        onHome: @escaping () -> Void,
+        onReplace: (() -> Void)? = nil,
+        onClose: (() -> Void)? = nil,
+        startsWithMistakeReview: Bool = false
+    ) {
         self.deck = deck
         self.onHome = onHome
+        self.onReplace = onReplace
+        self.onClose = onClose
         self.startsWithMistakeReview = startsWithMistakeReview
         _mode = State(initialValue: deck.sortedCards.isEmpty && !startsWithMistakeReview ? .create : .study)
     }
@@ -5823,10 +6005,23 @@ private struct FlashcardPaneView: View {
                     Text("\(deck.sortedCards.count)枚")
                         .font(.caption.monospacedDigit())
                 }
+                if let onReplace {
+                    PaneReplaceButton(pane: "flashcard", action: onReplace)
+                }
+                if let onClose {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("閉じる")
+                    .accessibilityIdentifier("flashcard-pane-close")
+                }
             }
             .padding(.horizontal, 14)
-            .frame(height: 38)
-            .background(.bar)
+            .frame(height: 44)
+            .background(.regularMaterial)
 
             Picker("モード", selection: $mode) {
                 ForEach(FlashcardPaneMode.allCases) { Text($0.title).tag($0) }
@@ -6936,7 +7131,11 @@ struct PageCanvasContainer: View {
                 Theme.Palette.canvas
                 ZStack {
                     ZStack {
-                        if let backgroundImage {
+                        if let pdfData = page.backgroundPDFData {
+                            PageNativePDFView(pdfData: pdfData)
+                                .frame(width: displaySize.width, height: displaySize.height)
+                                .modifier(ConditionalColorInvert(enabled: usesDarkPageDisplay))
+                        } else if let backgroundImage {
                             Image(uiImage: backgroundImage)
                                 .resizable()
                                 .scaledToFit()
@@ -8887,6 +9086,7 @@ private struct PageSidebar: View {
     private func duplicate(_ source: NotePage) {
         let page = NotePage(order: notebook.sortedPages.count, backgroundImageData: source.backgroundImageData, pageWidth: source.pageWidth, pageHeight: source.pageHeight)
         page.drawingData = source.drawingData
+        page.backgroundPDFData = source.backgroundPDFData
         page.templateRawValue = source.templateRawValue
         page.title = source.title
         for sourceElement in source.allElements {
