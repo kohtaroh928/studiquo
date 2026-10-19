@@ -362,9 +362,54 @@ final class AIChatStore: ObservableObject {
             return
         }
         let sentAttachments = overrideAttachments ?? attachments[draftKey] ?? []
+        _ = sendMessage(
+            trimmed,
+            attachments: sentAttachments,
+            draftKey: draftKey,
+            consumesComposerState: true,
+            noteContext: noteContext
+        )
+    }
+
+    /// Sends an edited copy of a previous prompt as the newest turn.
+    ///
+    /// Rewriting history must not discard a student's current composer: the
+    /// draft, staged attachments and explicit context stay untouched. Old
+    /// turns also remain in the conversation; this app has no branch model
+    /// with which to preserve ChatGPT-style alternate histories safely.
+    @discardableResult
+    func resend(_ text: String, noteContext: String = "") -> Bool {
+        guard selectedThread != nil else { return false }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        // Same consent step as `send`: ask first and resend once they allow.
+        if !AIDataDisclosure.hasBeenAcknowledged, !AIDataDisclosure.hasDeclinedInChat {
+            pendingConsentSend = { [weak self] in
+                self?.resend(text, noteContext: noteContext)
+            }
+            return false
+        }
+        return sendMessage(
+            trimmed,
+            attachments: [],
+            draftKey: activeDraftKey,
+            consumesComposerState: false,
+            noteContext: noteContext
+        )
+    }
+
+    @discardableResult
+    private func sendMessage(
+        _ trimmed: String,
+        attachments sentAttachments: [AIChatAttachment],
+        draftKey: String,
+        consumesComposerState: Bool,
+        noteContext: String
+    ) -> Bool {
+        guard !trimmed.isEmpty else { return false }
         let thread = threadForSending()
         let threadKey = Self.threadKey(thread)
-        guard !respondingThreadIDs.contains(threadKey) else { return }
+        guard !respondingThreadIDs.contains(threadKey) else { return false }
 
         let userMessage = AIChatMessage(text: AIChatFormatting.messageText(trimmed, with: sentAttachments), role: .user)
         userMessage.thread = thread
@@ -380,11 +425,9 @@ final class AIChatStore: ObservableObject {
         reply.thread = thread
         thread.addMessage(reply)
         thread.updatedAt = .now
-        drafts[draftKey] = ""
-        drafts[threadKey] = ""
-        attachments[draftKey] = []
-        attachments[threadKey] = []
-        let contextOverride = contextOverrides[draftKey] ?? contextOverrides[threadKey] ?? ""
+        let contextOverride = consumesComposerState
+            ? (contextOverrides[draftKey] ?? contextOverrides[threadKey] ?? "")
+            : ""
         let attachmentContext = sentAttachments
             .map { attachment -> String in
                 let text = attachment.contextText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -393,8 +436,14 @@ final class AIChatStore: ObservableObject {
             }
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
-        contextOverrides[draftKey] = nil
-        contextOverrides[threadKey] = nil
+        if consumesComposerState {
+            drafts[draftKey] = ""
+            drafts[threadKey] = ""
+            attachments[draftKey] = []
+            attachments[threadKey] = []
+            contextOverrides[draftKey] = nil
+            contextOverrides[threadKey] = nil
+        }
         try? modelContext.save()
         loadThreads()
         selectedThread = thread
@@ -453,6 +502,7 @@ final class AIChatStore: ObservableObject {
             thread.updatedAt = .now
             try? modelContext.save()
         }
+        return true
     }
 
     /// Marks a proof, from whatever the student handed over.
