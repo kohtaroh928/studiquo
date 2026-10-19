@@ -153,7 +153,8 @@ enum NotebookBackupService {
     static func restore(from url: URL) -> Notebook? {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: url),
+        guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxBackupFileBytes) == nil,
+              let data = try? Data(contentsOf: url),
               let archive = try? JSONDecoder().decode(Archive.self, from: data) else { return nil }
         let notebook = Notebook(title: archive.title)
         notebook.folderName = archive.folderName
