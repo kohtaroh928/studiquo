@@ -23,7 +23,7 @@ struct NotebookLockState {
         if !success {
             faceIDMessage = "認証できませんでした。もう一度お試しください"
         } else if !decrypted {
-            faceIDMessage = "ノートの内容を復号できませんでした"
+            faceIDMessage = "ノートの内容を復号できませんでした。別の端末で保護したノートの鍵は、届くまでしばらくかかることがあります。時間をおいてもう一度お試しください。"
         } else {
             faceIDMessage = "認証してノートを開いてください"
         }
