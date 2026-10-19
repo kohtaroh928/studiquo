@@ -17,6 +17,9 @@ final class AIChatLocalizationTests: XCTestCase {
         XCTAssertEqual(String(localized: "生成を止める", bundle: en), "Stop Generating")
         XCTAssertEqual(String(localized: "新しいトーク", bundle: en), "New Chat")
         XCTAssertEqual(String(localized: "コピー", bundle: en), "Copy")
+        XCTAssertEqual(String(localized: "コピーしました", bundle: en), "Copied")
+        XCTAssertEqual(String(localized: "書き直す", bundle: en), "Edit")
+        XCTAssertEqual(String(localized: "メッセージを書き直す", bundle: en), "Edit message")
     }
 
     func testAnswerReadyNotificationHasEnglishText() throws {

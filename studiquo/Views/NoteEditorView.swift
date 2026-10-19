@@ -3031,6 +3031,8 @@ struct NoteEditorView: View {
         // clearing the split here also discarded an in-flight snippet
         // preview from the composer.
         let keepsCompanionSplit = photoStudyPane != nil
+            || primaryShowsAIChat
+            || secondaryShowsAIChat
             || primaryChatTarget != nil
             || secondaryChatTarget != nil
         if keepsCompanionSplit {
