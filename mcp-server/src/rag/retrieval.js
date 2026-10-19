@@ -13,6 +13,7 @@ import { sourceQualification, sourceContextColumn, referencesAuthorized } from "
 import { LIMITS } from "./limits.js";
 import { stripInvisible } from "./sanitize.js";
 import { countInjectionHints } from "./injection-hints.js";
+import { redactPII } from "./redact-pii.js";
 import { emptyRetrieval } from "./contract.js";
 async function retrieveInternal(env, session, payload, deadline) {
   if (env.RAG_ENABLED !== "true") return emptyRetrieval("disabled");
@@ -67,7 +68,7 @@ async function retrieveInternal(env, session, payload, deadline) {
             return env.RAG_VECTORIZE.query(v, {
               topK: LIMITS.searchTopK,
               filter: { accountKey: key, ...scope.metadata },
-              returnMetadata: "none",
+              returnMetadata: "indexed", // accountKey is an indexed property; checked below as a second fence
             });
           }),
           boundedSearch(async () => {
@@ -86,7 +87,11 @@ async function retrieveInternal(env, session, payload, deadline) {
         // owner-scoped evidence. Vector hits still require D1 authorization.
         const vectors = vectorResult.status === "fulfilled" ? vectorResult.value : null;
         const keywords = keywordResult.status === "fulfilled" ? keywordResult.value : [];
+        // The account filter is the first fence and the owner-scoped D1 read is the last.
+        // This is the middle one: a match that reports a different account is dropped
+        // before it is even looked up. Metadata is never trusted to ALLOW anything.
         const ids = (vectors?.matches ?? [])
+          .filter((v) => v?.metadata?.accountKey === undefined || v.metadata.accountKey === key)
           .map((v) => v.id)
           .filter((id) => typeof id === "string")
           .slice(0, LIMITS.searchTopK);
@@ -142,6 +147,7 @@ async function retrieveInternal(env, session, payload, deadline) {
       /* RRF remains usable if reranking is unavailable; no content logs. */
     }
     const references = [];
+    let redacted = 0; // identifiers/secrets masked in excerpts (count only, for the log)
     let hints = 0; // instruction-like phrases found in excerpts (count only, for the log)
     let sanitized = 0; // hidden characters removed from excerpts (count only, for the log)
     let truncated = false; // an excerpt was cut, or a selected one skipped, by a size budget
@@ -160,8 +166,10 @@ async function retrieveInternal(env, session, payload, deadline) {
       if (!neighbors.some((n) => n.chunk_id === hit.chunk_id)) return null; // Deletion during retrieval.
       const cleaned = stripInvisible(neighbors.map((n) => n.text).join("\n"));
       sanitized += cleaned.removed;
-      const joined = cleaned.text;
-      hints += countInjectionHints(joined);
+      hints += countInjectionHints(cleaned.text);
+      const masked = redactPII(cleaned.text);
+      redacted += masked.total;
+      const joined = masked.text;
       const cut = Math.min(LIMITS.excerptChars, budget);
       if (joined.length > cut) truncated = true;
       const text = joined.slice(0, cut);
@@ -222,6 +230,7 @@ async function retrieveInternal(env, session, payload, deadline) {
     Object.defineProperty(result, "truncated", { value: truncated });
     Object.defineProperty(result, "sanitized", { value: sanitized });
     Object.defineProperty(result, "injectionHints", { value: hints });
+    Object.defineProperty(result, "redacted", { value: redacted });
     return result;
   } catch {
     return emptyRetrieval("error");

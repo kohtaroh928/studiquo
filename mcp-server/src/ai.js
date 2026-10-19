@@ -269,6 +269,7 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
       truncated: rag.truncated ?? null,
       sanitized: rag.sanitized ?? null,
       injectionHints: rag.injectionHints ?? null,
+      redacted: rag.redacted ?? null,
       elapsedMs: Date.now() - retrievalStartedAt,
     }));
   }

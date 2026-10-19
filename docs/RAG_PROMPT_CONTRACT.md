@@ -71,6 +71,8 @@
 - 添付ノート（`noteContext`、友達の共有ノートを含む）がある通常チャットでも、同じリンク除去をかける。
 - 内部の識別子（64桁のchunk ID、`sourceId=…`・`chunk_id: …`の形）も回答から除く。出典はサーバーが構造化データとして別に付けるため。
 - 年齢帯が`teen`のOpenAI回答は、完成した後にモデレーションにかけ、該当すれば回答の末尾に注意文を足してログに1行出す（本文は出さない）。すでに画面に出た文字は取り消せない。成人は対象外。
+- 検索結果の個人識別子・秘密（メール、電話、Luhnを満たすカード番号、マイナンバー表記付き、鍵やトークン）は、`rag/redact-pii.js`で伏せ字にしてから送る。数だけ`redacted`としてログに出る。保存された本文は変えない。
+- ベクトル検索の結果が別アカウントの`accountKey`を報告したら、D1を引く前に捨てる（アカウントフィルタ、この確認、D1の所有者条件の3段）。共有資料は未提供で、解禁条件は[RAG_SHARED_SOURCES_DESIGN.md](RAG_SHARED_SOURCES_DESIGN.md)。
 - 抜粋に命令らしい語句があれば`injectionHints`としてログに数だけ出す（`rag/injection-hints.js`）。本文は変えない。
 - 環境変数`RAG_CONTEXT_AS_INPUT=true`にすると、抜粋（`context`）を`instructions`ではなく、利用者の最後の発話の直前の別の入力項目として送る（回答方針の文面は`instructions`に残る）。**既定は未設定（従来の配置）**。LLMの見え方が変わるため、§7に従い旧版・新版を同じ入力で比較評価してから有効にする。実API評価は[RAG_INJECTION_LIVE_REPORT.md](RAG_INJECTION_LIVE_REPORT.md)。両配置とも攻撃への服従は0/44で差は検出できず、既定は現行のまま。
 - 送信直前の再認可（`revalidateRetrieval`）はRAG本体の担当で、プロンプト側に影響しない。
