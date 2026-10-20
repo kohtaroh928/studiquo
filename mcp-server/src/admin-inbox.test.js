@@ -3,7 +3,7 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import worker from "./app.js";
+import worker from "./app.ts";
 import { compareVersions } from "./app-errors.ts";
 import { INBOX_SCRIPT } from "./admin-inbox-ui.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";

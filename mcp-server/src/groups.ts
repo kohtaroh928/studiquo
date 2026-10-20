@@ -111,7 +111,7 @@ async function toClientGroup(env: Env, roomID, info) {
 }
 
 // ChatRoom throws plain Error(...) for every failure case — translated here
-// to a proper response instead of propagating uncaught to app.js's generic
+// to a proper response instead of propagating uncaught to app.ts's generic
 // 500. Distinct from chat.ts's own roomForbiddenResponse: a group room
 // never throws "Blocked"/"Closed", and throws a few reasons a direct room
 // never does.

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import worker from "./app.js";
+import worker from "./app.ts";
 import { PRODUCT_BILLING_MONTHS } from "./admin.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
 

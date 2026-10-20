@@ -484,7 +484,7 @@ export async function deleteAccount(env: Env, canonicalSub) {
 
   // Once more just before the account counts as deleted: an id request that was
   // already past its session check when the first erase ran may have made a new
-  // one since (app.js rechecks too; this closes what is left).
+  // one since (app.ts rechecks too; this closes what is left).
   await eraseLibraryIDs();
 
   // The finished marker keeps only hashes of the identities: an email address

@@ -20,7 +20,7 @@ const deadline = async (promise, label) => {
   try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} timed out`)), 30000); })]); } finally { clearTimeout(timer); }
 };
 export async function createHarness() {
-  const bundled = await build({ entryPoints: [resolve(root, 'mcp-server/src/worker.js')], bundle: true, write: false, format: 'esm', platform: 'neutral', mainFields: ['browser', 'module', 'main'], conditions: ['workerd', 'worker', 'browser'], external: ['cloudflare:workers', 'node:*'], logLevel: 'silent' });
+  const bundled = await build({ entryPoints: [resolve(root, 'mcp-server/src/worker.ts')], bundle: true, write: false, format: 'esm', platform: 'neutral', mainFields: ['browser', 'module', 'main'], conditions: ['workerd', 'worker', 'browser'], external: ['cloudflare:workers', 'node:*'], logLevel: 'silent' });
   const stats = { outboundBlocked: 0 };
   const options = {
     host: '127.0.0.1', port: 0, cf: false, kvPersist: false, d1Persist: false, durableObjectsPersist: false, cachePersist: false, modules: true, script: bundled.outputFiles[0].text,

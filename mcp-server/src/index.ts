@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod/v4";
 
 const snapshotPath = resolve(process.env.STUDIQUO_SNAPSHOT ?? "./studiquo-mcp-snapshot.json");
@@ -23,7 +24,7 @@ async function appendAction(action) {
   await writeFile(actionsPath, JSON.stringify(actions, null, 2), "utf8");
 }
 
-function result(value) {
+function result(value: unknown): CallToolResult {
   return {
     content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
     structuredContent: { result: value }

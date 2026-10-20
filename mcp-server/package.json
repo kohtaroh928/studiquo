@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "start": "node src/index.js",
+    "start": "node src/index.ts",
     "typecheck": "tsc --noEmit",
-    "smoke": "node src/smoke.js",
+    "smoke": "node src/smoke.ts",
     "test": "node --test \"src/*.test.js\" \"src/*.test.ts\"",
     "test:ai": "node --test src/ai.test.js",
     "security:sast": "python3 ../security/sast/run.py",
