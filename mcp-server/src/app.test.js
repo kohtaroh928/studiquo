@@ -11,8 +11,8 @@ import { externalSession } from "./mcp-oauth.js";
 import { reserveAttempt, refundAttempt, trustPair } from "./login-throttle.js";
 import { touchSeenContext } from "./login-monitor.js";
 import { argon2QueueState, engine } from "./local-auth.js";
-import { accountGenerationMethods } from "./test-account-generations.js";
-import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.js";
+import { accountGenerationMethods } from "./test-account-generations.ts";
+import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
 
 // Regression coverage for "logging out doesn't revoke the cloud sync token":
 // once a token is revoked, it must be rejected everywhere it used to work,

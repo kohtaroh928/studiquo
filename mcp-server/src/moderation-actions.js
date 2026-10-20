@@ -7,7 +7,7 @@
 //   GET  /api/admin/accounts/suspended
 //   GET  /api/admin/audit-log
 // See docs/RUNBOOK.md RB-17.
-import { json, readJSONLimited } from "./http.js";
+import { json, readJSONLimited } from "./http.ts";
 import { auditAdmin } from "./audit.js";
 import { SUSPENSION_PREFIX, CHAT_SUSPENSION_PREFIX } from "./session.js";
 import { sendPush } from "./push.js";

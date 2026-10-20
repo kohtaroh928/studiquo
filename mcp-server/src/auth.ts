@@ -5,7 +5,7 @@
 // separately-maintained copy of either function here would risk silently
 // breaking that assumption for just one endpoint.
 
-export function bearerToken(request) {
+export function bearerToken(request: Request): string | null {
   const match = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") ?? "");
   const token = match?.[1]?.trim() ?? "";
   return token.length >= 32 && token.length <= 256 ? token : null;
@@ -14,14 +14,14 @@ export function bearerToken(request) {
 // Compares two secrets without the comparison time depending on how many
 // leading characters match. Both sides are hashed first so the strings can be
 // any length, and the digests are compared over their full length.
-export async function secretsEqual(a, b) {
+export async function secretsEqual(a: unknown, b: unknown): Promise<boolean> {
   const [left, right] = await Promise.all([sha256Hex(String(a)), sha256Hex(String(b))]);
   let difference = 0;
   for (let i = 0; i < left.length; i++) difference |= left.charCodeAt(i) ^ right.charCodeAt(i);
   return difference === 0;
 }
 
-export async function sha256Hex(value) {
+export async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }

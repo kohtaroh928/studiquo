@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 import { resolveChatUserKey } from "./chat-identity.js";
-import { takeParsedBody, rememberParsedBody } from "./ai-body.js";
+import { takeParsedBody, rememberParsedBody } from "./ai-body.ts";
 import { callAnthropicChat, extractDeltaText } from "./anthropic.js";
 
 test("resolveChatUserKey falls back to tokenKey when USER_REGISTRY or sub is absent", async () => {

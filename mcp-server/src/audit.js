@@ -2,7 +2,7 @@
 // migrations/0007_moderation.sql). Written BEFORE the action, and a failed
 // write refuses the action: reading a person's report or pushing to every
 // device is not something that should be possible unrecorded.
-import { accessActor } from "./access.js";
+import { accessActor } from "./access.ts";
 
 const MAX_FIELD = 200;
 

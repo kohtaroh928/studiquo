@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isExpired } from "./token.js";
+import { isExpired } from "./token.ts";
 
 function tokenIssuedSecondsAgo(seconds) {
   const issuedAt = Math.floor(Date.now() / 1000) - seconds;

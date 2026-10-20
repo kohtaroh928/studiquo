@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
 import { compareVersions } from "./app-errors.js";
 import { INBOX_SCRIPT } from "./admin-inbox-ui.js";
-import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.js";
+import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
 
 // Same shape as admin.test.js's fake: a real in-memory SQLite database built
 // from the real migrations, behind the slice of D1's API the Worker uses.

@@ -4,7 +4,9 @@
 // (app-errors.js). Slack being unreachable must never fail the request that
 // triggered it: whatever it announces is already stored by the time this
 // runs, so a failure is only logged.
-export async function postSlackBlocks(env, blocks) {
+import type { Env } from "./env.ts";
+
+export async function postSlackBlocks(env: Env, blocks: unknown[]): Promise<void> {
   const webhookURL = env.SLACK_ISSUE_REPORT_WEBHOOK_URL;
   if (!webhookURL) return;
   try {

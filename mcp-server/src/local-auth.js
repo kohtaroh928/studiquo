@@ -14,7 +14,7 @@
 // back to code from before Argon2id existed would lock out every account
 // already rewritten. Turn it on in a second deploy once the first is stable.
 import { argon2idAsync } from "@noble/hashes/argon2.js";
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 
 const ACCOUNT_PREFIX = "account:local:";
 

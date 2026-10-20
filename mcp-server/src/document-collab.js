@@ -1,5 +1,5 @@
-import { blockedBetween } from "./block-check.js";
-import { json, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { blockedBetween } from "./block-check.ts";
+import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { sendPush } from "./push.js";
 import { roomMembershipKey } from "./document-room-store.js";
 

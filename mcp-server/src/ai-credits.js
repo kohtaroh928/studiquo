@@ -19,7 +19,7 @@
 // cannot be spent in one burst: calls per minute, credits per 5 hours, per
 // day (Japan time) and per month (Japan time). They are counted per account
 // (not per device or per session), under a hash of the account id.
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 
 export const DEFAULT_MODEL = "openai-luna";
 

@@ -2,22 +2,111 @@
 // `wrangler types`: most secrets and tuning values are set outside
 // wrangler.jsonc (`wrangler secret put`, the dashboard), so a generated file
 // would leave them out. Keep the bindings in step with wrangler.jsonc.
+import type { JWTVerifyGetKey } from "jose";
 
-/** The fixed-window limiters declared under `ratelimits` in wrangler.jsonc. */
-export type RateLimitBinding = RateLimit;
+// A Durable Object namespace whose stubs accept any method call. Each one gets
+// its class (DurableObjectNamespace<ChatRoom>) in the phase that converts it.
+export type UntypedNamespace = Omit<DurableObjectNamespace, "get" | "getByName" | "getExisting"> & {
+  get(id: DurableObjectId, options?: DurableObjectGetOptions): any;
+  getByName(name: string, options?: DurableObjectGetOptions): any;
+  getExisting(id: DurableObjectId, options?: DurableObjectGetOptions): any;
+};
 
 export interface Env {
-  // Storage and Durable Objects.
+  // Storage and Durable Objects. See UntypedNamespace above.
   STUDIQUO_DATA: KVNamespace;
+  STUDIQUO_SNAPSHOT?: KVNamespace;
+  STUDIQUO_ACTIONS?: KVNamespace;
   ADMIN_DB: D1Database;
-  CHAT_ROOM: DurableObjectNamespace;
-  USER_REGISTRY: DurableObjectNamespace;
-  DOCUMENT_ROOM: DurableObjectNamespace;
-  RATE_COUNTER: DurableObjectNamespace;
-  MCP_INBOX: DurableObjectNamespace;
+  CHAT_ROOM: UntypedNamespace;
+  USER_REGISTRY: UntypedNamespace;
+  DOCUMENT_ROOM: UntypedNamespace;
+  RATE_COUNTER: UntypedNamespace;
+  MCP_INBOX: UntypedNamespace;
 
-  // Every other binding or variable is optional text until the phase that
-  // converts the file reading it gives it a precise type. Rate limiters
-  // (RATE_LIMIT_*) are RateLimitBinding.
+  // Fixed-window limiters declared under `ratelimits` in wrangler.jsonc.
+  RATE_LIMIT_ADMIN_WEBHOOK?: RateLimit;
+  RATE_LIMIT_ANNOUNCEMENTS?: RateLimit;
+  RATE_LIMIT_APPLE_AUTH?: RateLimit;
+  RATE_LIMIT_APP_ERROR?: RateLimit;
+  RATE_LIMIT_ATTEST_ASSERT?: RateLimit;
+  RATE_LIMIT_ATTEST_CHALLENGE?: RateLimit;
+  RATE_LIMIT_ATTEST_REGISTER?: RateLimit;
+  RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD?: RateLimit;
+  RATE_LIMIT_CHAT_DEVICE_REGISTER?: RateLimit;
+  RATE_LIMIT_CHAT_FRIEND_ADD?: RateLimit;
+  RATE_LIMIT_CHAT_GROUP_ACTION?: RateLimit;
+  RATE_LIMIT_CHAT_MESSAGE?: RateLimit;
+  RATE_LIMIT_CHAT_REPORT?: RateLimit;
+  RATE_LIMIT_EMAIL_VERIFY_CONFIRM?: RateLimit;
+  RATE_LIMIT_EMAIL_VERIFY_SEND?: RateLimit;
+  RATE_LIMIT_GOOGLE_AUTH?: RateLimit;
+  RATE_LIMIT_ISSUE_REPORT?: RateLimit;
+  RATE_LIMIT_LOCAL_LOGIN?: RateLimit;
+  RATE_LIMIT_MCP_AUTHORIZE?: RateLimit;
+  RATE_LIMIT_MCP_PAIR?: RateLimit;
+  RATE_LIMIT_MCP_REGISTER?: RateLimit;
+  RATE_LIMIT_MCP_TOKEN?: RateLimit;
+  RATE_LIMIT_PASSKEY_LOGIN_OPTIONS?: RateLimit;
+  RATE_LIMIT_PASSKEY_LOGIN_VERIFY?: RateLimit;
+  RATE_LIMIT_PASSKEY_REGISTER_OPTIONS?: RateLimit;
+  RATE_LIMIT_PASSKEY_REGISTER_VERIFY?: RateLimit;
+  RATE_LIMIT_USAGE_EVENT?: RateLimit;
+
+  // Secrets and variables (wrangler.jsonc `vars`, `wrangler secret put`). Text unless noted.
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
+  SLACK_ISSUE_REPORT_WEBHOOK_URL?: string;
+  APNS_TEAM_ID?: string;
+  APNS_TOPIC?: string;
+  APNS_SANDBOX_KEY_ID?: string;
+  APNS_SANDBOX_AUTH_KEY?: string;
+  APNS_PRODUCTION_KEY_ID?: string;
+  APNS_PRODUCTION_AUTH_KEY?: string;
+  APNS_KEY_ID?: string;
+  APNS_AUTH_KEY?: string;
+  TOKEN_SIGNING_KEY?: string;
+  TOKEN_SIGNING_KEY_OLD?: string;
+  REVENUECAT_SECRET_API_KEY?: string;
+  REVENUECAT_WEBHOOK_SECRET?: string;
+  OPENAI_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
+  OPENAI_LUNA_MODEL?: string;
+  OPENAI_TERRA_MODEL?: string;
+  OPENAI_SOL_MODEL?: string;
+  OPENAI_ASTRA_MODEL?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
+  SNAPSHOT_ENCRYPTION_KEY?: string;
+  SNAPSHOT_ENCRYPTION_KEY_ID?: string;
+  SNAPSHOT_ENCRYPTION_KEY_OLD?: string;
+  SNAPSHOT_ENCRYPTION_KEY_OLD_ID?: string;
+  SNAPSHOT_ENCRYPTION_REQUIRED?: string;
+  APP_ATTEST_APP_ID?: string;
+  APP_ATTEST_MODE?: string;
+  APP_ATTEST_ALLOW_DEVELOP?: string;
+  PWNED_PASSWORDS_FETCH?: string;
+  PAYWALL_ENABLED?: string;
+  ARGON2_WRITE?: string;
+  SESSION_MAX_DAYS?: string;
+  PRIVACY_RETENTION_ENABLED?: string;
+  GLOBAL_GRADING_DAILY_LIMIT?: string;
+  GLOBAL_REVIEW_DAILY_LIMIT?: string;
+  GLOBAL_CHAT_DAILY_LIMIT?: string;
+  ANNOUNCEMENT_PUSH_BATCH?: string;
+  AI_RETRY_BASE_MS?: string;
+  REQUIRE_SIGNED_TOKENS?: string;
+  REQUIRE_ID_TOKEN_NONCE?: string;
+  MIN_APP_BUILD?: string;
+  MAINTENANCE_MODE?: string;
+  DISABLED_FEATURES?: string;
+  ALLOW_SANDBOX_PURCHASES?: string;
+  AI_PROVIDER_APPROVED?: string;
+  AI_MODERATION?: string;
+
+  // Cloudflare Access's key set; only tests supply it, otherwise it is fetched.
+  ACCESS_JWKS?: JWTVerifyGetKey;
+
+  // Anything not listed above is still untyped until every file is converted.
   [name: string]: unknown;
 }

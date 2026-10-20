@@ -13,10 +13,10 @@
 // storage, the admin form and the app's fallback logic are all driven by
 // language codes, not by a fixed pair.
 import { featureDisabled } from "./features.js";
-import { accessAllowed } from "./access.js";
+import { accessAllowed } from "./access.ts";
 import { auditAdmin } from "./audit.js";
-import { checkRateLimit, clientKey } from "./rate-limit.js";
-import { json, readJSONLimited, securityHeaders, htmlHeaders } from "./http.js";
+import { checkRateLimit, clientKey } from "./rate-limit.ts";
+import { json, readJSONLimited, securityHeaders, htmlHeaders } from "./http.ts";
 import { deviceStorageKey, loadDevices } from "./devices.js";
 import { sendPush } from "./push.js";
 

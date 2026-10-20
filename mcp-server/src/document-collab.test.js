@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "./app.js";
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 
 // Stands in for the real DocumentRoom Durable Object (document-room.js): one
 // shared participants/blocks/changes record per room id, persisting across

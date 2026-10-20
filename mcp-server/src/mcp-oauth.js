@@ -1,6 +1,6 @@
-import { bearerToken, secretsEqual, sha256Hex } from "./auth.js";
-import { json, readJSONLimited, readTextLimited } from "./http.js";
-import { checkRateLimit, clientKey } from "./rate-limit.js";
+import { bearerToken, secretsEqual, sha256Hex } from "./auth.ts";
+import { json, readJSONLimited, readTextLimited } from "./http.ts";
+import { checkRateLimit, clientKey } from "./rate-limit.ts";
 import { accountIsUnavailable } from "./session.js";
 import { resolveChatUserKey } from "./chat-identity.js";
 import { sendPush } from "./push.js";

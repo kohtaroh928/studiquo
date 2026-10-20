@@ -19,3 +19,10 @@
 
 - `scripts/vuln-watch`、`security/dast`(`.mjs`)、`security/sast/fixtures`(検査用の見本なので変換しない)。
 - フェーズ4では `security/dast/harness.mjs` が `mcp-server/src/worker.js` をバンドルしている点も直す。
+
+## 進み具合
+
+- フェーズ1 完了: `access` `ai-body` `auth` `block-check` `http` `jwks-verify` `library-id` `message-notification` `oauth-links` `pwned-passwords` `rate-limit` `slack` `token` `snapshot-crypto` `test-access` `test-account-generations`。他のファイルからの import は `.ts` に書き換え済み。
+- 他の末端ファイルの行き先: Durable Object 周り(`chat-room` `mcp-inbox` `counter-state` `document-room-store`)はフェーズ3、`anthropic` `openai` `entitlements` と管理画面の `*-ui` はフェーズ2、`index` `smoke` はフェーズ4。
+- `Env` の Durable Object は暫定の `UntypedNamespace`。フェーズ3で各クラスの型に置き換える。
+- ファイル名を書いた文書(`docs/`、`.claude/agents/`、`.codex/agents/`、`.agents/skills/`)は、全て移行し終わるフェーズ6でまとめて直す。

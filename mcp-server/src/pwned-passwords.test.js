@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isBreachedPassword } from "./pwned-passwords.js";
+import { isBreachedPassword } from "./pwned-passwords.ts";
 
 // SHA-1("password") = 5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8
 const PREFIX = "5BAA6";

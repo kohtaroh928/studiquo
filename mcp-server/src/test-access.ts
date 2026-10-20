@@ -6,7 +6,7 @@ export const ACCESS = { aud: "test-aud", team: "team.cloudflareaccess.com" };
 const keys = await generateKeyPair("ES256", { extractable: true });
 const jwks = createLocalJWKSet({ keys: [{ ...(await exportJWK(keys.publicKey)), alg: "ES256", use: "sig" }] });
 
-export function signAccessToken({ aud = ACCESS.aud, team = ACCESS.team } = {}) {
+export function signAccessToken({ aud = ACCESS.aud, team = ACCESS.team }: { aud?: string; team?: string } = {}): Promise<string> {
   return new SignJWT({}).setProtectedHeader({ alg: "ES256" })
     .setIssuer(`https://${team}`).setAudience(aud).setIssuedAt().setExpirationTime("1h").sign(keys.privateKey);
 }
