@@ -6,33 +6,33 @@ import {
 } from "./passkey-policy.ts";
 import { sha256Hex } from "./auth.ts";
 import { realSession } from "./session.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
   return partialEnv({
     RESEND_API_KEY: "test-key",
     STUDIQUO_DATA: {
-      async get(key, type: string) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
   });
 }
 
 function captureMail() {
-  const sent = [];
-  const original = mock.method(globalThis, "fetch", async (url, init: { body: string; }) => {
+  const sent: { url: string; body: any; }[] = [];
+  const original = mock.method(globalThis, "fetch", async (url: string, init: { body: string; }) => {
     sent.push({ url, body: JSON.parse(init.body) });
     return new Response("{}", { status: 200 });
   });
   return { sent, restore: () => original.mock.restore() };
 }
 
-async function addPasskey(env, id: string, { account = ACCOUNT, email = EMAIL, createdAt }: { account?: string; email?: string; createdAt?: number } = {}) {
+async function addPasskey(env: LooseEnv, id: string, { account = ACCOUNT, email = EMAIL, createdAt }: { account?: string; email?: string; createdAt?: number } = {}) {
   await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify({ id, email, ...(createdAt === undefined ? {} : { createdAt }) }));
   await indexAccountPasskey(env, account, email, id);
 }
@@ -63,7 +63,7 @@ test("the first sign-in without a passkey is refused, starts a recovery and tell
   try {
     await addPasskey(env, "cred-1");
     const now = Date.now();
-    const pending = [];
+    const pending: any[] = [];
     const response = await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now, notify: work => pending.push(work) });
     await Promise.all(pending);
 
@@ -149,7 +149,7 @@ test("passkeys registered before the per-account list existed are found once and
   const base = env.STUDIQUO_DATA;
   env.STUDIQUO_DATA = {
     ...base,
-    async put(key, value) { keys.set(key, value); return base.put(key, value); },
+    async put(key: string, value: string) { keys.set(key, value); return base.put(key, value); },
     async list({ prefix }) {
       return { keys: [...keys.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
     },
@@ -193,7 +193,7 @@ test("finishing a recovery signs out every earlier session and tells the owner",
     await addPasskey(env, "cred-1");
     const start = Date.now();
     await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now: start });
-    const pending = [];
+    const pending: any[] = [];
     const done = start + RECOVERY_DELAY_SECONDS * 1000 + 1;
     assert.equal(await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now: done, notify: work => pending.push(work) }), null);
     await Promise.all(pending);

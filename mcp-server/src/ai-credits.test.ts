@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { consumeCredits, creditCost, PLAN_BUDGETS, MODEL_CREDITS } from "./ai-credits.ts";
+import type { LooseEnv } from "./test-env.ts";
 
 function counters() {
   const used = new Map();
   return {
     used,
-    getByName(name) {
+    getByName(name: string) {
       return {
-        async take(limit: number, _seconds, amount = 1) {
+        async take(limit: number, _seconds: string, amount = 1) {
           const next = (used.get(name) ?? 0) + amount;
           if (next > limit) return { ok: false };
           used.set(name, next);

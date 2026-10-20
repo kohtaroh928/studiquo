@@ -3,7 +3,7 @@ import test from "node:test";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { generateKeyPair, exportPKCS8, exportJWK, createLocalJWKSet, SignJWT } from "jose";
 import { handleAnnouncements } from "./announcements.ts";
-import { readMigration } from "./test-env.ts";
+import { readMigration, type LooseEnv } from "./test-env.ts";
 
 class FakeD1Statement {
   db: DatabaseSync;
@@ -35,9 +35,9 @@ async function fixture(extra = {}) {
     APNS_AUTH_KEY: await exportPKCS8(privateKey),
     APNS_KEY_ID: "KEY1234567", APNS_TEAM_ID: "TEAM123456", APNS_TOPIC: "com.yabuko.studiquo",
     STUDIQUO_DATA: {
-      async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async get(key: string, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
       async list({ prefix, cursor, limit = 1000 }) {
         const all = [...values.keys()].filter(k => k.startsWith(prefix)).sort();
         const start = cursor ? Number(cursor) : 0;
@@ -54,7 +54,7 @@ async function fixture(extra = {}) {
 }
 
 const token = n => String(n).repeat(64).slice(0, 64);
-function seedUser(values: Map<any,any>, name: string, devices) {
+function seedUser(values: Map<any,any>, name: string, devices: unknown[]) {
   values.set(`chat:devices:${name}`, JSON.stringify(devices));
 }
 
@@ -75,7 +75,7 @@ async function call(env, path: string, { method = "POST", body, fetchImpl }: { m
   return handleAnnouncements(new URL(request.url), request, env, { fetchImpl });
 }
 
-async function create(env, over = {}) {
+async function create(env: unknown, over = {}) {
   const response = await call(env, "/api/admin/announcements", { body: {
     kind: "update", status: "published",
     translations: { ja: { title: "更新のお知らせ", body: "新機能が増えました" }, en: { title: "Update", body: "New features" } },
@@ -84,7 +84,7 @@ async function create(env, over = {}) {
   return (await response.json()).id;
 }
 
-async function pushAll(env, id, fetchImpl) {
+async function pushAll(env: unknown, id: string, fetchImpl) {
   let last;
   for (let i = 0; i < 20; i++) {
     const response = await call(env, `/api/admin/announcements/${id}/push`, { fetchImpl });
@@ -103,7 +103,7 @@ test("push walks every user in batches, in each device's language, honoring the 
   seedUser(values, "u5", [{ token: token(5), environment: "production" }, { token: token(6), environment: "sandbox", language: "ja" }]); // no language → en
   const id = await create(env);
 
-  const calls = [];
+  const calls: any[] = [];
   const result = await pushAll(env, id, apns(calls));
   assert.equal(result.done, true);
   assert.equal(result.users, 5);
@@ -122,7 +122,7 @@ test("a finished push cannot be sent twice", async () => {
   const { env, values } = await fixture();
   seedUser(values, "u1", [{ token: token(1), environment: "production" }]);
   const id = await create(env);
-  const calls = [];
+  const calls: string | any[] = [];
   await pushAll(env, id, apns(calls));
   const again = await call(env, `/api/admin/announcements/${id}/push`, { fetchImpl: apns(calls) });
   assert.equal(again.status, 409);
@@ -172,7 +172,7 @@ test("an overlapping batch request cannot claim the same batch", async () => {
     } }) };
   };
 
-  const calls = [];
+  const calls: any[] = [];
   const [a, b] = await Promise.all([
     call(env, `/api/admin/announcements/${id}/push`, { fetchImpl: apns(calls) }),
     call(env, `/api/admin/announcements/${id}/push`, { fetchImpl: apns(calls) }),
@@ -188,7 +188,7 @@ test("test push goes only to the user behind a friend code, marked as a test", a
   seedUser(values, "other", [{ token: token(2), environment: "production" }]);
   values.set("chat:code:ABC123", "me");
   const id = await create(env, { status: "draft" });
-  const calls = [];
+  const calls: any[] = [];
   const ok = await call(env, `/api/admin/announcements/${id}/push-test`, { body: { friendCode: "abc123" }, fetchImpl: apns(calls) });
   assert.equal(ok.status, 200);
   assert.deepEqual(calls.map(c => [c.device, c.title]), [[token(1), "[テスト] Update"]]);
@@ -202,7 +202,7 @@ test("long bodies are shortened in the notification", async () => {
   const { env, values } = await fixture();
   seedUser(values, "u1", [{ token: token(1), environment: "production" }]);
   const id = await create(env, { translations: { ja: { title: "t", body: "あ".repeat(500) } } });
-  const calls = [];
+  const calls: any[] = [];
   await pushAll(env, id, apns(calls));
   assert.equal(Array.from(calls[0].body).length, 141);
   assert.ok(calls[0].body.endsWith("…"));
@@ -212,7 +212,7 @@ test("while the push switch is stopped an announcement is refused, not counted a
   const { env, values } = await fixture();
   seedUser(values, "u1", [{ token: token(1), environment: "production" }]);
   const id = await create(env);
-  const calls = [];
+  const calls: string | any[] = [];
 
   const stopped = await call({ ...env, DISABLED_FEATURES: "push" }, `/api/admin/announcements/${id}/push`, { fetchImpl: apns(calls) });
   assert.equal(stopped.status, 503);

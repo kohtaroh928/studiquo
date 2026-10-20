@@ -16,9 +16,9 @@ test("resolveChatUserKey delegates to the hashed chat-account registry object wh
   const calls = [];
   const env = partialEnv({
     USER_REGISTRY: {
-      getByName(name) {
+      getByName(name: string) {
         return {
-          async resolveChatKey(identityHash, tokenKey) {
+          async resolveChatKey(identityHash: string, tokenKey: string) {
             calls.push({ name, identityHash, tokenKey });
             return "stable-chat-key";
           },

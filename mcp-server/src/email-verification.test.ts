@@ -2,18 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.ts";
 import { linkedIdentities } from "./oauth-links.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type: string) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
     RESEND_API_KEY: "test-key",
   });
@@ -28,9 +28,9 @@ function stubResend(handler) {
 // Reads back the code this module itself just generated and sent, so tests
 // don't have to hardcode or guess a code — they intercept the outgoing
 // Resend request the same way a real inbox would receive it.
-async function captureSentCode(env, email: string) {
+async function captureSentCode(env: LooseEnv, email: string) {
   let sentBody = null;
-  const restore = stubResend(async (_url, init: { body: string; }) => {
+  const restore = stubResend(async (_url: string, init: { body: string; }) => {
     sentBody = JSON.parse(init.body);
     return new Response("{}", { status: 200 });
   });
@@ -45,7 +45,7 @@ test("sendVerificationCode emails a 6-digit code to the given address", async ()
   const env = environment();
   let requestedURL = null;
   let sentBody = null;
-  const restore = stubResend(async (url, init: { body: string; }) => {
+  const restore = stubResend(async (url: string, init: { body: string; }) => {
     requestedURL = String(url);
     sentBody = JSON.parse(init.body);
     return new Response("{}", { status: 200 });

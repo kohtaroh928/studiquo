@@ -6,7 +6,7 @@ import worker from "./app.ts";
 import { compareVersions } from "./app-errors.ts";
 import { INBOX_SCRIPT } from "./admin-inbox-ui.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
-import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv } from "./test-env.ts";
 
 // Same shape as admin.test.js's fake: a real in-memory SQLite database built
 // from the real migrations, behind the slice of D1's API the Worker uses.
@@ -47,7 +47,7 @@ function fakeCloudflareLimiter(limit = 1000) {
 function countingCounter() {
   const counts = new Map();
   return {
-    getByName(name) {
+    getByName(name: string) {
       return { async bump(limit: number) { const used = (counts.get(name) ?? 0) + 1; if (used > limit) return false; counts.set(name, used); return true; } };
     },
   };
@@ -57,12 +57,12 @@ function environment({ appErrorLimit = 1000 }: { appErrorLimit?: number } = {}) 
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type: string) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
       async list({ prefix, cursor }) {
         const all = [...values.keys()].filter(k => k.startsWith(prefix)).sort();
         const start = cursor ? Number(cursor) : 0;
@@ -100,7 +100,7 @@ async function seedSession(env: { STUDIQUO_DATA: { put: (arg0: string,arg1: stri
 
 // Captures every Slack post made while `run` executes.
 async function withSlack(run) {
-  const posts = [];
+  const posts: { url: URL | RequestInfo<unknown,CfProperties<unknown>>; body: any; }[] = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     posts.push({ url, body: JSON.parse(init.body) });
@@ -114,13 +114,13 @@ async function withSlack(run) {
   return posts;
 }
 
-async function signedInUser(env, name: string | any[]) {
+async function signedInUser(env: LooseEnv, name: string | any[]) {
   const token = freshToken(name.slice(0, 1));
   await seedSession(env, token, `user-${name}`);
   return token;
 }
 
-async function sendErrors(env, token: string, errors, extra = {}) {
+async function sendErrors(env: LooseEnv, token: string, errors: unknown[], extra = {}) {
   return worker.fetch(
     request("/api/app-errors", { method: "POST", token, body: { appVersion: "1.0 (10)", osVersion: "27.0", deviceModel: "iPad14,1", errors, ...extra } }),
     env, noopCtx
@@ -129,19 +129,19 @@ async function sendErrors(env, token: string, errors, extra = {}) {
 
 const crash = (overrides = {}) => ({ kind: "crash", signature: "EXC_BAD_ACCESS|SIGSEGV|studiquo+0x1a2b", title: "EXC_BAD_ACCESS (SIGSEGV)", detail: "frame 0\nframe 1", ...overrides });
 
-async function listErrors(env, query = "?status=all") {
+async function listErrors(env: LooseEnv, query = "?status=all") {
   const response = await worker.fetch(request(`/api/admin/app-errors${query}`), env, noopCtx);
   assert.equal(response.status, 200);
   return (await response.json()).errors;
 }
 
-async function listReports(env, query = "?status=all") {
+async function listReports(env: LooseEnv, query = "?status=all") {
   const response = await worker.fetch(request(`/api/admin/issue-reports${query}`), env, noopCtx);
   assert.equal(response.status, 200);
   return (await response.json()).reports;
 }
 
-async function stats(env) {
+async function stats(env: LooseEnv) {
   const response = await worker.fetch(request("/api/admin/stats"), env, noopCtx);
   return response.json();
 }

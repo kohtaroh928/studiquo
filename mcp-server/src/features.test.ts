@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { register } from "node:module";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv } from "./test-env.ts";
 
 // app.ts pulls in Durable Object classes that extend "cloudflare:workers", which
 // only exists in the Workers runtime; stand in for that one import (as
@@ -151,7 +151,7 @@ test("disconnecting an AI app stays possible while mcp is stopped, and nothing e
 });
 
 test("a name that stops nothing is logged once and does not take effect", () => {
-  const lines = [];
+  const lines: any[] = [];
   const original = console.warn;
   console.warn = line => lines.push(line);
   try {

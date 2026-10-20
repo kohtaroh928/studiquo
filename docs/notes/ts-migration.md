@@ -50,7 +50,7 @@
   - テスト 1060 件(通過 1059、スキップ 1)は変更前と同じ。`src` を型除去して比べると、実行時の差はない。
 - `any` の置き換え(2026-10-20〜21): 明示の `any` は `src`(mcp-server)で 1 か所、vuln-watch と DAST で 0 か所、テストで約 13 か所(型を付けると検査の意味が変わる偽物など)になった。やり方は、使われ方から推論した型を `tsc` が通るものだけ採用する(作業用の道具で一括)ことと、残りを手で型付けすること。手で付けた主な型: `ThrottleState`/`ThrottlePolicy`/`LoginAttempt`(ログイン試行の制限)、`CborValue`/`Certificate`(App Attest)、`CreditRequest`(AI の利用枠)、`AnnouncementRow`、`StudyStats`/`BlockedContact`/`SnapshotNotebook`(records.ts)、vuln-watch の `Finding`/`RankedFinding`/`TriageItem`/`State`/`OsvVuln`/`NvdCve`/`JvnItem`、DAST の `ScanSummary`。外部から来た JSON を検証する関数(`validateOp` `sanitize*` `parseAnnouncement` `normalize` など)は引数を `unknown` にして、読む項目を疑ったまま取り出す。
 - 残した `any`: `src/http.ts` の `readJSONLimited` の戻り値。40 か所を超える呼び出し元が、信用しない本体から期待する項目を読んで検証している。`unknown` にすると各呼び出し元に同じ型の断定を足すだけになるため、JSON の境界としてコメント付きで残した。テストの約 13 か所は、偽の D1 の呼び出し、`Record<string, any>`(偽物の引数の束)など。
-- テストの strict: `alwaysStrict` `noImplicitThis` `strictBindCallApply` `strictFunctionTypes` `useUnknownInCatchVariables` は有効にした。`noImplicitAny`(約 1,500 件)と `strictNullChecks`(約 490 件)は、偽の Env や補助関数の引数に型を付ける作業が大きく、まだ無効。推論で約 410 か所の引数に型を足した(1,913 件→1,493 件)。残りは偽物の形そのものに型を付ける手作業になる。
+- テストの strict: `alwaysStrict` `noImplicitThis` `strictBindCallApply` `strictFunctionTypes` `useUnknownInCatchVariables` は有効にした。`noImplicitAny` と `strictNullChecks` は、偽の Env や補助関数の引数に型を付ける作業が大きく、まだ無効。引数の名前(`key` `env` `userKey` など)と推論で型を足し、`noImplicitAny` を有効にしたときの件数を約 1,500 件から約 460 件に、`strictNullChecks` は約 490 件から約 415 件にした(`npx tsc --noEmit -p mcp-server/tsconfig.test.json --noImplicitAny` で数えられる)。残りは偽物の形そのもの(`item` `options` `row` などの引数、分割代入、後から代入する変数)に型を付ける手作業になる。
 
 ## フェーズ6(strict 化)の結果
 
