@@ -1,12 +1,11 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "./app.ts";
 
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 
 test("GET / serves the public Studiquo home page", async () => {
-  const response = await worker.fetch(new Request("https://example.test/"), {}, noopCtx);
+  const response = await worker.fetch(new Request("https://example.test/"), partialEnv({}), noopCtx);
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /text\/html/);
   const body = await response.text();
@@ -19,7 +18,7 @@ test("GET / serves the public Studiquo home page", async () => {
 test("GET Search Console verification file proves site ownership", async () => {
   const response = await worker.fetch(
     new Request("https://example.test/googlea95d7e8605a2e940.html"),
-    {},
+    partialEnv({}),
     noopCtx,
   );
   assert.equal(response.status, 200);
@@ -27,7 +26,7 @@ test("GET Search Console verification file proves site ownership", async () => {
 });
 
 test("GET /privacy serves the privacy policy without a bearer token", async () => {
-  const response = await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx);
+  const response = await worker.fetch(new Request("https://example.test/privacy"), partialEnv({}), noopCtx);
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /text\/html/);
   const body = await response.text();
@@ -39,7 +38,7 @@ test("GET /privacy serves the privacy policy without a bearer token", async () =
 });
 
 test("GET /terms serves the terms of use without a bearer token", async () => {
-  const response = await worker.fetch(new Request("https://example.test/terms"), {}, noopCtx);
+  const response = await worker.fetch(new Request("https://example.test/terms"), partialEnv({}), noopCtx);
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /text\/html/);
   const body = await response.text();
@@ -56,7 +55,7 @@ test("GET /terms serves the terms of use without a bearer token", async () => {
 // links out to — losing any of them silently would still pass the plain
 // "renders a page" check above.
 test("GET /terms discloses the auto-renewal cancellation window and how to cancel", async () => {
-  const response = await worker.fetch(new Request("https://example.test/terms"), {}, noopCtx);
+  const response = await worker.fetch(new Request("https://example.test/terms"), partialEnv({}), noopCtx);
   const body = await response.text();
   assert.match(body, /24時間/);
   assert.match(body, /解約/);
@@ -68,7 +67,7 @@ test("GET /terms discloses the auto-renewal cancellation window and how to cance
 // policy has to keep stating, and the terms must not mention a sync capacity
 // limit that no longer exists.
 test("GET /privacy describes the optional iCloud sync and that iCloud data outlives account deletion", async () => {
-  const response = await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx);
+  const response = await worker.fetch(new Request("https://example.test/privacy"), partialEnv({}), noopCtx);
   const body = await response.text();
   assert.match(body, /iCloudで同期する/);
   assert.match(body, /初期状態でオフ/);
@@ -77,7 +76,7 @@ test("GET /privacy describes the optional iCloud sync and that iCloud data outli
 });
 
 test("GET /terms no longer mentions a cloud sync capacity limit", async () => {
-  const response = await worker.fetch(new Request("https://example.test/terms"), {}, noopCtx);
+  const response = await worker.fetch(new Request("https://example.test/terms"), partialEnv({}), noopCtx);
   const body = await response.text();
   assert.doesNotMatch(body, /クラウド同期容量/);
   assert.match(body, /AIクレジットの上限/);
@@ -89,7 +88,7 @@ test("GET /terms no longer mentions a cloud sync capacity limit", async () => {
 // the header options that make its inline <style> block render correctly.
 test("/privacy and /terms both ship the inline-style-only CSP", async () => {
   for (const path of ["/privacy", "/terms"]) {
-    const response = await worker.fetch(new Request(`https://example.test${path}`), {}, noopCtx);
+    const response = await worker.fetch(new Request(`https://example.test${path}`), partialEnv({}), noopCtx);
     assert.equal(
       response.headers.get("content-security-policy"),
       "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
@@ -99,14 +98,14 @@ test("/privacy and /terms both ship the inline-style-only CSP", async () => {
 });
 
 test("a request to an unrelated path is not intercepted by the legal router", async () => {
-  const response = await worker.fetch(new Request("https://example.test/health"), {}, noopCtx);
+  const response = await worker.fetch(new Request("https://example.test/health"), partialEnv({}), noopCtx);
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.ok, true);
 });
 
 test("the privacy policy discloses the automatic diagnostic reports and how to turn them off", async () => {
-  const response = await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx);
+  const response = await worker.fetch(new Request("https://example.test/privacy"), partialEnv({}), noopCtx);
   const body = await response.text();
   assert.match(body, /任意の診断情報/);
   assert.match(body, /初期状態では送信しません/);
@@ -118,11 +117,11 @@ test("the privacy policy discloses the automatic diagnostic reports and how to t
 });
 
 test("the policy and terms describe reports, blocks and what the operator can do about them", async () => {
-  const privacy = await (await worker.fetch(new Request("https://example.test/privacy"), {}, { waitUntil() {} })).text();
+  const privacy = await (await worker.fetch(new Request("https://example.test/privacy"), partialEnv({}), partialCtx({ waitUntil() {} }))).text();
   assert.match(privacy, /通報・ブロック・利用停止に関する情報/);
   assert.match(privacy, /通報は90日で削除/);
   assert.match(privacy, /取り消しても、通報の時点の内容は保存/);
-  const terms = await (await worker.fetch(new Request("https://example.test/terms"), {}, { waitUntil() {} })).text();
+  const terms = await (await worker.fetch(new Request("https://example.test/terms"), partialEnv({}), partialCtx({ waitUntil() {} }))).text();
   assert.match(terms, /メッセージの削除、通知による注意、チャット機能の停止、アカウントの利用停止/);
   assert.match(terms, /利用を停止された場合でも、アカウントの削除はできます/);
 });
@@ -138,6 +137,7 @@ test("the policy and terms describe reports, blocks and what the operator can do
 // webhook (a secret URL) are not literals, so they are named by hand in the
 // MUST_NAME list below instead.
 import { readdirSync, readFileSync } from "node:fs";
+import { partialCtx, partialEnv } from "./test-env.ts";
 
 const HOST_TO_POLICY_TERM = {
   "api.openai.com": "OpenAI",
@@ -162,12 +162,15 @@ const HOSTS_DELIBERATELY_NOT_IN_THE_POLICY = {
 };
 
 test("every outside host the Worker contacts is named in the privacy policy, or left out on purpose", async () => {
-  const sources = readdirSync(new URL(".", import.meta.url)).filter(name => name.endsWith(".js") && !name.endsWith(".test.js"));
-  const hosts = new Set();
+  const sources = readdirSync(new URL(".", import.meta.url) as any).filter(name => name.endsWith(".ts") && !name.endsWith(".test.ts"));
+  // A scan that found no sources (it once looked for ".js" files after they had become ".ts") would pass without checking anything.
+  assert.ok(sources.length > 20, `expected the Worker's source files, found ${sources.length}`);
+  const hosts = new Set<string>();
   for (const name of sources) {
-    for (const match of readFileSync(new URL(name, import.meta.url), "utf8").matchAll(/https:\/\/([a-z0-9.-]+\.[a-z]{2,})/g)) hosts.add(match[1]);
+    for (const match of readFileSync(new URL(name, import.meta.url) as any, "utf8").matchAll(/https:\/\/([a-z0-9.-]+\.[a-z]{2,})/g)) hosts.add(match[1]);
   }
-  const body = await (await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx)).text();
+  assert.ok(hosts.size > 3, `expected the outside hosts the code contacts, found ${hosts.size}`);
+  const body = await (await worker.fetch(new Request("https://example.test/privacy"), partialEnv({}), noopCtx)).text();
   const unaccounted = [...hosts].filter(host =>
     !(host in HOST_TO_POLICY_TERM) && !(host in HOSTS_DELIBERATELY_NOT_IN_THE_POLICY)
     && !/(^|\.)(example|test|evil\.example|invalid)(\.[a-z]+)?$/.test(host) && !host.endsWith("w3.org"));
@@ -181,7 +184,7 @@ test("every outside host the Worker contacts is named in the privacy policy, or 
 });
 
 test("the privacy policy states what is kept about a request, a device and an email", async () => {
-  const body = await (await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx)).text();
+  const body = await (await worker.fetch(new Request("https://example.test/privacy"), partialEnv({}), noopCtx)).text();
   // Provider-side facts of the code in login-throttle.ts, login-monitor.ts, devices.ts, push.ts.
   assert.match(body, /IPアドレス/);
   assert.match(body, /ハッシュ値/);
@@ -208,8 +211,8 @@ test("the privacy policy states what is kept about a request, a device and an em
 });
 
 test("the policy and the terms say the same thing about age", async () => {
-  const privacy = await (await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx)).text();
-  const terms = await (await worker.fetch(new Request("https://example.test/terms"), {}, noopCtx)).text();
+  const privacy = await (await worker.fetch(new Request("https://example.test/privacy"), partialEnv({}), noopCtx)).text();
+  const terms = await (await worker.fetch(new Request("https://example.test/terms"), partialEnv({}), noopCtx)).text();
   for (const body of [privacy, terms]) {
     assert.match(body, /登録時に年齢を確認する仕組みはありません/);
     assert.match(body, /AI機能に限り、初回の送信前に年齢区分を確認/);
@@ -221,6 +224,6 @@ test("the policy and the terms say the same thing about age", async () => {
 test("the policy does not yet claim what the legal review has not settled", async () => {
   // Cross-border transfer, the outside-transmission rule and the commerce-law notice
   // wait for a legal check (Notion: 法務確認). Nothing here pretends they are done.
-  const body = await (await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx)).text();
+  const body = await (await worker.fetch(new Request("https://example.test/privacy"), partialEnv({}), noopCtx)).text();
   assert.doesNotMatch(body, /越境|外国にある第三者|特定商取引/);
 });
