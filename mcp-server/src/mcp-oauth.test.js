@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test, { mock } from "node:test";
-import worker from "./app.js";
+import worker from "./app.ts";
 
 const hash = value => createHash("sha256").update(value).digest("hex");
 

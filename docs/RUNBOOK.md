@@ -236,7 +236,7 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
     - 規約: アカウントの出口(退会、ログアウト、セッション更新)は`/api/account`と`/api/session`の下に置き、`/api/auth/`や機能の接頭辞の下に置かない(置くと、その機能の停止で出口まで止まる)。
     - 設定の置き場: `wrangler.jsonc`の`vars`に書いて配備する。ダッシュボードで直接変えた値は、次の`wrangler deploy`で`vars`の内容に戻る。緊急にダッシュボードで入れたら、あとで`vars`にも反映する(または、反映するまで配備しない)。
     - 戻し方: 値から名前を消して(または空にして)配備する。
-- **https**(`mcp-server/src/transport.js`): 全レスポンスに`Strict-Transport-Security: max-age=31536000`(`includeSubDomains`・`preload`なし)を付ける。`http://`で届いた要求は、何も読まずに、GET・HEADは`308`でhttpsへ、それ以外は`403`(`code: "https_required"`)で断る(ローカル開発の`http://localhost`は対象外)。Cloudflareの「Always Use HTTPS」がエッジで同じことをするので、**ダッシュボードで有効にする**(Workerの分は二重の備え)。httpで来たクライアントは、Bearerトークンを平文で送ったことになるので、httpsに直し、そのトークンは見られたものとして扱う。**有効にする前に確認**: RevenueCatのWebhookの登録URL、死活監視、MCPクライアントの接続先が`https://`であること(`http://`だとPOSTは403、GET・HEADは308になる)。
+- **https**(`mcp-server/src/transport.ts`): 全レスポンスに`Strict-Transport-Security: max-age=31536000`(`includeSubDomains`・`preload`なし)を付ける。`http://`で届いた要求は、何も読まずに、GET・HEADは`308`でhttpsへ、それ以外は`403`(`code: "https_required"`)で断る(ローカル開発の`http://localhost`は対象外)。Cloudflareの「Always Use HTTPS」がエッジで同じことをするので、**ダッシュボードで有効にする**(Workerの分は二重の備え)。httpで来たクライアントは、Bearerトークンを平文で送ったことになるので、httpsに直し、そのトークンは見られたものとして扱う。**有効にする前に確認**: RevenueCatのWebhookの登録URL、死活監視、MCPクライアントの接続先が`https://`であること(`http://`だとPOSTは403、GET・HEADは308になる)。
 - **最初の確認**: 症状が出た時刻と、直前の配備・設定変更。`/health`が200か。`api.studiquo.app`のDNSとカスタムドメインがCloudflareで有効か。
 - **変更せず調べる**: Cloudflareの「セキュリティ」→「概要」・Analyticsで、WAFがブロックした記録(件数、対象のパス)。Workers Logsの`429`・`503`・`426`の件数。`curl`での`/health`・関連づけファイルの確認。
 - **判断の目安**:

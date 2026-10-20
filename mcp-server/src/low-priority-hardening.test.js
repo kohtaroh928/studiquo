@@ -27,7 +27,7 @@ register(
 );
 
 const { UserRegistry } = await import("./user-registry.ts");
-const { default: worker } = await import("./app.js");
+const { default: worker } = await import("./app.ts");
 const { normalizeIP, clientKey } = await import("./rate-limit.ts");
 const { appGateRejection } = await import("./app-gate.ts");
 const { isCrossSiteWrite } = await import("./access.ts");

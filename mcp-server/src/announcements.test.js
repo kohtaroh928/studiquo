@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import worker from "./app.js";
+import worker from "./app.ts";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 import { compareVersions, resolveTranslation, SUPPORTED_LANGUAGES } from "./announcements.ts";
 

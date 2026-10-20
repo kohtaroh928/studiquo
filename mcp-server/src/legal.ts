@@ -1,7 +1,7 @@
 import { securityHeaders } from "./http.ts";
 
 // Publicly served legal pages (no bearer token required) — registered in
-// app.js alongside /health and the Apple app-site-association file, before
+// app.ts alongside /health and the Apple app-site-association file, before
 // the /api/ bearer-token gate, since App Store Connect, Sign in with Apple's
 // configuration, and a user opening the link from Settings all need this
 // reachable with no auth.

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { deleteAccount } from "./account-deletion.ts";
 import { linkVerifiedEmail } from "./oauth-links.ts";
-import worker from "./app.js";
+import worker from "./app.ts";
 import { mintSession } from "./session.ts";
 import { indexAccountPasskey } from "./passkey-policy.ts";
 import { accountGenerationMethods } from "./test-account-generations.ts";

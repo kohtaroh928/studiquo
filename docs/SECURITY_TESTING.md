@@ -31,7 +31,7 @@ DASTは `security-reports/dast.json` と `security-reports/dast.md` に結果を
 
 ## 隔離と脅威・障害対策
 
-DASTはWranglerの通常設定や `.dev.vars` を読まず、Miniflareで一時的なローカルKV・D1・Durable Objectsを用意する。実処理は `mcp-server/src/worker.js` からbundleする。検査用Miniflareは安定版4.20260730.0に固定し、検査のcompatibility dateは2026-07-30。本番の2026-08-27との差があるため、本番と完全に同じruntimeではない。架空セッションは一時KVへ登録し、実際のsession検証を通す。アプリの認証bypassは追加しない。
+DASTはWranglerの通常設定や `.dev.vars` を読まず、Miniflareで一時的なローカルKV・D1・Durable Objectsを用意する。実処理は `mcp-server/src/worker.ts` からbundleする。検査用Miniflareは安定版4.20260730.0に固定し、検査のcompatibility dateは2026-07-30。本番の2026-08-27との差があるため、本番と完全に同じruntimeではない。架空セッションは一時KVへ登録し、実際のsession検証を通す。アプリの認証bypassは追加しない。
 
 Workerからの外部fetchはoutbound serviceで拒否する。ZAPは `--network none` のコンテナで実行し、Unix socketを経由した許可済みmethod/pathだけをサーバーへ渡す。秘密値や本文を含むZAP生データは一時領域に限定し、公開成果物へコピーしない。終了・失敗時はプロセスと一時領域を片付ける。指定外のmethod/pathは拒否する。外部接続、リダイレクト、基盤異常、安全上限の超過、到達不足は検査の失敗として報告する。
 

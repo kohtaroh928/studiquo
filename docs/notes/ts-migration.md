@@ -18,7 +18,6 @@
 ## 対象外・あとで扱う
 
 - `scripts/vuln-watch`、`security/dast`(`.mjs`)、`security/sast/fixtures`(検査用の見本なので変換しない)。
-- フェーズ4では `security/dast/harness.mjs` が `mcp-server/src/worker.js` をバンドルしている点も直す。
 
 ## 進み具合
 
@@ -28,5 +27,5 @@
 - 型は消えるので、`npm test` が通っても型エラーは見つからない。`npm run typecheck` を別に必ず実行する。
 - フェーズ3 完了: Durable Object 5本(`chat-room` `user-registry` `document-room` `rate-counter` `mcp-inbox`)と `counter-state` `document-room-store` を .ts 化。クラス名・エクスポート名・保存キー・SQLは変えていない。`Env` の Durable Object は暫定の `UntypedNamespace` をやめ、`DurableObjectNamespace<クラス>` にした。RPC の戻り値で型が深くなりすぎる・`SqlStorageValue` になる所は、メソッドに戻り値の型を明示するか `sql.exec<行の型>` で付ける。
 - 挙動を変えていないことの確かめ方: `node:module` の `stripTypeScriptTypes` で各 .ts の型を消し、移行前の .js(import の拡張子だけ読み替え)と空白・コメントを無視して比べる。フェーズ3の時点で、差が出るのは `nextCursor` への置き換えなど、レビュー済みの意図した箇所だけ。
-- 他の末端ファイルの行き先: Durable Object 周りはフェーズ3で完了、`anthropic` `openai` `entitlements` と管理画面の `*-ui` はフェーズ2、`index` `smoke` はフェーズ4。
-- ファイル名を書いたコメントと文書は、.ts にしたファイルの分をフェーズ3の後に直した(`src` のコメント、`docs/`、`mcp-server/README.md`、3つのツールのエージェント定義)。直さないもの: `docs/archive/`・`docs/releases/`(当時の記録)、適用済みの `migrations/`、アプリ側(Swift)のコメント。`app` `worker` `index` `smoke` `transport` は、フェーズ4で .ts にするときに同じ要領で直す。
+- フェーズ4 完了: `app` `transport` `index` `worker` `smoke` を .ts 化。`wrangler.jsonc` の `main`(`src/worker.ts`)、`package.json` の `start` `smoke`、`security/dast/harness.mjs` のバンドル入口を .ts に直した。MCP のツール結果は SDK の `CallToolResult` で型を付けた。`npm run smoke`(`node src/index.ts` を子プロセスで起動)で .ts のまま Node が動かせることを確かめた。
+- ファイル名を書いたコメントと文書は、.ts にしたファイルの分をフェーズ3の後に直した(`src` のコメント、`docs/`、`mcp-server/README.md`、3つのツールのエージェント定義)。直さないもの: `docs/archive/`・`docs/releases/`(当時の記録)、適用済みの `migrations/`、アプリ側(Swift)のコメント。フェーズ4の分(`app` `worker` `index` `smoke` `transport`)も同じ要領で直した。

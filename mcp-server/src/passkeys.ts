@@ -179,7 +179,7 @@ export async function handlePasskeys(url, request: Request, env: Env) {
     }
     // An account that has a passkey proves it with that, not with mail.
     if (await accountHasPasskey(env, auth.session.sub, email)) return json({ error: "A passkey is already registered." }, 409);
-    // Per-address budget, whichever session asks (same shape as the sign-in codes in app.js).
+    // Per-address budget, whichever session asks (same shape as the sign-in codes in app.ts).
     if (env.RATE_COUNTER && !(await env.RATE_COUNTER.getByName(`email-code-passkey:${await sha256Hex(email)}`).bump(5, 3_600))) {
       return json({ error: "Too many attempts. Please try again later." }, 429);
     }
@@ -203,7 +203,7 @@ export async function handlePasskeys(url, request: Request, env: Env) {
     if (await env.STUDIQUO_DATA.get(`email-account-owner:${email}`) !== auth.session.sub) {
       return json({ error: "This e-mail address does not belong to the signed-in account." }, 403);
     }
-    // Per-address budget for guesses, whichever session asks (as for the sign-in codes in app.js).
+    // Per-address budget for guesses, whichever session asks (as for the sign-in codes in app.ts).
     if (env.RATE_COUNTER && !(await env.RATE_COUNTER.getByName(`email-code-passkey-confirm:${await sha256Hex(email)}`).bump(10, 3_600))) {
       return json({ error: "Too many attempts. Please try again later." }, 429);
     }

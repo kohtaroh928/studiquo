@@ -18,7 +18,7 @@ function isLocalHost(hostname) {
 }
 
 /** A response for a request that came over plain http, or null for https and local development. */
-export function plainHttpResponse(request, url) {
+export function plainHttpResponse(request: Request, url) {
   if (url.protocol !== "http:" || isLocalHost(url.hostname)) return null;
   if (request.method === "GET" || request.method === "HEAD") {
     const secure = new URL(url);
@@ -29,7 +29,7 @@ export function plainHttpResponse(request, url) {
 }
 
 /** `response` with Strict-Transport-Security, unless it already has it or cannot take it. */
-export function withTransportHeaders(response) {
+export function withTransportHeaders(response: Response) {
   // A WebSocket handshake carries its socket on the response; rebuilding it would drop it.
   if (response.status === 101 || response.webSocket) return response;
   if (response.headers.has("strict-transport-security")) return response;

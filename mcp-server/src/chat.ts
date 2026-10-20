@@ -114,7 +114,7 @@ async function existingRoomIsBlocked(env: Env, roomIDValue, userKey: string) {
 }
 
 // ChatRoom.requireParticipant throws a plain Error("Forbidden") for a caller
-// who isn't in the room; without this, that propagates uncaught up to app.js's
+// who isn't in the room; without this, that propagates uncaught up to app.ts's
 // catch-all and comes back as a generic 500 instead of a proper 403.
 //
 // sendMessage throws a separate Error("Blocked") when the other participant

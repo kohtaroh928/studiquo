@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { register } from "node:module";
 
-// app.js reaches Durable Object classes that extend "cloudflare:workers"
+// app.ts reaches Durable Object classes that extend "cloudflare:workers"
 // (see features.test.js for the same stand-in).
 register(
   "data:text/javascript," + encodeURIComponent(`
@@ -21,8 +21,8 @@ register(
   import.meta.url
 );
 
-const { HSTS_VALUE, plainHttpResponse, withTransportHeaders } = await import("./transport.js");
-const { default: worker } = await import("./app.js");
+const { HSTS_VALUE, plainHttpResponse, withTransportHeaders } = await import("./transport.ts");
+const { default: worker } = await import("./app.ts");
 const noopCtx = { waitUntil() {} };
 
 test("every kind of response from the Worker carries Strict-Transport-Security", async () => {
