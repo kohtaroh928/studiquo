@@ -29,13 +29,16 @@ const URL_BODY = `(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|[${URL_CHARS}]|
 // "http:" or "https:". Browsers drop tabs and line breaks anywhere in an address, so
 // "ht\ntps://e.com" and "https:\r\n//e.com" are the same address as "https://e.com", and so is
 // "https:\n$e.com" (the same as "https:$e.com", which a browser reads as a web address too).
-// Between the letters any run of tabs and breaks is taken. After the colon only ONE line break
-// (with tabs around it) is taken, and only when something that is not a space or a sentence mark
-// follows it: a line that ends in "https:" takes the first word of the next line, but a blank line,
-// a heading, a code fence or a list marker after it stays. A bare "https:" in the middle of a line,
-// followed by a space, takes nothing. Past a blank line (or any longer run of breaks) only a word that starts like an address counts: "/", a backslash, a letter or a digit (https:\n\n//e.com, https:\n\ne.com).
+// Any run of tabs and line breaks (a lone CR included) is taken, between the letters and after the
+// colon, when something that is not a space or a sentence mark follows it. A line that ends in
+// "https:" therefore takes the next line's first word, and a blank line does not stop it: the
+// browser joins "https:\n\n$e.com" into one address, and any host character may start it ($ ! _ ~
+// % @, non-ASCII, ...), so the rule is "anything but a space or a sentence mark", not a list of
+// address characters. The price is that "https:" at the end of a paragraph takes the first word of
+// the next one (a heading mark, a list number, an English word, a Japanese sentence up to its mark).
+// A bare "https:" in the middle of a line, followed by a space, takes nothing.
 const GAP = "[\\t\\n\\r]*";
-const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:(?:\\t*\\r?\\n)?\\t*(?=[^\\s、。！？)）」』】])|${GAP}(?=[/\\\\A-Za-z0-9]))?`;
+const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:${GAP}(?=[^\\s、。！？)）」』】]))?`;
 const URL_RE = new RegExp(`(?:${HTTP}\\/\\/|${HTTP}(?=[A-Za-z0-9])|www\\.(?=[A-Za-z0-9]))${URL_BODY}`, "giu");
 // What is left of a malformed scheme: "https:/e.com", "https:\\e.com", "https:例え.com",
 // "https:`a.evil.com". The browser reads many of these as a normal address, so everything
@@ -123,21 +126,18 @@ function stripMarkdownLinks(text, depth = 0) {
 // "`https:`" written as a word in a sentence ("プロトコルは `https:` です") is a description, not an
 // address, and is left alone, provided the closing backtick ends the thought. Once the backticks
 // are gone, "`https:`//e.com" or "`https:`\n$e.com" reads as an address (browsers drop the line
-// break and the tab), so an address character after the closing backtick, past at most one line
-// break and tabs, means it is not a description and is removed like any other.
+// break and the tab), so anything but a space or a sentence mark after the closing backtick, past any run of tabs and
+// line breaks, means it is not a description and is removed like any other.
 const SCHEME_IN_CODE = /`[ \t]*https?:[ \t]*`/giu;
-// A scheme in backticks that is not a description takes the address after it (past one line break).
-const CODE_SCHEME_ADDRESS = /`[ \t]*https?:[ \t]*`(?:[\t\r\n]*(?=[/\\A-Za-z0-9])|(?:\t*\r?\n)?\t*)(?:[^\s、。！？)）」』]|[\t\r\n]+(?=[/\\]))*/giu;
-const AFTER_CODE = /([\t\r\n]*)([^]?)([^]?)/uy;
+// A scheme in backticks that is not a description takes the address after it (past any run of tabs and line breaks).
+const CODE_SCHEME_ADDRESS = /`[ \t]*https?:[ \t]*`(?:[\t\r\n]*(?=[^\s、。！？)）」』】]))?(?:[^\s、。！？)）」』]|[\t\r\n]+(?=[/\\]))*/giu;
+const AFTER_CODE = /[\t\r\n]*([^]?)([^]?)/uy;
 
 function endsTheThought(text, end) {
   AFTER_CODE.lastIndex = end;
-  const [, run, first, second] = AFTER_CODE.exec(text);
+  const [, first, second] = AFTER_CODE.exec(text);
   if (first === "" || /[ 、。！？)）」』】]/u.test(first)) return true;
-  if (/[/\\A-Za-z0-9]/u.test(first)) return false; // reads as an address, past any number of breaks
-  if (run !== "" && !/^\t*\r?\n?\t*$/u.test(run)) return true; // a blank line ends the thought
-  if (/[,.;:!?]/u.test(first)) return second === "" || /[ \r\n]/u.test(second);
-  return false;
+  return /[,.;:!?]/u.test(first) && (second === "" || /[ \r\n]/u.test(second));
 }
 
 function protectSchemeInCode(text) {
