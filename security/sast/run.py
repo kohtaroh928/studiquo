@@ -12,6 +12,7 @@ import tempfile
 from swift_scan import scan as scan_swift
 
 ROOT = Path(__file__).resolve().parents[2]
+SEMGREP_TIMEOUT_SECONDS = "30"
 VERSIONS = {"semgrep": "1.179.0", "gitleaks": "8.24.3"}
 # Keep this list synchronized with the four structural rules in swift_scan.swift.
 NATIVE_SWIFT_RULES = frozenset({
@@ -139,8 +140,11 @@ def main():
                                   and (ROOT / path).is_file() and not (ROOT / path).is_symlink()})
             original_hashes = {path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest() for path in swift_files}
             raw = temporary / "semgrep.json"
+            # Semgrep's default per-rule-per-file timeout (5 s) is too tight for slow CI runners
+            # and makes the scan fail intermittently on large Swift and test files.
             result = execute(["semgrep", "scan", "--config", ".semgrep.yml", "--metrics", "off",
-                              "--disable-version-check", "--strict", "--json", "--output", str(raw), "."])
+                              "--disable-version-check", "--strict", "--timeout", SEMGREP_TIMEOUT_SECONDS,
+                              "--json", "--output", str(raw), "."])
             if result.returncode not in (0, 3) or not raw.exists():
                 raise RuntimeError("Semgrep execution failed (raw output withheld)")
             semgrep_data = json.loads(raw.read_text())
