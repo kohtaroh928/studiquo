@@ -4,15 +4,15 @@
 //  - 新規に見つけたものは常に「要確認」にして、LLM判定に回す
 // 応答はXML。外部入力なので、エンティティ展開をしない最小の読み取りで必要なタグだけ取る。
 
-import { assetKey } from './osv.js';
-import { nvdHintFor } from './nvd.js';
+import { assetKey } from './osv.ts';
+import { nvdHintFor } from './nvd.ts';
 
 const BASE = 'https://jvndb.jvn.jp/myjvn';
 const PAGE = 50;
 
-const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 
-export function decodeXml(s) {
+export function decodeXml(s: any) {
   return String(s)
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
     .replace(/&(#x[0-9a-fA-F]+|#\d+|[a-z]+);/g, (m, e) => {
@@ -24,18 +24,18 @@ export function decodeXml(s) {
     });
 }
 
-const tag = (block, name) => {
+const tag = (block: any, name: any) => {
   const m = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`).exec(block);
   return m ? decodeXml(m[1]).trim() : null;
 };
 
-const attr = (openTag, name) => {
+const attr = (openTag: any, name: any) => {
   const m = new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(openTag);
   return m ? decodeXml(m[1]) : null;
 };
 
 /** getVulnOverviewList の応答から、項目と総件数を取り出す。 */
-export function parseOverview(xml) {
+export function parseOverview(xml: any) {
   const items = [];
   for (const m of String(xml).matchAll(/<item\s[^>]*>([\s\S]*?)<\/item>/g)) {
     const b = m[1];
@@ -76,18 +76,18 @@ export function parseOverview(xml) {
   };
 }
 
-const norm = (s) => String(s).toLowerCase().replace(/[-_\s]/g, '');
+const norm = (s: any) => String(s).toLowerCase().replace(/[-_\s]/g, '');
 
 /**
  * 項目が資産に関係しそうか。'cpe'=CPEのproductがヒントと一致 / 'text'=CPE無しで題名・概要に語がある / null=無関係。
  * CPEがあって一致しないもの(例: npmのjoseに対するGo JOSE)は捨てる。
  */
-export function relevance(item, hint) {
+export function relevance(item: any, hint: any) {
   const products = (hint.products ?? []).map(norm);
   const vendors = (hint.vendors ?? []).map(norm);
-  const apps = item.cpes.filter((c) => c.part === 'a');
+  const apps = item.cpes.filter((c: any) => c.part === 'a');
   if (apps.length) {
-    const hit = apps.some((c) => products.includes(norm(c.product)) && (vendors.length === 0 || vendors.includes(norm(c.vendor))));
+    const hit = apps.some((c: any) => products.includes(norm(c.product)) && (vendors.length === 0 || vendors.includes(norm(c.vendor))));
     return hit ? 'cpe' : null;
   }
   // 短い語(zodなど)が別の単語の一部に当たらないよう、語の境界で探す
@@ -98,7 +98,7 @@ export function relevance(item, hint) {
   return re.test(hay) ? 'text' : null;
 }
 
-async function fetchAll(client, keyword, { maxPages = 4 } = {}) {
+async function fetchAll(client: any, keyword: any, { maxPages = 4 } = {}) {
   const all = [];
   let start = 1;
   let total = 0;
@@ -118,7 +118,7 @@ async function fetchAll(client, keyword, { maxPages = 4 } = {}) {
 }
 
 /** 1項目×CVE番号ごとに指摘を作る。CVE番号が無ければJVNDB番号で1件。 */
-export function jvnFindings(item, asset, via) {
+export function jvnFindings(item: any, asset: any, via: any) {
   const base = {
     sources: ['jvn'],
     asset: assetKey(asset),
@@ -134,13 +134,13 @@ export function jvnFindings(item, asset, via) {
     references: item.link ? [item.link] : [],
     published: item.published,
   };
-  const ids = (cve) => [...new Set([item.jvndb, ...(cve ? [cve] : [])])];
+  const ids = (cve: any) => [...new Set([item.jvndb, ...(cve ? [cve] : [])])];
   return item.cves.length
-    ? item.cves.map((cve) => ({ ...base, ids: ids(cve), cve }))
+    ? item.cves.map((cve: any) => ({ ...base, ids: ids(cve), cve }))
     : [{ ...base, ids: ids(null), cve: null }];
 }
 
-export async function queryJvn(client, assets, { onWarning = () => {} } = {}) {
+export async function queryJvn(client: any, assets: any, { onWarning = (_message: string) => {} } = {}) {
   const findings = [];
   for (const asset of assets) {
     const hint = nvdHintFor(asset);

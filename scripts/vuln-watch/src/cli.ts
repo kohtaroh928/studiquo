@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // 使い方:
-//   node src/cli.js inventory [--swift-resolved <path>]   資産台帳(inventory.json)を作り直す
-//   node src/cli.js scan [--offline] [--no-nvd] [--no-jvn] [--out <dir>]   収集→照合→採点→機械判定のレポート
-//   node src/cli.js triage-pack [--fresh] [--out <dir>]        判定に回す指摘を triage-input.json に出す(scanも出す)。月曜と --fresh はキャッシュを使わない
-//   node src/cli.js triage-apply [--verdicts <file> | --no-reply] [--out <dir>]   エージェントの返信(ファイルか標準入力)を検証して反映
-//   node src/cli.js cards-plan --existing <file> [--dry-run] [--out <dir>]   Notionカードの操作リスト cards-ops.json を作る
-//   node src/cli.js summary [--created n --updated n --commented n --failed n]   固定書式の要約と通知文を出す
+//   node src/cli.ts inventory [--swift-resolved <path>]   資産台帳(inventory.json)を作り直す
+//   node src/cli.ts scan [--offline] [--no-nvd] [--no-jvn] [--out <dir>]   収集→照合→採点→機械判定のレポート
+//   node src/cli.ts triage-pack [--fresh] [--out <dir>]        判定に回す指摘を triage-input.json に出す(scanも出す)。月曜と --fresh はキャッシュを使わない
+//   node src/cli.ts triage-apply [--verdicts <file> | --no-reply] [--out <dir>]   エージェントの返信(ファイルか標準入力)を検証して反映
+//   node src/cli.ts cards-plan --existing <file> [--dry-run] [--out <dir>]   Notionカードの操作リスト cards-ops.json を作る
+//   node src/cli.ts summary [--created n --updated n --commented n --failed n]   固定書式の要約と通知文を出す
 // 共通: --state <path> で state.json の場所を変えられる(試験用)
 // 終了コード: 0=完了 / 2=取得に失敗したデータ源があり結果が不完全 / 3=LLM判定が反映されなかった / 4=その両方
 
@@ -13,25 +13,25 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { buildInventory } from './inventory.js';
-import { createClient } from './http.js';
-import { queryOsv, osvFindings, assetKey } from './osv.js';
-import { queryNvd } from './nvd.js';
-import { queryJvn } from './jvn.js';
-import { applyTriage, buildTriageInput, findingId, parseVerdicts } from './triage.js';
-import { gapWarning, isFreshDay, loadState, markNew, saveState, saveVerdicts, selectForJudgement } from './state.js';
-import { buildSummary, planCards } from './cards.js';
-import { fetchKev, fetchEpss } from './signals.js';
-import { mergeFindings, rank } from './score.js';
-import { renderReport } from './report.js';
+import { buildInventory } from './inventory.ts';
+import { createClient } from './http.ts';
+import { queryOsv, osvFindings, assetKey } from './osv.ts';
+import { queryNvd } from './nvd.ts';
+import { queryJvn } from './jvn.ts';
+import { applyTriage, buildTriageInput, findingId, parseVerdicts } from './triage.ts';
+import { gapWarning, isFreshDay, loadState, markNew, saveState, saveVerdicts, selectForJudgement } from './state.ts';
+import { buildSummary, planCards } from './cards.ts';
+import { fetchKev, fetchEpss } from './signals.ts';
+import { mergeFindings, rank } from './score.ts';
+import { renderReport } from './report.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const toolDir = resolve(here, '..');
 const repoRoot = resolve(toolDir, '../..');
 const inventoryPath = `${toolDir}/inventory.json`;
 
-function parseArgs(argv) {
-  const args = { _: [] };
+function parseArgs(argv: any) {
+  const args: Record<string, any> = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i].startsWith('--')) {
       const k = argv[i].slice(2);
@@ -50,13 +50,13 @@ function loadApiKey() {
   return m ? m[1].trim() : null;
 }
 
-function findSwiftResolved(explicit) {
+function findSwiftResolved(explicit: any) {
   const rel = 'studiquo.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved';
   const candidates = [explicit, process.env.VULN_WATCH_SWIFT_RESOLVED, `${repoRoot}/${rel}`].filter((p) => typeof p === 'string');
   return candidates.find((p) => existsSync(p)) ?? null;
 }
 
-function cmdInventory(args) {
+function cmdInventory(args: any) {
   const previous = existsSync(inventoryPath) ? JSON.parse(readFileSync(inventoryPath, 'utf8')) : null;
   const { items, warnings } = buildInventory({
     npmDir: `${repoRoot}/mcp-server`,
@@ -71,18 +71,18 @@ function cmdInventory(args) {
   return { items, warnings };
 }
 
-async function cmdScan(args) {
+async function cmdScan(args: any) {
   const { items, warnings } = cmdInventory(args);
   const client = createClient({ cacheDir: `${toolDir}/.cache`, offline: Boolean(args.offline) });
   const sourceErrors = [];
-  let findings = [];
+  let findings: any[] = [];
 
   const unmatchable = items.filter((a) => !a.version);
   try {
     const osv = await queryOsv(client, items);
     findings = findings.concat(osvFindings(osv));
   } catch (e) {
-    sourceErrors.push(`OSV: ${e.message}`);
+    sourceErrors.push(`OSV: ${(e as Error).message}`);
   }
   if (args['no-nvd']) sourceErrors.push('NVD: 取得を省略しました(--no-nvd)');
   if (args['no-jvn']) sourceErrors.push('JVN: 取得を省略しました(--no-jvn)');
@@ -90,15 +90,15 @@ async function cmdScan(args) {
     try {
       findings = findings.concat(await queryNvd(client, items, { apiKey: loadApiKey() }));
     } catch (e) {
-      sourceErrors.push(`NVD: ${e.message}`);
+      sourceErrors.push(`NVD: ${(e as Error).message}`);
     }
   }
 
   if (!args['no-jvn']) {
     try {
-      findings = findings.concat(await queryJvn(client, items, { onWarning: (w) => sourceErrors.push(w) }));
+      findings = findings.concat(await queryJvn(client, items, { onWarning: (w: any) => sourceErrors.push(w) }));
     } catch (e) {
-      sourceErrors.push(`JVN: ${e.message}`);
+      sourceErrors.push(`JVN: ${(e as Error).message}`);
     }
   }
 
@@ -108,12 +108,12 @@ async function cmdScan(args) {
   try {
     kev = await fetchKev(client);
   } catch (e) {
-    sourceErrors.push(`CISA KEV: ${e.message}(KEV掲載による引き上げが効いていません)`);
+    sourceErrors.push(`CISA KEV: ${(e as Error).message}(KEV掲載による引き上げが効いていません)`);
   }
   try {
     epss = await fetchEpss(client, merged.map((f) => f.cve).filter(Boolean));
   } catch (e) {
-    sourceErrors.push(`EPSS: ${e.message}`);
+    sourceErrors.push(`EPSS: ${(e as Error).message}`);
   }
 
   const assetsByKey = new Map(items.map((a) => [assetKey(a), a]));
@@ -124,7 +124,7 @@ async function cmdScan(args) {
   const gap = gapWarning(state, now);
   if (gap) warnings.push(gap);
   const ranked = markNew(
-    rank(merged, { assetsByKey, kev, epss }).map((f) => ({ ...f, id: findingId(f) })),
+    rank(merged, { assetsByKey, kev, epss }).map((f: any) => ({ ...f, id: findingId(f) })),
     state,
   );
 
@@ -143,23 +143,23 @@ async function cmdScan(args) {
   return sourceErrors.length ? 2 : 0;
 }
 
-function outDirOf(args) {
+function outDirOf(args: any) {
   return typeof args.out === 'string' ? resolve(args.out) : `${toolDir}/out`;
 }
 
-function statePathOf(args) {
+function statePathOf(args: any) {
   return typeof args.state === 'string' ? resolve(args.state) : `${toolDir}/state.json`;
 }
 
-const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
+const readJson = (path: any) => JSON.parse(readFileSync(path, 'utf8'));
 
 /** 前回の回の成果物を消す。古い返信や古い操作リストが、今回の回で使われないようにする。 */
-function clearStale(outDir, names) {
+function clearStale(outDir: any, names: any) {
   for (const n of names) rmSync(`${outDir}/${n}`, { force: true });
 }
 
 /** 候補の全件(triage-all.json: 検証用)と、エージェントに判定させる分(triage-input.json)を書く。 */
-function writeTriageFiles(outDir, ranked, generatedAt, state, now, fresh) {
+function writeTriageFiles(outDir: any, ranked: any, generatedAt: any, state: any, now: any, fresh: any) {
   clearStale(outDir, ['reply.json']); // 古い返信を、今回の指摘の判定として使わせない
   const all = buildTriageInput(ranked, { generatedAt });
   const { pending, cached } = selectForJudgement(all.items, state, now, { fresh });
@@ -168,7 +168,7 @@ function writeTriageFiles(outDir, ranked, generatedAt, state, now, fresh) {
   return { all: all.items.length, pending: pending.length, cached: cached.length };
 }
 
-function readRun(outDir) {
+function readRun(outDir: any) {
   const run = readJson(`${outDir}/latest.json`);
   const input = readJson(`${outDir}/triage-input.json`);
   const all = existsSync(`${outDir}/triage-all.json`) ? readJson(`${outDir}/triage-all.json`) : input;
@@ -179,13 +179,13 @@ function readRun(outDir) {
 }
 
 /** 同じ回(generatedAt)の成果物だけを使う。古いファイルは無かったことにする。 */
-function readSameRun(path, generatedAt) {
+function readSameRun(path: any, generatedAt: any) {
   if (!existsSync(path)) return null;
   const j = readJson(path);
   return j.generatedAt === generatedAt ? j : null;
 }
 
-function cmdTriagePack(args) {
+function cmdTriagePack(args: any) {
   const outDir = outDirOf(args);
   const run = readJson(`${outDir}/latest.json`);
   const now = new Date();
@@ -193,17 +193,17 @@ function cmdTriagePack(args) {
   console.log(`判定に回す指摘: ${c.pending}件(キャッシュ再利用 ${c.cached}件 / 候補 ${c.all}件) → ${outDir}/triage-input.json`);
 }
 
-function cmdTriageApply(args) {
+function cmdTriageApply(args: any) {
   const outDir = outDirOf(args);
   const { run, input, all } = readRun(outDir);
   const statePath = statePathOf(args);
   const state = loadState(statePath);
   const now = new Date();
 
-  const pendingIds = new Set(input.items.map((i) => i.id));
+  const pendingIds = new Set(input.items.map((i: any) => i.id));
   const cachedVerdicts = all.items
-    .filter((i) => !pendingIds.has(i.id) && state.verdicts[i.id]?.hash === i.hash)
-    .map((i) => ({ id: i.id, ...state.verdicts[i.id].verdict }));
+    .filter((i: any) => !pendingIds.has(i.id) && state.verdicts[i.id]?.hash === i.hash)
+    .map((i: any) => ({ id: i.id, ...state.verdicts[i.id].verdict }));
 
   const raw = args['no-reply'] ? '' : typeof args.verdicts === 'string' ? readFileSync(args.verdicts, 'utf8') : readFileSync(0, 'utf8');
   let replyIds = new Set();
@@ -215,14 +215,14 @@ function cmdTriageApply(args) {
 
   const result = applyTriage(run.ranked, all, raw, { repoRoot, allowLowering: run.sourceErrors.length === 0, cachedVerdicts, replyAllowedIds: pendingIds });
   const decided = new Set(result.acceptedVerdicts.map((e) => e.id));
-  const unjudged = all.items.filter((i) => !decided.has(i.id)).length; // 判定が付かなかった指摘(エージェントに回したのに返らなかったもの、検証で落ちたキャッシュを含む)
-  const cacheUsed = cachedVerdicts.filter((c) => decided.has(c.id)).length;
-  const cacheBad = cachedVerdicts.filter((c) => !decided.has(c.id)).map((c) => c.id);
+  const unjudged = all.items.filter((i: any) => !decided.has(i.id)).length; // 判定が付かなかった指摘(エージェントに回したのに返らなかったもの、検証で落ちたキャッシュを含む)
+  const cacheUsed = cachedVerdicts.filter((c: any) => decided.has(c.id)).length;
+  const cacheBad = cachedVerdicts.filter((c: any) => !decided.has(c.id)).map((c: any) => c.id);
   const triage = { status: result.status, accepted: result.accepted, judged: result.judged, total: result.total, rejected: result.rejected, redactions: result.redactions, unjudged, cached: cacheUsed };
 
-  const hashOf = new Map(all.items.map((i) => [i.id, i.hash]));
+  const hashOf = new Map(all.items.map((i: any) => [i.id, i.hash]));
   const fresh = result.acceptedVerdicts.filter((e) => replyIds.has(e.id)).map((e) => ({ id: e.id, hash: hashOf.get(e.id), verdict: e.verdict }));
-  saveVerdicts(statePath, state, fresh, all.items.map((i) => i.id), now.toISOString(), cacheBad);
+  saveVerdicts(statePath, state, fresh, all.items.map((i: any) => i.id), now.toISOString(), cacheBad);
 
   const md = renderReport({ ranked: result.ranked, inventory: run.inventory, unmatchable: run.unmatchable, warnings: run.warnings, sourceErrors: run.sourceErrors, generatedAt: run.generatedAt, triage });
   writeFileSync(`${outDir}/latest.md`, md);
@@ -236,7 +236,7 @@ function cmdTriageApply(args) {
   return noVerdict ? 3 : 0;
 }
 
-function cmdCardsPlan(args) {
+function cmdCardsPlan(args: any) {
   const outDir = outDirOf(args);
   clearStale(outDir, ['cards-ops.json']); // 失敗しても、前回の操作リストが残って実行されないように、最初に消す
   const run = readJson(`${outDir}/latest.json`);
@@ -254,12 +254,12 @@ function cmdCardsPlan(args) {
   for (const n of plan.notes) console.warn(`  注意: ${n}`);
 }
 
-function cmdSummary(args) {
+function cmdSummary(args: any) {
   const outDir = outDirOf(args);
   const run = readJson(`${outDir}/latest.json`);
   const result = readSameRun(`${outDir}/triage-result.json`, run.generatedAt);
   const plan = readSameRun(`${outDir}/cards-ops.json`, run.generatedAt);
-  const num = (k) => (typeof args[k] === 'string' && /^\d{1,3}$/.test(args[k]) ? Number(args[k]) : undefined);
+  const num = (k: any) => (typeof args[k] === 'string' && /^\d{1,3}$/.test(args[k]) ? Number(args[k]) : undefined);
   const { text, notify } = buildSummary({
     ranked: result?.ranked ?? run.ranked,
     run,
@@ -284,10 +284,10 @@ try {
   else if (cmd === 'cards-plan') cmdCardsPlan(args);
   else if (cmd === 'summary') cmdSummary(args);
   else {
-    console.error('使い方: cli.js inventory | scan [--offline] [--no-nvd] [--no-jvn] [--out dir] | triage-pack | triage-apply [--verdicts file | --no-reply] | cards-plan --existing file | summary');
+    console.error('使い方: cli.ts inventory | scan [--offline] [--no-nvd] [--no-jvn] [--out dir] | triage-pack | triage-apply [--verdicts file | --no-reply] | cards-plan --existing file | summary');
     process.exitCode = 1;
   }
 } catch (e) {
-  console.error(`失敗: ${e.message}`);
+  console.error(`失敗: ${(e as Error).message}`);
   process.exitCode = 1;
 }

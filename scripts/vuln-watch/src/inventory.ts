@@ -4,7 +4,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 
 /** OSV(SwiftURL)のパッケージ名は「github.com/owner/repo」。スキームと.gitは付けない。 */
-export function swiftUrlName(location) {
+export function swiftUrlName(location: any) {
   return String(location)
     .replace(/^[a-z+]+:\/\//i, '')
     .replace(/^git@([^:]+):/, '$1/')
@@ -12,13 +12,13 @@ export function swiftUrlName(location) {
     .replace(/\/$/, '');
 }
 
-export function parseNpmLock(lock, pkgJson = {}) {
+export function parseNpmLock(lock: any, pkgJson: any = {}) {
   const direct = new Set([
     ...Object.keys(pkgJson.dependencies ?? {}),
     ...Object.keys(pkgJson.devDependencies ?? {}),
   ]);
-  const items = [];
-  for (const [path, meta] of Object.entries(lock.packages ?? {})) {
+  const items: any[] = [];
+  for (const [path, meta] of Object.entries<any>(lock.packages ?? {})) {
     if (!path.includes('node_modules/')) continue; // ルート自身は除く
     const name = path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length);
     if (!meta.version || meta.link) continue;
@@ -33,9 +33,9 @@ export function parseNpmLock(lock, pkgJson = {}) {
   return items;
 }
 
-export function parseSwiftResolved(resolved) {
+export function parseSwiftResolved(resolved: any) {
   const pins = resolved.pins ?? resolved.object?.pins ?? [];
-  return pins.map((p) => {
+  return pins.map((p: any) => {
     const location = p.location ?? p.repositoryURL ?? '';
     const identity = p.identity ?? String(p.package ?? '').toLowerCase();
     return {
@@ -50,8 +50,8 @@ export function parseSwiftResolved(resolved) {
 }
 
 /** 手書き補足(assets.manual.json)を重ねる。キーは「ecosystem:name」または「SwiftURL:identity」。 */
-export function applyManual(items, manual) {
-  return items.map((it) => {
+export function applyManual(items: any, manual: any) {
+  return items.map((it: any) => {
     const hint = manual.assets?.[`${it.ecosystem}:${it.name}`] ?? manual.assets?.[`${it.ecosystem}:${it.identity}`] ?? {};
     return {
       ...it,
@@ -63,11 +63,11 @@ export function applyManual(items, manual) {
   });
 }
 
-function key(it) {
+function key(it: any) {
   return `${it.ecosystem}:${it.name}@${it.version ?? it.revision}`;
 }
 
-export function dedupe(items) {
+export function dedupe(items: any) {
   const seen = new Map();
   for (const it of items) {
     const k = key(it);
@@ -78,13 +78,13 @@ export function dedupe(items) {
   return [...seen.values()].sort((a, b) => key(a).localeCompare(key(b)));
 }
 
-const readJson = (p) => JSON.parse(readFileSync(p, 'utf8'));
+const readJson = (p: any) => JSON.parse(readFileSync(p, 'utf8'));
 
 /**
  * @param {{npmDir:string, swiftResolved:string|null, manualPath:string, previous?:object}} o
  * Package.resolved はgit管理外(xcodeprojが無視されるため)。見つからなければ前回の台帳のSwift分を引き継ぐ。
  */
-export function buildInventory({ npmDir, swiftResolved, manualPath, previous = null }) {
+export function buildInventory({ npmDir, swiftResolved, manualPath, previous = null }: any) {
   const warnings = [];
   const manual = existsSync(manualPath) ? readJson(manualPath) : {};
   let items = parseNpmLock(readJson(`${npmDir}/package-lock.json`), readJson(`${npmDir}/package.json`));
@@ -92,7 +92,7 @@ export function buildInventory({ npmDir, swiftResolved, manualPath, previous = n
   if (swiftResolved && existsSync(swiftResolved)) {
     items = items.concat(parseSwiftResolved(readJson(swiftResolved)));
   } else {
-    const carried = (previous?.items ?? []).filter((i) => i.ecosystem === 'SwiftURL');
+    const carried = (previous?.items ?? []).filter((i: any) => i.ecosystem === 'SwiftURL');
     warnings.push(
       carried.length
         ? `Package.resolved が見つからないため、前回の台帳のSwift分(${carried.length}件)を引き継ぎました。`

@@ -20,11 +20,11 @@ const LINK_RE = /^(https:\/\/nvd\.nist\.gov\/vuln\/detail\/CVE-\d{4}-\d{4,}|http
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\u0000-\u001f\u007f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/;
 
-const IMPORTANCE = { 緊急: '本番を止める', 高: '高', 中: '中' };
+const IMPORTANCE: Record<string, string> = { 緊急: '本番を止める', 高: '高', 中: '中' };
 const IMPORTANCE_ORDER = ['低', '中', '高', '本番を止める'];
-const AREA = { server: 'サーバー', app: 'アプリ', tooling: '全体' };
-const APPLIC = { applies: '該当', likely: 'おそらく該当', unlikely: 'おそらく非該当', not_applicable: '非該当', unknown: '不明' };
-const CONF = { high: '高', medium: '中', low: '低' };
+const AREA: Record<string, string> = { server: 'サーバー', app: 'アプリ', tooling: '全体' };
+const APPLIC: Record<string, string> = { applies: '該当', likely: 'おそらく該当', unlikely: 'おそらく非該当', not_applicable: '非該当', unknown: '不明' };
+const CONF: Record<string, string> = { high: '高', medium: '中', low: '低' };
 const SOURCES = ['osv', 'nvd', 'jvn'];
 
 const CREATE_ENUMS = {
@@ -35,13 +35,13 @@ const CREATE_ENUMS = {
   状態: ['未着手', 'あなた待ち'],
 };
 const CREATE_PROPS = new Set(['名前', '作業の種類', '重要度', '領域', '担当', '状態', '次の一手', '経緯・結果', 'リンク']);
-const TEXT_LIMITS = { 名前: 260, 次の一手: 400, '経緯・結果': 800 };
+const TEXT_LIMITS: Record<string, number> = { 名前: 260, 次の一手: 400, '経緯・結果': 800 };
 
-export function primaryId(f) {
+export function primaryId(f: any) {
   return [f.cve, ...(f.ids ?? [])].find((x) => typeof x === 'string' && ID_RE.test(x)) ?? null;
 }
 
-export function canonicalUrl(id) {
+export function canonicalUrl(id: any) {
   if (/^CVE-/.test(id)) return `https://nvd.nist.gov/vuln/detail/${id}`;
   if (/^GHSA-/.test(id)) return `https://github.com/advisories/${id}`;
   const m = /^JVNDB-(\d{4})-\d{4,}$/.exec(id);
@@ -49,27 +49,27 @@ export function canonicalUrl(id) {
 }
 
 /** 緊急・高は全件、中は版まで確定したものだけ。情報は作らない。 */
-export function eligible(f) {
+export function eligible(f: any) {
   return f.tier === '緊急' || f.tier === '高' || (f.tier === '中' && f.status === 'confirmed');
 }
 
-export function cardTitle(f) {
+export function cardTitle(f: any) {
   const id = primaryId(f);
   return id && typeof f.asset === 'string' && ASSET_RE.test(f.asset) ? `${CARD_PREFIX}${id} ${f.asset}` : null;
 }
 
 /** カードのURLから、Notionのページ ID(32桁の16進)を取り出す。形式に合わなければ null。 */
-export function extractPageId(url) {
+export function extractPageId(url: any) {
   return typeof url === 'string' ? (NOTION_URL_RE.exec(url)?.[1] ?? null) : null;
 }
 
-const normTitle = (t) => String(t).normalize('NFKC').trim();
+const normTitle = (t: any) => String(t).normalize('NFKC').trim();
 
-function createOp(f, today) {
+function createOp(f: any, today: any) {
   const id = primaryId(f);
   const url = canonicalUrl(id);
   const pkg = f.asset.slice(0, f.asset.lastIndexOf('@'));
-  const fixed = (Array.isArray(f.fixed) ? f.fixed : []).filter((v) => typeof v === 'string' && v.length <= 24 && FIXED_RE.test(v));
+  const fixed = (Array.isArray(f.fixed) ? f.fixed : []).filter((v: any) => typeof v === 'string' && v.length <= 24 && FIXED_RE.test(v));
   const needsCheck = f.status === 'needs-review';
   const next = [
     needsCheck ? '該当するかを確認する。' : '',
@@ -79,7 +79,7 @@ function createOp(f, today) {
   const cvss = typeof f.cvss === 'number' ? String(f.cvss) : '不明';
   const epss = typeof f.epss === 'number' ? `${(f.epss * 100).toFixed(1)}%` : '不明';
   const llm = f.verdict ? `${APPLIC[f.verdict.applicability] ?? '不明'}(確度${CONF[f.verdict.confidence] ?? '低'})` : 'なし';
-  const sources = (f.sources ?? []).filter((x) => SOURCES.includes(x)).join('・') || '不明';
+  const sources = (f.sources ?? []).filter((x: any) => SOURCES.includes(x)).join('・') || '不明';
   const history = `${today} 検出。区分 ${f.tier}、スコア ${Number(f.score)}、CVSS ${cvss}、KEV ${f.kev ? '有' : '無'}、EPSS ${epss}。LLM判定 ${llm}。出典 ${sources}。 ${url}`;
   return {
     op: 'create',
@@ -97,15 +97,15 @@ function createOp(f, today) {
   };
 }
 
-const importanceRank = (v) => IMPORTANCE_ORDER.indexOf(v);
+const importanceRank = (v: any) => IMPORTANCE_ORDER.indexOf(v);
 
-export const upText = (today, from, to) => `${today} 重要度を ${from}→${to} に上げた(区分または根拠の変化)。`;
-export const goneText = (today) => `${today} 検出されなくなった。更新されたかを確認して完了にする。`;
+export const upText = (today: any, from: any, to: any) => `${today} 重要度を ${from}→${to} に上げた(区分または根拠の変化)。`;
+export const goneText = (today: any) => `${today} 検出されなくなった。更新されたかを確認して完了にする。`;
 const COMMENT_RE = /^\d{4}-\d{2}-\d{2} (重要度を (低|中|高|本番を止める)→(低|中|高|本番を止める) に上げた\(区分または根拠の変化\)。|検出されなくなった。更新されたかを確認して完了にする。)$/;
 
 /** 操作を検証する。通らなければ理由の文字列、通れば null。 */
-export function validateOp(op) {
-  const str = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max && !CONTROL_RE.test(v);
+export function validateOp(op: any) {
+  const str = (v: any, max: any) => typeof v === 'string' && v.length > 0 && v.length <= max && !CONTROL_RE.test(v);
   if (op?.op === 'create') {
     const p = op.properties;
     if (!p || typeof p !== 'object') return 'properties が無い';
@@ -142,7 +142,7 @@ export function validateOp(op) {
  * Notionから取得した既存カードを、題名・URL・状態・重要度だけに絞る。
  * 「[脆弱性]」で始まるのに形式が合わず捨てたものは dropped に数える(捨てたまま計画すると重複カードを作るため)。
  */
-export function sanitizeExisting(raw) {
+export function sanitizeExisting(raw: any) {
   const cards = [];
   let dropped = 0;
   for (const c of Array.isArray(raw) ? raw : []) {
@@ -167,7 +167,7 @@ export function sanitizeExisting(raw) {
  * @param {{ranked:object[], existing:object[], today:string, incomplete:boolean, maxCreate?:number}} o
  * incomplete: 取得に失敗したデータ源がある回。「検出されなくなった」ことを根拠にカードを動かさない。
  */
-export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 }) {
+export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 }: any) {
   const { cards: list, dropped } = sanitizeExisting(existing);
   const cards = new Map();
   const notes = [];
@@ -183,14 +183,14 @@ export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 
   const blocked = dropped > 0;
   if (blocked) notes.push(`形式が合わず読み取れなかった[脆弱性]のカードが${dropped}件あるため、カードの新規作成と「検出されなくなった」の処理を止めた。`);
 
-  const ops = [];
+  const ops: any[] = [];
   const skipped = [];
-  const push = (op, label) => {
+  const push = (op: any, label: any) => {
     const problem = validateOp(op);
     if (problem) skipped.push({ target: label, reason: problem });
     else ops.push(op);
   };
-  const withPage = (op, url) => ({ ...op, url, pageId: extractPageId(url) });
+  const withPage = (op: any, url: any) => ({ ...op, url, pageId: extractPageId(url) });
 
   const current = new Set();
   for (const f of Array.isArray(ranked) ? ranked : []) {
@@ -233,7 +233,7 @@ export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 
         }
       }
     } catch (e) {
-      skipped.push({ target: String(f?.id ?? '(不明)'), reason: `計画中に失敗: ${String(e.message).slice(0, 80)}` });
+      skipped.push({ target: String(f?.id ?? '(不明)'), reason: `計画中に失敗: ${String((e as Error).message).slice(0, 80)}` });
     }
   }
 
@@ -248,25 +248,25 @@ export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 
     notes.push('取得に失敗したデータ源があるため、検出されなくなったカードは動かしていない。');
   }
 
-  const count = (k) => ops.filter((o) => o.op === k).length;
+  const count = (k: any) => ops.filter((o) => o.op === k).length;
   return { ops, skipped, notes: [...new Set(notes)], counts: { create: count('create'), update: count('update'), comment: count('comment') } };
 }
 
-const int = (v) => (Number.isInteger(v) && v >= 0 && v <= 999 ? v : null);
+const int = (v: any) => (Number.isInteger(v) && v >= 0 && v <= 999 ? v : null);
 
 // LLMが確度中以上で「非該当」と判定した「情報」止まりの指摘。消さず latest.md には残すが、
 // 日次要約のカウントからは外す(ユーザー合意・2026-10-19)。要約から外れても判定自体は記録に残るため、
 // 誤判定を見逃さないための「情報」の目的(設計書2.3)は latest.md の確認で引き続き担保する。
-const judgedNotApplicable = (f) => f.tier === '情報' && f.verdict?.applicability === 'not_applicable' && f.verdict?.confidence !== 'low';
+const judgedNotApplicable = (f: any) => f.tier === '情報' && f.verdict?.applicability === 'not_applicable' && f.verdict?.confidence !== 'low';
 
 /** 実行の最後に返す、固定書式の要約と、通知の文言(無ければ null)。 */
-export function buildSummary({ ranked, run, triage, plan, executed = {}, today, outDir }) {
+export function buildSummary({ ranked, run, triage, plan, executed = {}, today, outDir }: any) {
   const tiers = ['緊急', '高', '中', '情報'];
-  const visible = ranked.filter((f) => !judgedNotApplicable(f));
+  const visible = ranked.filter((f: any) => !judgedNotApplicable(f));
   const hidden = ranked.length - visible.length;
-  const n = (t) => visible.filter((f) => f.tier === t).length;
-  const fresh = visible.filter((f) => f.isNew).length;
-  const urgentNew = ranked.filter((f) => f.isNew && (f.tier === '緊急' || f.kev)).length;
+  const n = (t: any) => visible.filter((f: any) => f.tier === t).length;
+  const fresh = visible.filter((f: any) => f.isNew).length;
+  const urgentNew = ranked.filter((f: any) => f.isNew && (f.tier === '緊急' || f.kev)).length;
   const errors = run.sourceErrors?.length ?? 0;
   const ex = Object.fromEntries(['created', 'updated', 'commented', 'failed'].map((k) => [k, int(executed[k])]));
   const lines = [

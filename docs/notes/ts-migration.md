@@ -17,7 +17,7 @@
 
 ## 対象外・あとで扱う
 
-- `scripts/vuln-watch`、`security/dast`(`.mjs`)、`security/sast/fixtures`(検査用の見本なので変換しない)。
+- なし(`mcp-server` 以外の JavaScript も .ts にした。下の「他のフォルダ」)。
 
 ## 進み具合
 
@@ -47,3 +47,12 @@
 - 具体的な型を付けにくかった所は、暗黙の any を `: any` として明示した(`grep -n ": any" mcp-server/src/*.ts`、約230か所)。新しいコードで暗黙の any は出せないが、この `any` は具体的な型へ直していく(Notion の別カード)。
 - テスト(`*.test.ts`)は `tsconfig.test.json` で `strict: false` のまま。`@ts-nocheck` の件と合わせて別カード。
 - 型を付けたとき、`AttestRecord.publicKey` を `Uint8Array` と誤って書いていたのを `string`(base64url)に直した。フェーズ3のレビューでも見つからなかった例なので、`any` を具体的な型にするときは実際に保存・送信される値を確かめる。
+
+## 他のフォルダ(`mcp-server` 以外)
+
+- `scripts/vuln-watch`(14+3本)・`security/dast`(3本)・`security/sast/fixtures/javascript.js`(→ `typescript.ts`)を .ts にした。リポジトリに JavaScript(`.js` `.mjs` `.cjs`)は残っていない。
+- 実行は `node src/cli.ts ...` のように .ts を直接指定する(Node が型を除去する)。型検査: `scripts/vuln-watch` は自分の `tsconfig.json` と devDependencies(`typescript` `@types/node`)、`security/dast` は `security/tsconfig.json`(Node の型は `mcp-server` の `node_modules` から)。どちらも `strict`。引数の型は多くが明示の `any`(`mcp-server` と同じ方針)。
+- `security/package.json`(`"type": "module"`)を足した。`.ts` を ESM として読ませるため。
+- SAST: `.semgrep.yml` の規則は元から `[javascript, typescript]` なので、`.ts` もこれまで通り走査される。`security/sast/run.py` の「JavaScript を走査したか」の確認は、`.ts` を必須にした(コードが全部 .ts になったので、`.ts` の走査が抜けたら失敗させる。`.js` が1本残っていても通さない)。移行前と後で Semgrep の指摘は同じ20件(規則・ファイルとも同じ、行番号だけ違う)。
+- CI: `ci.yml` に `scripts` ジョブ(vuln-watch の型検査とテスト)を足し、`security-dast.yml` に DAST スクリプトの型検査を足した。 `dependabot.yml` に `/scripts/vuln-watch` を足した(typescript と @types/node の更新を見るため)。
+- vuln-watch は Claude Code のスケジュールタスクが `scripts/vuln-watch/RUNBOOK.md` に従って実行する。コマンドが `node src/cli.ts ...` に変わるので、許可設定(`.claude/settings.local.json` の `Bash(node src/cli.js scan)`)も `.ts` に直す必要がある(利用者の設定ファイルなので、ここでは直していない)。
