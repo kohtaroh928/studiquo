@@ -1,14 +1,14 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Hex } from "./auth.ts";
 import { accountGenerationMethods } from "./test-account-generations.ts";
 import { Argon2BusyError, argon2QueueState, engine, hashers, upsertLocalAccount, verifyLocalAccount } from "./local-auth.ts";
+import { partialEnv } from "./test-env.ts";
 
-function environment({ argon2Write = true } = {}) {
+function environment({ argon2Write = true }: { argon2Write?: boolean } = {}) {
   const values = new Map();
   const generations = new Map();
-  const env = {
+  const env = partialEnv({
     ...(argon2Write ? { ARGON2_WRITE: "true" } : {}),
     RATE_COUNTER: {
       getByName: name => accountGenerationMethods(name, generations, () => env.STUDIQUO_DATA),
@@ -21,7 +21,7 @@ function environment({ argon2Write = true } = {}) {
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
     },
-  };
+  });
   return env;
 }
 
@@ -49,7 +49,7 @@ test("the stored record never contains the plaintext password", async () => {
   const env = environment();
   await upsertLocalAccount(env, "person@example.com", "correct-horse-battery");
 
-  const record = await env.STUDIQUO_DATA.get("account:local:person@example.com", "json");
+  const record: any = await env.STUDIQUO_DATA.get("account:local:person@example.com", "json");
   assert.equal(JSON.stringify(record).includes("correct-horse-battery"), false);
   assert.ok(record.passwordHash);
   assert.ok(record.salt);
@@ -69,8 +69,8 @@ test("two accounts with the same password get different salts and different stor
   await upsertLocalAccount(env, "a@example.com", "shared-password-123");
   await upsertLocalAccount(env, "b@example.com", "shared-password-123");
 
-  const a = await env.STUDIQUO_DATA.get("account:local:a@example.com", "json");
-  const b = await env.STUDIQUO_DATA.get("account:local:b@example.com", "json");
+  const a: any = await env.STUDIQUO_DATA.get("account:local:a@example.com", "json");
+  const b: any = await env.STUDIQUO_DATA.get("account:local:b@example.com", "json");
   assert.notEqual(a.salt, b.salt);
   assert.notEqual(a.passwordHash, b.passwordHash);
 });
@@ -94,7 +94,7 @@ function storedRecord(env, email) {
 }
 
 // A pre-migration account, written exactly as the old code did.
-async function seedLegacyAccount(env, email, password, { iterations = 100_000 } = {}) {
+async function seedLegacyAccount(env, email, password, { iterations = 100_000 }: { iterations?: number } = {}) {
   const salt = crypto.getRandomValues(new Uint8Array(24));
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations, hash: "SHA-256" }, key, 256);
@@ -270,14 +270,14 @@ test("a stale read of the pre-reset record cannot bring the old password back", 
   await upsertLocalAccount(env, "person@example.com", "brand-new-password");
   // ...but a lagging replica still serves the old one to the login that follows.
   const realGet = env.STUDIQUO_DATA.get;
-  env.STUDIQUO_DATA.get = async (key, type) => (
+  (env.STUDIQUO_DATA as any).get = async (key, type) => (
     key === "account:local:person@example.com" ? (type === "json" ? JSON.parse(staleRecord) : staleRecord) : realGet(key, type)
   );
   try {
     // The old password is accepted off the stale record (KV consistency, not new)...
     assert.equal(await verifyLocalAccount(env, "person@example.com", "old-password-1"), true);
   } finally {
-    env.STUDIQUO_DATA.get = realGet;
+    (env.STUDIQUO_DATA as any).get = realGet;
   }
   // ...but its upgrade must not have replaced the reset.
   assert.equal(await verifyLocalAccount(env, "person@example.com", "brand-new-password"), true);
@@ -313,7 +313,7 @@ test("a reset that lands between the upgrade's read and its write is not overwri
 test("a failed upgrade write never fails the sign-in", async () => {
   const env = environment();
   await seedLegacyAccount(env, "person@example.com", "correct-horse-battery");
-  env.RATE_COUNTER = { getByName: () => ({ upgradeAccountIfCurrent: async () => { throw new Error("DO down"); } }) };
+  (env.RATE_COUNTER as any) = { getByName: () => ({ upgradeAccountIfCurrent: async () => { throw new Error("DO down"); } }) };
   const originalError = console.error;
   console.error = () => {};
   try {
@@ -359,7 +359,7 @@ test("if the generation store is down, setting a password fails and the old reco
   await upsertLocalAccount(env, "person@example.com", "old-password-1");
   const before = JSON.stringify(await storedRecord(env, "person@example.com"));
 
-  env.RATE_COUNTER = { getByName: () => ({ nextAccountGeneration: async () => { throw new Error("DO down"); } }) };
+  (env.RATE_COUNTER as any) = { getByName: () => ({ nextAccountGeneration: async () => { throw new Error("DO down"); } }) };
   await assert.rejects(() => upsertLocalAccount(env, "person@example.com", "brand-new-password"), /DO down/);
   assert.equal(JSON.stringify(await storedRecord(env, "person@example.com")), before);
 });

@@ -1,14 +1,14 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleAdminReports } from "./admin-reports.ts";
+import { partialEnv } from "./test-env.ts";
 
 function makeAdminEnv() {
   const issueReports = new Map();
   const appErrors = new Map();
   const kv = new Map();
 
-  return {
+  return partialEnv({
     _issueReports: issueReports,
     _appErrors: appErrors,
     _kv: kv,
@@ -95,15 +95,15 @@ function makeAdminEnv() {
         };
       },
     },
-  };
+  });
 }
 
 test("returns null for non-admin-report routes and 503 when ADMIN_DB is missing", async () => {
   const otherUrl = new URL("https://api.studiquo.app/api/announcements");
-  assert.equal(await handleAdminReports(otherUrl, new Request(otherUrl), {}), null);
+  assert.equal(await handleAdminReports(otherUrl, new Request(otherUrl), partialEnv({})), null);
 
   const adminUrl = new URL("https://api.studiquo.app/api/admin/issue-reports");
-  const unavailable = await handleAdminReports(adminUrl, new Request(adminUrl), {});
+  const unavailable = await handleAdminReports(adminUrl, new Request(adminUrl), partialEnv({}));
   assert.equal(unavailable.status, 503);
 });
 

@@ -1,7 +1,7 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MONITOR, noteSignInContext, recordLoginOutcome, requestContext, touchSeenContext } from "./login-monitor.ts";
+import { partialEnv } from "./test-env.ts";
 
 const DAY = 86_400_000;
 
@@ -48,7 +48,7 @@ test("requestContext needs both country and ASN, and never exposes the IP", () =
 function fakeEnv() {
   const counts = new Map();
   const seen = new Map();
-  const env = {
+  const env = partialEnv({
     RESEND_API_KEY: "test-key",
     SLACK_ISSUE_REPORT_WEBHOOK_URL: "https://hooks.example.test/slack",
     RATE_COUNTER: {
@@ -68,7 +68,7 @@ function fakeEnv() {
         };
       },
     },
-  };
+  });
   return env;
 }
 
@@ -137,7 +137,7 @@ test("a Slack or counter failure never throws out of recordLoginOutcome", async 
   const original = console.error;
   console.error = () => {};
   try {
-    await recordLoginOutcome({ RATE_COUNTER: { getByName() { throw new Error("DO down"); } } }, withCf({ country: "JP", asn: 1 }), "failure");
+    await recordLoginOutcome(partialEnv({ RATE_COUNTER: { getByName() { throw new Error("DO down"); } } }), withCf({ country: "JP", asn: 1 }), "failure");
   } finally {
     console.error = original;
   }

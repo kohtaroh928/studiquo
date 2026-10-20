@@ -1,12 +1,12 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.ts";
 import { linkedIdentities } from "./oauth-links.ts";
+import { partialEnv } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) {
         const value = values.get(key) ?? null;
@@ -16,7 +16,7 @@ function environment() {
       async delete(key) { values.delete(key); },
     },
     RESEND_API_KEY: "test-key",
-  };
+  });
 }
 
 function stubResend(handler) {
@@ -128,7 +128,7 @@ test("confirmVerificationCode rejects an expired code", async () => {
   const env = environment();
   const code = await captureSentCode(env, "person@example.com");
   const record = await env.STUDIQUO_DATA.get("email-verify:person@example.com", "json");
-  await env.STUDIQUO_DATA.put("email-verify:person@example.com", JSON.stringify({ ...record, expiresAt: Date.now() - 1000 }));
+  await env.STUDIQUO_DATA.put("email-verify:person@example.com", JSON.stringify({ ...(record as object), expiresAt: Date.now() - 1000 }));
 
   const result = await confirmVerificationCode(env, "person@example.com", code);
   assert.deepEqual(result, { verified: false, attemptsRemaining: 0 });

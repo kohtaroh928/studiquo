@@ -1,7 +1,7 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { register } from "node:module";
+import { partialCtx, partialEnv } from "./test-env.ts";
 
 // app.ts reaches Durable Object classes that extend "cloudflare:workers"
 // (see features.test.js for the same stand-in).
@@ -24,11 +24,11 @@ register(
 
 const { HSTS_VALUE, plainHttpResponse, withTransportHeaders } = await import("./transport.ts");
 const { default: worker } = await import("./app.ts");
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 
 test("every kind of response from the Worker carries Strict-Transport-Security", async () => {
   for (const path of ["/health", "/invite?token=ABCD1234", "/invite", "/api/plan", "/no-such-route", "/terms", "/.well-known/apple-app-site-association"]) {
-    const response = await worker.fetch(new Request(`https://example.test${path}`), {}, noopCtx);
+    const response = await worker.fetch(new Request(`https://example.test${path}`), partialEnv({}), noopCtx);
     assert.equal(response.headers.get("strict-transport-security"), HSTS_VALUE, path);
   }
   assert.equal(HSTS_VALUE, "max-age=31536000", "no includeSubDomains and no preload");
@@ -42,7 +42,7 @@ test("a response whose headers cannot be changed is copied, and a WebSocket hand
   assert.equal(copied.headers.get("location"), "https://example.test/x");
 
   const upgrade = { status: 101, headers: new Headers(), webSocket: {} };
-  assert.equal(withTransportHeaders(upgrade), upgrade, "rebuilding a 101 would drop its socket");
+  assert.equal(withTransportHeaders(upgrade as unknown as Response), upgrade, "rebuilding a 101 would drop its socket");
   assert.equal(upgrade.headers.has("strict-transport-security"), false);
 
   const already = new Response("x", { headers: { "strict-transport-security": "max-age=1" } });
@@ -50,22 +50,22 @@ test("a response whose headers cannot be changed is copied, and a WebSocket hand
 });
 
 test("plain http is answered before the handler runs: GET goes to https, anything else is refused", async () => {
-  const get = await worker.fetch(new Request("http://api.example.test/api/plan?x=1", { headers: { authorization: "Bearer secret" } }), {}, noopCtx);
+  const get = await worker.fetch(new Request("http://api.example.test/api/plan?x=1", { headers: { authorization: "Bearer secret" } }), partialEnv({}), noopCtx);
   assert.equal(get.status, 308);
   assert.equal(get.headers.get("location"), "https://api.example.test/api/plan?x=1");
   assert.equal(get.headers.get("strict-transport-security"), HSTS_VALUE);
 
   for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
-    const response = await worker.fetch(new Request("http://api.example.test/api/chat/inbox", { method, headers: { authorization: "Bearer secret" } }), {}, noopCtx);
+    const response = await worker.fetch(new Request("http://api.example.test/api/chat/inbox", { method, headers: { authorization: "Bearer secret" } }), partialEnv({}), noopCtx);
     assert.equal(response.status, 403, method);
     assert.equal((await response.json()).code, "https_required");
   }
 });
 
 test("plain http to /health is also sent to https, and local development over http is untouched", async () => {
-  assert.equal((await worker.fetch(new Request("http://api.example.test/health"), {}, noopCtx)).status, 308);
+  assert.equal((await worker.fetch(new Request("http://api.example.test/health"), partialEnv({}), noopCtx)).status, 308);
   for (const host of ["localhost:8787", "127.0.0.1:8787", "[::1]:8787", "dev.localhost:8787"]) {
-    const response = await worker.fetch(new Request(`http://${host}/health`), {}, noopCtx);
+    const response = await worker.fetch(new Request(`http://${host}/health`), partialEnv({}), noopCtx);
     assert.equal(response.status, 200, host);
   }
   const request = new Request("http://api.example.test/health");
@@ -74,13 +74,13 @@ test("plain http to /health is also sent to https, and local development over ht
 });
 
 test("HEAD over plain http is sent to https like GET", async () => {
-  const response = await worker.fetch(new Request("http://api.example.test/api/plan", { method: "HEAD" }), {}, noopCtx);
+  const response = await worker.fetch(new Request("http://api.example.test/api/plan", { method: "HEAD" }), partialEnv({}), noopCtx);
   assert.equal(response.status, 308);
   assert.equal(response.headers.get("location"), "https://api.example.test/api/plan");
 });
 
 test("a failing handler still answers with the transport header", async () => {
-  const broken = { STUDIQUO_DATA: { get() { throw new Error("KV down"); }, put() { throw new Error("KV down"); } } };
+  const broken = partialEnv({ STUDIQUO_DATA: { get() { throw new Error("KV down"); }, put() { throw new Error("KV down"); } } });
   const original = console.error;
   console.error = () => {};
   try {
@@ -110,10 +110,10 @@ test("a streamed response is passed through unbuffered, immutable headers or not
 });
 
 test("other methods over plain http are refused too, and the refusal says why", async () => {
-  const response = await worker.fetch(new Request("http://api.example.test/api/chat/inbox", { method: "OPTIONS" }), {}, noopCtx);
+  const response = await worker.fetch(new Request("http://api.example.test/api/chat/inbox", { method: "OPTIONS" }), partialEnv({}), noopCtx);
   assert.equal(response.status, 403);
   assert.equal((await response.json()).code, "https_required");
-  const upper = await worker.fetch(new Request("HTTP://API.EXAMPLE.TEST:80/health"), {}, noopCtx);
+  const upper = await worker.fetch(new Request("HTTP://API.EXAMPLE.TEST:80/health"), partialEnv({}), noopCtx);
   assert.equal(upper.status, 308);
   assert.equal(upper.headers.get("location"), "https://api.example.test/health");
 });

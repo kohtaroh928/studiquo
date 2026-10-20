@@ -1,16 +1,16 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import test from "node:test";
 import worker from "./app.ts";
 import { sealSnapshot, openSnapshot } from "./snapshot-crypto.ts";
+import { partialCtx, partialEnv } from "./test-env.ts";
 
 const newKey = () => randomBytes(32).toString("base64");
 const hash = value => createHash("sha256").update(value).digest("hex");
 const SNAPSHOT = JSON.stringify({ version: 1, notebooks: [{ id: "n", title: "秘密のノート", pages: [{ id: "p", title: "p", recognizedText: "ひみつの内容" }] }] });
 
 test("a sealed snapshot does not contain its plaintext and opens back to the original", async () => {
-  const env = { SNAPSHOT_ENCRYPTION_KEY: newKey() };
+  const env = partialEnv({ SNAPSHOT_ENCRYPTION_KEY: newKey() });
   const sealed = await sealSnapshot(env, "snapshot:a", SNAPSHOT);
   assert.match(sealed, /^enc1\.1\./);
   assert.ok(!sealed.includes("ひみつ") && !sealed.includes("recognizedText"));
@@ -18,18 +18,18 @@ test("a sealed snapshot does not contain its plaintext and opens back to the ori
 });
 
 test("the same snapshot sealed twice gives different ciphertext (fresh IV each time)", async () => {
-  const env = { SNAPSHOT_ENCRYPTION_KEY: newKey() };
+  const env = partialEnv({ SNAPSHOT_ENCRYPTION_KEY: newKey() });
   assert.notEqual(await sealSnapshot(env, "snapshot:a", SNAPSHOT), await sealSnapshot(env, "snapshot:a", SNAPSHOT));
 });
 
 test("a ciphertext moved to another key name does not open", async () => {
-  const env = { SNAPSHOT_ENCRYPTION_KEY: newKey() };
+  const env = partialEnv({ SNAPSHOT_ENCRYPTION_KEY: newKey() });
   const sealed = await sealSnapshot(env, "snapshot:alice", SNAPSHOT);
   await assert.rejects(openSnapshot(env, "snapshot:bob", sealed));
 });
 
 test("a tampered ciphertext is rejected", async () => {
-  const env = { SNAPSHOT_ENCRYPTION_KEY: newKey() };
+  const env = partialEnv({ SNAPSHOT_ENCRYPTION_KEY: newKey() });
   const sealed = await sealSnapshot(env, "snapshot:a", SNAPSHOT);
   // Form: "enc1.<key id>.<iv>.<ciphertext>". Change a character well inside the
   // ciphertext. The very last base64 character can carry bits that decoding
@@ -47,47 +47,47 @@ test("a tampered ciphertext is rejected", async () => {
 });
 
 test("the wrong key does not open a sealed snapshot", async () => {
-  const sealed = await sealSnapshot({ SNAPSHOT_ENCRYPTION_KEY: newKey() }, "snapshot:a", SNAPSHOT);
-  await assert.rejects(openSnapshot({ SNAPSHOT_ENCRYPTION_KEY: newKey() }, "snapshot:a", sealed));
+  const sealed = await sealSnapshot(partialEnv({ SNAPSHOT_ENCRYPTION_KEY: newKey() }), "snapshot:a", SNAPSHOT);
+  await assert.rejects(openSnapshot(partialEnv({ SNAPSHOT_ENCRYPTION_KEY: newKey() }), "snapshot:a", sealed));
 });
 
 test("a plaintext snapshot written before encryption existed is still readable", async () => {
-  assert.equal(await openSnapshot({ SNAPSHOT_ENCRYPTION_KEY: newKey() }, "snapshot:a", SNAPSHOT), SNAPSHOT);
-  assert.equal(await openSnapshot({}, "snapshot:a", SNAPSHOT), SNAPSHOT);
+  assert.equal(await openSnapshot(partialEnv({ SNAPSHOT_ENCRYPTION_KEY: newKey() }), "snapshot:a", SNAPSHOT), SNAPSHOT);
+  assert.equal(await openSnapshot(partialEnv({}), "snapshot:a", SNAPSHOT), SNAPSHOT);
 });
 
 test("with no key configured the snapshot is stored as is, unless encryption is required", async () => {
-  assert.equal(await sealSnapshot({}, "snapshot:a", SNAPSHOT), SNAPSHOT);
-  await assert.rejects(sealSnapshot({ SNAPSHOT_ENCRYPTION_REQUIRED: "true" }, "snapshot:a", SNAPSHOT));
+  assert.equal(await sealSnapshot(partialEnv({}), "snapshot:a", SNAPSHOT), SNAPSHOT);
+  await assert.rejects(sealSnapshot(partialEnv({ SNAPSHOT_ENCRYPTION_REQUIRED: "true" }), "snapshot:a", SNAPSHOT));
 });
 
 test("a record written under the previous key still opens during a key rotation", async () => {
   const oldKey = newKey();
-  const sealed = await sealSnapshot({ SNAPSHOT_ENCRYPTION_KEY: oldKey, SNAPSHOT_ENCRYPTION_KEY_ID: "1" }, "snapshot:a", SNAPSHOT);
-  const rotated = { SNAPSHOT_ENCRYPTION_KEY: newKey(), SNAPSHOT_ENCRYPTION_KEY_ID: "2", SNAPSHOT_ENCRYPTION_KEY_OLD: oldKey, SNAPSHOT_ENCRYPTION_KEY_OLD_ID: "1" };
+  const sealed = await sealSnapshot(partialEnv({ SNAPSHOT_ENCRYPTION_KEY: oldKey, SNAPSHOT_ENCRYPTION_KEY_ID: "1" }), "snapshot:a", SNAPSHOT);
+  const rotated = partialEnv({ SNAPSHOT_ENCRYPTION_KEY: newKey(), SNAPSHOT_ENCRYPTION_KEY_ID: "2", SNAPSHOT_ENCRYPTION_KEY_OLD: oldKey, SNAPSHOT_ENCRYPTION_KEY_OLD_ID: "1" });
   assert.equal(await openSnapshot(rotated, "snapshot:a", sealed), SNAPSHOT);
   assert.match(await sealSnapshot(rotated, "snapshot:a", SNAPSHOT), /^enc1\.2\./);
 });
 
 test("a key of the wrong length is refused rather than used", async () => {
-  await assert.rejects(sealSnapshot({ SNAPSHOT_ENCRYPTION_KEY: Buffer.alloc(16).toString("base64") }, "snapshot:a", SNAPSHOT));
+  await assert.rejects(sealSnapshot(partialEnv({ SNAPSHOT_ENCRYPTION_KEY: Buffer.alloc(16).toString("base64") }), "snapshot:a", SNAPSHOT));
 });
 
 test("an 8 MB snapshot seals and opens", async () => {
-  const env = { SNAPSHOT_ENCRYPTION_KEY: newKey() };
+  const env = partialEnv({ SNAPSHOT_ENCRYPTION_KEY: newKey() });
   const big = JSON.stringify({ version: 1, notebooks: [], filler: "あ".repeat(2_600_000) });
   assert.equal(await openSnapshot(env, "snapshot:a", await sealSnapshot(env, "snapshot:a", big)), big);
 });
 
 // ---- Through the Worker -------------------------------------------------
 
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 const fetchApp = (env, path, options = {}) => worker.fetch(new Request(`https://example.test${path}`, options), env, noopCtx);
 
 function environment(extra = {}) {
   const values = new Map();
   const ttls = new Map();
-  return {
+  return partialEnv({
     ttls,
     STUDIQUO_DATA: {
       async get(key, type) {
@@ -101,7 +101,7 @@ function environment(extra = {}) {
     raw: values,
     RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
     ...extra,
-  };
+  });
 }
 
 async function syncAs(env, token, sub) {
