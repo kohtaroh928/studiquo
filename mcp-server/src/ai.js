@@ -3,7 +3,7 @@ import { retrieve } from "./rag/index.js";
 import { revalidateRetrieval } from "./rag/authorization.js";
 import { ragAnswerPolicy } from "./rag/answer-policy.js";
 import { normalizeRetrieval } from "./rag/contract.js";
-import { linkRedactor } from "./rag/output-filter.js";
+import { filterReply } from "./rag/output-filter.js";
 import { groundingCheck } from "./rag/grounding-check.js";
 /**
  * AI proxy (OpenAI is the base provider).
@@ -370,8 +370,13 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
     let providerCompleted = false;
     const requiresCompletion = extractText === openaiDeltaText;
 
-    // Only an answer built from retrieved documents has its links removed.
-    const redactor = redactRagLinks ? linkRedactor() : null;
+    // A reply built from retrieved documents or an attached note is held until it is complete
+    // and its links are removed once, on the whole text (rag/output-filter.js). Filtering the
+    // stream piece by piece kept failing: two harmless pieces could join into a link. Every
+    // other reply streams as before.
+    const holdReply = redactRagLinks;
+    const heldPieces = [];
+    let keepalive = null;
     let answer = ""; // what the student saw, kept (bounded) for the teen output screen
 
     // Every write is guarded. Once the app has the answer it closes the
@@ -389,6 +394,16 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
     };
 
     try {
+      if (holdReply) {
+        // Nothing is shown until the reply is done, which can take a while. A comment line is
+        // ignored by the app (it reads only lines that start with "data:") and keeps the
+        // connection from looking idle to anything in between.
+        keepalive = setInterval(() => {
+          if (clientGone) return;
+          writer.write(encoder.encode(": keepalive\n\n")).catch(() => { clientGone = true; });
+        }, 15000);
+        keepalive.unref?.();
+      }
       if (ragStatus) await writer.write(encoder.encode(`data: ${JSON.stringify({ ragStatus })}\n\n`));
       if (citations.length) await writer.write(encoder.encode(`data: ${JSON.stringify({ citations })}\n\n`));
       for await (const chunk of upstream.body) {
@@ -418,17 +433,19 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
           }
           if (text) {
             produced += text.length;
-            const safe = redactor ? redactor.push(text) : text;
-            if (answer.length < 8000) answer += safe;
-            if (safe) await send(safe);
+            if (holdReply) heldPieces.push(text);
+            else {
+              if (answer.length < 8000) answer += text;
+              await send(text);
+            }
           }
         }
       }
-      if (redactor) {
-        const rest = redactor.flush();
-        if (rest) {
-          if (answer.length < 8000) answer += rest;
-          await send(rest);
+      if (holdReply) {
+        const safe = filterReply(heldPieces.join(""));
+        if (safe) {
+          answer = safe.slice(0, 8000);
+          await send(safe);
         }
       }
       // The text is already on the student's screen and cannot be taken back, so a
@@ -454,6 +471,7 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
       await send("\n\n（通信が中断しました。もう一度お試しください）");
       await refund();
     } finally {
+      if (keepalive) clearInterval(keepalive);
       // Never allowed to reject: an unsettled close is exactly what hung the
       // request before.
       try {

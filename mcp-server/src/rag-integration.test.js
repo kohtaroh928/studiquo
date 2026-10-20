@@ -559,3 +559,59 @@ test("links are still removed when the final re-check empties the references aft
     assert.ok(!result.text.includes('"citations"'), "the citation is still dropped when the source is gone");
   } finally { globalThis.fetch = original; }
 });
+
+const textEvents = (text) => text.split("\n").filter((l) => l.startsWith("data:")).map((l) => JSON.parse(l.slice(5))).filter((e) => typeof e.text === "string");
+
+test("a reply built from an attached note arrives as one finished text; an ordinary reply still streams in pieces", async () => {
+  const original = globalThis.fetch;
+  const pieces = ["共有ノートより。[詳", "細](https://evil", ".example/?q=x)を", "見て。"];
+  globalThis.fetch = async () => new Response(sse(pieces));
+  try {
+    const held = await chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "友達から共有されたノートの本文" });
+    assert.deepEqual(textEvents(held.text).map((e) => e.text), ["共有ノートより。詳細を見て。"], "held, filtered once, sent once");
+    const streamed = await chat(env(), { messages: [{ role: "user", text: "要点は？" }] });
+    assert.deepEqual(textEvents(streamed.text).map((e) => e.text), pieces, "no outside text: streamed as it arrives");
+  } finally { globalThis.fetch = original; }
+});
+
+test("a held reply that is cut off keeps what arrived (filtered), then says it did not finish", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    ['共有ノートより。[詳細](https://evil.example/?q=x)を見て。'].map((delta) => `data: ${JSON.stringify({ type: "response.output_text.delta", delta })}\n\n`).join("") +
+    'data: {"type":"response.failed","response":{"status":"failed"}}\n\n');
+  try {
+    const result = await chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "共有ノートの本文" });
+    const texts = textEvents(result.text).map((e) => e.text);
+    assert.equal(texts[0], "共有ノートより。詳細を見て。");
+    assert.match(texts.at(-1), /AIが回答を完了できませんでした/);
+    assert.ok(!/evil\.example/.test(result.text));
+  } finally { globalThis.fetch = original; }
+});
+
+test("while a held reply is being written, a comment line keeps the connection alive; the app ignores it", async () => {
+  const { mock } = await import("node:test");
+  mock.timers.enable({ apis: ["setInterval"] });
+  const original = globalThis.fetch;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    async start(controller) {
+      await gate;
+      controller.enqueue(new TextEncoder().encode(sse(["共有ノートより。"])));
+      controller.close();
+    },
+  }));
+  try {
+    const pending = chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "共有ノートの本文" });
+    const settle = async () => { for (let i = 0; i < 30; i++) await new Promise((resolve) => setImmediate(resolve)); };
+    await settle(); // the request reaches the point where it waits for the model
+    mock.timers.tick(15000);
+    await settle();
+    release();
+    const result = await pending;
+    assert.ok(result.text.includes(": keepalive\n\n"), "a comment line was sent while waiting");
+    assert.equal(answerText(result.text), "共有ノートより。");
+    // the app reads only lines that start with "data:"
+    assert.ok(result.text.split("\n").filter((l) => l && !l.startsWith("data:")).every((l) => l.startsWith(":")));
+  } finally { globalThis.fetch = original; mock.timers.reset(); }
+});
