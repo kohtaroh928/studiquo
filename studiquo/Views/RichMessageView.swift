@@ -11,8 +11,8 @@ struct RichMessageView: View {
     let source: String
     var fontSize: CGFloat = 17
     var color: UIColor = .label
-    /// False for a reply built from retrieved documents: a link there could
-    /// have been planted by a document and would carry its text out when tapped.
+    /// A hard switch: false means this view never offers a link. Links are otherwise
+    /// opened only for the sites `AILinkPolicy` allows.
     var allowLinks = true
 
     private final class ParseCache {
@@ -138,13 +138,12 @@ struct RichInlineText: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// The address a span may open. Nil when links are off for this reply, or the
-    /// address is not a web link: a reply built from documents or notes could carry
-    /// a planted link, and only https or http ones are ever worth opening.
+    /// The address a span may open. Nil when links are switched off for this view, or when
+    /// the address is not on the allowed-site list (`AILinkPolicy`): a reply can carry a
+    /// link planted by a note or a document, so only a few known sites are ever opened.
     static func openableURL(_ link: String?, allowLinks: Bool) -> URL? {
-        guard allowLinks, let link, let url = URL(string: link),
-              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return nil }
-        return url
+        guard allowLinks else { return nil }
+        return AILinkPolicy.openableURL(link)
     }
 
     private func text(for span: RichSpan) -> Text {

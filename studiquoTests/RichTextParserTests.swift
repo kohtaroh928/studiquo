@@ -294,19 +294,72 @@ final class RichTextParserTests: XCTestCase {
     }
 }
 
-/// A reply built from retrieved documents or an attached note must not offer a
-/// tappable link: a document can plant one that carries other text in its address.
+/// A link in an AI reply opens only for an allowed site: a note or a document can plant a
+/// link whose address carries other text, and opening it would send that text away.
 final class RichReplyLinkTests: XCTestCase {
-    func testLinksAreOffWhenTheReplyWasBuiltFromDocuments() {
-        XCTAssertNil(RichInlineText.openableURL("https://example.com/a", allowLinks: false))
+    private let allowed = ["wikipedia.org"]
+
+    private func opens(_ link: String?) -> Bool {
+        AILinkPolicy.openableURL(link, allowedDomains: allowed) != nil
     }
 
-    func testOnlyWebAddressesOpenWhenLinksAreAllowed() {
-        XCTAssertEqual(RichInlineText.openableURL("https://example.com/a", allowLinks: true)?.absoluteString, "https://example.com/a")
-        XCTAssertNotNil(RichInlineText.openableURL("HTTP://example.com", allowLinks: true))
-        for unsafe in ["javascript:alert(1)", "tel:0312345678", "mailto:a@example.com", "file:///etc/hosts", "studiquo://x", "not a url", ""] {
-            XCTAssertNil(RichInlineText.openableURL(unsafe, allowLinks: true), unsafe)
+    func testAnAllowedSiteAndItsSubdomainsOpen() {
+        XCTAssertEqual(AILinkPolicy.openableURL("https://wikipedia.org/wiki/X", allowedDomains: allowed)?.absoluteString, "https://wikipedia.org/wiki/X")
+        XCTAssertTrue(opens("https://ja.wikipedia.org/wiki/%E7%B4%B0%E8%83%9E"))
+        XCTAssertTrue(opens("HTTPS://JA.Wikipedia.ORG/wiki/X"))
+        XCTAssertTrue(opens("https://en.wikipedia.org:443/wiki/X"))
+    }
+
+    func testOtherSitesStayText() {
+        for link in ["https://example.com/a", "https://evil.example/?d=secret", "https://google.com/search?q=x"] {
+            XCTAssertFalse(opens(link), link)
         }
-        XCTAssertNil(RichInlineText.openableURL(nil, allowLinks: true))
+        XCTAssertNil(AILinkPolicy.openableURL("https://wikipedia.org/wiki/X", allowedDomains: []), "an empty list opens nothing")
+        XCTAssertNil(AILinkPolicy.openableURL(nil, allowedDomains: allowed))
+        XCTAssertNil(AILinkPolicy.openableURL("", allowedDomains: allowed))
+    }
+
+    func testLookAlikeHostsAreRefused() {
+        for link in [
+            "https://evilwikipedia.org/x",                  // ends the same, is another site
+            "https://wikipedia.org.evil.example/x",         // starts the same, is another site
+            "https://wikipedia.org@evil.example/x",         // user name, host is evil.example
+            "https://user:pass@wikipedia.org/x",            // credentials in the address
+            "https://wikipedia.org:8443/x",                 // another port
+            "https://wikipedia.org./x",                     // trailing dot
+            "https://xn--wikipedi-a1b.org/x",               // punycode
+            "https://wikipediа.org/x",                      // Cyrillic а
+            "https://wikipedia.org%2eevil.example/x",       // escaped dot in the host
+            "https://wikipedia.org\\@evil.example/x",       // backslash
+            "https://wikipedia.org evil.example/x",         // space
+            "https://１２７.0.0.1/x",                        // full-width digits
+            "https://127.0.0.1/x", "https://[::1]/x", "https://localhost/x",
+        ] {
+            XCTAssertFalse(opens(link), link)
+        }
+    }
+
+    func testOnlyHTTPSAndShortAddressesOpen() {
+        for link in ["http://wikipedia.org/x", "javascript:alert(1)", "tel:0312345678", "mailto:a@wikipedia.org",
+                     "file:///etc/hosts", "studiquo://x", "//wikipedia.org/x", "wikipedia.org/x", "not a url"] {
+            XCTAssertFalse(opens(link), link)
+        }
+        XCTAssertTrue(opens("https://wikipedia.org/" + String(repeating: "a", count: 270)))
+        XCTAssertFalse(opens("https://wikipedia.org/" + String(repeating: "a", count: 300)), "a long address is where data is hidden")
+    }
+
+    func testTheListShippedWithTheAppIsShortAndHasNoSharedHosting() {
+        XCTAssertLessThanOrEqual(AILinkPolicy.allowedDomains.count, 10)
+        let shared = ["github.io", "googleusercontent.com", "docs.google.com", "drive.google.com", "bit.ly", "t.co", "tinyurl.com",
+                      "notion.site", "notion.so", "herokuapp.com", "vercel.app", "netlify.app", "pages.dev", "workers.dev", "web.app", "firebaseapp.com"]
+        for domain in AILinkPolicy.allowedDomains {
+            XCTAssertFalse(shared.contains { domain == $0 || domain.hasSuffix("." + $0) }, domain)
+        }
+    }
+
+    func testTheViewSwitchStillTurnsEveryLinkOff() {
+        XCTAssertNil(RichInlineText.openableURL("https://wikipedia.org/wiki/X", allowLinks: false))
+        XCTAssertNotNil(RichInlineText.openableURL("https://wikipedia.org/wiki/X", allowLinks: true))
+        XCTAssertNil(RichInlineText.openableURL("https://example.com/", allowLinks: true))
     }
 }
