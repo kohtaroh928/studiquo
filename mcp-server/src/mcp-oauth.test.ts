@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test, { mock } from "node:test";
 import worker from "./app.ts";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv } from "./test-env.ts";
 
 const hash = value => createHash("sha256").update(value).digest("hex");
 
@@ -12,24 +12,24 @@ function environment() {
   const consumed = new Set();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type: string) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
       async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
     },
-    MCP_INBOX: { getByName(account) { return {
-      async consumeOnce(id) { const key = `${account}:${id}`; if (consumed.has(key)) return false; consumed.add(key); return true; },
-      async enqueue(id, kind, payload, source) {
+    MCP_INBOX: { getByName(account: string) { return {
+      async consumeOnce(id: string) { const key = `${account}:${id}`; if (consumed.has(key)) return false; consumed.add(key); return true; },
+      async enqueue(id: string, kind: string, payload: unknown[], source: string) {
         const record = { id, kind, payload: { type: kind, ...payload }, source, status: "pending" };
         items.set(`${account}:${id}`, record);
         return { id, status: "pending" };
       },
       async list() { return [...items].filter(([key, value]) => key.startsWith(`${account}:`) && value.status === "pending").map(([, value]) => value); },
-      async status(id) { return items.get(`${account}:${id}`) ?? null; },
-      async acknowledge(id) { const item = items.get(`${account}:${id}`); if (item) item.status = "imported"; return item ?? null; },
+      async status(id: string) { return items.get(`${account}:${id}`) ?? null; },
+      async acknowledge(id: string) { const item = items.get(`${account}:${id}`); if (item) item.status = "imported"; return item ?? null; },
     }; } },
     RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
     RATE_LIMIT_MCP_REGISTER: { async limit() { return { success: true }; } },
@@ -41,13 +41,13 @@ function environment() {
 
 // The owner makes a code in the app; the AI app's page takes it. Returns the
 // answer of the page's POST /oauth/pair.
-async function enterOwnerCode(env, flowId: string, sub: string, kind = "other") {
+async function enterOwnerCode(env: LooseEnv, flowId: string, sub: string, kind = "other") {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const { code } = await issueOwnerCode(env, sub, kind);
   return fetch(env, "/oauth/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: flowId, code }) });
 }
 
-const fetch = (env, path: string, options = {}) => worker.fetch(new Request(`https://example.test${path}`, options), env, partialCtx({ waitUntil() {} }));
+const fetch = (env: LooseEnv, path: string, options = {}) => worker.fetch(new Request(`https://example.test${path}`, options), env, partialCtx({ waitUntil() {} }));
 
 test("MCP connector pairs through the logged-in iPad, imports by account, and can be revoked", async () => {
   const env = environment();
@@ -160,7 +160,7 @@ test("a registered client expires after a year instead of staying forever", asyn
   const env = environment();
   const ttls = new Map();
   const put = env.STUDIQUO_DATA.put;
-  env.STUDIQUO_DATA.put = async (key, value, options: { expirationTtl: any; }) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: { expirationTtl: any; }) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
   const response = await fetch(env, "/oauth/register", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ client_name: "Claude", redirect_uris: ["https://claude.ai/callback"] }),
@@ -221,7 +221,7 @@ test("an unknown refresh token revokes nothing", async () => {
 // A counter that really counts, so single-use and attempt limits can be tested.
 function countingCounter() {
   const counts = new Map();
-  return { getByName(name) { return { async bump(limit: number, _window, amount = 1) {
+  return { getByName(name: string) { return { async bump(limit: number, _window: string, amount = 1) {
     const used = (counts.get(name) ?? 0) + amount;
     if (used > limit) return false;
     counts.set(name, used);
@@ -229,7 +229,7 @@ function countingCounter() {
   } }; } };
 }
 
-async function startFlow(env, redirectUri: string | number | boolean, clientName = "Client") {
+async function startFlow(env: LooseEnv, redirectUri: string | number | boolean, clientName = "Client") {
   const registered = await fetch(env, "/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ client_name: clientName, redirect_uris: [redirectUri] }) });
   const { client_id: clientId } = await registered.json();
   const challenge = createHash("sha256").update("v".repeat(43)).digest("base64url");
@@ -237,7 +237,7 @@ async function startFlow(env, redirectUri: string | number | boolean, clientName
   return page.match(/id:'([a-f0-9]{64})'/)[1];
 }
 
-const submit = (env, id: string, code: string) => fetch(env, "/oauth/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, code }) });
+const submit = (env: LooseEnv, id: string, code: string) => fetch(env, "/oauth/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, code }) });
 
 test("clients are sorted into Claude, ChatGPT, Codex or other by where they send the owner back to", async () => {
   const { classifyClient } = await import("./mcp-oauth.ts");
@@ -294,7 +294,7 @@ test("a new code replaces the last one, and an expired code is gone", async () =
   env.RATE_COUNTER = countingCounter();
   const ttls = new Map();
   const put = env.STUDIQUO_DATA.put;
-  env.STUDIQUO_DATA.put = async (key: string, value, options: { expirationTtl: any; }) => { ttls.set(key.split(":").slice(0, 2).join(":"), options?.expirationTtl); return put(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: { expirationTtl: any; }) => { ttls.set(key.split(":").slice(0, 2).join(":"), options?.expirationTtl); return put(key, value, options); };
   const id = await startFlow(env, "https://client.example/a");
   const old = await issueOwnerCode(env, "apple:owner", "other");
   const fresh = await issueOwnerCode(env, "apple:owner", "other");

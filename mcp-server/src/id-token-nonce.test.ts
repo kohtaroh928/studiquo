@@ -12,7 +12,7 @@ function makeEnv({ requireNonce = "false" }: { requireNonce?: string } = {}) {
     RATE_COUNTER: {
       getByName(name: unknown) {
         return {
-          async bump(limit, windowSeconds) {
+          async bump(limit: string, windowSeconds: string) {
             ttlRecorded.set(name, { limit, windowSeconds });
             if (used.has(name)) return false;
             used.add(name);
@@ -27,7 +27,7 @@ function makeEnv({ requireNonce = "false" }: { requireNonce?: string } = {}) {
 
 async function captureLogs(fn) {
   const original = console.log;
-  const lines = [];
+  const lines: string[] = [];
   console.log = (...args) => lines.push(args.join(" "));
   try {
     const result = await fn();

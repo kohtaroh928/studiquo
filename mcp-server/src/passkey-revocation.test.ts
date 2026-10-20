@@ -1,19 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { revokePasskeysForAccount } from "./passkeys.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv } from "./test-env.ts";
 import {
   indexAccountPasskey, listAccountPasskeys, passkeyRevokedByReset,
 } from "./passkey-policy.ts";
 
 function kv() {
   const values = new Map();
-  const lists = [];
+  const lists: any[] = [];
   return {
     values, lists,
     async get(key: string, type?: string | undefined) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
     async put(key: string, value: string) { values.set(key, value); },
-    async delete(key) { values.delete(key); },
+    async delete(key: string) { values.delete(key); },
     async list({ prefix, cursor }) {
       lists.push(prefix);
       return { keys: [...values.keys()].filter(name => name.startsWith(prefix)).map(name => ({ name })), list_complete: true, cursor };

@@ -4,7 +4,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { PRODUCT_BILLING_MONTHS } from "./admin.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
-import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv } from "./test-env.ts";
 
 // Wraps a real in-memory SQLite database (seeded from the actual migration
 // file, so tests run against the real schema) in the shape D1 exposes to a
@@ -56,12 +56,12 @@ function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type: string) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
       async list({ prefix, cursor }) {
         const all = [...values.keys()].filter(k => k.startsWith(prefix)).sort();
         const start = cursor ? Number(cursor) : 0;
@@ -97,13 +97,13 @@ function request(path: string, { method = "GET", token, body, authorization }: {
   });
 }
 
-async function seedSession(env, token: string | NodeJS.ArrayBufferView<ArrayBufferLike>, sub: string) {
+async function seedSession(env: LooseEnv, token: string | NodeJS.ArrayBufferView<ArrayBufferLike>, sub: string) {
   const { createHash } = await import("node:crypto");
   const key = createHash("sha256").update(token).digest("hex");
   await env.STUDIQUO_DATA.put(`session:${key}`, JSON.stringify({ sub, issuedAt: Math.floor(Date.now() / 1000) }));
 }
 
-async function sendWebhook(env, event, authorization = WEBHOOK_SECRET) {
+async function sendWebhook(env: LooseEnv, event: unknown, authorization = WEBHOOK_SECRET) {
   return worker.fetch(
     request("/api/admin/revenuecat-webhook", { method: "POST", authorization, body: { event } }),
     env, noopCtx
@@ -126,7 +126,7 @@ function purchaseEvent(overrides = {}) {
   };
 }
 
-async function stats(env) {
+async function stats(env: LooseEnv) {
   const response = await worker.fetch(request("/api/admin/stats"), env, noopCtx);
   assert.equal(response.status, 200);
   return response.json();
@@ -432,7 +432,7 @@ test("every /api/admin/* route except RevenueCat's webhook needs a verified Acce
 
 // --- PRODUCT_CHANGE: which product the subscriber is on afterwards ----------
 
-async function subscriberProduct(env, appUserId: string) {
+async function subscriberProduct(env: LooseEnv, appUserId: string) {
   const row = await env.ADMIN_DB.prepare("SELECT product_id FROM subscribers WHERE app_user_id = ?").bind(appUserId).first();
   return row?.product_id;
 }
