@@ -549,6 +549,52 @@ test("53. 同時に2回削除してもデータが復活しない", async () => 
   }
 });
 
+test("53b. 片方が遅れて始まり、先の実行がセッションを消した後で終わっても、スナップショットが残らない", async () => {
+  const env = environment();
+  const canonical = "account-concurrent-53b";
+  await seedLinked(env, canonical, "concurrent53b@example.com", [{ provider: "apple", sub: canonical }]);
+  await env.STUDIQUO_DATA.put(`account:${canonical}`, "{}");
+  await env.STUDIQUO_DATA.put("session:concurrent-53b", JSON.stringify({ sub: canonical }));
+  await env.STUDIQUO_DATA.put("snapshot:concurrent-53b", "{}");
+
+  // 2つの実行を決まった順に進める。「遅い方(slow)」は、削除の状態を最初に読んだ(まだ何も書かれていない)
+  // ところで止め、「先の方(first)」は、セッションを消した直後で止める。遅い方を最後まで走らせてから、先の方を再開する。
+  // 本番では、2つの退会要求が重なったとき、KVの読み書きの遅れ方しだいでこの順になりうる。
+  const stateKey = `account-deletion:${hash(canonical)}`;
+  const kv = env.STUDIQUO_DATA;
+  const realGet = kv.get.bind(kv);
+  const realDelete = kv.delete.bind(kv);
+  let releaseSlow!: () => void;
+  let releaseFirst!: () => void;
+  const slowGate = new Promise<void>(resolve => { releaseSlow = resolve; });
+  const firstGate = new Promise<void>(resolve => { releaseFirst = resolve; });
+  let firstReadsOfState = 0;
+  let heldFirst = false;
+  let firstHeld!: () => void;
+  const firstIsHeld = new Promise<void>(resolve => { firstHeld = resolve; });
+  kv.get = async (key, type?) => {
+    const value = await realGet(key, type);
+    if (key === stateKey && ++firstReadsOfState === 1) await slowGate;
+    return value;
+  };
+  kv.delete = async key => {
+    const result = await realDelete(key);
+    if (key === "session:concurrent-53b" && !heldFirst) { heldFirst = true; firstHeld(); await firstGate; }
+    return result;
+  };
+
+  const slow = deleteAccount(env, canonical);
+  const first = deleteAccount(env, canonical);
+  await firstIsHeld;
+  releaseSlow();
+  assert.deepEqual(await slow, { deleted: true });
+  releaseFirst();
+  assert.deepEqual(await first, { deleted: true });
+  for (const key of [`account:${canonical}`, "session:concurrent-53b", "snapshot:concurrent-53b", "email-accounts:concurrent53b@example.com"]) {
+    assert.equal(await realGet(key), null, key);
+  }
+});
+
 test("54. 大量のセッションやMCP接続があってもページネーション漏れがない", async () => {
   const env = environment();
   const canonical = "account-pages-54";
