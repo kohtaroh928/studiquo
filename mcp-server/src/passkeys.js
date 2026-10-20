@@ -5,13 +5,13 @@ import {
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
 import { isRevoked } from "./revocation.js";
-import { isExpired } from "./token.js";
-import { checkRateLimit, clientKey } from "./rate-limit.js";
-import { bearerToken, sha256Hex } from "./auth.js";
-import { json, readJSONLimited } from "./http.js";
+import { isExpired } from "./token.ts";
+import { checkRateLimit, clientKey } from "./rate-limit.ts";
+import { bearerToken, sha256Hex } from "./auth.ts";
+import { json, readJSONLimited } from "./http.ts";
 import { confirmVerificationCode, sendVerificationCode } from "./email-verification.js";
 import { mintSession, hasRealSession, realSession } from "./session.js";
-import { linkVerifiedEmail } from "./oauth-links.js";
+import { linkVerifiedEmail } from "./oauth-links.ts";
 import {
   REAUTH_ACTIONS, accountHasPasskey, cancelPasskeyRecovery, dropPasskeyIndex, indexAccountPasskey, indexedPasskeyIds, passkeyAccountKeys,
   passkeyIndexComplete, passkeyRevokedByReset, setPasskeyValidFrom, isEstablishedPasskey, listAccountPasskeys,

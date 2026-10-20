@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { eraseLibraryID, getOrCreateLibraryID } from "./library-id.js";
+import { eraseLibraryID, getOrCreateLibraryID } from "./library-id.ts";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const MAX_FRIENDS = 500;

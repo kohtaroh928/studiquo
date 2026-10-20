@@ -1,6 +1,6 @@
-import { json, readJSONLimited } from "./http.js";
+import { json, readJSONLimited } from "./http.ts";
 import { allowedModelIds } from "./ai.js";
-import { rememberParsedBody } from "./ai-body.js";
+import { rememberParsedBody } from "./ai-body.ts";
 
 // The base provider is OpenAI. Its terms forbid directing the service at, or
 // knowingly serving, children under 13, and teens need a guardian's consent,

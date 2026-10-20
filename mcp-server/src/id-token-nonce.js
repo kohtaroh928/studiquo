@@ -18,7 +18,7 @@
 // A request with no nonce is a build from before this existed; it is accepted
 // unless REQUIRE_ID_TOKEN_NONCE is "true", which is turned on once every build
 // in use sends one.
-import { secretsEqual, sha256Hex } from "./auth.js";
+import { secretsEqual, sha256Hex } from "./auth.ts";
 
 const RAW_NONCE = /^[A-Za-z0-9_-]{16,200}$/;
 const SINGLE_USE_SECONDS = 3_600;

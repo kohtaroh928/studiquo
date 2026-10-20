@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { linkVerifiedEmail, linkedIdentities } from "./oauth-links.js";
+import { linkVerifiedEmail, linkedIdentities } from "./oauth-links.ts";
 
 function environment() {
   const values = new Map();

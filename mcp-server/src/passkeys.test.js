@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { associationFile, handlePasskeys, mintPasskeySession } from "./passkeys.js";
-import { linkVerifiedEmail } from "./oauth-links.js";
+import { linkVerifiedEmail } from "./oauth-links.ts";
 import { realSession } from "./session.js";
 import { revoke } from "./revocation.js";
 

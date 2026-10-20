@@ -1,5 +1,5 @@
-import { checkRateLimit } from "./rate-limit.js";
-import { json, readJSONLimited } from "./http.js";
+import { checkRateLimit } from "./rate-limit.ts";
+import { json, readJSONLimited } from "./http.ts";
 import { sendPush } from "./push.js";
 
 const MAX_BODY = 2_000;

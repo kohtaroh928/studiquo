@@ -13,8 +13,8 @@
 //
 // Nothing here may ever fail or slow a login: callers hand these promises to
 // ctx.waitUntil, and every failure is only logged.
-import { sha256Hex } from "./auth.js";
-import { postSlackBlocks } from "./slack.js";
+import { sha256Hex } from "./auth.ts";
+import { postSlackBlocks } from "./slack.ts";
 import { featureDisabled } from "./features.js";
 
 export const MONITOR = {

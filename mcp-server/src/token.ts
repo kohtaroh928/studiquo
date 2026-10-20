@@ -3,7 +3,7 @@
 // an expiry without having to remember when it first saw any given token.
 export const VALIDITY_SECONDS = 90 * 24 * 60 * 60;
 
-export function isExpired(token) {
+export function isExpired(token: string): boolean {
   const dot = token.indexOf(".");
   if (dot <= 0) return true;
   const issuedAt = Number(token.slice(0, dot));
@@ -19,7 +19,7 @@ const KV_MINIMUM_TTL_SECONDS = 60;
 // deletion finds a token's data through the live session rows; without this a
 // snapshot written under a token whose session has long since expired could
 // never be traced back to its owner and would stay forever.
-export function remainingValiditySeconds(token, nowMs = Date.now()) {
+export function remainingValiditySeconds(token: string, nowMs = Date.now()): number {
   const dot = token.indexOf(".");
   const issuedAt = dot > 0 ? Number(token.slice(0, dot)) : NaN;
   if (!Number.isFinite(issuedAt) || issuedAt <= 0) return KV_MINIMUM_TTL_SECONDS;

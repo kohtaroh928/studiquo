@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkRateLimit, clientKey } from "./rate-limit.js";
+import { checkRateLimit, clientKey } from "./rate-limit.ts";
 
 // Mirrors the real Cloudflare Rate Limiting binding's shape: an object with
 // a `limit({ key })` method resolving to `{ success: boolean }`.

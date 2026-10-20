@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
 import { PRODUCT_BILLING_MONTHS } from "./admin.js";
-import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.js";
+import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
 
 // Wraps a real in-memory SQLite database (seeded from the actual migration
 // file, so tests run against the real schema) in the shape D1 exposes to a

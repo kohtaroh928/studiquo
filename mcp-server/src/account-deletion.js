@@ -1,8 +1,8 @@
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 import { queueRevenueCatDeletion } from "./privacy-retention.js";
 import { roomMembershipKey } from "./document-room-store.js";
 import { generationOf } from "./session.js";
-import { libraryIdObjectName } from "./library-id.js";
+import { libraryIdObjectName } from "./library-id.ts";
 import { tokenIndexCoversEverything } from "./mcp-oauth.js";
 import { indexedPasskeyIds, passkeyAccountKeys, passkeyIndexComplete } from "./passkey-policy.js";
 

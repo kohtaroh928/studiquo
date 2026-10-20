@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
-import { linkedIdentities } from "./oauth-links.js";
+import { linkedIdentities } from "./oauth-links.ts";
 
 function environment() {
   const values = new Map();

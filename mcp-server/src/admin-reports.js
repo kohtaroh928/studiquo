@@ -7,7 +7,7 @@
 // Because they are reachable with the admin's browser cookie alone, every
 // write requires a JSON content type: a cross-site HTML form can't send one
 // without a CORS preflight, which this API never answers.
-import { json, readJSONLimited } from "./http.js";
+import { json, readJSONLimited } from "./http.ts";
 import { auditAdmin } from "./audit.js";
 import { PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.js";
 

@@ -3,14 +3,14 @@
 // model, and the handler needs the same payload afterwards. Reading it twice
 // meant two copies of a body that size in one Worker isolate, so the check
 // parses it once and leaves the result here for the handler to take.
-const parsedBodies = new WeakMap();
+const parsedBodies = new WeakMap<Request, unknown>();
 
-export function rememberParsedBody(request, body) {
+export function rememberParsedBody(request: Request, body: unknown): void {
   parsedBodies.set(request, body);
 }
 
 /** The body ai-privacy.js already parsed for this request, or `undefined` if none was. */
-export function takeParsedBody(request) {
+export function takeParsedBody(request: Request): unknown {
   if (!parsedBodies.has(request)) return undefined;
   const body = parsedBodies.get(request);
   parsedBodies.delete(request);

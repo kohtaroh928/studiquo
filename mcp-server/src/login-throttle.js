@@ -26,7 +26,7 @@
 //     are not *enforced* against that pair, though its failures still count
 //     toward them, and its own IP+account streak still escalates. A stranger hammering the
 //     address can't therefore keep its owner waiting on their usual network.
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 
 export const THROTTLE_POLICIES = {
   // Shared carrier/NAT ASNs hold many honest users, so this key tolerates a

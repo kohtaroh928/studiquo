@@ -2,7 +2,7 @@
 // every JSON response should carry, and a single byte-limited body reader so
 // each route file doesn't reimplement the same streaming-read loop.
 
-export function securityHeaders(extra = {}) {
+export function securityHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
@@ -19,7 +19,7 @@ export function securityHeaders(extra = {}) {
  * body is sandboxed: even if it is really HTML, it cannot run script.
  * `download` also marks it as a file to save rather than a page to show.
  */
-export function binaryHeaders(contentType, cacheControl, { download = false } = {}) {
+export function binaryHeaders(contentType: string, cacheControl: string, { download = false }: { download?: boolean } = {}): Record<string, string> {
   return {
     "content-type": contentType,
     "cache-control": cacheControl,
@@ -37,7 +37,7 @@ export function binaryHeaders(contentType, cacheControl, { download = false } = 
  * submit a form elsewhere or load anything from another origin.
  * `connect` lets the page's own script call the Worker's API.
  */
-export function htmlHeaders({ connect = false, scripts = true } = {}) {
+export function htmlHeaders({ connect = false, scripts = true }: { connect?: boolean; scripts?: boolean } = {}): Record<string, string> {
   // `scripts: false` for a page that has none: nothing can run there even if markup is injected.
   const policy = ["default-src 'none'", scripts ? "script-src 'unsafe-inline'" : "script-src 'none'", "style-src 'unsafe-inline'"];
   if (connect) policy.push("connect-src 'self'");
@@ -52,7 +52,7 @@ export function htmlHeaders({ connect = false, scripts = true } = {}) {
   };
 }
 
-export function json(value, status = 200) {
+export function json(value: unknown, status = 200): Response {
   return Response.json(value, { status, headers: securityHeaders() });
 }
 
@@ -62,7 +62,7 @@ export function json(value, status = 200) {
  * misreport). Returns `null` if the body exceeds the limit, or `""` if there
  * is no body at all.
  */
-export async function readTextLimited(request, maximumBytes) {
+export async function readTextLimited(request: Request, maximumBytes: number): Promise<string | null> {
   if (!request.body) return "";
   const reader = request.body.getReader();
   const decoder = new TextDecoder();
@@ -87,7 +87,7 @@ export async function readTextLimited(request, maximumBytes) {
  * need to distinguish those cases (e.g. to return a specific error message)
  * should use `readTextLimited` and `JSON.parse` directly instead.
  */
-export async function readJSONLimited(request, maximumBytes) {
+export async function readJSONLimited(request: Request, maximumBytes: number): Promise<any> {
   const declaredSize = Number(request.headers.get("content-length") ?? 0);
   if (!request.body || declaredSize > maximumBytes) return null;
   const text = await readTextLimited(request, maximumBytes);
@@ -104,6 +104,6 @@ export async function readJSONLimited(request, maximumBytes) {
  * photos are decoded when they are served, so one that is not would make every
  * later download of it fail with a 500.
  */
-export function isWellFormedBase64(value) {
+export function isWellFormedBase64(value: unknown): boolean {
   return typeof value === "string" && value.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(value);
 }

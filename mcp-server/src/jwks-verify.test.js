@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
-import { jwksVerifier } from "./jwks-verify.js";
+import { jwksVerifier } from "./jwks-verify.ts";
 
 function makeEnv() {
   const store = new Map();
