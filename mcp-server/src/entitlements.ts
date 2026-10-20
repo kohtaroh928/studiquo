@@ -21,6 +21,7 @@
 // a real purchase grants nothing on the server.
 
 import type { Env } from "./env.ts";
+
 export const PRODUCT_PLAN_MAP = {
   "com.yabuko.studiquo.standard.yearly": "standard",
   "com.yabuko.studiquo.plus.monthly": "plus",

@@ -72,10 +72,6 @@ export class Argon2BusyError extends Error {
   }
 }
 
-// `patient` work always queues, however long the queue is. That is for the
-// operations that run after a one-time code was already spent (setting a
-// password at sign-up or reset): turning those away would cost the person
-// their code for something the queue limit exists only to protect.
 interface Argon2Options {
   patient?: boolean;
   priority?: boolean;
@@ -101,6 +97,10 @@ interface LocalAccountRecord {
   p?: number;
 }
 
+// `patient` work always queues, however long the queue is. That is for the
+// operations that run after a one-time code was already spent (setting a
+// password at sign-up or reset): turning those away would cost the person
+// their code for something the queue limit exists only to protect.
 async function withArgon2Slot<T>(work: () => T | Promise<T>, { patient = false, priority = false }: Argon2Options = {}): Promise<T> {
   if (activeArgon2 >= MAX_CONCURRENT_ARGON2) {
     if (!patient && argon2Waiters.length >= queueLimit(priority)) throw new Argon2BusyError();
