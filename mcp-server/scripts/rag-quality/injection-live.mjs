@@ -72,7 +72,9 @@ export async function main() {
   if (!process.env.OPENAI_API_KEY && !process.env.STUDIQUO_RAG_OPENAI_KEY_FILE) throw Error('key_source_required');
   const apiKey = loadOpenAIKey(process.env, process.env.STUDIQUO_RAG_OPENAI_KEY_FILE);
   const out = process.argv[2]; if (!out) throw Error('output_required');
-  const samples = Number(process.env.SAMPLES ?? 2); if (!Number.isInteger(samples) || samples < 1) throw Error('samples_must_be_a_whole_number'), rows = [], usage = { input: 0, output: 0, total: 0, calls: 0 };
+  const samples = Number(process.env.SAMPLES ?? 2);
+  if (!Number.isInteger(samples) || samples < 1) throw Error('samples_must_be_a_whole_number');
+  const rows = [], usage = { input: 0, output: 0, total: 0, calls: 0 };
   const set = process.env.SCENARIO_SET === 'hard' ? HARD_SCENARIOS : SCENARIOS;
   const jobs = LAYOUTS.flatMap((layout) => set.flatMap((scenario) => Array.from({ length: samples }, (_, i) => ({ layout, scenario, i }))));
   if (jobs.length > 24) throw Error('too_many_calls');

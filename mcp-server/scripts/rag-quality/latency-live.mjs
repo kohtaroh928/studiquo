@@ -112,7 +112,10 @@ export async function main() {
   }
   const text = JSON.stringify({ model: 'gpt-6-luna', samples, calls: calls.n, failedStatus: calls.failed, interrupted: failure !== null, rows }, null, 2) + '\n';
   if (text.includes(apiKey)) throw Error('unsafe_artifact');
-  fs.writeFileSync(out, text, { flag: 'wx', mode: 0o600 });
+  try { fs.writeFileSync(out, text, { flag: 'wx', mode: 0o600 }); } catch (writeError) {
+    if (!failure) throw writeError; // a write error must not hide the failure that interrupted the run
+    console.error('latency_result_not_written', writeError.code);
+  }
   if (failure) throw failure;
   console.log(JSON.stringify({ rows: rows.length, calls: calls.n }));
 }

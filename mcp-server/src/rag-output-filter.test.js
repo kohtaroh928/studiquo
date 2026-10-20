@@ -130,15 +130,25 @@ test("browsers drop tabs and line breaks inside an address, so a split scheme an
   }
 });
 
-test("whatever follows 'https:' after a line break is part of the address, as the browser reads it", () => {
+test("whatever follows 'https:' after ONE line break is part of the address, as the browser reads it", () => {
   // The reviewers' cases: the browser drops the line break, so each is "https:" + the rest.
   for (const rest of ["$e.com", "-e.com", "_e.com", "~e.com", "%65.com", "@e.com", ".e.com", "[e].com", "&e.com", "!e.com", "*e.com", "例え.com", "`a.evil.com", "/e.com", "e.com"]) {
-    for (const gap of ["\n", "\t", "\r\n", "\n\n"]) {
+    for (const gap of ["\n", "\t", "\r\n", "\t\n\t"]) {
       const text = `前 https:${gap}${rest}/?d=SECRETDATA 後`;
       const out = redactLinks(text);
       assert.ok(!out.includes("SECRETDATA") && !/https?:/iu.test(out), `${JSON.stringify(text)} -> ${JSON.stringify(out)}`);
       assert.ok(out.startsWith("前 ") && out.endsWith(" 後"), JSON.stringify(out));
     }
+  }
+});
+
+test("a blank line, a heading, a fence or a list marker after 'https:' is not swallowed; '//' still is", () => {
+  for (const text of ["スキームは https:\n\n次の段落", "https:\n\n## 見出し", "https:\n\n```js\nx\n```", "https:\n\n- 項目", "使うのは http:\r\n\r\n次"]) {
+    assert.equal(redactLinks(text), text, JSON.stringify(text));
+  }
+  for (const text of ["https:\n\n//e.com/?d=SECRETDATA", "https:\r\n\r\n//e.com/?d=SECRETDATA"]) {
+    const out = redactLinks(`前 ${text} 後`);
+    assert.ok(!out.includes("SECRETDATA") && !/https?:|e\.com/iu.test(out), JSON.stringify(out));
   }
 });
 
@@ -158,3 +168,11 @@ test("a scheme written in backticks as a word in a sentence is a description and
   }
 });
 
+test("a scheme in backticks takes the address after it, however the break or separator is written", () => {
+  for (const tail of ["\n//evil.com", "\t//evil.com", "\n$e.com", ".evil.com", ";//evil.com", ",//evil.com", ":evil.com", "!evil.com", "\r\n例え.com", "\n\t/evil.com"]) {
+    const out = redactLinks(`前 \`https:\`${tail}/?d=SECRETDATA 後`);
+    assert.ok(!out.includes("SECRETDATA") && !/https?:|evil|e\.com|例え/iu.test(out), `${JSON.stringify(tail)} -> ${JSON.stringify(out)}`);
+    assert.ok(out.startsWith("前 ") && out.endsWith(" 後"), JSON.stringify(out));
+  }
+  for (const text of ["使うのは `https:`\n\n次の段落", "`https:`\n", "`https:`", "`https:` と `http:`"]) assert.equal(redactLinks(text), text, JSON.stringify(text));
+});
