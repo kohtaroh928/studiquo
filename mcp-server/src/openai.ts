@@ -24,7 +24,7 @@ const ATTEMPTS = 3;
 const MAX_OUTPUT_TOKENS = 8192;
 
 /** A user turn's content parts: its text, plus any images attached to it. */
-function userContent(turn, images) {
+function userContent(turn: any, images: any) {
   const parts: Record<string, unknown>[] = [{ type: "input_text", text: String(turn.text ?? "") }];
   for (const image of images) {
     parts.push({ type: "input_image", image_url: `data:image/png;base64,${image}`, detail: "auto" });
@@ -98,10 +98,10 @@ export function toStrictJSONSchema(schema: any): any {
 }
 
 /** Sends one Responses request, retrying overload/5xx with backoff. Returns the last response. */
-async function postWithRetry(env: Env, body, apiKey) {
+async function postWithRetry(env: Env, body: any, apiKey: any) {
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured on this Worker.");
   const payload = JSON.stringify(body);
-  let last = null;
+  let last: Response | null = null;
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     if (attempt > 0) {
       const base = env.AI_RETRY_BASE_MS === undefined ? 600 : Number(env.AI_RETRY_BASE_MS) || 0;
@@ -119,18 +119,18 @@ async function postWithRetry(env: Env, body, apiKey) {
     await last?.body?.cancel().catch(() => {});
     last = response;
   }
-  return last;
+  return last as Response;
 }
 
 /** Neutral content parts ({text} / {image: base64 PNG}) → Responses input parts. */
-function toInputParts(parts) {
-  return parts.map(part => part.image
+function toInputParts(parts: any) {
+  return parts.map((part: any) => part.image
     ? { type: "input_image", image_url: `data:image/png;base64,${part.image}`, detail: "auto" }
     : { type: "input_text", text: String(part.text ?? "") });
 }
 
 /** A structured (JSON schema) call whose single user message is made of `parts`. */
-export async function callOpenAIStructured(env: Env, { model, systemInstruction, parts, schema, schemaName, safetyId, maxOutputTokens, apiKey = env.OPENAI_API_KEY }) {
+export async function callOpenAIStructured(env: Env, { model, systemInstruction, parts, schema, schemaName, safetyId, maxOutputTokens, apiKey = env.OPENAI_API_KEY }: any) {
   const body = buildResponsesBody({ model, systemInstruction, turns: [], safetyId, schema, schemaName, maxOutputTokens });
   body.input = [{ role: "user", content: toInputParts(parts) }];
   return postWithRetry(env, body, apiKey);
@@ -145,7 +145,7 @@ export async function callOpenAIStructured(env: Env, { model, systemInstruction,
  * `apiKey` defaults to this Worker's own `OPENAI_API_KEY`; it is a parameter
  * so a per-user token can be passed here later without touching the body.
  */
-export async function callOpenAIChat(env: Env, { model, systemInstruction, turns, images = [], safetyId, apiKey = env.OPENAI_API_KEY }) {
+export async function callOpenAIChat(env: Env, { model, systemInstruction, turns, images = [], safetyId, apiKey = env.OPENAI_API_KEY }: any) {
   return postWithRetry(env, buildResponsesBody({ model, systemInstruction, turns, images, safetyId }), apiKey);
 }
 
@@ -160,9 +160,9 @@ export async function callOpenAIChat(env: Env, { model, systemInstruction, turns
  */
 export const MODERATION_UNAVAILABLE = Object.freeze({ unavailable: true });
 
-export async function moderationRejection(env: Env, texts, apiKey = env.OPENAI_API_KEY) {
+export async function moderationRejection(env: Env, texts: any, apiKey = env.OPENAI_API_KEY) {
   if (env.AI_MODERATION === "off" || !apiKey) return null;
-  const input = texts.map(text => String(text ?? "").slice(0, 8000)).filter(Boolean);
+  const input = texts.map((text: string) => String(text ?? "").slice(0, 8000)).filter(Boolean);
   if (input.length === 0) return null;
   try {
     const response = await fetch(MODERATION_URL, {
@@ -198,7 +198,7 @@ export async function moderationRejection(env: Env, texts, apiKey = env.OPENAI_A
  * output_item.*, completed, ...) yields "". Responses streams have no
  * terminal `[DONE]` line — ai.ts's pump ends when the body ends.
  */
-export function extractDeltaText(event) {
+export function extractDeltaText(event: any) {
   if (event?.type !== "response.output_text.delta") return "";
   return typeof event.delta === "string" ? event.delta : "";
 }

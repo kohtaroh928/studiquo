@@ -33,15 +33,15 @@ export const REAUTH_ACTIONS = ["delete-account", "approve-app", "add-passkey", "
 
 const RESEND_API_URL = "https://api.resend.com/emails";
 
-const indexKey = async accountKey => `passkey-account:${await sha256Hex(accountKey)}`;
-const recoveryKey = async accountKey => `passkey-recovery:${await sha256Hex(accountKey)}`;
+const indexKey = async (accountKey: string) => `passkey-account:${await sha256Hex(accountKey)}`;
+const recoveryKey = async (accountKey: string) => `passkey-recovery:${await sha256Hex(accountKey)}`;
 
-export async function resolveAccountKey(env: Env, key) {
+export async function resolveAccountKey(env: Env, key: string) {
   return (await env.STUDIQUO_DATA.get(`identity-canonical:${key}`)) || key;
 }
 
 // Every key the same person's passkeys could be listed under.
-export async function passkeyAccountKeys(env: Env, accountKey, email) {
+export async function passkeyAccountKeys(env: Env, accountKey: string, email: string | null) {
   const keys = new Set([await resolveAccountKey(env, accountKey)]);
   if (email) keys.add(`email:${email.trim().toLowerCase()}`);
   return [...keys];
@@ -82,7 +82,7 @@ async function ensurePasskeyIndex(env: Env) {
 }
 
 /** The passkeys of this account that still exist (a deleted one may linger in a list). */
-export async function loadAccountPasskeys(env: Env, accountKey, email) {
+export async function loadAccountPasskeys(env: Env, accountKey: string, email: string | null) {
   await ensurePasskeyIndex(env);
   const ids = new Set<string>();
   for (const key of await passkeyAccountKeys(env, accountKey, email)) {
@@ -105,13 +105,13 @@ export async function loadAccountPasskeys(env: Env, accountKey, email) {
 // that one, as long as the key itself has reached the place reading it (a
 // key-value read can also be about a minute behind). A record without a registration time predates the field, and so
 // predates any reset that wrote this.
-const validFromKey = async accountKey => `passkey-valid-from:${await sha256Hex(accountKey)}`;
+const validFromKey = async (accountKey: string) => `passkey-valid-from:${await sha256Hex(accountKey)}`;
 
-export async function setPasskeyValidFrom(env, keys, now = Date.now()) {
+export async function setPasskeyValidFrom(env: Env, keys: any, now = Date.now()) {
   for (const key of keys) await env.STUDIQUO_DATA.put(await validFromKey(key), String(now));
 }
 
-export async function passkeyRevokedByReset(env: Env, record, keys = null) {
+export async function passkeyRevokedByReset(env: Env, record: any, keys: any = null) {
   let checked = keys;
   if (!checked) {
     const email = String(record?.email ?? "").trim().toLowerCase();
@@ -140,7 +140,7 @@ export async function passkeyIndexComplete(env: Env) {
  * is true when a list is at its size limit: the oldest ids drop off a full list,
  * so it can no longer be taken as everything the account has.
  */
-export async function indexedPasskeyIds(env: Env, keys) {
+export async function indexedPasskeyIds(env: Env, keys: any) {
   const ids = new Set<string>();
   let full = false;
   for (const key of keys) {
@@ -151,32 +151,32 @@ export async function indexedPasskeyIds(env: Env, keys) {
   return { ids: [...ids], full };
 }
 
-export async function dropPasskeyIndex(env: Env, keys) {
+export async function dropPasskeyIndex(env: Env, keys: any) {
   for (const key of keys) await env.STUDIQUO_DATA.delete(await indexKey(key));
 }
 
-export function isEstablishedPasskey(record, now = Date.now()) {
+export function isEstablishedPasskey(record: any, now = Date.now()) {
   // Records from before registration times were kept count as established.
   return !Number.isFinite(record.createdAt) || now >= record.createdAt + ESTABLISH_AFTER_SECONDS * 1000;
 }
 
-export async function listAccountPasskeys(env: Env, accountKey, email) {
+export async function listAccountPasskeys(env: Env, accountKey: string, email: string | null) {
   return (await loadAccountPasskeys(env, accountKey, email)).map(record => record.id);
 }
 
-export async function listEstablishedPasskeys(env, accountKey, email, now = Date.now()) {
+export async function listEstablishedPasskeys(env: Env, accountKey: string, email: string | null, now = Date.now()) {
   return (await loadAccountPasskeys(env, accountKey, email)).filter(record => isEstablishedPasskey(record, now)).map(record => record.id);
 }
 
-export async function accountHasPasskey(env: Env, accountKey, email) {
+export async function accountHasPasskey(env: Env, accountKey: string, email: string | null) {
   return (await listAccountPasskeys(env, accountKey, email)).length > 0;
 }
 
-export async function accountHasEstablishedPasskey(env, accountKey, email, now = Date.now()) {
+export async function accountHasEstablishedPasskey(env: Env, accountKey: string, email: string | null, now = Date.now()) {
   return (await listEstablishedPasskeys(env, accountKey, email, now)).length > 0;
 }
 
-export async function indexAccountPasskey(env: Env, accountKey, email, credentialID) {
+export async function indexAccountPasskey(env: Env, accountKey: string, email: string, credentialID: any) {
   for (const key of await passkeyAccountKeys(env, accountKey, email)) {
     const k = await indexKey(key);
     const ids = (await env.STUDIQUO_DATA.get<string[]>(k, "json")) ?? [];
@@ -185,7 +185,7 @@ export async function indexAccountPasskey(env: Env, accountKey, email, credentia
 }
 
 /** Removes every passkey of the account (records, lists and any recovery in progress). */
-export async function removeAllPasskeys(env: Env, accountKey, email) {
+export async function removeAllPasskeys(env: Env, accountKey: string, email: string | null) {
   // Every id on the account's lists, including passkeys a password reset has
   // already cut off (listAccountPasskeys leaves those out): the lists are
   // dropped below, so anything not removed here could no longer be found.
@@ -218,7 +218,7 @@ export async function removeAllPasskeys(env: Env, accountKey, email) {
 }
 
 /** A successful sign-in with an established passkey ends any recovery someone else started. Returns whether there was one. */
-export async function cancelPasskeyRecovery(env: Env, accountKey, email) {
+export async function cancelPasskeyRecovery(env: Env, accountKey: string, email: string | null) {
   let hadRecovery = false;
   for (const key of await passkeyAccountKeys(env, accountKey, email)) {
     const k = await recoveryKey(key);
@@ -228,7 +228,7 @@ export async function cancelPasskeyRecovery(env: Env, accountKey, email) {
   return hadRecovery;
 }
 
-export async function sendPasskeyNotice(env: Env, email, subject, lines) {
+export async function sendPasskeyNotice(env: Env, email: string | null, subject: any, lines: any) {
   if (!env.RESEND_API_KEY || !email) return;
   // The "email" kill switch (features.ts).
   if (featureDisabled(env, "email")) return;
@@ -265,10 +265,10 @@ export async function sendPasskeyNotice(env: Env, email, subject, lines) {
  *
  * `notify` runs the mail in the background (waitUntil) when given.
  */
-export async function gatePasskeyAccount(env, accountKey, email, { now = Date.now(), notify = work => work } = {}) {
+export async function gatePasskeyAccount(env: Env, accountKey: string, email: string | null, { now = Date.now(), notify = (work: any) => work } = {}) {
   if (!(await accountHasEstablishedPasskey(env, accountKey, email, now))) return null;
   const key = await recoveryKey(await resolveAccountKey(env, accountKey));
-  const pending = await env.STUDIQUO_DATA.get(key, "json");
+  const pending = await env.STUDIQUO_DATA.get<{ requestedAt?: number }>(key, "json");
   const requestedAt = Number(pending?.requestedAt);
   if (Number.isFinite(requestedAt) && now >= requestedAt + RECOVERY_DELAY_SECONDS * 1000) {
     const keys = await passkeyAccountKeys(env, accountKey, email);
@@ -316,7 +316,7 @@ export async function gatePasskeyAccount(env, accountKey, email, { now = Date.no
  * up by the action it was given for, so a stolen copy of the session cannot
  * ride along on the owner's check for something else.
  */
-export async function markRecentPasskey(env: Env, tokenHash, action = "*") {
+export async function markRecentPasskey(env: Env, tokenHash: any, action = "*") {
   await env.STUDIQUO_DATA.put(`passkey-reauth:${tokenHash}`, action, { expirationTtl: REAUTH_VALIDITY_SECONDS });
 }
 
@@ -326,7 +326,7 @@ export async function markRecentPasskey(env: Env, tokenHash, action = "*") {
  * passkey must have used it a moment ago in this session, for this action.
  * Returns null to proceed.
  */
-export async function requireRecentPasskey(env: Env, token, session, action) {
+export async function requireRecentPasskey(env: Env, token: string, session: any, action: string) {
   if (!(await accountHasEstablishedPasskey(env, session.sub, null))) return null;
   const key = `passkey-reauth:${await sha256Hex(token)}`;
   const marked = await env.STUDIQUO_DATA.get(key);

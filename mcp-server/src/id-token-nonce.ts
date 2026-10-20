@@ -38,13 +38,13 @@ const SINGLE_USE_SECONDS = 3_600;
  *   mismatch         the nonce does not belong to the ID token
  *   replayed         the nonce was already used
  */
-function logOutcome(provider, outcome) {
+function logOutcome(provider: any, outcome: string) {
   console.log(JSON.stringify({ event: "id_token_nonce", provider, outcome }));
 }
 
 /** `false` when the sign-in may go on, `true` when it is to be refused. */
-export async function idTokenNonceRefused(env: Env, payload, suppliedNonce, provider = "unknown") {
-  const refuse = outcome => { logOutcome(provider, outcome); return true; };
+export async function idTokenNonceRefused(env: Env, payload: any, suppliedNonce: any, provider = "unknown") {
+  const refuse = (outcome: string) => { logOutcome(provider, outcome); return true; };
   if (suppliedNonce === undefined || suppliedNonce === null || suppliedNonce === "") {
     if (env.REQUIRE_ID_TOKEN_NONCE === "true") return refuse("absent_refused");
     logOutcome(provider, "absent");

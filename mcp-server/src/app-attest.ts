@@ -65,27 +65,27 @@ export const ATTEST_PROTECTED_PATHS = new Set([
 
 // --- encoding helpers --------------------------------------------------------
 
-export function bytesToBase64Url(bytes) {
+export function bytesToBase64Url(bytes: any) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-export function base64ToBytes(value) {
+export function base64ToBytes(value: any) {
   const normalized = String(value).replaceAll("-", "+").replaceAll("_", "/");
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) throw new Error("bad base64");
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
   return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
 }
 
-async function sha256(...parts) {
+async function sha256(...parts: Uint8Array[]) {
   const joined = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
   let offset = 0;
   for (const part of parts) { joined.set(part, offset); offset += part.length; }
   return new Uint8Array(await crypto.subtle.digest("SHA-256", joined));
 }
 
-function bytesEqual(a, b) {
+function bytesEqual(a: any, b: any) {
   if (a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
@@ -94,23 +94,23 @@ function bytesEqual(a, b) {
 
 // --- CBOR (just enough for Apple's attestation and assertion objects) --------
 
-export function decodeCBOR(bytes) {
+export function decodeCBOR(bytes: any) {
   let offset = 0;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const take = length => {
+  const take = (length: any) => {
     if (length < 0 || offset + length > bytes.length) throw new Error("cbor: truncated");
     const slice = bytes.subarray(offset, offset + length);
     offset += length;
     return slice;
   };
-  const argument = info => {
+  const argument = (info: any) => {
     if (info < 24) return info;
     if (info === 24) return take(1)[0];
     if (info === 25) { take(2); return view.getUint16(offset - 2); }
     if (info === 26) { take(4); return view.getUint32(offset - 4); }
     throw new Error("cbor: unsupported length");
   };
-  const read = depth => {
+  const read = (depth: any): any => {
     if (depth > 8) throw new Error("cbor: too deep");
     const initial = take(1)[0];
     const major = initial >> 5;
@@ -128,7 +128,7 @@ export function decodeCBOR(bytes) {
       case 5: {
         const count = argument(info);
         if (count > bytes.length) throw new Error("cbor: bad count");
-        const map = {};
+        const map: Record<string, any> = {};
         for (let i = 0; i < count; i++) {
           const key = read(depth + 1);
           if (typeof key !== "string") throw new Error("cbor: non-text key");
@@ -152,7 +152,7 @@ export function decodeCBOR(bytes) {
 // --- DER / X.509 (just enough to check Apple's chain) ------------------------
 
 // A node is { tag, start, end, raw } over the one buffer it was read from.
-function readTLV(bytes, offset) {
+function readTLV(bytes: any, offset: any) {
   if (offset + 2 > bytes.length) throw new Error("der: truncated");
   const tag = bytes[offset];
   let length = bytes[offset + 1];
@@ -169,7 +169,7 @@ function readTLV(bytes, offset) {
   return { tag, start, end, raw: bytes.subarray(offset, end), content: bytes.subarray(start, end) };
 }
 
-function childrenOf(bytes, node) {
+function childrenOf(bytes: any, node: any) {
   const out = [];
   let offset = node.start;
   while (offset < node.end) {
@@ -181,18 +181,18 @@ function childrenOf(bytes, node) {
   return out;
 }
 
-function oidString(content) {
+function oidString(content: any) {
   const parts = [];
   let value = 0;
   for (const byte of content) {
     value = value * 128 + (byte & 0x7f);
     if (!(byte & 0x80)) { parts.push(value); value = 0; }
   }
-  const first = parts.shift();
+  const first = parts.shift()!;
   return [Math.min(Math.floor(first / 40), 2), first - 40 * Math.min(Math.floor(first / 40), 2), ...parts].join(".");
 }
 
-function parseTime(node) {
+function parseTime(node: any) {
   const text = new TextDecoder().decode(node.content);
   const match = node.tag === 0x17
     ? /^(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/.exec(text)
@@ -203,13 +203,13 @@ function parseTime(node) {
   return Date.UTC(year, Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6]));
 }
 
-const SIGNATURE_ALGORITHMS = {
+const SIGNATURE_ALGORITHMS: Record<string, string> = {
   "1.2.840.10045.4.3.2": "SHA-256",
   "1.2.840.10045.4.3.3": "SHA-384",
 };
-const CURVES = { "1.2.840.10045.3.1.7": { name: "P-256", size: 32 }, "1.3.132.0.34": { name: "P-384", size: 48 } };
+const CURVES: Record<string, { name: string; size: number }> = { "1.2.840.10045.3.1.7": { name: "P-256", size: 32 }, "1.3.132.0.34": { name: "P-384", size: 48 } };
 
-export function parseCertificate(der) {
+export function parseCertificate(der: any) {
   const cert = readTLV(der, 0);
   if (cert.tag !== 0x30 || cert.end !== der.length) throw new Error("x509: bad certificate");
   const [tbs, algorithm, signature] = childrenOf(der, cert);
@@ -225,7 +225,7 @@ export function parseCertificate(der) {
   const spkiParts = childrenOf(der, spki);
   const curveOid = oidString(childrenOf(der, spkiParts[0])[1].content);
   const keyBits = spkiParts[1].content;
-  const extensions = {};
+  const extensions: Record<string, any> = {};
   const extensionList = fields.find(field => field.tag === 0xa3);
   if (extensionList) {
     for (const extension of childrenOf(der, childrenOf(der, extensionList)[0])) {
@@ -251,11 +251,11 @@ export function parseCertificate(der) {
 
 // An ECDSA signature in DER ("SEQUENCE { INTEGER r, INTEGER s }") as the fixed-size
 // r||s that WebCrypto wants.
-export function derSignatureToRaw(der, size) {
+export function derSignatureToRaw(der: any, size: any) {
   const sequence = readTLV(der, 0);
   const [r, s] = childrenOf(der, sequence);
   if (sequence.tag !== 0x30 || r?.tag !== 0x02 || s?.tag !== 0x02) throw new Error("bad signature");
-  const fit = integer => {
+  const fit = (integer: any) => {
     let value = integer.content;
     while (value.length > size && value[0] === 0) value = value.subarray(1);
     if (value.length > size) throw new Error("bad signature");
@@ -269,14 +269,14 @@ export function derSignatureToRaw(der, size) {
   return raw;
 }
 
-async function certificateSignedBy(cert, issuer) {
+async function certificateSignedBy(cert: any, issuer: any) {
   if (!cert.signatureAlgorithm || !issuer.curve) return false;
   const key = await crypto.subtle.importKey("spki", issuer.spki, { name: "ECDSA", namedCurve: issuer.curve.name }, false, ["verify"]);
   const signature = derSignatureToRaw(cert.signature, issuer.curve.size);
   return crypto.subtle.verify({ name: "ECDSA", hash: cert.signatureAlgorithm }, key, signature, cert.tbs);
 }
 
-async function verifyChain(leaf, intermediate, root, now) {
+async function verifyChain(leaf: any, intermediate: any, root: any, now: number) {
   for (const cert of [leaf, intermediate, root]) {
     if (now < cert.notBefore || now > cert.notAfter) return false;
   }
@@ -286,7 +286,7 @@ async function verifyChain(leaf, intermediate, root, now) {
 
 // --- attestation and assertion -----------------------------------------------
 
-function parseAuthData(authData) {
+function parseAuthData(authData: any) {
   if (authData.length < 37) throw new Error("authData too short");
   return {
     rpIdHash: authData.subarray(0, 32),
@@ -299,7 +299,7 @@ function parseAuthData(authData) {
  * base64url, the key as the 65-byte uncompressed point, base64url), or throws
  * with the step that failed. `rootDer` is only overridden by tests.
  */
-export async function verifyAttestation({ attestation, challenge, keyId, appId, allowDevelop = false, now = Date.now(), rootDer }) {
+export async function verifyAttestation({ attestation, challenge, keyId, appId, allowDevelop = false, now = Date.now(), rootDer }: any) {
   const object = decodeCBOR(attestation);
   if (object.fmt !== "apple-appattest") throw new Error("format");
   const x5c = object.attStmt?.x5c;
@@ -341,7 +341,7 @@ export async function verifyAttestation({ attestation, challenge, keyId, appId, 
  * which the caller must then advance in the key's object (a counter that did not
  * go up is a copy). Throws with the step that failed.
  */
-export async function verifyAssertion({ assertion, clientData, publicKey, storedCounter, appId }) {
+export async function verifyAssertion({ assertion, clientData, publicKey, storedCounter, appId }: any) {
   const object = decodeCBOR(assertion);
   const { signature, authenticatorData } = object;
   if (!(signature instanceof Uint8Array) || !(authenticatorData instanceof Uint8Array)) throw new Error("shape");
@@ -362,17 +362,17 @@ async function challengeKey(env: Env) {
   return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
 }
 
-async function challengeSignature(env: Env, body) {
+async function challengeSignature(env: Env, body: any) {
   return bytesToBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", await challengeKey(env), encoder.encode(CHALLENGE_LABEL + body))));
 }
 
-export async function issueChallenge(env, now = Date.now()) {
+export async function issueChallenge(env: Env, now = Date.now()) {
   const random = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(16)));
   const body = `${now}.${random}`;
   return `${body}.${await challengeSignature(env, body)}`;
 }
 
-export async function challengeIsValid(env, challenge, now = Date.now()) {
+export async function challengeIsValid(env: Env, challenge: any, now = Date.now()) {
   const match = /^(\d{12,14})\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{43})$/.exec(String(challenge ?? ""));
   if (!match) return false;
   const age = now - Number(match[1]);
@@ -395,18 +395,18 @@ export function appAttestMode(env: Env) {
   return mode;
 }
 
-function keyObject(env: Env, keyId) {
+function keyObject(env: Env, keyId: any) {
   return env.RATE_COUNTER.getByName(`attest-key:${keyId}`);
 }
 
 // --- routes ------------------------------------------------------------------------
 
-async function limited(binding, request: Request) {
+async function limited(binding: any, request: Request) {
   return binding ? !(await checkRateLimit(binding, clientKey(request))) : false;
 }
 
 /** POST /api/attest/challenge and POST /api/attest/register. null for any other route. */
-export async function handleAppAttest(url, request, env, { now = Date.now(), rootDer }: { now?: number; rootDer?: Uint8Array } = {}) {
+export async function handleAppAttest(url: URL, request: Request, env: Env, { now = Date.now(), rootDer }: { now?: number; rootDer?: Uint8Array } = {}) {
   if (request.method !== "POST") return null;
   if (url.pathname !== "/api/attest/challenge" && url.pathname !== "/api/attest/register") return null;
   const mode = appAttestMode(env);
@@ -450,7 +450,7 @@ export async function handleAppAttest(url, request, env, { now = Date.now(), roo
  * Judges the assertion on a protected request. One of: ok, absent, malformed,
  * stale, unknown_key, replay, invalid, error. Never throws.
  */
-export async function assessAssertion(request, env, url, now = Date.now()) {
+export async function assessAssertion(request: Request, env: Env, url: URL, now = Date.now()) {
   const header = request.headers.get("x-studiquo-attest");
   if (!header) return "absent";
   const match = /^([A-Za-z0-9_-]{43})\.(\d{12,14})\.([A-Za-z0-9_-]{20,2000})$/.exec(header);
@@ -494,7 +494,7 @@ export async function assessAssertion(request, env, url, now = Date.now()) {
  * The gate for the protected routes: null to carry on, or a 403. In "log" mode it
  * only writes the log line.
  */
-export async function appAttestGate(request, env, url, now = Date.now()) {
+export async function appAttestGate(request: Request, env: Env, url: URL, now = Date.now()) {
   const mode = appAttestMode(env);
   if (mode === "off") return null;
   if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") return null;

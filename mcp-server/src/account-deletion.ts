@@ -16,7 +16,7 @@ import type { ChatUser, DeletionJob, DeletionState, IssueReportRecord, PasskeyRe
 const ACCOUNT_GENERATION_RETIREMENT_SECONDS = 7 * 86_400;
 
 // Once accepted, cleanup survives session revocation and request timeouts.
-export async function startAccountDeletion(env: Env, canonicalSub) {
+export async function startAccountDeletion(env: Env, canonicalSub: string) {
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
   const state = await env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(canonicalSub)}`, "json");
   await env.STUDIQUO_DATA.put(jobKey, JSON.stringify({ canonicalSub, requestedAt: Date.now(), generation: generationOf(state) }));
@@ -32,7 +32,7 @@ export async function startAccountDeletion(env: Env, canonicalSub) {
 // "deleting" under the same generation. Another run may have finished it, and
 // the person signed in again, since this one began; going on would erase the
 // new account or put "deleted" back over it.
-async function stillDeleting(env: Env, deletionStateKey, generation) {
+async function stillDeleting(env: Env, deletionStateKey: any, generation: any) {
   const state = await env.STUDIQUO_DATA.get<DeletionState>(deletionStateKey, "json");
   return state?.status === "deleting" && generationOf(state) === generation;
 }
@@ -52,7 +52,7 @@ async function stillDeleting(env: Env, deletionStateKey, generation) {
 // single invocation may do; the rest is finished by the retry.
 const MAX_ROOMS_PER_RUN = 40;
 
-async function removeDocumentRooms(env: Env, chatKey) {
+async function removeDocumentRooms(env: Env, chatKey: any) {
   // Invitations still waiting for this account's answer (document-collab.ts).
   for (const key of await entries(env, `doc-invite:${chatKey}:`)) await env.STUDIQUO_DATA.delete(key);
   const prefix = roomMembershipKey(chatKey, "");
@@ -75,7 +75,7 @@ async function removeDocumentRooms(env: Env, chatKey) {
   if (keys.length > MAX_ROOMS_PER_RUN) throw new Error("More document rooms remain to be removed.");
 }
 
-async function entries(env: Env, prefix) {
+async function entries(env: Env, prefix: string) {
   const result: string[] = [];
   let cursor: string | undefined;
   do {
@@ -90,7 +90,7 @@ async function deleteKeys(env: Env, keys: Iterable<string>) {
   await Promise.all([...new Set(keys)].map(key => env.STUDIQUO_DATA.delete(key)));
 }
 
-function linkedIdentityKey(identity) {
+function linkedIdentityKey(identity: any) {
   if (identity.provider === "google") return `google:${identity.sub}`;
   if (identity.provider === "email") return `email:${identity.sub}`;
   return identity.sub;
@@ -109,7 +109,7 @@ function linkedIdentityKey(identity) {
  * different account. The aliases left alone for having begun a new account
  * are returned, so the caller can keep them out of the provider-side erasure.
  */
-async function markAliases(env: Env, canonicalSub, identityKeys, state) {
+async function markAliases(env: Env, canonicalSub: string, identityKeys: any, state: any) {
   const beganNewAccount = new Set<string>();
   for (const identity of identityKeys) {
     if (identity === canonicalSub) continue;
@@ -125,7 +125,7 @@ async function markAliases(env: Env, canonicalSub, identityKeys, state) {
   return beganNewAccount;
 }
 
-export async function deleteAccount(env: Env, canonicalSub) {
+export async function deleteAccount(env: Env, canonicalSub: string) {
   const deletionStateKey = `account-deletion:${await sha256Hex(canonicalSub)}`;
   let previousState: Partial<DeletionState> | null = await env.STUDIQUO_DATA.get<DeletionState>(deletionStateKey, "json");
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
@@ -145,9 +145,9 @@ export async function deleteAccount(env: Env, canonicalSub) {
     const activeGeneration = previousState.generation;
     // Counts decide when both sides have one; the clock comparison remains
     // for markers and jobs written before the count existed.
-    const isRequestedSince = job => Number.isFinite(job?.generation) && Number.isFinite(activeGeneration)
+    const isRequestedSince = (job: any) => Number.isFinite(job?.generation) && Number.isFinite(activeGeneration)
       ? job.generation === activeGeneration
-      : Number.isFinite(startedAt) ? job?.requestedAt >= startedAt : true;
+      : Number.isFinite(startedAt) ? job?.requestedAt >= (startedAt as number) : true;
     let job = await env.STUDIQUO_DATA.get<DeletionJob>(jobKey, "json");
     if (!isRequestedSince(job)) {
       // Read once more before clearing: the person may have asked to delete
@@ -213,7 +213,7 @@ export async function deleteAccount(env: Env, canonicalSub) {
   const ownedTokenHashes = [...(previousState?.tokenHashes ?? [])];
   for (const key of sessionKeys) {
     const session = await env.STUDIQUO_DATA.get<SessionRecord>(key, "json");
-    if (!identityKeys.has(session?.sub)) continue;
+    if (!identityKeys.has(session?.sub as string)) continue;
     ownedSessionKeys.push(key);
     ownedTokenHashes.push(key.slice("session:".length));
   }
@@ -347,7 +347,7 @@ export async function deleteAccount(env: Env, canonicalSub) {
     for (const prefix of ["mcp:access:", "mcp:refresh:"]) {
       for (const key of await entries(env, prefix)) {
         const value = await env.STUDIQUO_DATA.get<{ sub?: string }>(key, "json");
-        if (identityKeys.has(value?.sub)) mcpKeys.push(key);
+        if (identityKeys.has(value?.sub as string)) mcpKeys.push(key);
       }
     }
   }
@@ -408,7 +408,7 @@ export async function deleteAccount(env: Env, canonicalSub) {
     // another member's, so their text is dropped; the reported message stays.
     const filed = await env.ADMIN_DB.prepare("SELECT id, snapshot FROM chat_reports WHERE reporter_key = ?").bind(chatKey).all<{ id: string; snapshot: string }>();
     for (const row of filed.results ?? []) {
-      const kept = JSON.parse(row.snapshot).map(item => item.reported ? item : { ...item, text: "" });
+      const kept = JSON.parse(row.snapshot).map((item: any) => item.reported ? item : { ...item, text: "" });
       await env.ADMIN_DB.prepare("UPDATE chat_reports SET reporter_key = ?, snapshot = ?, reason = '' WHERE id = ?")
         .bind(`deleted:${row.id}`, JSON.stringify(kept), row.id).run();
     }
@@ -419,7 +419,7 @@ export async function deleteAccount(env: Env, canonicalSub) {
   const accountHashes = new Set(await Promise.all([...identityKeys].map(identity => sha256Hex(`usage-account:${identity}`))));
   for (const reportKey of await entries(env, "issue-report:")) {
     const report = await env.STUDIQUO_DATA.get<IssueReportRecord>(reportKey, "json");
-    if (!accountHashes.has(report?.accountKey) && !ownedTokenHashes.includes(report?.reporterKey)) continue;
+    if (!accountHashes.has(report?.accountKey as string) && !ownedTokenHashes.includes(report?.reporterKey as string)) continue;
     checkpointKeys.add(reportKey);
     checkpointKeys.add(`issue-report-screenshot:${reportKey.slice("issue-report:".length)}`);
   }

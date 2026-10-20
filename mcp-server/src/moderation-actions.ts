@@ -18,13 +18,13 @@ const WARNING = {
   title: "運営からのお知らせ",
   body: "あなたの投稿が利用規約に反している可能性があるため、確認しました。繰り返される場合は、機能の利用を制限することがあります。",
 };
-const PREFIXES = { account: SUSPENSION_PREFIX, chat: CHAT_SUSPENSION_PREFIX };
+const PREFIXES: Record<string, string> = { account: SUSPENSION_PREFIX, chat: CHAT_SUSPENSION_PREFIX };
 
 const NOTE_MAX = 2_000;
-const requireJSON = request => (request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json");
+const requireJSON = (request: Request) => (request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json");
 
 // Adds to the report's note without losing what the operator already wrote.
-async function resolveReport(env: Env, id, line) {
+async function resolveReport(env: Env, id: string, line: any) {
   const row = await env.ADMIN_DB.prepare("SELECT admin_note FROM chat_reports WHERE id = ?").bind(id).first();
   const note = [row?.admin_note, line].filter(Boolean).join(" / ").slice(0, NOTE_MAX);
   await env.ADMIN_DB.prepare("UPDATE chat_reports SET status = 'resolved', admin_note = ?, updated_at = ? WHERE id = ?")
@@ -32,7 +32,7 @@ async function resolveReport(env: Env, id, line) {
 }
 
 // The account behind a report's reported chat user, or why it can't be found.
-async function reportedAccount(env: Env, reportID) {
+async function reportedAccount(env: Env, reportID: any) {
   const report = await env.ADMIN_DB.prepare("SELECT reported_key FROM chat_reports WHERE id = ?").bind(reportID).first<{ reported_key: string }>();
   if (!report) return { response: json({ error: "Not found." }, 404) };
   const identityHash = await env.STUDIQUO_DATA.get(`chat-identity-of:${report.reported_key}`);
@@ -45,7 +45,7 @@ async function reportedAccount(env: Env, reportID) {
   return { identityHash };
 }
 
-export async function handleModerationActions(url, request: Request, env: Env) {
+export async function handleModerationActions(url: URL, request: Request, env: Env) {
   const removeMatch = /^\/api\/admin\/chat-reports\/([0-9a-f-]{36})\/remove-message$/.exec(url.pathname);
   const warnMatch = /^\/api\/admin\/chat-reports\/([0-9a-f-]{36})\/warn$/.exec(url.pathname);
   const isAccounts = url.pathname.startsWith("/api/admin/accounts/");
@@ -80,7 +80,7 @@ export async function handleModerationActions(url, request: Request, env: Env) {
   if (!requireJSON(request)) return json({ error: "Content-Type must be application/json." }, 415);
 
   if (removeMatch) {
-    const report = await env.ADMIN_DB.prepare("SELECT room_id, message_id FROM chat_reports WHERE id = ?").bind(removeMatch[1]).first<{ room_id: string; message_id: string }>();
+    const report = await env.ADMIN_DB.prepare("SELECT room_id, message_id FROM chat_reports WHERE id = ?").bind(removeMatch[1]).first<{ room_id: string; message_id: number }>();
     if (!report) return json({ error: "Not found." }, 404);
     await auditAdmin(env, request, "chat_report.remove_message", removeMatch[1]);
     const result = await env.CHAT_ROOM.getByName(report.room_id).moderatorRemoveMessage(report.message_id);

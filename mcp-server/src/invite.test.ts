@@ -1,3 +1,4 @@
+// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "./app.ts";

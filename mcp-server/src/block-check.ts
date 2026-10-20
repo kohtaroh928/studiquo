@@ -3,7 +3,7 @@
 // person put another in front of someone (document and group invites).
 import type { Env } from "./env.ts";
 
-export async function blockedBetween(env: Env, userKey: string, friend?: { roomID?: string } | null): Promise<boolean> {
+export async function blockedBetween(env: Env, userKey: string, friend?: { roomID?: string | null } | null): Promise<boolean> {
   if (!friend?.roomID) return false;
   try {
     const state = await env.CHAT_ROOM.getByName(friend.roomID).blockStatus(userKey);

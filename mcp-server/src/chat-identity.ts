@@ -10,7 +10,7 @@ import type { Env } from "./env.ts";
 //
 // Without a registry binding (a plain test environment) the session's own
 // token hash is used, which is what these routes did before.
-export async function resolveChatUserKey(env: Env, sub, tokenKey) {
+export async function resolveChatUserKey(env: Env, sub: string | undefined, tokenKey: any) {
   if (!env.USER_REGISTRY || !sub) return tokenKey;
   const identityHash = await sha256Hex(`chat-account:${sub}`);
   return env.USER_REGISTRY.getByName(identityHash).resolveChatKey(identityHash, tokenKey);

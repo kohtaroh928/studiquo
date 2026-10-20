@@ -14,13 +14,13 @@
 // into the app from those in-app browsers, and it needs a tap.
 import { json, htmlHeaders } from "./http.ts";
 
-function htmlEscape(value) {
-  return String(value).replace(/[&<>"']/g, character => ({
+function htmlEscape(value: any) {
+  return String(value).replace(/[&<>"']/g, character => (({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[character]);
+  }) as Record<string, string>)[character]);
 }
 
-export function handleInvitePage(url) {
+export function handleInvitePage(url: URL) {
   if (url.pathname !== "/invite") return null;
 
   const token = (url.searchParams.get("token") ?? "").trim();

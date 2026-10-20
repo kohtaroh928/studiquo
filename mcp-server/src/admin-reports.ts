@@ -19,7 +19,7 @@ const CHAT_REPORT_STATUSES = new Set([...STATUSES, "dismissed"]);
 const MAX_NOTE_LENGTH = 2_000;
 const LIST_LIMIT = 200;
 
-function statusFilter(url, allowed = STATUSES) {
+function statusFilter(url: URL, allowed = STATUSES) {
   const status = url.searchParams.get("status") ?? "open";
   return status === "all" ? null : allowed.has(status) ? status : "open";
 }
@@ -45,7 +45,7 @@ async function readUpdate(request: Request, allowed = STATUSES) {
   return { update };
 }
 
-function issueReportJSON(row, origin) {
+function issueReportJSON(row: any, origin: any) {
   return {
     id: row.id,
     description: row.description,
@@ -63,7 +63,7 @@ function issueReportJSON(row, origin) {
 
 // The list leaves out the copied messages: reading those is a separate,
 // logged step (GET /api/admin/chat-reports/:id).
-function chatReportJSON(row, withSnapshot) {
+function chatReportJSON(row: any, withSnapshot: any) {
   return {
     id: row.id,
     roomID: row.room_id,
@@ -76,7 +76,7 @@ function chatReportJSON(row, withSnapshot) {
   };
 }
 
-function appErrorJSON(row) {
+function appErrorJSON(row: any) {
   return {
     fingerprint: row.fingerprint,
     kind: row.kind,
@@ -125,7 +125,7 @@ async function importLegacyReports(env: Env) {
   return { imported, skipped };
 }
 
-export async function handleAdminReports(url, request: Request, env: Env) {
+export async function handleAdminReports(url: URL, request: Request, env: Env) {
   if (!url.pathname.startsWith("/api/admin/issue-reports") && !url.pathname.startsWith("/api/admin/app-errors")
     && !url.pathname.startsWith("/api/admin/chat-reports")) return null;
   if (!env.ADMIN_DB) return json({ error: "Unavailable." }, 503);

@@ -34,11 +34,11 @@ const ALLOWED_SCREENSHOT_CONTENT_TYPES = new Set(["image/jpeg", "image/png"]);
 // outlives the session that filed it by much.
 const REPORT_TTL_SECONDS = 90 * 24 * 60 * 60;
 
-function truncate(value, max) {
+function truncate(value: any, max: number) {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 
-async function postToSlack(env: Env, report, dashboardURL) {
+async function postToSlack(env: Env, report: any, dashboardURL: any) {
   if (!env.SLACK_ISSUE_REPORT_WEBHOOK_URL) return;
   const context = [
     report.appVersion && `v${report.appVersion}`,
@@ -61,7 +61,7 @@ async function postToSlack(env: Env, report, dashboardURL) {
 // Mirrors the report into D1 so the admin dashboard can list it and track
 // whether it's been handled. The KV copy above stays the durable record, so
 // a D1 hiccup is logged rather than failing the person's report.
-async function recordInDashboard(env: Env, report) {
+async function recordInDashboard(env: Env, report: any) {
   if (!env.ADMIN_DB) return;
   try {
     await env.ADMIN_DB.prepare(
@@ -77,14 +77,14 @@ async function recordInDashboard(env: Env, report) {
   }
 }
 
-export async function handleIssueReports(url, request: Request, env: Env) {
+export async function handleIssueReports(url: URL, request: Request, env: Env) {
   if (!url.pathname.startsWith("/api/issue-reports")) return null;
 
   const screenshotMatch = /^\/api\/issue-reports\/([0-9a-f-]{36})\/screenshot$/.exec(url.pathname);
   if (screenshotMatch && request.method === "GET") {
     if (!await accessAllowed(request, env)) return json({ error: "Unauthorized." }, 401);
     const report = await env.STUDIQUO_DATA.get<IssueReportRecord>(`issue-report:${screenshotMatch[1]}`, "json");
-    if (!report || report.createdAt + REPORT_TTL_SECONDS * 1000 <= Date.now()) return json({ error: "Not found" }, 404);
+    if (!report || (report.createdAt as number) + REPORT_TTL_SECONDS * 1000 <= Date.now()) return json({ error: "Not found" }, 404);
     const screenshot = await env.STUDIQUO_DATA.get<StoredImage>(`issue-report-screenshot:${screenshotMatch[1]}`, "json");
     if (!screenshot) return json({ error: "Not found" }, 404);
     if (!env.ADMIN_DB) return json({ error: "Unavailable." }, 503);

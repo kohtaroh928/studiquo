@@ -35,23 +35,23 @@ const MAX_AVATAR_UPLOAD_BODY = 450_000;
 const GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const GROUP_CODE_LENGTH = 10;
 
-function parseGroupName(body) {
+function parseGroupName(body: any) {
   const name = String(body?.name ?? "").trim().slice(0, MAX_GROUP_NAME_LENGTH);
   return name || null;
 }
 
-function parseMemberCodes(body) {
+function parseMemberCodes(body: any) {
   const raw = Array.isArray(body?.memberCodes) ? body.memberCodes : [];
-  const codes: string[] = [...new Set<string>(raw.map(item => String(item ?? "").trim().toUpperCase()))];
+  const codes: string[] = [...new Set<string>(raw.map((item: any) => String(item ?? "").trim().toUpperCase()))];
   return codes.every(code => FRIEND_CODE_PATTERN.test(code)) ? codes : null;
 }
 
-function parseFriendCode(body) {
+function parseFriendCode(body: any) {
   const code = String(body?.code ?? "").trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
 
-async function currentUser(env: Env, key) {
+async function currentUser(env: Env, key: string) {
   return env.STUDIQUO_DATA.get<ChatUser>(`chat:user:${key}`, "json");
 }
 
@@ -80,7 +80,7 @@ interface GroupMetadata {
 // Public group metadata is deliberately separate from the internal 64-hex
 // room id. Existing groups predate this record, so the first list/detail
 // request lazily gives them a stable, human-shareable code too.
-async function ensureGroupMetadata(env: Env, roomID): Promise<GroupMetadata> {
+async function ensureGroupMetadata(env: Env, roomID: string): Promise<GroupMetadata> {
   const metadataKey = `chat:group-meta:${roomID}`;
   const existing = await env.STUDIQUO_DATA.get<GroupMetadata>(metadataKey, "json");
   if (existing?.code) return existing;
@@ -99,7 +99,7 @@ async function ensureGroupMetadata(env: Env, roomID): Promise<GroupMetadata> {
   throw new Error("Unable to allocate a group code.");
 }
 
-async function toClientGroup(env: Env, roomID, info) {
+async function toClientGroup(env: Env, roomID: string, info: any) {
   const metadata = await ensureGroupMetadata(env, roomID);
   return {
     roomID,
@@ -115,7 +115,7 @@ async function toClientGroup(env: Env, roomID, info) {
 // 500. Distinct from chat.ts's own roomForbiddenResponse: a group room
 // never throws "Blocked"/"Closed", and throws a few reasons a direct room
 // never does.
-function groupErrorResponse(error) {
+function groupErrorResponse(error: any) {
   if (!(error instanceof Error)) return null;
   if (error.message === "Forbidden") return json({ error: "You are not a member of this group." }, 403);
   if (error.message === "NotAGroup") return json({ error: "This is not a group." }, 400);
@@ -125,7 +125,7 @@ function groupErrorResponse(error) {
   return null;
 }
 
-async function withGroupErrors(promise) {
+async function withGroupErrors(promise: any) {
   try {
     return json(await promise);
   } catch (error) {
@@ -139,11 +139,11 @@ async function withGroupErrors(promise) {
 // comment in chat-room.ts) — this just strips the internal key before a
 // member list ever reaches a client, the same boundary friends()/messages
 // already keep around a raw user key.
-function toClientMembers(members) {
-  return members.map(({ code, name }) => ({ code, name }));
+function toClientMembers(members: any) {
+  return members.map(({ code, name }: any) => ({ code, name }));
 }
 
-export async function handleGroupRoutes(url, request: Request, env: Env, key, ctx) {
+export async function handleGroupRoutes(url: URL, request: Request, env: Env, key: string, ctx: ExecutionContext) {
   if (!url.pathname.startsWith("/api/chat/groups") && url.pathname !== "/api/chat/group-invites") {
     return null;
   }
@@ -299,7 +299,7 @@ export async function handleGroupRoutes(url, request: Request, env: Env, key, ct
         // actually succeed — see resolveIncomingGroupInvite's own comment.
         // Since it didn't, put the invitee back where they were instead of
         // leaving a phantom group membership with no way to retry.
-        const invite: { name?: string; inviterCode?: string; inviterName?: string } = result.invite ?? {};
+        const invite: { name?: string | null; inviterCode?: string; inviterName?: string } = result.invite ?? {};
         await env.USER_REGISTRY.getByName(key)
           .undoAcceptedGroupInvite(key, roomID, invite.name, invite.inviterCode, invite.inviterName);
         return response;

@@ -95,13 +95,13 @@ const IP_ATTEMPT_WINDOW = 600;
 // owner back to. Anyone can register a client under any name, but not under
 // someone else's address, so the address is what the kind rests on. A code made
 // for "claude" therefore cannot be spent on a client that is not at claude.ai.
-export function classifyClient(client) {
+export function classifyClient(client: any) {
   const hosts = [];
   for (const value of client?.redirectUris ?? []) {
     try { hosts.push(new URL(value).hostname); } catch { /* ignored */ }
   }
   if (hosts.length === 0) return "other";
-  const under = (host, domain) => host === domain || host.endsWith(`.${domain}`);
+  const under = (host: any, domain: any) => host === domain || host.endsWith(`.${domain}`);
   if (hosts.every(host => under(host, "claude.ai") || under(host, "claude.com"))) return "claude";
   if (hosts.every(host => under(host, "chatgpt.com") || under(host, "chat.openai.com") || under(host, "openai.com"))) return "chatgpt";
   const loopback = hosts.every(host => ["localhost", "127.0.0.1", "[::1]"].includes(host));
@@ -109,11 +109,11 @@ export function classifyClient(client) {
   return "other";
 }
 
-export function normalizeCode(value) {
+export function normalizeCode(value: any) {
   return String(value ?? "").toUpperCase().replace(/[\s-]/g, "");
 }
 
-async function ownerCodeKey(code) {
+async function ownerCodeKey(code: string) {
   return `mcp:owner-code:${await sha256Hex(code)}`;
 }
 
@@ -122,7 +122,7 @@ async function ownerCodeKey(code) {
  * page. Only the owner's signed-in session can make one, it is for one kind of
  * app, lasts five minutes and works once. A new code replaces the last one.
  */
-export async function issueOwnerCode(env: Env, sub, kind) {
+export async function issueOwnerCode(env: Env, sub: string, kind: string) {
   if (!CONNECTION_KINDS.includes(kind)) return null;
   const activeKey = `mcp:owner-code-active:${await sha256Hex(sub)}`;
   const previous = await env.STUDIQUO_DATA.get(activeKey);
@@ -134,13 +134,13 @@ export async function issueOwnerCode(env: Env, sub, kind) {
   return { code, kind, expiresInSeconds: OWNER_CODE_TTL };
 }
 
-function htmlEscape(value) {
-  return String(value).replace(/[&<>"']/g, character => ({
+function htmlEscape(value: any) {
+  return String(value).replace(/[&<>"']/g, character => (({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[character]);
+  }) as Record<string, string>)[character]);
 }
 
-function validRedirect(value) {
+function validRedirect(value: any) {
   try {
     const url = new URL(value);
     return !url.username && !url.password && !url.hash &&
@@ -148,7 +148,7 @@ function validRedirect(value) {
   } catch { return false; }
 }
 
-async function grantKey(sub, clientId) {
+async function grantKey(sub: string, clientId: any) {
   return `mcp:grant:${await sha256Hex(sub)}:${await sha256Hex(clientId)}`;
 }
 
@@ -157,7 +157,7 @@ async function grantKey(sub, clientId) {
 // grant; approving the same app again makes a new one with a new nonce, so
 // tokens from before the revocation do not come back to life with it. A grant
 // from before nonces existed has none, and neither do its tokens: those match.
-function sameGeneration(grant, token) {
+function sameGeneration(grant: GrantRecord | null, token: IssuedToken | null) {
   return (grant?.nonce ?? null) === (token?.grantId ?? null);
 }
 
@@ -180,7 +180,7 @@ export async function tokenIndexCoversEverything(env: Env, now = Date.now()) {
   return Number.isFinite(since) && since > 0 && now > since + TOKEN_INDEX_COVERS_AFTER_MS;
 }
 
-async function issueTokens(env: Env, sub, clientId, scope, grantId) {
+async function issueTokens(env: Env, sub: string, clientId: any, scope: any, grantId: any) {
   const generation = grantId ? { grantId } : {};
   // Signed when a key is configured, so a made-up access token is refused before
   // KV is read (token-signature.ts).
@@ -215,7 +215,7 @@ export async function externalSession(env: Env, request: Request) {
 
 // The authorize page's owner typed a right code: grant the app and hand back
 // where to send them, authorization code attached.
-async function approveFlow(env: Env, flowId, pending, sub) {
+async function approveFlow(env: Env, flowId: any, pending: any, sub: string) {
   const authorizationCode = `mcp_code_${randomToken()}`;
   await env.STUDIQUO_DATA.put(`mcp:code:${await sha256Hex(authorizationCode)}`, JSON.stringify({
     sub, clientId: pending.clientId, redirectUri: pending.redirectUri,
@@ -233,7 +233,7 @@ async function approveFlow(env: Env, flowId, pending, sub) {
 
 // Tells the owner's devices that an app was just connected, so a connection
 // they did not make is noticed. Best effort: the connection stands either way.
-async function notifyConnected(env: Env, sub, pending) {
+async function notifyConnected(env: Env, sub: string, pending: any) {
   try {
     const userKey = await resolveChatUserKey(env, sub, null);
     if (!userKey) return;
@@ -247,13 +247,13 @@ async function notifyConnected(env: Env, sub, pending) {
   }
 }
 
-export async function listConnections(env: Env, sub) {
+export async function listConnections(env: Env, sub: string) {
   const prefix = `mcp:grant:${await sha256Hex(sub)}:`;
   const names = [];
   let cursor;
   do {
-    const page = await env.STUDIQUO_DATA.list({ prefix, ...(cursor ? { cursor } : {}) });
-    names.push(...page.keys.map(key => key.name));
+    const page: KVNamespaceListResult<unknown> = await env.STUDIQUO_DATA.list({ prefix, ...(cursor ? { cursor } : {}) });
+    names.push(...page.keys.map((key: any) => key.name));
     cursor = page.list_complete === false ? page.cursor : undefined;
   } while (cursor);
   // Only what the app lists: the grant's `nonce` is what ties issued tokens to
@@ -270,19 +270,19 @@ export async function listConnections(env: Env, sub) {
  * app approved before two sign-in methods were linked sits under the other
  * identity: pass the account's own key together with every linked identity.
  */
-export async function revokeAllConnections(env: Env, subs) {
+export async function revokeAllConnections(env: Env, subs: any) {
   for (const sub of new Set(Array.isArray(subs) ? subs : [subs])) {
     for (const connection of await listConnections(env, sub)) await revokeConnection(env, sub, connection.id);
   }
 }
 
-export async function revokeConnection(env: Env, sub, id) {
+export async function revokeConnection(env: Env, sub: string, id: string) {
   if (!/^[a-f0-9]{64}$/.test(id)) return false;
   await env.STUDIQUO_DATA.delete(`mcp:grant:${await sha256Hex(sub)}:${id}`);
   return true;
 }
 
-export async function handleMCPOAuth(url, request: Request, env: Env, ctx) {
+export async function handleMCPOAuth(url: URL, request: Request, env: Env, ctx: ExecutionContext) {
   const origin = url.origin;
   if (url.pathname === "/.well-known/oauth-protected-resource" || url.pathname === "/.well-known/oauth-protected-resource/mcp") {
     return json({ resource: `${origin}/mcp`, authorization_servers: [origin], scopes_supported: ["studiquo.read", "studiquo.write"] });
@@ -341,7 +341,7 @@ export async function handleMCPOAuth(url, request: Request, env: Env, ctx) {
     return new Response(page, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });
   }
   if (url.pathname === "/oauth/pair" && request.method === "POST") {
-    const fail = (message, status = 400) => json({ error: "invalid_code", message }, status);
+    const fail = (message: any, status = 400) => json({ error: "invalid_code", message }, status);
     if (!(await checkRateLimit(env.RATE_LIMIT_MCP_PAIR, clientKey(request)))) return fail("試行が多すぎます。しばらくしてからやり直してください。", 429);
     const body = await readJSONLimited(request, 1_000);
     const id = String(body?.id ?? "");

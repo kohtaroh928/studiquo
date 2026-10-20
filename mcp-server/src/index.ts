@@ -15,7 +15,7 @@ async function snapshot() {
   return JSON.parse(await readFile(snapshotPath, "utf8"));
 }
 
-async function appendAction(action) {
+async function appendAction(action: Record<string, unknown>) {
   let actions = [];
   if (existsSync(actionsPath)) {
     try { actions = JSON.parse(await readFile(actionsPath, "utf8")); } catch { actions = []; }
@@ -41,11 +41,11 @@ server.registerTool("list_notebooks", {
   inputSchema: z.object({})
 }, async () => {
   const data = await snapshot();
-  return result(data.notebooks.map(notebook => ({
+  return result(data.notebooks.map((notebook: any) => ({
     id: notebook.id,
     title: notebook.title,
     pageCount: notebook.pages.length,
-    pages: notebook.pages.map(page => ({ id: page.id, title: page.title }))
+    pages: notebook.pages.map((page: any) => ({ id: page.id, title: page.title }))
   })));
 });
 
@@ -56,7 +56,7 @@ server.registerTool("search_notes", {
   const data = await snapshot();
   const needle = query.toLocaleLowerCase("ja");
   const matches = data.notebooks
-    .flatMap(notebook => notebook.pages.flatMap(page => {
+    .flatMap((notebook: any) => notebook.pages.flatMap((page: any) => {
       const haystack = `${notebook.title}\n${page.title}\n${page.recognizedText ?? ""}`.toLocaleLowerCase("ja");
       return haystack.includes(needle)
         ? [{ notebookId: notebook.id, notebookTitle: notebook.title, pageId: page.id, pageTitle: page.title, recognizedText: page.recognizedText ?? "" }]
@@ -71,7 +71,7 @@ server.registerTool("list_flashcard_decks", {
   inputSchema: z.object({ includeCards: z.boolean().default(false) })
 }, async ({ includeCards }) => {
   const data = await snapshot();
-  return result(data.flashcardDecks.map(deck => includeCards ? deck : ({ id: deck.id, title: deck.title, cardCount: deck.cards.length })));
+  return result(data.flashcardDecks.map((deck: any) => includeCards ? deck : ({ id: deck.id, title: deck.title, cardCount: deck.cards.length })));
 });
 
 server.registerTool("list_calendar_events", {
