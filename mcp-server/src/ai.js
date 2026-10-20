@@ -2,6 +2,9 @@ import { structuredOutputJSONSchema, parseStructuredOutput, MAX_STRUCTURED_OUTPU
 import { retrieve } from "./rag/index.js";
 import { revalidateRetrieval } from "./rag/authorization.js";
 import { ragAnswerPolicy } from "./rag/answer-policy.js";
+import { normalizeRetrieval } from "./rag/contract.js";
+import { filterReply } from "./rag/output-filter.js";
+import { groundingCheck } from "./rag/grounding-check.js";
 /**
  * AI proxy (OpenAI is the base provider).
  *
@@ -247,14 +250,17 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
   const baseSystem = system;
   let rag = { context: "", citations: [] };
   let ragRequested = false;
+  // What the model was actually sent on the last attempt. The final re-check below can
+  // empty `rag` (a timeout, a deleted source) after the excerpts have already gone out,
+  // and the reply built from them must still have its links removed.
+  let referencesSent = "";
   // Explicit renewed consent authorizes retrieval for OpenAI.
   if (provider === "openai" && env.RAG_ENABLED === "true" && payload?.rag && session &&
       request.headers.get("X-Studiquo-RAG-Consent") === "rag-openai-v1") {
     ragRequested = true;
     const retrievalStartedAt = Date.now();
     try {
-      rag = await retrieve(env, session, payload);
-      rag.status ??= "fallback";
+      rag = normalizeRetrieval(await retrieve(env, session, payload));
     } catch {
       // Fail open only to ordinary chat; never expose provider errors or text.
       rag = { context: "", citations: [], status: "fallback" };
@@ -263,6 +269,13 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
       event: "rag_retrieval",
       used: rag.citations.length > 0,
       citationCount: rag.citations.length,
+      status: rag.status,
+      reason: rag.reason ?? null,
+      truncated: rag.truncated ?? null,
+      sanitized: rag.sanitized ?? null,
+      injectionHints: rag.injectionHints ?? null,
+      redacted: rag.redacted ?? null,
+      aiCalls: rag.aiCalls ?? null,
       elapsedMs: Date.now() - retrievalStartedAt,
     }));
   }
@@ -292,7 +305,12 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
         safetyId: account,
         ...(ragRequested ? { beforeDispatch: async () => {
           rag = await revalidateRetrieval(env, session, rag);
-          return baseSystem + (rag.context ? "\n\n" + rag.context : "") + ragAnswerPolicy(rag.status, payload.rag.answerStyle);
+          referencesSent = rag.context;
+          const policy = ragAnswerPolicy(rag.status, payload.rag.answerStyle);
+          // Off by default: moving the excerpts changes what the model sees, so
+          // it is compared against the current layout (docs/RAG_PROMPT_CONTRACT.md §7) first.
+          if (env.RAG_CONTEXT_AS_INPUT === "true" && rag.context) return { instructions: baseSystem + policy, reference: rag.context };
+          return baseSystem + (rag.context ? "\n\n" + rag.context : "") + policy;
         } } : {}),
       });
       if (ragRequested) rag = await revalidateRetrieval(env, session, rag);
@@ -310,9 +328,17 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
     throw error;
   }
 
+  // Text the student did not write reaches the model through retrieved excerpts and
+  // through an attached note (which may be a friend's shared note). Either can plant a
+  // link or an instruction, so a reply built from them keeps no links and, for a teen,
+  // is screened once complete (see streamNormalizedText).
+  const untrustedInput = referencesSent !== "" || (typeof payload?.noteContext === "string" && payload.noteContext.trim() !== "");
   return streamNormalizedText(upstream, extractText, ctx, env, key, {
     "x-studiquo-images-received": String(images.length),
-  }, gate.refund, rag.citations, rag.status);
+  }, gate.refund, rag.citations, rag.status, untrustedInput,
+    untrustedInput && provider === "openai" && request.headers.get("X-Studiquo-Age") === "teen",
+    // What the model was shown, for the shadow grounding check (counts only).
+    referencesSent ? `${referencesSent}\n${turns.at(-1)?.text ?? ""}` : null, rag.status);
 }
 
 /**
@@ -329,7 +355,7 @@ async function handleChat(request, env, key, ctx, plan, account, session) {
  * runtime cancelled it. Here the buffer is an ordinary local and the
  * response is returned immediately while the pump runs behind it.
  */
-function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders = {}, refund = async () => {}, citations = [], ragStatus) {
+function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders = {}, refund = async () => {}, citations = [], ragStatus, redactRagLinks = false, moderateOutput = false, groundingSource = null, groundingStatus) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
@@ -343,6 +369,15 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
     let produced = 0;
     let providerCompleted = false;
     const requiresCompletion = extractText === openaiDeltaText;
+
+    // A reply built from retrieved documents or an attached note is held until it is complete
+    // and its links are removed once, on the whole text (rag/output-filter.js). Filtering the
+    // stream piece by piece kept failing: two harmless pieces could join into a link. Every
+    // other reply streams as before.
+    const holdReply = redactRagLinks;
+    const heldPieces = [];
+    let keepalive = null;
+    let answer = ""; // what the student saw, kept (bounded) for the teen output screen
 
     // Every write is guarded. Once the app has the answer it closes the
     // connection, and a write into a stream nobody is reading rejects — the
@@ -359,6 +394,16 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
     };
 
     try {
+      if (holdReply) {
+        // Nothing is shown until the reply is done, which can take a while. A comment line is
+        // ignored by the app (it reads only lines that start with "data:") and keeps the
+        // connection from looking idle to anything in between.
+        keepalive = setInterval(() => {
+          if (clientGone) return;
+          writer.write(encoder.encode(": keepalive\n\n")).catch(() => { clientGone = true; });
+        }, 15000);
+        keepalive.unref?.();
+      }
       if (ragStatus) await writer.write(encoder.encode(`data: ${JSON.stringify({ ragStatus })}\n\n`));
       if (citations.length) await writer.write(encoder.encode(`data: ${JSON.stringify({ citations })}\n\n`));
       for await (const chunk of upstream.body) {
@@ -388,9 +433,31 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
           }
           if (text) {
             produced += text.length;
-            await send(text);
+            if (holdReply) heldPieces.push(text);
+            else {
+              if (answer.length < 8000) answer += text;
+              await send(text);
+            }
           }
         }
+      }
+      if (holdReply) {
+        const safe = filterReply(heldPieces.join(""));
+        heldPieces.length = 0; // sent (or empty): the catch below must not send it again
+        if (safe) {
+          answer = Array.from(safe).slice(0, 8000).join(""); // by character, not in the middle of a surrogate pair
+          await send(safe);
+        }
+      }
+      // The text is already on the student's screen and cannot be taken back, so a
+      // flagged reply gets a plain notice after it and a log line (no text).
+      if (moderateOutput && !failed && answer && await moderationRejection(env, [answer], undefined, { timeoutMs: 4000 })) {
+        console.error(JSON.stringify({ message: "teen output flagged by moderation" }));
+        await send("\n\n（この回答には学習アプリで扱えない内容が含まれている可能性があります。内容を信じすぎず、保護者や先生に相談してください）");
+      }
+      if (groundingSource && !failed && answer) {
+        // Shadow mode: counts go to the log, the answer is untouched.
+        console.log(JSON.stringify({ event: "rag_grounding", status: groundingStatus, ...groundingCheck(answer, groundingSource) }));
       }
       completed = true;
       // A stream that ends in failure, or without a single character, is not an
@@ -402,9 +469,21 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
         await refund();
       }
     } catch (error) {
+      // A held reply that was cut off midway still shows what arrived, filtered, as the
+      // streamed kind would have.
+      if (holdReply && heldPieces.length) {
+        try {
+          const safe = filterReply(heldPieces.join(""));
+          heldPieces.length = 0;
+          if (safe) await send(safe);
+        } catch {
+          // nothing more can be done for the held text
+        }
+      }
       await send("\n\n（通信が中断しました。もう一度お試しください）");
       await refund();
     } finally {
+      if (keepalive) clearInterval(keepalive);
       // Never allowed to reject: an unsettled close is exactly what hung the
       // request before.
       try {

@@ -88,12 +88,28 @@ export function toStrictJSONSchema(schema) {
 async function postWithRetry(env, body, apiKey, beforeDispatch) {
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured on this Worker.");
   let last = null;
+  const baseInput = body.input;
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     if (attempt > 0) {
       const base = env.AI_RETRY_BASE_MS === undefined ? 600 : Number(env.AI_RETRY_BASE_MS) || 0;
       await new Promise(resolve => setTimeout(resolve, base * 2 ** (attempt - 1)));
     }
-    if (beforeDispatch) body.instructions = await beforeDispatch();
+    if (beforeDispatch) {
+      // A string is the instructions. An object may also carry `reference`:
+      // retrieved text sent as its own input item just before the student's
+      // last turn, so it is data in the conversation and not an instruction.
+      const prepared = await beforeDispatch();
+      if (typeof prepared === "string") {
+        // A retry whose references were revoked must not keep the earlier attempt's input item.
+        body.instructions = prepared;
+        body.input = baseInput;
+      } else {
+        body.instructions = prepared.instructions;
+        body.input = prepared.reference
+          ? [...baseInput.slice(0, -1), { role: "user", content: prepared.reference }, baseInput.at(-1)]
+          : baseInput;
+      }
+    }
     const payload = JSON.stringify(body);
     const response = await fetch(API_URL, {
       method: "POST",
@@ -144,7 +160,7 @@ export async function callOpenAIChat(env, { model, systemInstruction, turns, ima
  * rather than the app refusing a student in distress). Fails open: a
  * moderation outage must not take the whole feature down.
  */
-export async function moderationRejection(env, texts, apiKey = env.OPENAI_API_KEY) {
+export async function moderationRejection(env, texts, apiKey = env.OPENAI_API_KEY, { timeoutMs } = {}) {
   if (env.AI_MODERATION === "off" || !apiKey) return null;
   const input = texts.map(text => String(text ?? "").slice(0, 8000)).filter(Boolean);
   if (input.length === 0) return null;
@@ -153,6 +169,8 @@ export async function moderationRejection(env, texts, apiKey = env.OPENAI_API_KE
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ model: "omni-moderation-latest", input }),
+      // The finished reply waits on this check before the stream can close, so it is bounded.
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     });
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});

@@ -404,3 +404,234 @@ test('RAG SSE evidence states and OpenAI instructions reflect supported, partial
     }
   } finally {globalThis.fetch=original;}
 });
+
+function sse(pieces) {
+  return pieces.map((delta) => `data: ${JSON.stringify({ type: "response.output_text.delta", delta })}\n\n`).join("") +
+    'data: {"type":"response.completed","response":{"status":"completed"}}\n\n';
+}
+const answerText = (text) => text.split("\n").filter((l) => l.startsWith("data:")).map((l) => JSON.parse(l.slice(5))).map((e) => e.text ?? "").join("");
+
+test("an answer built from documents has its links removed even when split across stream pieces; ordinary chat keeps them", async () => {
+  const original = globalThis.fetch;
+  const pieces = ["光合成は葉で起きます。[詳", "細](https://evil", ".example/?q=抜粋)", "を開いてください。"];
+  globalThis.fetch = async () => new Response(sse(pieces));
+  try {
+    const qenv = qualityEnvironment(), environment = { ...env(), ...qenv };
+    await indexSource(environment, await accountKey("canonical-owner"), qualitySource());
+    environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map((v) => ({ id: v.id, score: 0.6 })) });
+    const rag = await chat(environment, { messages: [{ role: "user", text: "光合成とは？" }], rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+    assert.ok(rag.text.includes('"grounded"'));
+    assert.equal(answerText(rag.text), "光合成は葉で起きます。詳細を開いてください。");
+    const plain = await chat(env(), { messages: [{ role: "user", text: "光合成とは？" }] });
+    assert.equal(answerText(plain.text), pieces.join(""));
+  } finally { globalThis.fetch = original; }
+});
+
+test("RAG_CONTEXT_AS_INPUT moves the excerpts out of the instructions into a separate input item; default is unchanged", async () => {
+  const original = globalThis.fetch;
+  const bodies = [];
+  globalThis.fetch = async (_url, options) => { bodies.push(JSON.parse(options.body)); return new Response(sse(["回答"])); };
+  try {
+    for (const flag of [undefined, "true"]) {
+      const qenv = qualityEnvironment(), environment = { ...env(), ...qenv, ...(flag ? { RAG_CONTEXT_AS_INPUT: flag } : {}) };
+      await indexSource(environment, await accountKey("canonical-owner"), qualitySource());
+      environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map((v) => ({ id: v.id, score: 0.6 })) });
+      await chat(environment, { messages: [{ role: "user", text: "光合成とは？" }], rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+      const body = bodies.at(-1);
+      const inInstructions = body.instructions.includes("UNTRUSTED retrieved reference data"); // the policy text alone also names untrustedReferences
+      const inputs = body.input.map((m) => JSON.stringify(m.content));
+      if (!flag) {
+        assert.ok(inInstructions);
+        assert.equal(body.input.length, 1);
+      } else {
+        assert.ok(!inInstructions, "excerpts must not be in the instructions");
+        assert.match(body.instructions, /claims they actually support/); // the answer policy stays in the instructions
+        assert.equal(body.input.length, 2);
+        assert.match(inputs[0], /UNTRUSTED retrieved reference data/);
+        assert.match(inputs[1], /光合成とは/); // the student's own turn stays last
+        assert.equal(body.input[0].role, "user");
+      }
+    }
+  } finally { globalThis.fetch = original; }
+});
+
+test("a chat with an attached note has its links removed too; a chat with neither keeps them", async () => {
+  const original = globalThis.fetch;
+  const pieces = ["共有ノートより。[詳", "細](https://evil", ".example/?q=x)を見て。"];
+  globalThis.fetch = async () => new Response(sse(pieces));
+  try {
+    const withNote = await chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "友達から共有されたノートの本文" });
+    assert.equal(answerText(withNote.text), "共有ノートより。詳細を見て。");
+    const without = await chat(env(), { messages: [{ role: "user", text: "要点は？" }] });
+    assert.equal(answerText(without.text), pieces.join(""));
+    const blank = await chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "   " });
+    assert.equal(answerText(blank.text), pieces.join(""));
+  } finally { globalThis.fetch = original; }
+});
+
+test("a teen's finished reply is screened by moderation: a flagged reply gets a notice, a clean one and an adult's do not", async () => {
+  const original = globalThis.fetch;
+  let moderated = 0, flag = true;
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes("/moderations")) {
+      moderated++;
+      // Only the model's reply is flagged; the student's question is clean.
+      const hit = flag && JSON.parse(options.body).input.some((t) => t.includes("不適切"));
+      return new Response(JSON.stringify({ results: [{ categories: { violence: hit } }] }));
+    }
+    return new Response(sse(["不適切かもしれない回答です。"]));
+  };
+  try {
+    const screened = env({ AI_MODERATION: undefined });
+    const withNote = (headers) => chat(screened, { messages: [{ role: "user", text: "質問" }], noteContext: "共有ノートの本文" }, headers);
+    const run = withNote;
+    const teen = await run({ "X-Studiquo-Age": "teen" });
+    assert.match(answerText(teen.text), /保護者や先生に相談/);
+    assert.ok(moderated >= 2, "the question and the reply are both screened"); // input moderation + output moderation
+    flag = false; moderated = 0;
+    const clean = await run({ "X-Studiquo-Age": "teen" });
+    assert.ok(!/保護者や先生/.test(answerText(clean.text)));
+    flag = true; moderated = 0;
+    const adult = await run({ "X-Studiquo-Age": "adult" });
+    assert.ok(!/保護者や先生/.test(answerText(adult.text)));
+    // A reply with no outside text in it (no note, no excerpts) is not screened a second time.
+    moderated = 0;
+    const plain = await chat(screened, { messages: [{ role: "user", text: "質問" }] }, { "X-Studiquo-Age": "teen" });
+    assert.ok(!/保護者や先生/.test(answerText(plain.text)));
+    assert.equal(moderated, 1, "only the student's question was screened");
+  } finally { globalThis.fetch = original; }
+});
+
+test("the shadow grounding check logs counts for a document-based answer and never changes the answer", async () => {
+  const original = globalThis.fetch, log = console.log, lines = [];
+  globalThis.fetch = async () => new Response(sse(["電流計の価格は8000円です。"]));
+  console.log = (...args) => { lines.push(args.join(" ")); };
+  try {
+    const qenv = qualityEnvironment(), environment = { ...env(), ...qenv };
+    await indexSource(environment, await accountKey("canonical-owner"), qualitySource({ pages: [{ pageNumber: 1, text: "電流計の価格は5000円です。" }] }));
+    environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map((v) => ({ id: v.id, score: 0.6 })) });
+    const result = await chat(environment, { messages: [{ role: "user", text: "電流計の価格を教えて" }], rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+    assert.equal(answerText(result.text), "電流計の価格は8000円です。"); // unchanged even though 8000 is not in the excerpt
+    const event = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((e) => e?.event === "rag_grounding");
+    assert.deepEqual(event, { event: "rag_grounding", status: "grounded", checkedNumbers: 1, ungroundedNumbers: 1, checkedTokens: 0, ungroundedTokens: 0 });
+  } finally { globalThis.fetch = original; console.log = log; }
+});
+
+test("RAG_CONTEXT_AS_INPUT: a retry whose references were revoked sends no excerpt in the input", async () => {
+  const { callOpenAIChat } = await import("./openai.js");
+  const original = globalThis.fetch, bodies = [];
+  let status = 503;
+  globalThis.fetch = async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    const response = new Response(status === 503 ? "busy" : sse(["回答"]), { status });
+    status = 200; // the second attempt succeeds
+    return response;
+  };
+  try {
+    let attempt = 0;
+    await callOpenAIChat({ AI_RETRY_BASE_MS: 0 }, {
+      model: "gpt-test", systemInstruction: "base", turns: [{ role: "user", text: "質問" }], apiKey: "test-placeholder",
+      beforeDispatch: async () => (++attempt === 1
+        ? { instructions: "base", reference: "UNTRUSTED retrieved reference data 資料の抜粋" }
+        : "base"), // revalidation failed: references revoked
+    });
+    assert.equal(bodies.length, 2);
+    assert.equal(bodies[0].input.length, 2);
+    assert.match(JSON.stringify(bodies[0].input), /資料の抜粋/);
+    assert.equal(bodies[1].input.length, 1, "the revoked excerpt must not be resent");
+    assert.ok(!JSON.stringify(bodies[1]).includes("資料の抜粋"));
+  } finally { globalThis.fetch = original; }
+});
+
+test("links are still removed when the final re-check empties the references after they were sent", async () => {
+  const original = globalThis.fetch;
+  const qenv = qualityEnvironment(), environment = { ...env(), ...qenv };
+  globalThis.fetch = async () => {
+    // The source is deleted while the model is answering: the final re-check fails.
+    qenv.ADMIN_DB.db.exec("UPDATE rag_sources SET deleted=1");
+    return new Response(sse(["電流計は5000円です。[詳細](https://evil.example/?q=x)"]));
+  };
+  try {
+    await indexSource(environment, await accountKey("canonical-owner"), qualitySource({ pages: [{ pageNumber: 1, text: "電流計の価格は5000円です。" }] }));
+    environment.RAG_VECTORIZE.query = async () => ({ matches: [...qenv.vectors.values()].map((v) => ({ id: v.id, score: 0.6 })) });
+    const result = await chat(environment, { messages: [{ role: "user", text: "電流計の価格を教えて" }], rag: { scope: { type: "library" } } }, { "X-Studiquo-RAG-Consent": "rag-openai-v1" });
+    assert.ok(!/evil\.example/.test(answerText(result.text)), answerText(result.text));
+    assert.ok(!result.text.includes('"citations"'), "the citation is still dropped when the source is gone");
+  } finally { globalThis.fetch = original; }
+});
+
+const textEvents = (text) => text.split("\n").filter((l) => l.startsWith("data:")).map((l) => JSON.parse(l.slice(5))).filter((e) => typeof e.text === "string");
+
+test("a reply built from an attached note arrives as one finished text; an ordinary reply still streams in pieces", async () => {
+  const original = globalThis.fetch;
+  const pieces = ["共有ノートより。[詳", "細](https://evil", ".example/?q=x)を", "見て。"];
+  globalThis.fetch = async () => new Response(sse(pieces));
+  try {
+    const held = await chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "友達から共有されたノートの本文" });
+    assert.deepEqual(textEvents(held.text).map((e) => e.text), ["共有ノートより。詳細を見て。"], "held, filtered once, sent once");
+    const streamed = await chat(env(), { messages: [{ role: "user", text: "要点は？" }] });
+    assert.deepEqual(textEvents(streamed.text).map((e) => e.text), pieces, "no outside text: streamed as it arrives");
+  } finally { globalThis.fetch = original; }
+});
+
+test("a held reply that is cut off keeps what arrived (filtered), then says it did not finish", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    ['共有ノートより。[詳細](https://evil.example/?q=x)を見て。'].map((delta) => `data: ${JSON.stringify({ type: "response.output_text.delta", delta })}\n\n`).join("") +
+    'data: {"type":"response.failed","response":{"status":"failed"}}\n\n');
+  try {
+    const result = await chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "共有ノートの本文" });
+    const texts = textEvents(result.text).map((e) => e.text);
+    assert.equal(texts[0], "共有ノートより。詳細を見て。");
+    assert.match(texts.at(-1), /AIが回答を完了できませんでした/);
+    assert.ok(!/evil\.example/.test(result.text));
+  } finally { globalThis.fetch = original; }
+});
+
+test("while a held reply is being written, a comment line keeps the connection alive; the app ignores it", async () => {
+  const { mock } = await import("node:test");
+  mock.timers.enable({ apis: ["setInterval"] });
+  const original = globalThis.fetch;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    async start(controller) {
+      await gate;
+      controller.enqueue(new TextEncoder().encode(sse(["共有ノートより。"])));
+      controller.close();
+    },
+  }));
+  try {
+    const pending = chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "共有ノートの本文" });
+    const settle = async () => { for (let i = 0; i < 30; i++) await new Promise((resolve) => setImmediate(resolve)); };
+    await settle(); // the request reaches the point where it waits for the model
+    mock.timers.tick(15000);
+    await settle();
+    release();
+    const result = await pending;
+    assert.ok(result.text.includes(": keepalive\n\n"), "a comment line was sent while waiting");
+    assert.equal(answerText(result.text), "共有ノートより。");
+    // the app reads only lines that start with "data:"
+    assert.ok(result.text.split("\n").filter((l) => l && !l.startsWith("data:")).every((l) => l.startsWith(":")));
+  } finally { globalThis.fetch = original; mock.timers.reset(); }
+});
+
+test("a held reply cut off by a broken connection still shows what arrived, filtered, then says it was interrupted", async () => {
+  const original = globalThis.fetch;
+  // The first read delivers part of the reply, the second one fails (a connection reset).
+  let reads = 0;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    pull(controller) {
+      if (reads++ === 0) controller.enqueue(new TextEncoder().encode(sse(["共有ノートより。[詳細](https://evil.example/?q=x)を見て。"]).split("data: {\"type\":\"response.completed\"")[0]));
+      else controller.error(new Error("connection reset"));
+    },
+  }));
+  try {
+    const result = await chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "共有ノートの本文" });
+    const texts = textEvents(result.text).map((e) => e.text);
+    assert.equal(texts[0], "共有ノートより。詳細を見て。");
+    assert.match(texts.at(-1), /通信が中断しました/);
+    assert.equal(texts.length, 2, "the held text is sent once, not twice");
+    assert.ok(!/evil\.example/.test(result.text));
+  } finally { globalThis.fetch = original; }
+});
