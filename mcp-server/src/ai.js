@@ -443,8 +443,9 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
       }
       if (holdReply) {
         const safe = filterReply(heldPieces.join(""));
+        heldPieces.length = 0; // sent (or empty): the catch below must not send it again
         if (safe) {
-          answer = safe.slice(0, 8000);
+          answer = Array.from(safe).slice(0, 8000).join(""); // by character, not in the middle of a surrogate pair
           await send(safe);
         }
       }
@@ -468,6 +469,17 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
         await refund();
       }
     } catch (error) {
+      // A held reply that was cut off midway still shows what arrived, filtered, as the
+      // streamed kind would have.
+      if (holdReply && heldPieces.length) {
+        try {
+          const safe = filterReply(heldPieces.join(""));
+          heldPieces.length = 0;
+          if (safe) await send(safe);
+        } catch {
+          // nothing more can be done for the held text
+        }
+      }
       await send("\n\n（通信が中断しました。もう一度お試しください）");
       await refund();
     } finally {

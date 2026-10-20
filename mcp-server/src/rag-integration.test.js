@@ -615,3 +615,23 @@ test("while a held reply is being written, a comment line keeps the connection a
     assert.ok(result.text.split("\n").filter((l) => l && !l.startsWith("data:")).every((l) => l.startsWith(":")));
   } finally { globalThis.fetch = original; mock.timers.reset(); }
 });
+
+test("a held reply cut off by a broken connection still shows what arrived, filtered, then says it was interrupted", async () => {
+  const original = globalThis.fetch;
+  // The first read delivers part of the reply, the second one fails (a connection reset).
+  let reads = 0;
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    pull(controller) {
+      if (reads++ === 0) controller.enqueue(new TextEncoder().encode(sse(["共有ノートより。[詳細](https://evil.example/?q=x)を見て。"]).split("data: {\"type\":\"response.completed\"")[0]));
+      else controller.error(new Error("connection reset"));
+    },
+  }));
+  try {
+    const result = await chat(env(), { messages: [{ role: "user", text: "要点は？" }], noteContext: "共有ノートの本文" });
+    const texts = textEvents(result.text).map((e) => e.text);
+    assert.equal(texts[0], "共有ノートより。詳細を見て。");
+    assert.match(texts.at(-1), /通信が中断しました/);
+    assert.equal(texts.length, 2, "the held text is sent once, not twice");
+    assert.ok(!/evil\.example/.test(result.text));
+  } finally { globalThis.fetch = original; }
+});
