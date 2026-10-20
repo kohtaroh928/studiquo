@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { exportPKCS8, generateKeyPair } from "jose";
 import test from "node:test";
-import { handleDeviceRoutes, loadDevices } from "./devices.js";
+import { handleDeviceRoutes, loadDevices } from "./devices.ts";
 
 function environment(limit = 5) {
   const values = new Map();

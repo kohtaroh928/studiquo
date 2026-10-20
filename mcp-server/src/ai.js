@@ -15,7 +15,7 @@
 import { consumeCredits, creditUsage, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES } from "./ai-credits.js";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { takeParsedBody } from "./ai-body.ts";
-import { sendPush } from "./push.js";
+import { sendPush } from "./push.ts";
 import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.js";
 import { callOpenAIChat, callOpenAIStructured, moderationRejection, MODERATION_UNAVAILABLE, extractDeltaText as openaiDeltaText } from "./openai.js";
 

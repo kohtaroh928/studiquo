@@ -16,6 +16,7 @@
 import { sha256Hex } from "./auth.ts";
 import { postSlackBlocks } from "./slack.ts";
 import { featureDisabled } from "./features.js";
+import type { Env } from "./env.ts";
 
 export const MONITOR = {
   windowSeconds: 3_600,
@@ -46,9 +47,9 @@ const RESEND_API_URL = "https://api.resend.com/emails";
  * (oldest evicted). `wasEmpty` is true when nothing live was recorded before,
  * i.e. the account has no history to compare against.
  */
-export function touchSeenContext(state, key, now, maxEntries, ttlSeconds) {
+export function touchSeenContext(state: { entries?: Record<string, number> } | null | undefined, key: string, now: number, maxEntries: number, ttlSeconds: number) {
   const live = Object.entries(state?.entries ?? {}).filter(([, seenAt]) => now - seenAt < ttlSeconds * 1000);
-  const entries = Object.fromEntries(live);
+  const entries: Record<string, number> = Object.fromEntries(live);
   const wasEmpty = live.length === 0;
   const isNew = !(key in entries);
   entries[key] = now;
@@ -63,7 +64,7 @@ function cleanLabel(value) {
 }
 
 /** Cloudflare's view of where the request came from, or null when it isn't available. */
-export function requestContext(request) {
+export function requestContext(request: Request) {
   const cf = request.cf;
   if (!cf || !cf.country || cf.asn === undefined || cf.asn === null) return null;
   return {
@@ -75,7 +76,7 @@ export function requestContext(request) {
   };
 }
 
-async function countAndAlert(env, counterName, threshold, title, detail) {
+async function countAndAlert(env: Env, counterName, threshold, title, detail) {
   // Both counters are named for the clock hour they belong to, so "alert at
   // most once" lines up exactly with "count per hour" instead of drifting
   // with whenever each one's first bump happened.
@@ -95,7 +96,7 @@ async function countAndAlert(env, counterName, threshold, title, detail) {
  * Logs one local-login outcome ("success" | "failure" | "throttled") and
  * feeds the spike alerts. Never throws.
  */
-export async function recordLoginOutcome(env, request, outcome, { newContext = false, firstSeen = false } = {}) {
+export async function recordLoginOutcome(env: Env, request: Request, outcome, { newContext = false, firstSeen = false } = {}) {
   try {
     const context = requestContext(request);
     console.log(JSON.stringify({
@@ -136,7 +137,7 @@ export async function recordLoginOutcome(env, request, outcome, { newContext = f
   }
 }
 
-async function sendSignInNotice(env, email, context, when) {
+async function sendSignInNotice(env: Env, email, context, when) {
   // The "email" kill switch (features.js). Callers treat a notice as best effort.
   if (featureDisabled(env, "email")) return;
   const place = [context.country, context.region].filter(Boolean).join(" / ");
@@ -168,7 +169,7 @@ async function sendSignInNotice(env, email, context, when) {
  * when `notify` is set and it's one the account hasn't used lately — emails
  * the owner. Returns `{ newContext, firstSeen }` for the metrics. Never throws.
  */
-export async function noteSignInContext(env, request, email, { notify }) {
+export async function noteSignInContext(env: Env, request: Request, email, { notify }) {
   try {
     const context = requestContext(request);
     if (!context) return { newContext: false, firstSeen: false };

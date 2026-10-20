@@ -1,10 +1,10 @@
 import { sha256Hex } from "./auth.ts";
 import { queueRevenueCatDeletion } from "./privacy-retention.js";
 import { roomMembershipKey } from "./document-room-store.js";
-import { generationOf } from "./session.js";
+import { generationOf } from "./session.ts";
 import { libraryIdObjectName } from "./library-id.ts";
-import { tokenIndexCoversEverything } from "./mcp-oauth.js";
-import { indexedPasskeyIds, passkeyAccountKeys, passkeyIndexComplete } from "./passkey-policy.js";
+import { tokenIndexCoversEverything } from "./mcp-oauth.ts";
+import { indexedPasskeyIds, passkeyAccountKeys, passkeyIndexComplete } from "./passkey-policy.ts";
 
 // How long the retired password generation outlives the deletion. KV can serve
 // a stale record for about a minute; a week is a wide margin on top of that.

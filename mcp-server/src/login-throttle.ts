@@ -27,6 +27,7 @@
 //     toward them, and its own IP+account streak still escalates. A stranger hammering the
 //     address can't therefore keep its owner waiting on their usual network.
 import { sha256Hex } from "./auth.ts";
+import type { Env } from "./env.ts";
 
 export const THROTTLE_POLICIES = {
   // Shared carrier/NAT ASNs hold many honest users, so this key tolerates a
@@ -104,7 +105,7 @@ export function trustExpiryMs(state) {
   return state?.trustedUntil ?? 0;
 }
 
-async function loginKeys(env, request, email) {
+async function loginKeys(env: Env, request: Request, email) {
   const emailHash = await sha256Hex(email.trim().toLowerCase());
   const ip = request.headers.get("cf-connecting-ip") || "unknown";
   const named = (policy, name) => ({ policy, stub: env.RATE_COUNTER.getByName(name) });
@@ -127,7 +128,7 @@ async function loginKeys(env, request, email) {
  * earns a place in the reserved part of the hashing queue. Otherwise pass the
  * result to finishLoginAttempt() with the outcome.
  */
-export async function beginLoginAttempt(env, request, email) {
+export async function beginLoginAttempt(env: Env, request: Request, email) {
   const { pair, shared } = await loginKeys(env, request, email);
   const own = await pair.stub.loginReserve(pair.policy);
   if (own.waitSeconds > 0) return { waitSeconds: own.waitSeconds, trusted: own.trusted, pair, held: [] };

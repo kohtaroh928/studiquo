@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
-import { getApplePublicKeys, verifyAppleIdentityToken } from "./apple-auth.js";
+import { getApplePublicKeys, verifyAppleIdentityToken } from "./apple-auth.ts";
 
 const REAL_ISSUER = "https://appleid.apple.com";
 const REAL_AUDIENCE = "com.yabuko.studiquo";

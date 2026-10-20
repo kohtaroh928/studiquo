@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { revokePasskeysForAccount } from "./passkeys.js";
+import { revokePasskeysForAccount } from "./passkeys.ts";
 import {
   indexAccountPasskey, listAccountPasskeys, passkeyRevokedByReset,
-} from "./passkey-policy.js";
+} from "./passkey-policy.ts";
 
 function kv() {
   const values = new Map();
@@ -65,7 +65,7 @@ test("a missed passkey does not count as the account's passkey either", async ()
   await register(env, { email: "a@example.com", id: "missed", userKey: "dev-a", account: "email:a@example.com", createdAt: Date.now() - 1000 });
   assert.deepEqual(await listAccountPasskeys(env, "email:a@example.com", "a@example.com"), ["missed"]);
   // Simulate the sweep missing it: only the reset time is written.
-  const { setPasskeyValidFrom } = await import("./passkey-policy.js");
+  const { setPasskeyValidFrom } = await import("./passkey-policy.ts");
   await setPasskeyValidFrom(env, ["email:a@example.com"]);
   assert.deepEqual(await listAccountPasskeys(env, "email:a@example.com", "a@example.com"), []);
 });

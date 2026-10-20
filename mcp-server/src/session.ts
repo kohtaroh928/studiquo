@@ -5,14 +5,16 @@
 // trusting the token's own embedded timestamp as proof it's genuine.
 import { sha256Hex } from "./auth.ts";
 import { VALIDITY_SECONDS } from "./token.ts";
-import { sessionTokenAcceptable, signSessionToken } from "./token-signature.js";
+import { sessionTokenAcceptable, signSessionToken } from "./token-signature.ts";
+import type { Env } from "./env.ts";
+import type { DeletionState, SessionRecord } from "./records.ts";
 
 // Which life of the account a record belongs to. Each time a deleted account
 // is signed into again (mintSession) the count goes up by one, and jobs and
 // states carry the count they were written under. Comparing counts tells an
 // earlier life's leftovers from the current one without trusting clocks that
 // differ between the isolates serving a request and the one running a retry.
-export function generationOf(state) {
+export function generationOf(state: DeletionState | null | undefined): number {
   return Number.isFinite(state?.generation) ? state.generation : 0;
 }
 
@@ -28,7 +30,7 @@ const IDENTITY_CANONICAL_PREFIX = "identity-canonical:";
  * identities are cleared, since the provider lists them as aliases of the one
  * customer. Returns false when that could not be done.
  */
-async function clearDeletedCustomerRecords(env, hashes) {
+async function clearDeletedCustomerRecords(env: Env, hashes) {
   if (!env.ADMIN_DB || hashes.length === 0) return true;
   try {
     await env.ADMIN_DB.prepare("DELETE FROM privacy_deleted_customers WHERE customer_hash IN (SELECT value FROM json_each(?))")
@@ -59,13 +61,13 @@ function newSecretHalf() {
  * `randomValue` and is ignored: the secret half of the token always comes from the
  * Worker (256 random bits, so two logins never share one in practice).
  */
-export async function mintSession(env, identityKey, _suppliedByTheApp, { originIssuedAtMs } = {}) {
+export async function mintSession(env: Env, identityKey, _suppliedByTheApp?: unknown, { originIssuedAtMs }: { originIssuedAtMs?: number } = {}) {
   const issuedAt = Math.floor(Date.now() / 1000);
   // Signed when a signing key is configured (token-signature.js), so that an
   // invented token can be refused later without a KV read.
   const token = await signSessionToken(env, `${issuedAt}.${newSecretHalf()}`);
   const deletionStateKey = `account-deletion:${await sha256Hex(identityKey)}`;
-  const deletionState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
+  const deletionState = await env.STUDIQUO_DATA.get<DeletionState>(deletionStateKey, "json");
   if (deletionState?.status === "deleting") return null;
   // The deletion finished and this identity has now signed in again, so it is
   // a new account. The "deleted" marker (which only exists so a stale retry
@@ -131,7 +133,7 @@ export async function mintSession(env, identityKey, _suppliedByTheApp, { originI
  * timestamp) returns false even though isExpired(token) alone would accept
  * it.
  */
-export async function hasRealSession(env, token, options) {
+export async function hasRealSession(env: Env, token, options?: { allowSuspended?: boolean }) {
   return (await realSession(env, token, options)) !== null;
 }
 
@@ -146,14 +148,14 @@ export async function suspensionKey(canonicalSub) {
 // Looked up under the canonical account and, for a session issued before two
 // sign-in methods were linked, under the identity it was issued to as well: an
 // operator's mark made against either one must hold.
-async function isSuspended(env, session) {
+async function isSuspended(env: Env, session: SessionRecord) {
   return hasModerationMark(env, session, SUSPENSION_PREFIX);
 }
 
 // An operator's mark of the given kind on this person (account-suspended: or
 // chat-suspended:), under the canonical account and the identity the session
 // was issued to.
-export async function hasModerationMark(env, session, prefix) {
+export async function hasModerationMark(env: Env, session, prefix) {
   const subs = session.originalSub && session.originalSub !== session.sub ? [session.sub, session.originalSub] : [session.sub];
   const marks = await Promise.all(subs.map(async item =>
     env.STUDIQUO_DATA.get(`${prefix}${await sha256Hex(`chat-account:${item}`)}`)));
@@ -167,12 +169,12 @@ export const CHAT_SUSPENSION_PREFIX = "chat-suspended:";
  * to do — leaving (deleting the account, and the passkey check that deletion
  * asks for). Everything else treats a suspended account like a signed-out one.
  */
-export async function realSession(env, token, { allowSuspended = false } = {}) {
+export async function realSession(env: Env, token, { allowSuspended = false } = {}) {
   // First, before anything is read: a token whose signature is wrong (or missing
   // while signatures are required) cannot be a real session.
   if (!(await sessionTokenAcceptable(env, token))) return null;
   const key = await sha256Hex(token);
-  const session = await env.STUDIQUO_DATA.get(`${SESSION_PREFIX}${key}`, "json");
+  const session = await env.STUDIQUO_DATA.get<SessionRecord>(`${SESSION_PREFIX}${key}`, "json");
   if (typeof session?.sub !== "string" || session.sub.length === 0) return null;
   // Linking providers must also affect already-issued sessions. Otherwise a
   // user switching sign-in method would remain split until every old token
@@ -184,7 +186,7 @@ export async function realSession(env, token, { allowSuspended = false } = {}) {
     : session;
   // Independent reads, so the cut-off adds no waiting on top of the state.
   const [deletionState, cutoff, suspended] = await Promise.all([
-    env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(resolved.sub)}`, "json"),
+    env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(resolved.sub)}`, "json"),
     sessionCutoff(env, resolved.sub),
     allowSuspended ? null : isSuspended(env, resolved),
   ]);
@@ -206,10 +208,10 @@ export async function realSession(env, token, { allowSuspended = false } = {}) {
  * `accountIsUnavailable`, an already-deleted account is not counted: a person
  * who has left may register again.
  */
-export async function accountIsBeingDeleted(env, sub) {
+export async function accountIsBeingDeleted(env: Env, sub) {
   const canonical = await env.STUDIQUO_DATA.get(`${IDENTITY_CANONICAL_PREFIX}${sub}`);
   const subs = canonical && canonical !== sub ? [sub, canonical] : [sub];
-  const states = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(item)}`, "json")));
+  const states = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(item)}`, "json")));
   return states.some(state => state?.status === "deleting");
 }
 
@@ -218,10 +220,10 @@ export async function accountIsBeingDeleted(env, sub) {
  * credentials that are not sessions (connected-app tokens). `sub` may be a
  * linked identity rather than the canonical account, so both are looked at.
  */
-export async function accountIsUnavailable(env, sub) {
+export async function accountIsUnavailable(env: Env, sub) {
   const canonical = await env.STUDIQUO_DATA.get(`${IDENTITY_CANONICAL_PREFIX}${sub}`);
   const subs = canonical && canonical !== sub ? [sub, canonical] : [sub];
-  const states = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(item)}`, "json")));
+  const states = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(item)}`, "json")));
   if (states.some(state => state?.status === "deleting" || state?.status === "deleted")) return true;
   // A suspended account's connected apps stop working too.
   const suspensions = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get(await suspensionKey(item))));
@@ -230,7 +232,7 @@ export async function accountIsUnavailable(env, sub) {
 
 const CUTOFF_PREFIX = "session-valid-from:";
 
-async function sessionCutoff(env, identityKey) {
+async function sessionCutoff(env: Env, identityKey) {
   const value = Number(await env.STUDIQUO_DATA.get(`${CUTOFF_PREFIX}${await sha256Hex(identityKey)}`));
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
@@ -258,8 +260,8 @@ export function sessionIsBeforeCutoff(session, cutoff) {
  * minute, so a revoked session can live that long. An account that is being
  * deleted, or is already deleted, has no live sessions to protect.
  */
-export async function revokeSessionsIssuedBefore(env, identityKey, now = Date.now()) {
-  const state = await env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(identityKey)}`, "json");
+export async function revokeSessionsIssuedBefore(env: Env, identityKey: string, now = Date.now()) {
+  const state = await env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(identityKey)}`, "json");
   if (state?.status === "deleting" || state?.status === "deleted") return;
   await env.STUDIQUO_DATA.put(`${CUTOFF_PREFIX}${await sha256Hex(identityKey)}`, String(now), { expirationTtl: VALIDITY_SECONDS + 86_400 });
 }

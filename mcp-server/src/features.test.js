@@ -23,11 +23,11 @@ register(
 );
 
 const { FEATURES, disabledFeatures, featureDisabled, featureForPath, featureGateRejection } = await import("./features.js");
-const { appGateRejection } = await import("./app-gate.js");
+const { appGateRejection } = await import("./app-gate.ts");
 const { default: worker } = await import("./app.js");
-const { sendPush } = await import("./push.js");
-const { sendVerificationCode } = await import("./email-verification.js");
-const { sendPasskeyNotice } = await import("./passkey-policy.js");
+const { sendPush } = await import("./push.ts");
+const { sendVerificationCode } = await import("./email-verification.ts");
+const { sendPasskeyNotice } = await import("./passkey-policy.ts");
 
 const noopCtx = { waitUntil() {}, passThroughOnException() {} };
 const gate = (path, env) => appGateRejection(new Request(`https://example.test${path}`, { method: "POST" }), env, new URL(`https://example.test${path}`));

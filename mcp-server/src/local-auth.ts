@@ -15,6 +15,7 @@
 // already rewritten. Turn it on in a second deploy once the first is stable.
 import { argon2idAsync } from "@noble/hashes/argon2.js";
 import { sha256Hex } from "./auth.ts";
+import type { Env } from "./env.ts";
 
 const ACCOUNT_PREFIX = "account:local:";
 
@@ -75,7 +76,32 @@ export class Argon2BusyError extends Error {
 // operations that run after a one-time code was already spent (setting a
 // password at sign-up or reset): turning those away would cost the person
 // their code for something the queue limit exists only to protect.
-async function withArgon2Slot(work, { patient = false, priority = false } = {}) {
+interface Argon2Options {
+  patient?: boolean;
+  priority?: boolean;
+}
+
+interface Argon2Params {
+  m: number;
+  t: number;
+  p: number;
+}
+
+/** account:<email>: the stored password hash. Older records are PBKDF2 and have no `algo`. */
+interface LocalAccountRecord {
+  email: string;
+  salt: string;
+  passwordHash: string;
+  gen?: number;
+  updatedAt: string;
+  algo?: "argon2id" | "pbkdf2";
+  iterations?: number;
+  m?: number;
+  t?: number;
+  p?: number;
+}
+
+async function withArgon2Slot<T>(work: () => T | Promise<T>, { patient = false, priority = false }: Argon2Options = {}): Promise<T> {
   if (activeArgon2 >= MAX_CONCURRENT_ARGON2) {
     if (!patient && argon2Waiters.length >= queueLimit(priority)) throw new Argon2BusyError();
     // The slot is handed over by whoever finishes (active stays counted).
@@ -92,7 +118,7 @@ async function withArgon2Slot(work, { patient = false, priority = false } = {}) 
   }
 }
 
-async function pbkdf2(password, salt, iterations) {
+async function pbkdf2(password: string, salt: Uint8Array<ArrayBuffer>, iterations: number) {
   const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations, hash: "SHA-256" }, keyMaterial, 256);
   return new Uint8Array(bits);
@@ -102,7 +128,7 @@ async function pbkdf2(password, salt, iterations) {
 // can watch how many run at once.
 export const engine = { argon2idAsync };
 
-function argon2id(password, salt, { m, t, p }, { patient = false, priority = false } = {}) {
+function argon2id(password: string, salt: Uint8Array, { m, t, p }: Argon2Params, { patient = false, priority = false }: Argon2Options = {}) {
   return withArgon2Slot(() => engine.argon2idAsync(password, salt, { m, t, p, dkLen: ARGON2.dkLen }), { patient, priority });
 }
 
@@ -116,26 +142,26 @@ function normalizeEmail(email) {
   return trimmed.length > 0 && trimmed.length <= 254 && trimmed.includes("@") ? trimmed : null;
 }
 
-function toBase64(bytes) {
+function toBase64(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes));
 }
 
-function fromBase64(value) {
+function fromBase64(value: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(value), char => char.charCodeAt(0));
 }
 
-function constantTimeEqual(a, b) {
+function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   let difference = 0;
   for (let i = 0; i < a.length; i++) difference |= a[i] ^ b[i];
   return difference === 0;
 }
 
-function argon2Writes(env) {
+function argon2Writes(env: Env) {
   return env.ARGON2_WRITE === "true";
 }
 
-async function newArgon2Record(normalized, password, gen, options) {
+async function newArgon2Record(normalized: string, password: string, gen: number, options?: Argon2Options): Promise<LocalAccountRecord> {
   const salt = crypto.getRandomValues(new Uint8Array(24));
   const passwordHash = await hashers.argon2id(password, salt, ARGON2, options);
   return {
@@ -151,7 +177,7 @@ async function newArgon2Record(normalized, password, gen, options) {
   };
 }
 
-async function newLegacyRecord(normalized, password, gen) {
+async function newLegacyRecord(normalized: string, password: string, gen: number): Promise<LocalAccountRecord> {
   const salt = crypto.getRandomValues(new Uint8Array(24));
   const passwordHash = await hashers.pbkdf2(password, salt, PBKDF2_ITERATIONS);
   return {
@@ -172,7 +198,7 @@ async function newLegacyRecord(normalized, password, gen) {
 // and a read can be up to a minute stale, so "re-read, compare, write" could
 // still bring back a password the owner had just replaced. A stale read
 // carries a stale generation, which no longer matches.
-function generationStub(env, emailHash) {
+function generationStub(env: Env, emailHash: string) {
   return env.RATE_COUNTER.getByName(`account-gen:${emailHash}`);
 }
 
@@ -186,7 +212,7 @@ function generationStub(env, emailHash) {
  *
  * Throws if `email`/`password` don't pass basic validation.
  */
-export async function upsertLocalAccount(env, email, password) {
+export async function upsertLocalAccount(env: Env, email: unknown, password: unknown) {
   const normalized = normalizeEmail(email);
   if (!normalized) throw new Error("Invalid email address.");
   if (typeof password !== "string" || password.length < 8 || password.length > 1_024) {
@@ -214,23 +240,23 @@ function dummyArgon2(password, options) {
   return hashers.argon2id(password, DUMMY_SALT, ARGON2, options);
 }
 
-async function rejectAfterDummyWork(password, options) {
+async function rejectAfterDummyWork(password: unknown, options?: Argon2Options) {
   const text = typeof password === "string" ? password : "";
   await dummyPbkdf2(text);
   await dummyArgon2(text, options);
   return false;
 }
 
-function argon2ParamsOf(record) {
+function argon2ParamsOf(record: LocalAccountRecord): Argon2Params | null {
   const { m, t, p } = record;
-  const ok = [m, t, p].every(Number.isInteger) && m >= 8 && t >= 1 && p >= 1
+  const ok = [m, t, p].every(Number.isInteger) && m! >= 8 && t >= 1 && p >= 1
     && m <= ARGON2_LIMITS.m && t <= ARGON2_LIMITS.t && p <= ARGON2_LIMITS.p;
   return ok ? { m, t, p } : null;
 }
 
 // Moves a legacy record to Argon2id after a correct password, but only if no
 // password was set since this record was read (see the generation note above).
-async function upgradeLegacyRecord(env, key, original, normalized, password) {
+async function upgradeLegacyRecord(env: Env, key: string, original: LocalAccountRecord, normalized: string, password: string) {
   if (!argon2Writes(env)) return;
   try {
     const expectedGen = Number.isInteger(original.gen) ? original.gen : 0;
@@ -244,7 +270,7 @@ async function upgradeLegacyRecord(env, key, original, normalized, password) {
   }
 }
 
-function legacyIterationsOf(record) {
+function legacyIterationsOf(record: LocalAccountRecord): number | null {
   const { iterations } = record;
   const known = record.algo === undefined || record.algo === "pbkdf2";
   return known && Number.isInteger(iterations) && iterations >= 1 && iterations <= 1_000_000 ? iterations : null;
@@ -269,7 +295,7 @@ function legacyIterationsOf(record) {
  * TEMPORARY: once no legacy PBKDF2
  * records remain, drop the PBKDF2 half (and the legacy branch below).
  */
-export async function verifyLocalAccount(env, email, password, { priority = false } = {}) {
+export async function verifyLocalAccount(env: Env, email: unknown, password: unknown, { priority = false }: { priority?: boolean } = {}) {
   // Checked before any hashing or lookup, so a full queue costs a refused
   // sign-in nothing (not even a PBKDF2 run: that isn't queued, and spending it
   // on requests that will be turned away anyway would defeat the limit), and
@@ -279,7 +305,7 @@ export async function verifyLocalAccount(env, email, password, { priority = fals
   const normalized = normalizeEmail(email);
   if (!normalized || typeof password !== "string") return rejectAfterDummyWork(password, { priority });
   const key = `${ACCOUNT_PREFIX}${normalized}`;
-  const record = await env.STUDIQUO_DATA.get(key, "json");
+  const record = await env.STUDIQUO_DATA.get<LocalAccountRecord>(key, "json");
   if (!record) return rejectAfterDummyWork(password, { priority });
 
   try {

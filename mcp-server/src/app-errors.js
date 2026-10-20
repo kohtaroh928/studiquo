@@ -9,12 +9,12 @@
 // The app never puts note, chat or account content in there, and this file
 // bounds every field so a misbehaving client can't turn the dashboard into
 // a dumping ground.
-import { isRevoked } from "./revocation.js";
+import { isRevoked } from "./revocation.ts";
 import { isExpired } from "./token.ts";
 import { checkRateLimit } from "./rate-limit.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
 import { json, readJSONLimited } from "./http.ts";
-import { realSession } from "./session.js";
+import { realSession } from "./session.ts";
 import { postSlackBlocks } from "./slack.ts";
 
 const MAX_BODY = 200_000;

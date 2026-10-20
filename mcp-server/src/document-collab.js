@@ -1,6 +1,6 @@
 import { blockedBetween } from "./block-check.ts";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
-import { sendPush } from "./push.js";
+import { sendPush } from "./push.ts";
 import { roomMembershipKey } from "./document-room-store.js";
 
 // A full block snapshot for a modest document (well past what any

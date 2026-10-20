@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mintSession, hasRealSession, realSession } from "./session.js";
+import { mintSession, hasRealSession, realSession } from "./session.ts";
 
 function environment() {
   const values = new Map();

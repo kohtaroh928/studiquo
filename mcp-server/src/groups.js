@@ -1,7 +1,7 @@
 import { blockedBetween } from "./block-check.ts";
 import { checkRateLimit } from "./rate-limit.ts";
 import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.ts";
-import { sendPush } from "./push.js";
+import { sendPush } from "./push.ts";
 
 /**
  * Group chat: multiple people sharing one ChatRoom (kind: "group" — see

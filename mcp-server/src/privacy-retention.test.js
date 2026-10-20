@@ -6,7 +6,7 @@ import { sha256Hex } from "./auth.ts";
 import { runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.js";
 import { deleteAccount, startAccountDeletion } from "./account-deletion.js";
 import { handleAdminWebhook } from "./admin.js";
-import { mintSession } from "./session.js";
+import { mintSession } from "./session.ts";
 
 function environment() {
   const db = new DatabaseSync(":memory:");

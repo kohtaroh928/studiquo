@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isRevoked, revoke } from "./revocation.js";
+import { isRevoked, revoke } from "./revocation.ts";
 
 function environment() {
   const values = new Map();

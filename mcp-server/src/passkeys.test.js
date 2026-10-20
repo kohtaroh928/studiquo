@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { associationFile, handlePasskeys, mintPasskeySession } from "./passkeys.js";
+import { associationFile, handlePasskeys, mintPasskeySession } from "./passkeys.ts";
 import { linkVerifiedEmail } from "./oauth-links.ts";
-import { realSession } from "./session.js";
-import { revoke } from "./revocation.js";
+import { realSession } from "./session.ts";
+import { revoke } from "./revocation.ts";
 
 function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -318,7 +318,7 @@ test("the e-mail check happens before anything is stored for the attempt", async
 
 // --- reauthentication with a passkey -------------------------------------
 import { generateKeyPairSync, createSign } from "node:crypto";
-import { indexAccountPasskey, requireRecentPasskey } from "./passkey-policy.js";
+import { indexAccountPasskey, requireRecentPasskey } from "./passkey-policy.ts";
 
 const RP_ID = "api.studiquo.app";
 const b64url = buffer => Buffer.from(buffer).toString("base64url");
@@ -449,7 +449,7 @@ test("adding another passkey needs a recent passkey check once the account has o
   assert.equal(refused.status, 403);
   assert.equal((await refused.json()).code, "reauth_required");
 
-  const { markRecentPasskey } = await import("./passkey-policy.js");
+  const { markRecentPasskey } = await import("./passkey-policy.ts");
   await markRecentPasskey(env, sha256Hex(token));
   assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env)).status, 200);
 });

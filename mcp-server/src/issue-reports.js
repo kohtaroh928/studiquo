@@ -11,12 +11,12 @@
 // receives only metadata and a dashboard link, never private report content.
 import { accessAllowed } from "./access.ts";
 import { auditAdmin } from "./audit.js";
-import { isRevoked } from "./revocation.js";
+import { isRevoked } from "./revocation.ts";
 import { isExpired } from "./token.ts";
 import { checkRateLimit } from "./rate-limit.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
 import { json, binaryHeaders, readJSONLimited } from "./http.ts";
-import { realSession } from "./session.js";
+import { realSession } from "./session.ts";
 import { postSlackBlocks } from "./slack.ts";
 
 const MAX_DESCRIPTION_LENGTH = 2_000;

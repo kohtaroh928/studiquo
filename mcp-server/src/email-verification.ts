@@ -7,6 +7,7 @@
 import { sha256Hex } from "./auth.ts";
 import { featureDisabled } from "./features.js";
 import { linkVerifiedEmail } from "./oauth-links.ts";
+import type { Env } from "./env.ts";
 
 const CODE_PREFIX = "email-verify:";
 const CODE_TTL_SECONDS = 15 * 60;
@@ -36,7 +37,7 @@ function generateCode() {
  * Throws if `email` doesn't look like an email address, or if the Resend
  * call itself fails — callers should treat either as "could not send".
  */
-export async function sendVerificationCode(env, email) {
+export async function sendVerificationCode(env: Env, email) {
   // The "email" kill switch (features.js). Checked before a code is stored.
   if (featureDisabled(env, "email")) throw new Error("Email sending is paused.");
   const normalized = normalizeEmail(email);
@@ -83,12 +84,19 @@ export async function sendVerificationCode(env, email) {
  * expired code too, so callers can't distinguish "never sent" from
  * "exhausted" — nothing a legitimate caller needs to tell those apart for.
  */
-export async function confirmVerificationCode(env, email, code) {
+/** email-verify:<email>: a code that was sent and has not been used up. */
+interface PendingCode {
+  codeHash: string;
+  expiresAt: number;
+  attempts: number;
+}
+
+export async function confirmVerificationCode(env: Env, email, code) {
   const normalized = normalizeEmail(email);
   if (!normalized || typeof code !== "string") return { verified: false, attemptsRemaining: 0 };
 
   const key = `${CODE_PREFIX}${normalized}`;
-  const record = await env.STUDIQUO_DATA.get(key, "json");
+  const record = await env.STUDIQUO_DATA.get<PendingCode>(key, "json");
   if (!record || record.expiresAt < Date.now()) return { verified: false, attemptsRemaining: 0 };
 
   const codeHash = await sha256Hex(code);

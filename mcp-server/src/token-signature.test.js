@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import test from "node:test";
 import worker from "./app.js";
-import { mintSession } from "./session.js";
-import { sessionTokenAcceptable, accessTokenAcceptable, signSessionToken, signAccessToken } from "./token-signature.js";
+import { mintSession } from "./session.ts";
+import { sessionTokenAcceptable, accessTokenAcceptable, signSessionToken, signAccessToken } from "./token-signature.ts";
 
 const hash = value => createHash("sha256").update(value).digest("hex");
 const noopCtx = { waitUntil() {} };
