@@ -1,5 +1,5 @@
 // Filing a chat report (POST /api/chat/rooms/:id/messages/:n/report, called
-// from chat.js once the caller is known to be in the room).
+// from chat.ts once the caller is known to be in the room).
 //
 // What makes a report usable: the message and its neighbours are copied at the
 // moment of the report (a sender can retract afterwards, which blanks the

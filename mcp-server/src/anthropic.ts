@@ -1,12 +1,12 @@
 import type { Env } from "./env.ts";
 
 /**
- * Anthropic proxy, the same shape as ai.js's own `callGemini`: the app
+ * Anthropic proxy, the same shape as ai.ts's own `callGemini`: the app
  * never holds `ANTHROPIC_API_KEY`, only this Worker does, and this file
- * knows nothing about plans or quotas — ai.js decides which plan may use
+ * knows nothing about plans or quotas — ai.ts decides which plan may use
  * which model (its `PLAN_MODELS`) and only calls here once that's settled.
  *
- * `callAnthropicChat` returns the raw upstream `Response`; ai.js re-emits
+ * `callAnthropicChat` returns the raw upstream `Response`; ai.ts re-emits
  * its SSE body through its own `streamNormalizedText`, using
  * `extractDeltaText` below to pull incremental text out of each event —
  * the same two-piece split (fetch here, pump there) `callGemini`/`textOf`
@@ -27,7 +27,7 @@ function contentBlocks(turn, images) {
 }
 
 /**
- * `turns` is the same provider-agnostic shape ai.js's chat handler already
+ * `turns` is the same provider-agnostic shape ai.ts's chat handler already
  * builds for Gemini (`{ role: "user" | "assistant", text }`), so this file
  * doesn't need its own copy of the chat-history trimming/escaping logic.
  * `images` (already-validated PNG base64 strings) are attached to the last

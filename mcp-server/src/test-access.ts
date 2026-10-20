@@ -1,5 +1,5 @@
 // Test helper: a real signed Cloudflare Access token, verified against a local
-// key set, so tests exercise src/access.js instead of bypassing it.
+// key set, so tests exercise src/access.ts instead of bypassing it.
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 
 export const ACCESS = { aud: "test-aud", team: "team.cloudflareaccess.com" };

@@ -3,7 +3,7 @@ import test from "node:test";
 import worker from "./app.js";
 import { sha256Hex } from "./auth.ts";
 
-// Stands in for the real DocumentRoom Durable Object (document-room.js): one
+// Stands in for the real DocumentRoom Durable Object (document-room.ts): one
 // shared participants/blocks/changes record per room id, persisting across
 // separate getByName(id) calls the way a real Durable Object instance would.
 function fakeDocumentRoomBinding() {
@@ -99,7 +99,7 @@ function fakeDocumentRoomBinding() {
   };
 }
 
-// Stands in for the real RateCounter Durable Object (rate-counter.js): a
+// Stands in for the real RateCounter Durable Object (rate-counter.ts): a
 // plain in-memory count per name, ignoring windowSeconds entirely since no
 // test here spans a real window boundary.
 function fakeRateCounterBinding() {
@@ -146,7 +146,7 @@ function environment() {
   };
 }
 
-// Stands in for ChatRoom's blockStatus (chat-room.js): nothing is blocked
+// Stands in for ChatRoom's blockStatus (chat-room.ts): nothing is blocked
 // unless a test lists the room id.
 function fakeChatRoomBinding(blockedRooms = new Set()) {
   return {
@@ -185,7 +185,7 @@ function initRoom(env, token, blocks) {
 
 let nextTestCode = 1;
 
-// Seeds the same chat:user:/chat:code: KV records chat.js's registerUser()
+// Seeds the same chat:user:/chat:code: KV records chat.ts's registerUser()
 // would create for a real account, so invite() below can resolve a friend
 // code to a userKey exactly the way the live handler does. Returns the
 // minted code.
@@ -210,7 +210,7 @@ async function befriend(env, token, friend) {
 
 // `inviteeToken` is the token belonging to the person being invited — the
 // route resolves their friend code to a userKey server-side (the same way
-// chat.js resolves one when adding a friend), so this registers them first.
+// chat.ts resolves one when adding a friend), so this registers them first.
 async function sendInvite(env, ownerToken, inviteeToken, role, { name = "友人" } = {}) {
   const code = await registerFriend(env, inviteeToken, name, { befriendedBy: ownerToken });
   return worker.fetch(

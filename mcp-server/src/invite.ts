@@ -1,6 +1,6 @@
 // Serves the https:// landing page a friend-invite link points at (see
 // FriendStore.invitationURL in the Swift app). On a device where Universal
-// Links actually matched (see passkeys.js's associationFile), iOS opens
+// Links actually matched (see passkeys.ts's associationFile), iOS opens
 // Studiquo directly and this page is never shown at all. It only renders
 // when that hand-off didn't happen — most commonly because the link was
 // tapped inside another app's in-app browser (LINE, Snapchat, …), which

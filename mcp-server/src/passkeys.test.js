@@ -177,7 +177,7 @@ test("rejects registration options for a token older than 90 days", async () => 
 });
 
 // MARK: - Rate limiting: /api/passkeys/login/options and /login/verify are
-// callable with no bearer token at all, so they're gated by rate-limit.js's
+// callable with no bearer token at all, so they're gated by rate-limit.ts's
 // two-layer (Cloudflare binding + KV) check instead.
 
 test("POST /api/passkeys/login/options: allows up to the limit, then 429s", async () => {

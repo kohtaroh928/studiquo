@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { register } from "node:module";
 
-// user-registry.js extends the real DurableObject from "cloudflare:workers",
+// user-registry.ts extends the real DurableObject from "cloudflare:workers",
 // which only exists inside the Workers runtime; stand in for that one import
 // (the same approach mcp-inbox.test.js takes) so the real class runs here.
 register(

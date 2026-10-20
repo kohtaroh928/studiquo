@@ -1,8 +1,8 @@
 // Dashboard-side API for the two inboxes: reports people wrote by hand
 // ("問題を報告", table issue_reports) and errors the app sent by itself
-// (table app_errors, filled by app-errors.js). Like the rest of /api/admin/*
+// (table app_errors, filled by app-errors.ts). Like the rest of /api/admin/*
 // these routes carry no bearer-token check of their own — Cloudflare Access
-// gates them at the edge (see admin.js's header comment).
+// gates them at the edge (see admin.ts's header comment).
 //
 // Because they are reachable with the admin's browser cookie alone, every
 // write requires a JSON content type: a cross-site HTML form can't send one
@@ -205,7 +205,7 @@ export async function handleAdminReports(url, request: Request, env: Env) {
     const existing = await env.ADMIN_DB.prepare(`SELECT last_app_version FROM app_errors WHERE fingerprint = ?`).bind(errorMatch[1]).first();
     if (!existing) return json({ error: "Not found." }, 404);
     // Remember how new the newest affected build was when this was closed,
-    // so only a still-newer build counts as a regression (see app-errors.js).
+    // so only a still-newer build counts as a regression (see app-errors.ts).
     await auditAdmin(env, request, "app_error.update", errorMatch[1], update.status ?? "note");
     const resolvedAfter = update.status === "resolved" ? existing.last_app_version : null;
     await env.ADMIN_DB.prepare(

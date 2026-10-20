@@ -2,7 +2,7 @@
 // message, suspend chat or the account), people currently suspended, and the
 // record of operator actions. Everything shown came from outside (a person's
 // message, a reason they typed), so it only ever reaches the page through
-// textContent, never as markup. Same constraints as admin-inbox-ui.js: it is
+// textContent, never as markup. Same constraints as admin-inbox-ui.ts: it is
 // embedded in a JS template literal, so no backtick, dollar-brace or backslash.
 export const MODERATION_HTML = `
 <h2 id="moderation">通報と措置</h2>

@@ -4,7 +4,7 @@ import { getPlan, PRODUCT_PLAN_MAP } from "./entitlements.ts";
 
 // A hand-rolled stand-in for the ADMIN_DB D1 binding: real SQL text is
 // ignored (admin.test.js already exercises the real schema against a real
-// SQLite file for admin.js's own writes), and `subscribers` is just the
+// SQLite file for admin.ts's own writes), and `subscribers` is just the
 // rows `getPlan`'s single query would see for a given app_user_id. This
 // also makes it easy to hand back more than one row for the same
 // app_user_id — not something today's real schema (app_user_id is its

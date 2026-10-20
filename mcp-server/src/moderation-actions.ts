@@ -1,5 +1,5 @@
 // What an operator can do about a chat report beyond reading it (all behind
-// Cloudflare Access, all logged before they act — see audit.js):
+// Cloudflare Access, all logged before they act — see audit.ts):
 //   POST /api/admin/chat-reports/:id/remove-message   stage 2: blank the message
 //   POST /api/admin/chat-reports/:id/warn             stage 1: push a fixed warning
 //   POST /api/admin/accounts/suspend    {reportID, scope?}   stage 3 (scope "chat") / 4 ("account", default)

@@ -41,7 +41,7 @@ tags: [open-decisions, release, security, tech-debt]
 ## 認証まわりの改善候補
 
 - 保存する識別子の塩なしSHA-256を、サーバー秘密鍵によるHMACへ移行する。
-- Argon2id移行後にPBKDF2のレコードが残らなくなったら、`local-auth.js`のPBKDF2のダミー計算と旧レコードの分岐を外す。
+- Argon2id移行後にPBKDF2のレコードが残らなくなったら、`local-auth.ts`のPBKDF2のダミー計算と旧レコードの分岐を外す。
 - App Attest(端末とアプリの証明)の導入を、CAPTCHAに代わる対策として検討する。
 
 出典: [SECURITY_AND_PRIVACY](../SECURITY_AND_PRIVACY.md) 19章
@@ -57,6 +57,6 @@ tags: [open-decisions, release, security, tech-debt]
 - `ClaudeDirectProvider`とWorker経由のAIの2経路があり、機能差と秘密情報の責任範囲が異なる。
 - API契約がSwift構造体、Zod schema、ハンドラーに分散している。
 - `StudiquoApp.swift`の一部の起動ログが`String(describing: error)`をpublic privacyで記録している。
-- `PrivacyPolicyView`と`mcp-server/src/legal.js`を手作業で重複管理している。
+- `PrivacyPolicyView`と`mcp-server/src/legal.ts`を手作業で重複管理している。
 
 Related: [ブランチ対応表](branches.md)、[ADR-0001](decisions/adr-0001-swiftdata-cloudkit-source-of-truth.md)、[ADR-0002](decisions/adr-0002-ai-provider-google-only-and-consent-gate.md)、[ADR-0003](decisions/adr-0003-login-rate-limit-and-argon2id-queue.md)、[RELEASE_CHECKLIST](../RELEASE_CHECKLIST.md)

@@ -15,7 +15,7 @@ import type { ChatUser, StoredImage } from "./records.ts";
 
 const MAX_BODY = 16_000;
 // Attachment uploads carry base64-encoded image/file bytes (up to
-// MAX_ATTACHMENT_BYTES in chat-room.js, ~33% larger once base64-encoded,
+// MAX_ATTACHMENT_BYTES in chat-room.ts, ~33% larger once base64-encoded,
 // plus a little JSON overhead) — far past the small-JSON-payload MAX_BODY.
 const MAX_ATTACHMENT_UPLOAD_BODY = 6_000_000;
 // The client resizes a profile photo to 512x512 before ever sending it
@@ -31,7 +31,7 @@ const MAX_FRIENDS = 500;
 // A report's free-text reason — generous for context, but bounded so a
 // report can't be used to smuggle an oversized payload into storage.
 const MAX_REPORT_REASON_LENGTH = 1_000;
-// Kept as long as an in-app problem report is (issue-reports.js), then dropped:
+// Kept as long as an in-app problem report is (issue-reports.ts), then dropped:
 // without an expiry every report stayed in KV for good.
 const REPORT_TTL_SECONDS = 90 * 24 * 60 * 60;
 // Matches the format the client itself generates and validates (see
@@ -56,7 +56,7 @@ function parseLinkToken(body) {
 
 // `Number("1e400")` and friends parse to Infinity, which SQLite's bind
 // rejects with an exception — this turns that into a clean fallback instead
-// of a 500 from chat-room.js's query.
+// of a 500 from chat-room.ts's query.
 function parseAfter(rawValue) {
   const number = Number(rawValue ?? 0);
   return Number.isSafeInteger(number) && number >= 0 ? number : 0;
@@ -132,16 +132,16 @@ function roomForbiddenResponse(error) {
     return json({ error: "This friendship has ended." }, 403);
   }
   // Thrown by ChatRoom's blocking methods for a group room (see
-  // chat-room.js's own isGroupRoom guards) — reachable here because groups
+  // chat-room.ts's own isGroupRoom guards) — reachable here because groups
   // reuse these same /api/chat/rooms/:id/block* routes, not just from
-  // groups.js's own routes.
+  // groups.ts's own routes.
   if (error instanceof Error && error.message === "NotSupported") {
     return json({ error: "Not supported for a group." }, 400);
   }
   return null;
 }
 
-// Strips the internal `senderKey` chat-room.js's message-returning methods
+// Strips the internal `senderKey` chat-room.ts's message-returning methods
 // attach (see their own doc comments) and substitutes the sender's own
 // code/name, resolved once per distinct sender in the batch rather than
 // once per message — a group's recent history often shares just a handful
@@ -214,7 +214,7 @@ export async function handleChat(url, request: Request, env: Env, ctx) {
   // A session changes on each sign-in, but a person's chat identity must not.
   // Preserve the old token-derived key when upgrading an existing account so
   // its friend codes and room participants remain usable after token rotation.
-  // An operator turned chat off for this person (moderation-actions.js).
+  // An operator turned chat off for this person (moderation-actions.ts).
   if (await hasModerationMark(env, session, CHAT_SUSPENSION_PREFIX)) {
     return json({ error: "Chat is unavailable for this account.", code: "chat_suspended" }, 403);
   }
@@ -230,7 +230,7 @@ export async function handleChat(url, request: Request, env: Env, ctx) {
     }
     const user = await env.USER_REGISTRY.getByName(key).ensureUser(key, body?.name, parseStudyStats(body), body?.bio);
     // So a report about this chat user can be traced to the account an operator
-    // may suspend (moderation-actions.js); the chat key alone can't be reversed.
+    // may suspend (moderation-actions.ts); the chat key alone can't be reversed.
     const identityLink = `chat-identity-of:${key}`;
     const identityHash = await sha256Hex(`chat-account:${session.sub}`);
     if ((await env.STUDIQUO_DATA.get(identityLink)) !== identityHash) await env.STUDIQUO_DATA.put(identityLink, identityHash);
@@ -582,7 +582,7 @@ export async function handleChat(url, request: Request, env: Env, ctx) {
 
   // Repairs a legacy attachment reference in place, once the sender's own
   // device has re-rendered and re-uploaded the material under the newer,
-  // shareable scheme — see `editMessage` in chat-room.js.
+  // shareable scheme — see `editMessage` in chat-room.ts.
   const editMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/messages\/(\d+)\/edit$/.exec(url.pathname);
   if (editMatch && request.method === "POST") {
     const messageID = Number(editMatch[2]);
@@ -602,7 +602,7 @@ export async function handleChat(url, request: Request, env: Env, ctx) {
 
   // Batch lookup by id, for reconciling messages old enough to have
   // scrolled out of `listMessages`' rolling reconcile window — see
-  // `getMessagesByIDs` in chat-room.js.
+  // `getMessagesByIDs` in chat-room.ts.
   const lookupMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/messages\/lookup$/.exec(url.pathname);
   if (lookupMatch && request.method === "POST") {
     const body = await readBody(request);
@@ -655,7 +655,7 @@ export async function handleChat(url, request: Request, env: Env, ctx) {
   }
 
   // Blocks the other participant in this 1:1 room — from that point on,
-  // sendMessage rejects anything they try to send here (see chat-room.js).
+  // sendMessage rejects anything they try to send here (see chat-room.ts).
   // Idempotent, like initialize elsewhere: blocking twice is a no-op, not
   // an error.
   const blockMatch = /^\/api\/chat\/rooms\/([a-f0-9]{64})\/block$/.exec(url.pathname);
@@ -677,7 +677,7 @@ export async function handleChat(url, request: Request, env: Env, ctx) {
     return roomResponse(env.CHAT_ROOM.getByName(blockStatusMatch[1]).blockStatus(key));
   }
 
-  // Records a report for the operator (chat-reports.js: a D1 row holding a
+  // Records a report for the operator (chat-reports.ts: a D1 row holding a
   // snapshot of the message, a Slack ping, and the admin API to work it).
   // Verifying the reporter is an actual room participant (not just anyone
   // with a valid token) still goes through the room itself.
@@ -708,8 +708,8 @@ export async function handleChat(url, request: Request, env: Env, ctx) {
   }
 
   // Group chat routes share this file's /api/chat/ prefix and auth gate
-  // (see groups.js's own doc comment for why it isn't a fully independent
-  // handler the way ai.js/document-collab.js are) — tried last, after every
+  // (see groups.ts's own doc comment for why it isn't a fully independent
+  // handler the way ai.ts/document-collab.js are) — tried last, after every
   // route above, so an unmatched group path still falls through to this
   // function's own 404 below.
   const groups = await handleGroupRoutes(url, request, env, key, ctx);
