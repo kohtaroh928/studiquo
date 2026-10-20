@@ -7,6 +7,7 @@ final class PlanAllowanceTests: XCTestCase {
         XCTAssertEqual(PlanAllowance.forPlan(.standard), PlanAllowance(monthlyCredits: 120, dailyCredits: 60, fiveHourCredits: 40, callsPerMinute: 5))
         XCTAssertEqual(PlanAllowance.forPlan(.plus), PlanAllowance(monthlyCredits: 1_500, dailyCredits: 600, fiveHourCredits: 400, callsPerMinute: 10))
         XCTAssertEqual(PlanAllowance.forPlan(.pro), PlanAllowance(monthlyCredits: 4_000, dailyCredits: 1_500, fiveHourCredits: 1_000, callsPerMinute: 20))
+        XCTAssertEqual(PlanAllowance.forPlan(.free).monthlyCredits, 0)
     }
 
     func testMonthlyTurnsPerModel() {
@@ -21,7 +22,7 @@ final class PlanAllowanceTests: XCTestCase {
     }
 
     func testHigherPlansNeverAllowLessInAnyWindow() {
-        let plans: [StudiquoPlan] = [.standard, .plus, .pro]
+        let plans: [StudiquoPlan] = [.free, .standard, .plus, .pro]
         for (lower, higher) in zip(plans, plans.dropFirst()) {
             let a = PlanAllowance.forPlan(lower), b = PlanAllowance.forPlan(higher)
             XCTAssertLessThanOrEqual(a.monthlyCredits, b.monthlyCredits)

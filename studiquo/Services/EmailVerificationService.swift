@@ -20,7 +20,7 @@ enum EmailVerificationService {
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(SendCodeRequest(email: email))
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             // 429: this address (or network) has had too many codes sent for now.
             if let http = response as? HTTPURLResponse, http.statusCode == 429 {
@@ -61,7 +61,7 @@ enum EmailVerificationService {
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(ConfirmCodeRequest(email: email, code: code, password: password, randomValue: randomValue))
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse else { throw EmailVerificationError.confirmFailed }
         if 200..<300 ~= http.statusCode {
             guard let payload = try? JSONDecoder().decode(ConfirmSuccessResponse.self, from: data) else {
@@ -71,6 +71,7 @@ enum EmailVerificationService {
         }
         // 429: too many checks for this address for now. The code was not looked
         // at, so it is neither right nor wrong, and is still good once the wait is over.
+        if http.statusCode == 403, PasskeyRequired.isIn(body: data) { throw EmailVerificationError.passkeyRequired }
         if http.statusCode == 429 {
             throw EmailVerificationError.tooManyConfirmations(retryAfter: LocalAuthService.retryAfterSeconds(http, body: data))
         }
@@ -95,9 +96,12 @@ enum EmailVerificationError: LocalizedError, Equatable {
     case tooManySends(retryAfter: TimeInterval?)
     /// Too many codes have been tried for this address.
     case tooManyConfirmations(retryAfter: TimeInterval?)
+    /// The account has a passkey, so a code is no longer accepted.
+    case passkeyRequired
 
     var errorDescription: String? {
         switch self {
+        case .passkeyRequired: PasskeyRequired.message
         case .sendFailed: "確認コードを送信できませんでした。"
         case .confirmFailed: "確認コードを確認できませんでした。"
         case .tooManySends(let retryAfter):

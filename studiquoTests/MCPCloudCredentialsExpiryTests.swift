@@ -79,6 +79,188 @@ final class MCPCloudCredentialsExpiryTests: XCTestCase {
     }
 }
 
+/// A person who keeps using the app must not be signed out when the token's 90
+/// days end: an old-enough token is exchanged for a new one, and any failure
+/// leaves the stored token exactly as it was.
+final class MCPCloudCredentialsRefreshTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        MCPCloudCredentials.clear()
+        RefreshStubProtocol.reset()
+    }
+
+    override func tearDown() {
+        MCPCloudCredentials.clear()
+        RefreshStubProtocol.reset()
+        super.tearDown()
+    }
+
+    private func token(issuedDaysAgo days: Double, tail: String = "deadbeef") -> String {
+        "\(Int(Date().timeIntervalSince1970 - days * 86_400))." + String(repeating: tail, count: 4)
+    }
+
+    private var session: URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RefreshStubProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    func testATokenOlderThanThirtyDaysIsReplacedByTheOneTheServerGives() async {
+        let old = token(issuedDaysAgo: 45)
+        let replacement = token(issuedDaysAgo: 0, tail: "cafef00d")
+        MCPCloudCredentials.save(old)
+        RefreshStubProtocol.respond(status: 200, json: ["refreshed": true, "token": replacement])
+
+        await MCPCloudCredentials.refreshIfNeeded(session: session)
+
+        XCTAssertEqual(MCPCloudCredentials.currentToken(), replacement)
+        XCTAssertEqual(RefreshStubProtocol.lastRequest?.url?.path, "/api/session/refresh")
+        XCTAssertEqual(RefreshStubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer \(old)")
+    }
+
+    func testARecentTokenIsNotSentToTheServerAtAll() async {
+        let recent = token(issuedDaysAgo: 5)
+        MCPCloudCredentials.save(recent)
+
+        await MCPCloudCredentials.refreshIfNeeded(session: session)
+
+        XCTAssertNil(RefreshStubProtocol.lastRequest)
+        XCTAssertEqual(MCPCloudCredentials.currentToken(), recent)
+    }
+
+    func testAnAlreadyExpiredTokenIsLeftForTheNormalSignInPath() async {
+        let expired = token(issuedDaysAgo: 100)
+        MCPCloudCredentials.save(expired)
+
+        await MCPCloudCredentials.refreshIfNeeded(session: session)
+
+        XCTAssertNil(RefreshStubProtocol.lastRequest)
+        XCTAssertEqual(MCPCloudCredentials.currentToken(), expired)
+    }
+
+    func testAServerFailureKeepsTheStoredToken() async {
+        let old = token(issuedDaysAgo: 45)
+        MCPCloudCredentials.save(old)
+        for status in [401, 404, 500] {
+            RefreshStubProtocol.respond(status: status, json: ["error": "no"])
+            await MCPCloudCredentials.refreshIfNeeded(session: session)
+            XCTAssertEqual(MCPCloudCredentials.currentToken(), old, "status \(status)")
+        }
+    }
+
+    func testAReplacementThatIsUnusableIsNotStored() async {
+        let old = token(issuedDaysAgo: 45)
+        MCPCloudCredentials.save(old)
+        for body: [String: Any] in [
+            ["refreshed": false],
+            ["refreshed": true],
+            ["refreshed": true, "token": "short"],
+            ["refreshed": true, "token": token(issuedDaysAgo: 100, tail: "cafef00d")],
+        ] {
+            RefreshStubProtocol.respond(status: 200, json: body)
+            await MCPCloudCredentials.refreshIfNeeded(session: session)
+            XCTAssertEqual(MCPCloudCredentials.currentToken(), old, "\(body)")
+        }
+    }
+
+    func testSigningOutWhileTheRequestIsInFlightDoesNotBringTheTokenBack() async {
+        let old = token(issuedDaysAgo: 45)
+        MCPCloudCredentials.save(old)
+        RefreshStubProtocol.respond(status: 200, json: ["refreshed": true, "token": token(issuedDaysAgo: 0, tail: "cafef00d")])
+        RefreshStubProtocol.onRequest = { MCPCloudCredentials.clear() }
+
+        await MCPCloudCredentials.refreshIfNeeded(session: session)
+
+        XCTAssertNil(MCPCloudCredentials.currentToken())
+    }
+
+    func testALockedKeychainNeverProducesAReplacementToken() {
+        let stored = String(repeating: "a", count: 40)
+        XCTAssertEqual(MCPCloudCredentials.tokenDecision(token: nil, status: errSecInteractionNotAllowed), .unavailable)
+        XCTAssertEqual(MCPCloudCredentials.tokenDecision(token: "short", status: errSecInteractionNotAllowed), .unavailable)
+        XCTAssertEqual(MCPCloudCredentials.tokenDecision(token: nil, status: errSecItemNotFound), .createNew)
+        XCTAssertEqual(MCPCloudCredentials.tokenDecision(token: "short", status: errSecSuccess), .createNew)
+        XCTAssertEqual(MCPCloudCredentials.tokenDecision(token: stored, status: errSecSuccess), .use(stored))
+        XCTAssertTrue(MCPCloudCredentials.isLocked(status: errSecInteractionNotAllowed))
+        XCTAssertFalse(MCPCloudCredentials.isLocked(status: errSecItemNotFound))
+        XCTAssertFalse(MCPCloudCredentials.isLocked(status: errSecSuccess))
+    }
+
+    func testARequestSentWithoutATokenKeepsAuthFailuresFromSigningOutForAWhile() {
+        _ = MCPCloudCredentials.tokenDecision(token: nil, status: errSecInteractionNotAllowed)
+        // tokenDecision is pure; only loadOrCreateToken records the lock.
+        XCTAssertFalse(MCPCloudCredentials.sentWithoutTokenRecently(now: Date().addingTimeInterval(10_000)))
+    }
+
+    func testSavingOverAnExistingTokenReplacesItInPlace() {
+        MCPCloudCredentials.save(token(issuedDaysAgo: 1, tail: "aaaaaaaa"))
+        let next = token(issuedDaysAgo: 0, tail: "bbbbbbbb")
+        MCPCloudCredentials.save(next)
+        XCTAssertEqual(MCPCloudCredentials.currentToken(), next)
+    }
+
+    func testAReadableKeychainIsNotReportedAsUnavailable() {
+        XCTAssertFalse(MCPCloudCredentials.isStorageUnavailable, "no token stored")
+        MCPCloudCredentials.save(token(issuedDaysAgo: 1))
+        XCTAssertFalse(MCPCloudCredentials.isStorageUnavailable, "token stored")
+    }
+}
+
+private final class RefreshStubProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var status = 200
+    private static var data = Data()
+    private static var request: URLRequest?
+    nonisolated(unsafe) static var onRequest: (() -> Void)?
+
+    static var lastRequest: URLRequest? { lock.lock(); defer { lock.unlock() }; return request }
+
+    static func reset() {
+        lock.lock(); defer { lock.unlock() }
+        status = 200; data = Data(); request = nil; onRequest = nil
+    }
+
+    static func respond(status: Int, json: [String: Any]) {
+        lock.lock(); defer { lock.unlock() }
+        self.status = status
+        self.data = (try? JSONSerialization.data(withJSONObject: json)) ?? Data()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.lock.lock()
+        Self.request = request
+        let status = Self.status, data = Self.data, hook = Self.onRequest
+        Self.lock.unlock()
+        hook?()
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+final class PasskeyReauthDetectionTests: XCTestCase {
+    private func body(_ code: String) -> Data { try! JSONSerialization.data(withJSONObject: ["error": "x", "code": code]) }
+
+    func testOnlyA403WithTheReauthCodeCountsAsNeedingAPasskeyCheck() {
+        XCTAssertTrue(PasskeyReauth.isRequired(status: 403, body: body("reauth_required")))
+        XCTAssertFalse(PasskeyReauth.isRequired(status: 403, body: body("passkey_required")))
+        XCTAssertFalse(PasskeyReauth.isRequired(status: 401, body: body("reauth_required")))
+        XCTAssertFalse(PasskeyReauth.isRequired(status: 403, body: Data("not json".utf8)))
+        XCTAssertFalse(PasskeyReauth.isRequired(status: nil, body: Data()))
+    }
+
+    func testThePasskeyRequiredAnswerIsRecognised() {
+        XCTAssertTrue(PasskeyRequired.isIn(body: body("passkey_required")))
+        XCTAssertFalse(PasskeyRequired.isIn(body: body("reauth_required")))
+    }
+}
+
 final class MCPImportReceiptTests: XCTestCase {
     @MainActor
     func testImportedDocumentAndReceiptSurviveReloadTogether() throws {

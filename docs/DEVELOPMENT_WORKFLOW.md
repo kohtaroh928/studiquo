@@ -106,6 +106,8 @@ Standard以上では、実装前に少なくとも次を定義する。
 - 対象テスト、関連テスト、ビルドの順で確認する。実機差がある機能はシミュレータだけで完了としない。
 - `project.yml`変更後は`xcodegen generate`を実行し、署名・entitlements・Capabilitiesが保持されたか確認する。
 - XcodeGenにはネストした`SystemCapabilities`の既知の制約があるため、Apple Sign InとCloudKitを特に確認する。
+- コマンドラインでiOSのテストを動かすときは、署名の設定を上書きしない(`CODE_SIGNING_ALLOWED=NO`や`CODE_SIGN_IDENTITY="-"`を付けない)。Keychainを使うテスト(`AuthenticationStoreTests`など)は、署名なしではエラー-34018(権限なし)で、`"-"`(アドホック署名)では一部が失敗するが、プロジェクトの既定の署名(Xcodeでの実行と同じ)では全件成功する。
+- `xcodegen generate`は、`studiquo/Info.plist`を作り直して差分を出す。この差分は、設定の変更ではないので、コミットしない。
 
 #### Cloudflare Workers
 
@@ -149,7 +151,8 @@ Standard以上では、実装前に少なくとも次を定義する。
 - `main`または`master`へ直接実装・コミットしない。
 - 作業前にブランチとworking treeを確認する。適切な作業ブランチ上なら継続してよい。
 - 未コミット変更がある状態で、勝手にブランチを切り替えたり新規作成したりしない。
-- 新規ブランチは目的が分かる短い名前にする。Codexでは原則`codex/`接頭辞を使う。
+- 新規ブランチは目的が分かる短い名前にする。接頭辞はClaudeが`claude/`、Codexが`codex/`とする。
+- 作業はメインのチェックアウトではなく`git worktree`で行い、他エージェントのブランチ・worktreeには触れない。詳細は`AGENTS.md`の「作業ブランチと作業フォルダの分離」と`.githooks/`を参照する。
 - 1つの変更セットには1つの目的を持たせる。機械的整形と機能変更を混ぜない。
 - コミット前に`git diff`と`git status`を確認し、自分の変更だけを含める。
 - force push、履歴改変、破壊的reset、ユーザー変更の破棄を行わない。

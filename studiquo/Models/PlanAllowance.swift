@@ -17,6 +17,7 @@ struct PlanAllowance: Equatable {
 
     static func forPlan(_ plan: StudiquoPlan) -> PlanAllowance {
         switch plan {
+        case .free: PlanAllowance(monthlyCredits: 0, dailyCredits: 0, fiveHourCredits: 0, callsPerMinute: 0)
         case .standard: PlanAllowance(monthlyCredits: 120, dailyCredits: 60, fiveHourCredits: 40, callsPerMinute: 5)
         case .plus: PlanAllowance(monthlyCredits: 1_500, dailyCredits: 600, fiveHourCredits: 400, callsPerMinute: 10)
         case .pro: PlanAllowance(monthlyCredits: 4_000, dailyCredits: 1_500, fiveHourCredits: 1_000, callsPerMinute: 20)

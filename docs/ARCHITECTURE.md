@@ -1,6 +1,6 @@
 # Studiquo Architecture
 
-最終更新: 2026-10-05
+最終更新: 2026-10-17
 
 ## 1. 目的
 
@@ -50,8 +50,8 @@ MCPへ公開される学習データは、アプリが明示的にWorkerへ同�
 | `studiquoTests/` | iOSユニットテスト |
 | `studiquoUITests/` | iOS UIテスト |
 | `project.yml` | XcodeGenプロジェクト定義の正本 |
-| `mcp-server/src/app.js` | WorkerのHTTPルーティングとMCPサーバー構築 |
-| `mcp-server/src/worker.js` | WranglerのエントリーポイントとDurable Object export |
+| `mcp-server/src/app.ts` | WorkerのHTTPルーティングとMCPサーバー構築 |
+| `mcp-server/src/worker.ts` | WranglerのエントリーポイントとDurable Object export |
 | `mcp-server/src/*.js` | 機能別ハンドラー、認証、永続化、外部連携 |
 | `mcp-server/migrations/` | D1の追加型migration |
 | `mcp-server/wrangler.jsonc` | Worker、KV、D1、Durable Objects、Rate Limit、観測設定 |
@@ -91,7 +91,6 @@ MCPへ公開される学習データは、アプリが明示的にWorkerへ同�
 | カレンダー・学習履歴 | `CalendarEvent`、`StudyActivity` | 独立した時系列データ |
 | AI会話・復習 | `AIChatThread`、`AIChatMessage`、`AIReviewItem` | Thread削除でMessageをcascade削除 |
 | 文書 | `TextDocument`、`DocumentBlock`、表、コメント、脚注、変更履歴 | Documentをルートとする編集モデル |
-| スライド | `SlideDeck`、`Slide`、`SlideMaster`、Layout、Placeholder、Element | Deckをルートとする編集モデル |
 | MCP取り込み | `MCPImportReceipt` | Workerの受信項目を重複取り込みしないための記録 |
 
 画像、描画、暗号化データなどの大きなバイナリは、必要に応じてSwiftDataの`externalStorage`属性を使う。
@@ -101,7 +100,7 @@ CloudKit互換性を壊しやすいため、モデル追加・必須属性・関
 
 | 保存先 | 内容 |
 | --- | --- |
-| SwiftData | ノート、カード、文書、スライド、予定、AI会話、取り込み履歴 |
+| SwiftData | ノート、カード、文書、予定、AI会話、取り込み履歴 |
 | CloudKit | SwiftDataのAppleデバイス間同期。コンテナは`iCloud.com.yabuko.studiquo` |
 | Keychain | Workerセッショントークン、ノート暗号鍵、任意の直接接続AIキー |
 | UserDefaults / AppStorage | 言語、プロフィール、UI設定、Worker endpointなどの軽量設定 |
@@ -111,10 +110,18 @@ CloudKit互換性を壊しやすいため、モデル追加・必須属性・関
 
 ## 5. Cloudflare Worker
 
+### 5.0 入口(ドメインとレート制限の層)
+
+- 本番Workerの入口は、独自ドメイン`api.studiquo.app`(Cloudflareのゾーン`studiquo.app`に、Workerのカスタムドメインとして割り当てる)だけである。`workers.dev`のアドレスと、バージョンごとのプレビューURLは無効にしている(`wrangler.jsonc`の`workers_dev: false`、`preview_urls: false`)。ステージングは`workers.dev`で動かし、`env.staging`で明示的に有効にしている。
+- ゾーンのWAFに、レート制限ルール(同じIPからの通信が10秒に200件を超えたら、10秒ブロック)を置き、認証より前の連打をWorkerに届く前に止める。無料プランで選べる条件に合わせ、URIパスが`/`で始まる通信を対象にしている。同じゾーンに別のサイトを置くときは、条件を見直す。
+- アプリの接続先(`WorkerAIProvider.defaultEndpoint`)、Passkeyの`RP ID`(`passkeys.ts`)、`project.yml`・entitlementsの関連ドメイン(`applinks`、`webcredentials`)は、すべてこのドメインに揃える。ドメインを変えると、登録済みのPasskeyは使えなくなる。
+- Worker内でも、認証前後の各経路にレート制限を持つ(Cloudflare Rate Limiting bindingsと`RATE_COUNTER`)。
+
 ### 5.1 リクエスト処理
 
-Wranglerは`src/worker.js`を読み込み、実処理を`src/app.js`へ委譲する。
-`app.js`は次の順序で要求を処理する。
+Wranglerは`src/worker.ts`を読み込み、実処理を`src/app.ts`へ委譲する。
+サーバーはTypeScriptで書く(`mcp-server/tsconfig.json`、`strict`)。型検査は`npm run typecheck`、テストは`npm test`(Nodeが型を取り除いて実行するため、テストが通っても型エラーは見つからない)。どちらもCIのWorkerジョブで動く。移行の経緯と決めごとは`docs/notes/ts-migration.md`。
+`app.ts`は次の順序で要求を処理する。
 
 1. ヘルスチェック、Cloudflare Access対象の運営API、OAuth metadataなどの公開・管理経路。
 2. 法務ページ、招待ページ、Passkey、チャット、報告、お知らせなどの機能別ハンドラー。
@@ -125,7 +132,7 @@ Wranglerは`src/worker.js`を読み込み、実処理を`src/app.js`へ委譲す
 
 HTTP本文にはサイズ上限を設け、入力スキーマ、認可、Rate Limitを各境界で確認する。
 
-AIの公開APIでは`ai-privacy.js`が提供条件の承認フラグ、同意バージョン、Google限定モデルを検証する。旧direct-provider経路は初期提供では停止する。退会ジョブ・RevenueCat削除ジョブはKVへ永続化し、`worker.js`の定期ハンドラーから`privacy-retention.js`が再試行と期限超過データ削除を行う。実装の公開条件は[PRIVACY_RELEASE_CHECKLIST.md](PRIVACY_RELEASE_CHECKLIST.md)を参照する。
+AIの公開APIでは`ai-privacy.ts`が提供条件の承認フラグ、同意バージョン、Google限定モデルを検証する。旧direct-provider経路は初期提供では停止する。退会ジョブ・RevenueCat削除ジョブはKVへ永続化し、`worker.ts`の定期ハンドラーから`privacy-retention.ts`が再試行と期限超過データ削除を行う。実装の公開条件は[PRIVACY_RELEASE_CHECKLIST.md](PRIVACY_RELEASE_CHECKLIST.md)を参照する。
 
 ### 5.2 Workerの永続化
 
@@ -136,7 +143,7 @@ AIの公開APIでは`ai-privacy.js`が提供条件の承認フラグ、同意バ
 | `USER_REGISTRY` Durable Object | ユーザープロフィール、友達コード、友達・グループ関係の調整 |
 | `CHAT_ROOM` Durable Object | チャットルーム、メッセージ、添付情報 |
 | `DOCUMENT_ROOM` Durable Object | 共同編集参加者、提案、承認状態 |
-| `RATE_COUNTER` Durable Object | AIなどの利用量カウンター |
+| `RATE_COUNTER` Durable Object | AI、`/mcp`、スナップショット保存、共同編集の部屋作成、自動エラーの新規行などの利用量・回数カウンター |
 | `MCP_INBOX` Durable Object | 外部MCPクライアントが作成した項目の受信箱と取り込み状態 |
 | Cloudflare Rate Limiting bindings | 認証、チャット、MCP、Webhookなどの短時間レート制限 |
 
@@ -148,11 +155,12 @@ Durable Objectはユーザーまたはルーム単位の直列化が必要な状
 | --- | --- |
 | Apple / Google | ID tokenを検証しStudiquoセッションを発行 |
 | WebAuthn / Passkeys | パスキー登録・ログイン |
-| Resend | メール確認コード送信 |
+| Resend | メール確認コード、新しい環境でのサインイン通知、パスキー通知の送信 |
 | RevenueCat | App Store課金、Webhook経由のサーバー側プラン同期 |
-| Gemini / Anthropic / OpenAI | AIチャット、採点、復習教材生成 |
+| OpenAI(Anthropicは実装のみで無効) | AIチャット、採点、復習教材生成 |
 | APNs | チャット、お知らせなどのプッシュ通知 |
 | Cloudflare Access | `/api/admin/*`管理画面・管理APIの保護 |
+| Cloudflare WAF(ゾーン`studiquo.app`) | `api.studiquo.app`への短時間の連打を、Workerの前で制限 |
 | Slack webhook | 問題報告の運営通知 |
 
 外部サービスの秘密鍵はWorker secretsで管理し、iOSアプリやリポジトリへ入れない。
@@ -192,7 +200,7 @@ Workerはこの同期経路に参加しない。CloudKit障害とWorker障害は
 
 ### 6.4 MCP連携
 
-1. iOSがノートのOCR、カード、予定、文書、スライド、フォルダ情報をスナップショットとしてWorkerへ送る。
+1. iOSがノートのOCR、カード、予定、文書、フォルダ情報をスナップショットとしてWorkerへ送る。
 2. 外部MCPクライアントがOAuth Authorization Code + PKCEで接続し、read/write scopeを得る。
 3. 読み取りツールは認証ユーザーのスナップショットだけを参照する。
 4. 書き込みツールは`MCP_INBOX`へ項目をキューし、直接SwiftDataを変更しない。

@@ -30,7 +30,7 @@ struct SharedInbox {
     /// items. Anything else would be silently dropped there, so the batch
     /// import checks this first and tells the student what it skipped.
     static let importableExtensions: Set<String> = [
-        "pdf", "docx", "pptx", "txt", "tsv", "csv", "json",
+        "pdf", "docx", "txt", "tsv", "csv", "json",
         "png", "jpg", "jpeg", "heic", "heif", "tif", "tiff", "gif", "webp"
     ]
 

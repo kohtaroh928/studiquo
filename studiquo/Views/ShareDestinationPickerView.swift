@@ -14,6 +14,9 @@ struct ShareDestinationPickerView: View {
     let onCancel: () -> Void
 
     @Query private var allFolders: [Folder]
+    @Query private var notebooks: [Notebook]
+    @Query private var flashcardDecks: [FlashcardDeck]
+    @Query private var textDocuments: [TextDocument]
     @State private var current: Folder?
     @State private var isNamingFolder = false
     @State private var newFolderName = ""
@@ -26,6 +29,25 @@ struct ShareDestinationPickerView: View {
 
     private var currentTitle: String {
         current?.pathComponents.joined(separator: " / ") ?? L("ライブラリ")
+    }
+
+    /// Existing materials are deliberately shown in the destination browser.
+    /// Before this, entering a folder only listed child folders, making a
+    /// populated destination look empty and leaving no way to verify where a
+    /// Files-app import would land.
+    private var materials: [DestinationMaterial] {
+        let notes = notebooks
+            .filter { !$0.isTrashed && belongsToCurrentFolder(folder: $0.folder, legacyPath: $0.folderName) }
+            .map { DestinationMaterial(title: $0.title, icon: $0.containsPDF ? "doc.richtext" : "note.text") }
+        let decks = flashcardDecks
+            .filter { !$0.isTrashed && belongsToCurrentFolder(folder: $0.folder, legacyPath: $0.folderName) }
+            .map { DestinationMaterial(title: $0.title, icon: "rectangle.on.rectangle.angled") }
+        let documents = textDocuments
+            .filter { !$0.isTrashed && belongsToCurrentFolder(folder: $0.folder, legacyPath: $0.folderName) }
+            .map { DestinationMaterial(title: $0.title, icon: "doc.text") }
+        return (notes + decks + documents).sorted {
+            $0.title.localizedStandardCompare($1.title) == .orderedAscending
+        }
     }
 
     var body: some View {
@@ -64,9 +86,23 @@ struct ShareDestinationPickerView: View {
                                     .foregroundStyle(.tertiary)
                             }
                         }
+                        .accessibilityIdentifier("share-destination-folder-\(folder.name)")
+                    }
+                }
+
+                Section("このフォルダの資料") {
+                    if materials.isEmpty {
+                        Text("このフォルダに資料はありません")
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(materials) { material in
+                        Label(material.title, systemImage: material.icon)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("share-destination-material-\(material.title)")
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("保存先を選択")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -92,7 +128,7 @@ struct ShareDestinationPickerView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.themePrimary)
                 .padding()
                 .background(.bar)
                 .accessibilityIdentifier("share-destination-confirm")
@@ -115,6 +151,21 @@ struct ShareDestinationPickerView: View {
         guard !name.isEmpty, let created = onCreateFolder(current, name) else { return }
         current = created
     }
+
+    private func belongsToCurrentFolder(folder: Folder?, legacyPath: String) -> Bool {
+        if let current {
+            return folder?.persistentModelID == current.persistentModelID
+                || (folder == nil && legacyPath == current.legacyPath)
+        }
+        return folder == nil && legacyPath.isEmpty
+    }
+}
+
+private struct DestinationMaterial: Identifiable {
+    let title: String
+    let icon: String
+
+    var id: String { "\(icon):\(title)" }
 }
 
 /// What a shared import did, shown once it finishes if anything needs
@@ -199,15 +250,17 @@ struct SharedImportHost: ViewModifier {
             VStack(alignment: .leading, spacing: 8) {
                 Text("取り込み中 \(min(progress.completed + 1, progress.total))/\(progress.total)")
                     .font(.headline)
-                ProgressView(value: Double(progress.completed), total: Double(max(progress.total, 1)))
-                Text(progress.currentName)
+                ProgressView(value: progress.fraction)
+                Text(progress.pageTotal > 1
+                     ? "\(progress.currentName)(\(progress.pageDone)/\(progress.pageTotal)ページ)"
+                     : progress.currentName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             .padding()
             .frame(maxWidth: 420, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
             .padding(.top, 8)
             .transition(.move(edge: .top).combined(with: .opacity))
         } else if !coordinator.heldItems.isEmpty && !coordinator.isPickingDestination {
@@ -215,10 +268,10 @@ struct SharedImportHost: ViewModifier {
                 Label("取り込めなかったファイルが\(coordinator.heldItems.count)件あります", systemImage: "tray.and.arrow.down")
                     .font(.subheadline.weight(.semibold))
                 Button("再試行", action: coordinator.presentHeldPicker)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .accessibilityIdentifier("shared-import-retry")
                 Button("破棄", role: .destructive) { confirmingDiscard = true }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.themeSecondary)
                     .accessibilityIdentifier("shared-import-discard")
             }
             .padding(.horizontal, 16)
@@ -226,7 +279,6 @@ struct SharedImportHost: ViewModifier {
             .background(.regularMaterial, in: Capsule())
             .padding(.top, 8)
             .transition(.move(edge: .top).combined(with: .opacity))
-            .accessibilityIdentifier("shared-import-held-banner")
         }
     }
 }

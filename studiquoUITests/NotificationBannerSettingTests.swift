@@ -38,6 +38,7 @@ final class NotificationBannerSettingTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["設定"].waitForExistence(timeout: 10), "設定シートが開きません。")
         sleep(1)
 
+        app.openSettingsCategory("notifications")
         let row = app.buttons["settings-notifications"]
         reveal(row)
         XCTAssertTrue(row.exists, "設定に「通知」の行がありません。")
@@ -130,7 +131,7 @@ final class NotificationBannerSettingTests: XCTestCase {
 
         // Back out and in again: the choice is stored.
         app.navigationBars["通知"].buttons.firstMatch.tap()
-        XCTAssertTrue(app.navigationBars["設定"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars[SettingsCategoryUI.titles["notifications"]!].waitForExistence(timeout: 10))
         let row = app.buttons["settings-notifications"]
         reveal(row)
         row.tap()

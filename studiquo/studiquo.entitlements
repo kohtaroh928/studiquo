@@ -10,7 +10,8 @@
 	</array>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:studiquo-mcp.studiquo-mcp-server.workers.dev</string>
+		<string>applinks:api.studiquo.app</string>
+		<string>webcredentials:api.studiquo.app</string>
 	</array>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>

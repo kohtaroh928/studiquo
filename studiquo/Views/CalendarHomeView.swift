@@ -1023,6 +1023,8 @@ struct CalendarHomeView: View {
     @Query(sort: \StudyActivity.startedAt, order: .reverse) private var studyActivities: [StudyActivity]
     @State private var selectedDate = Date.now
     @State private var displayedMonth = Date.now
+    @State private var isHalfWidthWindow = false
+    @State private var showsDayEvents = true
     @State private var showsNewEvent = false
     @State private var editingEvent: CalendarEvent?
     @State private var showsUniversityConnection = false
@@ -1096,7 +1098,7 @@ struct CalendarHomeView: View {
     var body: some View {
         GeometryReader { geometry in
             Group {
-                if geometry.size.width >= 760 {
+                if !isHalfWidthWindow && geometry.size.width >= 760 {
                     HStack(spacing: 0) {
                         calendarPanel
                             .frame(maxWidth: .infinity)
@@ -1108,8 +1110,34 @@ struct CalendarHomeView: View {
                     VStack(spacing: 0) {
                         calendarPanel
                         Divider()
-                        eventList
+                        if isHalfWidthWindow {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showsDayEvents.toggle()
+                                }
+                            } label: {
+                                HStack {
+                                    Text(showsDayEvents ? "日ごとの予定を閉じる" : "日ごとの予定を表示")
+                                    Spacer()
+                                    Image(systemName: showsDayEvents ? "chevron.down" : "chevron.up")
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .padding(.horizontal)
+                            }
+                            .accessibilityIdentifier("calendar-day-events-toggle")
+                            .accessibilityValue(showsDayEvents ? "表示中" : "閉じています")
+                        }
+                        if !isHalfWidthWindow || showsDayEvents {
+                            eventList
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
                     }
+                }
+            }
+            .background {
+                WindowSplitAvailabilityReader { allowsSplit in
+                    isHalfWidthWindow = !allowsSplit
+                    if allowsSplit { showsDayEvents = true }
                 }
             }
         }
@@ -1146,11 +1174,6 @@ struct CalendarHomeView: View {
                               ? "link.badge.plus" : "link.circle.fill")
                     }
                     .accessibilityLabel("カレンダー連携")
-                    Button {
-                        showsNewEvent = true
-                    } label: {
-                        Label("予定を追加", systemImage: "plus")
-                    }
                     ReportIssueButton {
                         pendingReportIssue = PendingIssueReport(screenshot: ScreenshotCapture.captureFrontWindow())
                     }
@@ -1252,6 +1275,7 @@ struct CalendarHomeView: View {
                         }
                     }
                 }
+                    .themeScreenBackground()
                 .navigationTitle("カレンダー連携")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -1399,13 +1423,13 @@ struct CalendarHomeView: View {
                     title: "今日の勉強時間",
                     value: formattedDuration(todayStudySeconds),
                     icon: "clock.fill",
-                    color: .blue
+                    color: Theme.Palette.accent
                 )
                 learningMetric(
                     title: "連続学習日数",
                     value: "\(currentStudyStreak)日",
                     icon: "flame.fill",
-                    color: .orange
+                    color: Theme.Palette.accent
                 )
             }
             .padding(.horizontal)
@@ -1417,8 +1441,11 @@ struct CalendarHomeView: View {
                 colorFor: color(for:)
             )
                 .padding(20)
-                .background(.background, in: RoundedRectangle(cornerRadius: 24))
-                .shadow(color: .indigo.opacity(0.10), radius: 14, y: 5)
+                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous)
+                        .strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline)
+                )
                 .padding()
 
             HStack(spacing: 14) {
@@ -1442,13 +1469,7 @@ struct CalendarHomeView: View {
         }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(
-            LinearGradient(
-                colors: [Color.indigo.opacity(0.10), Color.cyan.opacity(0.07), Color.clear],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background(Theme.Palette.canvas)
     }
 
     private func learningMetric(title: String, value: String, icon: String, color: Color) -> some View {
@@ -1457,7 +1478,7 @@ struct CalendarHomeView: View {
                 .font(.title2)
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background(color.gradient, in: Circle())
+                .background(color, in: Circle())
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.caption).foregroundStyle(.secondary)
                 Text(value).font(.title3.bold()).monospacedDigit()
@@ -1466,8 +1487,11 @@ struct CalendarHomeView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity)
-        .background(.background, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(color.opacity(0.18)))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous)
+                .strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline)
+        )
     }
 
     private func formattedDuration(_ duration: TimeInterval) -> String {
@@ -1497,6 +1521,8 @@ struct CalendarHomeView: View {
                 Button { showsNewEvent = true } label: {
                     Image(systemName: "plus.circle.fill").font(.title2)
                 }
+                .accessibilityLabel("予定を追加")
+                .accessibilityIdentifier("calendar-add-day-event")
             }
             .padding()
 
@@ -1543,17 +1569,18 @@ struct CalendarHomeView: View {
                         }
                     }
                 }
+                    .themeScreenBackground()
                 .listStyle(.plain)
             }
         }
-        .background(Color(.secondarySystemBackground))
+        .background(Theme.Palette.canvas)
     }
 
     private func color(for kind: CalendarEventKind) -> Color {
         switch kind {
-        case .test: .red
-        case .classLesson: .blue
-        case .other: .orange
+        case .test: Theme.Palette.danger
+        case .classLesson: Theme.Palette.accent
+        case .other: Theme.Palette.warning
         }
     }
 
@@ -1565,7 +1592,7 @@ struct CalendarHomeView: View {
                 .font(.footnote)
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
-                .background(Color.blue.gradient, in: Circle())
+                .background(Theme.Palette.accent, in: Circle())
             VStack(alignment: .leading, spacing: 1) {
                 Text("\(selectedDate.formatted(.dateTime.month().day()))の勉強時間")
                     .font(.caption2)
@@ -1579,7 +1606,7 @@ struct CalendarHomeView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity)
-        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .background(Theme.Palette.accentSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
     }
 }
 
@@ -1745,7 +1772,7 @@ private struct StudyTimeBarChart: View {
                         .font(.headline)
                     Text(selectedDetailText ?? averageLabel)
                         .font(.caption)
-                        .foregroundStyle(selectedDetailText != nil ? Color.blue : .secondary)
+                        .foregroundStyle(selectedDetailText != nil ? Theme.Palette.accent : Theme.Palette.textSecondary)
                 }
                 Spacer()
                 Picker("期間", selection: $span) {
@@ -1760,8 +1787,11 @@ private struct StudyTimeBarChart: View {
                 .frame(height: 172)
         }
         .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 20))
-        .shadow(color: .indigo.opacity(0.08), radius: 10, y: 4)
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous)
+                .strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline)
+        )
     }
 
     private var chart: some View {
@@ -1793,11 +1823,11 @@ private struct StudyTimeBarChart: View {
         return VStack(spacing: dense ? 3 : 5) {
             Spacer(minLength: 0)
             RoundedRectangle(cornerRadius: dense ? 1.5 : 3)
-                .fill(bar.isHighlighted || isSelected ? Color.blue : Color.blue.opacity(0.4))
+                .fill(bar.isHighlighted || isSelected ? Theme.Palette.accent : Theme.Palette.accent.opacity(0.35))
                 .frame(width: width, height: height)
             Text(bar.label)
                 .font(.system(size: dense ? 8 : 9))
-                .foregroundStyle(bar.isHighlighted || isSelected ? Color.blue : .secondary)
+                .foregroundStyle(bar.isHighlighted || isSelected ? Theme.Palette.accent : Theme.Palette.textSecondary)
                 .lineLimit(1)
                 .fixedSize()
                 .frame(width: max(width, dense ? 6 : 14))
@@ -1845,7 +1875,7 @@ private struct MonthCalendarGrid: View {
                     .frame(width: 30, height: 30)
             }
         }
-        .foregroundStyle(.indigo)
+        .foregroundStyle(Theme.Palette.accent)
     }
 
     private var weekdayHeader: some View {
@@ -1885,9 +1915,9 @@ private struct MonthCalendarGrid: View {
                     .frame(width: 30, height: 30)
                     .background {
                         if isSelected {
-                            Circle().fill(Color.indigo)
+                            Circle().fill(Theme.Palette.accent)
                         } else if isToday {
-                            Circle().strokeBorder(Color.indigo, lineWidth: 1.5)
+                            Circle().strokeBorder(Theme.Palette.accent, lineWidth: 1.5)
                         }
                     }
 
@@ -2081,6 +2111,7 @@ private struct CalendarEventEditor: View {
                     }
                 }
             }
+                .themeScreenBackground()
             .navigationTitle(event == nil ? L("予定を追加") : L("予定を編集"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -69,7 +69,7 @@ final class AnnouncementStore: ObservableObject {
 
     init(
         defaults: UserDefaults = .standard,
-        fetch: @escaping Fetch = { try await URLSession.shared.data(for: $0) },
+        fetch: @escaping Fetch = { try await URLSession.shared.dataNoticing(for: $0) },
         endpoint: @escaping () -> URL = {
             MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)!
         },

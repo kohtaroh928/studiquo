@@ -72,8 +72,7 @@ let studiquoSchema = Schema([
     Notebook.self, NotePage.self, PageElement.self,
     FlashcardDeck.self, Flashcard.self, CalendarEvent.self, StudyActivity.self,
     AIChatThread.self, AIChatMessage.self,
-    TextDocument.self, SlideDeck.self, Slide.self,
-    SlideMaster.self, SlideLayoutTemplate.self, SlidePlaceholder.self, SlideElement.self,
+    TextDocument.self,
     DocumentBlock.self, DocumentTableRow.self, DocumentTableCell.self,
     DocumentHeaderFooter.self, DocumentComment.self, DocumentChangeRecord.self, DocumentFootnote.self,
     AIReviewItem.self,
@@ -106,7 +105,7 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        startupLogger.error("APNs registration failed: \(String(describing: error), privacy: .public)")
+        startupLogger.error("APNs registration failed")
     }
 
     func userNotificationCenter(
@@ -131,6 +130,16 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
             await FlashcardReviewNotifications.snooze(content)
             return
         }
+        if response.actionIdentifier == AIReviewNotifications.keepActionIdentifier
+            || response.actionIdentifier == AIReviewNotifications.declineActionIdentifier {
+            if let raw = content.userInfo["reviewID"] as? String, let id = UUID(uuidString: raw) {
+                AIReviewDecisionQueue.enqueue(
+                    reviewID: id,
+                    keep: response.actionIdentifier == AIReviewNotifications.keepActionIdentifier
+                )
+            }
+            return
+        }
         await MainActor.run {
             NotificationCenter.default.post(
                 name: .studiquoNotificationRoute,
@@ -140,6 +149,9 @@ final class StudiquoAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifica
         }
     }
 }
+
+/// The iCloud container in `studiquo.entitlements`.
+private let cloudKitContainerIdentifier = "iCloud.com.yabuko.studiquo"
 
 /// Only fall back after the cloud attempt has actually returned an error.
 /// A deadline cannot cancel ModelContainer.init; opening another container
@@ -155,19 +167,22 @@ private func makeStudiquoModelContainer() throws -> ModelContainer {
     }
     startupLogger.info("Opening persistent store with CloudKit")
     do {
-        let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .automatic)
+        // Named, not `.automatic`: automatic takes the first container in the
+        // entitlements, so adding another container later could silently send the
+        // library to the wrong one. Only the private database is ever used.
+        let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .private(cloudKitContainerIdentifier))
         let container = try ModelContainer(for: studiquoSchema, configurations: configuration)
         startupLogger.info("Persistent store ready (CloudKit)")
         return container
     } catch {
-        startupLogger.error("CloudKit store open failed: \(String(describing: error), privacy: .public)")
+        startupLogger.error("CloudKit store open failed")
         do {
             let configuration = ModelConfiguration(schema: studiquoSchema, cloudKitDatabase: .none)
             let container = try ModelContainer(for: studiquoSchema, configurations: configuration)
             startupLogger.info("Persistent store ready (local)")
             return container
         } catch {
-            startupLogger.error("Local store open failed: \(String(describing: error), privacy: .public)")
+            startupLogger.error("Local store open failed")
             // Never silently substitute an empty, unsaved in-memory library.
             throw error
         }
@@ -191,6 +206,8 @@ struct StudiquoApp: App {
     /// `init()` above makes its first `Purchases.shared` call, so it can't
     /// simply live inside `body`'s `.task` alongside `startup.start()`.
     init() {
+        // Files left in the work folder by the last run (StudiquoWorkFiles).
+        StudiquoWorkFiles.sweep()
         // Before anything can create the store file — see `ICloudSyncPreference`.
         ICloudSyncPreference.resolveAtLaunch()
         // Listen from the start: a "full" report can arrive right after launch.
@@ -198,6 +215,8 @@ struct StudiquoApp: App {
         SubscriptionStore.configureSDK()
         CrashDiagnosticsSubscriber.shared.start()
         CloudKitErrorReporting.start()
+        // Covers sensitive screens in the app switcher (AppSwitcherPrivacy.swift).
+        AppSwitcherPrivacyCover.shared.start()
     }
 
     private var resolvedLocale: Locale {
@@ -216,6 +235,8 @@ struct StudiquoApp: App {
                     StartupUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test") {
                     LibraryDropUITestRoot()
+                } else if ProcessInfo.processInfo.arguments.contains("--paywall-ui-test") {
+                    PaywallUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test") {
                     FriendChatUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test") {
@@ -223,7 +244,8 @@ struct StudiquoApp: App {
                 } else if ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test") ||
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test") ||
                             ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test") ||
-                            ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test") {
+                            ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test") ||
+                            ProcessInfo.processInfo.arguments.contains(NoteSnippetFriendUITestRoot.tabDropArgument) {
                     NoteSnippetFriendUITestRoot()
                 } else if ProcessInfo.processInfo.arguments.contains("--math-spike") {
                     MathSpikeView()
@@ -241,15 +263,20 @@ struct StudiquoApp: App {
                 #endif
             }
             .preferredColorScheme(.light)
+            // On the whole tree (not just normalRoot) so toggles, links and
+            // controls share the accent in every root, including the test fixtures.
+            .tint(Theme.Palette.accent)
             .task {
                 #if DEBUG
                 guard !ProcessInfo.processInfo.arguments.contains("--library-drop-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--startup-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains("--paywall-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--friend-chat-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--split-source-picker-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--friend-requests-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-ui-test"),
+                      !ProcessInfo.processInfo.arguments.contains(NoteSnippetFriendUITestRoot.tabDropArgument),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--note-snippet-group-drag-ui-test"),
                       !ProcessInfo.processInfo.arguments.contains("--math-spike"),
@@ -266,7 +293,6 @@ struct StudiquoApp: App {
             AccountGateView()
                 .modelContainer(modelContainer)
                 .environmentObject(subscriptionStore)
-                .tint(Color(red: 0.16, green: 0.33, blue: 0.63))
                 .environment(\.locale, resolvedLocale)
                 .overlay(alignment: .top) {
                     VStack(spacing: 8) {
@@ -299,11 +325,13 @@ private struct FriendChatUITestRoot: View {
         defaults: UserDefaults(suiteName: "FriendChatUITest-\(UUID().uuidString)")!,
         autoRefresh: false
     )
+    /// Normally a friend whose room is unavailable, so a send is rejected and the tests can
+    /// check the typed text survives. The scroll test needs the opposite — a send that
+    /// succeeds, so there is a newest message to scroll to — and a demo friend accepts
+    /// sends locally.
     private let friend = FriendRecord(
         id: UUID(), name: "Test friend", code: "TEST01",
         todayStudySeconds: 0, roomID: nil,
-        // Scroll regression needs a successful local send; the separate
-        // rejected-send fixture retains its unavailable room behavior.
         isDemo: ProcessInfo.processInfo.arguments.contains("--friend-chat-scroll-test")
     )
 
@@ -382,18 +410,52 @@ private struct NoteSnippetFriendUITestRoot: View {
         _ = NoteSnippetFriendUITestStore.container
     }
 
+    /// Starts the note editor with no snippet seeded, for tests that only need an
+    /// editor plus the tab-drag source chips.
+    static let tabDropArgument = "--tab-drop-ui-test"
+    /// Adds a bar of draggable chips above the editor, standing in for the top
+    /// tab bar: dragging one onto a split pane is the "drop a tab" gesture.
+    static let tabDragSourcesArgument = "--ui-test-tab-drag-sources"
+
+    private var showsTabDragSources: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains(Self.tabDragSourcesArgument) || arguments.contains(Self.tabDropArgument)
+    }
+
     var body: some View {
-        NoteEditorView(
-            notebook: NoteSnippetFriendUITestStore.notebook,
-            columnVisibility: $columnVisibility,
-            onHome: {}
-        )
-        .modelContainer(NoteSnippetFriendUITestStore.container)
-        .environmentObject(AIChatStore.shared(for: NoteSnippetFriendUITestStore.container.mainContext))
-        .environmentObject(splitState)
-        .environmentObject(friendStore)
+        VStack(spacing: 0) {
+            if showsTabDragSources {
+                HStack(spacing: 12) {
+                    // Not the notebook's own title: a test looks for that title to see the
+                    // drop land, and the chip must not satisfy it by itself.
+                    Text("タブ(\(NoteSnippetFriendUITestStore.dropTargetNotebookTitle))")
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Color.accentColor.opacity(0.15), in: Capsule())
+                        .tabDraggable("notebook:\(NoteSnippetFriendUITestStore.dropTargetNotebookID)")
+                        .accessibilityIdentifier("tab-drag-source-notebook")
+                    Text("タブ(\(NoteSnippetFriendUITestStore.dropTargetDocumentTitle))")
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Color.accentColor.opacity(0.15), in: Capsule())
+                        .tabDraggable("document:\(NoteSnippetFriendUITestStore.dropTargetDocumentID)")
+                        .accessibilityIdentifier("tab-drag-source-document")
+                    Spacer()
+                }
+                .padding(8)
+                .background(Theme.Palette.canvas)
+            }
+            NoteEditorView(
+                notebook: NoteSnippetFriendUITestStore.notebook,
+                columnVisibility: $columnVisibility,
+                onHome: {}
+            )
+            .modelContainer(NoteSnippetFriendUITestStore.container)
+            .environmentObject(AIChatStore.shared(for: NoteSnippetFriendUITestStore.container.mainContext))
+            .environmentObject(splitState)
+            .environmentObject(friendStore)
+        }
         .task {
             guard !seededSnippet else { return }
+            if ProcessInfo.processInfo.arguments.contains(Self.tabDropArgument) { return }
             try? await Task.sleep(for: .milliseconds(600))
             seededSnippet = true
             if ProcessInfo.processInfo.arguments.contains("--note-snippet-friend-drag-ui-test") ||
@@ -466,12 +528,44 @@ private enum NoteSnippetFriendUITestStore {
         page.notebook = notebook
         notebook.addPage(page)
         container.mainContext.insert(notebook)
+        // The notebook a dragged tab stands for, so a drop has somewhere real to land.
+        let dropTarget = Notebook(title: dropTargetNotebookTitle)
+        let dropTargetPage = NotePage(order: 0)
+        dropTargetPage.notebook = dropTarget
+        dropTarget.addPage(dropTargetPage)
+        container.mainContext.insert(dropTarget)
+        container.mainContext.insert(TextDocument(title: dropTargetDocumentTitle))
         try! container.mainContext.save()
         return container
     }()
 
+    static let dropTargetNotebookTitle = "ドロップ先ノート"
+    static let dropTargetDocumentTitle = "ドロップ先文書"
+
+    /// The id a tab for the drop-target document carries.
+    static var dropTargetDocumentID: String {
+        let title = dropTargetDocumentTitle
+        let target = try! container.mainContext.fetch(
+            FetchDescriptor<TextDocument>(predicate: #Predicate { $0.title == title })
+        ).first!
+        return String(describing: target.persistentModelID)
+    }
+
     static var notebook: Notebook {
-        try! container.mainContext.fetch(FetchDescriptor<Notebook>()).first!
+        let title = "切り抜き送信テスト"
+        return try! container.mainContext.fetch(
+            FetchDescriptor<Notebook>(predicate: #Predicate { $0.title == title })
+        ).first!
+    }
+
+    /// The id a tab for the drop-target notebook carries, in the same `String(describing:)`
+    /// form the real tab bar uses.
+    static var dropTargetNotebookID: String {
+        let title = dropTargetNotebookTitle
+        let target = try! container.mainContext.fetch(
+            FetchDescriptor<Notebook>(predicate: #Predicate { $0.title == title })
+        ).first!
+        return String(describing: target.persistentModelID)
     }
 }
 
@@ -486,6 +580,20 @@ private struct NoteAIChatUITestRoot: View {
     init() {
         AIDataDisclosure.acknowledge(ageBand: .adult)
         AI.provider = UITestAIProvider()
+        // Stored settings (toolbar layout, tool choice, ...) would carry one
+        // UI test's state into the next, so start from nothing. The floating
+        // chat's frame is the one thing kept: a test that checks it survives
+        // a relaunch needs it, and `--note-ai-chat-reset-frame` drops it for
+        // a test that checks the first-launch placement.
+        let defaults = UserDefaults.standard
+        let frameKeys = ["centerX", "centerY", "width", "height"].map { "temporaryAIChat.\($0)" }
+        let keptFrame = ProcessInfo.processInfo.arguments.contains("--note-ai-chat-reset-frame")
+            ? [:]
+            : frameKeys.reduce(into: [String: Any]()) { result, key in
+                if let value = defaults.object(forKey: key) { result[key] = value }
+            }
+        if let domain = Bundle.main.bundleIdentifier { defaults.removePersistentDomain(forName: domain) }
+        for (key, value) in keptFrame { defaults.set(value, forKey: key) }
         let store = FriendStore(
             defaults: UserDefaults(suiteName: "NoteAIChatUITest-\(UUID().uuidString)")!,
             autoRefresh: false
@@ -658,6 +766,33 @@ private struct StartupUITestRoot: View {
     }
 }
 
+/// DEBUG-only: shows the blocking paywall on its own, with a paywall-enabled
+/// store and a throwaway keychain service, so the screen (and its exits) can
+/// be looked at without signing in or any App Store products.
+private struct PaywallUITestRoot: View {
+    @StateObject private var authentication = AuthenticationStore(service: "com.yabuko.studiquo.paywall-ui-tests")
+    @StateObject private var subscriptionStore = SubscriptionStore(
+        automaticallyRefresh: false, paywallEnabled: true, serverPlanProvider: { .free }
+    )
+    private let container = try? ModelContainer(
+        for: studiquoSchema,
+        configurations: ModelConfiguration(schema: studiquoSchema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+    )
+
+    var body: some View {
+        if let container {
+            SubscriptionPlansView(
+                isBlocking: !ProcessInfo.processInfo.arguments.contains("--paywall-ui-test-settings"),
+                sampleOptions: ProcessInfo.processInfo.arguments.contains("--paywall-ui-test-sample-prices")
+                    ? SamplePurchaseOption.appStoreConnectProducts : []
+            )
+                .modelContainer(container)
+                .environmentObject(authentication)
+                .environmentObject(subscriptionStore)
+        }
+    }
+}
+
 private enum StartupUITestAttempts {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var count = 0
@@ -673,6 +808,7 @@ private enum StartupUITestAttempts {
 /// A disposable in-memory library for the drag-and-drop UI regression test.
 /// It is reachable only through the test runner's launch argument.
 private struct LibraryDropUITestRoot: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// Set when the test asks for a notification tap to be simulated.
     @State private var routeThreadKey: String?
     @ObservedObject private var authentication = LibraryDropUITestStore.authentication
@@ -688,6 +824,12 @@ private struct LibraryDropUITestRoot: View {
             LibraryDropUITestStore.authentication.ignoresAuthFailures = true
             LibraryDropUITestStore.authentication.finishOnboarding()
         }
+        if ProcessInfo.processInfo.arguments.contains(SharedInboxUITestSeed.clearArgument) {
+            SharedInboxUITestSeed.clear()
+        }
+        if ProcessInfo.processInfo.arguments.contains(SharedInboxUITestSeed.argument) {
+            SharedInboxUITestSeed.seed()
+        }
         // Lets UI tests drive the AIトーク (home tab and editor) without a network.
         if ProcessInfo.processInfo.arguments.contains("--ui-test-fake-ai") {
             AI.provider = UITestAIProvider()
@@ -702,6 +844,43 @@ private struct LibraryDropUITestRoot: View {
             }
         }
         _ = LibraryDropUITestStore.container
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-ai-review-notification") {
+            // A review awaiting the keep/decline choice, and the real
+            // notification for it a few seconds from now.
+            let context = LibraryDropUITestStore.container.mainContext
+            let item = AIReviewItem(
+                questionText: "通知ボタンの確認", threadTitle: "テスト", createdAt: .now,
+                reviewDate: .now, explanationMarkdown: "確認用の解説", quiz: []
+            )
+            context.insert(item)
+            try? context.save()
+            let content = UNMutableNotificationContent()
+            content.title = "復習の時間です"
+            content.body = "昨日の質問「通知ボタンの確認」を復習できます"
+            content.categoryIdentifier = AppNotificationKind.aiReview.categoryIdentifier
+            content.userInfo = ["route": AppNotificationKind.aiReview.rawValue, "reviewID": item.id.uuidString]
+            AppNotificationPreferences.registerCategories()
+            // Scheduling before the permission is granted drops the request.
+            Task {
+                _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+                try? await UNUserNotificationCenter.current().add(UNNotificationRequest(
+                    identifier: "ui-test-ai-review",
+                    content: content,
+                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 15, repeats: false)
+                ))
+                // A later one, to open the review by tapping after a button decided it.
+                let reopen = UNMutableNotificationContent()
+                reopen.title = "復習をもう一度開く"
+                reopen.body = "確認用"
+                reopen.categoryIdentifier = content.categoryIdentifier
+                reopen.userInfo = content.userInfo
+                try? await UNUserNotificationCenter.current().add(UNNotificationRequest(
+                    identifier: "ui-test-ai-review-reopen",
+                    content: reopen,
+                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 50, repeats: false)
+                ))
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--ui-test-ai-notification-route") {
             let context = LibraryDropUITestStore.container.mainContext
             let thread = AIChatThread(title: "通知から")
@@ -726,6 +905,10 @@ private struct LibraryDropUITestRoot: View {
             }
         }
             .modelContainer(LibraryDropUITestStore.container)
+            // Exercise the real collapsed split-view navigation on a full-screen
+            // simulator without relying on system multitasking gestures.
+            .environment(\.horizontalSizeClass,
+                         ProcessInfo.processInfo.arguments.contains("--compact-library-ui-test") ? .compact : horizontalSizeClass)
             .environmentObject(LibraryDropUITestStore.authentication)
             .environmentObject(LibraryDropUITestStore.subscriptionStore)
             .environment(\.locale, appLanguage == "english" ? Locale(identifier: "en") : Locale(identifier: "ja"))
@@ -804,6 +987,9 @@ private enum LibraryDropUITestStore {
     static let container: ModelContainer = {
         let arguments = ProcessInfo.processInfo.arguments
         let mode = arguments.contains("--column-mode") ? "column" : arguments.contains("--icon-mode") ? "icon" : "list"
+        if arguments.contains("--compact-library-ui-test") {
+            UserDefaults.standard.set("", forKey: "favoriteFolderPaths")
+        }
         let compact = arguments.contains("--resource-types-fixture")
         UserDefaults.standard.set(mode, forKey: "homeViewMode")
         // Settings persist across UI-test launches in the simulator, so a test
@@ -844,9 +1030,25 @@ private enum LibraryDropUITestStore {
         container.mainContext.insert(target)
         if compact {
             container.mainContext.insert(Notebook(title: "Drag me"))
+            if arguments.contains("--home-pdf-cover") {
+                // A PDF with a real first page, and a protected one whose
+                // first page must not be shown as its icon.
+                let firstPage = UIGraphicsImageRenderer(size: CGSize(width: 60, height: 80)).pngData { context in
+                    UIColor.systemRed.setFill()
+                    context.fill(CGRect(x: 0, y: 0, width: 60, height: 80))
+                }
+                for (title, locked) in [("表紙つきPDF", false), ("保護されたPDF", true)] {
+                    let pdf = Notebook(title: title)
+                    let page = NotePage(order: 0, backgroundImageData: firstPage)
+                    page.notebook = pdf
+                    pdf.addPage(page)
+                    pdf.refreshLibraryMetadata()
+                    pdf.isLocked = locked
+                    container.mainContext.insert(pdf)
+                }
+            }
             container.mainContext.insert(FlashcardDeck(title: "Cards"))
             container.mainContext.insert(TextDocument(title: "Document"))
-            container.mainContext.insert(SlideDeck(title: "Y"))
             try! container.mainContext.save()
             return container
         }
@@ -866,7 +1068,6 @@ private enum LibraryDropUITestStore {
         container.mainContext.insert(Notebook(title: "Other two"))
         container.mainContext.insert(FlashcardDeck(title: "Cards"))
         container.mainContext.insert(TextDocument(title: "Document"))
-        container.mainContext.insert(SlideDeck(title: "Y"))
         let nested = Notebook(title: "Source note")
         nested.folder = sourceFolder
         nested.folderName = sourceFolder.legacyPath
@@ -931,7 +1132,9 @@ private struct SplitSourcePickerUITestRoot: View {
         }
         .modelContainer(library.container)
         // Once, on first appearance: every test launch starts as the list.
-        .task { UserDefaults.standard.removeObject(forKey: "splitSourcePickerLayout") }
+        .task {
+            UserDefaults.standard.removeObject(forKey: "splitSourcePickerLayout")
+        }
     }
 }
 
@@ -954,12 +1157,27 @@ private enum SplitSourcePickerUITestStore {
         note.addPage(notePage)
 
         let pdf = Notebook(title: "分割PDF")
-        let pdfPage = NotePage(order: 0, backgroundImageData: Data([0]))
+        // A real, decodable first page: the pickers show it as the PDF's icon.
+        let firstPageImage = UIGraphicsImageRenderer(size: CGSize(width: 60, height: 80)).pngData { context in
+            UIColor.systemRed.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 60, height: 80))
+        }
+        let pdfPage = NotePage(order: 0, backgroundImageData: firstPageImage)
         pdfPage.notebook = pdf
         pdf.addPage(pdfPage)
         pdf.refreshLibraryMetadata()
         pdf.folderName = subject.legacyPath
         pdf.folder = subject
+
+        // A protected PDF: its first page must never be shown as the icon.
+        let protectedPDF = Notebook(title: "保護PDF")
+        let protectedPage = NotePage(order: 0, backgroundImageData: firstPageImage)
+        protectedPage.notebook = protectedPDF
+        protectedPDF.addPage(protectedPage)
+        protectedPDF.refreshLibraryMetadata()
+        protectedPDF.isLocked = true
+        protectedPDF.folderName = subject.legacyPath
+        protectedPDF.folder = subject
 
         let deck = FlashcardDeck(title: "分割暗記")
         deck.folderName = math.legacyPath
@@ -967,9 +1185,10 @@ private enum SplitSourcePickerUITestStore {
 
         context.insert(note)
         context.insert(pdf)
+        context.insert(protectedPDF)
         context.insert(deck)
         try! context.save()
-        return (container, [note, pdf], [deck])
+        return (container, [note, pdf, protectedPDF], [deck])
     }()
 }
 
@@ -1046,15 +1265,10 @@ private struct LaunchLoadingView: View {
         .padding(24)
         .frame(maxWidth: 520)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
+        .background(Theme.Palette.canvas)
     }
 }
 
-/// Tracks whether this device's very first CloudKit hand-off (schema push +
-/// initial import) is still in flight, so the UI can show a brief, dismissible
-/// hint instead of silently waiting for notes to appear from other devices.
-/// Never blocks app launch; CloudKit sync runs in the background.
-@MainActor
 /// Reports iCloud sync failures that point at a real problem. Being offline,
 /// signed out of iCloud or rate-limited is ordinary and not worth a report.
 enum CloudKitErrorReporting {
@@ -1088,6 +1302,11 @@ enum CloudKitErrorReporting {
     }
 }
 
+/// Tracks whether this device's very first CloudKit hand-off (schema push +
+/// initial import) is still in flight, so the UI can show a brief, dismissible
+/// hint instead of silently waiting for notes to appear from other devices.
+/// Never blocks app launch; CloudKit sync runs in the background.
+@MainActor
 private final class CloudKitSyncStatus: ObservableObject {
     private static let hasCompletedFirstSyncKey = "hasCompletedFirstCloudKitSync"
     /// Safety net for accounts that never get a CloudKit event at all (no

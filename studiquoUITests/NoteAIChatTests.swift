@@ -70,6 +70,60 @@ final class NoteAIChatTests: XCTestCase {
         XCTAssertTrue(button("ai-chat-thread-既存の会話").exists, "2通目以降で会話名が変わってはいけません。")
     }
 
+    func testSentPromptActionsCopyAndResendAnInlineEditBelowTheBubble() {
+        let prompt = app.staticTexts["既存の質問"]
+        let copy = button("ai-chat-copy-message")
+        let edit = button("ai-chat-edit-message")
+        XCTAssertTrue(prompt.waitForExistence(timeout: 5))
+        XCTAssertTrue(copy.waitForExistence(timeout: 5))
+        XCTAssertTrue(edit.exists)
+        XCTAssertGreaterThanOrEqual(copy.frame.minY, prompt.frame.maxY - 2, "操作は送信メッセージの直下に置くこと")
+        XCTAssertLessThanOrEqual(copy.frame.maxX, edit.frame.minX, "コピー、書き直すの順に並べること")
+
+        copy.tap()
+        XCTAssertTrue(
+            app.buttons.matching(identifier: "ai-chat-copy-message")
+                .matching(NSPredicate(format: "label == %@", "コピーしました")).firstMatch
+                .waitForExistence(timeout: 2),
+            "コピー完了が通知されません。"
+        )
+        let composer = draftField
+        composer.tap()
+        composer.typeText("入力中の下書き")
+        edit.tap()
+        let editTextView = app.textViews["ai-chat-edit-field"]
+        let editTextField = app.textFields["ai-chat-edit-field"]
+        let editField = editTextView.exists ? editTextView : editTextField
+        XCTAssertTrue(editField.waitForExistence(timeout: 5), "吹き出しが編集欄に切り替わりません。")
+        XCTAssertEqual(editField.value as? String, "既存の質問")
+        editField.tap()
+        editField.typeText(" 書き直し")
+        button("ai-chat-edit-send").tap()
+
+        XCTAssertTrue(
+            app.staticTexts.matching(
+                NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", "テスト返答:", "書き直し")
+            ).firstMatch.waitForExistence(timeout: 10),
+            "書き直した質問への返答が表示されません。"
+        )
+        XCTAssertTrue(app.staticTexts["既存の質問"].exists, "元の質問を履歴から消してはいけません。")
+        XCTAssertTrue(app.staticTexts["既存の返答"].exists, "元の回答を履歴から消してはいけません。")
+        XCTAssertEqual(draftField.value as? String, "入力中の下書き", "再送で入力欄の下書きを消してはいけません。")
+    }
+
+    func testCancelingAnInlineEditKeepsTheOriginalPrompt() {
+        button("ai-chat-edit-message").tap()
+        let editTextView = app.textViews["ai-chat-edit-field"]
+        let editField = editTextView.exists ? editTextView : app.textFields["ai-chat-edit-field"]
+        XCTAssertTrue(editField.waitForExistence(timeout: 5))
+        editField.tap()
+        editField.typeText(" 変更途中")
+        button("ai-chat-edit-cancel").tap()
+
+        XCTAssertTrue(app.staticTexts["既存の質問"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["既存の質問 変更途中"].exists)
+    }
+
     func testStopButtonCancelsAStreamingReply() {
         send("ゆっくり答えて")
         let stop = button("ai-chat-stop")

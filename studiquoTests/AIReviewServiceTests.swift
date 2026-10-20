@@ -48,13 +48,19 @@ final class AIReviewServiceTests: XCTestCase {
     /// relying on in-memory external-storage handling being equivalent. A
     /// unique temp file per test keeps tests isolated from each other.
     private func makeContext() -> ModelContext {
-        let schema = Schema([TextDocument.self, AIReviewItem.self])
+        let schema = Schema([TextDocument.self, AIReviewItem.self, Folder.self, Notebook.self, FlashcardDeck.self])
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("AIReviewServiceTests-\(UUID().uuidString).sqlite")
         storeURLs.append(url)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         let container = try! ModelContainer(for: schema, configurations: configuration)
         return ModelContext(container)
+    }
+
+    /// Generation no longer files a document; the student keeps it later.
+    private func keepFirstItem(_ context: ModelContext) throws {
+        let item = try XCTUnwrap(try context.fetch(FetchDescriptor<AIReviewItem>()).first)
+        AIReviewService.keepAsDocument(item, modelContext: context)
     }
 
     // MARK: 設定でのオン・オフ（回帰テスト）
@@ -129,6 +135,7 @@ final class AIReviewServiceTests: XCTestCase {
             questionText: "解の公式", threadTitle: "数学", askedAt: .now, modelContext: context
         )
 
+        try keepFirstItem(context)
         let document = try XCTUnwrap(try context.fetch(FetchDescriptor<TextDocument>()).first)
         XCTAssertFalse(document.plainText.contains("\\frac"), document.plainText)
         XCTAssertFalse(document.plainText.contains("$"), document.plainText)
@@ -211,6 +218,8 @@ final class AIReviewServiceTests: XCTestCase {
             modelContext: context
         )
 
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TextDocument>()), 0, "生成時は文書を作らない")
+        try keepFirstItem(context)
         let documents = try context.fetch(FetchDescriptor<TextDocument>())
         XCTAssertEqual(documents.count, 1)
         XCTAssertEqual(documents.first?.folderName, AIReviewService.reviewFolderName)
@@ -242,6 +251,7 @@ final class AIReviewServiceTests: XCTestCase {
             questionText: "積分って何？", threadTitle: "数学", askedAt: .now, modelContext: context
         )
 
+        try keepFirstItem(context)
         let document = try XCTUnwrap(try context.fetch(FetchDescriptor<TextDocument>()).first)
         XCTAssertEqual(document.title, "復習: 積分って何？")
         XCTAssertFalse(document.title.contains("…"))
@@ -263,6 +273,7 @@ final class AIReviewServiceTests: XCTestCase {
             questionText: question, threadTitle: "スレッド", askedAt: .now, modelContext: context
         )
 
+        try keepFirstItem(context)
         let document = try XCTUnwrap(try context.fetch(FetchDescriptor<TextDocument>()).first)
         XCTAssertEqual(document.title, "復習: " + question)
         XCTAssertFalse(document.title.contains("…"))
@@ -281,6 +292,7 @@ final class AIReviewServiceTests: XCTestCase {
             questionText: question, threadTitle: "スレッド", askedAt: .now, modelContext: context
         )
 
+        try keepFirstItem(context)
         let document = try XCTUnwrap(try context.fetch(FetchDescriptor<TextDocument>()).first)
         let expectedSnippet = String(question.prefix(20))
         XCTAssertEqual(document.title, "復習: \(expectedSnippet)…")
@@ -309,6 +321,7 @@ final class AIReviewServiceTests: XCTestCase {
         )
 
         let items = try context.fetch(FetchDescriptor<AIReviewItem>())
+        for item in items { AIReviewService.keepAsDocument(item, modelContext: context) }
         let documents = try context.fetch(FetchDescriptor<TextDocument>())
         XCTAssertEqual(items.count, 2)
         XCTAssertEqual(documents.count, 2)
@@ -435,7 +448,7 @@ final class AIReviewServiceTests: XCTestCase {
         )
 
         let item = try XCTUnwrap(try context.fetch(FetchDescriptor<AIReviewItem>()).first)
-        let document = try XCTUnwrap(item.explanationDocument)
+        let document = AIReviewService.keepAsDocument(item, modelContext: context)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<TextDocument>()), 1)
 
         context.delete(document)
@@ -467,7 +480,7 @@ final class AIReviewServiceTests: XCTestCase {
         )
 
         let item = try XCTUnwrap(try context.fetch(FetchDescriptor<AIReviewItem>()).first)
-        let document = try XCTUnwrap(item.explanationDocument)
+        let document = AIReviewService.keepAsDocument(item, modelContext: context)
 
         document.isTrashed = true
         document.trashedAt = .now
@@ -513,6 +526,74 @@ final class AIReviewServiceTests: XCTestCase {
 
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<AIReviewItem>()), 0)
     }
+    // MARK: 文書として残す／残さない・AI復習フォルダ
+
+    func testKeepingCreatesARealFolderAndFilesTheDocumentInIt() async throws {
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+        await AIReviewService.considerForReview(questionText: "質問A", threadTitle: "t", askedAt: .now, modelContext: context)
+        await AIReviewService.considerForReview(questionText: "質問B", threadTitle: "t", askedAt: .now, modelContext: context)
+        let items = try context.fetch(FetchDescriptor<AIReviewItem>())
+        XCTAssertTrue(items.allSatisfy(\.needsDocumentDecision))
+        for item in items { AIReviewService.keepAsDocument(item, modelContext: context) }
+
+        let folders = try context.fetch(FetchDescriptor<Folder>())
+        XCTAssertEqual(folders.count, 1, "文書は1つのフォルダにまとまる")
+        XCTAssertEqual(folders.first?.name, AIReviewService.reviewFolderName)
+        let documents = try context.fetch(FetchDescriptor<TextDocument>())
+        XCTAssertTrue(documents.allSatisfy { $0.folder === folders.first })
+        XCTAssertTrue((UserDefaults.standard.string(forKey: "libraryFolderNames") ?? "").contains(AIReviewService.reviewFolderName))
+    }
+
+    func testDecliningLeavesNoDocumentAndNoFolder() async throws {
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+        await AIReviewService.considerForReview(questionText: "質問", threadTitle: "t", askedAt: .now, modelContext: context)
+        let item = try XCTUnwrap(try context.fetch(FetchDescriptor<AIReviewItem>()).first)
+        AIReviewService.declineDocument(item, modelContext: context)
+
+        XCTAssertFalse(item.needsDocumentDecision)
+        XCTAssertNil(item.explanationDocument)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TextDocument>()), 0)
+    }
+
+    func testKeepingTwiceDoesNotDuplicateTheDocument() async throws {
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+        await AIReviewService.considerForReview(questionText: "質問", threadTitle: "t", askedAt: .now, modelContext: context)
+        let item = try XCTUnwrap(try context.fetch(FetchDescriptor<AIReviewItem>()).first)
+        AIReviewService.keepAsDocument(item, modelContext: context)
+        AIReviewService.keepAsDocument(item, modelContext: context)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TextDocument>()), 1)
+    }
+
+    func testReconcileAppliesQueuedNotificationDecisionsAndAdoptsOrphans() async throws {
+        let fake = FakeAIProvider()
+        fake.reviewResult = .success(AIReviewResult(isStudyRelevant: true, explanationMarkdown: "解説", quiz: []))
+        AI.provider = fake
+        let context = makeContext()
+        await AIReviewService.considerForReview(questionText: "質問", threadTitle: "t", askedAt: .now, modelContext: context)
+        let item = try XCTUnwrap(try context.fetch(FetchDescriptor<AIReviewItem>()).first)
+        AIReviewDecisionQueue.enqueue(reviewID: item.id, keep: true)
+
+        // A document filed by an older version: path string only, no folder.
+        let legacy = TextDocument(title: "旧")
+        legacy.folderName = AIReviewService.reviewFolderName
+        context.insert(legacy)
+
+        AIReviewService.reconcile(modelContext: context)
+
+        XCTAssertNotNil(item.explanationDocument)
+        XCTAssertNotNil(legacy.folder)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Folder>()), 1)
+        XCTAssertTrue(AIReviewDecisionQueue.drain().isEmpty)
+    }
 }
 
 /// A controllable stand-in for `AI.provider`. Only `researchReview` matters
@@ -548,3 +629,4 @@ private final class FakeAIProvider: AIProvider {
         return try reviewResult.get()
     }
 }
+

@@ -276,6 +276,7 @@ struct NotePageSnapshot {
     var drawingData: Data?
     var backgroundImageData: Data?
     var recognizedText: String
+    var backgroundPDFData: Data?
     var inkReferenceWidth: Double
     var isBookmarked: Bool
     var title: String
@@ -303,6 +304,7 @@ struct NotePageSnapshot {
         drawingData = page.drawingData
         backgroundImageData = page.backgroundImageData
         recognizedText = page.recognizedText
+        backgroundPDFData = page.backgroundPDFData
         inkReferenceWidth = page.inkReferenceWidth
         isBookmarked = page.isBookmarked
         title = page.title
@@ -331,6 +333,7 @@ struct NotePageSnapshot {
         page.drawingData = drawingData
         page.backgroundImageData = backgroundImageData
         page.recognizedText = recognizedText
+        page.backgroundPDFData = backgroundPDFData
         page.inkReferenceWidth = inkReferenceWidth
         page.isBookmarked = isBookmarked
         page.title = title

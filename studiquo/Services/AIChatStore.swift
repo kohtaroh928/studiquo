@@ -100,6 +100,14 @@ final class AIChatStore: ObservableObject {
             object: AIChatTabInfo(id: thread.persistentModelID, title: thread.title)
         )
     }
+    /// Tells the tab bar a conversation was renamed. Unlike `announceThread`
+    /// it never opens a tab or switches to one.
+    var renameThreadTab: (AIChatThread) -> Void = { thread in
+        NotificationCenter.default.post(
+            name: .studiquoRenameAIChatTab,
+            object: AIChatTabInfo(id: thread.persistentModelID, title: thread.title)
+        )
+    }
     /// Tells the tab bar a conversation is gone.
     var closeThreadTab: (AIChatThread) -> Void = { thread in
         NotificationCenter.default.post(name: .studiquoCloseAIChatTab, object: thread.persistentModelID)
@@ -308,6 +316,26 @@ final class AIChatStore: ObservableObject {
     }
 
     @Published var ragScope: RAGSearchScope?
+    // MARK: Consent
+
+    /// Set while the consent card is up; holds the send to run on "allow".
+    @Published var pendingConsentSend: (() -> Void)?
+
+    func allowPendingSend(ageBand: AIAgeBand) {
+        let resume = pendingConsentSend
+        pendingConsentSend = nil
+        AIDataDisclosure.acknowledge(ageBand: ageBand)
+        resume?()
+    }
+
+    /// Declining still sends the message, so the chat shows the
+    /// "not allowed" error where the answer would have been.
+    func declinePendingSend() {
+        let resume = pendingConsentSend
+        pendingConsentSend = nil
+        AIDataDisclosure.declineInChat()
+        resume?()
+    }
 
     // MARK: Sending
 
@@ -325,10 +353,64 @@ final class AIChatStore: ObservableObject {
         let draftKey = overrideDraftKey ?? activeDraftKey
         let trimmed = (overrideText ?? drafts[draftKey] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // Not yet allowed: ask first, and send once they allow. A student who
+        // already said no here skips the card and gets the error in the chat
+        // (the provider refuses without consent).
+        if !AIDataDisclosure.hasBeenAcknowledged, !AIDataDisclosure.hasDeclinedInChat {
+            pendingConsentSend = { [weak self] in
+                self?.send(draftKey: overrideDraftKey, text: overrideText, attachments: overrideAttachments, noteContext: noteContext)
+            }
+            return
+        }
         let sentAttachments = overrideAttachments ?? attachments[draftKey] ?? []
+        _ = sendMessage(
+            trimmed,
+            attachments: sentAttachments,
+            draftKey: draftKey,
+            consumesComposerState: true,
+            noteContext: noteContext
+        )
+    }
+
+    /// Sends an edited copy of a previous prompt as the newest turn.
+    ///
+    /// Rewriting history must not discard a student's current composer: the
+    /// draft, staged attachments and explicit context stay untouched. Old
+    /// turns also remain in the conversation; this app has no branch model
+    /// with which to preserve ChatGPT-style alternate histories safely.
+    @discardableResult
+    func resend(_ text: String, noteContext: String = "") -> Bool {
+        guard selectedThread != nil else { return false }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        // Same consent step as `send`: ask first and resend once they allow.
+        if !AIDataDisclosure.hasBeenAcknowledged, !AIDataDisclosure.hasDeclinedInChat {
+            pendingConsentSend = { [weak self] in
+                self?.resend(text, noteContext: noteContext)
+            }
+            return false
+        }
+        return sendMessage(
+            trimmed,
+            attachments: [],
+            draftKey: activeDraftKey,
+            consumesComposerState: false,
+            noteContext: noteContext
+        )
+    }
+
+    @discardableResult
+    private func sendMessage(
+        _ trimmed: String,
+        attachments sentAttachments: [AIChatAttachment],
+        draftKey: String,
+        consumesComposerState: Bool,
+        noteContext: String
+    ) -> Bool {
+        guard !trimmed.isEmpty else { return false }
         let thread = threadForSending()
         let threadKey = Self.threadKey(thread)
-        guard !respondingThreadIDs.contains(threadKey) else { return }
+        guard !respondingThreadIDs.contains(threadKey) else { return false }
 
         let userMessage = AIChatMessage(text: AIChatFormatting.messageText(trimmed, with: sentAttachments), role: .user)
         userMessage.thread = thread
@@ -344,11 +426,9 @@ final class AIChatStore: ObservableObject {
         reply.thread = thread
         thread.addMessage(reply)
         thread.updatedAt = .now
-        drafts[draftKey] = ""
-        drafts[threadKey] = ""
-        attachments[draftKey] = []
-        attachments[threadKey] = []
-        let contextOverride = contextOverrides[draftKey] ?? contextOverrides[threadKey] ?? ""
+        let contextOverride = consumesComposerState
+            ? (contextOverrides[draftKey] ?? contextOverrides[threadKey] ?? "")
+            : ""
         let attachmentContext = sentAttachments
             .map { attachment -> String in
                 let text = attachment.contextText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -357,8 +437,14 @@ final class AIChatStore: ObservableObject {
             }
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
-        contextOverrides[draftKey] = nil
-        contextOverrides[threadKey] = nil
+        if consumesComposerState {
+            drafts[draftKey] = ""
+            drafts[threadKey] = ""
+            attachments[draftKey] = []
+            attachments[threadKey] = []
+            contextOverrides[draftKey] = nil
+            contextOverrides[threadKey] = nil
+        }
         try? modelContext.save()
         loadThreads()
         selectedThread = thread
@@ -445,6 +531,7 @@ final class AIChatStore: ObservableObject {
             thread.updatedAt = .now
             try? modelContext.save()
         }
+        return true
     }
 
     /// Marks a proof, from whatever the student handed over.
@@ -460,6 +547,10 @@ final class AIChatStore: ObservableObject {
     /// same page agree.
     func submitProof(_ submission: ProofSubmission) {
         guard submission.hasQuestion, submission.hasAnswer else { return }
+        if !AIDataDisclosure.hasBeenAcknowledged, !AIDataDisclosure.hasDeclinedInChat {
+            pendingConsentSend = { [weak self] in self?.submitProof(submission) }
+            return
+        }
         let thread = threadForSending()
         let threadKey = Self.threadKey(thread)
         guard !respondingThreadIDs.contains(threadKey) else { return }
@@ -514,6 +605,21 @@ final class AIChatStore: ObservableObject {
         tasks[threadKey]?.cancel()
         tasks[threadKey] = nil
         respondingThreadIDs.remove(threadKey)
+    }
+
+    static let maxTitleLength = 50
+
+    /// Renames a conversation. A blank name is ignored; `updatedAt` is left
+    /// alone so the history order does not change.
+    func rename(_ thread: AIChatThread, to newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let title = String(trimmed.prefix(Self.maxTitleLength))
+        guard title != thread.title else { return }
+        thread.title = title
+        try? modelContext.save()
+        loadThreads()
+        renameThreadTab(thread)
     }
 
     func delete(_ thread: AIChatThread) {

@@ -32,14 +32,21 @@ final class TabPickerCreateTests: XCTestCase {
         addTabButton.tap()
     }
 
+    /// 画面右上の「新規作成」メニューから、種類ごとの項目を選ぶ。
+    private func chooseCreate(_ app: XCUIApplication, _ entry: String) {
+        app.buttons["新規作成"].firstMatch.tap()
+        XCTAssertTrue(app.buttons[entry].waitForExistence(timeout: 5), "\(entry)がメニューにありません。")
+        app.buttons[entry].tap()
+    }
+
     func testCreatingADocumentFromTheTabPickerShowsTheDocumentAlertAndOpensANewTab() {
         let app = launchApp()
         openTabPicker(app)
 
-        app.buttons["tab-picker-create-document"].tap()
+        chooseCreate(app, "新規文書")
 
         let alert = app.alerts["新規文書"]
-        XCTAssertTrue(alert.waitForExistence(timeout: 5), "「文書」セクションの＋を押したら「新規文書」のアラートが出る必要があります。")
+        XCTAssertTrue(alert.waitForExistence(timeout: 5), "「新規作成」の「新規文書」を押したら「新規文書」のアラートが出る必要があります。")
         alert.textFields["文書名"].tap()
         alert.textFields["文書名"].typeText("回帰テスト用の文書")
         alert.buttons["作成"].tap()
@@ -50,33 +57,15 @@ final class TabPickerCreateTests: XCTestCase {
         )
     }
 
-    func testCreatingASlideDeckFromTheTabPickerShowsTheSlideAlertAndOpensANewTab() {
-        let app = launchApp()
-        openTabPicker(app)
-
-        app.buttons["tab-picker-create-slideDeck"].tap()
-
-        let alert = app.alerts["新規スライド"]
-        XCTAssertTrue(alert.waitForExistence(timeout: 5), "「スライド」セクションの＋を押したら「新規スライド」のアラートが出る必要があります。")
-        alert.textFields["スライド名"].tap()
-        alert.textFields["スライド名"].typeText("回帰テスト用のスライド")
-        alert.buttons["作成"].tap()
-
-        XCTAssertTrue(
-            app.descendants(matching: .any)["tab-slide-回帰テスト用のスライド"].waitForExistence(timeout: 5),
-            "作成したスライドが新しいタブとして開く必要があります。"
-        )
-    }
-
     func testCreatingAFlashcardDeckFromTheTabPickerShowsTheFlashcardAlert() {
         let app = launchApp()
         openTabPicker(app)
 
-        app.buttons["tab-picker-create-deck"].tap()
+        chooseCreate(app, "新規暗記カード")
 
         XCTAssertTrue(
             app.alerts["新規暗記帳"].waitForExistence(timeout: 5),
-            "「暗記帳」セクションの＋を押したら「新規暗記帳」のアラートが出る必要があります。"
+            "「新規作成」の「新規暗記カード」を押したら「新規暗記帳」のアラートが出る必要があります。"
         )
     }
 
@@ -84,11 +73,11 @@ final class TabPickerCreateTests: XCTestCase {
         let app = launchApp()
         openTabPicker(app)
 
-        app.buttons["tab-picker-create-notebook"].tap()
+        chooseCreate(app, "新規ノート")
 
         XCTAssertTrue(
             app.navigationBars["新規ノート"].waitForExistence(timeout: 5),
-            "「ノート・PDF」セクションの＋を押したら「新規ノート」のシートが出る必要があります。"
+            "「新規作成」の「新規ノート」を押したら「新規ノート」のシートが出る必要があります。"
         )
     }
 
@@ -100,10 +89,9 @@ final class TabPickerCreateTests: XCTestCase {
         let app = launchApp()
         openTabPicker(app)
 
-        app.buttons["tab-picker-create-slideDeck"].tap()
-        XCTAssertTrue(app.alerts["新規スライド"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.alerts["新規文書"].exists)
+        chooseCreate(app, "新規文書")
+        XCTAssertTrue(app.alerts["新規文書"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.alerts["新規暗記帳"].exists)
-        app.alerts["新規スライド"].buttons["キャンセル"].tap()
+        app.alerts["新規文書"].buttons["キャンセル"].tap()
     }
 }

@@ -38,7 +38,13 @@ enum AccountFileEraser {
                 try manager.removeItem(at: child)
             }
         }
-        for path in ["Library/Application Support/studiquo/AutoBackups", "Library/Application Support/SharedInbox"] {
+        // The list of files opened in place from Files: names and bookmarks are
+        // the person's data, but the originals are never touched.
+        for path in [
+            "Library/Application Support/studiquo/AutoBackups",
+            "Library/Application Support/SharedInbox",
+            "Library/Application Support/studiquo/ExternalFileBookmarks.json",
+        ] {
             try eraseDirectory(sandbox.appendingPathComponent(path), manager: manager)
         }
     }

@@ -19,13 +19,13 @@ struct ICloudSyncSettingsSection: View {
             if ICloudSyncPreference.isEnabledAtLaunch && monitor.isQuotaExceeded {
                 Label("iCloudの空き容量がありません。新しい内容は、このiPadにだけ保存されています。", systemImage: "exclamationmark.icloud")
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Palette.warning)
                     .accessibilityIdentifier("icloud-sync-quota-note")
             }
         } header: {
             Text("iCloud同期")
         } footer: {
-            Text("ノート・暗記帳・文書・スライド・カレンダーなど、アプリ内のすべてのデータを、iCloudで他の端末と同期します。オフにすると、このiPadにだけ保存されます。設定は端末ごとです。オフにしても、iCloudにある分は消えません(削除はiPadの「設定」アプリから行えます)。Studiquo側の容量の上限はなく、使えるのはiCloudの空き容量までです。")
+            Text("ノート・暗記帳・文書・カレンダーなど、アプリ内のすべてのデータを、iCloudで他の端末と同期します。オフにすると、このiPadにだけ保存されます。設定は端末ごとです。オフにしても、iCloudにある分は消えません(削除はiPadの「設定」アプリから行えます)。Studiquo側の容量の上限はなく、使えるのはiCloudの空き容量までです。")
         }
     }
 }
@@ -57,17 +57,17 @@ struct ICloudQuotaBanner: View {
                             ICloudSyncPreference.setEnabled(false)
                             didStop = true
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.themePrimary)
                         .accessibilityIdentifier("icloud-quota-stop")
                     }
                     Button("閉じる") { monitor.dismissBanner() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.themeSecondary)
                         .accessibilityIdentifier("icloud-quota-dismiss")
                 }
             }
             .padding(14)
             .frame(maxWidth: 460, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
             .padding(.top, 8)
             .accessibilityIdentifier("icloud-quota-banner")
         }

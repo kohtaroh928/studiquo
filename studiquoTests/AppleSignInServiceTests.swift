@@ -75,6 +75,36 @@ final class AppleSignInServiceTests: XCTestCase {
         XCTAssertEqual(token, "cloud-token")
     }
 
+    func testExchangeSendsTheRawNonceWhenThereIsOne() async throws {
+        URLProtocolStub.handler = { request in
+            let body = try Self.bodyData(from: request)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
+            XCTAssertEqual(json["identityToken"], "apple-id-token")
+            XCTAssertEqual(json["nonce"], "raw-nonce-value")
+            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil))
+            return (response, Data(#"{"token":"cloud-token"}"#.utf8))
+        }
+        let token = try await AppleSignInService.shared.exchange(
+            identityToken: "apple-id-token", randomValue: "random-part", nonce: "raw-nonce-value",
+            endpoint: URL(string: "https://example.test/base")!, session: session()
+        )
+        XCTAssertEqual(token, "cloud-token")
+    }
+
+    func testExchangeLeavesOutTheNonceKeyWhenThereIsNone() async throws {
+        URLProtocolStub.handler = { request in
+            let body = try Self.bodyData(from: request)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertNil(json["nonce"])
+            let response = try XCTUnwrap(HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil))
+            return (response, Data(#"{"token":"cloud-token"}"#.utf8))
+        }
+        _ = try await AppleSignInService.shared.exchange(
+            identityToken: "apple-id-token", randomValue: "random-part",
+            endpoint: URL(string: "https://example.test/base")!, session: session()
+        )
+    }
+
     func testExchangeAcceptsAnySuccessfulHTTPStatus() async throws {
         URLProtocolStub.handler = { request in
             let response = try XCTUnwrap(HTTPURLResponse(

@@ -366,7 +366,7 @@ private final class RecordingErrorReportProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        XCTAssertEqual(request.url?.host, "studiquo-mcp.studiquo-mcp-server.workers.dev", "Unexpected test request host")
+        XCTAssertEqual(request.url?.host, "api.studiquo.app", "Unexpected test request host")
         let body = request.httpBody ?? request.httpBodyStream.map { stream -> Data in
             stream.open(); defer { stream.close() }
             var data = Data()

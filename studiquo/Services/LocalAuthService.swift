@@ -32,7 +32,7 @@ enum LocalAuthService {
         request.httpBody = try JSONEncoder().encode(LoginRequest(
             email: email, password: password, randomValue: randomValue
         ))
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             if let http = response as? HTTPURLResponse {
                 let retryAfter = Self.retryAfterSeconds(http, body: data)
@@ -41,7 +41,15 @@ enum LocalAuthService {
                 // busy to check this one, and did not count it against anyone.
                 // Neither says anything about whether the password was right.
                 if http.statusCode == 429 { throw LocalAuthError.tooManyAttempts(retryAfter: retryAfter) }
-                if http.statusCode == 503 { throw LocalAuthError.serverBusy(retryAfter: retryAfter) }
+                if http.statusCode == 503 {
+                    // The operator has paused the service or sign-in on purpose: the banner says so,
+                    // and retrying in a few seconds (what a busy server gets) would only repeat it.
+                    if let notice = ServerNotice.parse(statusCode: 503, retryAfterHeader: http.value(forHTTPHeaderField: "Retry-After"), body: data) {
+                        throw LocalAuthError.servicePaused(message: notice.message)
+                    }
+                    throw LocalAuthError.serverBusy(retryAfter: retryAfter)
+                }
+                if http.statusCode == 403, PasskeyRequired.isIn(body: data) { throw LocalAuthError.passkeyRequired }
             }
             throw LocalAuthError.rejected
         }
@@ -69,9 +77,15 @@ enum LocalAuthError: LocalizedError, Equatable {
     case tooManyAttempts(retryAfter: TimeInterval?)
     /// The server was too busy to check the password (nothing was counted).
     case serverBusy(retryAfter: TimeInterval?)
+    /// The account has a passkey, so a password is no longer accepted.
+    case passkeyRequired
+    /// The operator paused the service (maintenance) or sign-in. Not retried.
+    case servicePaused(message: String)
 
     var errorDescription: String? {
         switch self {
+        case .servicePaused(let message): message
+        case .passkeyRequired: PasskeyRequired.message
         case .rejected:
             "メールアドレスまたはパスワードが違います。"
         case .tooManyAttempts(let retryAfter):
@@ -94,3 +108,14 @@ private struct RetryBody: Decodable { let retryAfterSeconds: Int? }
 
 private struct LoginRequest: Encodable { let email: String; let password: String; let randomValue: String }
 private struct LoginResponse: Decodable { let token: String }
+
+/// The server refuses a password or e-mailed code for an account that has a
+/// passkey (`code: "passkey_required"`).
+enum PasskeyRequired {
+    static let message = "このアカウントはパスキーでログインする設定です。「パスキーでログイン」を使ってください。パスキーが使えない場合は、メールをお送りしたので、案内に沿って48時間後にもう一度お試しください。"
+
+    static func isIn(body: Data) -> Bool {
+        struct Body: Decodable { let code: String? }
+        return (try? JSONDecoder().decode(Body.self, from: body))?.code == "passkey_required"
+    }
+}

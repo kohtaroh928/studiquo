@@ -318,6 +318,77 @@ final class AuthenticationStoreTests: XCTestCase {
         XCTAssertEqual(MCPCloudCredentials.currentToken(), "1234567890.\(String(repeating: "a", count: 40))")
     }
 
+    func testLoginForAnAccountWithAPasskeyExplainsThatAPasskeyIsNeededAndSavesNothing() async {
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 403, body: ["error": "passkey", "code": "passkey_required"])
+        let store = makeStore()
+
+        let result = await store.login(email: "student@example.com", password: "correct-horse-battery")
+
+        XCTAssertFalse(result)
+        XCTAssertEqual(store.errorMessage, PasskeyRequired.message)
+        XCTAssertEqual(store.state, .needsLogin)
+        XCTAssertNil(MCPCloudCredentials.currentToken())
+    }
+
+    // MARK: - passkey enrollment gate
+
+    private func makeSignedInStore(email: String = "student@example.com", registered: Bool?) -> AuthenticationStore {
+        KeychainCredentialFixtures.seedSignedInDevice(service: storeService, email: email)
+        return AuthenticationStore(
+            service: storeService, defaults: testDefaults, authenticationSession: testSession,
+            passkeyRegistered: { registered }
+        )
+    }
+
+    func testAnAccountWithoutAPasskeyIsAskedForOne() async {
+        let store = makeSignedInStore(registered: false)
+        XCTAssertFalse(store.needsPasskeyEnrollment)
+        await store.checkPasskeyRequirement()
+        XCTAssertTrue(store.needsPasskeyEnrollment)
+    }
+
+    func testAnAccountWithAPasskeyIsNotAsked() async {
+        let store = makeSignedInStore(registered: true)
+        await store.checkPasskeyRequirement()
+        XCTAssertFalse(store.needsPasskeyEnrollment)
+    }
+
+    func testAFailedLookupNeverBlocksAnyone() async {
+        let store = makeSignedInStore(registered: nil)
+        await store.checkPasskeyRequirement()
+        XCTAssertFalse(store.needsPasskeyEnrollment, "offline or an older server must not lock the person out")
+    }
+
+    func testAnAccountWithoutAnEmailAddressIsNotAsked() async {
+        let store = makeSignedInStore(email: "", registered: false)
+        await store.checkPasskeyRequirement()
+        XCTAssertFalse(store.needsPasskeyEnrollment, "a passkey is tied to an e-mail address")
+    }
+
+    func testTheRequestCannotBeSkippedBeforeSettingUpHasFailed() async {
+        let store = makeSignedInStore(registered: false)
+        await store.checkPasskeyRequirement()
+        store.skipPasskeyEnrollmentForNow()
+        XCTAssertTrue(store.needsPasskeyEnrollment, "only offered once a try has failed")
+        XCTAssertFalse(store.passkeyEnrollmentFailed)
+    }
+
+    func testAPrivateRelayAddressIsNotAskedForAPasskey() async {
+        let store = makeSignedInStore(email: "abc123@privaterelay.appleid.com", registered: false)
+        await store.checkPasskeyRequirement()
+        XCTAssertFalse(store.needsPasskeyEnrollment, "the server cannot tie a passkey to a relay address")
+        XCTAssertTrue(AuthenticationStore.isPrivateRelayAddress("X@PrivateRelay.AppleID.com"))
+        XCTAssertFalse(AuthenticationStore.isPrivateRelayAddress("student@example.com"))
+    }
+
+    func testSigningOutClearsTheRequest() async {
+        let store = makeSignedInStore(registered: false)
+        await store.checkPasskeyRequirement()
+        XCTAssertTrue(store.needsPasskeyEnrollment)
+        store.logout()
+        XCTAssertFalse(store.needsPasskeyEnrollment)
+    }
+
     func testLoginWithWrongPasswordFailsWithoutSavingAnyToken() async {
         StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 401, body: ["error": "メールアドレスまたはパスワードが違います。"])
         let store = makeStore()
@@ -384,7 +455,7 @@ final class AuthenticationStoreTests: XCTestCase {
     /// loginWithApple/loginWithGoogle do — this verifies restore() actually
     /// honors it on a *freshly constructed* store, simulating relaunch.
     func testRestoreRecognizesALocalEmailIdentityAfterRelaunch() async {
-        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 200, body: ["token": "1234567890.\(String(repeating: "c", count: 40))"])
+        StubAuthNetworkProtocol.jsonResponse(forPathSuffix: "api/auth/local/login", status: 200, body: ["token": "\(Int(Date().timeIntervalSince1970)).\(String(repeating: "c", count: 40))"])
         let firstLaunch = makeStore()
         let signedIn = await firstLaunch.login(email: "student@example.com", password: "correct-horse-battery")
         XCTAssertTrue(signedIn)
@@ -398,6 +469,25 @@ final class AuthenticationStoreTests: XCTestCase {
     }
 
     func testRestoreWithNoPriorSignInStaysAtNeedsLogin() {
+        let store = makeStore()
+
+        XCTAssertEqual(store.state, .needsLogin)
+    }
+
+    func testRestoreDoesNotTrustOnlyTheLongerLivedLocalSession() {
+        KeychainCredentialFixtures.seedSignedInDevice(service: storeService, email: "student@example.com")
+        MCPCloudCredentials.clear()
+
+        let store = makeStore()
+
+        XCTAssertEqual(store.state, .needsLogin)
+    }
+
+    func testRestoreRejectsAnExpiredServerTokenEvenWhenTheLocalSessionIsLive() {
+        KeychainCredentialFixtures.seedSignedInDevice(service: storeService, email: "student@example.com")
+        let expired = "\(Int(Date().timeIntervalSince1970 - MCPCloudCredentials.validityPeriod - 1)).\(String(repeating: "e", count: 64))"
+        MCPCloudCredentials.save(expired)
+
         let store = makeStore()
 
         XCTAssertEqual(store.state, .needsLogin)
@@ -520,7 +610,7 @@ private final class StubAuthNetworkProtocol: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        XCTAssertEqual(request.url?.host, "studiquo-mcp.studiquo-mcp-server.workers.dev", "Unexpected test request host")
+        XCTAssertEqual(request.url?.host, "api.studiquo.app", "Unexpected test request host")
         let path = request.url?.path ?? ""
         Self.lock.lock()
         let forbidden = Self.forbidden.first { path.hasSuffix($0) }

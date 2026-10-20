@@ -3,14 +3,14 @@ import UIKit
 import SwiftUI
 
 enum ExportService {
-    /// A flattened, read-only rendering of an in-app note/deck/document/slide,
+    /// A flattened, read-only rendering of an in-app note/deck/document,
     /// suitable for sending to a friend in chat. The recipient's device has no
     /// access to the sender's local SwiftData store, so a live editable object
     /// can never be handed over directly — a PDF is the shared, self-contained
     /// stand-in both sides can open the same way an uploaded photo or file
     /// already is.
     @MainActor
-    static func chatAttachmentPDFData(sourceKind: String, sourceID: String, notebooks: [Notebook], flashcardDecks: [FlashcardDeck], textDocuments: [TextDocument], slideDecks: [SlideDeck]) -> Data? {
+    static func chatAttachmentPDFData(sourceKind: String, sourceID: String, notebooks: [Notebook], flashcardDecks: [FlashcardDeck], textDocuments: [TextDocument]) -> Data? {
         switch sourceKind {
         case "notebook":
             guard let notebook = notebooks.first(where: { String(describing: $0.persistentModelID) == sourceID && !$0.isTrashed }) else { return nil }
@@ -21,9 +21,6 @@ enum ExportService {
         case "document":
             guard let document = textDocuments.first(where: { String(describing: $0.persistentModelID) == sourceID && !$0.isTrashed }) else { return nil }
             return pdfData(from: document)
-        case "slide":
-            guard let deck = slideDecks.first(where: { String(describing: $0.persistentModelID) == sourceID && !$0.isTrashed }) else { return nil }
-            return pdfData(from: deck)
         default:
             return nil
         }
@@ -141,26 +138,6 @@ enum ExportService {
         cgContext.restoreGState()
     }
 
-    @MainActor
-    static func pdfData(from deck: SlideDeck) -> Data? {
-        let size = deck.aspect.size
-        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: size))
-        let ordered = deck.sortedSlides
-        return renderer.pdfData { context in
-            for slide in ordered {
-                context.beginPage()
-                let view = SlideElementsLayer(slide: slide, slideSize: size, isEditable: false, onChange: {})
-                    .frame(width: size.width, height: size.height)
-                let imageRenderer = ImageRenderer(content: view)
-                imageRenderer.scale = 2
-                if let image = imageRenderer.uiImage {
-                    image.draw(in: CGRect(origin: .zero, size: size))
-                }
-            }
-            if ordered.isEmpty { context.beginPage() }
-        }
-    }
-
     /// Flashcards have no existing PDF export to reuse — this renders a
     /// simple one-card-per-page question/answer layout, enough for a friend
     /// to read the deck without needing the live study UI.
@@ -207,8 +184,8 @@ enum ExportService {
     static func makePNG(from page: NotePage, notebookTitle: String) -> URL? {
         guard let data = makeImage(from: page).pngData() else { return nil }
         let safeTitle = notebookTitle.replacingOccurrences(of: "/", with: "-")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeTitle)-page-\(page.order + 1).png")
-        try? data.write(to: url, options: .atomic)
+        let url = StudiquoWorkFiles.file(named: "\(safeTitle)-page-\(page.order + 1).png")
+        try? data.write(to: url, options: [.atomic, .completeFileProtection])
         return url
     }
 
@@ -275,9 +252,9 @@ enum ExportService {
         guard let data = pdfData(pages: pages) else { return nil }
 
         let safeFilename = filename.replacingOccurrences(of: "/", with: "-")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeFilename).pdf")
+        let url = StudiquoWorkFiles.file(named: "\(safeFilename).pdf")
         do {
-            try data.write(to: url)
+            try data.write(to: url, options: .completeFileProtection)
             return url
         } catch {
             return nil

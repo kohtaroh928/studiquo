@@ -43,6 +43,27 @@ final class AuthenticationStore: ObservableObject {
     @Published private(set) var isLoginBusy = false
     @Published private(set) var isAccountDeletionBusy = false
 
+    /// Every login method writes the same local session. Keeping them mutually
+    /// exclusive prevents a slower sheet from replacing a session that has
+    /// already completed with another account.
+    var isSignInBusy: Bool {
+        isLoginBusy || isPasskeyBusy || isAppleSignInBusy || isGoogleSignInBusy
+    }
+    /// True while the signed-in account has no passkey: the app asks for one
+    /// before anything else (see PasskeyEnrollmentView). A passkey is what a
+    /// look-alike site relaying a password or code cannot imitate, and once an
+    /// account has one the server stops accepting those.
+    @Published private(set) var needsPasskeyEnrollment = false
+    /// Set once setting up a passkey has failed in this run, which is when the
+    /// request offers "skip for now": a person whose device cannot make one
+    /// (iCloud Keychain off, a managed device) must not be locked out of their
+    /// own notes. It comes back at the next launch.
+    @Published private(set) var passkeyEnrollmentFailed = false
+    /// True while the first passkey waits for the code mailed to the account's
+    /// address (see PasskeyService.sendEmailCode).
+    @Published private(set) var passkeyNeedsEmailCode = false
+    @Published private(set) var passkeyEmailCodeSent = false
+
     private let sessionAccount = "session"
     private let service: String
     private let onboardingKey = "authenticationOnboardingComplete"
@@ -54,6 +75,9 @@ final class AuthenticationStore: ObservableObject {
     private let revokeCloudCredentials: () async -> Void
     private let deleteAccountOnServer: () async throws -> Void
     private let authenticationSession: URLSession
+    /// What the in-app browser keeps must not outlive the sign-out or the account.
+    private let eraseBrowserData: @MainActor () async -> Void
+    private let passkeyRegistered: () async -> Bool?
     private var authenticationEndpoint: URL {
         MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)!
     }
@@ -83,7 +107,12 @@ final class AuthenticationStore: ObservableObject {
         unregisterPushDevice: @escaping () async -> Void = { await PushNotificationRegistration.unregisterCurrentDevice() },
         revokeCloudCredentials: @escaping () async -> Void = { await MCPCloudCredentials.revoke() },
         deleteAccountOnServer: @escaping () async throws -> Void = { try await AccountDeletionService.deleteAccount() },
-        authenticationSession: URLSession = .shared
+        authenticationSession: URLSession = .shared,
+        eraseBrowserData: @escaping @MainActor () async -> Void = { await BrowserDataEraser.eraseAll() },
+        passkeyRegistered: @escaping () async -> Bool? = {
+            guard let token = MCPCloudCredentials.currentToken(), let endpoint = MCPCloudCredentials.configuredEndpoint() else { return nil }
+            return await PasskeyService.hasPasskey(token: token, endpoint: endpoint)
+        }
     ) {
         self.service = service
         self.now = now
@@ -92,6 +121,8 @@ final class AuthenticationStore: ObservableObject {
         self.revokeCloudCredentials = revokeCloudCredentials
         self.deleteAccountOnServer = deleteAccountOnServer
         self.authenticationSession = authenticationSession
+        self.eraseBrowserData = eraseBrowserData
+        self.passkeyRegistered = passkeyRegistered
         restore()
         authFailureSubscription = NotificationCenter.default.publisher(for: .studiquoAuthFailed)
             .receive(on: DispatchQueue.main)
@@ -145,6 +176,7 @@ final class AuthenticationStore: ObservableObject {
     /// recognize this device on the next cold launch, same as every other
     /// sign-in method.
     func login(email: String, password: String) async -> Bool {
+        guard !isSignInBusy else { return false }
         let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty, !password.isEmpty else {
             errorMessage = "メールアドレスとパスワードを入力してください。"
@@ -165,7 +197,7 @@ final class AuthenticationStore: ObservableObject {
             // A wait or a busy server says nothing about the password, so it
             // must not read as "wrong password".
             switch error {
-            case .tooManyAttempts, .serverBusy: errorMessage = error.localizedDescription
+            case .tooManyAttempts, .serverBusy, .passkeyRequired, .servicePaused: errorMessage = error.localizedDescription
             case .rejected: errorMessage = "メールアドレスまたはパスワードが違います。"
             }
             return false
@@ -210,6 +242,10 @@ final class AuthenticationStore: ObservableObject {
     func logout() {
         AIDataDisclosure.revoke()
         delete(account: sessionAccount)
+        needsPasskeyEnrollment = false
+        passkeyEnrollmentFailed = false
+        passkeyNeedsEmailCode = false
+        passkeyEmailCodeSent = false
         state = .needsLogin
         // Best-effort and non-blocking: remove this device while the bearer
         // token is still available, then revoke that token. Local sign-out
@@ -223,6 +259,7 @@ final class AuthenticationStore: ObservableObject {
         // different person on a shared device), and RevenueCat must not
         // keep attributing their purchases to whoever signed out.
         Task { _ = try? await Purchases.shared.logOut() }
+        Task { await eraseBrowserData() }
     }
 
     func requestAccountDeletion() async -> Bool {
@@ -265,6 +302,7 @@ final class AuthenticationStore: ObservableObject {
         // should the provider allow it) starts from a clean entitlement
         // slate rather than inheriting the deleted account's purchases.
         Task { _ = try? await Purchases.shared.logOut() }
+        Task { await eraseBrowserData() }
     }
 
     /// A definitive 401 from any authenticated server call (see
@@ -277,6 +315,10 @@ final class AuthenticationStore: ObservableObject {
     private func handleAuthFailure() {
         guard !ignoresAuthFailures else { return }
         guard state == .authenticated || state == .onboarding else { return }
+        // A locked device cannot read its Keychain, so a request made then goes
+        // out without the real token and is refused. That says nothing about
+        // the login itself; signing out here would erase a good session.
+        guard !MCPCloudCredentials.isStorageUnavailable, !MCPCloudCredentials.sentWithoutTokenRecently() else { return }
         let reallyExpired = MCPCloudCredentials.currentToken().map(MCPCloudCredentials.isExpired) ?? true
         errorMessage = reallyExpired
             ? "ログインの有効期限が切れました。もう一度サインインしてください。"
@@ -375,19 +417,103 @@ final class AuthenticationStore: ObservableObject {
         isPasskeyBusy = true
         defer { isPasskeyBusy = false }
         do {
-            try await PasskeyService.shared.register(
-                email: email,
-                token: MCPCloudCredentials.loadOrCreateToken()
-            )
+            let token = MCPCloudCredentials.loadOrCreateToken()
+            do {
+                try await PasskeyService.shared.register(email: email, token: token)
+            } catch PasskeyError.reauthRequired {
+                // An account that already has a passkey proves it with one
+                // before getting another.
+                try await PasskeyService.shared.reauthenticate(token: token, action: "add-passkey")
+                try await PasskeyService.shared.register(email: email, token: token)
+            }
+            needsPasskeyEnrollment = false
+            passkeyEnrollmentFailed = false
+            passkeyNeedsEmailCode = false
+            passkeyEmailCodeSent = false
             errorMessage = ""
             return true
+        } catch let error as ASAuthorizationError where error.code == .canceled {
+            return false
+        } catch PasskeyError.cancelled {
+            return false
+        } catch PasskeyError.emailCodeRequired {
+            // The first passkey: the mailbox is confirmed with a code first.
+            passkeyNeedsEmailCode = true
+            errorMessage = ""
+            if !passkeyEmailCodeSent { await sendPasskeyEmailCode() }
+            return false
         } catch {
+            passkeyEnrollmentFailed = true
             errorMessage = error.localizedDescription
             return false
         }
     }
 
+    /// Mails the code that confirms the mailbox before the first passkey.
+    func sendPasskeyEmailCode() async {
+        guard !email.isEmpty else { return }
+        isPasskeyBusy = true
+        defer { isPasskeyBusy = false }
+        do {
+            try await PasskeyService.shared.sendEmailCode(email: email, token: MCPCloudCredentials.loadOrCreateToken())
+            passkeyEmailCodeSent = true
+            errorMessage = ""
+        } catch {
+            errorMessage = "確認コードを送れませんでした。しばらくしてからもう一度お試しください。"
+        }
+    }
+
+    /// Checks the code and, when it is right, goes straight on to the passkey.
+    func confirmPasskeyEmailCode(_ code: String) async -> Bool {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !email.isEmpty, !trimmed.isEmpty else { return false }
+        isPasskeyBusy = true
+        do {
+            try await PasskeyService.shared.confirmEmailCode(
+                email: email, code: trimmed, token: MCPCloudCredentials.loadOrCreateToken()
+            )
+        } catch {
+            isPasskeyBusy = false
+            errorMessage = error.localizedDescription
+            return false
+        }
+        isPasskeyBusy = false
+        passkeyNeedsEmailCode = false
+        return await addPasskey()
+    }
+
+    /// Looks up whether the signed-in account has a passkey and, if it
+    /// definitely has none, asks for one. A lookup that fails (offline, an
+    /// older server) or an account without an e-mail address (which a passkey
+    /// is tied to) never blocks anyone.
+    func checkPasskeyRequirement() async {
+        guard state == .authenticated || state == .onboarding, !email.isEmpty else {
+            needsPasskeyEnrollment = false
+            return
+        }
+        // A private-relay address (Sign in with Apple, "hide my e-mail") cannot be
+        // tied to a passkey: the server only accepts an address the account has
+        // verified as its own. Those accounts are not asked, and keep signing in as before.
+        guard !Self.isPrivateRelayAddress(email) else {
+            needsPasskeyEnrollment = false
+            return
+        }
+        guard let registered = await passkeyRegistered() else { return }
+        needsPasskeyEnrollment = !registered
+    }
+
+    static func isPrivateRelayAddress(_ address: String) -> Bool {
+        address.lowercased().hasSuffix("@privaterelay.appleid.com")
+    }
+
+    /// Hides the request until the next launch; only offered after a failure.
+    func skipPasskeyEnrollmentForNow() {
+        guard passkeyEnrollmentFailed else { return }
+        needsPasskeyEnrollment = false
+    }
+
     func loginWithPasskey() async -> Bool {
+        guard !isSignInBusy else { return false }
         isPasskeyBusy = true
         defer { isPasskeyBusy = false }
         do {
@@ -420,6 +546,7 @@ final class AuthenticationStore: ObservableObject {
             errorMessage = error.localizedDescription
             return false
         case .success(let authorization):
+            guard !isSignInBusy else { return false }
             isAppleSignInBusy = true
             defer { isAppleSignInBusy = false }
             do {
@@ -448,6 +575,7 @@ final class AuthenticationStore: ObservableObject {
     /// finishes the whole native Google sign-in flow itself, same as
     /// AppleSignInService.signIn().
     func loginWithGoogle() async -> Bool {
+        guard !isSignInBusy else { return false }
         isGoogleSignInBusy = true
         defer { isGoogleSignInBusy = false }
         do {
@@ -472,12 +600,18 @@ final class AuthenticationStore: ObservableObject {
 
     private func restore() {
         guard (passkeyIdentity() != nil || oauthIdentity() != nil),
-              let session: SessionRecord = load(account: sessionAccount), session.expiresAt > Date() else {
+              let session: SessionRecord = load(account: sessionAccount), session.expiresAt > Date(),
+              let cloudToken = MCPCloudCredentials.currentToken(),
+              !MCPCloudCredentials.isExpired(cloudToken) else {
             state = .needsLogin
             return
         }
         // Active use renews the six-month session.
         createSession()
+        for account in [sessionAccount, passkeyIdentityAccount, oauthIdentityAccount] {
+            relaxKeychainAccessibility(service: service, account: account)
+        }
+        MCPCloudCredentials.relaxAccessibility()
         state = defaults.bool(forKey: onboardingKey) ? .authenticated : .onboarding
     }
 
@@ -504,7 +638,30 @@ final class AuthenticationStore: ObservableObject {
         case "email": canonicalIdentity = "email:\(subject)"
         default: canonicalIdentity = subject // Apple: the bare JWT `sub`, unprefixed.
         }
-        Task { _ = try? await Purchases.shared.logIn(canonicalIdentity) }
+        revenueCatLogin = Task { _ = try? await Purchases.shared.logIn(canonicalIdentity) }
+    }
+
+    /// The in-flight RevenueCat `logIn`, so the plan lookup can wait for it:
+    /// reading CustomerInfo before it finishes returns the anonymous user's,
+    /// and a purchase made in that window is transferred rather than recorded
+    /// under this account.
+    private var revenueCatLogin: Task<Void, Never>?
+
+    /// Waits for the login, but never longer than `timeout`: a RevenueCat
+    /// that does not answer must not hold the plan lookup (and with it a
+    /// grandfathered student's entitlement) forever.
+    func waitForRevenueCatIdentity(timeout: Duration = .seconds(15)) async {
+        guard let login = revenueCatLogin else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            var resumed = false
+            let finish = {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume()
+            }
+            Task { await login.value; finish() }
+            Task { try? await Task.sleep(for: timeout); finish() }
+        }
     }
 
     private func passkeyIdentity() -> PasskeyIdentity? { load(account: passkeyIdentityAccount) }
@@ -525,7 +682,7 @@ final class AuthenticationStore: ObservableObject {
         SecItemDelete(query as CFDictionary)
         var item = query
         item[kSecValueData as String] = data
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
@@ -575,7 +732,12 @@ enum AccountDeletionService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["confirmation": "DELETE"])
-        let (_, response) = try await URLSession.shared.data(for: request)
+        var (data, response) = try await URLSession.shared.dataNoticing(for: request)
+        // An account with a passkey proves it with one first, then asks again.
+        if PasskeyReauth.isRequired(status: (response as? HTTPURLResponse)?.statusCode, body: data) {
+            try await PasskeyService.shared.reauthenticate(token: token, action: "delete-account")
+            (data, response) = try await URLSession.shared.dataNoticing(for: request)
+        }
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw AccountDeletionError.rejected
         }
@@ -670,12 +832,6 @@ enum AccountDataEraser {
         try context.delete(model: PageElement.self)
         try context.delete(model: NotePage.self)
         try context.delete(model: Notebook.self)
-        try context.delete(model: SlideElement.self)
-        try context.delete(model: SlidePlaceholder.self)
-        try context.delete(model: SlideLayoutTemplate.self)
-        try context.delete(model: SlideMaster.self)
-        try context.delete(model: Slide.self)
-        try context.delete(model: SlideDeck.self)
         try context.delete(model: DocumentComment.self)
         try context.delete(model: DocumentChangeRecord.self)
         try context.delete(model: DocumentFootnote.self)

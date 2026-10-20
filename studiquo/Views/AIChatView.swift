@@ -3,8 +3,6 @@ import SwiftData
 import UIKit
 import UniformTypeIdentifiers
 import VisionKit
-import Speech
-import AVFoundation
 
 /// The width of the chat pane, read so a narrow pane can start with its
 /// history folded away. Reads the pane's own size, which nothing inside the
@@ -23,8 +21,16 @@ private struct AIChatPaneWidthKey: PreferenceKey {
 /// pane-switching and paste-onto-page behaviour; the home screen adds none of
 /// that and none of those menu items appear.
 /// Recognises a dragged tab's id that a text field swallowed as plain text.
+/// Where the AIチャット message list rests when it is shown. A conversation
+/// opens on its newest message; only the empty-state greeting starts at the top.
+enum AIChatScrollPolicy {
+    static func anchor(messageCount: Int) -> UnitPoint {
+        messageCount == 0 ? .top : .bottom
+    }
+}
+
 enum DroppedTabText {
-    static let prefixes = ["notebook:", "deck:", "web:", "ai:", "friend:", "group:", "document:", "slide:"]
+    static let prefixes = ["notebook:", "deck:", "web:", "ai:", "friend:", "group:", "document:"]
 
     /// The tab id inserted by the change from `old` to `new`, or nil when the
     /// change is ordinary typing, a deletion, or text that is not a tab id.
@@ -57,6 +63,9 @@ struct AIChatPanel: View {
     @State private var surfaceID = UUID()
     @State private var ragAvailable = false
     @State private var showsRAG = false
+    /// The age band picked on the consent card (nothing preselected).
+    @State private var consentAge: AIAgeBand?
+    @State private var consentUnder13 = false
 
     var body: some View {
         AIChatPane(
@@ -67,7 +76,9 @@ struct AIChatPanel: View {
             onSelectThread: { store.select($0) },
             onNewThread: { store.startNewThread() },
             onDeleteThread: { store.delete($0) },
+            onRenameThread: { store.rename($0, to: $1) },
             onSend: { store.send(noteContext: noteContext()) },
+            onResend: { store.resend($0, noteContext: noteContext()) },
             respondingThreadIDs: store.respondingThreadIDs,
             onCancel: { store.cancelResponse() },
             onGradeProof: { store.submitProof($0) },
@@ -93,121 +104,88 @@ struct AIChatPanel: View {
             }
         }
         .task { ragAvailable = await RAGIndexingService().isEnabled() }
+        .overlay {
+            if store.pendingConsentSend != nil {
+                consentCard
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: store.pendingConsentSend != nil)
         .onAppear { store.surfaceDidAppear(surfaceID) }
         .onDisappear { store.surfaceDidDisappear(surfaceID) }
     }
+
+    private var consentCard: some View {
+        ZStack {
+            Color.black.opacity(0.18).ignoresSafeArea()
+            VStack(spacing: 14) {
+                Image(systemName: "hand.raised")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(Theme.Palette.accent)
+                VStack(spacing: 6) {
+                    Text(L("AIへの送信を許可しますか？"))
+                        .font(.headline)
+                    Text(L("質問・会話履歴と、送信対象として選んだ資料・画像がOpenAI(ChatGPTのモデル)へ送信されます。許可はいつでも設定 → プライバシーから取り消せます。"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L("年齢の確認(13〜17歳は保護者の同意が必要です)"))
+                        .font(.caption.weight(.semibold))
+                    consentAgeOption(L("18歳以上です"), selected: consentAge == .adult && !consentUnder13) {
+                        consentAge = .adult; consentUnder13 = false
+                    }
+                    consentAgeOption(L("13〜17歳で、保護者の同意を得ています"), selected: consentAge == .teen && !consentUnder13) {
+                        consentAge = .teen; consentUnder13 = false
+                    }
+                    consentAgeOption(L("13歳未満です"), selected: consentUnder13) {
+                        consentAge = nil; consentUnder13 = true
+                    }
+                    if consentUnder13 {
+                        Text(L("13歳未満の方はAI機能を利用できません。"))
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 10) {
+                    Button { store.declinePendingSend() } label: {
+                        Text(L("許可しない")).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.themeSecondary)
+                    .accessibilityIdentifier("ai-chat-consent-decline")
+                    Button {
+                        if let consentAge { store.allowPendingSend(ageBand: consentAge) }
+                    } label: {
+                        Text(L("許可して送信")).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.themePrimary)
+                    .disabled(consentAge == nil)
+                    .accessibilityIdentifier("ai-chat-consent-allow")
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: 340)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous).strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline))
+            .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+            .padding(24)
+        }
+        .transition(.opacity)
+        .zIndex(30)
+    }
 }
 
-@MainActor
-final class SpeechInputController: ObservableObject {
-    @Published var isRecording = false
-    @Published var isCallMode = false
-    @Published var statusText = ""
-
-    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
-    private let audioEngine = AVAudioEngine()
-    private var request: SFSpeechAudioBufferRecognitionRequest?
-    private var task: SFSpeechRecognitionTask?
-    private var baseText = ""
-
-    func toggleDictation(draft: Binding<String>) {
-        if isRecording {
-            stop()
-        } else {
-            start(draft: draft, callMode: false)
-        }
-    }
-
-    func toggleCall(draft: Binding<String>) {
-        if isRecording && isCallMode {
-            stop()
-        } else {
-            start(draft: draft, callMode: true)
-        }
-    }
-
-    func stop() {
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-        request?.endAudio()
-        task?.cancel()
-        request = nil
-        task = nil
-        isRecording = false
-        isCallMode = false
-        statusText = ""
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-    }
-
-    private func start(draft: Binding<String>, callMode: Bool) {
-        Task {
-            let authorized = await requestAuthorization()
-            guard authorized else {
-                statusText = L("マイクまたは音声認識の許可が必要です。")
-                return
-            }
-            do {
-                try beginRecognition(draft: draft, callMode: callMode)
-            } catch {
-                statusText = L("音声入力を開始できませんでした：\(error.localizedDescription)")
-                stop()
+extension AIChatPanel {
+    fileprivate func consentAgeOption(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                Text(title).font(.caption).foregroundStyle(.primary)
+                Spacer()
             }
         }
-    }
-
-    private func requestAuthorization() async -> Bool {
-        let speechAllowed = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status == .authorized)
-            }
-        }
-
-        let micAllowed = await withCheckedContinuation { continuation in
-            AVAudioApplication.requestRecordPermission { allowed in
-                continuation.resume(returning: allowed)
-            }
-        }
-
-        return speechAllowed && micAllowed
-    }
-
-    private func beginRecognition(draft: Binding<String>, callMode: Bool) throws {
-        stop()
-        baseText = draft.wrappedValue
-
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
-        try session.setActive(true, options: .notifyOthersOnDeactivation)
-
-        let newRequest = SFSpeechAudioBufferRecognitionRequest()
-        newRequest.shouldReportPartialResults = true
-        request = newRequest
-
-        let input = audioEngine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak newRequest] buffer, _ in
-            newRequest?.append(buffer)
-        }
-
-        audioEngine.prepare()
-        try audioEngine.start()
-
-        isRecording = true
-        isCallMode = callMode
-        statusText = callMode ? L("通話モードで聞き取っています…") : L("文字起こし中…")
-
-        task = recognizer?.recognitionTask(with: newRequest) { [weak self] result, error in
-            Task { @MainActor in
-                guard let self else { return }
-                if let text = result?.bestTranscription.formattedString {
-                    let separator = self.baseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n"
-                    draft.wrappedValue = self.baseText + separator + text
-                }
-                if error != nil || result?.isFinal == true {
-                    self.stop()
-                }
-            }
-        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -235,7 +213,7 @@ struct AppAttachmentPicker: View {
                     HStack(spacing: 12) {
                         Image(systemName: option.icon)
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Theme.Palette.accent)
                             .frame(width: 28)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(option.title)
@@ -250,6 +228,7 @@ struct AppAttachmentPicker: View {
                 }
                 .buttonStyle(.plain)
             }
+                .themeScreenBackground()
             .overlay {
                 if options.isEmpty {
                     ContentUnavailableView(
@@ -278,7 +257,9 @@ struct AIChatPane: View {
     let onSelectThread: (AIChatThread) -> Void
     let onNewThread: () -> Void
     let onDeleteThread: (AIChatThread) -> Void
+    let onRenameThread: (AIChatThread, String) -> Void
     let onSend: () -> Void
+    let onResend: (String) -> Bool
     let respondingThreadIDs: Set<String>
     let onCancel: () -> Void
     /// Runs the two-stage marker over whatever the marking box collected.
@@ -301,7 +282,9 @@ struct AIChatPane: View {
         onSelectThread: @escaping (AIChatThread) -> Void,
         onNewThread: @escaping () -> Void,
         onDeleteThread: @escaping (AIChatThread) -> Void,
+        onRenameThread: @escaping (AIChatThread, String) -> Void,
         onSend: @escaping () -> Void,
+        onResend: @escaping (String) -> Bool,
         respondingThreadIDs: Set<String>,
         onCancel: @escaping () -> Void,
         onGradeProof: @escaping (ProofSubmission) -> Void,
@@ -318,7 +301,9 @@ struct AIChatPane: View {
         self.onSelectThread = onSelectThread
         self.onNewThread = onNewThread
         self.onDeleteThread = onDeleteThread
+        self.onRenameThread = onRenameThread
         self.onSend = onSend
+        self.onResend = onResend
         self.respondingThreadIDs = respondingThreadIDs
         self.onCancel = onCancel
         self.onGradeProof = onGradeProof
@@ -332,11 +317,6 @@ struct AIChatPane: View {
     /// Whether the app knows where its AI server is. The API key itself lives
     /// on that server, so there is nothing for the student to enter.
     @State private var hasKey = AI.provider.isConfigured
-    /// Mirrors `AIModelSelection.current` into `@State` so picking a model
-    /// from `modelPickerButton`'s menu redraws the header immediately,
-    /// rather than waiting for the next time this view happens to rebuild.
-    @State private var selectedModel = AIModelSelection.current
-    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     /// What the student chose with the sidebar button; `nil` until they do,
     /// in which case the width decides (a narrow pane starts with the history
     /// folded away so the conversation keeps room).
@@ -354,6 +334,8 @@ struct AIChatPane: View {
         width >= historySidebarMinimumWidth
     }
     @State private var pendingDeleteThread: AIChatThread?
+    @State private var renamingThread: AIChatThread?
+    @State private var renameDraft = ""
     @State private var attachmentPickerMode: AttachmentPickerMode?
     @State private var isDropTargeted = false
     @State private var isComposerDropTargeted = false
@@ -365,7 +347,12 @@ struct AIChatPane: View {
     @State private var markingQuestionSnippet: PageSnippet?
     @State private var markingAnswerSnippet: PageSnippet?
     @State private var showsCameraScanner = false
-    @StateObject private var speechInput = SpeechInputController()
+    @State private var usage: AIUsage?
+    /// Only one historical prompt can be edited at a time. Keeping this in
+    /// the pane (rather than each bubble) avoids two inline editors competing
+    /// for attention on a touch-first screen.
+    @State private var editingMessageID: PersistentIdentifier?
+    @State private var editedPrompt = ""
 
     private enum AttachmentPickerMode: Identifiable {
         case files
@@ -383,39 +370,6 @@ struct AIChatPane: View {
             case .files: return [.item]
             case .folder: return [.folder]
             }
-        }
-    }
-
-    /// Shows the model AIトーク currently talks to, and lets the student
-    /// switch — scoped by `subscriptionStore.currentPlan`: a model the plan
-    /// doesn't unlock yet shows a lock icon and which plan would unlock it,
-    /// and tapping it does nothing (the Worker would reject it with 403
-    /// anyway; this just avoids a round trip to find that out).
-    private var modelPickerButton: some View {
-        Menu {
-            ForEach(AIModelCatalog.offered) { model in
-                let isAvailable = AIModelCatalog.isAvailable(model.id, for: subscriptionStore.currentPlan)
-                Button {
-                    guard isAvailable else { return }
-                    selectedModel = model.id
-                    AIModelSelection.current = model.id
-                } label: {
-                    if isAvailable {
-                        Text(model.displayName)
-                    } else {
-                        Label(L("\(model.displayName)（\(model.requiredPlan.title)で利用可能）"), systemImage: "lock.fill")
-                    }
-                }
-                .disabled(!isAvailable)
-            }
-        } label: {
-            HStack(spacing: 3) {
-                Text(AIModelCatalog.info(for: selectedModel)?.displayName ?? selectedModel.rawValue)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
     }
 
@@ -447,17 +401,22 @@ struct AIChatPane: View {
                             Text(selectedThread?.title ?? L("新しいトーク"))
                                 .font(.headline)
                                 .lineLimit(1)
-                            if hasKey {
-                                modelPickerButton
-                            } else {
+                            if !hasKey {
                                 Text(L("AIサーバー未設定"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
+                        if let usage {
+                            Text("残り\(usage.remaining)回")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("ai-chat-usage")
+                                .accessibilityLabel("AI利用残り\(usage.remaining)回")
+                        }
                         Image(systemName: hasKey ? "sparkles" : "exclamationmark.triangle")
-                            .foregroundStyle(hasKey ? Color.accentColor : Color.orange)
+                            .foregroundStyle(hasKey ? Theme.Palette.accent : Theme.Palette.warning)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -470,7 +429,7 @@ struct AIChatPane: View {
                                     VStack(spacing: 12) {
                                         Image(systemName: "sparkles")
                                             .font(.system(size: 34))
-                                            .foregroundStyle(Color.accentColor)
+                                            .foregroundStyle(Theme.Palette.accent)
                                         Text("何を手伝いましょうか？")
                                             .font(.title3.weight(.semibold))
                                         Text(hasKey
@@ -490,12 +449,31 @@ struct AIChatPane: View {
                                         message: message,
                                         onInsertOnPage: onInsertAssistantMessage.map { insert in
                                             { insert(message.text) }
+                                        },
+                                        isEditing: editingMessageID == message.persistentModelID,
+                                        editedText: $editedPrompt,
+                                        canEdit: !isResponding,
+                                        onBeginEditing: {
+                                            editingMessageID = message.persistentModelID
+                                            editedPrompt = message.text
+                                        },
+                                        onCancelEditing: cancelMessageEditing,
+                                        onResend: { text in
+                                            let didSend = onResend(text)
+                                            if didSend { cancelMessageEditing() }
+                                            return didSend
                                         }
                                     )
                                         .id(message.persistentModelID)
                                 }
                             }
                             .padding(18)
+                        }
+                        .defaultScrollAnchor(AIChatScrollPolicy.anchor(messageCount: messages.count))
+                        .onAppear {
+                            if let last = messages.last {
+                                proxy.scrollTo(last.persistentModelID, anchor: .bottom)
+                            }
                         }
                         .onChange(of: messages.count) { _, _ in
                             if let last = messages.last {
@@ -562,7 +540,7 @@ struct AIChatPane: View {
                                     .font(.system(size: 17, weight: .semibold))
                                     .foregroundStyle(.primary)
                                     .frame(width: 34, height: 34)
-                                    .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                                    .background(Theme.Palette.surface, in: Circle())
                             }
                             .accessibilityLabel(L("ファイルやフォルダーを追加"))
 
@@ -571,34 +549,11 @@ struct AIChatPane: View {
                                 .textFieldStyle(.plain)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 11)
-                                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
                                 .submitLabel(.send)
                                 .onSubmit(onSend)
                                 .accessibilityIdentifier("ai-chat-draft")
 
-                            Button {
-                                speechInput.toggleDictation(draft: $draft)
-                            } label: {
-                                Image(systemName: speechInput.isRecording && !speechInput.isCallMode ? "waveform.circle.fill" : "waveform")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundStyle(speechInput.isRecording && !speechInput.isCallMode ? Color.accentColor : .primary)
-                                    .frame(width: 34, height: 34)
-                                    .background(Color(uiColor: .secondarySystemBackground), in: Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(L("文字起こし"))
-
-                            Button {
-                                speechInput.toggleCall(draft: $draft)
-                            } label: {
-                                Image(systemName: speechInput.isRecording && speechInput.isCallMode ? "phone.circle.fill" : "phone")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(speechInput.isRecording && speechInput.isCallMode ? Color.green : .primary)
-                                    .frame(width: 34, height: 34)
-                                    .background(Color(uiColor: .secondarySystemBackground), in: Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(L("通話"))
 
                             // Turns into a stop button while a reply is streaming, so
                             // a long answer can be cut short.
@@ -612,13 +567,6 @@ struct AIChatPane: View {
                             .disabled(!isResponding && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             .accessibilityLabel(isResponding ? L("生成を止める") : L("送信"))
                             .accessibilityIdentifier(isResponding ? "ai-chat-stop" : "ai-chat-send")
-                        }
-
-                        if !speechInput.statusText.isEmpty {
-                            Text(speechInput.statusText)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .padding(.leading, 44)
                         }
                     }
                     .padding(12)
@@ -643,12 +591,12 @@ struct AIChatPane: View {
                     .overlay {
                         if isComposerDropTargeted {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 22)
-                                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2.5, dash: [7, 5]))
-                                    .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 22))
+                                RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous)
+                                    .strokeBorder(Theme.Palette.accent, style: StrokeStyle(lineWidth: 2.5, dash: [7, 5]))
+                                    .background(Theme.Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous))
                                 Image(systemName: "plus")
                                     .font(.system(size: 26, weight: .bold))
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(Theme.Palette.accent)
                             }
                             .allowsHitTesting(false)
                         }
@@ -669,7 +617,23 @@ struct AIChatPane: View {
                 deleteConfirmationCard(for: pendingDeleteThread)
             }
         }
-        .background(Color(uiColor: .systemBackground))
+        .alert(L("名前を変更"), isPresented: Binding(
+            get: { renamingThread != nil },
+            set: { if !$0 { renamingThread = nil } }
+        )) {
+            TextField(L("トークの名前"), text: $renameDraft)
+                .onChange(of: renameDraft) { _, value in
+                    if value.count > AIChatStore.maxTitleLength {
+                        renameDraft = String(value.prefix(AIChatStore.maxTitleLength))
+                    }
+                }
+            Button(L("キャンセル"), role: .cancel) {}
+            Button(L("保存")) {
+                if let renamingThread { onRenameThread(renamingThread, renameDraft) }
+            }
+            .disabled(renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .background(Theme.Palette.canvas)
         .background(
             GeometryReader { proxy in
                 Color.clear.preference(key: AIChatPaneWidthKey.self, value: proxy.size.width.rounded())
@@ -678,22 +642,44 @@ struct AIChatPane: View {
         .onChange(of: draft) { oldValue, newValue in
             absorbDroppedTabText(old: oldValue, new: newValue)
         }
+        .task { await refreshUsage() }
+        .onChange(of: respondingThreadIDs) { _, responding in
+            if responding.isEmpty { Task { await refreshUsage() } }
+        }
         .onPreferenceChange(AIChatPaneWidthKey.self) { width in
             if width > 0, width != measuredWidth { measuredWidth = width }
         }
+        .onChange(of: selectedThread?.persistentModelID) { _, _ in
+            cancelMessageEditing()
+        }
         // The whole pane accepts crops, not just the composer — aiming a
         // drag at a text field on a split screen is fiddly, and there is
-        // nothing else here a page snippet could mean.
-        .dropDestination(for: PageSnippet.self) { snippets, _ in
-            for snippet in snippets { accept(snippet) }
-            return !snippets.isEmpty
+        // nothing else here a page snippet could mean. It also accepts a tab,
+        // which switches this pane to that material (the composer, inside,
+        // keeps attaching tabs instead).
+        //
+        // ONE destination for both kinds: with one destination per type on the
+        // same view, only one is consulted and the tab drop never arrived.
+        // See `PaneDropPayload`.
+        .dropDestination(for: PaneDropPayload.self) { drops, _ in
+            var handled = false
+            for drop in drops {
+                switch drop {
+                case .snippet(let snippet):
+                    accept(snippet)
+                    handled = true
+                case .tab(let value):
+                    if onPaneDrop?(value) ?? false { handled = true }
+                }
+            }
+            return handled
         } isTargeted: { targeted in
             withAnimation(.easeOut(duration: 0.15)) { isDropTargeted = targeted }
         }
         .overlay {
             if isDropTargeted {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
+                    .strokeBorder(Theme.Palette.accent, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
                     .padding(4)
                     .allowsHitTesting(false)
             }
@@ -749,6 +735,16 @@ struct AIChatPane: View {
         isDropTargeted = false
     }
 
+    @MainActor
+    private func refreshUsage() async {
+        usage = await AI.provider.usage()
+    }
+
+    private func cancelMessageEditing() {
+        editingMessageID = nil
+        editedPrompt = ""
+    }
+
     private func isPaneSwitchDrop(_ value: String) -> Bool {
         value.hasPrefix("notebook:")
             || value.hasPrefix("deck:")
@@ -764,7 +760,7 @@ struct AIChatPane: View {
                 Label("新しいトーク", systemImage: "square.and.pencil")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.themeSecondary)
             .accessibilityIdentifier("ai-chat-new-thread")
 
             Text("履歴")
@@ -793,15 +789,28 @@ struct AIChatPane: View {
                         .padding(.vertical, 9)
                         .background(
                             isSelected(thread)
-                            ? Color.accentColor.opacity(0.14)
+                            ? Theme.Palette.accent.opacity(0.14)
                             : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 10)
+                            in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
                         )
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("ai-chat-thread-\(thread.title)")
                     .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
                     .listRowBackground(Color.clear)
+                    .contextMenu {
+                        Button {
+                            renameDraft = thread.title
+                            renamingThread = thread
+                        } label: {
+                            Label(L("名前を変更"), systemImage: "pencil")
+                        }
+                        Button(role: .destructive) {
+                            pendingDeleteThread = thread
+                        } label: {
+                            Label(L("削除"), systemImage: "trash")
+                        }
+                    }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {
                             pendingDeleteThread = thread
@@ -816,7 +825,7 @@ struct AIChatPane: View {
         }
         .padding(12)
         .frame(width: 210)
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(Theme.Palette.canvas)
     }
 
     private var messages: [AIChatMessage] {
@@ -847,7 +856,7 @@ struct AIChatPane: View {
             VStack(spacing: 14) {
                 Image(systemName: "trash")
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.Palette.danger)
 
                 VStack(spacing: 6) {
                     Text(L("このトークを削除しますか？"))
@@ -865,7 +874,7 @@ struct AIChatPane: View {
                         Text(L("いいえ"))
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.themeSecondary)
 
                     Button(role: .destructive) {
                         onDeleteThread(thread)
@@ -874,17 +883,16 @@ struct AIChatPane: View {
                         Text(L("はい"))
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
+                    .buttonStyle(.themeDanger)
                     .accessibilityIdentifier("ai-chat-delete-confirm")
                 }
             }
             .padding(18)
             .frame(maxWidth: 320)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous)
+                    .strokeBorder(Theme.Palette.line, lineWidth: Theme.Stroke.hairline)
             )
             .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
             .padding(24)
@@ -929,7 +937,7 @@ struct AIChatPane: View {
                 .font(.caption)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+                .background(Theme.Palette.surface, in: Capsule())
             }
             .buttonStyle(.plain)
         }
@@ -947,7 +955,7 @@ struct AIChatPane: View {
                 }
             }
             .frame(width: 104, height: 66)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
 
             Menu {
                 Picker(L("役割"), selection: roleBinding(for: attachment)) {
@@ -965,9 +973,9 @@ struct AIChatPane: View {
             }
         }
         .padding(6)
-        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 11))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 11)
+            RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
                 .stroke(attachment.proofRole == .none ? .clear : attachment.proofRole.tint, lineWidth: 1.5)
         }
         .overlay(alignment: .topTrailing) {
@@ -977,7 +985,7 @@ struct AIChatPane: View {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
-                    .background(Circle().fill(Color(uiColor: .systemBackground)))
+                    .background(Circle().fill(Theme.Palette.surface))
             }
             .buttonStyle(.plain)
             .offset(x: 4, y: -4)
@@ -1063,7 +1071,7 @@ struct AIChatPane: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.seal.fill")
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Theme.Palette.accent)
                 Text("AI採点")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
@@ -1100,18 +1108,18 @@ struct AIChatPane: View {
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
-                    .background(canMark ? Color.accentColor : Color.secondary.opacity(0.3),
-                                in: RoundedRectangle(cornerRadius: 11))
+                    .background(canMark ? Theme.Palette.accent : Color.secondary.opacity(0.3),
+                                in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
                     .foregroundStyle(canMark ? .white : .secondary)
             }
             .buttonStyle(.plain)
             .disabled(!canMark)
         }
         .padding(12)
-        .background(Color(uiColor: .tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
+                .stroke(Theme.Palette.accent.opacity(0.35), lineWidth: 1)
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
@@ -1146,8 +1154,8 @@ struct AIChatPane: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 90)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(tint.opacity(0.35), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous).stroke(tint.opacity(0.35), lineWidth: 1))
 
                     Button {
                         snippet.wrappedValue = nil
@@ -1171,11 +1179,11 @@ struct AIChatPane: View {
                 .textFieldStyle(.plain)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 9))
+                .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(9)
-        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 11))
+        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
         .dropDestination(for: PageSnippet.self) { items, _ in
             guard let dropped = items.first else { return false }
             snippet.wrappedValue = dropped
@@ -1193,9 +1201,16 @@ struct AIChatBubble: View {
     let message: AIChatMessage
     /// `nil` where there is no page to paste onto (the home AI screen).
     let onInsertOnPage: (() -> Void)?
+    let isEditing: Bool
+    @Binding var editedText: String
+    let canEdit: Bool
+    let onBeginEditing: () -> Void
+    let onCancelEditing: () -> Void
+    let onResend: (String) -> Bool
 
     /// Follows Dynamic Type like the `.body` text it replaces.
     @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 17
+    @State private var didCopy = false
 
     var body: some View {
         if message.role == .assistant {
@@ -1218,18 +1233,92 @@ struct AIChatBubble: View {
             RAGCitationLinks(citations: message.ragCitations)
             RAGRetrievalStatusNotice(status: message.ragStatus)
         } else {
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
                 Spacer(minLength: 40)
 
-                Text(message.text)
-                    .font(.body)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 18))
-                    .frame(maxWidth: 520, alignment: .trailing)
+                VStack(alignment: .trailing, spacing: 2) {
+                    if isEditing {
+                        editPanel
+                    } else {
+                        Text(message.text)
+                            .font(.body)
+                            .foregroundStyle(Theme.Palette.onAccent)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(Theme.Palette.accent, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
+                            .accessibilityIdentifier("ai-chat-user-message")
+
+                        HStack(spacing: 0) {
+                            Button(action: copyMessage) {
+                                Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(didCopy ? Color.green : .secondary)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(didCopy ? L("コピーしました") : L("コピー"))
+                            .accessibilityIdentifier("ai-chat-copy-message")
+
+                            Button(action: onBeginEditing) {
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!canEdit)
+                            .accessibilityLabel(L("書き直す"))
+                            .accessibilityIdentifier("ai-chat-edit-message")
+                        }
+                        .frame(height: 36)
+                    }
+                }
+                .frame(maxWidth: 520, alignment: .trailing)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+
+    private var editPanel: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            TextField(L("メッセージを書き直す"), text: $editedText, axis: .vertical)
+                .lineLimit(1...10)
+                .font(.body)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+                }
+                .accessibilityIdentifier("ai-chat-edit-field")
+
+            HStack(spacing: 8) {
+                Button(L("キャンセル"), action: onCancelEditing)
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("ai-chat-edit-cancel")
+
+                Button(L("送信")) {
+                    _ = onResend(editedText)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !canEdit)
+                .accessibilityIdentifier("ai-chat-edit-send")
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func copyMessage() {
+        UIPasteboard.general.string = message.text
+        didCopy = true
+        UIAccessibility.post(notification: .announcement, argument: L("コピーしました"))
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            didCopy = false
         }
     }
 }

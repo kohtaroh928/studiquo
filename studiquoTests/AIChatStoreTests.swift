@@ -12,8 +12,15 @@ final class AIChatStoreTests: XCTestCase {
     private var storeURLs: [URL] = []
     private var provider: ScriptedAIProvider!
 
+    private var consentSuiteName = ""
+
     override func setUp() {
         super.setUp()
+        // Sending is gated on the student's AI-sharing permission; most tests
+        // are about the conversation itself, so they start out allowed.
+        consentSuiteName = "AIChatStoreTests-\(UUID().uuidString)"
+        AIDataDisclosure.defaults = UserDefaults(suiteName: consentSuiteName)!
+        AIDataDisclosure.acknowledge(ageBand: .adult)
         provider = ScriptedAIProvider()
         AI.provider = provider
         // Keep the fire-and-forget "review tomorrow" step away from the
@@ -26,6 +33,8 @@ final class AIChatStoreTests: XCTestCase {
         // still in place before it is deleted.
         try? await Task.sleep(for: .milliseconds(150))
         AI.provider = WorkerAIProvider()
+        AIDataDisclosure.defaults.removePersistentDomain(forName: consentSuiteName)
+        AIDataDisclosure.defaults = .standard
         AIReviewService.scheduleNotification = { await AIReviewNotifications.schedule(for: $0) }
         for url in storeURLs { try? FileManager.default.removeItem(at: url) }
         storeURLs = []
@@ -43,6 +52,7 @@ final class AIChatStoreTests: XCTestCase {
         let store = AIChatStore(modelContext: context)
         store.announceThread = { [weak self] in self?.announced.append($0.title) }
         store.closeThreadTab = { [weak self] _ in self?.closedTabs += 1 }
+        store.renameThreadTab = { [weak self] in self?.renamedTabs.append($0.title) }
         store.deliverCompletion = { [weak self] thread in self?.delivered.append(thread.title) }
         store.clearCompletion = { [weak self] thread in self?.cleared.append(thread.title) }
         return (store, context)
@@ -50,6 +60,7 @@ final class AIChatStoreTests: XCTestCase {
 
     private var announced: [String] = []
     private var closedTabs = 0
+    private var renamedTabs: [String] = []
     /// Titles of conversations an "answer ready" notification was sent for / taken back.
     private var delivered: [String] = []
     private var cleared: [String] = []
@@ -66,6 +77,43 @@ final class AIChatStoreTests: XCTestCase {
 
     private func settle(_ store: AIChatStore) async {
         await waitUntil("replies to finish") { store.respondingThreadIDs.isEmpty }
+    }
+
+    // MARK: Renaming
+
+    private func makeThread(_ store: AIChatStore, _ context: ModelContext, title: String) -> AIChatThread {
+        let thread = AIChatThread(title: title)
+        context.insert(thread)
+        let message = AIChatMessage(text: "q", role: .user)
+        message.thread = thread
+        thread.addMessage(message)
+        try? context.save()
+        store.loadThreads()
+        return thread
+    }
+
+    func testRenameTrimsCapsAtFiftyCharactersKeepsOrderAndRetitlesTheTab() {
+        let (store, context) = makeStore()
+        let thread = makeThread(store, context, title: "古い名前")
+        let updatedAt = thread.updatedAt
+
+        store.rename(thread, to: "  " + String(repeating: "あ", count: 80) + "  ")
+
+        XCTAssertEqual(thread.title, String(repeating: "あ", count: 50))
+        XCTAssertEqual(thread.updatedAt, updatedAt)
+        XCTAssertEqual(renamedTabs, [String(repeating: "あ", count: 50)])
+        XCTAssertEqual(store.threads.first?.title, thread.title)
+    }
+
+    func testRenameIgnoresBlankAndUnchangedNames() {
+        let (store, context) = makeStore()
+        let thread = makeThread(store, context, title: "名前")
+
+        store.rename(thread, to: "   ")
+        store.rename(thread, to: "名前")
+
+        XCTAssertEqual(thread.title, "名前")
+        XCTAssertTrue(renamedTabs.isEmpty)
     }
 
     // MARK: Sending
@@ -110,6 +158,61 @@ final class AIChatStoreTests: XCTestCase {
         XCTAssertEqual(store.threads.count, 1)
     }
 
+    func testResendAppendsTheEditedPromptWithoutConsumingTheComposer() async {
+        let (store, _) = makeStore()
+        provider.chat = { _, _, _, _, onDelta in onDelta("最初の返答") }
+        store.activeDraft = "元の質問"
+        store.send()
+        await settle(store)
+        let thread = try! XCTUnwrap(store.selectedThread)
+        let threadKey = AIChatStore.threadKey(thread)
+
+        let stagedAttachment = AIChatAttachment(name: "次に送る資料", path: "", kind: .file)
+        store.activeDraft = "入力中の下書き"
+        store.activeAttachments = [stagedAttachment]
+        store.setContextOverride("次の送信だけの文脈", forKey: threadKey)
+        var resentTurns: [AITurn] = []
+        var resentContext = "not called"
+        provider.chat = { turns, context, images, expectsImages, onDelta in
+            resentTurns = turns
+            resentContext = context
+            XCTAssertTrue(images.isEmpty)
+            XCTAssertFalse(expectsImages)
+            onDelta("書き直しへの返答")
+        }
+
+        XCTAssertTrue(store.resend("  書き直した質問  "))
+        await settle(store)
+
+        XCTAssertEqual(thread.title, "元の質問")
+        XCTAssertEqual(
+            thread.sortedMessages.map(\.text),
+            ["元の質問", "最初の返答", "書き直した質問", "書き直しへの返答"]
+        )
+        XCTAssertEqual(resentTurns.map(\.text), ["元の質問", "最初の返答", "書き直した質問"])
+        XCTAssertEqual(resentContext, "", "入力欄用の文脈を履歴の再送へ混ぜない")
+        XCTAssertEqual(store.activeDraft, "入力中の下書き")
+        XCTAssertEqual(store.activeAttachments, [stagedAttachment])
+        XCTAssertEqual(store.contextOverrides[threadKey], "次の送信だけの文脈")
+    }
+
+    func testResendIsRejectedWhileTheThreadIsResponding() async {
+        let (store, _) = makeStore()
+        provider.chat = { _, _, _, _, onDelta in
+            onDelta("途中")
+            try await Task.sleep(for: .seconds(30))
+        }
+        store.activeDraft = "元の質問"
+        store.send()
+        let thread = try! XCTUnwrap(store.selectedThread)
+
+        XCTAssertFalse(store.resend("書き直した質問"))
+        XCTAssertEqual(thread.sortedMessages.count, 2)
+
+        store.cancelResponse()
+        await settle(store)
+    }
+
     func testOnlyExplicitlySelectedContextIsSentAndOpenNoteIsExcluded() async {
         let (store, _) = makeStore()
         var seenTurns: [AITurn] = []
@@ -133,6 +236,58 @@ final class AIChatStoreTests: XCTestCase {
         XCTAssertTrue(seenTurns.first?.text.contains("- ファイル: 資料") ?? false)
         XCTAssertEqual(seenContext, "追加の文脈\n\n【資料】\n添付の中身")
         XCTAssertFalse(seenContext.contains("ページの文章"))
+    }
+
+    // MARK: Consent
+
+    func testSendWithoutPermissionAsksFirstAndKeepsTheDraft() {
+        AIDataDisclosure.revoke()
+        let (store, _) = makeStore()
+        store.activeDraft = "質問"
+
+        store.send()
+
+        XCTAssertNotNil(store.pendingConsentSend)
+        XCTAssertNil(store.selectedThread)
+        XCTAssertEqual(store.activeDraft, "質問")
+        XCTAssertEqual(provider.chatCallCount, 0)
+    }
+
+    func testAllowingSendsThePendingMessage() async {
+        AIDataDisclosure.revoke()
+        let (store, _) = makeStore()
+        provider.chat = { _, _, _, _, onDelta in onDelta("答え") }
+        store.activeDraft = "質問"
+        store.send()
+
+        store.allowPendingSend(ageBand: .adult)
+
+        XCTAssertNil(store.pendingConsentSend)
+        XCTAssertTrue(AIDataDisclosure.hasBeenAcknowledged)
+        await settle(store)
+        XCTAssertEqual(store.selectedThread?.sortedMessages.last?.text, "答え")
+    }
+
+    func testDecliningShowsTheErrorInChatAndLaterSendsDoNotAskAgain() async {
+        AIDataDisclosure.revoke()
+        AI.provider = WorkerAIProvider()
+        let (store, _) = makeStore()
+        store.activeDraft = "質問"
+        store.send()
+
+        store.declinePendingSend()
+
+        XCTAssertNil(store.pendingConsentSend)
+        XCTAssertFalse(AIDataDisclosure.hasBeenAcknowledged)
+        await settle(store)
+        let expected = WorkerAIProvider.ProviderError.consentRequired.errorDescription
+        XCTAssertEqual(store.selectedThread?.sortedMessages.last?.text, expected)
+
+        store.activeDraft = "もう一度"
+        store.send()
+        XCTAssertNil(store.pendingConsentSend)
+        await settle(store)
+        XCTAssertEqual(store.selectedThread?.sortedMessages.last?.text, expected)
     }
 
     func testBlankDraftSendsNothing() {

@@ -113,12 +113,17 @@ final class HomeMultiSelectUITests: XCTestCase {
         )
         XCTAssertTrue(selectionAction(in: app).waitForExistence(timeout: 5), "移動後に選択モードが終わっていません")
 
-        // Dismiss the native overflow menu exposed by the end-state check.
-        if app.buttons["選択"].exists {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.3)).tap()
+        // Dismiss the native overflow menu only if the end-state check left
+        // it open. A menu item has lost the toolbar button's identifier; the
+        // toolbar button itself keeps it, and tapping blindly would land on
+        // the iPad sidebar (the trash row) instead.
+        if app.buttons["選択"].exists && !app.buttons["library-selection-begin"].exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.9)).tap()
         }
-        app.buttons["library-folder-Parent"].tap()
-        app.buttons["library-folder-Parent/Destination"].tap()
+        let parentFolder = app.descendants(matching: .any)["library-folder-Parent"].firstMatch
+        XCTAssertTrue(parentFolder.waitForExistence(timeout: 5), "移動後にフォルダ「Parent」が表示されません")
+        parentFolder.tap()
+        app.descendants(matching: .any)["library-folder-Parent/Destination"].firstMatch.tap()
         XCTAssertTrue(app.descendants(matching: .any)["library-entry-Drag me"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["library-entry-Other one"].exists)
     }
@@ -175,6 +180,133 @@ final class HomeMultiSelectUITests: XCTestCase {
             "フォルダ内の資料がゴミ箱に入っていません"
         )
         XCTAssertTrue(app.descendants(matching: .any)["library-entry-Source note"].exists)
+    }
+
+    // MARK: Swipe to trash on a folder row
+
+    private func folderSurface(_ name: String, in app: XCUIApplication) -> XCUIElement {
+        let folder = app.descendants(matching: .any)["library-folder-\(name)"].firstMatch
+        XCTAssertTrue(folder.waitForExistence(timeout: 15), "フォルダ「\(name)」が表示されません")
+        return folder
+    }
+
+    func testSwipingAFolderRowLeftRevealsTheTrashButtonAndMovesTheWholeRow() {
+        let app = launch()
+        let folder = folderSurface("Sibling", in: app)
+        let restingX = folder.frame.minX
+        let trash = app.buttons["library-folder-trash-Sibling"]
+        XCTAssertFalse(trash.isHittable, "スワイプ前にゴミ箱ボタンが見えています")
+
+        folder.swipeLeft()
+
+        XCTAssertTrue(trash.waitForExistence(timeout: 3), "左スワイプでゴミ箱ボタンが出ません")
+        XCTAssertLessThan(folder.frame.minX, restingX - 40, "行の中身だけでなく、行全体が左へ動く必要があります")
+    }
+
+    func testSwipingAFolderRowRightClosesAnOpenRow() {
+        let app = launch()
+        let folder = folderSurface("Sibling", in: app)
+        let restingX = folder.frame.minX
+        folder.swipeLeft()
+        XCTAssertLessThan(folder.frame.minX, restingX - 40)
+
+        folder.swipeRight()
+
+        let closed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in abs(folder.frame.minX - restingX) < 2 },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 3), .completed, "右スワイプで行が元の位置に戻りません")
+    }
+
+    func testTappingTheSwipeTrashButtonMovesTheFolderContentsToTheTrash() {
+        let app = launch()
+        let folder = folderSurface("Parent", in: app)
+        folder.swipeLeft()
+
+        let trash = app.buttons["library-folder-trash-Parent"]
+        XCTAssertTrue(trash.waitForExistence(timeout: 3), "左スワイプでゴミ箱ボタンが出ません")
+        trash.tap()
+
+        XCTAssertFalse(
+            app.descendants(matching: .any)["library-folder-Parent"].waitForExistence(timeout: 3),
+            "ゴミ箱へ送ったフォルダが残っています"
+        )
+
+        app.buttons["ゴミ箱"].firstMatch.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["library-entry-Parent note"].waitForExistence(timeout: 5),
+            "フォルダ内の資料がゴミ箱に入っていません"
+        )
+        XCTAssertTrue(app.descendants(matching: .any)["library-entry-Source note"].exists)
+    }
+
+    func testSwipingAColumnFolderRowRevealsTheTrashButton() {
+        let app = launch(["--column-mode"])
+        let folder = folderSurface("Parent", in: app)
+        folder.swipeLeft()
+
+        let trash = app.buttons["library-folder-trash-Parent"]
+        XCTAssertTrue(trash.waitForExistence(timeout: 3), "カラム表示で左スワイプしてもゴミ箱ボタンが出ません")
+        trash.tap()
+
+        XCTAssertFalse(
+            app.descendants(matching: .any)["library-folder-Parent"].waitForExistence(timeout: 3),
+            "ゴミ箱へ送ったフォルダが残っています"
+        )
+    }
+
+    func testSwipingAColumnEntryRowRevealsTheTrashButton() {
+        let app = launch(["--column-mode"])
+        let entry = app.descendants(matching: .any)["library-entry-Drag me"].firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 15), "資料「Drag me」が表示されません")
+        entry.swipeLeft()
+
+        let trash = app.buttons["library-entry-trash-Drag me"]
+        XCTAssertTrue(trash.waitForExistence(timeout: 3), "カラム表示で資料を左スワイプしてもゴミ箱ボタンが出ません")
+        trash.tap()
+
+        XCTAssertFalse(
+            app.descendants(matching: .any)["library-entry-Drag me"].waitForExistence(timeout: 3),
+            "ゴミ箱へ送った資料が残っています"
+        )
+    }
+
+    func testSwipingAHomeEntryRowRevealsTheTrashButton() {
+        let app = launch()
+        let entry = app.descendants(matching: .any)["library-entry-Drag me"].firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 15), "資料「Drag me」が表示されません")
+        entry.swipeLeft()
+
+        let trash = app.buttons["library-entry-trash-Drag me"]
+        XCTAssertTrue(trash.waitForExistence(timeout: 3), "ホーム一覧で資料カード全体を左スワイプしてもゴミ箱ボタンが出ません")
+    }
+
+    func testLongPressingAFolderOffersMoveToTrash() {
+        let app = launch(["--icon-mode"])
+        let folder = folderSurface("Sibling", in: app)
+        folder.press(forDuration: 1.0)
+
+        let trash = app.buttons["ゴミ箱に移動"]
+        XCTAssertTrue(trash.waitForExistence(timeout: 3), "フォルダの長押しメニューに「ゴミ箱に移動」がありません")
+        trash.tap()
+
+        XCTAssertFalse(
+            app.descendants(matching: .any)["library-folder-Sibling"].waitForExistence(timeout: 3),
+            "ゴミ箱へ送ったフォルダが残っています"
+        )
+    }
+
+    func testVerticalScrollingDoesNotOpenAFolderRow() {
+        let app = launch()
+        let folder = folderSurface("Sibling", in: app)
+        let restingX = folder.frame.minX
+
+        let start = folder.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 4, dy: -80)))
+
+        XCTAssertFalse(app.buttons["library-folder-trash-Sibling"].isHittable, "縦スクロールでゴミ箱ボタンが出ています")
+        XCTAssertEqual(folder.frame.minX, restingX, accuracy: 2)
     }
 
     func testSelectionWorksInIconAndColumnModes() {
