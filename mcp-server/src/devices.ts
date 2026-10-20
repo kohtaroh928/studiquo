@@ -86,7 +86,7 @@ function booleanMap(value: unknown): Record<string, boolean> {
   return result;
 }
 
-export async function handleDeviceRoutes(url: URL, request: Request, env: Env, userKey: string, ctx: ExecutionContext) {
+export async function handleDeviceRoutes(url: URL, request: Request, env: Env, userKey: string, ctx?: ExecutionContext) {
   if (url.pathname !== "/api/chat/devices") return null;
 
   if (request.method === "POST") {

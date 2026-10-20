@@ -282,7 +282,7 @@ export async function revokeConnection(env: Env, sub: string, id: string) {
   return true;
 }
 
-export async function handleMCPOAuth(url: URL, request: Request, env: Env, ctx: ExecutionContext) {
+export async function handleMCPOAuth(url: URL, request: Request, env: Env, ctx?: ExecutionContext) {
   const origin = url.origin;
   if (url.pathname === "/.well-known/oauth-protected-resource" || url.pathname === "/.well-known/oauth-protected-resource/mcp") {
     return json({ resource: `${origin}/mcp`, authorization_servers: [origin], scopes_supported: ["studiquo.read", "studiquo.write"] });

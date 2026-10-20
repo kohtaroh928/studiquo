@@ -1,4 +1,3 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」と同じ方針(外す作業は別カード)。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compareVersions, inCpeRange } from '../src/semver.ts';
@@ -12,9 +11,9 @@ import { createClient } from '../src/http.ts';
 
 test('semver: 比較とプレリリース', () => {
   assert.equal(compareVersions('1.2.3', '1.2.3'), 0);
-  assert.ok(compareVersions('1.10.0', '1.9.9') > 0);
-  assert.ok(compareVersions('2.0.0-rc.1', '2.0.0') < 0);
-  assert.ok(compareVersions('2.0.0-rc.2', '2.0.0-rc.10') < 0);
+  assert.ok(compareVersions('1.10.0', '1.9.9')! > 0);
+  assert.ok(compareVersions('2.0.0-rc.1', '2.0.0')! < 0);
+  assert.ok(compareVersions('2.0.0-rc.2', '2.0.0-rc.10')! < 0);
   assert.equal(compareVersions('abc', '1.0.0'), null);
 });
 
@@ -138,12 +137,12 @@ test('http: 4xxは再試行せず失敗、5xxは再試行して成功', async ()
   let calls = 0;
   const flaky = createClient({
     sleep: async () => {},
-    fetchImpl: async () => (++calls < 3 ? { ok: false, status: 503 } : { ok: true, status: 200, text: async () => '{"ok":1}' }),
+    fetchImpl: async () => (++calls < 3 ? { ok: false, status: 503, text: async () => '' } : { ok: true, status: 200, text: async () => '{"ok":1}' }),
   });
   assert.deepEqual(await flaky.json('https://example.com/x'), { ok: 1 });
   assert.equal(calls, 3);
   let c2 = 0;
-  const bad = createClient({ sleep: async () => {}, fetchImpl: async () => (c2++, { ok: false, status: 404 }) });
+  const bad = createClient({ sleep: async () => {}, fetchImpl: async () => (c2++, { ok: false, status: 404, text: async () => '' }) });
   await assert.rejects(bad.json('https://example.com/y'), /HTTP 404/);
   assert.equal(c2, 1);
 });

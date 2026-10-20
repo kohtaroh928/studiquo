@@ -1,18 +1,20 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.ts";
 import { compareVersions } from "./app-errors.ts";
 import { INBOX_SCRIPT } from "./admin-inbox-ui.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
 
 // Same shape as admin.test.js's fake: a real in-memory SQLite database built
 // from the real migrations, behind the slice of D1's API the Worker uses.
 class FakeD1Statement {
-  constructor(db, sql, params = []) { this.db = db; this.sql = sql; this.params = params; }
+  db: any;
+  sql: string;
+  params: unknown[];
+  constructor(db: any, sql: string, params: unknown[] = []) { this.db = db; this.sql = sql; this.params = params; }
   bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() {
     const info = this.db.prepare(this.sql).run(...this.params);
@@ -24,8 +26,8 @@ class FakeD1Statement {
 
 function fakeD1() {
   const db = new DatabaseSync(":memory:");
-  for (const file of readdirSync(new URL("../migrations/", import.meta.url)).sort()) {
-    db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  for (const file of migrationFiles()) {
+    db.exec(readMigration(file));
   }
   return { raw: db, prepare(sql) { return new FakeD1Statement(db, sql); } };
 }
@@ -51,9 +53,9 @@ function countingCounter() {
   };
 }
 
-function environment({ appErrorLimit = 1000 } = {}) {
+function environment({ appErrorLimit = 1000 }: { appErrorLimit?: number } = {}) {
   const values = new Map();
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) {
         const value = values.get(key) ?? null;
@@ -75,15 +77,15 @@ function environment({ appErrorLimit = 1000 } = {}) {
     RATE_LIMIT_ISSUE_REPORT: fakeCloudflareLimiter(),
     SLACK_ISSUE_REPORT_WEBHOOK_URL: "https://hooks.slack.test/services/xyz",
     ...ACCESS_ENV,
-  };
+  });
 }
 
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 const freshToken = suffix => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 
-function request(path, { method = "GET", token, body, contentType } = {}) {
+function request(path, { method = "GET", token, body, contentType }: { method?: string; token?: any; body?: any; contentType?: any } = {}) {
   // /api/admin/* is verified against the Cloudflare Access login (src/access.ts).
-  const headers = path.startsWith("/api/admin/") ? { ...ACCESS_HEADERS } : {};
+  const headers: Record<string, string> = path.startsWith("/api/admin/") ? { ...ACCESS_HEADERS } : {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined || contentType) headers["content-type"] = contentType ?? "application/json";
   return new Request(`https://example.test${path}`, {
@@ -413,7 +415,7 @@ test("a report can be moved through its statuses with a note", async () => {
 test("a report that fails to mirror into D1 is still accepted", async () => {
   const env = environment();
   const token = await signedInUser(env, "alice");
-  env.ADMIN_DB = { prepare() { throw new Error("D1 is down"); } };
+  (env.ADMIN_DB as any) = { prepare() { throw new Error("D1 is down"); } };
   const originalError = console.error;
   console.error = () => {};
   try {
@@ -502,7 +504,7 @@ test("the moderation section is on the dashboard, builds the page only through t
   assert.doesNotMatch(MODERATION_SCRIPT, /innerHTML|insertAdjacentHTML|document\.write|outerHTML/);
   assert.doesNotMatch(MODERATION_SCRIPT + MODERATION_HTML, /\u0060|\$\{/);
   assert.doesNotThrow(() => new Function(MODERATION_SCRIPT));
-  const page = await worker.fetch(new Request("https://example.test/admin"), environment(), { waitUntil() {} });
+  const page = await worker.fetch(new Request("https://example.test/admin"), environment(), partialCtx({ waitUntil() {} }));
   const html = await page.text();
   assert.ok(html.includes('id="moderation"'));
   assert.ok(html.includes("mtab-reports"));
