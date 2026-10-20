@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import type { NvdCpeMatch, RankedFinding } from '../src/types.ts';
+import { partialAsset } from './fixtures.ts';
 import { compareVersions, inCpeRange } from '../src/semver.ts';
 import { cvss3BaseScore, severityLabelToScore } from '../src/cvss.ts';
 import { swiftUrlName, parseNpmLock, parseSwiftResolved, applyManual, dedupe } from '../src/inventory.ts';
@@ -47,7 +49,7 @@ test('inventory: package-lockのdevはtooling、直接依存を判別', () => {
     },
   };
   const items = parseNpmLock(lock, { dependencies: { jose: '^5' }, devDependencies: { esbuild: '^0.25' } });
-  const by = (n: any, v: any) => items.find((i) => i.name === n && i.version === v);
+  const by = (n: string, v: string) => items.find((i) => i.name === n && i.version === v)!;
   assert.equal(by('jose', '5.10.0').exposure, 'server');
   assert.equal(by('jose', '5.10.0').direct, true);
   assert.equal(by('jose', '4.0.0').direct, false); // 入れ子は間接依存
@@ -79,12 +81,12 @@ test('inventory: 同じ版がruntimeとdevの両方にあればruntimeを優先'
   assert.equal(out[0].exposure, 'server');
 });
 
-const cveWith = (cpeMatch: any) => ({ id: 'CVE-2099-0001', configurations: [{ nodes: [{ cpeMatch }] }] });
+const cveWith = (cpeMatch: NvdCpeMatch[]) => ({ id: 'CVE-2099-0001', configurations: [{ nodes: [{ cpeMatch }] }] });
 const asset = { ecosystem: 'npm', name: 'jose', version: '5.10.0' };
 
 test('nvd: vendor指定+範囲内のみ「確定」、それ以外は「要確認」、範囲外は無関係', () => {
   const hint = { products: ['jose'], vendors: ['panva'] };
-  const m = (extra: any, vendor = 'panva') => cveWith([{ vulnerable: true, criteria: `cpe:2.3:a:${vendor}:jose:*:*:*:*:*:node.js:*:*`, ...extra }]);
+  const m = (extra: { versionEndExcluding?: string; }, vendor = 'panva') => cveWith([{ vulnerable: true, criteria: `cpe:2.3:a:${vendor}:jose:*:*:*:*:*:node.js:*:*`, ...extra }]);
   assert.equal(matchCve(m({ versionEndExcluding: '5.11.0' }), asset, hint), 'affected');
   assert.equal(matchCve(m({ versionEndExcluding: '5.0.0' }), asset, hint), null);
   assert.equal(matchCve(m({}), asset, hint), 'review'); // 範囲が無い=判断不能
@@ -97,9 +99,9 @@ test('nvd: 間接依存はNVDを引かない', () => {
   assert.deepEqual(nvdHintFor({ ecosystem: 'npm', name: '@a/b', direct: true }), { keyword: 'b', products: ['b'] });
 });
 
-const fakeFetch = (routes: any) => async (url: any, init: any) => {
+const fakeFetch = (routes: [string, unknown][]) => async (url: string, init?: unknown) => {
   for (const [pat, body] of routes) {
-    if (url.includes(pat)) return { ok: true, status: 200, text: async () => JSON.stringify(typeof body === 'function' ? body(init) : body) };
+    if (url.includes(pat)) return { ok: true, status: 200, text: async () => JSON.stringify(typeof body === 'function' ? (body as (i: unknown) => unknown)(init) : body) };
   }
   return { ok: false, status: 404, text: async () => '{}' };
 };
@@ -180,8 +182,8 @@ test('merge+rank: OSVとNVDを同じCVE・資産で1件にし、KEVで最上位�
   assert.deepEqual(one.fixed, ['5.11.0']);
 
   const ranked = rank(merged, {
-    assetsByKey: new Map([[key, { exposure: 'server', sensitive: true }]]),
-    kev: new Map([['CVE-2099-1', { dueDate: '2099-01-01' }]]),
+    assetsByKey: new Map([[key, partialAsset({ exposure: 'server', sensitive: true })]]),
+    kev: new Map([['CVE-2099-1', { dueDate: '2099-01-01', ransomware: false }]]),
     epss: new Map(),
   });
   assert.equal(ranked[0].cve, 'CVE-2099-1');
@@ -193,7 +195,7 @@ test('report: 区分ごとに出力し、取得失敗は警告に出す。説明
     { tier: '緊急', score: 100, cve: 'CVE-2099-1', ids: ['CVE-2099-1'], asset: 'npm:jose@5.10.0', summary: '<script>`x`|', cvss: 9.8, cvssSource: 'NVD', epss: 0.5, kev: { dueDate: '2099-01-01' }, exposure: 'server', sensitive: true, usage: 'JWT', fixed: ['5.11.0'], sources: ['osv'], references: ['https://e.com'], status: 'confirmed' },
     { tier: '情報', score: 5, cve: 'CVE-2099-3', ids: ['CVE-2099-3'], asset: 'npm:z@1.0.0', summary: 'low', cvss: 2, cvssSource: 'NVD', epss: null, kev: null, exposure: 'tooling', fixed: null, sources: ['osv'], references: [], status: 'confirmed' },
   ];
-  const md = renderReport({ ranked, inventory: [{ ecosystem: 'npm' }], unmatchable: [{ ecosystem: 'SwiftURL', name: 'github.com/x/y', revision: 'abcdef1234567' }], sourceErrors: ['OSV: 落ちた'], generatedAt: 'T' });
+  const md = renderReport({ ranked: ranked as RankedFinding[], inventory: [partialAsset({ ecosystem: 'npm' })], unmatchable: [partialAsset({ ecosystem: 'SwiftURL', name: 'github.com/x/y', revision: 'abcdef1234567' })], sourceErrors: ['OSV: 落ちた'], generatedAt: 'T' });
   assert.match(md, /## 緊急\(1件\)/);
   assert.match(md, /CISA KEV掲載/);
   assert.match(md, /取得に失敗したデータ源/);

@@ -4,10 +4,15 @@
 
 import { inCpeRange, compareVersions } from './semver.ts';
 import { assetKey } from './osv.ts';
+import type { HttpClient } from './http.ts';
+import type { Asset, Finding, NvdCpeMatch, NvdCve, NvdHint } from './types.ts';
 
 const BASE = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
 
-export function nvdHintFor(asset: any) {
+/** 1ページ分の応答。 */
+interface NvdPage { vulnerabilities?: { cve: NvdCve & { vulnStatus?: string } }[]; resultsPerPage?: number; totalResults?: number }
+
+export function nvdHintFor(asset: Pick<Asset, 'ecosystem' | 'name' | 'direct' | 'nvd'>): NvdHint | null {
   if (asset.nvd) return asset.nvd;
   if (asset.ecosystem === 'npm' && asset.direct) {
     const base = asset.name.replace(/^@[^/]+\//, '');
@@ -16,15 +21,15 @@ export function nvdHintFor(asset: any) {
   return null; // 間接依存はOSVに任せる(NVDの全件検索は件数が多すぎる)
 }
 
-export function parseCpe(criteria: any) {
+export function parseCpe(criteria: unknown) {
   const p = String(criteria).split(':');
   return { part: p[2], vendor: p[3]?.toLowerCase(), product: p[4]?.toLowerCase(), version: p[5] };
 }
 
-const norm = (s: any) => String(s).toLowerCase().replace(/[-_]/g, '');
+const norm = (s: string) => String(s).toLowerCase().replace(/[-_]/g, '');
 
 /** 1件のCVEが資産に当たるか。'affected' | 'review' | null(無関係)を返す。 */
-export function matchCve(cve: any, asset: any, hint: any) {
+export function matchCve(cve: NvdCve, asset: Pick<Asset, 'version'> & Partial<Asset>, hint: Partial<NvdHint>) {
   const products = (hint.products ?? []).map(norm);
   const vendors = (hint.vendors ?? []).map(norm);
   let result = null;
@@ -48,25 +53,25 @@ export function matchCve(cve: any, asset: any, hint: any) {
   return result;
 }
 
-function bestScore(metrics: Record<string, any> = {}) {
+function bestScore(metrics: NvdCve['metrics'] = {}) {
   for (const k of ['cvssMetricV40', 'cvssMetricV31', 'cvssMetricV30']) {
-    const m = metrics[k]?.find((x: any) => x.type === 'Primary') ?? metrics[k]?.[0];
+    const m = metrics[k]?.find((x: { type: string; }) => x.type === 'Primary') ?? metrics[k]?.[0];
     if (m) return { cvss: m.cvssData.baseScore, cvssSource: `NVD ${k.replace('cvssMetric', 'CVSS ')}` };
   }
   return { cvss: null, cvssSource: null };
 }
 
-export async function queryNvd(client: any, assets: any, { apiKey = null as string | null } = {}) {
-  const findings = [];
+export async function queryNvd(client: HttpClient, assets: Asset[], { apiKey = null as string | null } = {}) {
+  const findings: Finding[] = [];
   const gap = apiKey ? 700 : 6500; // キー無しは30秒5件まで
-  const headers = apiKey ? { apiKey } : {};
+  const headers: Record<string, string> = apiKey ? { apiKey } : {};
   for (const asset of assets) {
     const hint = nvdHintFor(asset);
     if (!hint || !asset.version) continue;
     let start = 0;
     for (;;) {
       const url = `${BASE}?keywordSearch=${encodeURIComponent(hint.keyword)}&resultsPerPage=200&startIndex=${start}`;
-      const page = await client.json(url, { headers, minGapMs: gap });
+      const page = await client.json<NvdPage>(url, { headers, minGapMs: gap });
       for (const { cve } of page.vulnerabilities ?? []) {
         if (cve.vulnStatus === 'Rejected') continue;
         const verdict = matchCve(cve, asset, hint);
@@ -76,11 +81,11 @@ export async function queryNvd(client: any, assets: any, { apiKey = null as stri
           cve: cve.id,
           sources: ['nvd'],
           asset: assetKey(asset),
-          summary: cve.descriptions?.find((d: any) => d.lang === 'en')?.value?.split('\n')[0] ?? '',
+          summary: cve.descriptions?.find((d) => d.lang === 'en')?.value?.split('\n')[0] ?? '',
           ...bestScore(cve.metrics),
           fixed: null,
           status: verdict === 'affected' ? 'confirmed' : 'needs-review',
-          references: (cve.references ?? []).map((r: any) => r.url).slice(0, 5),
+          references: (cve.references ?? []).map((r) => r.url).slice(0, 5),
           published: cve.published ?? null,
         });
       }

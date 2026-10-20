@@ -4,7 +4,7 @@ import { checkRateLimit, clientKey } from "./rate-limit.ts";
 
 // Mirrors the real Cloudflare Rate Limiting binding's shape: an object with
 // a `limit({ key })` method resolving to `{ success: boolean }`.
-function fakeCloudflareLimiter(limit) {
+function fakeCloudflareLimiter(limit: number) {
   const counts = new Map();
   return {
     async limit({ key }) {

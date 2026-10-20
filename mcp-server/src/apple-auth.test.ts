@@ -11,7 +11,7 @@ function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
@@ -37,7 +37,7 @@ async function seedJWKS(env, jwk) {
   await env.STUDIQUO_DATA.put("apple:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signToken(privateKey, kid, { issuer = REAL_ISSUER, audience = REAL_AUDIENCE, expiresInSeconds = 600, issuedAtSecondsAgo = 0 }: { issuer?: any; audience?: any; expiresInSeconds?: number; issuedAtSecondsAgo?: number } = {}) {
+function signToken(privateKey, kid: string | undefined, { issuer = REAL_ISSUER, audience = REAL_AUDIENCE, expiresInSeconds = 600, issuedAtSecondsAgo = 0 }: { issuer?: any; audience?: any; expiresInSeconds?: number; issuedAtSecondsAgo?: number } = {}) {
   const now = Math.floor(Date.now() / 1000) - issuedAtSecondsAgo;
   return new SignJWT({ sub: "000123.abcdef.4567" })
     .setProtectedHeader({ alg: "RS256", kid })

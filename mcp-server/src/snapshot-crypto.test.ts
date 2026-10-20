@@ -82,7 +82,7 @@ test("an 8 MB snapshot seals and opens", async () => {
 // ---- Through the Worker -------------------------------------------------
 
 const noopCtx = partialCtx({ waitUntil() {} });
-const fetchApp = (env, path, options = {}) => worker.fetch(new Request(`https://example.test${path}`, options), env, noopCtx);
+const fetchApp = (env, path: string, options = {}) => worker.fetch(new Request(`https://example.test${path}`, options), env, noopCtx);
 
 function environment(extra = {}) {
   const values = new Map();
@@ -90,11 +90,11 @@ function environment(extra = {}) {
   return partialEnv({
     ttls,
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value, options) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
+      async put(key, value, options: { expirationTtl: any; }) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
       async delete(key) { values.delete(key); },
       async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
     },
@@ -104,7 +104,7 @@ function environment(extra = {}) {
   });
 }
 
-async function syncAs(env, token, sub) {
+async function syncAs(env, token: string, sub: string) {
   await env.STUDIQUO_DATA.put(`session:${hash(token)}`, JSON.stringify({ sub }));
   return fetchApp(env, "/api/snapshot", {
     method: "PUT",
@@ -113,7 +113,7 @@ async function syncAs(env, token, sub) {
   });
 }
 
-async function listNotebooks(env, token) {
+async function listNotebooks(env, token: string) {
   const response = await fetchApp(env, "/mcp", {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" },

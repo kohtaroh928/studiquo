@@ -38,9 +38,9 @@ function fakeRateCounterBinding(getData) {
   const logins = new Map();
   const seen = new Map();
   return {
-    getByName(name) {
+    getByName(name: string) {
       return {
-        async bump(limit) {
+        async bump(limit: number) {
           const used = (counts.get(name) ?? 0) + 1;
           if (used > limit) return false;
           counts.set(name, used);
@@ -49,14 +49,14 @@ function fakeRateCounterBinding(getData) {
         // Same pure transitions the real RateCounter applies; these methods
         // contain no await between read and write, so like the real object
         // each call is atomic with respect to the others.
-        async loginReserve(policy, options) {
+        async loginReserve(policy, options: { enforce?: boolean | undefined; } | undefined) {
           const result = reserveAttempt(logins.get(name), Date.now(), policy, options);
           if (result.waitSeconds === 0) logins.set(name, result.state);
           return { waitSeconds: result.waitSeconds, trusted: result.trusted };
         },
         async loginRefund(policy) { if (logins.has(name)) logins.set(name, refundAttempt(logins.get(name), policy)); },
         ...accountGenerationMethods(name, generations, getData),
-        async seenContext(key, { maxEntries, ttlSeconds }) {
+        async seenContext(key: string, { maxEntries, ttlSeconds }) {
           const result = touchSeenContext(seen.get(name), key, Date.now(), maxEntries, ttlSeconds);
           seen.set(name, result.state);
           return { isNew: result.isNew, wasEmpty: result.wasEmpty };
@@ -73,7 +73,7 @@ function environment({ strictSessions = false }: { strictSessions?: boolean } = 
   const env = partialEnv({
     _ttls: ttls,
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         let value = values.get(key) ?? null;
         // These tests aren't exercising session-authenticity enforcement
         // itself (see "requireRealSession" tests below, which pass
@@ -85,7 +85,7 @@ function environment({ strictSessions = false }: { strictSessions?: boolean } = 
         }
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value, options) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
+      async put(key, value, options: { expirationTtl: any; }) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
       async delete(key) { values.delete(key); },
       async list({ prefix }) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
@@ -110,12 +110,12 @@ const noopCtx = partialCtx({ waitUntil() {} });
 
 // Tokens are "<issued-at epoch seconds>.<random secret>"; freshToken() mints
 // one that was "just issued" so tests aren't tripped up by the expiry check.
-function freshToken(suffix) {
+function freshToken(suffix: string) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 }
 
-function request(path, { method = "GET", token, body, ip }: { method?: string; token?: any; body?: any; ip?: any } = {}) {
-  const headers: Record<string, any> = {};
+function request(path: string, { method = "GET", token, body, ip }: { method?: string; token?: string; body?: unknown; ip?: string } = {}) {
+  const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers["content-type"] = "application/json";
   if (ip) headers["cf-connecting-ip"] = ip;
@@ -126,7 +126,7 @@ function request(path, { method = "GET", token, body, ip }: { method?: string; t
   });
 }
 
-function sha256Hex(value) {
+function sha256Hex(value: string | NodeJS.ArrayBufferView<ArrayBufferLike>) {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -145,7 +145,7 @@ async function seedAppleJWKS(env, jwk) {
   await env.STUDIQUO_DATA.put("apple:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signAppleIdentityToken(privateKey, kid, { sub, email, isPrivateEmail, emailVerified, nonce }: { sub?: any; email?: any; isPrivateEmail?: any; emailVerified?: any; nonce?: any } = {}) {
+function signAppleIdentityToken(privateKey, kid: string | undefined, { sub, email, isPrivateEmail, emailVerified, nonce }: { sub?: string; email?: string; isPrivateEmail?: boolean; emailVerified?: boolean; nonce?: string } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const claims: Record<string, unknown> = { sub };
   if (nonce !== undefined) claims.nonce = nonce;
@@ -175,7 +175,7 @@ async function seedGoogleJWKS(env, jwk) {
   await env.STUDIQUO_DATA.put("google:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signGoogleIdentityToken(privateKey, kid, { sub, email, emailVerified, nonce }: { sub?: any; email?: any; emailVerified?: any; nonce?: any } = {}) {
+function signGoogleIdentityToken(privateKey, kid: string | undefined, { sub, email, emailVerified, nonce }: { sub?: string; email?: string; emailVerified?: boolean; nonce?: string } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const claims: Record<string, unknown> = { sub };
   if (nonce !== undefined) claims.nonce = nonce;
@@ -190,7 +190,7 @@ function signGoogleIdentityToken(privateKey, kid, { sub, email, emailVerified, n
     .sign(privateKey);
 }
 
-async function revokeToken(env, token) {
+async function revokeToken(env, token: string) {
   const response = await worker.fetch(request("/api/session/revoke", { method: "POST", token }), env, noopCtx);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { revoked: true });
@@ -796,7 +796,7 @@ test("POST /api/auth/email/send-code: per-email limit holds across different IPs
   const env = environment();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response("{}", { status: 200 });
-  const attempt = (ip, email = "person@example.com") => worker.fetch(
+  const attempt = (ip: string, email = "person@example.com") => worker.fetch(
     request("/api/auth/email/send-code", { method: "POST", ip, body: { email } }),
     env,
     noopCtx
@@ -825,7 +825,7 @@ test("POST /api/auth/email/confirm-code: per-email attempts persist across resen
     env,
     noopCtx
   );
-  const confirm = (ip, code) => worker.fetch(
+  const confirm = (ip: string, code: string) => worker.fetch(
     request("/api/auth/email/confirm-code", {
       method: "POST",
       ip,
@@ -860,12 +860,12 @@ test("email-code budgets: send and confirm are counted separately, per address, 
   // Each call comes from its own IP so only the per-email budget is in play.
   let ipCounter = 0;
   const nextIp = () => `203.0.113.${++ipCounter}`;
-  const send = (email) => worker.fetch(
+  const send = (email: string) => worker.fetch(
     request("/api/auth/email/send-code", { method: "POST", ip: nextIp(), body: { email } }),
     env,
     noopCtx
   );
-  const confirm = (email, code) => worker.fetch(
+  const confirm = (email: string, code: string) => worker.fetch(
     request("/api/auth/email/confirm-code", {
       method: "POST",
       ip: nextIp(),
@@ -895,7 +895,7 @@ test("POST /api/auth/email/confirm-code: a breached password is refused and the 
   const env = environment();
   // SHA-1("breached-password-1") is looked up by prefix; answer as if its suffix were in the corpus.
   const hibpCalls = [];
-  env.PWNED_PASSWORDS_FETCH = async (url) => {
+  env.PWNED_PASSWORDS_FETCH = async (url: string) => {
     hibpCalls.push(url);
     const digest = createHash("sha1").update("breached-password-1").digest("hex").toUpperCase();
     return new Response(url.endsWith(digest.slice(0, 5)) ? `${digest.slice(5)}:42\r\n` : "", { status: 200 });
@@ -903,7 +903,7 @@ test("POST /api/auth/email/confirm-code: a breached password is refused and the 
   const stub = stubResendCapturingCode();
   await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }), env, noopCtx);
   stub.restore();
-  const confirm = (password) => worker.fetch(
+  const confirm = (password: string) => worker.fetch(
     request("/api/auth/email/confirm-code", {
       method: "POST",
       body: { email: "person@example.com", code: stub.code(), password, randomValue: "r".repeat(40) },
@@ -991,7 +991,7 @@ test("local and Google sign-ins with the same verified email authenticate as one
 
 // MARK: - Local email/password login
 
-async function createLocalAccount(env, email, password) {
+async function createLocalAccount(env, email: string, password: string) {
   const stub = stubResendCapturingCode();
   await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email } }), env, noopCtx);
   stub.restore();
@@ -1007,7 +1007,7 @@ async function createLocalAccount(env, email, password) {
   return response.json();
 }
 
-async function signInAppleForTest(env, privateKey, kid, claims, randomValue = "a".repeat(40)) {
+async function signInAppleForTest(env, privateKey: { type: string; }, kid: string | undefined, claims, randomValue = "a".repeat(40)) {
   const identityToken = await signAppleIdentityToken(privateKey, kid, claims);
   const response = await worker.fetch(
     request("/api/auth/apple", { method: "POST", body: { identityToken, randomValue } }), env, noopCtx
@@ -1016,7 +1016,7 @@ async function signInAppleForTest(env, privateKey, kid, claims, randomValue = "a
   return response.json();
 }
 
-async function signInGoogleForTest(env, privateKey, kid, claims, randomValue = "g".repeat(40)) {
+async function signInGoogleForTest(env, privateKey: { type: string; }, kid: string | undefined, claims: { sub?: string; email?: string; emailVerified?: boolean; nonce?: string; } | undefined, randomValue = "g".repeat(40)) {
   const idToken = await signGoogleIdentityToken(privateKey, kid, claims);
   const response = await worker.fetch(
     request("/api/auth/google", { method: "POST", body: { idToken, randomValue } }), env, noopCtx
@@ -1025,7 +1025,7 @@ async function signInGoogleForTest(env, privateKey, kid, claims, randomValue = "
   return response.json();
 }
 
-async function localLoginForTest(env, email, password, randomValue = "l".repeat(40)) {
+async function localLoginForTest(env, email: string, password: string, randomValue = "l".repeat(40)) {
   const response = await worker.fetch(
     request("/api/auth/local/login", { method: "POST", body: { email, password, randomValue } }), env, noopCtx
   );
@@ -1243,11 +1243,11 @@ test("POST /api/auth/local/login: allows up to the limit, then 429s", async () =
 // the throttle under test ever runs; lift it so only the throttle is in play.
 function throttleEnvironment() {
   const env = environment();
-  (env.RATE_LIMIT_LOCAL_LOGIN as any) = fakeCloudflareLimiter(10_000);
+  env.RATE_LIMIT_LOCAL_LOGIN = fakeCloudflareLimiter(10_000);
   return env;
 }
 
-function loginAttempt(env, { email = "person@example.com", password = "wrong-password", ip, asn }: { email?: string; password?: string; ip?: any; asn?: any } = {}) {
+function loginAttempt(env, { email = "person@example.com", password = "wrong-password", ip, asn }: { email?: string; password?: string; ip?: string; asn?: number } = {}) {
   const req = request("/api/auth/local/login", {
     method: "POST",
     ip,
@@ -1404,7 +1404,7 @@ function collectingCtx() {
   return { waitUntil(promise) { pending.push(promise); }, flush: () => Promise.all(pending) };
 }
 
-function geoRequest(path, { cf, ip, body }) {
+function geoRequest(path: string, { cf, ip, body }) {
   const req = request(path, { method: "POST", ip, body });
   return Object.defineProperty(req, "cf", { value: cf });
 }
@@ -1437,7 +1437,7 @@ test("local login: a sign-in from a new country+network emails the owner; the ba
     }), env, partialCtx(ctx));
     await ctx.flush();
 
-    const login = async (cf, ip) => {
+    const login = async (cf: { country: string; asn: number; region: string; asOrganization: string; }, ip: string) => {
       const c = collectingCtx();
       const response = await worker.fetch(geoRequest("/api/auth/local/login", {
         cf, ip, body: { email: "person@example.com", password: "correct-horse-battery", randomValue: "l".repeat(40) },
@@ -1481,7 +1481,7 @@ test("local login: failures and throttled tries are logged as outcomes, and a br
   console.log = line => logs.push(String(line));
   console.error = () => {};
   try {
-    const attempt = async (password, ip) => {
+    const attempt = async (password: string, ip: string) => {
       const c = collectingCtx();
       const response = await worker.fetch(geoRequest("/api/auth/local/login", {
         cf, ip, body: { email: "person@example.com", password, randomValue: "l".repeat(40) },
@@ -1569,7 +1569,7 @@ test("local login: if handing the refused attempt back fails, the answer is stil
     // The attempt is reserved first and then refused for the full queue; make
     // the call that hands the reservation back fail.
     const realGetByName = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-    (env.RATE_COUNTER as any).getByName = name => {
+    env.RATE_COUNTER.getByName = name => {
       const stub = realGetByName(name);
       return { ...stub, loginRefund: async () => { throw new Error("DO down"); } };
     };
@@ -1629,7 +1629,7 @@ test("local login: with the hashing queue full, a known client still gets in whi
 
 // Fills the hashing queue (2 running, 32 waiting) with sign-ins for made-up
 // addresses, runs `during` with it full, then lets everything finish.
-async function withFullHashingQueue(env, ipPrefix, during) {
+async function withFullHashingQueue(env, ipPrefix: string, during) {
   const original = engine.argon2idAsync;
   let open;
   const gate = new Promise(resolve => { open = resolve; });
@@ -1659,7 +1659,7 @@ test("local login: a known client's wrong password in a full queue is still a co
   await createLocalAccount(env, "person@example.com", "correct-horse-battery");
   assert.equal((await loginAttempt(env, { ip: "203.0.113.92", password: "correct-horse-battery" })).status, 200);
 
-  await withFullHashingQueue(env, "10.6.0", async (open) => {
+  await withFullHashingQueue(env, "10.6.0", async (open: () => void) => {
     const wrong = loginAttempt(env, { ip: "203.0.113.92", password: "wrong-password" });
     for (let i = 0; i < 600 && argon2QueueState().waiting < 33; i++) await new Promise(resolve => setTimeout(resolve, 10));
     open();
@@ -1681,7 +1681,7 @@ test("local login: when even the reserved places are taken, a known client is tu
     assert.equal((await loginAttempt(env, { ip: `203.0.114.${i + 1}`, password: "correct-horse-battery" })).status, 200);
   }
 
-  await withFullHashingQueue(env, "10.7.0", async (open) => {
+  await withFullHashingQueue(env, "10.7.0", async (open: () => void) => {
     // They come back together and take the whole reserve.
     const reserve = Array.from({ length: 16 }, (_, i) => loginAttempt(env, { ip: `203.0.114.${i + 1}`, password: "correct-horse-battery" }));
     for (let i = 0; i < 600 && argon2QueueState().waiting < 48; i++) await new Promise(resolve => setTimeout(resolve, 10));
@@ -1791,7 +1791,7 @@ test("POST /api/issue-reports stores the report and posts it to Slack when a web
   const token = freshToken("p");
 
   let slackCall = null;
-  const restore = stubFetch(async (url, init) => {
+  const restore = stubFetch(async (url, init: { body: string; }) => {
     slackCall = { url, body: JSON.parse(init.body) };
     return new Response("ok", { status: 200 });
   });
@@ -1827,13 +1827,13 @@ function withAuditDB(env) {
   for (const file of migrationFiles()) {
     db.exec(readMigration(file));
   }
-  const statement = (sql, params = []) => ({
+  const statement = (sql: string, params = []) => ({
     bind: (...next) => statement(sql, next),
     async run() { db.prepare(sql).run(...params); return { success: true, meta: { changes: 1 } }; },
     async all() { return { results: db.prepare(sql).all(...params) }; },
     async first() { return db.prepare(sql).get(...params) ?? null; },
   });
-  (env.ADMIN_DB as any) = { prepare: sql => statement(sql) };
+  env.ADMIN_DB = { prepare: sql => statement(sql) };
   env._auditDB = db;
   return env;
 }
@@ -1847,7 +1847,7 @@ test("report screenshots require verified Access and are not sent to Slack", asy
   const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
 
   let sentImageURL = null;
-  const restore = stubFetch(async (_url, init) => {
+  const restore = stubFetch(async (_url, init: { body: string; }) => {
     const body = JSON.parse(init.body);
     sentImageURL = body.blocks.find(block => block.type === "image")?.image_url ?? null;
     return new Response("ok", { status: 200 });
@@ -1933,7 +1933,7 @@ test("a downloaded issue-report screenshot is cached only privately and only bri
   const token = freshToken("w9");
 
   let sentImageURL = null;
-  const restore = stubFetch(async (_url, init) => {
+  const restore = stubFetch(async (_url, init: { body: string; }) => {
     const body = JSON.parse(init.body);
     sentImageURL = body.blocks.find(block => block.type === "image")?.image_url ?? null;
     return new Response("ok", { status: 200 });
@@ -2227,7 +2227,7 @@ test("POST /api/auth/email/confirm-code: resetting the password signs out the se
   t.after(() => mock.timers.reset());
   mock.timers.enable({ apis: ["Date"], now: Date.now() });
   const env = environment({ strictSessions: true });
-  const confirm = async (randomValue, password) => {
+  const confirm = async (randomValue: string, password: string) => {
     const stub = stubResendCapturingCode();
     const send = await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "reset@example.com" } }), env, noopCtx);
     stub.restore();
@@ -2292,7 +2292,7 @@ test("POST /api/auth/email/confirm-code: a reset also disconnects the account's 
   t.after(() => mock.timers.reset());
   mock.timers.enable({ apis: ["Date"], now: Date.now() });
   const env = environment({ strictSessions: true });
-  const confirm = async (randomValue, password) => {
+  const confirm = async (randomValue: string, password: string) => {
     const stub = stubResendCapturingCode();
     await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "mcp-reset@example.com" } }), env, noopCtx);
     stub.restore();
@@ -2314,7 +2314,7 @@ test("POST /api/auth/email/confirm-code: a reset also disconnects the account's 
   assert.equal(await externalSession(env, request("/mcp", { token: "mcp_" + "t".repeat(40) })), null);
 });
 
-async function resetPasswordWith(env, email, password, randomValue) {
+async function resetPasswordWith(env, email: string, password: string, randomValue: string) {
   const stub = stubResendCapturingCode();
   const send = await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email } }), env, noopCtx);
   stub.restore();
@@ -2337,12 +2337,12 @@ test("POST /api/auth/email/confirm-code: a reset whose sign-out cannot be comple
 
   // The sign-out (the cut-off write) fails part-way through the reset.
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value, options) => {
     if (key.startsWith("session-valid-from:")) throw new Error("KV unavailable");
     return realPut(key, value, options);
   };
   const failed = await resetPasswordWith(env, "failclosed@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(failed.status, 503, "the person is told to try again");
   assert.equal(await env.STUDIQUO_DATA.get("account:local:failclosed@example.com"), stored,
@@ -2357,7 +2357,7 @@ test("POST /api/auth/email/confirm-code: a reset whose sign-out cannot be comple
 // reset below stop at the passkey gate. These tests are about what a reset that
 // does go through removes (the gate itself is tested in passkey-policy.test.js),
 // so by default the record is dated a day ahead: not yet counted by the gate.
-async function seedPasskey(env, email, id, userKey, createdAt = Date.now() + 24 * 60 * 60 * 1000) {
+async function seedPasskey(env, email: string, id: string, userKey: string, createdAt = Date.now() + 24 * 60 * 60 * 1000) {
   const record = { id, publicKey: [1, 2, 3], counter: 0, transports: ["internal"], email, userKey, createdAt };
   await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify(record));
   const existing = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
@@ -2417,7 +2417,7 @@ test("POST /api/auth/email/confirm-code: passkeys are found across every page of
   for (let n = 1; n <= 7; n++) await seedPasskey(env, "pk-pages@example.com", `page-passkey-${n}`, `device-${n}`);
 
   const realList = env.STUDIQUO_DATA.list;
-  (env.STUDIQUO_DATA as any).list = async ({ prefix, cursor }) => {
+  env.STUDIQUO_DATA.list = async ({ prefix, cursor }) => {
     const all = (await realList.call(env.STUDIQUO_DATA, { prefix })).keys;
     const start = cursor ? Number(cursor) : 0;
     return { keys: all.slice(start, start + 2), list_complete: start + 2 >= all.length, cursor: String(start + 2) };
@@ -2440,7 +2440,7 @@ test("POST /api/auth/email/confirm-code: a passkey registered while the new pass
   // sessions' part of the second pass then fails.
   const realPut = env.STUDIQUO_DATA.put;
   let stored = false;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value, options) => {
     if (key === "account:local:pk-window@example.com" && !stored) {
       stored = true;
       await seedPasskey(env, "pk-window@example.com", "window-passkey", "attacker-device");
@@ -2449,7 +2449,7 @@ test("POST /api/auth/email/confirm-code: a passkey registered while the new pass
     return realPut(key, value, options);
   };
   const response = await resetPasswordWith(env, "pk-window@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(response.status, 200, "the password was stored, so the reset succeeds");
   assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:window-passkey"), null,
@@ -2466,7 +2466,7 @@ test("POST /api/auth/email/confirm-code: the second passkey pass is tried again 
   const realPut = env.STUDIQUO_DATA.put;
   let stored = false;
   let failures = 0;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value, options) => {
     if (stored && key.startsWith("passkey-valid-from:") && failures < 2) { failures += 1; throw new Error("KV unavailable"); }
     if (key === "account:local:pk-retry@example.com" && !stored) {
       await seedPasskey(env, "pk-retry@example.com", "retry-passkey", "attacker-device");
@@ -2475,7 +2475,7 @@ test("POST /api/auth/email/confirm-code: the second passkey pass is tried again 
     return realPut(key, value, options);
   };
   const response = await resetPasswordWith(env, "pk-retry@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(response.status, 200);
   assert.equal(failures, 2, "two attempts failed");
@@ -2500,12 +2500,12 @@ test("POST /api/auth/email/confirm-code: a reset whose passkeys cannot be remove
   mock.timers.tick(5_000);
 
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value, options) => {
     if (key.startsWith("passkey-valid-from:")) throw new Error("KV unavailable");
     return realPut(key, value, options);
   };
   const failed = await resetPasswordWith(env, "pk-failclosed@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(failed.status, 503, "the person is told to try again");
   assert.equal(await env.STUDIQUO_DATA.get("account:local:pk-failclosed@example.com"), stored,
@@ -2551,7 +2551,7 @@ test("POST /api/auth/email/confirm-code: a sign-in made with the old password wh
   // works, so a holder of it signs in: a session issued after the first cut-off.
   let attacker = null;
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value, options) => {
     if (key === "account:local:window@example.com" && !attacker) {
       mock.timers.tick(200);
       attacker = await mintSession(env, "email:window@example.com", "a".repeat(40));
@@ -2560,7 +2560,7 @@ test("POST /api/auth/email/confirm-code: a sign-in made with the old password wh
     return realPut(key, value, options);
   };
   const reset = await resetPasswordWith(env, "window@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(reset.status, 200);
   assert.ok(attacker, "the scenario must have produced the in-window session");
@@ -2577,12 +2577,12 @@ test("POST /api/auth/email/confirm-code: a failure to store the new password is 
   mock.timers.tick(5_000);
 
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value, options) => {
     if (key === "account:local:busy@example.com") throw new Error("KV unavailable");
     return realPut(key, value, options);
   };
   const failed = await resetPasswordWith(env, "busy@example.com", "another-passphrase-1", "n".repeat(40));
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
 
   assert.equal(failed.status, 503);
   assert.equal(await env.STUDIQUO_DATA.get("account:local:busy@example.com"), stored, "the old password is untouched");
@@ -2590,13 +2590,13 @@ test("POST /api/auth/email/confirm-code: a failure to store the new password is 
 
 // --- GET /api/plan ----------------------------------------------------------
 
-function planEnvironment({ paywall = false, legacy = [] }: { paywall?: boolean; legacy?: any } = {}) {
+function planEnvironment({ paywall = false, legacy = [] }: { paywall?: boolean; legacy?: unknown[] } = {}) {
   const env = environment();
   if (paywall) env.PAYWALL_ENABLED = "true";
-  (env.ADMIN_DB as any) = {
-    prepare(sql) {
+  env.ADMIN_DB = {
+    prepare(sql: string | string[]) {
       return {
-        bind(appUserId) {
+        bind(appUserId: unknown) {
           return {
             async all() {
               if (sql.includes("legacy_standard_accounts")) {
@@ -2633,7 +2633,7 @@ test("/api/plan: a request without a token is rejected", async () => {
   assert.equal(response.status, 401);
 });
 
-function tokenIssuedDaysAgo(days, suffix) {
+function tokenIssuedDaysAgo(days: number, suffix: string) {
   return `${Math.floor(Date.now() / 1000) - days * 86_400}.${suffix.repeat(40)}`;
 }
 
@@ -2841,7 +2841,7 @@ function fakeLibraryRegistry() {
   };
 }
 
-async function libraryID(env, token) {
+async function libraryID(env, token: string) {
   const response = await worker.fetch(request("/api/account/library-id", { token }), env, noopCtx);
   return { status: response.status, body: await response.json() };
 }
@@ -2915,7 +2915,7 @@ test("without the registry nothing is handed out, and the library id needs a sig
 const nonceHash = nonce => createHash("sha256").update(nonce).digest("hex");
 const RAW_NONCE = "n".repeat(10) + "0123456789abcdefghijklmnopqrstuv";
 
-async function providerFixture(provider) {
+async function providerFixture(provider: string) {
   const env = environment();
   const keys = provider === "apple" ? await makeAppleSigningKey() : await makeGoogleSigningKey();
   await (provider === "apple" ? seedAppleJWKS : seedGoogleJWKS)(env, keys.jwk);
@@ -2997,10 +2997,10 @@ for (const provider of ["apple", "google"]) {
   test(`${provider}: each outcome of the nonce check is logged as one line, with no secret in it`, async () => {
     const { env, sign, exchange } = await providerFixture(provider);
     // This test signs in more often than the per-minute limit of the real endpoint.
-    (env.RATE_LIMIT_APPLE_AUTH as any) = fakeCloudflareLimiter(10_000);
-    (env.RATE_LIMIT_GOOGLE_AUTH as any) = fakeCloudflareLimiter(10_000);
+    env.RATE_LIMIT_APPLE_AUTH = fakeCloudflareLimiter(10_000);
+    env.RATE_LIMIT_GOOGLE_AUTH = fakeCloudflareLimiter(10_000);
     const strict = { ...env, REQUIRE_ID_TOKEN_NONCE: "true" };
-    const nonce = (letter) => letter.repeat(10) + "0123456789abcdefghijklmnopqrstuv";
+    const nonce = (letter: string) => letter.repeat(10) + "0123456789abcdefghijklmnopqrstuv";
     const cases = [
       ["verified", async () => exchange(await sign({ nonce: nonceHash(nonce("v")) }), { nonce: nonce("v") })],
       ["absent", async () => exchange(await sign({}), {})],

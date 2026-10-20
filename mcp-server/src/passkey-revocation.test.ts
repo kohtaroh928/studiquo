@@ -11,8 +11,8 @@ function kv() {
   const lists = [];
   return {
     values, lists,
-    async get(key, type?) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
-    async put(key, value) { values.set(key, value); },
+    async get(key: string, type?: string | undefined) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+    async put(key: string, value: string) { values.set(key, value); },
     async delete(key) { values.delete(key); },
     async list({ prefix, cursor }) {
       lists.push(prefix);
@@ -79,7 +79,7 @@ test("while the list does not yet cover older passkeys, the reset still finds th
   await env.STUDIQUO_DATA.put("passkeys:user:dev-a", JSON.stringify([record]));
   const realList = env.STUDIQUO_DATA.list;
   let calls = 0;
-  (env.STUDIQUO_DATA as any).list = async options => {
+  env.STUDIQUO_DATA.list = async options => {
     // The catch-up reads one page and stops short of finishing.
     if (options.prefix === "passkeys:credential:" && calls++ === 0) return { keys: [], list_complete: false, cursor: "c" };
     return realList.call(env.STUDIQUO_DATA, options);
@@ -114,7 +114,7 @@ test("the reset time is written again after the sweep", async () => {
   const env = { STUDIQUO_DATA: kv() };
   const writes = [];
   const put = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value) => { if (key.startsWith("passkey-valid-from:")) writes.push(key); return put.call(env.STUDIQUO_DATA, key, value); };
+  env.STUDIQUO_DATA.put = async (key, value) => { if (key.startsWith("passkey-valid-from:")) writes.push(key); return put.call(env.STUDIQUO_DATA, key, value); };
   await revokePasskeysForAccount(partialEnv(env), { accountKey: "email:a@example.com", emails: ["a@example.com"] });
   assert.ok(writes.length >= 2 && new Set(writes).size < writes.length, "each key written at the start and again at the end");
 });

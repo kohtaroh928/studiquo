@@ -9,7 +9,7 @@ function makeEnv() {
   const puts = [];
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const raw = store.get(key) ?? null;
         return type === "json" && raw ? JSON.parse(raw) : raw;
       },

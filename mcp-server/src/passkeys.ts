@@ -73,11 +73,11 @@ async function keysWithPrefix(env: Env, prefix: string) {
 // Throws when it cannot finish, leaving the caller to stop the reset rather
 // than carry on with a passkey that still works. It reads only this account's
 // passkeys (the per-account list), so the cost does not grow with the service.
-export async function revokePasskeysForAccount(env: Env, { accountKey, emails = [] }: any) {
-  const wanted: string[] = [...new Set<string>(emails.map((email: any) => String(email).trim().toLowerCase()).filter(Boolean))];
+export async function revokePasskeysForAccount(env: Env, { accountKey, emails = [] }: { accountKey?: string | null; emails?: unknown[] }) {
+  const wanted: string[] = [...new Set<string>(emails.map((email) => String(email).trim().toLowerCase()).filter(Boolean))];
   // Nothing registered before this moment counts any more, whether or not the
   // sweeps below find it (see passkeyRevokedByReset).
-  const keys = new Set();
+  const keys = new Set<string>();
   if (accountKey) for (const key of await passkeyAccountKeys(env, accountKey, null)) keys.add(key);
   for (const email of wanted) for (const key of await passkeyAccountKeys(env, accountKey || `email:${email}`, email)) keys.add(key);
   await setPasskeyValidFrom(env, [...keys]);
@@ -120,7 +120,7 @@ export async function revokePasskeysForAccount(env: Env, { accountKey, emails = 
 }
 
 // The original sweep, kept for the time before the per-account list is complete.
-async function scanAndRevoke(env: Env, { accountKey, wanted }: any) {
+async function scanAndRevoke(env: Env, { accountKey, wanted }: { accountKey?: string | null; wanted: string[] }) {
   const emails = new Set(wanted);
   const owners = new Map();
   const belongs = async (item: PasskeyRecord | null) => {

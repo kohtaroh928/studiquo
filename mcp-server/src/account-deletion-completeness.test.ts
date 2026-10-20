@@ -21,7 +21,7 @@ function roomSql() {
   const db = new DatabaseSync(":memory:");
   db.exec(DOCUMENT_ROOM_SCHEMA);
   const sql = {
-    exec(query, ...params) {
+    exec(query: string, ...params) {
       const statement = db.prepare(query);
       const returnsRows = /^\s*SELECT/i.test(query) || /RETURNING/i.test(query);
       const rows = returnsRows ? statement.all(...params) : (statement.run(...params), []);
@@ -31,7 +31,7 @@ function roomSql() {
   return { db, sql };
 }
 
-function seedRoom(sql, members, { changes = [] }: { changes?: any } = {}) {
+function seedRoom(sql: { exec: any; }, members: string[][], { changes = [] }: { changes?: any } = {}) {
   for (const [key, role] of members) sql.exec("INSERT INTO participants (user_key, role) VALUES (?, ?)", key, role);
   sql.exec("INSERT INTO blocks (block_order, kind, text) VALUES (0, 'paragraph', '本文')");
   for (const [author, status] of changes) {
@@ -42,7 +42,7 @@ function seedRoom(sql, members, { changes = [] }: { changes?: any } = {}) {
   }
 }
 
-const count = (db, table) => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
+const count = (db, table: string) => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
 
 test("purging a room erases its text, proposals and members, and reports who was in it", () => {
   const { db, sql } = roomSql();
@@ -142,8 +142,8 @@ function sqlBackedRooms() {
           return { blocks: sql.exec("SELECT * FROM blocks").toArray(), pendingChanges: [] };
         },
         async roleOf(userKey) { return sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray()[0]?.role ?? null; },
-        async ownerMembers(userKey) { return membersIfOwner(sql, userKey); },
-        async removeAccount(userKey) { return removeAccountData(sql, userKey); },
+        async ownerMembers(userKey: string) { return membersIfOwner(sql, userKey); },
+        async removeAccount(userKey: string) { return removeAccountData(sql, userKey); },
         // Test helper standing in for the propose route.
         _propose(userKey, text) {
           sql.exec(
@@ -161,7 +161,7 @@ function sqlBackedRooms() {
 // Chat gives each account a key that does not change between sign-ins. Like the
 // real registry: settled on first use, and equal to the token-derived key only
 // when a chat user already exists under it, otherwise derived from the account.
-function fakeRegistry(values) {
+function fakeRegistry(values: Map<any,any>) {
   const keys = new Map();
   return {
     getByName(identityHash) {
@@ -185,7 +185,7 @@ function environment() {
   const puts = [];
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
@@ -209,7 +209,7 @@ let nextToken = 1;
 
 // A signed-in session for `sub`: the token the app would hold, and the server
 // side session row that makes it real.
-async function signIn(env, sub, { ageSeconds = 0 }: { ageSeconds?: number } = {}) {
+async function signIn(env, sub: string, { ageSeconds = 0 }: { ageSeconds?: number } = {}) {
   const issuedAt = Math.floor(Date.now() / 1000) - ageSeconds;
   const token = `${issuedAt}.${String(nextToken++).padStart(4, "0").repeat(10)}`;
   const tokenHash = await sha256Hex(token);
@@ -217,7 +217,7 @@ async function signIn(env, sub, { ageSeconds = 0 }: { ageSeconds?: number } = {}
   return { token, tokenHash };
 }
 
-function call(env, path, { method = "GET", token, body }: { method?: string; token?: any; body?: any } = {}) {
+function call(env, path: string, { method = "GET", token, body }: { method?: string; token?: string; body?: unknown } = {}) {
   const headers = { authorization: `Bearer ${token}` };
   if (body !== undefined) headers["content-type"] = "application/json";
   return worker.fetch(
@@ -227,12 +227,12 @@ function call(env, path, { method = "GET", token, body }: { method?: string; tok
 }
 
 const ROOM = "b".repeat(64);
-const initRoom = (env, token) => call(env, `/api/document/rooms/${ROOM}/init`, { method: "POST", token, body: { blocks: [] } });
-const roomState = (env, token) => call(env, `/api/document/rooms/${ROOM}/state`, { token });
+const initRoom = (env, token: string) => call(env, `/api/document/rooms/${ROOM}/init`, { method: "POST", token, body: { blocks: [] } });
+const roomState = (env, token: string) => call(env, `/api/document/rooms/${ROOM}/state`, { token });
 
 // Gives `sub` a friend code the way chat registration does, under the account's
 // stable chat key.
-async function registerFriend(env, session, sub, code) {
+async function registerFriend(env, session: { token?: string; tokenHash: any; }, sub: string, code: string) {
   const identityHash = await sha256Hex(`chat-account:${sub}`);
   const key = await env.USER_REGISTRY.getByName(identityHash).resolveChatKey(identityHash, session.tokenHash);
   env._values.set(`chat:code:${code}`, key);
@@ -327,7 +327,7 @@ test("deletion that failed part-way finishes when it is run again", async () => 
 
   const rooms = env.DOCUMENT_ROOM;
   let fail = true;
-  (env.DOCUMENT_ROOM as any) = {
+  env.DOCUMENT_ROOM = {
     getByName(id) {
       const room = rooms.getByName(id);
       return { ...room, async removeAccount(userKey) { if (fail) throw new Error("storage hiccup"); return room.removeAccount(userKey); } };
@@ -352,11 +352,11 @@ test("deleting an account that is in no room touches no room", async () => {
   assert.equal((await roomState(env, alice.token)).status, 200);
 });
 
-const initRoomById = (env, token, roomID) =>
+const initRoomById = (env, token: string, roomID) =>
   call(env, `/api/document/rooms/${roomID}/init`, { method: "POST", token, body: { blocks: [] } });
 const roomIdNumber = n => n.toString(16).padStart(64, "0");
 
-async function stableKey(env, sub, tokenHash) {
+async function stableKey(env, sub: string, tokenHash: string) {
   const identityHash = await sha256Hex(`chat-account:${sub}`);
   return env.USER_REGISTRY.getByName(identityHash).resolveChatKey(identityHash, tokenHash);
 }
@@ -385,7 +385,7 @@ test("a room whose index write failed at creation is still found when the client
 
   const put = env.STUDIQUO_DATA.put;
   let failOnce = true;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value, options) => {
     if (failOnce && key.startsWith("doc-room:")) { failOnce = false; throw new Error("kv unavailable"); }
     return put(key, value, options);
   };
@@ -421,7 +421,7 @@ test("the other members' entries are dropped before the room is erased, so no re
 
   const rooms = env.DOCUMENT_ROOM;
   let fail = true;
-  (env.DOCUMENT_ROOM as any) = {
+  env.DOCUMENT_ROOM = {
     getByName(id) {
       const room = rooms.getByName(id);
       return { ...room, async removeAccount(userKey) { if (fail) throw new Error("cut short"); return room.removeAccount(userKey); } };
@@ -445,7 +445,7 @@ test("one room that cannot be removed does not stop the others", async () => {
 
   const rooms = env.DOCUMENT_ROOM;
   let broken = true;
-  (env.DOCUMENT_ROOM as any) = {
+  env.DOCUMENT_ROOM = {
     getByName(id) {
       const room = rooms.getByName(id);
       if (id !== roomIdNumber(2)) return room;

@@ -22,7 +22,7 @@ function environment(extra = {}) {
     reads: 0,
     values,
     STUDIQUO_DATA: {
-      async get(key, type) { env.reads += 1; const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async get(key, type: string) { env.reads += 1; const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
       async list() { return { keys: [], list_complete: true }; },
@@ -33,7 +33,7 @@ function environment(extra = {}) {
   return env;
 }
 
-const call = (env, path, { method = "GET", token, body, headers = {} }: { method?: string; token?: string; body?: BodyInit; headers?: Record<string, string> } = {}) => worker.fetch(new Request(`https://example.test${path}`, {
+const call = (env, path: string, { method = "GET", token, body, headers = {} }: { method?: string; token?: string; body?: BodyInit; headers?: Record<string, string> } = {}) => worker.fetch(new Request(`https://example.test${path}`, {
   method, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers }, body,
 }), env, noopCtx);
 
@@ -180,7 +180,7 @@ test("renewing a login hands back a signed token", async () => {
 function oauthEnvironment(extra = {}) {
   const env = environment({
     RATE_LIMIT_MCP_TOKEN: { async limit() { return { success: true }; } },
-    MCP_INBOX: { getByName() { const used = new Set(); return { async consumeOnce(id) { if (used.has(id)) return false; used.add(id); return true; } }; } },
+    MCP_INBOX: { getByName() { const used = new Set(); return { async consumeOnce(id: unknown) { if (used.has(id)) return false; used.add(id); return true; } }; } },
     ...extra,
   });
   return env;

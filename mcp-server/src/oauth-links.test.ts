@@ -7,7 +7,7 @@ function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value as string) : value;
       },
@@ -96,7 +96,7 @@ const REF_EMAIL_LINK_PREFIX = "email-accounts:";
 const REF_EMAIL_OWNER_PREFIX = "email-account-owner:";
 const REF_IDENTITY_CANONICAL_PREFIX = "identity-canonical:";
 const REF_MAX_LINKED_IDENTITIES = 10;
-function refIdentityKey(identity) {
+function refIdentityKey(identity: { provider: any; sub: any; }) {
   if (identity.provider === "google") return `google:${identity.sub}`;
   if (identity.provider === "email") return `email:${identity.sub}`;
   return identity.sub;
@@ -133,7 +133,7 @@ function countingEnvironment(seed = {}) {
     stats,
     values,
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         stats.gets += 1;
         if (stats.inFlightGets === 0) stats.readRounds += 1;   // a read that starts with none in flight begins a new round
         stats.inFlightGets += 1;
@@ -143,8 +143,8 @@ function countingEnvironment(seed = {}) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value as string) : value;
       },
-      async put(key, value) { stats.puts += 1; stats.putKeys.push(key); await pause(); values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: unknown) { stats.puts += 1; stats.putKeys.push(key); await pause(); values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
   });
 }
@@ -228,7 +228,7 @@ test("an unverified or missing email does no KV work at all", async () => {
 });
 
 // A tiny seeded generator, so a failure can be reproduced.
-function makeRandom(seed) {
+function makeRandom(seed: number) {
   let state = seed >>> 0;
   return () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 2 ** 32; };
 }
@@ -365,7 +365,7 @@ test("differential, long histories on one address (reaches the ten-identity limi
 test("if the link-list write fails, nothing after it is written (the original order is kept for anything that changes the index)", async () => {
   const env = countingEnvironment();
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value) => {
+  env.STUDIQUO_DATA.put = async (key: string, value) => {
     if (key.startsWith("email-accounts:")) throw new Error("KV write failed");
     return realPut(key, value);
   };
@@ -379,7 +379,7 @@ test("an identity that is already linked but whose owner record is missing is ha
   // The owner shows up between the first read and the decision: the later read must win.
   const realGet = env.STUDIQUO_DATA.get;
   let ownerReads = 0;
-  (env.STUDIQUO_DATA as any).get = async (key, type) => {
+  env.STUDIQUO_DATA.get = async (key: string, type) => {
     if (key === "email-account-owner:person@example.com") {
       ownerReads += 1;
       if (ownerReads >= 2) return "google:somebody-else";
@@ -397,7 +397,7 @@ test("the common case never takes the slow path: no second read of the list or t
   await linkVerifiedEmail(env, apple);
   const reads = [];
   const realGet = env.STUDIQUO_DATA.get;
-  (env.STUDIQUO_DATA as any).get = async (key, type) => { reads.push(key); return realGet(key, type); };
+  env.STUDIQUO_DATA.get = async (key, type) => { reads.push(key); return realGet(key, type); };
   await linkVerifiedEmail(env, apple);
   assert.equal(reads.filter(key => key === "email-accounts:person@example.com").length, 1);
   assert.equal(reads.filter(key => key === "email-account-owner:person@example.com").length, 1);

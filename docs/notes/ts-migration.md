@@ -48,14 +48,16 @@
   - 実装側の型を、実装が既に許していたとおりに直した: `handleDeviceRoutes` `handleMCPOAuth` の `ctx`、`handleAI` の `session` `plan` を省略可能に(いずれも本体が省略を許す書き方)。
   - vuln-watch は `http.ts` に `FetchLike` を足して、テストの偽の `fetch` を型で表した。
   - テスト 1060 件(通過 1059、スキップ 1)は変更前と同じ。`src` を型除去して比べると、実行時の差はない。
-- `any` の置き換え: `name: any` の引数 324 か所のうち、使われ方から推論した単純な型(`string` `number` `Uint8Array` `string | null` など)を、`tsc`(`src` とテストの両方)が通るものだけ採用した(約215か所)。推論とふるい分けは作業用の道具で行った(リポジトリには入れていない)。残る `src` の `any` は約126か所(コメントを除く)。残る形: 保存された記録(`login-throttle` の状態など)、JSON の本体、SQL の行、`{ a, b }: any` の分割代入、`unknown` にすると呼び出し側が通らない所。型を付けるときは、実際に保存・送信される値を確かめる(下の `AttestRecord.publicKey` の例)。
+- `any` の置き換え(2026-10-20〜21): 明示の `any` は `src`(mcp-server)で 1 か所、vuln-watch と DAST で 0 か所、テストで約 13 か所(型を付けると検査の意味が変わる偽物など)になった。やり方は、使われ方から推論した型を `tsc` が通るものだけ採用する(作業用の道具で一括)ことと、残りを手で型付けすること。手で付けた主な型: `ThrottleState`/`ThrottlePolicy`/`LoginAttempt`(ログイン試行の制限)、`CborValue`/`Certificate`(App Attest)、`CreditRequest`(AI の利用枠)、`AnnouncementRow`、`StudyStats`/`BlockedContact`/`SnapshotNotebook`(records.ts)、vuln-watch の `Finding`/`RankedFinding`/`TriageItem`/`State`/`OsvVuln`/`NvdCve`/`JvnItem`、DAST の `ScanSummary`。外部から来た JSON を検証する関数(`validateOp` `sanitize*` `parseAnnouncement` `normalize` など)は引数を `unknown` にして、読む項目を疑ったまま取り出す。
+- 残した `any`: `src/http.ts` の `readJSONLimited` の戻り値。40 か所を超える呼び出し元が、信用しない本体から期待する項目を読んで検証している。`unknown` にすると各呼び出し元に同じ型の断定を足すだけになるため、JSON の境界としてコメント付きで残した。テストの約 13 か所は、偽の D1 の呼び出し、`Record<string, any>`(偽物の引数の束)など。
+- テストの strict: `alwaysStrict` `noImplicitThis` `strictBindCallApply` `strictFunctionTypes` `useUnknownInCatchVariables` は有効にした。`noImplicitAny`(約 1,500 件)と `strictNullChecks`(約 490 件)は、偽の Env や補助関数の引数に型を付ける作業が大きく、まだ無効。推論で約 410 か所の引数に型を足した(1,913 件→1,493 件)。残りは偽物の形そのものに型を付ける手作業になる。
 
 ## フェーズ6(strict 化)の結果
 
 - `mcp-server/tsconfig.json` は `allowJs: false`・`strict: true`(`src` のテスト以外)。`Env` の添字シグネチャ(`[name: string]: unknown`)も外した。使っている変数・バインディングは全て `env.ts` に載っている。
 - 型を後付けしたとき、実行時の挙動を変えないことを優先した。`!`(非 null 表明)と `as` は型を消すと何も残らない。値を変える書き換えは次の2つだけ(結果は同じ): `.filter(Boolean)` を `.filter(plan => Boolean(plan))` に、`const { iterations } = record` を `const iterations = record.iterations` に。
 - 具体的な型を付けにくかった所は、暗黙の any を `: any` として明示した(当初約600か所。2026-10-20 の置き換えで `src` は約126か所)。新しいコードで暗黙の any は出せないが、この `any` は具体的な型へ直していく(Notion の別カード)。
-- テスト(`*.test.ts`)は `tsconfig.test.json` で `strict: false` のまま(`@ts-nocheck` は無くなった)。strict にするのは別カード。
+- テスト(`*.test.ts`)は `tsconfig.test.json` で `strict: false` のまま、一部の strict 検査だけ有効(上)。`@ts-nocheck` は無くなった。
 - 型を付けたとき、`AttestRecord.publicKey` を `Uint8Array` と誤って書いていたのを `string`(base64url)に直した。フェーズ3のレビューでも見つからなかった例なので、`any` を具体的な型にするときは実際に保存・送信される値を確かめる。
 
 ## 他のフォルダ(`mcp-server` 以外)

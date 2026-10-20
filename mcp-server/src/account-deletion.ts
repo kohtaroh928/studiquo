@@ -145,9 +145,9 @@ export async function deleteAccount(env: Env, canonicalSub: string) {
     const activeGeneration = previousState.generation;
     // Counts decide when both sides have one; the clock comparison remains
     // for markers and jobs written before the count existed.
-    const isRequestedSince = (job: any) => Number.isFinite(job?.generation) && Number.isFinite(activeGeneration)
-      ? job.generation === activeGeneration
-      : Number.isFinite(startedAt) ? job?.requestedAt >= (startedAt as number) : true;
+    const isRequestedSince = (job: Partial<DeletionJob> | null) => Number.isFinite(job?.generation) && Number.isFinite(activeGeneration)
+      ? job!.generation === activeGeneration
+      : Number.isFinite(startedAt) ? (job?.requestedAt as number) >= (startedAt as number) : true;
     let job = await env.STUDIQUO_DATA.get<DeletionJob>(jobKey, "json");
     if (!isRequestedSince(job)) {
       // Read once more before clearing: the person may have asked to delete
@@ -274,7 +274,7 @@ export async function deleteAccount(env: Env, canonicalSub: string) {
   // have dropped some), every record is read as before.
   const ownedCredentialKeys = [];
   const ownedPasskeyUserKeys = [];
-  const listKeys = new Set();
+  const listKeys = new Set<string>();
   for (const identity of new Set([...identityKeys, canonicalSub])) for (const key of await passkeyAccountKeys(env, identity, null)) listKeys.add(key);
   for (const email of emails) for (const key of await passkeyAccountKeys(env, `email:${String(email).trim().toLowerCase()}`, email)) listKeys.add(key);
   const listed = (await passkeyIndexComplete(env)) ? await indexedPasskeyIds(env, [...listKeys]) : null;

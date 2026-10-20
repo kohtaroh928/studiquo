@@ -86,7 +86,7 @@ function registryEnvironment() {
   return partialEnv({
     values,
     STUDIQUO_DATA: {
-      async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
       async put(key, value) { values.set(key, value); },
     },
   });
@@ -112,7 +112,7 @@ test("an account that already has a 7-character code keeps it", async () => {
 
 // ---- Maintenance mode and the minimum build ------------------------------------
 
-const gate = (path, { env = {}, userAgent }: { env?: any; userAgent?: string } = {}) =>
+const gate = (path: string, { env = {}, userAgent }: { env?: Record<string, unknown>; userAgent?: string } = {}) =>
   appGateRejection(new Request(`https://example.test${path}`, { headers: userAgent ? { "user-agent": userAgent } : {} }), partialEnv(env), new URL(`https://example.test${path}`));
 
 test("with both switches unset nothing is turned away", () => {
@@ -169,7 +169,7 @@ test("the gate runs in front of the whole Worker", async () => {
 const urlOf = "https://example.test/api/admin/x";
 
 test("isCrossSiteWrite refuses another origin or a cross-site fetch, and lets reads and origin-less calls through", () => {
-  const req = (method, headers = {}) => new Request(urlOf, { method, headers });
+  const req = (method: string, headers = {}) => new Request(urlOf, { method, headers });
   const url = new URL(urlOf);
   assert.equal(isCrossSiteWrite(req("POST", { origin: "https://evil.example" }), url), true);
   assert.equal(isCrossSiteWrite(req("DELETE", { "sec-fetch-site": "cross-site" }), url), true);
@@ -201,7 +201,7 @@ function sessionEnvironment(extra = {}) {
   return partialEnv({
     values,
     STUDIQUO_DATA: {
-      async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
       async list() { return { keys: [], list_complete: true }; },
@@ -220,7 +220,7 @@ async function sessionAged(env, { tokenAgeDays, originAgeDays, withOrigin = true
   return token;
 }
 
-const refresh = (env, token) => worker.fetch(new Request("https://example.test/api/session/refresh", {
+const refresh = (env, token: string) => worker.fetch(new Request("https://example.test/api/session/refresh", {
   method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
   body: JSON.stringify({ randomValue: "n".repeat(40) }),
 }), env, noopCtx);

@@ -26,16 +26,16 @@ const MAX_NEW_PROBLEMS_PER_DAY = 20;
 const KINDS = new Set(["crash", "hang", "cpu", "disk", "error"]);
 const KIND_LABELS: Record<string, string> = { crash: "クラッシュ", hang: "フリーズ", cpu: "CPU過負荷", disk: "ディスク書き込み過多", error: "エラー" };
 
-function truncate(value: string | unknown[], max: number) {
+function truncate(value: unknown, max: number) {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 
 // "1.4.0 (23)" -> [1, 4, 0, 23]. Missing parts compare as 0.
-export function versionParts(version: {}) {
+export function versionParts(version: unknown) {
   return (String(version ?? "").match(/\d+/g) ?? []).map(Number);
 }
 
-export function compareVersions(a: any, b: {}) {
+export function compareVersions(a: unknown, b: unknown) {
   const left = versionParts(a);
   const right = versionParts(b);
   const length = Math.max(left.length, right.length);
@@ -46,7 +46,9 @@ export function compareVersions(a: any, b: {}) {
   return 0;
 }
 
-function describeContext(error: { appVersion: unknown; osVersion: unknown; deviceModel: unknown; }) {
+type Context = { appVersion: unknown; osVersion: unknown; deviceModel: unknown };
+
+function describeContext(error: Context) {
   return [
     error.appVersion && `v${error.appVersion}`,
     error.osVersion && `iOS ${error.osVersion}`,
@@ -54,7 +56,7 @@ function describeContext(error: { appVersion: unknown; osVersion: unknown; devic
   ].filter(Boolean).join(" ・ ");
 }
 
-async function notify(env: Env, origin: string, outcome: string, row: any, error: { appVersion: unknown; osVersion: unknown; deviceModel: unknown; }) {
+async function notify(env: Env, origin: string, outcome: string, row: { kind: string; title: string }, error: Context) {
   const label = KIND_LABELS[row.kind] ?? "エラー";
   const headline = outcome === "new" ? `🆕 新しい${label}` : `🔁 ${label}が再発`;
   await postSlackBlocks(env, [
@@ -70,7 +72,7 @@ async function notify(env: Env, origin: string, outcome: string, row: any, error
 // whether it is worth a Slack message: only a first sighting and a
 // regression are — a problem that is already known and open, or that only
 // old builds still hit, stays quiet.
-async function recordOccurrence(env: Env, fingerprint: unknown, error: any, userKey: string, now: number) {
+async function recordOccurrence(env: Env, fingerprint: string, error: NormalizedError, userKey: string, now: number) {
   const existing = await env.ADMIN_DB.prepare(
     `SELECT status, resolved_after_version, last_seen_at, last_app_version FROM app_errors WHERE fingerprint = ?`
   ).bind(fingerprint).first();
@@ -120,18 +122,22 @@ async function recordOccurrence(env: Env, fingerprint: unknown, error: any, user
   return reopens ? "reopened" : null;
 }
 
-async function recordAffectedUser(env: Env, fingerprint: unknown, userKey: string) {
+async function recordAffectedUser(env: Env, fingerprint: string, userKey: string) {
   await env.ADMIN_DB.prepare(`INSERT INTO app_error_users (fingerprint, user_key, last_seen_at) VALUES (?, ?, ?)
     ON CONFLICT(fingerprint, user_key) DO UPDATE SET last_seen_at = excluded.last_seen_at`)
     .bind(fingerprint, userKey, Date.now()).run();
 }
 
-function normalize(raw: any, defaults: { appVersion: unknown; osVersion: unknown; deviceModel: unknown; }, now: number) {
-  if (!raw || typeof raw !== "object") return null;
+export type NormalizedError = NonNullable<ReturnType<typeof normalize>>;
+
+function normalize(input: unknown, defaults: Context, now: number) {
+  if (!input || typeof input !== "object") return null;
+  // One entry of a device's report: each member is checked or clamped below.
+  const raw = input as Record<string, unknown>;
   const signature = truncate(raw.signature, 500).trim();
   const title = truncate(raw.title, 200).trim();
   if (!signature || !title) return null;
-  const kind = KINDS.has(raw.kind) ? raw.kind : "error";
+  const kind = KINDS.has(raw.kind as string) ? (raw.kind as string) : "error";
   const count = Math.min(MAX_COUNT, Math.max(1, Math.floor(Number(raw.count)) || 1));
   // The device's clock can be wrong; never accept a time in the future.
   const occurredAt = Math.min(now, Number.isFinite(Number(raw.occurredAt)) && Number(raw.occurredAt) > 0 ? Number(raw.occurredAt) : now);
@@ -172,7 +178,7 @@ export async function handleAppErrors(url: URL, request: Request, env: Env) {
     osVersion: truncate(body.osVersion, 40),
     deviceModel: truncate(body.deviceModel, 60),
   };
-  const errors = body.errors.slice(0, MAX_ERRORS_PER_REQUEST).map((raw: any) => normalize(raw, defaults, now)).filter(Boolean);
+  const errors = body.errors.slice(0, MAX_ERRORS_PER_REQUEST).map((raw: unknown) => normalize(raw, defaults, now)).filter((entry: NormalizedError | null): entry is NormalizedError => entry !== null);
   // Same account hash as usage_events, so deleting the account removes it too.
   const userKey = await sha256Hex(`usage-account:${session.sub}`);
 

@@ -41,12 +41,12 @@ export async function retryRevenueCatDeletion(env: Env, key: string, job: { iden
   return true;
 }
 
-async function processJobs(env: Env, prefix: string, callback: any, limit = 10) {
+async function processJobs<Job>(env: Env, prefix: string, callback: (key: string, job: Job) => Promise<unknown>, limit = 10) {
   const cursorKey = `privacy-cursor:${prefix}`;
   const cursor = await env.STUDIQUO_DATA.get(cursorKey) || undefined;
   const page = await env.STUDIQUO_DATA.list({ prefix, limit, cursor });
   for (const key of page.keys) {
-    const job = await env.STUDIQUO_DATA.get(key.name, "json");
+    const job = await env.STUDIQUO_DATA.get<Job>(key.name, "json");
     if (!job) continue;
     try { await callback(key.name, job); }
     catch { console.error(JSON.stringify({ message: "privacy deletion retry failed", kind: prefix })); }
@@ -68,7 +68,7 @@ async function processJobs(env: Env, prefix: string, callback: any, limit = 10) 
 export async function processPendingDeletions(env: Env, fetcher = fetch, { limit = 10 } = {}) {
   // Import lazily to avoid a module cycle with deleteAccount's shared helpers.
   const { deleteAccount } = await import("./account-deletion.ts");
-  await processJobs(env, "privacy-account-delete:", async (_key: any, job: { canonicalSub: string; }) => deleteAccount(env, job.canonicalSub), limit);
+  await processJobs(env, "privacy-account-delete:", async (_key: string, job: { canonicalSub: string; }) => deleteAccount(env, job.canonicalSub), limit);
   // Without the provider secret every attempt fails, so skip the pass: it
   // would only spend subrequests and keep cycling the same jobs. Say so when
   // jobs are waiting, so queued erasures don't pile up unnoticed.

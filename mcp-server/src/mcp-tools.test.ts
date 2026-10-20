@@ -57,7 +57,7 @@ function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
@@ -76,14 +76,14 @@ function environment() {
 
 const noopCtx = partialCtx({ waitUntil() {} });
 
-function freshDeviceToken(suffix) {
+function freshDeviceToken(suffix: string) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(64)}`;
 }
 
-const fetchApp = (env, path, options = {}) =>
+const fetchApp = (env, path: string, options = {}) =>
   worker.fetch(new Request(`https://example.test${path}`, options), env, noopCtx);
 
-async function signIn(env, deviceToken, sub) {
+async function signIn(env, deviceToken: string, sub: string) {
   await env.STUDIQUO_DATA.put(`session:${hash(deviceToken)}`, JSON.stringify({ sub }));
 }
 
@@ -92,7 +92,7 @@ async function signIn(env, deviceToken, sub) {
 // access token — the same sequence mcp-oauth.test.js's one big test
 // performs inline, pulled out here so each test below can ask for exactly
 // the scope it needs.
-async function pairMCPClient(env, deviceToken, { scope }: { scope?: any } = {}) {
+async function pairMCPClient(env, deviceToken: string, { scope }: { scope?: string } = {}) {
   const redirectUri = "https://claude.example/callback";
   const registered = await fetchApp(env, "/oauth/register", {
     method: "POST",
@@ -134,7 +134,7 @@ async function pairMCPClient(env, deviceToken, { scope }: { scope?: any } = {}) 
   return access_token;
 }
 
-async function callTool(env, accessToken, name, args) {
+async function callTool(env, accessToken: string, name: string, args) {
   const response = await fetchApp(env, "/mcp", {
     method: "POST",
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
@@ -173,7 +173,7 @@ test("a device connection with no paired MCP account queues writes locally inste
   // paired-account shape ({ id, status: "pending" }) — no MCP_INBOX id at all.
   assert.deepEqual(value, { queued: true, deckTitle: "英単語", cardCount: 1 });
 
-  const queued: any = await env.STUDIQUO_DATA.get(`actions:${hash(deviceToken)}`, "json");
+  const queued = await env.STUDIQUO_DATA.get(`actions:${hash(deviceToken)}`, "json");
   assert.equal(queued.length, 1);
   assert.equal(queued[0].type, "create_flashcards");
 });

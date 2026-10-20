@@ -55,7 +55,7 @@ export function creditCost(kind: string, modelId: string) {
 const JST_OFFSET_MS = 9 * 3_600_000;
 const pad = (n: number) => String(n).padStart(2, "0");
 
-function windowsFor(accountHash: any, now: number) {
+function windowsFor(accountHash: string, now: number) {
   const jst = new Date(now + JST_OFFSET_MS);
   const month = `${jst.getUTCFullYear()}${pad(jst.getUTCMonth() + 1)}`;
   const day = `${month}${pad(jst.getUTCDate())}`;
@@ -90,7 +90,22 @@ export async function accountCounterKey(sub: string | undefined, fallback: strin
  * the first limit that was hit ("global" for the service-wide one). `refund()`
  * hands the credits back, for a call that fails before producing anything.
  */
-export async function consumeCredits(env: Env, { accountKey, plan, kind, model, globalBucket, globalLimit, now = Date.now() }: any) {
+/** What one call asks of the credit windows. */
+export interface CreditRequest {
+  accountKey: string;
+  plan: string;
+  /** The feature (`chat`, `rubric`, ...). */
+  kind: string;
+  model: string;
+  globalBucket: string;
+  globalLimit: number;
+  now?: number;
+}
+
+/** `ok: true` carries `refund`; `ok: false` carries the `window` that refused. (One shape, not a union: the test program is not strict, and does not narrow a union.) */
+export interface CreditResult { ok: boolean; window?: string; refund?: () => Promise<void> }
+
+export async function consumeCredits(env: Env, { accountKey, plan, kind, model, globalBucket, globalLimit, now = Date.now() }: CreditRequest): Promise<CreditResult> {
   const budget = PLAN_BUDGETS[plan] ?? PLAN_BUDGETS.free;
   const cost = creditCost(kind, model);
   const taken: { name: string; amount: number; windowEndsAt: number }[] = [];
@@ -126,7 +141,7 @@ export async function consumeCredits(env: Env, { accountKey, plan, kind, model, 
  * month), without spending anything — the figure the app shows as "remaining".
  * The per-minute window is a burst guard, not an allowance, so it is skipped.
  */
-export async function creditUsage(env: Env, { accountKey, plan, now = Date.now() }: any) {
+export async function creditUsage(env: Env, { accountKey, plan, now = Date.now() }: Pick<CreditRequest, "accountKey" | "plan" | "now">) {
   const budget = PLAN_BUDGETS[plan] ?? PLAN_BUDGETS.free;
   let tightest = null;
   for (const window of windowsFor(accountKey, now)) {

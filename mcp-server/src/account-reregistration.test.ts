@@ -16,7 +16,7 @@ function environment(extra = {}) {
   const db = new DatabaseSync(":memory:");
   for (const name of readdirSync(new URL("../migrations/", import.meta.url) as any).sort()) db.exec(readFileSync(new URL(`../migrations/${name}`, import.meta.url) as any, "utf8"));
   const values = new Map();
-  const statement = (sql, params = []) => ({
+  const statement = (sql: string, params = []) => ({
     bind(...args) { return statement(sql, args); },
     async run() { return { success: true, meta: db.prepare(sql).run(...params) }; },
     async all() { return { results: db.prepare(sql).all(...params) }; },
@@ -27,7 +27,7 @@ function environment(extra = {}) {
     RATE_LIMIT_ADMIN_WEBHOOK: { async limit() { return { success: true }; } },
     ADMIN_DB: { prepare: statement },
     STUDIQUO_DATA: {
-      async get(key, type) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
+      async get(key, type: string) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
       async list({ prefix, limit = 1000 }) { const keys = [...values.keys()].filter(key => key.startsWith(prefix)).slice(0, limit); return { keys: keys.map(name => ({ name })), list_complete: true }; },
@@ -44,7 +44,7 @@ const stateKey = async identity => `account-deletion:${await sha256Hex(identity)
 
 // Signs in as `identity`, gives the account some data that deletion must erase,
 // and returns the session token.
-async function signInWithData(env, identity, marker) {
+async function signInWithData(env, identity: string, marker: string) {
   const token = await mintSession(env, identity, RANDOM + marker);
   assert.ok(token, "sign-in should succeed");
   // Snapshots are stored under the hash of the session token that uploaded them.
@@ -148,9 +148,9 @@ test("N1: a leftover cleanup job cannot erase an account created after the delet
   // the person is told the cleanup is pending and the job stays queued.
   const realDelete = env.STUDIQUO_DATA.delete;
   const jobKeyName = `privacy-account-delete:${await sha256Hex(identity)}`;
-  (env.STUDIQUO_DATA as any).delete = async key => { if (key === jobKeyName) throw new Error("temporary storage outage"); return realDelete(key); };
+  env.STUDIQUO_DATA.delete = async key => { if (key === jobKeyName) throw new Error("temporary storage outage"); return realDelete(key); };
   assert.deepEqual(await startAccountDeletion(env, identity), { deleted: false, cleanupPending: true });
-  (env.STUDIQUO_DATA as any).delete = realDelete;
+  env.STUDIQUO_DATA.delete = realDelete;
   assert.equal(env._values.has(jobKeyName), true, "the leftover job is still queued");
   assert.equal(JSON.parse(env._values.get(await stateKey(identity))).status, "deleted");
 
@@ -185,8 +185,8 @@ test("an ordinary sign-in performs no KV writes besides the session", async () =
   const env = environment();
   const writes = [];
   const { put, delete: del } = env.STUDIQUO_DATA;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => { writes.push(["put", key]); return put(key, value, options); };
-  (env.STUDIQUO_DATA as any).delete = async key => { writes.push(["delete", key]); return del(key); };
+  env.STUDIQUO_DATA.put = async (key, value, options) => { writes.push(["put", key]); return put(key, value, options); };
+  env.STUDIQUO_DATA.delete = async key => { writes.push(["delete", key]); return del(key); };
   assert.ok(await mintSession(env, "apple:ordinary", RANDOM));
   assert.deepEqual(writes.map(([kind]) => kind), ["put"]);
   assert.match(writes[0][1], /^session:/);
@@ -197,9 +197,9 @@ test("H2: pending deletions finish even while the automatic retention flag is of
   const identity = "apple:cleanup-pending";
   await signInWithData(env, identity, "life");
   const original = env.ADMIN_DB.prepare;
-  (env.ADMIN_DB as any).prepare = () => ({ bind() { return { async run() { throw new Error("temporary storage outage"); } }; } });
+  env.ADMIN_DB.prepare = () => ({ bind() { return { async run() { throw new Error("temporary storage outage"); } }; } });
   assert.deepEqual(await startAccountDeletion(env, identity), { deleted: false, cleanupPending: true });
-  (env.ADMIN_DB as any).prepare = original;
+  env.ADMIN_DB.prepare = original;
   assert.equal(await mintSession(env, identity, RANDOM + "stuck"), null, "stuck mid-deletion, sign-in is refused");
 
   // runPrivacyRetention is gated by the flag, so it does nothing...
@@ -262,9 +262,9 @@ test("M1: a retry that read the old job just before the person came back leaves 
   const jobName = `privacy-account-delete:${await sha256Hex(identity)}`;
   // The deletion finishes, but removing its job fails: the job stays queued.
   const realDelete = env.STUDIQUO_DATA.delete;
-  (env.STUDIQUO_DATA as any).delete = async key => { if (key === jobName) throw new Error("temporary storage outage"); return realDelete(key); };
+  env.STUDIQUO_DATA.delete = async key => { if (key === jobName) throw new Error("temporary storage outage"); return realDelete(key); };
   await startAccountDeletion(env, identity);
-  (env.STUDIQUO_DATA as any).delete = realDelete;
+  env.STUDIQUO_DATA.delete = realDelete;
   const jobRead = JSON.parse(env._values.get(jobName)); // what a cron run has just read
 
   // The person signs in again, then the cron run carries on with what it read.
@@ -337,7 +337,7 @@ test("M1: a request made while a leftover is being cleared is not lost", async (
   env._values.set(jobName, JSON.stringify({ canonicalSub: identity, requestedAt: 1 }));
   const realGet = env.STUDIQUO_DATA.get;
   let jobReads = 0;
-  (env.STUDIQUO_DATA as any).get = async (key, type) => {
+  env.STUDIQUO_DATA.get = async (key: string, type) => {
     if (key === jobName && ++jobReads === 2) env._values.set(jobName, JSON.stringify({ canonicalSub: identity, requestedAt: Date.now() + 1000 }));
     return realGet(key, type);
   };
@@ -374,12 +374,12 @@ test("N4: queued provider deletions without a secret are reported, and only then
 
 // --- H3: a customer who deletes the account and comes back can subscribe again ---
 
-async function webhook(env, event) {
+async function webhook(env, event: { id: string; app_user_id: string; type: string; product_id?: string; aliases?: string[]; }) {
   const url = new URL("https://test.example/api/admin/revenuecat-webhook");
   const request = new Request(url, { method: "POST", headers: { authorization: "test-secret", "content-type": "application/json" }, body: JSON.stringify({ event: { event_timestamp_ms: Date.now(), ...event } }) });
   return (await handleAdminWebhook(url, request, env)).json();
 }
-const subscriberRows = (env, appUserId) => env._db.prepare("SELECT status FROM subscribers WHERE app_user_id = ?").all(appUserId).map(row => row.status);
+const subscriberRows = (env, appUserId: string) => env._db.prepare("SELECT status FROM subscribers WHERE app_user_id = ?").all(appUserId).map(row => row.status);
 
 test("H3: after coming back, a purchase by the same customer is recorded again", async () => {
   const env = environment();
@@ -430,7 +430,7 @@ test("H3: if the record cannot be cleared, sign-in still works and the next sign
   await signInWithData(env, identity, "first-life");
   await startAccountDeletion(env, identity);
   const realPrepare = env.ADMIN_DB.prepare;
-  (env.ADMIN_DB as any).prepare = sql => sql.includes("DELETE FROM privacy_deleted_customers") ? { bind() { return { async run() { throw new Error("temporary storage outage"); } }; } } : realPrepare(sql);
+  env.ADMIN_DB.prepare = sql => sql.includes("DELETE FROM privacy_deleted_customers") ? { bind() { return { async run() { throw new Error("temporary storage outage"); } }; } } : realPrepare(sql);
   const errors = [];
   const realError = console.error;
   console.error = message => errors.push(message);
@@ -446,7 +446,7 @@ test("H3: if the record cannot be cleared, sign-in still works and the next sign
   assert.equal(pending.pendingCustomerClear.length, 1, "what could not be cleared is remembered");
   assert.deepEqual(await webhook(env, { id: "still-ignored", app_user_id: identity, type: "RENEWAL" }), { received: true, ignored: true });
 
-  (env.ADMIN_DB as any).prepare = realPrepare;
+  env.ADMIN_DB.prepare = realPrepare;
   assert.ok(await mintSession(env, identity, RANDOM + "healthy"));
   const settled = JSON.parse(env._values.get(await stateKey(identity)));
   assert.equal(settled.status, "active");
@@ -461,11 +461,11 @@ test("H3 M-1: while the provider records cannot be cleared, the person can still
   await signInWithData(env, identity, "first-life");
   await startAccountDeletion(env, identity);
   const realPrepare = env.ADMIN_DB.prepare;
-  (env.ADMIN_DB as any).prepare = sql => sql.includes("DELETE FROM privacy_deleted_customers") ? { bind() { return { async run() { throw new Error("temporary storage outage"); } }; } } : realPrepare(sql);
+  env.ADMIN_DB.prepare = sql => sql.includes("DELETE FROM privacy_deleted_customers") ? { bind() { return { async run() { throw new Error("temporary storage outage"); } }; } } : realPrepare(sql);
   const realError = console.error; console.error = () => {};
   let token;
   try { token = await signInWithData(env, identity, "second-life"); } finally { console.error = realError; }
-  (env.ADMIN_DB as any).prepare = realPrepare;
+  env.ADMIN_DB.prepare = realPrepare;
 
   assert.deepEqual(await startAccountDeletion(env, identity), { deleted: true, externalDeletionPending: true });
   assert.equal(env._values.has("account:apple:outage-then-delete"), false, "the new account is really erased");
@@ -480,9 +480,9 @@ test("H3 M-2: alias markers are written before the canonical one, so a cut-short
   await signInWithData(env, canonical, "life");
   const aliasStateKey = await stateKey(alias);
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => { if (key === aliasStateKey) throw new Error("temporary storage outage"); return realPut(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key: string, value, options) => { if (key === aliasStateKey) throw new Error("temporary storage outage"); return realPut(key, value, options); };
   assert.deepEqual(await startAccountDeletion(env, canonical), { deleted: false, cleanupPending: true });
-  (env.STUDIQUO_DATA as any).put = realPut;
+  env.STUDIQUO_DATA.put = realPut;
   assert.equal(JSON.parse(env._values.get(await stateKey(canonical))).status, "deleting", "not finished, so it will be retried");
   assert.ok(env._values.has(`privacy-account-delete:${await sha256Hex(canonical)}`));
 
@@ -526,9 +526,9 @@ test("M2: while an account is being deleted, signing in through one of its other
   env._values.set(`identity-canonical:${canonical}`, canonical);
   await signInWithData(env, canonical, "life");
   const original = env.ADMIN_DB.prepare;
-  (env.ADMIN_DB as any).prepare = () => ({ bind() { return { async run() { throw new Error("temporary storage outage"); } }; } });
+  env.ADMIN_DB.prepare = () => ({ bind() { return { async run() { throw new Error("temporary storage outage"); } }; } });
   assert.deepEqual(await startAccountDeletion(env, canonical), { deleted: false, cleanupPending: true });
-  (env.ADMIN_DB as any).prepare = original;
+  env.ADMIN_DB.prepare = original;
 
   assert.deepEqual(JSON.parse(env._values.get(await stateKey(alias))), { status: "deleting", of: canonical });
   assert.equal(await mintSession(env, alias, RANDOM + "too-early"), null, "the alias cannot slip through mid-deletion");

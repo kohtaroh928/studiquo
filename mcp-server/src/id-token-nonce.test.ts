@@ -10,7 +10,7 @@ function makeEnv({ requireNonce = "false" }: { requireNonce?: string } = {}) {
   return partialEnv({
     REQUIRE_ID_TOKEN_NONCE: requireNonce,
     RATE_COUNTER: {
-      getByName(name) {
+      getByName(name: unknown) {
         return {
           async bump(limit, windowSeconds) {
             ttlRecorded.set(name, { limit, windowSeconds });

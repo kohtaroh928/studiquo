@@ -244,10 +244,10 @@ async function sessionCutoff(env: Env, identityKey: string) {
  * second. An older record that only has whole seconds is judged as a whole
  * second, and one with no issue time at all can't be shown to be newer.
  */
-export function sessionIsBeforeCutoff(session: any, cutoff: number) {
+export function sessionIsBeforeCutoff(session: Pick<SessionRecord, "issuedAt" | "issuedAtMs">, cutoff: number) {
   if (!cutoff) return false;
-  if (Number.isFinite(session.issuedAtMs)) return session.issuedAtMs < cutoff;
-  if (Number.isFinite(session.issuedAt)) return (session.issuedAt + 1) * 1000 <= cutoff;
+  if (Number.isFinite(session.issuedAtMs)) return (session.issuedAtMs as number) < cutoff;
+  if (Number.isFinite(session.issuedAt)) return ((session.issuedAt as number) + 1) * 1000 <= cutoff;
   return true;
 }
 

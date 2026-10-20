@@ -8,7 +8,7 @@ function counters() {
     used,
     getByName(name) {
       return {
-        async take(limit, _seconds, amount = 1) {
+        async take(limit: number, _seconds, amount = 1) {
           const next = (used.get(name) ?? 0) + amount;
           if (next > limit) return { ok: false };
           used.set(name, next);
@@ -48,7 +48,7 @@ test("the published budgets are what the Worker enforces", () => {
 
 // Clears the minute / 5-hour / day counters between calls so only the month
 // window is being tested.
-async function spendUntilStopped(env, options, limit = 5000) {
+async function spendUntilStopped(env: { RATE_COUNTER: any; }, options: {} | undefined, limit = 5000) {
   let ok = 0;
   for (let i = 0; i < limit; i += 1) {
     for (const name of [...env.RATE_COUNTER.used.keys()]) if (!name.includes(":mon:") && !name.startsWith("ai:global:")) env.RATE_COUNTER.used.delete(name);
@@ -165,7 +165,7 @@ test("a refund still returns the other windows when one give throws", async () =
   const env = { RATE_COUNTER: counters() };
   const result = await call(env, { plan: "pro", model: "claude-opus-5-5" });
   const real = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-  env.RATE_COUNTER.getByName = name => name.startsWith("ai:cr:5h:")
+  (env.RATE_COUNTER as { getByName: (name: string) => unknown }).getByName = (name: string) => name.startsWith("ai:cr:5h:")
     ? { async give() { throw new Error("boom"); } }
     : real(name);
   await result.refund(); // must not throw

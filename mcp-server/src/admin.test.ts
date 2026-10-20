@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { PRODUCT_BILLING_MONTHS } from "./admin.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
@@ -10,10 +10,10 @@ import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-en
 // file, so tests run against the real schema) in the shape D1 exposes to a
 // Worker: prepare(sql).bind(...params).run()/.all()/.first().
 class FakeD1Statement {
-  db: any;
+  db: DatabaseSync;
   sql: string;
-  params: unknown[];
-  constructor(db: any, sql: string, params: unknown[] = []) {
+  params: SQLInputValue[];
+  constructor(db: DatabaseSync, sql: string, params: SQLInputValue[] = []) {
     this.db = db;
     this.sql = sql;
     this.params = params;
@@ -36,7 +36,7 @@ function fakeD1() {
   for (const file of migrationFiles()) {
     db.exec(readMigration(file));
   }
-  return { prepare(sql) { return new FakeD1Statement(db, sql); } };
+  return { prepare(sql: string) { return new FakeD1Statement(db, sql); } };
 }
 
 function fakeCloudflareLimiter(limit = 1000) {
@@ -56,7 +56,7 @@ function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
@@ -81,11 +81,11 @@ function environment() {
 
 const noopCtx = partialCtx({ waitUntil() {} });
 
-function freshToken(suffix) {
+function freshToken(suffix: string) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 }
 
-function request(path, { method = "GET", token, body, authorization }: { method?: string; token?: any; body?: any; authorization?: any } = {}) {
+function request(path: string, { method = "GET", token, body, authorization }: { method?: string; token?: string; body?: unknown; authorization?: string } = {}) {
   // The admin routes sit behind a verified Cloudflare Access login (src/access.ts);
   // RevenueCat's webhook is the one exception and authenticates by secret.
   const headers: Record<string, string> = path.startsWith("/api/admin/") && path !== "/api/admin/revenuecat-webhook" ? { ...ACCESS_HEADERS } : {};
@@ -97,7 +97,7 @@ function request(path, { method = "GET", token, body, authorization }: { method?
   });
 }
 
-async function seedSession(env, token, sub) {
+async function seedSession(env, token: string | NodeJS.ArrayBufferView<ArrayBufferLike>, sub: string) {
   const { createHash } = await import("node:crypto");
   const key = createHash("sha256").update(token).digest("hex");
   await env.STUDIQUO_DATA.put(`session:${key}`, JSON.stringify({ sub, issuedAt: Math.floor(Date.now() / 1000) }));
@@ -368,7 +368,7 @@ test("account count deduplicates linked identities but keeps unrelated ones sepa
 
 test("the issue report count is the reports still open, not everything ever filed", async () => {
   const env = environment();
-  const insert = (id, status) => env.ADMIN_DB.prepare(
+  const insert = (id: string, status: string) => env.ADMIN_DB.prepare(
     `INSERT INTO issue_reports (id, reporter_key, description, status, created_at, updated_at) VALUES (?, 'k', 'd', ?, 1, 1)`
   ).bind(id, status).run();
   await insert("report-open", "open");
@@ -393,7 +393,7 @@ test("MCP connection count reflects mcp:grant: entries in KV", async () => {
 
 test("the webhook endpoint is rate-limited", async () => {
   const env = environment();
-  (env.RATE_LIMIT_ADMIN_WEBHOOK as any) = fakeCloudflareLimiter(3);
+  env.RATE_LIMIT_ADMIN_WEBHOOK = fakeCloudflareLimiter(3);
   let last;
   for (let i = 0; i < 4; i += 1) {
     last = await sendWebhook(env, purchaseEvent({ id: crypto.randomUUID() }));
@@ -432,7 +432,7 @@ test("every /api/admin/* route except RevenueCat's webhook needs a verified Acce
 
 // --- PRODUCT_CHANGE: which product the subscriber is on afterwards ----------
 
-async function subscriberProduct(env, appUserId) {
+async function subscriberProduct(env, appUserId: string) {
   const row = await env.ADMIN_DB.prepare("SELECT product_id FROM subscribers WHERE app_user_id = ?").bind(appUserId).first();
   return row?.product_id;
 }

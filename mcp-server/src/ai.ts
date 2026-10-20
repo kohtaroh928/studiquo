@@ -12,7 +12,8 @@
  * response schema, and the app only supplies content.
  */
 
-import { consumeCredits, creditUsage, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES } from "./ai-credits.ts";
+import { consumeCredits, creditUsage, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES, type CreditRequest } from "./ai-credits.ts";
+import type { SessionRecord } from "./records.ts";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { takeParsedBody } from "./ai-body.ts";
 import { sendPush } from "./push.ts";
@@ -144,7 +145,7 @@ const DAY_SECONDS = 86_400;
  * when the upstream refuses before producing anything. `kind` is the feature, `model` the
  * model that will answer.
  */
-async function creditGate(env: Env, { account, plan, kind, model, globalBucket, globalLimit }: any) {
+async function creditGate(env: Env, { account, plan, kind, model, globalBucket, globalLimit }: Omit<CreditRequest, "accountKey" | "now"> & { account: string }) {
   const result = await consumeCredits(env, { accountKey: account, plan, kind, model, globalBucket, globalLimit });
   if (result.ok) return { response: null, refund: result.refund! };
   const response = json({ error: LIMIT_MESSAGES[result.window!], code: "ai_limit", window: result.window }, 429);
@@ -157,7 +158,7 @@ async function creditGate(env: Env, { account, plan, kind, model, globalBucket, 
  * screening is a call to the provider, and an account that is over its limits
  * must be refused without costing one). A rejection hands the credits back.
  */
-async function moderateOrRefund(env: Env, gate: any, texts: any) {
+async function moderateOrRefund(env: Env, gate: { refund: () => Promise<void> }, texts: string[]) {
   const blocked = await moderationRejection(env, texts);
   if (!blocked) return null;
   await gate.refund();
@@ -204,12 +205,12 @@ const CHAT_SYSTEM = `あなたは学習アプリ「Studiquo」に組み込まれ
  * to parse regardless of which provider's full event envelope it came
  * from.
  */
-async function handleChat(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string | number, account: any) {
+async function handleChat(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
   const turns = Array.isArray(payload?.messages) ? payload.messages : [];
   if (turns.length === 0) return json({ error: "messages is required." }, 400);
   const requestedImages = Array.isArray(payload?.images)
-    ? payload.images.map((image: any) => String(image ?? "")).filter(Boolean).slice(0, 4)
+    ? payload.images.map((image: unknown) => String(image ?? "")).filter(Boolean).slice(0, 4)
     : [];
   const images = requestedImages.filter(isPNGBase64);
   const requiresImage = payload?.requiresImage === true;
@@ -319,7 +320,7 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
  * runtime cancelled it. Here the buffer is an ordinary local and the
  * response is returned immediately while the pump runs behind it.
  */
-function streamNormalizedText(upstream: Response, extractText: any, ctx: ExecutionContext, env: Env, key: string, extraHeaders = {}, refund = async () => {}) {
+function streamNormalizedText(upstream: Response, extractText: (event: unknown) => string, ctx: ExecutionContext, env: Env, key: string, extraHeaders = {}, refund = async () => {}) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
@@ -527,7 +528,7 @@ const GRADE_SCHEMA = {
   required: ["score", "maxScore", "verdict", "criteria", "issues"],
 };
 
-async function handleRubric(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: any, account: any) {
+async function handleRubric(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 20_000);
   const modelAnswer = String(payload?.modelAnswer ?? "").trim().slice(0, 30_000);
@@ -581,7 +582,20 @@ async function handleRubric(request: Request, env: Env, key: string, ctx: Execut
  * last event. It also gives the app something real to show a student who is
  * watching a spinner.
  */
-function streamJSON(env: Env, { refund = async () => {}, model, account, systemInstruction, parts, responseSchema, schemaName, maxOutputTokens, failureMessage }: any, ctx: ExecutionContext) {
+/** One structured-output call for streamJSON. */
+interface StreamJSONOptions {
+  refund?: () => Promise<void>;
+  model: string;
+  account: string;
+  systemInstruction: string;
+  parts: { image?: string; text?: unknown }[];
+  responseSchema: unknown;
+  schemaName: string;
+  maxOutputTokens: number;
+  failureMessage: string;
+}
+
+function streamJSON(env: Env, { refund = async () => {}, model, account, systemInstruction, parts, responseSchema, schemaName, maxOutputTokens, failureMessage }: StreamJSONOptions, ctx: ExecutionContext) {
   const { readable, writable } = new TransformStream();
 
   const pump = (async () => {
@@ -685,7 +699,7 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
   });
 }
 
-async function handleGrade(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: any, account: any) {
+async function handleGrade(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 20_000);
   const answerText = String(payload?.answerText ?? "").trim().slice(0, 30_000);
@@ -783,7 +797,7 @@ const REVIEW_SCHEMA = {
   required: ["isStudyRelevant", "explanationMarkdown", "quiz"],
 };
 
-async function handleReview(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: any, account: any) {
+async function handleReview(request: Request, env: Env, key: string, ctx: ExecutionContext, plan: string, account: string) {
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 4_000);
   if (!question) return json({ error: "question is required." }, 400);
@@ -845,7 +859,7 @@ export function subscriptionRequiredResponse(plan: string, url: URL, request: Re
   return json({ error: "AI機能のご利用にはStandard以上のプランが必要です。", code: "subscription_required" }, 402);
 }
 
-export async function handleAI(url: URL, request: Request, env: Env, key: string, ctx: ExecutionContext, session?: any, plan?: string) {
+export async function handleAI(url: URL, request: Request, env: Env, key: string, ctx: ExecutionContext, session?: Pick<SessionRecord, "sub"> | null, plan?: string) {
   const effectivePlan = plan ?? "standard";
   // Read-only: what is left of the tightest window, for the usage header. Costs nothing.
   if (url.pathname === "/api/ai/usage" && request.method === "GET") {

@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./env.ts";
 import { takeFrom, giveTo, type CounterState } from "./counter-state.ts";
 import { reserveAttempt, refundAttempt, trustPair, trustExpiryMs } from "./login-throttle.ts";
+import type { ThrottlePolicy, ThrottleState } from "./login-throttle.ts";
 import { touchSeenContext } from "./login-monitor.ts";
 
 // One instance per counted key (an AI usage bucket, a document-collab
@@ -80,26 +81,26 @@ export class RateCounter extends DurableObject<Env> {
   // transitions; this object serialises access to them, which is what makes
   // "check the wait, then count the attempt" one atomic step). A name is
   // used either for bump() or for these, never both, so they share the alarm.
-  async loginReserve(policy: { freeFailures?: number; baseSeconds?: number; maxSeconds?: number; windowSeconds: number; }, { enforce = true } = {}) {
+  async loginReserve(policy: ThrottlePolicy, { enforce = true } = {}) {
     const now = Date.now();
-    const result = reserveAttempt(await this.ctx.storage.get("login"), now, policy, { enforce });
+    const result = reserveAttempt(await this.ctx.storage.get<ThrottleState>("login"), now, policy, { enforce });
     if (result.waitSeconds === 0) await this.saveLogin(result.state, now, policy);
     return { waitSeconds: result.waitSeconds, trusted: result.trusted };
   }
 
-  async loginRefund(policy: any) {
-    const stored = await this.ctx.storage.get("login");
+  async loginRefund(policy: ThrottlePolicy) {
+    const stored = await this.ctx.storage.get<ThrottleState>("login");
     if (stored) await this.saveLogin(refundAttempt(stored, policy), Date.now(), policy);
   }
 
   async loginTrust() {
     const now = Date.now();
-    const next = trustPair(await this.ctx.storage.get("login"), now);
+    const next = trustPair(await this.ctx.storage.get<ThrottleState>("login"), now);
     await this.ctx.storage.put("login", next);
     await this.ctx.storage.setAlarm(trustExpiryMs(next) + 3_600_000);
   }
 
-  async saveLogin(state: any, now: number, policy: { windowSeconds: number; }) {
+  async saveLogin(state: ThrottleState, now: number, policy: Pick<ThrottlePolicy, "windowSeconds">) {
     await this.ctx.storage.put("login", state);
     // Outlives both the failure window and any trust, then reclaims storage.
     const until = Math.max(Math.max(state.blockedUntil ?? 0, now) + policy.windowSeconds * 1000, trustExpiryMs(state) + 3_600_000);
@@ -108,7 +109,7 @@ export class RateCounter extends DurableObject<Env> {
 
   // Which country+network an account has signed in from (login-monitor.ts).
   // Used under its own name, so it shares nothing with bump()/login state.
-  async seenContext(key: string, { maxEntries, ttlSeconds }: any) {
+  async seenContext(key: string, { maxEntries, ttlSeconds }: { maxEntries: number; ttlSeconds: number }) {
     const now = Date.now();
     const result = touchSeenContext(await this.ctx.storage.get("seen"), key, now, maxEntries, ttlSeconds);
     await this.ctx.storage.put("seen", result.state);
