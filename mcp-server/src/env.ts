@@ -21,34 +21,34 @@ export interface Env {
   RATE_COUNTER: DurableObjectNamespace<RateCounter>;
   MCP_INBOX: DurableObjectNamespace<MCPInbox>;
 
-  // Fixed-window limiters declared under `ratelimits` in wrangler.jsonc.
-  RATE_LIMIT_ADMIN_WEBHOOK?: RateLimit;
-  RATE_LIMIT_ANNOUNCEMENTS?: RateLimit;
-  RATE_LIMIT_APPLE_AUTH?: RateLimit;
-  RATE_LIMIT_APP_ERROR?: RateLimit;
-  RATE_LIMIT_ATTEST_ASSERT?: RateLimit;
-  RATE_LIMIT_ATTEST_CHALLENGE?: RateLimit;
-  RATE_LIMIT_ATTEST_REGISTER?: RateLimit;
-  RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD?: RateLimit;
-  RATE_LIMIT_CHAT_DEVICE_REGISTER?: RateLimit;
-  RATE_LIMIT_CHAT_FRIEND_ADD?: RateLimit;
-  RATE_LIMIT_CHAT_GROUP_ACTION?: RateLimit;
-  RATE_LIMIT_CHAT_MESSAGE?: RateLimit;
-  RATE_LIMIT_CHAT_REPORT?: RateLimit;
-  RATE_LIMIT_EMAIL_VERIFY_CONFIRM?: RateLimit;
-  RATE_LIMIT_EMAIL_VERIFY_SEND?: RateLimit;
-  RATE_LIMIT_GOOGLE_AUTH?: RateLimit;
-  RATE_LIMIT_ISSUE_REPORT?: RateLimit;
-  RATE_LIMIT_LOCAL_LOGIN?: RateLimit;
-  RATE_LIMIT_MCP_AUTHORIZE?: RateLimit;
-  RATE_LIMIT_MCP_PAIR?: RateLimit;
-  RATE_LIMIT_MCP_REGISTER?: RateLimit;
-  RATE_LIMIT_MCP_TOKEN?: RateLimit;
-  RATE_LIMIT_PASSKEY_LOGIN_OPTIONS?: RateLimit;
-  RATE_LIMIT_PASSKEY_LOGIN_VERIFY?: RateLimit;
-  RATE_LIMIT_PASSKEY_REGISTER_OPTIONS?: RateLimit;
-  RATE_LIMIT_PASSKEY_REGISTER_VERIFY?: RateLimit;
-  RATE_LIMIT_USAGE_EVENT?: RateLimit;
+  // Fixed-window limiters declared under `ratelimits` in wrangler.jsonc (both environments).
+  RATE_LIMIT_ADMIN_WEBHOOK: RateLimit;
+  RATE_LIMIT_ANNOUNCEMENTS: RateLimit;
+  RATE_LIMIT_APPLE_AUTH: RateLimit;
+  RATE_LIMIT_APP_ERROR: RateLimit;
+  RATE_LIMIT_ATTEST_ASSERT: RateLimit;
+  RATE_LIMIT_ATTEST_CHALLENGE: RateLimit;
+  RATE_LIMIT_ATTEST_REGISTER: RateLimit;
+  RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD: RateLimit;
+  RATE_LIMIT_CHAT_DEVICE_REGISTER: RateLimit;
+  RATE_LIMIT_CHAT_FRIEND_ADD: RateLimit;
+  RATE_LIMIT_CHAT_GROUP_ACTION: RateLimit;
+  RATE_LIMIT_CHAT_MESSAGE: RateLimit;
+  RATE_LIMIT_CHAT_REPORT: RateLimit;
+  RATE_LIMIT_EMAIL_VERIFY_CONFIRM: RateLimit;
+  RATE_LIMIT_EMAIL_VERIFY_SEND: RateLimit;
+  RATE_LIMIT_GOOGLE_AUTH: RateLimit;
+  RATE_LIMIT_ISSUE_REPORT: RateLimit;
+  RATE_LIMIT_LOCAL_LOGIN: RateLimit;
+  RATE_LIMIT_MCP_AUTHORIZE: RateLimit;
+  RATE_LIMIT_MCP_PAIR: RateLimit;
+  RATE_LIMIT_MCP_REGISTER: RateLimit;
+  RATE_LIMIT_MCP_TOKEN: RateLimit;
+  RATE_LIMIT_PASSKEY_LOGIN_OPTIONS: RateLimit;
+  RATE_LIMIT_PASSKEY_LOGIN_VERIFY: RateLimit;
+  RATE_LIMIT_PASSKEY_REGISTER_OPTIONS: RateLimit;
+  RATE_LIMIT_PASSKEY_REGISTER_VERIFY: RateLimit;
+  RATE_LIMIT_USAGE_EVENT: RateLimit;
 
   // Secrets and variables (wrangler.jsonc `vars`, `wrangler secret put`). Text unless noted.
   RESEND_API_KEY?: string;
@@ -103,7 +103,4 @@ export interface Env {
 
   // Cloudflare Access's key set; only tests supply it, otherwise it is fetched.
   ACCESS_JWKS?: JWTVerifyGetKey;
-
-  // Anything not listed above is still untyped until every file is converted.
-  [name: string]: unknown;
 }

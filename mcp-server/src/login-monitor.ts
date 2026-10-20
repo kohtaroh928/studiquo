@@ -59,7 +59,7 @@ export function touchSeenContext(state: { entries?: Record<string, number> } | n
 
 // The network's registered name is chosen by whoever owns the AS, and ends up
 // in a mail to the account owner: keep it to one short printable line.
-function cleanLabel(value) {
+function cleanLabel(value: any) {
   return value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim().slice(0, 64);
 }
 
@@ -76,7 +76,7 @@ export function requestContext(request: Request) {
   };
 }
 
-async function countAndAlert(env: Env, counterName, threshold, title, detail) {
+async function countAndAlert(env: Env, counterName: any, threshold: any, title: any, detail: any) {
   // Both counters are named for the clock hour they belong to, so "alert at
   // most once" lines up exactly with "count per hour" instead of drifting
   // with whenever each one's first bump happened.
@@ -96,7 +96,7 @@ async function countAndAlert(env: Env, counterName, threshold, title, detail) {
  * Logs one local-login outcome ("success" | "failure" | "throttled") and
  * feeds the spike alerts. Never throws.
  */
-export async function recordLoginOutcome(env: Env, request: Request, outcome, { newContext = false, firstSeen = false } = {}) {
+export async function recordLoginOutcome(env: Env, request: Request, outcome: string, { newContext = false, firstSeen = false } = {}) {
   try {
     const context = requestContext(request);
     console.log(JSON.stringify({
@@ -137,7 +137,7 @@ export async function recordLoginOutcome(env: Env, request: Request, outcome, { 
   }
 }
 
-async function sendSignInNotice(env: Env, email, context, when) {
+async function sendSignInNotice(env: Env, email: string, context: any, when: any) {
   // The "email" kill switch (features.ts). Callers treat a notice as best effort.
   if (featureDisabled(env, "email")) return;
   const place = [context.country, context.region].filter(Boolean).join(" / ");
@@ -169,7 +169,7 @@ async function sendSignInNotice(env: Env, email, context, when) {
  * when `notify` is set and it's one the account hasn't used lately — emails
  * the owner. Returns `{ newContext, firstSeen }` for the metrics. Never throws.
  */
-export async function noteSignInContext(env: Env, request: Request, email, { notify }) {
+export async function noteSignInContext(env: Env, request: Request, email: string, { notify }: any) {
   try {
     const context = requestContext(request);
     if (!context) return { newContext: false, firstSeen: false };

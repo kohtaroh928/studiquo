@@ -4,9 +4,10 @@
 // export below) doesn't exist outside the Workers runtime.
 import app from "./app.ts";
 import { runScheduledPrivacyWork } from "./privacy-retention.ts";
+import type { Env } from "./env.ts";
 export default {
   ...app,
-  async scheduled(controller, env, ctx) {
+  async scheduled(controller: any, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runScheduledPrivacyWork(env, controller.scheduledTime));
   },
 };

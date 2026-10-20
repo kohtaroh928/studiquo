@@ -120,6 +120,7 @@ CloudKit互換性を壊しやすいため、モデル追加・必須属性・関
 ### 5.1 リクエスト処理
 
 Wranglerは`src/worker.ts`を読み込み、実処理を`src/app.ts`へ委譲する。
+サーバーはTypeScriptで書く(`mcp-server/tsconfig.json`、`strict`)。型検査は`npm run typecheck`、テストは`npm test`(Nodeが型を取り除いて実行するため、テストが通っても型エラーは見つからない)。どちらもCIのWorkerジョブで動く。移行の経緯と決めごとは`docs/notes/ts-migration.md`。
 `app.ts`は次の順序で要求を処理する。
 
 1. ヘルスチェック、Cloudflare Access対象の運営API、OAuth metadataなどの公開・管理経路。

@@ -14,13 +14,13 @@ const CODE_TTL_SECONDS = 15 * 60;
 const MAX_ATTEMPTS = 5;
 const RESEND_API_URL = "https://api.resend.com/emails";
 
-function normalizeEmail(email) {
+function normalizeEmail(email: string) {
   if (typeof email !== "string") return null;
   const trimmed = email.trim().toLowerCase();
   return trimmed.length > 0 && trimmed.length <= 254 && trimmed.includes("@") ? trimmed : null;
 }
 
-function generateCode() {
+function generateCode(): string {
   // 6 digits, zero-padded — rejects the all-zero code so a support agent
   // reading it aloud never has to say "and then four more zeros".
   const bytes = new Uint32Array(1);
@@ -37,7 +37,7 @@ function generateCode() {
  * Throws if `email` doesn't look like an email address, or if the Resend
  * call itself fails — callers should treat either as "could not send".
  */
-export async function sendVerificationCode(env: Env, email) {
+export async function sendVerificationCode(env: Env, email: string) {
   // The "email" kill switch (features.ts). Checked before a code is stored.
   if (featureDisabled(env, "email")) throw new Error("Email sending is paused.");
   const normalized = normalizeEmail(email);
@@ -91,7 +91,7 @@ interface PendingCode {
  * expired code too, so callers can't distinguish "never sent" from
  * "exhausted" — nothing a legitimate caller needs to tell those apart for.
  */
-export async function confirmVerificationCode(env: Env, email, code) {
+export async function confirmVerificationCode(env: Env, email: string, code: string) {
   const normalized = normalizeEmail(email);
   if (!normalized || typeof code !== "string") return { verified: false, attemptsRemaining: 0 };
 

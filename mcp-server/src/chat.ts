@@ -40,7 +40,7 @@ const REPORT_TTL_SECONDS = 90 * 24 * 60 * 60;
 // `code` from ever reaching a KV lookup keyed on it.
 const FRIEND_CODE_PATTERN = /^[A-Z0-9]{6,32}$/;
 
-function parseFriendCode(body) {
+function parseFriendCode(body: any) {
   const code = String(body?.code ?? "").trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
@@ -49,7 +49,7 @@ function parseFriendCode(body) {
 // generated the same way, just stored under a different KV prefix so a
 // link token can never be confused with, or substituted for, a manually
 // typed friend code.
-function parseLinkToken(body) {
+function parseLinkToken(body: any) {
   const token = String(body?.token ?? "").trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(token) ? token : null;
 }
@@ -57,7 +57,7 @@ function parseLinkToken(body) {
 // `Number("1e400")` and friends parse to Infinity, which SQLite's bind
 // rejects with an exception — this turns that into a clean fallback instead
 // of a 500 from chat-room.ts's query.
-function parseAfter(rawValue) {
+function parseAfter(rawValue: any) {
   const number = Number(rawValue ?? 0);
   return Number.isSafeInteger(number) && number >= 0 ? number : 0;
 }
@@ -67,7 +67,7 @@ function parseAfter(rawValue) {
 // just stores and relays this as-is. Deciding whether a friend's reported
 // date still counts as "today" is left to the viewer's own client, which is
 // the only side that actually knows what day it is for the viewer.
-function parseStudyStats(body) {
+function parseStudyStats(body: any) {
   const seconds = Number(body?.todayStudySeconds);
   const date = String(body?.studyDate ?? "");
   if (!Number.isSafeInteger(seconds) || seconds < 0 || seconds > 86_400) return null;
@@ -79,7 +79,7 @@ async function readBody(request: Request, maxBytes = MAX_BODY) {
   return readJSONLimitedShared(request, maxBytes);
 }
 
-async function ensureUser(env: Env, key, name = null, studyStats = null) {
+async function ensureUser(env: Env, key: string, name: string | null = null, studyStats: any = null) {
   const storageKey = `chat:user:${key}`;
   const user = await env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
   if (user) {
@@ -97,11 +97,11 @@ async function ensureUser(env: Env, key, name = null, studyStats = null) {
   return env.USER_REGISTRY.getByName(key).ensureUser(key, name, studyStats);
 }
 
-async function roomID(first, second) {
+async function roomID(first: any, second: any) {
   return sha256Hex([first, second].sort().join(":"));
 }
 
-async function existingRoomIsBlocked(env: Env, roomIDValue, userKey: string) {
+async function existingRoomIsBlocked(env: Env, roomIDValue: any, userKey: string) {
   try {
     const state = await env.CHAT_ROOM.getByName(roomIDValue).blockStatus(userKey);
     return state.blockedByMe || state.blockedByOther;
@@ -121,7 +121,7 @@ async function existingRoomIsBlocked(env: Env, roomIDValue, userKey: string) {
 // has blocked the caller — translated here to a deliberately vague message
 // rather than "you have been blocked", the same discretion ordinary blocking
 // UX gives every other messaging app: the blocked person isn't told why.
-function roomForbiddenResponse(error) {
+function roomForbiddenResponse(error: any) {
   if (error instanceof Error && error.message === "Forbidden") {
     return json({ error: "You are not a participant in this room." }, 403);
   }
@@ -149,7 +149,7 @@ function roomForbiddenResponse(error) {
 // (isMine already tells it everything it needs for exactly two people),
 // but resolving it there too costs one lookup at most and keeps this one
 // code path uniform instead of branching on room kind.
-async function withSenderNames(env: Env, result) {
+async function withSenderNames(env: Env, result: any) {
   const messages = Array.isArray(result) ? result : [result];
   const senderKeys = [...new Set(messages.map(item => item.senderKey).filter(Boolean))];
   const senders = new Map(await Promise.all(senderKeys.map(async senderKey => {
@@ -166,7 +166,7 @@ async function withSenderNames(env: Env, result) {
   return Array.isArray(result) ? resolved : resolved[0];
 }
 
-async function messageRoomResponse(env: Env, promise) {
+async function messageRoomResponse(env: Env, promise: any) {
   try {
     return json(await withSenderNames(env, await promise));
   } catch (error) {
@@ -176,7 +176,7 @@ async function messageRoomResponse(env: Env, promise) {
   }
 }
 
-async function roomResponse(promise) {
+async function roomResponse(promise: any) {
   try {
     return json(await promise);
   } catch (error) {
@@ -186,7 +186,7 @@ async function roomResponse(promise) {
   }
 }
 
-async function messageNotificationContext(env: Env, senderKey, roomIDValue) {
+async function messageNotificationContext(env: Env, senderKey: any, roomIDValue: any) {
   const sender = await ensureUser(env, senderKey);
   const group = (sender.groups ?? []).find(item => item.roomID === roomIDValue);
   if (group) {
@@ -202,7 +202,7 @@ async function messageNotificationContext(env: Env, senderKey, roomIDValue) {
   return { senderName: sender.name, groupName: null, recipientKeys: recipientKey ? [recipientKey] : [] };
 }
 
-export async function handleChat(url, request: Request, env: Env, ctx) {
+export async function handleChat(url: URL, request: Request, env: Env, ctx: ExecutionContext) {
   if (!url.pathname.startsWith("/api/chat/")) return null;
   const token = bearerToken(request);
   if (!token) return json({ error: "Authentication required." }, 401);
@@ -325,7 +325,7 @@ export async function handleChat(url, request: Request, env: Env, ctx) {
     for (let start = 0; start < rooms.length; start += 20) {
       const batch = await Promise.all(rooms.slice(start, start + 20).map(async room => {
         try {
-          const state = await env.CHAT_ROOM.getByName(room.roomID).inboxState(key);
+          const state = await env.CHAT_ROOM.getByName(room.roomID as string).inboxState(key);
           return { roomID: room.roomID, kind: room.kind, ...state };
         } catch (error) {
           if (error instanceof Error && error.message === "Forbidden") return null;
@@ -418,7 +418,7 @@ export async function handleChat(url, request: Request, env: Env, ctx) {
     const result = await env.USER_REGISTRY.getByName(otherKey).addIncomingRequest(otherKey, user.code, user.name);
     if (result.status === "not_found") return json({ error: "Friend not found." }, 404);
     if (result.status === "pending") {
-      await env.USER_REGISTRY.getByName(key).addOutgoingRequest(key, result.recipient.code, result.recipient.name);
+      await env.USER_REGISTRY.getByName(key).addOutgoingRequest(key, result.recipient!.code, result.recipient!.name);
       ctx?.waitUntil(sendPush(env, otherKey, {
         category: "friendRequest",
         title: "フレンド申請",
@@ -514,7 +514,7 @@ export async function handleChat(url, request: Request, env: Env, ctx) {
     // "sent, awaiting approval" list.
     const senderKey = await env.STUDIQUO_DATA.get(`chat:code:${friendCode}`);
     if (senderKey) {
-      await env.USER_REGISTRY.getByName(senderKey).removeOutgoingRequest(senderKey, result.recipient.code);
+      await env.USER_REGISTRY.getByName(senderKey).removeOutgoingRequest(senderKey, result.recipient!.code);
     }
     return json({ status: "rejected" });
   }

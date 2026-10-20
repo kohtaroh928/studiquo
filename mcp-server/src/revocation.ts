@@ -6,7 +6,7 @@ import type { Env } from "./env.ts";
 // compute the same SHA-256 hex digest of the token).
 const PREFIX = "revoked:";
 
-export async function isRevoked(env: Env, key) {
+export async function isRevoked(env: Env, key: string) {
   return Boolean(await env.STUDIQUO_DATA.get(`${PREFIX}${key}`));
 }
 
@@ -14,6 +14,6 @@ export async function isRevoked(env: Env, key) {
 // says, so the record only has to outlive that (with a day's margin).
 const TTL_SECONDS = VALIDITY_SECONDS + 86_400;
 
-export async function revoke(env: Env, key) {
+export async function revoke(env: Env, key: string) {
   await env.STUDIQUO_DATA.put(`${PREFIX}${key}`, "1", { expirationTtl: TTL_SECONDS });
 }

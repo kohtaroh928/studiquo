@@ -49,9 +49,9 @@ const MAX_QUEUED_ARGON2 = 32;
 // password, so it can't be claimed.
 const PRIORITY_EXTRA_QUEUED_ARGON2 = 16;
 let activeArgon2 = 0;
-const argon2Waiters = [];
+const argon2Waiters: ((value?: unknown) => void)[] = [];
 
-function queueLimit(priority) {
+function queueLimit(priority: any) {
   return MAX_QUEUED_ARGON2 + (priority ? PRIORITY_EXTRA_QUEUED_ARGON2 : 0);
 }
 
@@ -136,7 +136,7 @@ function argon2id(password: string, salt: Uint8Array, { m, t, p }: Argon2Params,
 // much work each login path really does.
 export const hashers = { pbkdf2, argon2id };
 
-function normalizeEmail(email) {
+function normalizeEmail(email: unknown): string | null {
   if (typeof email !== "string") return null;
   const trimmed = email.trim().toLowerCase();
   return trimmed.length > 0 && trimmed.length <= 254 && trimmed.includes("@") ? trimmed : null;
@@ -232,11 +232,11 @@ export async function upsertLocalAccount(env: Env, email: unknown, password: unk
 // as one that does. See verifyLocalAccount.
 const DUMMY_SALT = new Uint8Array(24).fill(0x5a);
 
-function dummyPbkdf2(password) {
+function dummyPbkdf2(password: any) {
   return hashers.pbkdf2(password, DUMMY_SALT, PBKDF2_ITERATIONS);
 }
 
-function dummyArgon2(password, options) {
+function dummyArgon2(password: any, options: any) {
   return hashers.argon2id(password, DUMMY_SALT, ARGON2, options);
 }
 
@@ -248,8 +248,8 @@ async function rejectAfterDummyWork(password: unknown, options?: Argon2Options) 
 }
 
 function argon2ParamsOf(record: LocalAccountRecord): Argon2Params | null {
-  const { m, t, p } = record;
-  const ok = [m, t, p].every(Number.isInteger) && m! >= 8 && t >= 1 && p >= 1
+  const { m, t, p } = record as LocalAccountRecord & { m: number; t: number; p: number };
+  const ok = [m, t, p].every(Number.isInteger) && m >= 8 && t >= 1 && p >= 1
     && m <= ARGON2_LIMITS.m && t <= ARGON2_LIMITS.t && p <= ARGON2_LIMITS.p;
   return ok ? { m, t, p } : null;
 }
@@ -259,7 +259,7 @@ function argon2ParamsOf(record: LocalAccountRecord): Argon2Params | null {
 async function upgradeLegacyRecord(env: Env, key: string, original: LocalAccountRecord, normalized: string, password: string) {
   if (!argon2Writes(env)) return;
   try {
-    const expectedGen = Number.isInteger(original.gen) ? original.gen : 0;
+    const expectedGen = Number.isInteger(original.gen) ? (original.gen as number) : 0;
     // Optional work: when the queue is full it is skipped, and the next
     // sign-in upgrades the record instead.
     const upgraded = await newArgon2Record(normalized, password, expectedGen);
@@ -271,7 +271,7 @@ async function upgradeLegacyRecord(env: Env, key: string, original: LocalAccount
 }
 
 function legacyIterationsOf(record: LocalAccountRecord): number | null {
-  const { iterations } = record;
+  const iterations = record.iterations as number;
   const known = record.algo === undefined || record.algo === "pbkdf2";
   return known && Number.isInteger(iterations) && iterations >= 1 && iterations <= 1_000_000 ? iterations : null;
 }

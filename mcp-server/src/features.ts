@@ -41,7 +41,7 @@ export function disabledFeatures(env: Env) {
   return new Set(names.filter(name => FEATURES.includes(name)));
 }
 
-export function featureDisabled(env: Env, feature) {
+export function featureDisabled(env: Env, feature: any) {
   return disabledFeatures(env).has(feature);
 }
 
@@ -55,7 +55,7 @@ export function featureDisabled(env: Env, feature) {
  * /api/mcp/connections/:id), is listed here so that stopping "mcp" after a bad
  * connection does not stop the person from cutting it.
  */
-export function featureForPath(pathname, method = "GET") {
+export function featureForPath(pathname: string, method = "GET") {
   if (method === "DELETE" && pathname.startsWith("/api/mcp/connections/")) return null;
   if (pathname === "/api/auth/email/send-code") return "email";
   if (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/passkeys/login/")) return "signin";
@@ -67,7 +67,7 @@ export function featureForPath(pathname, method = "GET") {
 }
 
 /** A 503 for a request whose feature is stopped, or null. */
-export function featureGateRejection(env: Env, pathname, method = "GET") {
+export function featureGateRejection(env: Env, pathname: string, method = "GET") {
   const feature = featureForPath(pathname, method);
   if (!feature || !featureDisabled(env, feature)) return null;
   const response = json({

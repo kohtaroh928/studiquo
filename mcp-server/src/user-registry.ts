@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./env.ts";
-import type { ChatUser } from "./records.ts";
+import type { ChatUser, GroupEntry } from "./records.ts";
 import { eraseLibraryID, getOrCreateLibraryID } from "./library-id.ts";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -54,11 +54,11 @@ export class UserRegistry extends DurableObject<Env> {
   // KV read from elsewhere can return a value up to a minute old, so a friend
   // who was just removed could still be listed; the writes (removeFriend and
   // the like) happen in this object's location, where a read sees them at once.
-  async getUser(key) {
+  async getUser(key: string) {
     return await this.env.STUDIQUO_DATA.get<ChatUser>(`chat:user:${key}`, "json");
   }
 
-  async ensureUser(key, name, studyStats = null, bio = undefined) {
+  async ensureUser(key: string, name: string | null | undefined, studyStats: any = null, bio: any = undefined): Promise<ChatUser> {
     const storageKey = `chat:user:${key}`;
     let user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (user) {
@@ -120,7 +120,7 @@ export class UserRegistry extends DurableObject<Env> {
   // requesting the same recipient at nearly the same moment can't each read
   // the same stale incomingRequests array and overwrite one another's
   // addition — the DO's one-at-a-time handling serializes them instead.
-  async addIncomingRequest(key, requesterCode, requesterName): Promise<{ status: "not_found" | "already_friends" | "pending"; recipient?: { code: string; name: string } }> {
+  async addIncomingRequest(key: string, requesterCode: any, requesterName: any): Promise<{ status: "not_found" | "already_friends" | "pending"; recipient?: { code: string; name: string } }> {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -144,7 +144,7 @@ export class UserRegistry extends DurableObject<Env> {
   // requests. Routed through this per-key instance for the same reason as
   // addIncomingRequest: a requester sending to two different people at
   // nearly the same moment must not have one addition overwrite the other.
-  async addOutgoingRequest(key, recipientCode, recipientName) {
+  async addOutgoingRequest(key: string, recipientCode: any, recipientName: any) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return;
@@ -159,7 +159,7 @@ export class UserRegistry extends DurableObject<Env> {
 
   // Clears a resolved (accepted or rejected) request from the original
   // requester's own outgoingRequests list, keyed by the recipient's code.
-  async removeOutgoingRequest(key, recipientCode) {
+  async removeOutgoingRequest(key: string, recipientCode: any) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return;
@@ -177,7 +177,7 @@ export class UserRegistry extends DurableObject<Env> {
   // pending request at nearly the same moment: without this, both read the
   // same stale record and whichever writes last silently wins — even
   // undoing a friendship the other one just created.
-  async resolveIncomingRequest(key, action, otherCode, otherName, roomID): Promise<{ status: "not_found" | "rejected" | "friends_full" | "accepted"; recipient?: { code: string; name: string }; friend?: { code: string; name: string } }> {
+  async resolveIncomingRequest(key: string, action: string, otherCode: string, otherName: any, roomID: string | null): Promise<{ status: "not_found" | "rejected" | "friends_full" | "accepted"; recipient?: { code: string; name: string }; friend?: { code: string; name: string } }> {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user || !(user.incomingRequests ?? []).some(item => item.code === otherCode)) {
@@ -204,7 +204,7 @@ export class UserRegistry extends DurableObject<Env> {
   // none was ever created for this path. Routed through this per-key
   // instance (called via getByName(key), the caller's own key) for the
   // same race-safety reason every other friends-list mutation here is.
-  async addFriendDirectly(key, otherCode, otherName, roomID) {
+  async addFriendDirectly(key: string, otherCode: string, otherName: any, roomID: string | null) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -222,7 +222,7 @@ export class UserRegistry extends DurableObject<Env> {
   // Called for both participants after their room has been closed. Keeping
   // the blocked-contact archive independent of `friends` makes an existing
   // block removable even after the friendship disappears from both lists.
-  async removeFriend(key, otherCode, blockedContact = null) {
+  async removeFriend(key: string, otherCode: string, blockedContact: any = null) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -243,7 +243,7 @@ export class UserRegistry extends DurableObject<Env> {
   // undo a concurrent removeFriend / request change on the same record — the
   // "deleted friend comes back" bug. Routing every write of `chat:user:*`
   // through this per-key instance serializes them.
-  async confirmFriendship(key, friend, { clearOutgoing = false } = {}) {
+  async confirmFriendship(key: string, friend: any, { clearOutgoing = false } = {}) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -255,7 +255,7 @@ export class UserRegistry extends DurableObject<Env> {
     return { status: "confirmed" };
   }
 
-  async setAvatarUpdatedAt(key, updatedAt) {
+  async setAvatarUpdatedAt(key: string, updatedAt: any) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -264,7 +264,7 @@ export class UserRegistry extends DurableObject<Env> {
     return { status: "updated" };
   }
 
-  async removeAccountReferences(key, deletedCode) {
+  async removeAccountReferences(key: string, deletedCode: any) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -295,7 +295,7 @@ export class UserRegistry extends DurableObject<Env> {
   // addIncomingRequest denormalizes the requester's name — a listed,
   // not-yet-accepted invite has no room membership yet to look it up live
   // through.
-  async addIncomingGroupInvite(key, roomID, name, inviterCode, inviterName) {
+  async addIncomingGroupInvite(key: string, roomID: string, name: string | null, inviterCode: any, inviterName: any) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -318,7 +318,7 @@ export class UserRegistry extends DurableObject<Env> {
   // incomingGroupInvites/groups — mirrors resolveIncomingRequest's own
   // race-safety reasoning for the same "both fire at nearly the same
   // moment" scenario.
-  async resolveIncomingGroupInvite(key, action, roomID): Promise<{ status: "not_found" | "accepted" | "rejected"; invite?: { roomID: string; name?: string; inviterCode?: string; inviterName?: string; invitedAt?: number } }> {
+  async resolveIncomingGroupInvite(key: string, action: string, roomID: string): Promise<{ status: "not_found" | "accepted" | "rejected"; invite?: GroupEntry }> {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     const invite = (user?.incomingGroupInvites ?? []).find(item => item.roomID === roomID);
@@ -345,7 +345,7 @@ export class UserRegistry extends DurableObject<Env> {
   // the invitee must not be left with a phantom `groups` entry for a room
   // they were never added to, nor with their invite silently discarded —
   // this puts both back so they can retry once a seat opens up.
-  async undoAcceptedGroupInvite(key, roomID, name, inviterCode, inviterName) {
+  async undoAcceptedGroupInvite(key: string, roomID: string, name: string | null | undefined, inviterCode: any, inviterName: any) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -364,7 +364,7 @@ export class UserRegistry extends DurableObject<Env> {
   // creator of a brand-new group, who doesn't go through an invite/accept
   // step for their own membership. Routed through this per-key instance for
   // the same race-safety reason every other groups-list mutation here is.
-  async addGroupForCreator(key, roomID) {
+  async addGroupForCreator(key: string, roomID: string) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -378,7 +378,7 @@ export class UserRegistry extends DurableObject<Env> {
   // left on their own or were removed by someone else; the room-side
   // removal (ChatRoom.removeParticipant) is a separate call groups.ts makes
   // alongside this one.
-  async removeGroup(key, roomID) {
+  async removeGroup(key: string, roomID: string) {
     const storageKey = `chat:user:${key}`;
     const user = await this.env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
     if (!user) return { status: "not_found" };

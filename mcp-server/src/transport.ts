@@ -13,12 +13,12 @@ import { json } from "./http.ts";
 
 export const HSTS_VALUE = "max-age=31536000";
 
-function isLocalHost(hostname) {
+function isLocalHost(hostname: any) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname.endsWith(".localhost");
 }
 
 /** A response for a request that came over plain http, or null for https and local development. */
-export function plainHttpResponse(request: Request, url) {
+export function plainHttpResponse(request: Request, url: URL) {
   if (url.protocol !== "http:" || isLocalHost(url.hostname)) return null;
   if (request.method === "GET" || request.method === "HEAD") {
     const secure = new URL(url);

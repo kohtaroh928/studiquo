@@ -33,7 +33,7 @@ const INVITE_TTL_SECONDS = 14 * 24 * 3_600;
 const MAX_PENDING_INVITES = 20;
 const RESPOND_LIMIT_PER_MINUTE = 20;
 
-export function pendingInviteKey(userKey: string, roomID) {
+export function pendingInviteKey(userKey: string, roomID: string) {
   return `doc-invite:${userKey}:${roomID}`;
 }
 
@@ -59,7 +59,7 @@ const INIT_WINDOW_SECONDS = 3_600;
 // resolves one when adding a friend.
 const FRIEND_CODE_PATTERN = /^[A-Z0-9]{6,32}$/;
 
-function parseFriendCode(body) {
+function parseFriendCode(body: any) {
   const code = String(body?.code ?? "").trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
@@ -78,7 +78,7 @@ async function readBody(request: Request, maxBytes = MAX_BODY) {
 // checkRateLimit()/the Cloudflare Rate Limiting binding those use, since
 // that binding is provisioned per endpoint in the Cloudflare dashboard and
 // this endpoint doesn't have one of its own yet.
-async function withinLimit(env: Env, keyPrefix, key, limit, windowSeconds = WINDOW_SECONDS) {
+async function withinLimit(env: Env, keyPrefix: any, key: string, limit: number, windowSeconds = WINDOW_SECONDS) {
   return env.RATE_COUNTER.getByName(`${keyPrefix}:${key}`).bump(limit, windowSeconds);
 }
 
@@ -93,18 +93,18 @@ async function chatUser(env: Env, userKey: string) {
 // Error("Forbidden") for a caller without room access — without this, that
 // propagates uncaught up to app.ts's catch-all and comes back as a generic
 // 500 instead of a proper 403. Mirrors chat.ts's roomForbiddenResponse.
-function roomForbiddenResponse(error) {
+function roomForbiddenResponse(error: any) {
   if (error instanceof Error && error.message === "Forbidden") {
     return json({ error: "You do not have access to this document room." }, 403);
   }
   return null;
 }
 
-async function recordRoomMembership(env: Env, userKey: string, roomID, role) {
+async function recordRoomMembership(env: Env, userKey: string, roomID: string, role: any) {
   await env.STUDIQUO_DATA.put(roomMembershipKey(userKey, roomID), role);
 }
 
-async function roomResponse(promise) {
+async function roomResponse(promise: any) {
   try {
     return json(await promise);
   } catch (error) {
@@ -131,7 +131,7 @@ async function roomResponse(promise) {
  * does (chat's early registration exists only for its own pre-token
  * sign-in exchange endpoints, which this has no equivalent of).
  */
-export async function handleDocumentCollab(url, request: Request, env: Env, key, ctx) {
+export async function handleDocumentCollab(url: URL, request: Request, env: Env, key: string, ctx: ExecutionContext) {
   if (!url.pathname.startsWith("/api/document/")) return null;
 
   const initMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/init$/.exec(url.pathname);

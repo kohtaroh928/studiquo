@@ -78,7 +78,7 @@ export async function sendPush(env: Env, userKey: string, notification: PushNoti
   // signing operation per actual key so mixed device lists use the correct
   // credential, while a legacy all-environments key is still signed once.
   const jwtByCredential = new Map();
-  const jwtFor = async environment => {
+  const jwtFor = async (environment: any) => {
     const credentials = apnsCredentials(env, environment);
     if (!credentials.authKey || !credentials.keyID) return null;
     const cacheKey = `${credentials.keyID}\u0000${credentials.authKey}`;
@@ -95,7 +95,7 @@ export async function sendPush(env: Env, userKey: string, notification: PushNoti
   // A device that turned the banner off for this category still gets the
   // notification, but quietly: `passive` goes to the notification centre
   // without lighting the screen, showing a banner or making a sound.
-  const buildPayload = quiet => JSON.stringify({
+  const buildPayload = (quiet: any) => JSON.stringify({
     ...customData,
     aps: {
       alert: { title: String(notification.title ?? ""), body: String(notification.body ?? "") },
@@ -112,7 +112,7 @@ export async function sendPush(env: Env, userKey: string, notification: PushNoti
   }
 
   return Promise.all(devices.map(async device => {
-    const quiet = Boolean(notification.category) && device.banners?.[notification.category] === false;
+    const quiet = Boolean(notification.category) && device.banners?.[notification.category as string] === false;
     try {
       const jwt = await jwtFor(device.environment);
       if (!jwt) {
@@ -123,7 +123,7 @@ export async function sendPush(env: Env, userKey: string, notification: PushNoti
         method: "POST",
         headers: {
           authorization: `bearer ${jwt}`,
-          "apns-topic": env.APNS_TOPIC,
+          "apns-topic": env.APNS_TOPIC!,
           "apns-push-type": "alert",
           // A quiet notification has no need to wake the screen, so it may be
           // delivered at the system's convenience.
@@ -135,7 +135,7 @@ export async function sendPush(env: Env, userKey: string, notification: PushNoti
       });
       if (response.ok) return { token: device.token, delivered: true };
       const reason = await apnsErrorReason(response);
-      if (response.status === 410 || (response.status === 400 && INVALID_TOKEN_REASONS.has(reason))) {
+      if (response.status === 410 || (response.status === 400 && INVALID_TOKEN_REASONS.has(reason as string))) {
         await removeDevice(env, userKey, device.token);
       }
       console.error(JSON.stringify({ event: "apns_delivery_failed", status: response.status, reason }));

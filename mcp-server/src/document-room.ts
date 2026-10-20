@@ -20,13 +20,13 @@ export class DocumentRoom extends DurableObject<Env> {
     });
   }
 
-  requireParticipant(userKey) {
+  requireParticipant(userKey: string) {
     const row = this.ctx.storage.sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray();
     if (row.length !== 1) throw new Error("Forbidden");
     return row[0].role;
   }
 
-  requireReviewer(userKey) {
+  requireReviewer(userKey: string) {
     const role = this.requireParticipant(userKey);
     if (role !== "owner" && role !== "reviewer") throw new Error("Forbidden");
   }
@@ -36,7 +36,7 @@ export class DocumentRoom extends DurableObject<Env> {
   // collaborating" request from the client can't reset an in-progress
   // session (dropping every invited editor/reviewer back out) partway
   // through.
-  async initialize(ownerKey, blocks) {
+  async initialize(ownerKey: any, blocks: any) {
     const existing = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (existing > 0) return { status: "already_initialized" };
     this.ctx.storage.sql.exec("INSERT OR IGNORE INTO participants (user_key, role) VALUES (?, 'owner')", ownerKey);
@@ -59,7 +59,7 @@ export class DocumentRoom extends DurableObject<Env> {
 
   // Only the owner may invite — an editor/reviewer can't in turn invite
   // someone else into the room.
-  async invite(ownerKey, userKey, role) {
+  async invite(ownerKey: any, userKey: string, role: any) {
     const ownerRole = this.requireParticipant(ownerKey);
     if (ownerRole !== "owner") throw new Error("Forbidden");
     if (role !== "editor" && role !== "reviewer") throw new Error("InvalidRole");
@@ -68,7 +68,7 @@ export class DocumentRoom extends DurableObject<Env> {
     return { status: "invited" };
   }
 
-  async listParticipants(userKey) {
+  async listParticipants(userKey: string) {
     this.requireParticipant(userKey);
     return this.ctx.storage.sql.exec<{ user_key: string; role: string }>("SELECT user_key, role FROM participants").toArray()
       .map(row => ({ userKey: row.user_key, role: row.role }));
@@ -78,7 +78,7 @@ export class DocumentRoom extends DurableObject<Env> {
   // (already-reviewed) text, plus every still-open proposal — enough for a
   // device to reconcile its local copy without a separate endpoint per
   // piece.
-  async getState(userKey) {
+  async getState(userKey: string) {
     this.requireParticipant(userKey);
     const blocks = this.ctx.storage.sql.exec("SELECT * FROM blocks ORDER BY block_order ASC").toArray();
     const changes = this.ctx.storage.sql.exec("SELECT * FROM changes WHERE status = 'pending' ORDER BY id ASC").toArray();
@@ -105,7 +105,7 @@ export class DocumentRoom extends DurableObject<Env> {
   // Records a proposed edit — never applied to `blocks` directly. Only the
   // owner or an editor may propose; a reviewer with no editor role can
   // review but not author changes of their own here.
-  async proposeChange(userKey, blockOrder, previousText, newText) {
+  async proposeChange(userKey: string, blockOrder: any, previousText: any, newText: any) {
     const role = this.requireParticipant(userKey);
     if (role !== "owner" && role !== "editor") throw new Error("Forbidden");
     const row = this.ctx.storage.sql.exec(
@@ -120,7 +120,7 @@ export class DocumentRoom extends DurableObject<Env> {
   // changes return their existing status rather than erroring, so a
   // double-tap on "承認" from a slow connection is a harmless no-op instead
   // of a surfaced failure.
-  async reviewChange(userKey, changeID, decision) {
+  async reviewChange(userKey: string, changeID: any, decision: any) {
     this.requireReviewer(userKey);
     if (decision !== "accept" && decision !== "reject") throw new Error("InvalidDecision");
     const change = this.ctx.storage.sql.exec("SELECT * FROM changes WHERE id = ?", changeID).toArray()[0];
@@ -139,19 +139,19 @@ export class DocumentRoom extends DurableObject<Env> {
 
   // The caller's role in this room, or null. Used to tell whether a
   // `already_initialized` answer means "this room is yours".
-  async roleOf(userKey) {
+  async roleOf(userKey: string) {
     const row = this.ctx.storage.sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray()[0];
     return row?.role ?? null;
   }
 
   // The room's members if `userKey` is its owner, otherwise null.
-  async ownerMembers(userKey): Promise<string[] | null> {
+  async ownerMembers(userKey: string): Promise<string[] | null> {
     return membersIfOwner(this.ctx.storage.sql, userKey);
   }
 
   // Removes `userKey`'s account from the room: erases the room if they own
   // it, otherwise takes only them out.
-  async removeAccount(userKey) {
+  async removeAccount(userKey: string) {
     return removeAccountData(this.ctx.storage.sql, userKey);
   }
 }

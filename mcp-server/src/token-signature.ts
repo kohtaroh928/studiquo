@@ -38,19 +38,19 @@ export const LEGACY_ACCESS = /^mcp_[0-9a-f]{64}$/;
 
 const importedKeys = new Map();
 
-function base64Bytes(value) {
+function base64Bytes(value: any) {
   const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
   return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
 }
 
-function base64Url(bytes) {
+function base64Url(bytes: any) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-async function hmacKey(secret) {
+async function hmacKey(secret: any) {
   const cached = importedKeys.get(secret);
   if (cached) return cached;
   const raw = base64Bytes(String(secret).trim());
@@ -60,7 +60,7 @@ async function hmacKey(secret) {
   return key;
 }
 
-async function signature(secret, label, payload) {
+async function signature(secret: any, label: any, payload: any) {
   const digest = await crypto.subtle.sign("HMAC", await hmacKey(secret), encoder.encode(label + payload));
   return base64Url(new Uint8Array(digest));
 }
@@ -73,7 +73,7 @@ function checkingKeys(env: Env) {
   return [env.TOKEN_SIGNING_KEY, env.TOKEN_SIGNING_KEY_OLD].filter(Boolean);
 }
 
-async function matchesAnyKey(env: Env, label, payload, presented) {
+async function matchesAnyKey(env: Env, label: any, payload: any, presented: any) {
   for (const secret of checkingKeys(env)) {
     if (await secretsEqual(presented, await signature(secret, label, payload))) return true;
   }
@@ -81,12 +81,12 @@ async function matchesAnyKey(env: Env, label, payload, presented) {
 }
 
 /** The token with its signature appended, or `payload` unchanged when no key is configured. */
-export async function signSessionToken(env: Env, payload) {
+export async function signSessionToken(env: Env, payload: any) {
   const key = signingKey(env);
   return key ? `${payload}.${await signature(key, SESSION_LABEL, payload)}` : payload;
 }
 
-export async function signAccessToken(env: Env, payload) {
+export async function signAccessToken(env: Env, payload: any) {
   const key = signingKey(env);
   return key ? `${payload}.${await signature(key, ACCESS_LABEL, payload)}` : payload;
 }
@@ -100,7 +100,7 @@ function signedRequired(env: Env) {
  * carries a wrong signature, and, when REQUIRE_SIGNED_TOKENS is on, for one that
  * carries none. True when no key is configured (nothing can be checked).
  */
-export async function sessionTokenAcceptable(env: Env, token) {
+export async function sessionTokenAcceptable(env: Env, token: string) {
   if (checkingKeys(env).length === 0) return true;
   const signed = SIGNED_SESSION.exec(token);
   if (!signed) return !signedRequired(env);
@@ -112,7 +112,7 @@ export async function sessionTokenAcceptable(env: Env, token) {
  * neither of the two shapes this Worker issues is refused: nothing legitimate looks
  * like that, and it costs no KV read to say so.
  */
-export async function accessTokenAcceptable(env: Env, token) {
+export async function accessTokenAcceptable(env: Env, token: string) {
   if (checkingKeys(env).length === 0) return true;
   if (LEGACY_ACCESS.test(token)) return !signedRequired(env);
   const signed = SIGNED_ACCESS.exec(token);

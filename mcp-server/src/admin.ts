@@ -40,7 +40,7 @@ function startOfMonthMs(date = new Date()) {
   return new Date(date.getFullYear(), date.getMonth(), 1).getTime();
 }
 
-async function countKVPrefix(env: Env, prefix) {
+async function countKVPrefix(env: Env, prefix: string) {
   let count = 0;
   let cursor;
   do {
@@ -76,7 +76,7 @@ async function countDistinctUsers(env: Env) {
 // `updated_at` holds the time of the RevenueCat event that wrote the row, not
 // the time it arrived: webhooks are delivered out of order and retried, and an
 // older event must never overwrite the state a newer one already set.
-async function upsertSubscriber(env: Env, appUserId, status, productId, expiresAt, identityHashes, occurredAt) {
+async function upsertSubscriber(env: Env, appUserId: any, status: any, productId: any, expiresAt: any, identityHashes: any, occurredAt: any) {
   await env.ADMIN_DB.prepare(
     `INSERT INTO subscribers (app_user_id, status, product_id, expires_at, updated_at)
      SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS
@@ -88,7 +88,7 @@ async function upsertSubscriber(env: Env, appUserId, status, productId, expiresA
   ).bind(appUserId, status, productId, expiresAt, occurredAt, JSON.stringify(identityHashes)).run();
 }
 
-export async function handleAdminWebhook(url, request: Request, env: Env) {
+export async function handleAdminWebhook(url: URL, request: Request, env: Env) {
   if (url.pathname !== "/api/admin/revenuecat-webhook" || request.method !== "POST") return null;
 
   const allowed = await checkRateLimit(env.RATE_LIMIT_ADMIN_WEBHOOK, clientKey(request));
@@ -157,7 +157,7 @@ export async function handleAdminWebhook(url, request: Request, env: Env) {
 // later task — but the receiving end and its table exist now so that work
 // is just "call this endpoint" when it happens. Authenticated the normal
 // way (a real studiquo bearer token), unlike the two routes above.
-export async function handleUsageEvent(url, request: Request, env: Env) {
+export async function handleUsageEvent(url: URL, request: Request, env: Env) {
   if (url.pathname !== "/api/usage-events" || request.method !== "POST") return null;
 
   const token = bearerToken(request);
@@ -187,7 +187,7 @@ export async function handleUsageEvent(url, request: Request, env: Env) {
   return json({ recorded: true });
 }
 
-async function countRecentUniqueUsers(env: Env, sinceMs) {
+async function countRecentUniqueUsers(env: Env, sinceMs: any) {
   const row = await env.ADMIN_DB.prepare(`SELECT COUNT(DISTINCT user_key) AS count FROM usage_events WHERE occurred_at >= ?`)
     .bind(sinceMs).first();
   return row?.count ?? 0;
@@ -198,7 +198,7 @@ async function countRecentUniqueUsers(env: Env, sinceMs) {
 // after they were first seen. Returns null (not 0) when there's no cohort
 // old enough yet to measure, so the dashboard can show "not enough data"
 // instead of a misleading 0%.
-async function retentionRate(env: Env, dayOffset) {
+async function retentionRate(env: Env, dayOffset: any) {
   const now = Date.now();
   const row = await env.ADMIN_DB.prepare(
     `SELECT COUNT(DISTINCT u.user_key) AS cohortSize,
@@ -213,7 +213,7 @@ async function retentionRate(env: Env, dayOffset) {
   return row?.cohortSize ? row.retained / row.cohortSize : null;
 }
 
-export async function handleAdminStats(url, request: Request, env: Env) {
+export async function handleAdminStats(url: URL, request: Request, env: Env) {
   if (url.pathname !== "/api/admin/stats" || request.method !== "GET") return null;
   // No auth check here on purpose — see this file's header comment.
 
@@ -415,7 +415,7 @@ fetch('/api/admin/stats').then(r => {
 <script>${MODERATION_SCRIPT}</script>
 </html>`;
 
-export function handleAdminPage(url) {
+export function handleAdminPage(url: URL) {
   if (url.pathname !== "/admin" && url.pathname !== "/admin/") return null;
   return new Response(DASHBOARD_HTML, { headers: htmlHeaders({ connect: true }) });
 }
