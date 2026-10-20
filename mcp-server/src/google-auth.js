@@ -6,7 +6,7 @@
 // OAuth client ID (not the iOS client ID): the iOS app sets that as its
 // `GIDServerClientID`, which is what makes Google mint an idToken addressed
 // to this audience instead of the app's own client ID.
-import { jwksVerifier } from "./jwks-verify.js";
+import { jwksVerifier } from "./jwks-verify.ts";
 
 // Google issues both forms across its token population; accepting either is
 // Google's own documented guidance for verifying ID tokens.

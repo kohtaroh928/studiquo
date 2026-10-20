@@ -1,4 +1,4 @@
-import { VALIDITY_SECONDS } from "./token.js";
+import { VALIDITY_SECONDS } from "./token.ts";
 // A revoked bearer token's SHA-256 hash is recorded here so every endpoint
 // that authenticates with it can reject it even after logout, regardless of
 // which module first derived the hash (worker.js, chat.js, passkeys.js all

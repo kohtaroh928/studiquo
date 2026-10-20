@@ -16,7 +16,7 @@
 /** The IP Cloudflare's edge observed for this request. Never trust a
  * client-supplied header for this — `cf-connecting-ip` is set by Cloudflare
  * itself and can't be spoofed by the caller. */
-export function clientKey(request) {
+export function clientKey(request: Request): string {
   return normalizeIP(request.headers.get("cf-connecting-ip")) || "unknown";
 }
 
@@ -28,7 +28,7 @@ export function clientKey(request) {
  * IPv6 address (`::ffff:1.2.3.4`) is the IPv4 address. Anything that cannot be
  * read as an address is returned unchanged rather than guessed at.
  */
-export function normalizeIP(value) {
+export function normalizeIP(value: unknown): string | null {
   const text = String(value ?? "").trim();
   if (!text) return null;
   if (!text.includes(":")) return text;
@@ -56,7 +56,7 @@ export function normalizeIP(value) {
  * @param binding - the Cloudflare Rate Limiting binding for this endpoint (env.RATE_LIMIT_*)
  * @param key - clientKey(request), or a userKey for an already-authenticated endpoint
  */
-export async function checkRateLimit(binding, key) {
+export async function checkRateLimit(binding: RateLimit, key: string): Promise<boolean> {
   const result = await binding.limit({ key });
   return result.success;
 }

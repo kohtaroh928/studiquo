@@ -1,4 +1,4 @@
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 
 // A person's chat identity must not change when their session does: friend
 // codes, chat rooms and document rooms are all recorded under it. The registry

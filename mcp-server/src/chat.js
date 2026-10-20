@@ -1,13 +1,13 @@
 import { isRevoked } from "./revocation.js";
 import { resolveChatUserKey } from "./chat-identity.js";
-import { isExpired } from "./token.js";
-import { checkRateLimit } from "./rate-limit.js";
-import { bearerToken, sha256Hex } from "./auth.js";
-import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.js";
+import { isExpired } from "./token.ts";
+import { checkRateLimit } from "./rate-limit.ts";
+import { bearerToken, sha256Hex } from "./auth.ts";
+import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { realSession, hasModerationMark, CHAT_SUSPENSION_PREFIX } from "./session.js";
 import { handleGroupRoutes } from "./groups.js";
 import { sendPush } from "./push.js";
-import { chatMessageNotification } from "./message-notification.js";
+import { chatMessageNotification } from "./message-notification.ts";
 import { handleDeviceRoutes } from "./devices.js";
 import { fileChatReport } from "./chat-reports.js";
 

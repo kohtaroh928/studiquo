@@ -12,8 +12,8 @@
 // on the account signs in with it only (see gatePasskeyAccount). The app asks
 // every account for one at its first sign-in and has no way to remove it; the
 // way back after losing it is the e-mailed recovery below.
-import { sha256Hex } from "./auth.js";
-import { json } from "./http.js";
+import { sha256Hex } from "./auth.ts";
+import { json } from "./http.ts";
 import { featureDisabled } from "./features.js";
 import { revokeAllConnections } from "./mcp-oauth.js";
 import { revokeSessionsIssuedBefore } from "./session.js";

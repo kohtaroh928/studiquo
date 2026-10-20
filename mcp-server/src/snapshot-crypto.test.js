@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import test from "node:test";
 import worker from "./app.js";
-import { sealSnapshot, openSnapshot } from "./snapshot-crypto.js";
+import { sealSnapshot, openSnapshot } from "./snapshot-crypto.ts";
 
 const newKey = () => randomBytes(32).toString("base64");
 const hash = value => createHash("sha256").update(value).digest("hex");

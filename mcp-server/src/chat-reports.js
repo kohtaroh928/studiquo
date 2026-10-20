@@ -5,8 +5,8 @@
 // moment of the report (a sender can retract afterwards, which blanks the
 // room's copy), the sender is recorded as the reported party, and the
 // operator is told in Slack — with the id and a link only, never the text.
-import { json } from "./http.js";
-import { postSlackBlocks } from "./slack.js";
+import { json } from "./http.ts";
+import { postSlackBlocks } from "./slack.ts";
 
 function roomErrorResponse(error) {
   if (error instanceof Error && error.message === "Forbidden") return json({ error: "Forbidden" }, 403);

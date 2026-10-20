@@ -12,7 +12,7 @@
 // can register the same custom scheme; a script that hands the token over without
 // a tap would give it to whichever app iOS picks. The button below is the way
 // into the app from those in-app browsers, and it needs a tap.
-import { json, htmlHeaders } from "./http.js";
+import { json, htmlHeaders } from "./http.ts";
 
 function htmlEscape(value) {
   return String(value).replace(/[&<>"']/g, character => ({
