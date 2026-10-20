@@ -1,3 +1,4 @@
+import {requireRawPDFStartEnabled,requireRawPDFStartSchema} from './pdf-start-gate.js';
 import {sha256Hex} from '../auth.js';
 import {requireRawPDFIntakeAuthorization} from './pdf-intake.js';
 import {RAW_PDF_CONSENT_VERSION} from './pdf-preflight.js';
@@ -71,24 +72,33 @@ async function reserve(env,session,input,limits,clock){
  if(r?.meta?.changes!==1 && saved.intake_id!==verified.intakeId)fail('pdf_job_admission_denied');
  return result(saved);
 }
-async function claim(env,session,input,jobId,clock){
+async function claim(env,session,input,jobId,clock,stopProtocol=false){
  session=snapshot(session);const proof=snapshot(input),key=await owner(session);
  if(!id(jobId))fail('invalid_pdf_job');const p=await requireRawPDFIntakeAuthorization(env,session,proof,{clock});
  const db=env.ADMIN_DB;await schema(db);const token=crypto.randomUUID(),tokenHash=await sha256Hex(token),n=now(clock);
- const r=await stmt(db,`UPDATE rag_pdf_jobs SET state='receiving',token_hash=?
+ const update=stmt(db,`UPDATE rag_pdf_jobs SET state='receiving',token_hash=?${stopProtocol?",claim_protocol='stop-proof-v1'":''}
  WHERE account_key=? AND job_id=? AND intake_id=? AND state='reserved' AND token_hash IS NULL AND deadline>?
- AND ${gate}`,tokenHash,key,jobId,p.intakeId,n,...gateArgs(key,p,n)).run();
- if(r?.meta?.changes!==1)fail('pdf_job_claim_conflict');
+ AND ${gate}${stopProtocol?' RETURNING job_id':''}`,tokenHash,key,jobId,p.intakeId,n,...gateArgs(key,p,n));
+ // D1 changes also counts the evidence INSERT trigger. RETURNING isolates the
+ // claim winner instead of interpreting two writes as a losing claim.
+ const r=stopProtocol?await update.all():await update.run();
+ if(stopProtocol?r.results.length!==1:r?.meta?.changes!==1)fail('pdf_job_claim_conflict');
  return Object.freeze({jobId,executionToken:token});
 }
-async function dispatch(env,session,input,jobId,token,clock){
+async function dispatch(env,session,input,jobId,token,clock,v2=false,start=false){
  session=snapshot(session);const proof=snapshot(input),key=await owner(session);
  if(!id(jobId)||!id(token))fail('invalid_pdf_job');const p=await requireRawPDFIntakeAuthorization(env,session,proof,{clock});
  const db=env.ADMIN_DB;await schema(db);const tokenHash=await sha256Hex(token),n=now(clock);
- const r=await stmt(db,`UPDATE rag_pdf_jobs SET state='dispatched',ever_dispatched=1
+ if(v2)await requireRawPDFRPCV2Schema(db);
+ if(start){requireRawPDFStartEnabled(env);await requireRawPDFStartSchema(db);requireRawPDFStartEnabled(env);}
+ const update=stmt(db,`UPDATE rag_pdf_jobs SET state='dispatched',ever_dispatched=1${v2?",rpc_version=2,rpc_pdf_sha256=?,rpc_not_after=deadline":''}${start?",start_protocol='one-shot-v1'":''}
  WHERE account_key=? AND job_id=? AND intake_id=? AND token_hash=? AND state='receiving'
- AND ever_dispatched=0 AND deadline>? AND ${gate}`,key,jobId,p.intakeId,tokenHash,n,...gateArgs(key,p,n)).run();
- if(r?.meta?.changes!==1)fail('pdf_job_dispatch_conflict');return {dispatch:true};
+ AND ever_dispatched=0 AND deadline>? AND ${gate}${start?" AND start_protocol='legacy' AND claim_protocol='stop-proof-v1'":''}${v2?' RETURNING job_id,rpc_pdf_sha256,rpc_not_after':''}`,
+ ...(v2?[p.pdfSha256]:[]),key,jobId,p.intakeId,tokenHash,n,...gateArgs(key,p,n));
+ const r=v2?await update.all():await update.run();
+ if(start)requireRawPDFStartEnabled(env);
+ if(v2?r.results.length!==1:r?.meta?.changes!==1)fail('pdf_job_dispatch_conflict');
+ return v2?Object.freeze({version:2,jobId:r.results[0].job_id,pdfSha256:r.results[0].rpc_pdf_sha256,notAfter:r.results[0].rpc_not_after}):{dispatch:true};
 }
 async function stop(env,session,jobId){
  session=snapshot(session);const key=await owner(session),db=env.ADMIN_DB;await schema(db);
@@ -128,12 +138,14 @@ async function settle(env,jobId,token,stopConfirmed,clock){
  const saved=await stmt(db,`SELECT ${fields} FROM rag_pdf_jobs WHERE job_id=? AND token_hash=? AND state='settled'`,jobId,tokenHash).first();
  if(!saved)fail('pdf_job_stop_unconfirmed');return result(saved);
 }
-const errors=new Set(['invalid_pdf_job_clock','pdf_job_unauthorized','pdf_job_upgrade_required','pdf_job_policy_required',
+const errors=new Set(['pdf_start_disabled','pdf_start_upgrade_required','invalid_pdf_job_clock','pdf_job_unauthorized','pdf_job_upgrade_required','pdf_job_policy_required',
  'invalid_pdf_job','pdf_job_admission_denied','pdf_job_claim_conflict','pdf_job_dispatch_conflict','pdf_job_not_found','pdf_job_stop_unconfirmed',
  'pdf_intake_unauthorized','pdf_intake_upgrade_required','pdf_intake_disabled','invalid_pdf_intake_proof','pdf_intake_not_authorized','invalid_pdf_intake_clock']);
 async function guarded(work){try{return await work();}catch(e){throw new Error(errors.has(e?.message)?e.message:'pdf_job_unavailable');}}
 export const reserveRawPDFJob=(env,session,proof,limits,{clock=Date.now}={})=>guarded(()=>reserve(env,session,proof,limits,clock));
 export const claimRawPDFJob=(env,session,proof,jobId,{clock=Date.now}={})=>guarded(()=>claim(env,session,proof,jobId,clock));
+// Internal stop-evidence adapter only; no client-selectable protocol parameter.
+export const claimRawPDFJobWithStopProtocol=(env,session,proof,jobId,{clock=Date.now}={})=>guarded(()=>claim(env,session,proof,jobId,clock,true));
 export const markRawPDFJobDispatched=(env,session,proof,jobId,token,{clock=Date.now}={})=>guarded(()=>dispatch(env,session,proof,jobId,token,clock));
 export const requestRawPDFJobStop=(env,session,jobId)=>guarded(()=>stop(env,session,jobId));
 export const requestExpiredRawPDFJobsStop=(env,{clock=Date.now,limit=100}={})=>guarded(()=>expire(env,clock,limit));
@@ -152,3 +164,14 @@ export const requireRawPDFJobExecution=(env,session,proof,jobId,token,{clock=Dat
   AND ${gate}`,key,jobId,p.intakeId,tokenHash,n,...gateArgs(key,p,n)).first();
  if(!found)fail('pdf_job_claim_conflict');return result(found);
 });
+
+// Internal v2 dispatch fixes the envelope in the same winning CAS, before RPC.
+export async function requireRawPDFRPCV2Schema(db){
+ const columns=await stmt(db,'PRAGMA table_info(rag_pdf_jobs)').all();
+ const guards=await stmt(db,"SELECT COUNT(*) AS n FROM sqlite_master WHERE type='trigger' AND name IN ('rag_pdf_jobs_rpc_insert','rag_pdf_jobs_rpc_update')").first();
+ if(!['rpc_version','rpc_pdf_sha256','rpc_not_after'].every(n=>columns.results.some(c=>c.name===n))||guards?.n!==2)fail('pdf_job_upgrade_required');
+}
+export const markRawPDFJobDispatchedV2=(env,session,proof,jobId,token,{clock=Date.now}={})=>guarded(()=>dispatch(env,session,proof,jobId,token,clock,true));
+
+// Internal only; not selected by the current processor or public request.
+export const markRawPDFJobDispatchedWithStartProtocol=(env,session,proof,jobId,token,{clock=Date.now}={})=>guarded(()=>dispatch(env,session,proof,jobId,token,clock,true,true));

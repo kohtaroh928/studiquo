@@ -609,3 +609,53 @@ admission/receive claim/有限reader/digest/dispatch/private parse/strict manife
 ## 原PDF Step5-Bの処理済み台帳整理（2026-10-19）
 
 追加0015で初期無効の内部purgeを実装。精算から48h・過去UTC窓・永続失効/置換・既知時刻・復旧done/leaseなしだけ、粗い候補10件とcursorで有限整理。floor/child/parent/leaseは原子的rollback、writer fenceは停止後も維持。legacy/停止不明/registry参照は保持、将来採用migrationはpre-adoption契約を先に変更して旧purgeを閉じる。server1888件と実local D1同時pass/rollback検証成功。remote未適用、HTTP/cron/flag未有効化。詳細: [Step5-B報告](RAG_PDF_PURGE_IMPLEMENTATION_REPORT.md)。
+
+
+## Step6-A停止証拠基盤（2026-10-19）
+
+Step6-A adds internal claim-bound durable local/remote stop evidence and token-free settlement only after both proofs exist. The production PDF processor and reaper are not wired yet. Lost executors without durable local proof remain held. Migration0016 deliberately closes the old0015 purge contract until atomic evidence/parent retention is reviewed. No deployment or answer-prompt change.
+
+詳細: [停止証拠の設計](RAG_PDF_STOP_EVIDENCE_DESIGN.md)。
+
+
+## Step6-B停止証拠の実処理接続（2026-10-19）
+
+Step6-B wires claim-bound stop evidence into the real PDF processor and bounded reaper. Only saved local/remote proofs permit token-free settlement, with a lease recheck in the settlement write. Migration0017 preserves populated proof rows while adding FK cascade and the pre-adoption-stop-v2 retention contract; prior purge opt-in is disabled. Server1923 tests and actual local workerd/D1 passed using synthetic parser/cancel adapters. Real Docling VM integration, remote rollout, account pending phases and receipts remain. Runtime flags are not enabled.
+
+詳細: [Step6-B報告](RAG_PDF_STOP_INTEGRATION_REPORT.md)。
+
+
+## Step5-Cアカウント削除とPDF後片付け（2026-10-20）
+
+Step5-C connects owner-scoped PDF cleanup to account deletion. PDF-only pending preserves the privacy retry job while independent credentials/session/data erasure proceeds; the minimal checkpoint keeps only identity ownership, PDF status and phase completion. Versionless legacy deleted records recheck PDF state. Saved proofs alone permit settlement; missing schema/binding or unknown stopping stays pending. No rollout, new flags or migration.
+
+詳細: [Step5-C報告](RAG_PDF_ACCOUNT_CLEANUP_REPORT.md)。
+
+
+## Step5-D1 private v2期限境界（2026-10-20）
+
+Step5-D1 adds an opt-in private v2 RPC boundary with immutable notAfter, legacy-signature rejection and cancellation after expiry. It is not wired to MCP and the flag remains unset. Private41 tests and MCP1936 tests passed; actual local DO RPC/SQLite used a synthetic destroy adapter. Next D2a persists the envelope before dispatch and migrates all stop callers; D2b handles finite purge after its safety prerequisites.
+
+詳細: [D1結果](RAG_DO_V2_BOUNDARY_REPORT.md)。
+
+
+## Step5-D2a v2接続（2026-10-20）
+
+MCPのparse/stop/evidence/reaper/account cleanupをv2へ接続した。RAG_PDF_RPC_V2_ENABLED=trueでは0018 schema確認後だけ受付し、dispatch CASと同じ更新で固定digest/notAfterを保存、parseV2を一度呼ぶ。停止は保存job情報から復元し、intake消去・flag OFF後も同期限、旧pendingもdigest補完せずdrain。追加job digestは親台帳の保持対象で、取消で消去済みとは扱わない。既存local/remote両停止証拠・会計・認可・prompt v1は維持。設定は未変更/未配備。実local D1(18migration)→service RPC→SQLite DO→合成VM IO→manifest→停止証拠/精算まで確認。次はD2bの実停止/旧caller閉鎖/grace根拠とfinite purge。
+
+詳細: [接続検証](RAG_PDF_RPC_V2_INTEGRATION_REPORT.md)。
+
+
+## D2b-A：停止観測と削除前提（2026-10-20）
+
+D2b-Aは停止観測の保存と削除前提の確認まで。private v2 stateへ初回destroyConfirmedAtを保存、障害時ack拒否。private51/MCP v2通し12成功、local workerd/RPC/SQLite DOで保存確認（VM IO合成）、別の実Linux固定imageで合成2page解析20.945秒/取消/期限kill/reap/終了を再確認。全消去＋clock後退の再実行反例があり、外部fence等の設計前にfinite DO purgeへ進めない。新retention alarm/grace/flag/配備なし。
+
+
+## D2b-B：再実行防止の設計（2026-10-20）
+
+D2b-Bの設計で、marker保持を維持しつつ既存D1 one-shot start CASを第一候補に選定した。C1未接続schema/helper→C2privateRPCと元promise追跡→C3clock/backup/alarm/grace→C4条件付きmarker整理へ分割。DO start直前で一度許可を消費し、同jobの再grantはしない。今回production/DDL/configは変更せず、新RAG精度・実行の検証成績ではない。 [設計正本](RAG_DO_REPLAY_FENCE_DESIGN.md)。
+
+
+## D2b-C1：開始許可のDB部品（2026-10-20）
+
+D2b-C1で一回限り開始許可の追加schemaと内部CASをローカル実装した。新専用dispatchのみone-shot-v1、同nonce再grantなし、停止不明/応答喪失の権利をresetしない。新protocol親は保持、legacy混在purgeはcursor前進。private/HTTP/config未接続なので実際の解析経路は変わらない。次C2でnamedRPCとDO start直前へ接続し、元promise追跡と遅延許可を検証する。 [検証と制約](RAG_PDF_START_GATE_REPORT.md)。

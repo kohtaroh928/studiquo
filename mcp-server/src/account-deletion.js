@@ -1,3 +1,4 @@
+import { cleanupAccountRawPDF } from './rag/pdf-account-cleanup.js';
 import { deleteAccountRAG } from "./rag/index.js";
 import { sha256Hex } from "./auth.js";
 import { queueRevenueCatDeletion } from "./privacy-retention.js";
@@ -11,8 +12,8 @@ export async function startAccountDeletion(env, canonicalSub) {
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
   await env.STUDIQUO_DATA.put(jobKey, JSON.stringify({ canonicalSub, requestedAt: Date.now() }));
   try {
-    await deleteAccount(env, canonicalSub);
-    return { deleted: true, externalDeletionPending: true };
+    const result = await deleteAccount(env, canonicalSub);
+    return result.deleted ? { deleted: true, externalDeletionPending: true } : result;
   } catch {
     return { deleted: false, cleanupPending: true };
   }
@@ -39,15 +40,38 @@ function linkedIdentityKey(identity) {
   return identity.sub;
 }
 
+// Only fixed PDF phase metadata is added to the existing durable checkpoint.
+// Saved identity ownership survives credential/session erasure; no PDF/job/token
+// payload is copied into KV. Re-evaluate on retry, never trust a cached complete.
+async function pdfPhase(env, identities, previous, establishFence = false) {
+  let tracked = previous?.tracked === true, pending = false;
+  for (const identity of identities) {
+    const phase = await cleanupAccountRawPDF(env, identity, { requireSchema: tracked, establishFence });
+    tracked ||= phase.tracked;
+    pending ||= phase.pending;
+  }
+  return { version: 1, tracked, pending };
+}
+
 export async function deleteAccount(env, canonicalSub) {
   const deletionStateKey = `account-deletion:${await sha256Hex(canonicalSub)}`;
   const previousState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
-  if (previousState?.status === "deleted") {
+  if (previousState?.status === "deleted" && previousState.pdfCleanup?.version === 1 && previousState.pdfCleanup.pending === false) {
     await env.STUDIQUO_DATA.delete(jobKey);
     return { deleted: true };
   }
   await env.STUDIQUO_DATA.put(jobKey, JSON.stringify({ canonicalSub, requestedAt: Date.now() }));
+  if (previousState?.independentCleanupComplete === true || previousState?.status === "deleted") {
+    const identities = [...new Set([canonicalSub, ...(previousState.identityKeys ?? [])])];
+    const phase = await pdfPhase(env, identities, previousState.pdfCleanup, true);
+    const resumed = { status: "deleting", identityKeys: identities, pdfCleanup: phase, independentCleanupComplete: true };
+    await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(resumed));
+    if (phase.pending) return { deleted: false, cleanupPending: true };
+    await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "deleted", deletedAt: Date.now(), identityKeys: identities, ...(phase.tracked ? { pdfCleanup: phase } : {}) }));
+    await env.STUDIQUO_DATA.delete(jobKey);
+    return { deleted: true };
+  }
   const checkpointKeys = new Set(previousState?.deletionKeys ?? []);
   let checkpoint = { ...previousState, status: "deleting", deletionKeys: [...checkpointKeys] };
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(checkpoint));
@@ -109,7 +133,7 @@ export async function deleteAccount(env, canonicalSub) {
   // Persist the cleanup plan before revoking sessions. If a later binding
   // call times out, a retry still knows which token-derived data belonged to
   // this account even though those session rows are already gone.
-  checkpoint = { status: "deleting", deletionKeys: [...checkpointKeys], emails, identityKeys: [...identityKeys], tokenHashes: [...new Set(ownedTokenHashes)] };
+  checkpoint = { ...checkpoint, status: "deleting", pdfCleanup: { version: 1, tracked: checkpoint.pdfCleanup?.tracked === true, pending: true }, deletionKeys: [...checkpointKeys], emails, identityKeys: [...identityKeys], tokenHashes: [...new Set(ownedTokenHashes)] };
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(checkpoint));
   // Keep an erasure-only alias map after deleting login identity mappings.
   // Otherwise one provider job could finish first and allow re-registration
@@ -120,6 +144,9 @@ export async function deleteAccount(env, canonicalSub) {
   await deleteKeys(env, ownedSessionKeys);
   // Independent of RAG_ENABLED: disabling retrieval must never disable erasure.
   for (const identity of identityKeys) await deleteAccountRAG(env, identity);
+  checkpoint.pdfCleanup = await pdfPhase(env, identityKeys, checkpoint.pdfCleanup);
+  // Save the PDF result before later phases erase login/identity discovery.
+  await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(checkpoint));
 
   const accountKeys = [];
   for (const identity of identities) {
@@ -274,7 +301,10 @@ export async function deleteAccount(env, canonicalSub) {
     }
   }
 
-  await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "deleted", deletedAt: Date.now(), identityKeys: [...identityKeys] }));
+  checkpoint = { status: "deleting", identityKeys: [...identityKeys], pdfCleanup: checkpoint.pdfCleanup, independentCleanupComplete: true };
+  await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify(checkpoint));
+  if (checkpoint.pdfCleanup.pending) return { deleted: false, cleanupPending: true };
+  await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ status: "deleted", deletedAt: Date.now(), identityKeys: [...identityKeys], ...(checkpoint.pdfCleanup.tracked ? { pdfCleanup: checkpoint.pdfCleanup } : {}) }));
   await env.STUDIQUO_DATA.delete(jobKey);
   return { deleted: true };
 }

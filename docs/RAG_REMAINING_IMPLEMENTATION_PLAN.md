@@ -11,8 +11,15 @@
 | 2（調査完了） | Cloudflare stagingの既存版・DB適用済みmigration・契約/料金条件を読み取り確認 | v83、未適用0008〜0013、別系統2履歴、Paid契約を確認。[記録](RAG_STAGING_PREFLIGHT_20261019.md)。復旧実施/配備前照合はStep 8〜9 |
 | 3（調査完了・配布対応残） | Linux base OSと依存/モデルの利用条件を確認 | OS429/wheel102/モデル3を確認。[調査](RAG_LICENSE_REVIEW_20261019.md)。license本文同梱/native配布条件/OS CVEは配備前の残件 |
 | 4（設計完了） | 一時job/intake/receipt/tombstoneの保存期間・削除順を設計 | [設計](RAG_PDF_RETENTION_DESIGN.md)。独立Planner/Code/Security確認、Medium2件修正済み。実削除は未実施 |
-| 5（A/Bローカル完了、C/D残） | 保存期間に従う有限cleanupと監視を実装・試験 | [Step5-A実装結果](RAG_PDF_RETENTION_IMPLEMENTATION_REPORT.md)。nullable時刻/expiry詳細削減/集計、1865件と実local D1成功。[Bの処理済み台帳整理](RAG_PDF_PURGE_IMPLEMENTATION_REPORT.md)も実装・1888件と実local D1成功、初期無効。停止不明回復/account/DO/receiptは未完 |
-| 6 | claimed後の停止不明・executor token紛失時の復旧を設計/実装 | remote停止だけでローカル処理終了と断定せず、証拠付き回収か明確な手動復旧 |
+| 5（A/B/Cローカル完了、D残） | 保存期間に従う有限cleanupと監視を実装・試験 | [Step5-A実装結果](RAG_PDF_RETENTION_IMPLEMENTATION_REPORT.md)。nullable時刻/expiry詳細削減/集計、1865件と実local D1成功。[Bの処理済み台帳整理](RAG_PDF_PURGE_IMPLEMENTATION_REPORT.md)も実装・1888件と実local D1成功、初期無効。停止証拠保存済みjobの回復はStep6-Bで接続、account PDF phaseはStep5-Cで接続、DO/receiptは未完 |
+| 6（A/Bローカル完了） | claimed後の停止不明・executor token紛失時の復旧を設計/実装 | [B接続結果](RAG_PDF_STOP_INTEGRATION_REPORT.md)：保存済み停止証拠から精算、0017にFKcascade親/証拠retention。1923件と実localD1成功。証拠前executor消失は保持。remote未反映 |
+| 5-C（ローカル完了） | account PDF pending checkpoint/他phase継続/最終判定 | [結果](RAG_PDF_ACCOUNT_CLEANUP_REPORT.md)。owner専用処理、最小checkpoint、旧deleted再確認、証拠付きretry。実KV/remoteは未検証 |
+| 5-D1（ローカル部品完了） | private v2期限固定/旧RPC拒否の境界 | [D1結果](RAG_DO_V2_BOUNDARY_REPORT.md)。private41件/MCP1936件、実localRPC/SQLite成功。MCP未接続・purgeなし・flag未設定 |
+| 5-D2a（ローカル完了） | MCP immutable envelope保存と全caller移行 | 0018・固定CAS・全停止adapter・旧pending drain。実local RPC/DO確認、VM IOは合成。実VM停止はD2b前提の残件 |
+| 5-D2b-A（ローカル完了） | 停止観測の永続化と削除前提検証 | v2のdestroy後時刻固定、実Linux再試験。物理purge/alarm分離は未実装 |
+| 5-D2b-B（設計完了・未実装） | DO再実行防止の方式選定 | [設計](RAG_DO_REPLAY_FENCE_DESIGN.md)。marker保持既定、既存D1 one-shot start CASを第一候補。grace/clock/backup/alarmは削除前提として保持 |
+| 5-D2b-C1（ローカル完了） | start消費metadata＋内部CASを未接続で実装 | 既存行unknown保持、許可再発行なし、同時/unknowncommit/失効/parentpurge回帰。private/HTTP/flags/配備は未接続 |
+| 5-D2b-C2（次）〜C4 | gate接続→全task/clock/backup/alarm/grace→marker整理 | 各段階を独立レビュー。条件不足のまま有限purgeしない |
 | 7 | 実測に基づく並列数/メモリ/時間/利用上限、異常時停止手順を校正 | shadow unitsを実請求上限としない |
 | 8 | staging配備範囲/費用と試験範囲を確定 | 現在のremote承認は未受領。既存DB backup/rollback準備、Step3のlicense本文同梱/native配布条件/OS CVE残件を解消 |
 | 9 | 必要migrationとprivate→public staging接続を段階反映 | flagを閉じた初期状態、各段階の独立確認。条件不足なら有効化しない |
@@ -155,3 +162,6 @@ Step 6〜8は改善提案であり、候補を必ず本番採用する約束で�
 検証: サーバー全1,851件、processor61件、provision6件、HTTP/app/process42件成功。Python102依存のauditは既知脆弱性0・skip0（OS/モデルライセンスの保証ではない）。独立Code/Securityレビューの未解決所見なし。回答品質の有料評価・実資料・未使用20問は使っていない。
 
 詳細・制約・ロールバック: [実Linuxと公開接続の検証](RAG_LINUX_PUBLIC_CONNECTION_REPORT.md)。次はstagingの既存配備/DB状態と利用条件を確認し、remote配備の承認範囲を確定してから段階適用・疎通する。iPad正式採用、claimed停止不明の復旧、retentionは残る。
+
+
+2026-10-20 Step5-D2a: MCP側の不変v2 envelopeと全停止callerを接続。0018追加型、既存metadata/会計/停止証拠の保持条件は維持。新12回帰、実local D1(18migration)/service RPC/SQLite DO＋合成VM IOで解析→両停止証拠→精算を確認。実Cloudflare Container停止・D2b物理削除・flags有効化・配備なし。[結果](RAG_PDF_RPC_V2_INTEGRATION_REPORT.md)。

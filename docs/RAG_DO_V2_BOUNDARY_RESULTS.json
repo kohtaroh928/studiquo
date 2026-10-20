@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-20",
+  "step": "5-D1",
+  "scope": "private v2 boundary only; no MCP caller migration or purge",
+  "privateWorkerTests": {
+    "tests": 41,
+    "pass": 41,
+    "fail": 0,
+    "skipped": 0
+  },
+  "newV2Tests": 13,
+  "serverTests": {
+    "tests": 1936,
+    "pass": 1936,
+    "fail": 0,
+    "skipped": 0
+  },
+  "localWorkerd": {
+    "localWorkerd": true,
+    "sqliteDO": true,
+    "actualRPC": true,
+    "fixedDeadline": true,
+    "cancelConfirmed": true,
+    "changedDeadlineRejected": true,
+    "legacyRejected": true,
+    "replayRejected": true,
+    "expiredEmptyNoMarker": true,
+    "expiredEmptyDestroyAdapter": true,
+    "vm": "synthetic_destroy_adapter_only",
+    "remoteChanges": false
+  },
+  "reviews": {
+    "planner": "split D1/D2a/D2b",
+    "code": "no findings",
+    "security": "no findings; persistent caller envelope prerequisite remains",
+    "independentTestRerun": false
+  },
+  "flagsEnabled": false,
+  "remoteChanges": false,
+  "physicalPurge": false,
+  "paidAI": false,
+  "commitOrPush": false,
+  "remaining": [
+    "MCP immutable envelope persistence before dispatch",
+    "all cancellation/recovery/account caller migration",
+    "legacy pending job stop compatibility",
+    "real VM stop and deadline integration",
+    "finite purge after justified grace and caller closure"
+  ],
+  "sourceHashes": {
+    "services/docling-worker/index.js": "1f21b1b844a8f116a2a34aada0407972ae0804feff84c6776d82a03b694a9925",
+    "services/docling-worker/v2.test.js": "26f38aaa573b7bbf72d8cb7ccc21559645f041c77eb8eab662b56662a3a46edc",
+    "mcp-server/tools/rag-docling-v2-local-smoke.mjs": "9334eecd7f610067f2a2eda85778e8b4587807f8073f0a117bcedd7892b0eb6e"
+  }
+}

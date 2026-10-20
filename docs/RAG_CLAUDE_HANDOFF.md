@@ -1,6 +1,112 @@
 # Studiquo RAG：Codex / Claude 共通の引き継ぎ
 
-最終更新: 2026-10-19。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
+最終更新: 2026-10-20。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
+
+## 未コミット変更の保存（2026-10-20）
+
+ユーザー依頼でcodex/rag-wipに蓄積したD1/D2a/D2b-A/B/C1の全53ファイルを一括local commitする。既存dirtyを保持し、対象ファイルのgitleaks検査（約637KB）は検出0。staged検査で新SQL末尾空行を1件検出し削除、該当source hashを更新（SQL文変更なし）。直前C1の全体逐次1966成功、private51成功等の既存検証結果を各reportに保持し、commitのみの今回は全体を再実行しない。構成/動作の追加変更なし、push/merge/deployなし。次の開発はC2。
+
+mainのGEMINI.md、detached main-mergeのinventory、claude/rag-contract・rag-ts・ts-anyの変更は本commitに含めない。最新AGENTS.mdのshared checkout/他agent接頭辞へのcommit禁止に従う。Notion既存カードへ保存結果を追記する。Project資料は前段C1で報告した3正本の差替えが引き続き必要、今回commitだけに伴う追加対象なし。
+
+## Step5-D2b-C1：開始許可のDB部品（2026-10-20、最新）
+
+既存dirty保持、High/full/独立Planner/Code/Security。0019 jobs start_protocol/start_claim_id/start_claimed_at、不正INSERT/後付け/消費reset/NULLpair/変更/REPLACE拒否。不明旧行はlegacy/NULL保持。pdf-jobsへ未接続専用dispatchを追加、stop-proof-v1 claim必須、v2 envelope固定と同じreceiving→dispatched CASでone-shot-v1。従来dispatchは維持。新pdf-start-gateは固定envelope/opaqueIDだけ、4flag+専用gate厳密true、schema9対象（floor no_replace含む）、最新owner/intake/同意/account/registry/floor/DB期限を単一UPDATE RETURNINGで照合。勝者だけ一度grant、同nonceも再発行なし。schema込み2秒、timeout/応答喪失/停止後の消費はresetしない。実VM起動/停止証拠でない。
+
+新protocol親はC1ではDELETE禁止、eligible viewをlegacy限定にしてcoarsecursorは保持行通過/旧親整理を継続。newtable/既存migration編集なし。停止/精算/accountcleanupは消費保持で継続。Plannerのmixedpurge starvation注意を反映。Security Medium（floor no_replaceのschema確認漏れ）を修正し再レビュー解消、Code追加所見なし（reviewer読取り、独立実行なし）。
+
+新18、target最終53逐次成功。初回full1966成功。schema修正後の並列再確認は既存HTTP/process短時間timer2件失敗とnew10ms制御phase前timeout/entered待機リスクを確認して中断。既存assertion/production期限を変えず新testを1000ms/phase1500ms上限へ修正、全体最終逐次1966成功（fail/cancel/skip0、258777ms）。結果はRAG_PDF_START_GATE_RESULTS.jsonを確認。負荷起因は推定で既存parallel安定を主張しない。
+
+実local workerd/D1で19migration、populated旧行保持/新専用dispatch/同時一勝者/同nonce拒否/commit応答喪失後再許可なし/reset拒否/消費保持精算/新親DELETE拒否に成功。一時storage破棄、VM/private/PDF起動なし、remote cancelは合成ack。RAG_PDF_START_GATE_REPORT/RESULTS（5sourcehash）、設計/保持/計画/関連3資料を更新。実config/binding/HTTP/process/private未接続、remote migration/deploy/実PDF/有料AI/commit/pushなし、automation PAUSED。
+
+次C2はnamed entrypointとDO start直前接続、元promise追跡/遅延許可拒否/局所再確認/gateoff時cleanupを実localRPCで検証。C3clock/backup/全task/VM停止/alarm/grace、C4条件成立後だけmarker整理。今回の親保持を勝手に解除しない。Project再同期対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG、Desktop複製/uploadなし。今回開始processは全終了。Notion既存カードへ着手/結果/次C2を記録済み。
+
+## Step5-D2b-B設計完了：既存D1による一回限りstart権利（2026-10-20、最新）
+
+ユーザー「続けて」でB設計を継続。production/DDL/config/runtime変更なし。新RAG_DO_REPLAY_FENCE_DESIGN.mdを正本に、当面DO marker保持、有限削除への第一候補は既存D1 jobのone-shot start CASとした。新storage/namespaceは作らない。readonly allow cacheやSELECT後無条件UPDATEは採らず、同nonceでも再grantしない。unknown commitは実行されないまま権利消費の可能性を残し、cleanup/枠保持。start_protocolはrpc_version2/stop-proof-v1と別、新dispatchだけ一回設定、旧行はunknownのまま。
+
+次C1は追加start metadata/immutable trigger/内部CASの未接続実装。固定契約/current owner-intake-consent-account/floor/4承認flag＋専用gate厳密trueを照合、同時/複製/unknown-latecommit/失効/個別flagOFF・欠落・不正/schema欠落/parentpurgeを検証。private/HTTP/実config未接続。C2はnamedRPC/DO start直前/元promise追跡と遅延許可拒否、C3はclock-backup/全task停止/alarm/grace、C4は成立後だけmarker整理。任意backup復元ではD1消費/floorも戻るため安全未保証、dispatched/legacy/停止不明はpurgeしない。
+
+独立Planner/Code/Securityの設計レビュー。Medium（承認flags条件欠落）を修正して再レビュー解消、残所見なし。レビューは読取り、新実装・DB・runtimeテストなし。diff check成功。前段Aのprivate51/MCP12/Linuxは新CASの成績ではない。設計/保持計画/3Project正本を更新。今回新規の実行processなし、前段の検証と専用VMは終了・停止確認済み。
+
+直前のNotion終了追記は使用量上限でauto-review未完了だったが、通常利用可能をread-only確認後、同じ正規ツールの再実行でA結果＋B着手の追記に成功。設定/キー/モデル/アカウント切替・reset購入なし。Notionから無料block上限/2026-10-22猶予通知、今回は書込成功・購入なし。B結果と次C1を既存カードへ更新済み。automation PAUSED、remote/deploy/migration/有料AI/実PDF/commit/pushなし。Project再同期対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG、Desktop複製/uploadなし。
+
+## Step5-D2b-Aローカル完了：停止観測と物理削除の前提（2026-10-20、最新）
+
+既存dirty保持。High/full、Planner/Code/Security独立レビュー。D2b物理削除は未完。Plannerが全消去後clock履歴も消え、clock後退で古いnotAfterが再び未来となる再実行問題を発見。保持markerは巻戻し後も拒否、Mapfixtureだけ人工消去したrestartは同契約parse成功の反例を新testで再現。外部単調fence/namespace incarnation、またはtrustedclock＋異常時全入口停止の契約が必要。graceだけでは解決しない。外部storageを勝手に作らない。
+
+今回index.js cleanup()にv2 destroy解決後の最初のdestroyConfirmedAt保存を追加。保存/clock後退・不正/alarm削除失敗はack拒否/poison/retry。timeout後の元promise解決は後書きなし、legacy/期限後空DOへ追加なし。過去の観測履歴であり現在VM停止/全task静止/reader cleanup/MCP local証拠/削除許可を意味しない。過去観測の後にdestroy失敗したら履歴は残るがpoison+ack失敗。物理purge/marker圧縮/retention alarm/purgeAt/grace定数/flag追加なし。既存alarmはcleanup専用、将来retention導入時に単一alarmの役割分離が必要。
+
+private51成功（既存41＋新10）、MCP v2 integration12成功、diff check成功。MCP production変更なし、前回全1948を今回は再実行していない。実local workerd/D1 18migration/serviceRPC/SQLite DOで停止観測保存と一連pipeline成功（VM IO合成）。一時storage破棄。新script rag-docling-destroy-confirmation-local-smoke.mjs。初回testfile const二重宣言を修正して成功、production条件緩和なし。独立reviewerは読取りのみ、独立再テスト/runtimeなし。
+
+既存専用Colima rag-linuxを元の停止状態から起動、既存image sha256:32018601399c0791a787fd72516acfd8fddce9fe568da12d6344a4c19792bc4dで実linux/amd64の合成2page（20.945秒/8454byte/POST1回）、UID10001/通信なし/共有なし/公開portなし/code-modelreadonly/egress拒否/取消/短縮0.3秒期限kill-reap/jobroot削除/SIGTERM成功。memory.peak=2GiBで上限到達、資源校正残件、OOM/十分な余裕の保証なし。既存runnerの別試験で新v2と実CloudflareContainerを通した証明ではない。試験container残存なしを確認し専用VMも停止へ復帰。今回起動processは全終了。
+
+RAG_DO_DESTROY_CONFIRMATION_REPORT/RESULTS（4sourcehashとimageID）、保持設計/計画/3設計資料/READMEを更新。次D2b-Bは上記外部再実行fence/clock/grace/全task停止/alarm/旧caller閉鎖の設計、その後に有限purgeを独立実装。receipt/iPad/資源費用/remote承認・migration別系統/backup/license/OS監査は残る。公開変更/remote migration/有料AI/実PDF/commit/pushなし、automation PAUSED。Project再同期対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG、Desktop複製/uploadなし。Notionは着手時の状態更新のみ成功。終了結果の追記は自動承認レビューが使用量上限で完了できず未実行（危険と判定された拒否ではない）。次回、既存カードへRAG_DO_DESTROY_CONFIRMATION_REPORT/RESULTSの結果とD2b-Bを追記する。回避のためキー/モデル/アカウント切替や自動スケジュール再開はしない。
+
+## Step5-D2aローカル完了：MCP固定envelopeと全停止caller接続（2026-10-20、最新）
+
+既存dirty保持。追加0018でjob.rpc_version/digest/notAfter、dispatch CAS同時固定、初回設定/不変性/全deadline固定trigger。新pdf-rpc、processの新受付flag snapshot/parseV2/schema gate、evidence/reaper/account cleanupの保存契約による停止を接続。保存v2はflags OFFでもcancelV2、失敗時旧fallback禁止、legacy pendingは元deadlineでcancelV2 drainしDB backfillしない。intake削減後も停止可能、unknown/late CASでparse再送/早期local proofなし。既存claim/evidence/lease/accounting/purge条件とprompt v1維持。private D1コードは今回未変更。
+
+job側rpc_pdf_sha256はPDF-linkableで匿名ではなく、取消/account削除後も未精算/停止不明/purge未接続中は保持する。intake digest消去と別で、48h等の既存親job purge条件成立後にだけ同時削除。Security Low文書不整合を保持設計と関連3資料へ修正し再レビュー解消。Code/Planner/Security独立確認、reviewer独立テスト/runtimeなし。
+
+新12成功、関連既存61成功、private41成功。サーバー最終1948 pass/0fail/0skip、diff check成功。詳細RAG_PDF_RPC_V2_INTEGRATION_RESULTS.json。実local workerd/D1 18migration/servicebindingRPC/SQLite DO→parse→manifest→両停止証拠→精算、不変契約/intake削減/flagoff取消/legacyparse/replay拒否に成功。VM IOだけ合成、実Container停止やLinux Docling再検証ではない。中間fixture arity/実RPC proxy検証記法の失敗は検証コードを修正して成功、production条件の緩和なし。一時runtime/storage破棄。今回起動した検証processは全て終了確認済み。
+
+RAG_PDF_RPC_V2_INTEGRATION_REPORT/RESULTS（8sourcehash）、保持設計/計画/復旧説明/README/関連3資料更新。過去hashは歴史的版を保持。新flag未設定/remote変更・有料AI・commit/pushなし、automation PAUSED。Project再同期対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG。Desktop複製/uploadなし。
+
+次はD2b：実Container停止/期限/再起動、旧入口閉鎖、grace根拠を揃え、finite spent marker/固定purgeAt/cleanupとpurge alarm分離/削除前再確認/clock異常拒否を独立レビュー単位で進める。D2aだけでDO有限保持・全RAG完了としない。remote migration別系統照合/backup/承認、receipt/iPad/資源校正/license/OS CVE残件保持。rollbackは新規受付OFF、v2停止helper/0018/契約/枠を維持、v2 pending中に旧callerへ戻さない。Notion既存カードへ結果と次の一手を更新済み。
+
+## Step5-D1ローカル部品完了：private v2期限固定（2026-10-20、最新）
+
+既存dirty保持。PlannerでDをD1 private境界/D2a MCP永続envelopeと全caller移行/D2b finitepurgeへ分割。今回services/docling-worker/index.jsにv2Only opt-inのparseV2/cancelV2を追加、entry/DO双方旧signature拒否、旧execute/claim/cancelJob引数も拒否。parse strict version/jobId/pdfSha256/notAfter、cancel strict version/jobId/notAfter。snapshot・実bytes digest、claim/start/result前期限確認、内部deadline=min(notAfter,125秒)、state rpcVersion/notAfter固定。DOにPDF/digest保存なし。
+
+期限後cancel/実行flagoffcleanup可。期限内cancel-before-parseは元期限marker、期限後空DOはdestroy確認するがmarker非作成。destroy不明ack拒否、旧state停止は可能だがv2期限を補完せず保持。今回MCPは旧RPCのまま、新flag未設定、purge/deleteAll/配備なし。今flagを有効化すると旧MCPと不整合なので不可。
+
+High/full＋独立Planner/Code/Security、残所見なし（reviewer独立テスト/runtimeなし）。private既存28+新13=41成功、MCP1936 pass/0fail/0skip、diff check成功。実localworkerd/SQLite DO/RPCで固定期限/変更期限拒否/legacy拒否/replay拒否/expiredempty markerなし確認。一時storage破棄、VMdestroyは合成overrideで実Container停止試験ではない。初回編集commandはdirectory誤りでfile未発見、正しい場所で実装検証済み、ユーザーdirty破棄なし。今回実行process終了。
+
+RAG_DO_V2_BOUNDARY_REPORT/RESULTSと3sourcehash、privateREADME/保持設計/計画/関連3設計資料を更新。過去hashは歴史的版維持。Notion既存RAGカード更新。次はD2aでjob.dispatch前にimmutable envelopeを永続化し、intake digest削減後も停止契約を復元、recovery/evidence/accountcleanup全callerを移行し旧pending停止互換を確認。finitepurgeはD2bで実停止/旧caller閉鎖/grace根拠を揃えてから。receipt/iPad/資源校正/remote承認・別系統照合/backup/license/OS CVE残件保持。
+
+rollbackはD1未接続のため現稼働変更なし。将来purge後にlegacy入口を戻さない。remote migration/deploy/実PDF/有料AI/commit/pushなし、automation PAUSED。Project再同期対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG、Desktop複製/uploadは今回未変更。
+
+## Step5-Cローカル完了：account削除とPDF pending連携（2026-10-20、最新）
+
+既存A/B/Project同期のdirty保持。新pdf-account-cleanupと既存account-deletion/recoveryを接続。account denial確認後にownerのraw consent/intakeを失効・詳細削減、owner限定reaperで最大10候補/10秒/remote2秒。受付期限前でも対象ownerを停止要求、無claimは0精算、claimedは保存済み両証拠のみ。flagsoffでもcleanup、schema不明/remoteのみ/停止不明はpending、accounting/evidence/floor等保持。HTTP非公開のowner専用入口は非文字列/null/undefined/64lowerhex以外を拒否、globalへfallbackしない。
+
+PDFだけpendingなら他独立phaseを継続しdeleted:false/cleanupPending:true、privacyjob維持。startAccountDeletionも戻り値を尊重。identity消去前にPDFphaseをcheckpoint、独立phase終了後はstatus/identityKeys/pdfCleanup/independentCleanupCompleteの4項目だけへ縮小。再試行はPDF-only、完了時だけdeleted/job削除。旧deletedのversionなしrecordもPDF-only再評価。旧RAG未利用者にはdurable完了checkpoint根拠でschema確認後拒否行だけ確立。noPDF旧schemaのcheckpoint形/既存API互換は保持。既存text/vector失敗は引き続き例外で、全RAG失敗を握り潰す実装ではない。
+
+High/full、独立Planner/Code/Security。Medium旧deleted迂回、不要個人metadata長期保持、ownerキー未指定global化、旧RAG未利用者の永久pendingを修正。最終再レビュー残所見なし（reviewer独立テスト/実DB操作なし）。新13件、対象83件、最終server1936 pass/0fail/0skip。中間の旧checkpoint形一致テスト失敗は既存testを変更せず実装互換へ修正し再実行成功。実localworkerd/D1で17migration/独立消去継続/最小checkpoint/flagsoff tokenなしretry精算/証拠保持に成功。KVは合成Map、remote cancel合成adapter、実KV伝播/VM/remoteの証明ではない。一時DB破棄、今回検証process終了。
+
+RAG_PDF_ACCOUNT_CLEANUP_REPORT/RESULTSと5sourcehash、計画/回復説明/関連3設計資料更新。過去hash/成績は歴史的版維持。Notion既存RAGカードへ結果・次の一手を更新。接続は成功しているがNotionから無料block上限と2026-10-22まで作成猶予の通知あり。今回購入/設定変更なし、将来記録不能なら未記録と明示する。
+
+次はStep5-Dのimmutable notAfter付きv2/旧RPC排除を含むDO有限tombstoneとreceipt前提を別レビュー単位で進める。その後資源/費用校正、remote承認/別系統照合/backup/license配布条件/OS CVE/iPad採用は残る。rollbackはPDF新規受付停止、checkpoint/account fence/job/evidence/lease/floor保持。pending非対応の旧account-deletionへ戻さない。新migration/配備/実ユーザーデータ削除/有料AI/commit/pushなし、automation PAUSED。
+
+Project更新対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAGとリリース02_審査メモ（account削除挙動の追加）。B/C分Desktop複製/uploadは今回未変更。
+
+## Step6-Bローカル完了：実処理/reaperと証拠retention（2026-10-19、最新）
+
+A/Project同期のdirtyを保持し、実pdf-processのflag opt-inをscopeへ接続。実reader/verify/dispatch/parse/manifest/consumer/monitorを追跡し、monitor/task/reader cleanup終了とpayload参照解放後だけlocal証拠。成功parse後も厳密cancel ackでremote証拠、同一cleanup一回、共有grace内。最終認可はseal済scope外のmetadata確認。新flag未設定、旧schema/flag falseはlegacy互換、新flag trueでschema不足は拒否。
+
+reaperは同一claimの保存済み証拠を有限10候補で精算、SQL実行時にもliveleaseを再検査。旧journal ackを新証拠へ流用しない。証拠保存前executor消失は保持、強制boolean/TTL解放なし。0017は証拠全列保持のtable再構築でFKcascade追加、v2契約、旧purge opt-in解除、fence/floor維持。親BEFOREの条件/floor/context/recovery→親消失後証拠cascade→親AFTERcontext解除。childguard親不在必須で手動context偽装を拒否。全失敗でchild/親/floor/cursor/lease/context rollback。
+
+High/full＋独立Planner/Code/Security。Medium lease read/write raceとcontext偽装、Low解除trigger確認漏れを修正。両trigger/FKをmodule/DBguard/診断で確認。最終再レビュー残所見なし、reviewer独立テスト/実D1操作なし。最終server1923 pass/0fail/0skip（新integration15含む）。実localworkerd/D1で17migration/processor local証拠/reaper精算/cancel一回/cascade整理と失敗rollback成功。remoteparse/cancelは合成adapter、実VM通し/remoteの証明ではない。一時DB破棄、今回起動検証process終了。初期fixture取消制約4失敗とruntime検証script bytes hash誤りは修正・再実行成功をRESULTSへ区別記録。
+
+RAG_PDF_STOP_INTEGRATION_REPORT/RESULTSと9sourcehash、計画/関連3設計資料/回復説明を更新。Aなど過去hashは歴史的版として維持。次はStep5-C account PDF pending checkpoint/他phase継続/最終判定、その後DO有限retention/receiptとStep7校正。remote承認/別系統migration照合/backup/license配布条件/OS CVE/iPadは引き続き残件。rollbackは新claim/purge入口を閉じ、0016/17/証拠/FK/trigger/fence/floorを保持、旧writer/旧purgeへ戻さない。
+
+Notion既存RAGカードへ結果・残件を更新。remote migration/deploy/実ユーザーPDF/有料AI/commit/pushなし、automation PAUSED。Project資料更新対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG。直前の複製同期はAまでで、B分のDesktop複製/uploadは今回未変更。
+
+## Project資料の複製更新（2026-10-19、最新）
+
+ユーザー依頼により、rag-wipのDATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAGをDesktopの設計Project複製へ、SECURITY_AND_PRIVACYをリリースProject複製へ差し替えた（3種類・計4ファイル）。全4件で正本とbyte完全一致を確認。旧版はprivate tmpへ退避。今回対象は直前に更新必要と報告した3資料で、他分野の資料は変更していない。claude.ai ProjectへのアップロードはPROJECT_SYNCに従い人間の操作として残る。機能コード変更/テスト再実行/配備/commit/pushなし。Notion既存RAGカードへ同期結果を記録。次の開発作業はStep6-Bのまま。
+
+## Step6-A完了：claimに結び付く停止証拠基盤（2026-10-19、最新）
+
+開始時clean、既存保存commit4debcd4（ユーザーが保存、今回agent commitなし）。追加0016、pdf-stop-evidence内部scope、opt-in claim、retention診断、専用20回帰とlocal workerd scriptを実装。process/reaper/HTTP/cron/config未接続、新flag未設定。legacyは変更せず新protocolだけclaim勝者のhashに証拠を固定。実task終了→reader cleanup終了→local証拠とtrusted cancel応答のremote証拠が揃う時だけtokenなし精算。未dispatchはlocal必須で0、dispatch済みは予約全額、時刻は初回固定。旧boolean精算は新protocolを通せない。
+
+High/full＋Planner/Code/Security。seal直後に開始済taskのfinallyがcleanupを登録すると失うHighを両レビューで発見し、starts封鎖とcleanup受付終了を分離。task drain後にcleanupを待つ修正と回帰で解消、再レビュー残所見なし（独立テスト再実行なし）。payloadを追跡外に保持しない・全task/reader cleanupを追跡・monitor停止はB接続時のtrusted義務で、任意の追跡外処理を自動証明する仕組みではない。
+
+最終server1908 pass/0fail/0skip、focused20成功、diff check成功。初回の並行suiteは1907中3件（login時刻/cleanup猶予/stage比較）が失敗、最終版suiteは成功。負荷競合原因は推定であり不具合修正済みとは主張しない。初回localD1はUND_ERR_SOCKET、再実行で16migration/RETURNING claim/処理中枠保持/tokenを捨てた証拠精算/冪等性/巻戻し拒否/旧purge閉鎖が成功。remote cancelは合成adapter、実VM停止検証ではない。一時DB破棄、今回検証process終了。結果と7source hashはRAG_PDF_STOP_EVIDENCE_RESULTS.json、設計はDESIGN参照。過去hash記録は歴史的版のまま維持。
+
+0016の6つ目PDF tableと証拠no-deleteにより0015旧purgeは意図的に利用不可、physicalPurgeEnabled=false。次のStep6-Bは実process/reaper接続に加え、証拠child/親jobの原子的retention契約更新が必須。証拠保存前にexecutor消失したjobは自動解放しない。Aのみで停止不明復旧/retention全体完了としない。account/DO/receipt/iPad/staging承認・別系統照合/backup・license/OS CVEは引き続き残件。
+
+rollbackは新claimを閉じ0016/証拠/枠保持、trigger削除や旧purge復帰は不可。remote migration/deploy/実ユーザーPDF/有料AI/commit/pushなし。automation PAUSED。Notion既存RAGカードへ結果とB残件を更新する。Project対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG、複製/upload未変更。
 
 ## Step5-B完了：処理済み台帳の有限整理（2026-10-19、最新）
 

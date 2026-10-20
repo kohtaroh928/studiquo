@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-20",
+  "step": "D2b-C1",
+  "scope": "unconnected_local_DB_component",
+  "branch": "codex/rag-wip",
+  "newTests": {
+    "pass": 18,
+    "fail": 0,
+    "skip": 0
+  },
+  "targetFinal": {
+    "pass": 53,
+    "fail": 0,
+    "skip": 0,
+    "testConcurrency": 1
+  },
+  "firstFull": {
+    "pass": 1966,
+    "fail": 0,
+    "skip": 0
+  },
+  "finalSerialFull": {
+    "status": "completed",
+    "pass": 1966,
+    "fail": 0,
+    "cancelled": 0,
+    "skip": 0,
+    "testConcurrency": 1,
+    "durationMs": 258777.420416
+  },
+  "parallelRecheck": {
+    "status": "interrupted",
+    "existingTimingFailures": [
+      "rag-pdf-http slow reader",
+      "rag-pdf-process absolute timeout"
+    ],
+    "newHarnessRisk": "10ms could expire before controlled phase; unbounded entered wait corrected to bounded wait and 1000ms within 2000ms contract"
+  },
+  "localRuntime": {
+    "localWorkerd": true,
+    "d1Migrations": 19,
+    "actualCAS": true,
+    "existingLegacyPreserved": true,
+    "oneWinner": true,
+    "sameNonceDenied": true,
+    "lostCommitNotRegranted": true,
+    "immutableConsumption": true,
+    "newParentHeld": true,
+    "vm": "not_started",
+    "remoteBinding": "synthetic_cancel_ack_only",
+    "remoteChanges": false
+  },
+  "sourceSha256": {
+    "mcp-server/migrations/0019_rag_pdf_start_gate.sql": "edc5781103dfe6e58c7d2130c0d267825002283b336af636e655d84386664a00",
+    "mcp-server/src/rag/pdf-start-gate.js": "21d4b2c9e53613a60ee33b159e7ced9308d1873abcde7b4dfd52acc9974c404f",
+    "mcp-server/src/rag/pdf-jobs.js": "e378448af5a935bf0399c43f44813b08fd9ee6b918a51d12e12dd1fb2903e12a",
+    "mcp-server/src/rag-pdf-start-gate.test.js": "15123d5328e3f01246f32d6ed1d40bc26113c2249b684661bc529d65c3f705da",
+    "mcp-server/tools/rag-pdf-start-gate-local-smoke.mjs": "7bc85df6699270525f0d3496dd620f04aa10349dc8a5aee2a21ca0fc70d8b632"
+  },
+  "reviews": {
+    "planner": "completed_read_only",
+    "code": "no_findings_read_only",
+    "security": "medium_no_replace_schema_guard_fixed_recheck_clear"
+  },
+  "newParentPurge": "held_indefinitely_in_C1; mixed_legacy_cursor_progress_tested",
+  "clockLimits": "SQL_next_second_and_5s_capture_skew; arbitrary_backup_or_clock_rollback_not_solved",
+  "privateOrHTTPConnected": false,
+  "realConfigChanged": false,
+  "physicalDOPurge": false,
+  "remoteChanges": false,
+  "paidAI": false,
+  "realPDF": false,
+  "commitOrPush": false,
+  "automation": "PAUSED",
+  "processesStartedThisTurn": "all_completed",
+  "intermediateFailure": "raw-consent-fixture_CHECK_fixed",
+  "answerQualityClaim": false,
+  "notion": "existing_card_start_and_result_recorded"
+}

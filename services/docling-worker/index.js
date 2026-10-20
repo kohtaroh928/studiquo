@@ -15,6 +15,18 @@ function pdfInput(value) {
 const sha = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2,'0')).join('');
 const keys = (value, names) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join(',') === names.sort().join(',');
 
+// V2 requires a trusted, persisted deadline; never regenerate it on retry.
+function rpcEnvelope(value,parse) {
+  if(!keys(value,parse?['version','jobId','pdfSha256','notAfter']:['version','jobId','notAfter'])||value.version!==2)throw fail('input_invalid');
+  validId(value.jobId);
+  if(!Number.isSafeInteger(value.notAfter)||value.notAfter<1||value.notAfter>Number.MAX_SAFE_INTEGER-180000||
+   (parse&&(typeof value.pdfSha256!=='string'||!/^[a-f0-9]{64}$/.test(value.pdfSha256))))throw fail('input_invalid');
+  return Object.freeze({...value});
+}
+function rpcTime(contract,now,parse) {
+  if(!Number.isSafeInteger(now)||now<0||contract.notAfter>now+180000||(parse&&now>=contract.notAfter))throw fail('input_invalid');
+}
+
 // Boundary validation, not a replacement for the final structured-input validator.
 export function validateManifest(value, digest) {
   if (!keys(value, ['version','integration','batches']) || value.version !== 1 || value.integration !== 'prepared_only_no_upload' || !Array.isArray(value.batches) || !value.batches.length || value.batches.length > 20) throw fail('output_invalid');
@@ -39,16 +51,32 @@ export function validateManifest(value, digest) {
 export class DoclingProcessor extends WorkerEntrypoint {
   async fetch() { return new Response('Not found', { status: 404 }); }
   async parse(jobId, pdfBytes) {
+    if (this.env.DOCLING_RPC_V2_ONLY === 'true') throw fail('rpc_upgrade_required');
     if (this.env.DOCLING_EXECUTION_ENABLED !== 'true') throw fail('execution_disabled');
     validId(jobId); const bytes = pdfInput(pdfBytes);
     try { return await this.env.DOCLING_JOBS.get(this.env.DOCLING_JOBS.idFromName(jobId)).parse(jobId, bytes); }
     catch { throw fail('processing_failed'); }
   }
   async cancel(jobId) {
+    if (this.env.DOCLING_RPC_V2_ONLY === 'true') throw fail('rpc_upgrade_required');
     validId(jobId);
     try { return await this.env.DOCLING_JOBS.get(this.env.DOCLING_JOBS.idFromName(jobId)).cancel(jobId); }
     catch { throw fail('cleanup_failed'); }
   }
+  async parseV2(input,pdfBytes) {
+    if(this.env.DOCLING_RPC_V2_ONLY!=='true')throw fail('rpc_upgrade_required');
+    if(this.env.DOCLING_EXECUTION_ENABLED!=='true')throw fail('execution_disabled');
+    const contract=rpcEnvelope(input,true),bytes=pdfInput(pdfBytes);rpcTime(contract,Date.now(),true);
+    try{return await this.env.DOCLING_JOBS.get(this.env.DOCLING_JOBS.idFromName(contract.jobId)).parseV2(contract,bytes);}
+    catch{throw fail('processing_failed');}
+  }
+  async cancelV2(input) {
+    if(this.env.DOCLING_RPC_V2_ONLY!=='true')throw fail('rpc_upgrade_required');
+    const contract=rpcEnvelope(input,false);rpcTime(contract,Date.now(),false);
+    try{return await this.env.DOCLING_JOBS.get(this.env.DOCLING_JOBS.idFromName(contract.jobId)).cancelV2(contract);}
+    catch{throw fail('cleanup_failed');}
+  }
+
 }
 
 export default DoclingProcessor;
@@ -89,11 +117,16 @@ export class DoclingJob extends DurableObject {
       })]);
     } finally { clearTimeout(timer); if (listener) signal.removeEventListener('abort', listener); }
   }
-  async claim(jobId) {
+  async claim(jobId,contract) {
+    if(this.env.DOCLING_RPC_V2_ONLY==='true'){
+      contract=rpcEnvelope(contract,true);if(contract.jobId!==jobId)throw fail('input_invalid');
+    }else if(contract)throw fail('rpc_upgrade_required');
     await this.ready;
     return this.gate(async () => {
       if (await this.ctx.storage.get('job')) throw fail('job_unavailable');
-      const state = { jobId, status: 'running', deadline: this.now() + DEADLINE, cleanupAttempts: 0 };
+      if(contract)rpcTime(contract,this.now(),true);
+      const state = { jobId, status: 'running', deadline: Math.min(this.now() + DEADLINE,contract?.notAfter??Infinity), cleanupAttempts: 0,
+        ...(contract?{rpcVersion:2,notAfter:contract.notAfter}:{}) };
       await this.ctx.storage.put('job', state);
       try { await this.ctx.storage.setAlarm(state.deadline); }
       catch { await this.ctx.storage.put('job', { ...state, status: 'poisoned' }); throw fail('processing_failed'); }
@@ -105,15 +138,27 @@ export class DoclingJob extends DurableObject {
     if (this.stopping || state?.status !== 'running' || this.now() >= state.deadline) throw fail('processing_failed');
   }
   async parse(jobId, pdfBytes) {
-    try { return await this.execute(jobId, pdfBytes); } catch { throw fail('processing_failed'); }
+    try { if(this.env.DOCLING_RPC_V2_ONLY==='true')throw fail('rpc_upgrade_required');return await this.execute(jobId, pdfBytes); } catch { throw fail('processing_failed'); }
   }
-  async execute(jobId, pdfBytes) {
+  async parseV2(input,pdfBytes) {
+    try{
+      if(this.env.DOCLING_RPC_V2_ONLY!=='true')throw fail('rpc_upgrade_required');
+      const contract=rpcEnvelope(input,true),bytes=pdfInput(pdfBytes);rpcTime(contract,this.now(),true);
+      return await this.execute(contract.jobId,bytes,contract);
+    }catch{throw fail('processing_failed');}
+  }
+  async execute(jobId, pdfBytes,contract) {
     if (this.env.DOCLING_EXECUTION_ENABLED !== 'true') throw fail('execution_disabled');
     validId(jobId); const bytes = pdfInput(pdfBytes);
+    if(contract || this.env.DOCLING_RPC_V2_ONLY==='true'){
+      if(this.env.DOCLING_RPC_V2_ONLY!=='true')throw fail('rpc_upgrade_required');
+      contract=rpcEnvelope(contract,true);if(contract.jobId!==jobId)throw fail('input_invalid');
+      rpcTime(contract,this.now(),true);if(await sha(bytes)!==contract.pdfSha256)throw fail('input_invalid');
+    }
     let state;
     try {
       if (this.stopping) throw fail('job_unavailable');
-      state = await this.claim(jobId);
+      state = await this.claim(jobId,contract);
     } catch (error) {
       if (error?.message !== 'job_unavailable') {
         this.stopping = true; this.abort?.abort();
@@ -210,7 +255,21 @@ export class DoclingJob extends DurableObject {
     this.cleaning = (async () => {
       try {
         await this.limited(() => this.ctx.container.destroy(), CLEANUP);
-        await this.ctx.storage.deleteAlarm();
+        // A resolved destroy is necessary, but not sufficient when recording
+        // its confirmation fails. Never treat timeout/late completion as proof.
+        await this.gate(async () => {
+          const state = await this.ctx.storage.get('job');
+          if (state?.rpcVersion === 2) {
+            const at = this.now();
+            if (!Number.isSafeInteger(at) || at < 0) throw fail('cleanup_failed');
+            const first = state.destroyConfirmedAt;
+            if (first !== undefined && (!Number.isSafeInteger(first) || first < 0 || first > at)) throw fail('cleanup_failed');
+            await this.ctx.storage.put('job', { ...state, destroyConfirmedAt: first ?? at });
+          }
+          // No retention alarm exists yet. Introducing one must replace this
+          // cleanup-only cancellation; do not infer permission to purge here.
+          await this.ctx.storage.deleteAlarm();
+        });
         return true;
       } catch {
         this.stopping = true; this.abort?.abort();
@@ -227,19 +286,34 @@ export class DoclingJob extends DurableObject {
     try { return await this.cleaning; } finally { this.cleaning = undefined; }
   }
   async cancel(jobId) {
-    try { return await this.cancelJob(jobId); } catch { throw fail('cleanup_failed'); }
+    try { if(this.env.DOCLING_RPC_V2_ONLY==='true')throw fail('rpc_upgrade_required');return await this.cancelJob(jobId); } catch { throw fail('cleanup_failed'); }
   }
-  async cancelJob(jobId) {
+  async cancelV2(input) {
+    try{
+      if(this.env.DOCLING_RPC_V2_ONLY!=='true')throw fail('rpc_upgrade_required');
+      const contract=rpcEnvelope(input,false);rpcTime(contract,this.now(),false);
+      return await this.cancelJob(contract.jobId,contract);
+    }catch{throw fail('cleanup_failed');}
+  }
+  async cancelJob(jobId,contract) {
     validId(jobId);
+    if(this.env.DOCLING_RPC_V2_ONLY==='true'){
+      contract=rpcEnvelope(contract,false);if(contract.jobId!==jobId)throw fail('input_invalid');
+    }else if(contract)throw fail('rpc_upgrade_required');
     let recorded = false, destroyed = false, identityRejected = false;
     try {
       await this.ready;
       await this.gate(async () => {
         const state = await this.ctx.storage.get('job');
-        if (state && state.jobId !== jobId) throw fail('job_unavailable');
+        if (state && (state.jobId !== jobId || (state.rpcVersion===2 && (!contract || state.notAfter!==contract.notAfter))))throw fail('job_unavailable');
+        if(contract)rpcTime(contract,this.now(),false);
         this.stopping = true; this.abort?.abort();
-        await this.ctx.storage.put('job', state ? { ...state, status: state.status === 'poisoned' ? 'poisoned' : 'cancelled' } : { jobId, status: 'cancelled', deadline: this.now(), cleanupAttempts: 0 });
-        await this.ctx.storage.setAlarm(this.now());
+        if(state || !contract || this.now()<contract.notAfter){
+          await this.ctx.storage.put('job',state?{...state,status:state.status==='poisoned'?'poisoned':'cancelled'}:
+            {jobId,status:'cancelled',deadline:this.now(),cleanupAttempts:0,...(contract?{rpcVersion:2,notAfter:contract.notAfter}:{})});
+          await this.ctx.storage.setAlarm(this.now());
+        }
+        // An expired empty V2 still requires destroy, without a new marker.
         recorded = true;
       });
     } catch (error) {

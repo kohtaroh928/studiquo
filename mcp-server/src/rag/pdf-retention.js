@@ -62,7 +62,13 @@ export const rawPDFRetentionStatus=(env,{clock=Date.now,timeoutMs=PASS_MS}={})=>
  if(typeof clock!=='function')fail('invalid_pdf_retention_options');
  const within=bounded(timeoutMs),db=env.ADMIN_DB;const at=time(clock);await schema(db,within);
  const newer=await within(()=>stmt(db,"SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name='rag_pdf_purge_control'").first());
- const purge=newer?await within(()=>stmt(db,'SELECT enabled,contract_version FROM rag_pdf_purge_control WHERE singleton=1').first()):null;
+ const purge=newer?await within(()=>stmt(db,`SELECT enabled,contract_version,
+  (((contract_version='pre-adoption-v1' AND (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name GLOB 'rag_pdf_*')=5)
+    OR (contract_version='pre-adoption-stop-v2' AND (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name GLOB 'rag_pdf_*')=6
+     AND (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('rag_pdf_purge_context_guard','rag_pdf_purge_context_clear'))=2
+     AND EXISTS(SELECT 1 FROM pragma_foreign_key_list('rag_pdf_execution_evidence') WHERE "table"='rag_pdf_jobs' AND "from"='job_id' AND "to"='job_id' AND on_delete='CASCADE')))
+   AND NOT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name LIKE '%receipt%')) AS compatible
+  FROM rag_pdf_purge_control WHERE singleton=1`).first()):null;
  const r=await within(()=>stmt(db,`SELECT
   (SELECT COUNT(*) FROM rag_pdf_intakes WHERE ${due} AND expires_at<=?) AS expired,
   (SELECT MIN(expires_at) FROM rag_pdf_intakes WHERE ${due} AND expires_at<=?) AS oldest,
@@ -72,5 +78,5 @@ export const rawPDFRetentionStatus=(env,{clock=Date.now,timeoutMs=PASS_MS}={})=>
  return Object.freeze({expiredIntakes:r.expired,oldestExpiredMs:r.oldest===null?0:Math.max(0,at-r.oldest),
   heldJobs:r.held,settledWithoutTime:r.unknown_settled,settledWithTime:r.dated_settled,
   physicalPurgeEnabled:env.RAG_PDF_RETENTION_ENABLED==='true'&&env.RAG_PDF_JOB_PURGE_ENABLED==='true'
-   &&purge?.enabled===1&&purge.contract_version==='pre-adoption-v1'});
+   &&purge?.enabled===1&&['pre-adoption-v1','pre-adoption-stop-v2'].includes(purge.contract_version)&&purge.compatible===1});
 });

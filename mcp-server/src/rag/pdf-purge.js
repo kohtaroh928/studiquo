@@ -1,6 +1,6 @@
 // Internal, pre-adoption maintenance. No HTTP/cron entry or runtime flag is
 // enabled by this module. Database policy must be reviewed before activation.
-const VERSION='pre-adoption-v1',PASS_MS=10000;
+const VERSIONS=['pre-adoption-v1','pre-adoption-stop-v2'],PASS_MS=10000;
 const stmt=(db,sql,...args)=>db.prepare(sql).bind(...args);
 const fail=code=>{throw new Error(code);};
 const dbNow="CAST(strftime('%s','now') AS INTEGER)*1000";
@@ -23,7 +23,12 @@ export async function purgeSettledRawPDFJobs(env,{clock=Date.now,limit=10,timeou
    if(found?.n!==16)fail('pdf_purge_upgrade_required');
    const control=await stmt(db,'SELECT enabled,contract_version FROM rag_pdf_purge_control WHERE singleton=1').first();
    if(control?.enabled!==1)fail('pdf_purge_disabled');
-   if(control.contract_version!==VERSION)fail('pdf_purge_upgrade_required');
+   if(!VERSIONS.includes(control.contract_version))fail('pdf_purge_upgrade_required');
+   if(control.contract_version==='pre-adoption-stop-v2'){
+    const context=await stmt(db,"SELECT COUNT(*) AS n FROM sqlite_master WHERE type='trigger' AND name IN ('rag_pdf_purge_context_guard','rag_pdf_purge_context_clear')").first();
+    const foreignKeys=await stmt(db,'PRAGMA foreign_key_list(rag_pdf_execution_evidence)').all();
+    if(context?.n!==2||!foreignKeys.results.some(k=>k.table==='rag_pdf_jobs'&&k.from==='job_id'&&k.to==='job_id'&&k.on_delete==='CASCADE'))fail('pdf_purge_upgrade_required');
+   }
    if(performance.now()-start>=timeoutMs)fail('pdf_purge_timeout');
    const token=crypto.randomUUID();
    // Anchor expiration to the initially observed database time too: an allowed
