@@ -20,5 +20,7 @@
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*"]
+  // Tests are checked by tsconfig.test.json, which loosens a few global types.
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts"]
 }
