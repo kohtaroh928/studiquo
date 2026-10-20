@@ -809,6 +809,20 @@ async function deleteAccount(env, token) {
   return worker.fetch(request("/api/account", { method: "DELETE", token, body: { confirmation: "DELETE" } }), env, noopCtx);
 }
 
+// Waits until `condition()` holds, yielding to the event loop between checks, and
+// fails with `what` if it does not hold within `timeoutMs`. Wait on the condition
+// with a time limit, not for a fixed number of event-loop turns: how many turns a
+// request needs depends on how long each of its crypto digests takes to come back,
+// which is about 30 turns for a deletion on a developer's machine and many more on
+// a CI runner (test 40 used to give up after 100 turns and failed only on CI).
+async function waitFor(condition, what, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) assert.fail(`Timed out after ${timeoutMs} ms waiting for ${what}.`);
+    await new Promise(resolve => setImmediate(resolve));
+  }
+}
+
 async function deletionFriendFixture() {
   const env = environment();
   const aliceToken = freshToken("da");
@@ -3668,9 +3682,7 @@ test("40: once concurrent deletion removes group membership, the deleting accoun
   const fixture = await deletionGroupFixture();
   const deletion = deleteAccount(fixture.env, fixture.aliceToken);
   const room = fixture.env.CHAT_ROOM._rooms.get(fixture.groupRoomID);
-  for (let attempt = 0; attempt < 100 && room.participants.has(fixture.aliceKey); attempt += 1) {
-    await new Promise(resolve => setImmediate(resolve));
-  }
+  await waitFor(() => !room.participants.has(fixture.aliceKey), "the deletion to remove Alice from the group");
   const send = await sendMessage(fixture.env, fixture.aliceToken, fixture.groupRoomID, "削除中の書き込み");
   assert.equal(send.status, 403);
   assert.equal((await deletion).status, 202);
