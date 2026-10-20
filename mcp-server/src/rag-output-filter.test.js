@@ -120,3 +120,17 @@ test("an invisible character cannot hide an address, and a reply that lost a lin
     assert.ok(!out.includes("SECRETDATA") && !/https?:/iu.test(out), `${JSON.stringify(hidden)}: ${JSON.stringify(out)}`);
   }
 });
+
+test("browsers drop tabs and line breaks inside an address, so a split scheme and a leading backtick are still removed", () => {
+  for (const text of ["https:`a.evil.com/x?d=SECRETDATA", "https:\ne.com/?d=SECRETDATA", "ht\ntps://e.com/?d=SECRETDATA", "https:\r\n//e.com/?d=SECRETDATA",
+    "h\tttps://e.com/?d=SECRETDATA", "http\n:\n//e.com/?d=SECRETDATA", "HTTPS:\\\\e.com/?d=SECRETDATA", "[x](ht\ntps://e.com/?d=SECRETDATA)", "https:`a b`SECRETDATA", "https:$a.evil.com/?d=SECRETDATA"]) {
+    const out = redactLinks(`前 ${text} 後`);
+    assert.ok(!out.includes("SECRETDATA") && !/https?:|evil\.com|e\.com/iu.test(out), `${JSON.stringify(text)} -> ${JSON.stringify(out)}`);
+    assert.ok(out.startsWith("前 ") && out.endsWith(" 後"), JSON.stringify(out));
+  }
+});
+
+test("a line that merely ends in 'https:' does not take the next line with it", () => {
+  const text = "使うプロトコルは https:\n次の行の説明です。\n- http: は平文";
+  assert.equal(redactLinks(text), text);
+});
