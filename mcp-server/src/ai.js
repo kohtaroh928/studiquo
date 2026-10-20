@@ -378,17 +378,30 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
     const heldPieces = [];
     let keepalive = null;
     let answer = ""; // what the student saw, kept (bounded) for the teen output screen
-    // The first 8000 characters, cut by character: never in the middle of a surrogate pair.
+    // What the screen reads: the first 24000 characters, cut by character (never in the middle of a
+    // surrogate pair) and sent to moderation in pieces of at most 8000, the size it reads per input.
+    const SCREEN_CAP = 24000, SCREEN_PIECE = 8000;
     const clip = (text) => {
-      const head = text.slice(0, 8000);
+      const head = text.slice(0, SCREEN_CAP);
       const last = head.charCodeAt(head.length - 1);
-      return text.length > 8000 && last >= 0xd800 && last <= 0xdbff ? head.slice(0, -1) : head;
+      return text.length > SCREEN_CAP && last >= 0xd800 && last <= 0xdbff ? head.slice(0, -1) : head;
+    };
+    const pieces = (text) => {
+      const out = [];
+      for (let start = 0; start < text.length;) {
+        let end = Math.min(start + SCREEN_PIECE, text.length);
+        const last = text.charCodeAt(end - 1);
+        if (end < text.length && last >= 0xd800 && last <= 0xdbff) end--;
+        out.push(text.slice(start, end));
+        start = end;
+      }
+      return out;
     };
     // A teen's reply that was built from outside text is screened once it is complete (or, if
     // the connection broke, once what arrived has been sent).
     const screenForTeen = async () => {
       if (!moderateOutput || !answer) return;
-      if (await moderationRejection(env, [answer], undefined, { timeoutMs: 4000 })) {
+      if (await moderationRejection(env, pieces(answer), undefined, { timeoutMs: 4000 })) {
         console.error(JSON.stringify({ message: "teen output flagged by moderation" }));
         await send("\n\n（この回答には学習アプリで扱えない内容が含まれている可能性があります。内容を信じすぎず、保護者や先生に相談してください）");
       }
@@ -450,7 +463,7 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
             produced += text.length;
             if (holdReply) heldPieces.push(text);
             else {
-              if (answer.length < 8000) answer += text;
+              if (answer.length < SCREEN_CAP) answer = clip(answer + text);
               await send(text);
             }
           }
@@ -466,7 +479,7 @@ function streamNormalizedText(upstream, extractText, ctx, env, key, extraHeaders
       }
       // The text is already on the student's screen and cannot be taken back, so a
       // flagged reply gets a plain notice after it and a log line (no text).
-      if (!failed) await screenForTeen();
+      await screenForTeen(); // also a reply that failed or stopped: what arrived is on the student's screen
       if (groundingSource && !failed && answer) {
         // Shadow mode: counts go to the log, the answer is untouched.
         console.log(JSON.stringify({ event: "rag_grounding", status: groundingStatus, ...groundingCheck(answer, groundingSource) }));
