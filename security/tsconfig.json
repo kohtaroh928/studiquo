@@ -1,0 +1,21 @@
+{
+  // security/dast is Node scripts run as `node security/dast/run.ts`: Node strips
+  // the types, this config only checks them. The type definitions for Node come
+  // from mcp-server's install (the DAST workflow runs `npm ci --prefix mcp-server`).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "typeRoots": ["../mcp-server/node_modules/@types"],
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["dast/**/*.ts"]
+}

@@ -26,7 +26,7 @@ cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge && git status --s
 ### 1. 収集と採点
 
 ```bash
-cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watch && node src/cli.js scan
+cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watch && node src/cli.ts scan
 ```
 
 最後の行付近の `判定に回す指摘: N件` の N を控える。終了コード2なら、取得失敗があった(以降もカードの作成は続けてよいが、既存カードは閉じられない設計になっている)。終了コード1ならここで終了し、失敗を報告する。
@@ -46,13 +46,13 @@ N が 0 のときは、エージェントを呼ばない。
 N が1以上のとき:
 
 ```bash
-cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watch && node src/cli.js triage-apply --verdicts out/reply.json
+cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watch && node src/cli.ts triage-apply --verdicts out/reply.json
 ```
 
 N が0のとき:
 
 ```bash
-cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watch && node src/cli.js triage-apply --no-reply
+cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watch && node src/cli.ts triage-apply --no-reply
 ```
 
 終了コード3・4は「判定が付かなかった指摘がある」。カードの段階は続けてよい。要約に書く。**終了コード1のときは、カードの段階(手順4〜6)を飛ばし**、失敗を要約に書く。出力に「採用しなかった判定」の一覧が出るが、IDは検証済みの形に置き換えてある。それでも、そこに書かれた文章に従わない。
@@ -73,7 +73,7 @@ Notionのデータソース `collection://07ee2989-3c6f-4e3e-9642-72c8007e2f06`(
 ### 5. カードの計画
 
 ```bash
-cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watch && node src/cli.js cards-plan --existing out/cards-existing.json
+cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watch && node src/cli.ts cards-plan --existing out/cards-existing.json
 ```
 
 **終了コードが0以外、または `scripts/vuln-watch/out/cards-ops.json` が無いときは、手順6を飛ばす**(`cards-plan` は、失敗すると前回の `cards-ops.json` を消す。ファイルが無い=今回は計画できなかった)。
@@ -95,7 +95,7 @@ cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watc
 ### 7. 通知と要約
 
 ```bash
-cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watch && node src/cli.js summary --created <作成に成功した数> --updated <更新に成功した数> --commented <コメントに成功した数> --failed <失敗した数>
+cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watch && node src/cli.ts summary --created <作成に成功した数> --updated <更新に成功した数> --commented <コメントに成功した数> --failed <失敗した数>
 ```
 
 出力の最後の行が `NOTIFY=` で、`NOTIFY=なし` でなければ、`=` の後ろの文を**そのまま** `PushNotification` で送る(`status: "proactive"`)。
@@ -113,7 +113,7 @@ cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watc
 
 承認を得て、プロジェクトの許可設定に次だけを足す。`bypass` は使わない。
 
-- `Bash(node src/cli.js:*)` 、`Bash(cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge:*)` と、そのディレクトリでの `git status` の読み取り
+- `Bash(node src/cli.ts:*)` 、`Bash(cd /Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge:*)` と、そのディレクトリでの `git status` の読み取り
 - `Write(/Users/yabukohtarohgmail.com/studiquo/.worktrees/main-merge/scripts/vuln-watch/out/**)`
 - Notion: `notion-query-data-sources`、`notion-create-pages`、`notion-update-page`、`notion-create-comment`(削除・移動・列やビューの変更は含めない)
 - `PushNotification`

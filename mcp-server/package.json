@@ -13,9 +13,9 @@
     "test:ai": "node --test src/ai.test.ts",
     "security:sast": "python3 ../security/sast/run.py",
     "security:sast:test": "python3 -m unittest discover -s ../security/sast -p \"test_*.py\"",
-    "security:dast": "node ../security/dast/run.mjs",
-    "security:dast:contracts": "node ../security/dast/run.mjs --contracts-only",
-    "security:dast:test": "node --test ../security/dast/*.test.mjs",
+    "security:dast": "node ../security/dast/run.ts",
+    "security:dast:contracts": "node ../security/dast/run.ts --contracts-only",
+    "security:dast:test": "node --test ../security/dast/*.test.ts",
     "security:sast:rules": "python3 ../security/sast/test_rules.py"
   },
   "dependencies": {

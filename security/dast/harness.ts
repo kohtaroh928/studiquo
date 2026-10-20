@@ -7,15 +7,15 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(resolve(root, 'mcp-server/package.json'));
 const { Miniflare, convertV4MiniflareOptions, Log, LogLevel } = require('miniflare');
 const { build } = require('esbuild');
-export const hash = value => createHash('sha256').update(value).digest('hex');
+export const hash = (value: any) => createHash('sha256').update(value).digest('hex');
 export const scanPaths = ['/health', '/privacy', '/terms', '/api/actions', '/api/mcp/inbox', '/api/mcp/connections'];
-export function allowedRequest(method, target) {
+export function allowedRequest(method: any, target: any) {
   // Origin-form only; never accept a scanner-supplied destination or CONNECT.
   if (method !== 'GET' || !target.startsWith('/') || target.startsWith('//')) return false;
   const url = new URL(target, 'http://127.0.0.1:8090');
   return url.origin === 'http://127.0.0.1:8090' && scanPaths.includes(url.pathname);
 }
-const deadline = async (promise, label) => {
+const deadline = async (promise: any, label: any) => {
   let timer;
   try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} timed out`)), 30000); })]); } finally { clearTimeout(timer); }
 };
@@ -51,14 +51,14 @@ export async function createHarness() {
     }
     const inbox = await mf.getDurableObjectNamespace('MCP_INBOX');
     for (const user of users) await inbox.get(inbox.idFromName(hash(`mcp-account:${user.sub}`))).enqueue(user.inboxId, 'create_document', { title: user.label, body: 'Synthetic fixture' }, 'DAST');
-    const request = (path, token, init = {}) => deadline(mf.dispatchFetch(`http://127.0.0.1:8090${path}`, { ...init, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...init.headers }, redirect: 'manual' }), 'Worker request');
+    const request = (path: any, token: any, init: any = {}) => deadline(mf.dispatchFetch(`http://127.0.0.1:8090${path}`, { ...init, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...init.headers }, redirect: 'manual' }), 'Worker request');
     return { mf, kv, users, stats, request, close: () => mf.dispose() };
   } catch (error) { await mf.dispose(); throw error; }
 }
-export async function runContracts(harness) {
+export async function runContracts(harness: any) {
   const { request, users: [a, b], kv } = harness;
   let passed = 0;
-  const check = async (name, callback) => { try { await callback(); passed++; } catch { throw new Error(`Contract failed: ${name}`); } };
+  const check = async (name: any, callback: any) => { try { await callback(); passed++; } catch { throw new Error(`Contract failed: ${name}`); } };
   for (const user of [a, b]) {
     await check(`authenticated-actions-${user.label}`, async () => {
       const response = await request('/api/actions', user.token);
