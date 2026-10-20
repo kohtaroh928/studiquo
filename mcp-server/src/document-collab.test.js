@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import worker from "./app.js";
+import worker from "./app.ts";
 import { sha256Hex } from "./auth.ts";
 
 // Stands in for the real DocumentRoom Durable Object (document-room.ts): one

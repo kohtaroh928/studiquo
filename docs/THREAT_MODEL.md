@@ -83,7 +83,7 @@ flowchart LR
 
 信頼境界の越え方(攻撃者が狙う入口):
 
-1. **端末 → Worker**: HTTPS。入口で`MAINTENANCE_MODE`、レート制限、署名つきトークンの確認、実在セッションの確認、権限の確認の順に通す(`mcp-server/src/app.js`、`app-gate.ts`)。
+1. **端末 → Worker**: HTTPS。入口で`MAINTENANCE_MODE`、レート制限、署名つきトークンの確認、実在セッションの確認、権限の確認の順に通す(`mcp-server/src/app.ts`、`app-gate.ts`)。
 2. **外部 → Worker**: MCPクライアント(OAuth)、RevenueCatのWebhook(秘密ヘッダ)、管理画面(Cloudflare Accessのトークン)。
 3. **Worker → 外部**: OpenAI(要約された範囲だけ)、Resend、APNs、Slack。受け取る側は信頼しない。
 4. **端末の中**: アプリと共有拡張(App Group)、他アプリ(URLスキーム、ペーストボード、ファイル)、バックアップ。
@@ -120,7 +120,7 @@ S=なりすまし、T=改ざん、R=否認、I=情報漏えい、D=サービス�
 ### A2. アカウント乗っ取り(X1, X2, X5)
 - **手口**: パスワードの総当たり・クレデンシャルスタッフィング、メール確認コードの総当たり、フィッシング(AiTM)、盗まれたIDトークンの再送、OAuthの連携で別アカウントに紐づける。
 - **緩和**: Argon2id(`local-auth.ts`)、漏えいPW照合(`pwned-passwords.ts`)、失敗の段階的な待機(IP+メール、メール、ASNの3系統、`login-throttle.ts`)、確認コードは15分・5回で失効しハッシュ保存(`email-verification.test.js`)、Apple/Googleは署名・audience・issuer・期限・nonce(`apple-auth.test.js`、`google-auth.test.js`、`REQUIRE_ID_TOKEN_NONCE`)、連携は検証済みメールだけ(`oauth-links.ts`)、新しい環境のサインインはメール通知(`login-monitor.ts`)、パスキーの強制(`passkey-policy.ts`、テスト「the first sign-in without a passkey is refused, starts a recovery and tells the owner」)、パスワード変更で古いセッションを失効(`session-revocation.test.js`)。
-- **残る**: パスワードの最小長が8(カード「パスワードの最小長」)。パスキー強制の配備と実機確認が未了(カード「AiTMフィッシング対策(パスキー強制)の配備判断と実機確認」)。**検証済みメールの所有権が人から人へ移る場合**(ドメインの失効後の再取得、会社・学校のアドレスの再割当)、そのアドレスで入った別人は、先着のオーナーの正規アカウントに紐づけられ、旧所有者のチャット・同期・課金・接続を引き継ぎうる(`oauth-links.ts`の`email-account-owner:`、`app.js`の`canonicalIdentityKey`でセッションを発行)。Appleの非公開リレーのアドレスは別のアドレスとして扱われる(カード「検証済みメールの所有権が移ったときのアカウントの引き継ぎ」)。
+- **残る**: パスワードの最小長が8(カード「パスワードの最小長」)。パスキー強制の配備と実機確認が未了(カード「AiTMフィッシング対策(パスキー強制)の配備判断と実機確認」)。**検証済みメールの所有権が人から人へ移る場合**(ドメインの失効後の再取得、会社・学校のアドレスの再割当)、そのアドレスで入った別人は、先着のオーナーの正規アカウントに紐づけられ、旧所有者のチャット・同期・課金・接続を引き継ぎうる(`oauth-links.ts`の`email-account-owner:`、`app.ts`の`canonicalIdentityKey`でセッションを発行)。Appleの非公開リレーのアドレスは別のアドレスとして扱われる(カード「検証済みメールの所有権が移ったときのアカウントの引き継ぎ」)。
 - **状態**: 一部。
 
 ### A3. 他人の資料への到達(IDOR)(X2, X3)
@@ -162,7 +162,7 @@ S=なりすまし、T=改ざん、R=否認、I=情報漏えい、D=サービス�
 
 ### A9. メール送信・プッシュ送信の悪用(X1)
 - **手口**: 確認コードの送信を連打して、Resendの料金や評判を損なう。他人に迷惑メールを送る。プッシュで偽の通知を送る。
-- **緩和**: 送信のレート制限(5回/分/IP)に加えて、**宛先のメールアドレスごとの上限**(`app.js`の`EMAIL_SEND_LIMIT_PER_WINDOW`=5、`withinEmailCodeBudget`)があり、多数のIPからでも同じ宛先への爆撃は窓内5通に収まる。応答は常に`{sent:true}`で、アドレスの存在は分からない。プッシュは友達関係が前提。`DISABLED_FEATURES`で個別に止められる(ブランチ`claude/kill-switch-server`、**未マージ**)。
+- **緩和**: 送信のレート制限(5回/分/IP)に加えて、**宛先のメールアドレスごとの上限**(`app.ts`の`EMAIL_SEND_LIMIT_PER_WINDOW`=5、`withinEmailCodeBudget`)があり、多数のIPからでも同じ宛先への爆撃は窓内5通に収まる。応答は常に`{sent:true}`で、アドレスの存在は分からない。プッシュは友達関係が前提。`DISABLED_FEATURES`で個別に止められる(ブランチ`claude/kill-switch-server`、**未マージ**)。
 - **残る**: 宛先を変え続ける送信量(Resendの料金)。送信量の異常を知らせる仕組みが無い。DMARCが無く、なりすましメールを拒否できない(カード「ドメインのDNS設定」)。
 - **状態**: 一部。
 

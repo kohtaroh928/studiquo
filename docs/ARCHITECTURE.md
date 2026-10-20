@@ -50,8 +50,8 @@ MCPへ公開される学習データは、アプリが明示的にWorkerへ同�
 | `studiquoTests/` | iOSユニットテスト |
 | `studiquoUITests/` | iOS UIテスト |
 | `project.yml` | XcodeGenプロジェクト定義の正本 |
-| `mcp-server/src/app.js` | WorkerのHTTPルーティングとMCPサーバー構築 |
-| `mcp-server/src/worker.js` | WranglerのエントリーポイントとDurable Object export |
+| `mcp-server/src/app.ts` | WorkerのHTTPルーティングとMCPサーバー構築 |
+| `mcp-server/src/worker.ts` | WranglerのエントリーポイントとDurable Object export |
 | `mcp-server/src/*.js` | 機能別ハンドラー、認証、永続化、外部連携 |
 | `mcp-server/migrations/` | D1の追加型migration |
 | `mcp-server/wrangler.jsonc` | Worker、KV、D1、Durable Objects、Rate Limit、観測設定 |
@@ -119,8 +119,8 @@ CloudKit互換性を壊しやすいため、モデル追加・必須属性・関
 
 ### 5.1 リクエスト処理
 
-Wranglerは`src/worker.js`を読み込み、実処理を`src/app.js`へ委譲する。
-`app.js`は次の順序で要求を処理する。
+Wranglerは`src/worker.ts`を読み込み、実処理を`src/app.ts`へ委譲する。
+`app.ts`は次の順序で要求を処理する。
 
 1. ヘルスチェック、Cloudflare Access対象の運営API、OAuth metadataなどの公開・管理経路。
 2. 法務ページ、招待ページ、Passkey、チャット、報告、お知らせなどの機能別ハンドラー。
@@ -131,7 +131,7 @@ Wranglerは`src/worker.js`を読み込み、実処理を`src/app.js`へ委譲す
 
 HTTP本文にはサイズ上限を設け、入力スキーマ、認可、Rate Limitを各境界で確認する。
 
-AIの公開APIでは`ai-privacy.ts`が提供条件の承認フラグ、同意バージョン、Google限定モデルを検証する。旧direct-provider経路は初期提供では停止する。退会ジョブ・RevenueCat削除ジョブはKVへ永続化し、`worker.js`の定期ハンドラーから`privacy-retention.ts`が再試行と期限超過データ削除を行う。実装の公開条件は[PRIVACY_RELEASE_CHECKLIST.md](PRIVACY_RELEASE_CHECKLIST.md)を参照する。
+AIの公開APIでは`ai-privacy.ts`が提供条件の承認フラグ、同意バージョン、Google限定モデルを検証する。旧direct-provider経路は初期提供では停止する。退会ジョブ・RevenueCat削除ジョブはKVへ永続化し、`worker.ts`の定期ハンドラーから`privacy-retention.ts`が再試行と期限超過データ削除を行う。実装の公開条件は[PRIVACY_RELEASE_CHECKLIST.md](PRIVACY_RELEASE_CHECKLIST.md)を参照する。
 
 ### 5.2 Workerの永続化
 

@@ -91,7 +91,7 @@ async function chatUser(env: Env, userKey: string) {
 
 // DocumentRoom.requireParticipant/requireReviewer throw a plain
 // Error("Forbidden") for a caller without room access — without this, that
-// propagates uncaught up to app.js's catch-all and comes back as a generic
+// propagates uncaught up to app.ts's catch-all and comes back as a generic
 // 500 instead of a proper 403. Mirrors chat.ts's roomForbiddenResponse.
 function roomForbiddenResponse(error) {
   if (error instanceof Error && error.message === "Forbidden") {
@@ -126,7 +126,7 @@ async function roomResponse(promise) {
  * invited editors/reviewers.
  *
  * `key` is the caller's already-authenticated session key — this handler
- * runs inside app.js's existing bearer-token gate, the same way
+ * runs inside app.ts's existing bearer-token gate, the same way
  * `handleAI` does, rather than performing its own auth like `handleChat`
  * does (chat's early registration exists only for its own pre-token
  * sign-in exchange endpoints, which this has no equivalent of).

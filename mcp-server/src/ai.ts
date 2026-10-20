@@ -118,7 +118,7 @@ async function upstreamFailureResponse(upstream) {
  *
  * Every AI route already requires a real, server-verified session — signed
  * in via Apple/Google (JWKS-verified identity token), a hashed local
- * password, or a WebAuthn passkey; see `requireRealSession` in app.js — so
+ * password, or a WebAuthn passkey; see `requireRealSession` in app.ts — so
  * this isn't standing in for missing authentication. It's defense-in-depth
  * against a single compromised or genuinely malicious signed-in device
  * driving up the shared bill on its own: the per-device cap only bounds one
@@ -824,13 +824,13 @@ const AI_PATHS = new Set(["/api/ai/chat", "/api/ai/rubric", "/api/ai/grade", "/a
 /**
  * Returns a `Response`, or `null` when the path is not an AI route.
  *
- * `session`/`plan` are optional — app.js resolves `plan` from
+ * `session`/`plan` are optional — app.ts resolves `plan` from
  * entitlements.ts's `getPlan(env, session.sub)` once, right before calling
- * here, and a caller with no real session (shouldn't happen past app.js's
+ * here, and a caller with no real session (shouldn't happen past app.ts's
  * own bearer-token gate, but also every existing test that calls this
  * directly without either) is treated as the "standard" plan: the exact
  * pre-existing base-model, flat-limit behavior. `session` itself isn't
- * read in this file yet; it's accepted now so app.js's call site doesn't
+ * read in this file yet; it's accepted now so app.ts's call site doesn't
  * need to change shape again if a future endpoint here needs the account
  * identity directly rather than just its resolved plan.
  */
@@ -838,7 +838,7 @@ const AI_PATHS = new Set(["/api/ai/chat", "/api/ai/rubric", "/api/ai/grade", "/a
  * Only reachable with PAYWALL_ENABLED (entitlements.ts): an account with no
  * subscription and no legacy grant. 402 so the app can tell "subscribe" apart
  * from the 403 (model not in your plan) and 429 (daily cap) answers. Exported
- * so app.js can refuse such an account before it reads a request body.
+ * so app.ts can refuse such an account before it reads a request body.
  */
 export function subscriptionRequiredResponse(plan, url, request: Request) {
   if (request.method !== "POST" || plan !== "free" || !AI_PATHS.has(url.pathname)) return null;

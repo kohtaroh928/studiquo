@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import test, { mock } from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
-import worker from "./app.js";
+import worker from "./app.ts";
 import { realSession, mintSession } from "./session.ts";
 import { indexAccountPasskey, markRecentPasskey } from "./passkey-policy.ts";
 import { externalSession } from "./mcp-oauth.ts";

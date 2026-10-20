@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { register } from "node:module";
 
-// app.js pulls in Durable Object classes that extend "cloudflare:workers", which
+// app.ts pulls in Durable Object classes that extend "cloudflare:workers", which
 // only exists in the Workers runtime; stand in for that one import (as
 // low-priority-hardening.test.js does).
 register(
@@ -24,7 +24,7 @@ register(
 
 const { FEATURES, disabledFeatures, featureDisabled, featureForPath, featureGateRejection } = await import("./features.ts");
 const { appGateRejection } = await import("./app-gate.ts");
-const { default: worker } = await import("./app.js");
+const { default: worker } = await import("./app.ts");
 const { sendPush } = await import("./push.ts");
 const { sendVerificationCode } = await import("./email-verification.ts");
 const { sendPasskeyNotice } = await import("./passkey-policy.ts");
