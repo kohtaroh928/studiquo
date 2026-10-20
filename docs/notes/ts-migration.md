@@ -29,4 +29,4 @@
 - フェーズ3 完了: Durable Object 5本(`chat-room` `user-registry` `document-room` `rate-counter` `mcp-inbox`)と `counter-state` `document-room-store` を .ts 化。クラス名・エクスポート名・保存キー・SQLは変えていない。`Env` の Durable Object は暫定の `UntypedNamespace` をやめ、`DurableObjectNamespace<クラス>` にした。RPC の戻り値で型が深くなりすぎる・`SqlStorageValue` になる所は、メソッドに戻り値の型を明示するか `sql.exec<行の型>` で付ける。
 - 挙動を変えていないことの確かめ方: `node:module` の `stripTypeScriptTypes` で各 .ts の型を消し、移行前の .js(import の拡張子だけ読み替え)と空白・コメントを無視して比べる。フェーズ3の時点で、差が出るのは `nextCursor` への置き換えなど、レビュー済みの意図した箇所だけ。
 - 他の末端ファイルの行き先: Durable Object 周りはフェーズ3で完了、`anthropic` `openai` `entitlements` と管理画面の `*-ui` はフェーズ2、`index` `smoke` はフェーズ4。
-- ファイル名を書いた文書(`docs/`、`.claude/agents/`、`.codex/agents/`、`.agents/skills/`)は、全て移行し終わるフェーズ6でまとめて直す。
+- ファイル名を書いたコメントと文書は、.ts にしたファイルの分をフェーズ3の後に直した(`src` のコメント、`docs/`、`mcp-server/README.md`、3つのツールのエージェント定義)。直さないもの: `docs/archive/`・`docs/releases/`(当時の記録)、適用済みの `migrations/`、アプリ側(Swift)のコメント。`app` `worker` `index` `smoke` `transport` は、フェーズ4で .ts にするときに同じ要領で直す。

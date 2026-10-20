@@ -183,7 +183,7 @@ export async function tokenIndexCoversEverything(env: Env, now = Date.now()) {
 async function issueTokens(env: Env, sub, clientId, scope, grantId) {
   const generation = grantId ? { grantId } : {};
   // Signed when a key is configured, so a made-up access token is refused before
-  // KV is read (token-signature.js).
+  // KV is read (token-signature.ts).
   const accessToken = await signAccessToken(env, `mcp_${randomToken()}`);
   const accessHash = await sha256Hex(accessToken);
   await env.STUDIQUO_DATA.put(`mcp:access:${accessHash}`, JSON.stringify({ sub, clientId, scope, ...generation }), { expirationTtl: ACCESS_TTL });

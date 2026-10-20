@@ -238,7 +238,7 @@ export class UserRegistry extends DurableObject<Env> {
   }
 
   // Records the other half of a new friendship on `key`'s own record. These
-  // used to be written straight from the request handlers (chat.js) as a
+  // used to be written straight from the request handlers (chat.ts) as a
   // whole-record overwrite of a possibly stale read, which could silently
   // undo a concurrent removeFriend / request change on the same record — the
   // "deleted friend comes back" bug. Routing every write of `chat:user:*`
@@ -330,7 +330,7 @@ export class UserRegistry extends DurableObject<Env> {
       user.groups = [...(user.groups ?? []).filter(item => item.roomID !== roomID), { roomID }];
     }
     await this.env.STUDIQUO_DATA.put(storageKey, JSON.stringify(user));
-    // `invite` is handed back so groups.js can restore it verbatim if the
+    // `invite` is handed back so groups.ts can restore it verbatim if the
     // accept it's about to attempt (addParticipant, one call up) turns out
     // not to actually take — see undoAcceptedGroupInvite below.
     return { status: action === "accept" ? "accepted" : "rejected", invite };
@@ -339,7 +339,7 @@ export class UserRegistry extends DurableObject<Env> {
   // Reverses exactly the "accept" mutation resolveIncomingGroupInvite just
   // made, for the one case where it turns out to have been premature: the
   // invite is consumed and `groups` optimistically updated *before*
-  // ChatRoom.addParticipant is actually attempted (see groups.js), so that
+  // ChatRoom.addParticipant is actually attempted (see groups.ts), so that
   // an accept racing a reject of the same invite still resolves atomically.
   // If addParticipant then fails (e.g. the group filled up in the meantime),
   // the invitee must not be left with a phantom `groups` entry for a room
@@ -376,7 +376,7 @@ export class UserRegistry extends DurableObject<Env> {
   // Removes this key's own groups-list entry — called against whichever
   // member's own record needs updating (getByName(targetKey)), whether they
   // left on their own or were removed by someone else; the room-side
-  // removal (ChatRoom.removeParticipant) is a separate call groups.js makes
+  // removal (ChatRoom.removeParticipant) is a separate call groups.ts makes
   // alongside this one.
   async removeGroup(key, roomID) {
     const storageKey = `chat:user:${key}`;

@@ -280,7 +280,7 @@ const MCP_CALLS_PER_MINUTE = 120;
 const SNAPSHOT_UPLOADS_PER_HOUR = 30;
 
 // Every AI request is refused or let through by the credit windows in
-// ai-credits.js, but only after its body (up to 20MB) has been read. This
+// ai-credits.ts, but only after its body (up to 20MB) has been read. This
 // bounds how many bodies one account can make the Worker read.
 const AI_REQUESTS_PER_MINUTE = 60;
 
@@ -337,7 +337,7 @@ const handler = {
       // verify the Access login here, once, for every admin route.
       if (isAccessGuardedPath(url.pathname)) {
         // The login may be a cookie, so a write another site's page triggered
-        // must not be taken for the owner's own action (access.js).
+        // must not be taken for the owner's own action (access.ts).
         if (isCrossSiteWrite(request, url)) return json({ error: "Forbidden." }, 403);
         if (!(await accessAllowed(request, env))) return json({ error: "Forbidden." }, 403);
       }
@@ -350,7 +350,7 @@ const handler = {
       const legal = handleLegal(url);
       if (legal) return legal;
 
-      // App Attest (src/app-attest.js): the two routes that register an app
+      // App Attest (src/app-attest.ts): the two routes that register an app
       // instance, then the check on the AI and sign-in routes. Off unless
       // APP_ATTEST_MODE is set. Before the passkey routes, which sign people in too.
       if (url.pathname.startsWith("/api/")) {
@@ -504,7 +504,7 @@ const handler = {
         // account-level copy below lives 90 days past the last sync (or until
         // the account is deleted).
         // Each copy is sealed under its own key name, so one cannot be moved
-        // to another key and still open (see snapshot-crypto.js).
+        // to another key and still open (see snapshot-crypto.ts).
         try {
           await env.STUDIQUO_DATA.put(`snapshot:${key}`, await sealSnapshot(env, `snapshot:${key}`, body), { expirationTtl: remainingValiditySeconds(token) });
           // Re-written on every sync, so this only lets go of the copy of an
@@ -539,7 +539,7 @@ const handler = {
       // features work on a fresh install, before the user has ever run a
       // sync. The plan is resolved here, once, right before the one route
       // that needs it — not for every /api/* request above — since it costs
-      // a D1 read (entitlements.js's getPlan) that every other route here
+      // a D1 read (entitlements.ts's getPlan) that every other route here
       // has no use for.
       if (url.pathname.startsWith("/api/ai/")) {
         // Cheapest refusals first, so that none of them costs a body read: the
@@ -642,7 +642,7 @@ async function handleSessionRefresh(request, env, token, session) {
 
 // POST /api/auth/apple: exchanges a Sign in with Apple identityToken for a
 // studiquo bearer token, in the same "<issued-at epoch>.<random>" format
-// token.js already expects everywhere else.
+// token.ts already expects everywhere else.
 async function handleAppleSignIn(request, env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_APPLE_AUTH, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
@@ -670,7 +670,7 @@ async function handleAppleSignIn(request, env, ctx) {
   } catch {
     return json({ error: "Invalid Apple identity token." }, 401);
   }
-  // The token must have been made for this very sign-in (id-token-nonce.js).
+  // The token must have been made for this very sign-in (id-token-nonce.ts).
   if (await idTokenNonceRefused(env, payload, nonce, "apple")) return json({ error: "Invalid Apple identity token." }, 401);
 
   const sub = payload.sub;
@@ -700,7 +700,7 @@ async function handleAppleSignIn(request, env, ctx) {
   // linked even though Apple never sends it again. A private-relay address
   // is per-app and can never actually match the same person's Google/local
   // email, so it must not join the cross-provider link index (see
-  // oauth-links.js's header comment).
+  // oauth-links.ts's header comment).
   let identityKey = sub;
   const accountEmail = email ?? existingAccount?.email;
   const accountEmailVerified = email ? emailVerified : existingAccount?.emailVerified === true;
@@ -712,7 +712,7 @@ async function handleAppleSignIn(request, env, ctx) {
     identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
-  // An account with a passkey signs in with that instead (passkey-policy.js).
+  // An account with a passkey signs in with that instead (passkey-policy.ts).
   const passkeyGate = await gatePasskeyAccount(env, identityKey, accountEmail && accountEmailVerified && !accountUsesPrivateRelay ? accountEmail : null, { notify: work => inBackground(ctx, work) });
   if (passkeyGate) return passkeyGate;
   const token = await mintSession(env, identityKey);
@@ -774,7 +774,7 @@ async function handleGoogleSignIn(request, env, ctx) {
     identityKey = link.canonicalIdentityKey ?? identityKey;
   }
 
-  // An account with a passkey signs in with that instead (passkey-policy.js).
+  // An account with a passkey signs in with that instead (passkey-policy.ts).
   const passkeyGate = await gatePasskeyAccount(env, identityKey, email && emailVerified ? email : null, { notify: work => inBackground(ctx, work) });
   if (passkeyGate) return passkeyGate;
   const token = await mintSession(env, identityKey);
@@ -786,7 +786,7 @@ async function handleGoogleSignIn(request, env, ctx) {
 // Per-email budget for the two email-code endpoints. The per-IP Cloudflare
 // limits above only slow one address down; a botnet can still spread
 // guesses at one mailbox across many IPs, and every send-code call hands
-// out a fresh code with a fresh attempt count (email-verification.js), so
+// out a fresh code with a fresh attempt count (email-verification.ts), so
 // resending alone would otherwise reset the guessing budget indefinitely.
 // This counts per address no matter which IP asks, and is deliberately a
 // fixed window (it starts at the first attempt, per RateCounter) rather than
@@ -878,7 +878,7 @@ async function handleConfirmEmailVerification(request, env, ctx) {
 
   // Checked before the code is: a refused password costs the caller no code
   // attempt and leaves the emailed code valid, so they can just pick another.
-  // Only the password's SHA-1 prefix goes to HIBP (pwned-passwords.js).
+  // Only the password's SHA-1 prefix goes to HIBP (pwned-passwords.ts).
   if (await isBreachedPassword(password, typeof env.PWNED_PASSWORDS_FETCH === "function" ? env.PWNED_PASSWORDS_FETCH : fetch)) {
     return json({
       error: "このパスワードは過去の情報漏えいで見つかっています。別のパスワードを設定してください。",
@@ -1014,7 +1014,7 @@ async function handleLocalLogin(request, env, ctx) {
   // Not a deliverable address: refuse without creating throttle state for it.
   if (email.length > 254) return json({ error: "メールアドレスまたはパスワードが違います。" }, 401);
 
-  // Escalating wait per account / IP+account / ASN (login-throttle.js). The
+  // Escalating wait per account / IP+account / ASN (login-throttle.ts). The
   // attempt is counted before the password is checked, atomically with the
   // wait check, so a burst of parallel requests can't all get a guess in.
   // While a wait runs the password isn't checked at all, so a correct guess
@@ -1071,7 +1071,7 @@ async function handleLocalLogin(request, env, ctx) {
   const token = await mintSession(env, link.canonicalIdentityKey ?? `email:${normalizedEmail}`);
   if (!token) return json({ error: "Signing in is not available for this account right now." }, 400);
   // A sign-in from a country+network this account hasn't used lately emails
-  // the owner (login-monitor.js); the outcome also feeds the spike alerts.
+  // the owner (login-monitor.ts); the outcome also feeds the spike alerts.
   inBackground(ctx, (async () => {
     const { newContext, firstSeen } = await noteSignInContext(env, request, normalizedEmail, { notify: true });
     await recordLoginOutcome(env, request, "success", { newContext, firstSeen });

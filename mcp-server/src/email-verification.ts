@@ -1,7 +1,7 @@
 // Email/password sign-up has no OAuth provider to vouch for the address the
 // user typed in, so this module is what actually proves they can receive
 // mail there: a short numeric code, emailed out and checked back. Only once
-// that check passes does the email participate in oauth-links.js's
+// that check passes does the email participate in oauth-links.ts's
 // cross-provider linking — exactly the same "only a verified email may join
 // two accounts" rule Apple and Google already get from their own tokens.
 import { sha256Hex } from "./auth.ts";
@@ -38,7 +38,7 @@ function generateCode() {
  * call itself fails — callers should treat either as "could not send".
  */
 export async function sendVerificationCode(env: Env, email) {
-  // The "email" kill switch (features.js). Checked before a code is stored.
+  // The "email" kill switch (features.ts). Checked before a code is stored.
   if (featureDisabled(env, "email")) throw new Error("Email sending is paused.");
   const normalized = normalizeEmail(email);
   if (!normalized) throw new Error("Invalid email address.");
@@ -81,7 +81,7 @@ interface PendingCode {
 /**
  * Checks `code` against the one on file for `email`. On a match, deletes the
  * stored code (one-time use) and links the now-verified email via
- * oauth-links.js under provider "email" — `sub` is the normalized email
+ * oauth-links.ts under provider "email" — `sub` is the normalized email
  * itself, since there's no OAuth subject to anchor to.
  *
  * Returns `{ verified: true }` on success. On a wrong code, records the

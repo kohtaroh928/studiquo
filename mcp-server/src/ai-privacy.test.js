@@ -39,7 +39,7 @@ test("approved OpenAI requests remain readable by the actual handler", async () 
   const input = request({ model: "openai-luna", messages: [{ role: "user", text: "test" }] });
   assert.equal(await aiPrivacyRejection(input, APPROVED), null);
   // The body is parsed once, here, and the handler takes the result from
-  // ai-body.js instead of reading the stream again.
+  // ai-body.ts instead of reading the stream again.
   assert.equal(takeParsedBody(input).messages[0].text, "test");
   assert.equal(takeParsedBody(input), undefined);
 });

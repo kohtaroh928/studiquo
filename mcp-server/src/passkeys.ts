@@ -152,7 +152,7 @@ async function scanAndRevoke(env: Env, { accountKey, wanted }) {
 export function associationFile() {
   return json({
     webcredentials: { apps: [APP_ID] },
-    // Lets a friend-invite link use a real https:// URL (see invite.js)
+    // Lets a friend-invite link use a real https:// URL (see invite.ts)
     // instead of only the studiquo:// custom scheme — a share sent through
     // LINE, Snapchat, etc. opens in that app's own in-app browser, which
     // generally won't hand off a custom scheme to iOS at all, but does
@@ -300,7 +300,7 @@ export async function handlePasskeys(url, request: Request, env: Env) {
         transports: credential.transports ?? ["internal"],
         email: pending.email,
         userKey: pending.userKey,
-        // Protects the account from the moment it is registered (passkey-policy.js).
+        // Protects the account from the moment it is registered (passkey-policy.ts).
         createdAt: Date.now(),
       };
       const updated = [...saved.filter(item => item.id !== record.id), record].slice(-10);

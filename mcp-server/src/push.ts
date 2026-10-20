@@ -58,7 +58,7 @@ export interface SendPushOptions {
  * never throws into the chat/friend action that triggered it.
  */
 export async function sendPush(env: Env, userKey: string, notification: PushNotification, options: SendPushOptions = {}) {
-  // The "push" kill switch (features.js): nothing is sent, nothing is thrown.
+  // The "push" kill switch (features.ts): nothing is sent, nothing is thrown.
   if (featureDisabled(env, "push")) return [];
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? Date.now();

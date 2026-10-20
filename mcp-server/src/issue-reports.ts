@@ -24,7 +24,7 @@ import type { IssueReportRecord, StoredImage } from "./records.ts";
 const MAX_DESCRIPTION_LENGTH = 2_000;
 // A JPEG/PNG screenshot base64-encoded is ~33% larger than its raw bytes;
 // this bounds the decoded size the same way MAX_AVATAR_BYTES bounds a
-// profile photo in chat.js.
+// profile photo in chat.ts.
 const MAX_SCREENSHOT_BYTES = 3_000_000;
 const MAX_UPLOAD_BODY = 4_200_000;
 const ALLOWED_SCREENSHOT_CONTENT_TYPES = new Set(["image/jpeg", "image/png"]);
@@ -106,7 +106,7 @@ export async function handleIssueReports(url, request: Request, env: Env) {
   const key = await sha256Hex(token);
   if (await isRevoked(env, key)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
 
-  // Occasional-action budget like RATE_LIMIT_CHAT_FRIEND_ADD's in chat.js —
+  // Occasional-action budget like RATE_LIMIT_CHAT_FRIEND_ADD's in chat.ts —
   // reporting isn't something a genuine user does rapidly, so a burst is
   // itself worth capping rather than something normal use would ever hit.
   const allowed = await checkRateLimit(env.RATE_LIMIT_ISSUE_REPORT, key);

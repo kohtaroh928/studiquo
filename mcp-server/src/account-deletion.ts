@@ -53,7 +53,7 @@ async function stillDeleting(env: Env, deletionStateKey, generation) {
 const MAX_ROOMS_PER_RUN = 40;
 
 async function removeDocumentRooms(env: Env, chatKey) {
-  // Invitations still waiting for this account's answer (document-collab.js).
+  // Invitations still waiting for this account's answer (document-collab.ts).
   for (const key of await entries(env, `doc-invite:${chatKey}:`)) await env.STUDIQUO_DATA.delete(key);
   const prefix = roomMembershipKey(chatKey, "");
   const keys = await entries(env, prefix);
@@ -253,7 +253,7 @@ export async function deleteAccount(env: Env, canonicalSub) {
   // code-attempt counters, and the password generation.
   //
   // The generation is retired FIRST, before anything is deleted. A legacy-password
-  // upgrade (local-auth.js) that began before this deletion — or whose login read
+  // upgrade (local-auth.ts) that began before this deletion — or whose login read
   // a stale copy of the record afterwards — would otherwise write account:local:*
   // back once it is gone; moving the count on makes that write refuse. It isn't
   // dropped outright for that reason: its own alarm clears it after
@@ -268,7 +268,7 @@ export async function deleteAccount(env: Env, canonicalSub) {
     }
   }
 
-  // The account's passkeys are found through its own list (passkey-policy.js)
+  // The account's passkeys are found through its own list (passkey-policy.ts)
   // rather than by reading every passkey there is. While that list does not yet
   // cover passkeys from before it existed, or has reached its limit (and so may
   // have dropped some), every record is read as before.
@@ -335,7 +335,7 @@ export async function deleteAccount(env: Env, canonicalSub) {
   // A grant's key starts with its account's hash, so each identity's grants are
   // listed by prefix rather than found among everyone's.
   for (const prefix of grantPrefixes) mcpKeys.push(...await entries(env, prefix));
-  // Tokens are listed per account too (mcp-oauth.js). Until every token that
+  // Tokens are listed per account too (mcp-oauth.ts). Until every token that
   // could exist has been issued under that list, the old scan also runs.
   for (const identity of identityKeys) {
     const indexPrefix = `mcp:token-index:${await sha256Hex(identity)}:`;
@@ -450,7 +450,7 @@ export async function deleteAccount(env: Env, canonicalSub) {
 
   // The id the app keeps this account's on-device library under is erased too, so
   // signing up again gives a new one and an earlier library is not handed to the
-  // new account (library-id.js). Idempotent, so a retry repeats it harmlessly.
+  // new account (library-id.ts). Idempotent, so a retry repeats it harmlessly.
   // The names that could have been used: every identity of the account, and the
   // e-mail identities (as for the passkey lists), since the id is kept under the
   // account's canonical identity and the one an address resolved to.

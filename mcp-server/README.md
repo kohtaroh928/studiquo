@@ -32,9 +32,9 @@ Studiquoアプリから同期したノート・OCRテキスト・暗記カード
 | `POST /api/ai/grade` | 答案画像を採点基準で採点する（Luna固定） |
 | `POST /api/ai/review` | 復習教材（解説＋一問一答）を作る（Luna固定） |
 
-認証は `/api/*` と同じ端末トークンで、`session.sub` を `entitlements.js`の`getPlan`でRevenueCatの`subscribers`テーブル（D1 `ADMIN_DB`、`admin.js`のWebhookが書き込む）に照会し、standard/plus/proのいずれかを解決します。RevenueCatの`app_user_id`はiOS側が`Purchases.shared.logIn(session.sub)`を呼ぶ前提でstudiquoの`sub`と一致させています（呼ばれていないと常にstandard扱いになります）。
+認証は `/api/*` と同じ端末トークンで、`session.sub` を `entitlements.ts`の`getPlan`でRevenueCatの`subscribers`テーブル（D1 `ADMIN_DB`、`admin.ts`のWebhookが書き込む）に照会し、standard/plus/proのいずれかを解決します。RevenueCatの`app_user_id`はiOS側が`Purchases.shared.logIn(session.sub)`を呼ぶ前提でstudiquoの`sub`と一致させています（呼ばれていないと常にstandard扱いになります）。
 
-AIの利用量は**クレジット**で数え、プランごとに4つの窓（1分あたりの回数・5時間・1日・1か月。1日と1か月は日本時間）で同時に制限します。数える単位は端末ではなく**アカウント**です（`ai-credits.js`）。1クレジットは約$0.0007の原価で、モデルごとの重み（Luna 1 / Sol 20 / Terra 22 / Astra 100）と機能ごとの倍率（チャット1 / 採点基準2 / 採点・復習3）を掛けた値を、1回の呼び出しで消費します。
+AIの利用量は**クレジット**で数え、プランごとに4つの窓（1分あたりの回数・5時間・1日・1か月。1日と1か月は日本時間）で同時に制限します。数える単位は端末ではなく**アカウント**です（`ai-credits.ts`）。1クレジットは約$0.0007の原価で、モデルごとの重み（Luna 1 / Sol 20 / Terra 22 / Astra 100）と機能ごとの倍率（チャット1 / 採点基準2 / 採点・復習3）を掛けた値を、1回の呼び出しで消費します。
 
 | | 1分(回数) | 5時間 | 1日 | 1か月 |
 |---|---|---|---|---|
@@ -42,13 +42,13 @@ AIの利用量は**クレジット**で数え、プランごとに4つの窓（1
 | plus | 10 | 400 | 600 | 1,500 |
 | pro | 20 | 1,000 | 1,500 | 4,000 |
 
-上限に達すると429（`code: "ai_limit"`、`window` は `minute` / `fiveHours` / `day` / `month` / `global`）を返します。別に、機能ごとのサービス全体の1日の上限（`GLOBAL_*_DAILY_LIMIT`）も残してあります。重みや上限を直すときは`ai-credits.js`の表だけを変えます（アプリに表示するクレジット数は`SubscriptionPlansView.swift`に手で合わせます）。
+上限に達すると429（`code: "ai_limit"`、`window` は `minute` / `fiveHours` / `day` / `month` / `global`）を返します。別に、機能ごとのサービス全体の1日の上限（`GLOBAL_*_DAILY_LIMIT`）も残してあります。重みや上限を直すときは`ai-credits.ts`の表だけを変えます（アプリに表示するクレジット数は`SubscriptionPlansView.swift`に手で合わせます）。
 
 `/api/ai/chat`のみ、リクエストボディの`model`でプラン対応モデルを選べます（standardはChatGPT Luna、plusはLunaに加えてTerra・Sol、proはさらにAstra）。プラン外のモデルは403です。`model`を省略した場合はLunaを呼びます。AnthropicのコードはWorkerに残っていますが、どのプランの表にも載せていないため無効です。
 
 **AIを使える人の条件と安全策**（OpenAIの利用条件が13歳未満を対象外とし、未成年には保護者の同意を求めるため）:
 
-- アプリは初回に年齢区分（`adult`＝18歳以上、`teen`＝13〜17歳で保護者の同意あり）を確認し、リクエストに`X-Studiquo-Age`ヘッダーを付けます。13歳未満は選べず、AIを使えません。ヘッダーが無い・不正な値のリクエストは`ai-privacy.js`が403で止めます。
+- アプリは初回に年齢区分（`adult`＝18歳以上、`teen`＝13〜17歳で保護者の同意あり）を確認し、リクエストに`X-Studiquo-Age`ヘッダーを付けます。13歳未満は選べず、AIを使えません。ヘッダーが無い・不正な値のリクエストは`ai-privacy.ts`が403で止めます。
 - 同意の版は`openai-v1`（`X-Studiquo-AI-Consent`）。古い版や`AI_PROVIDER_APPROVED`が`true`でないときは使えません。`PAYWALL_ENABLED`が`true`でないときも使えません(課金なしのアカウントを量産して全体の1日上限を使い切られるのを防ぐため。AIを解禁するときは両方を`true`にします)。
 - 利用者の入力文はOpenAIのモデレーション（`omni-moderation-latest`）にかけ、不適切と判定されたら送らずに400（`code: "content_rejected"`）を返します（自傷関連は止めません。モデレーション自体が落ちている・読めないときは送らずに503（`code: "moderation_unavailable"`）を返し、消費した回数は戻します。`AI_MODERATION=off`で無効化）。
 - OpenAIへ送るときは`store: false`と、アカウントのハッシュを元にした`safety_identifier`を付けます（アカウントIDそのものは送りません）。
@@ -133,7 +133,7 @@ openssl rand -base64 32 | npx wrangler secret put SNAPSHOT_ENCRYPTION_KEY
 
 ## トークンの署名
 
-Workerが発行するトークンに署名を付け、でっち上げたトークンを、**KVを読む前に**拒否する仕組みです(`src/token-signature.js`)。トークンの形がまねしやすく、偽のトークンでもKVの読み取りが起きて、大量に送られるとアカウント共有のKVの上限を使い切られるため、これを防ぎます。IPを大量に変える連打にも効きます(WAFのIP単位の制限では止められない)。
+Workerが発行するトークンに署名を付け、でっち上げたトークンを、**KVを読む前に**拒否する仕組みです(`src/token-signature.ts`)。トークンの形がまねしやすく、偽のトークンでもKVの読み取りが起きて、大量に送られるとアカウント共有のKVの上限を使い切られるため、これを防ぎます。IPを大量に変える連打にも効きます(WAFのIP単位の制限では止められない)。
 
 | 変数(Worker secret) | 値 | 動作 |
 | --- | --- | --- |
@@ -151,7 +151,7 @@ Workerが発行するトークンに署名を付け、でっち上げたトー�
 
 ## ID トークンのnonce(Apple・Google)
 
-Sign in with Apple / GoogleのIDトークンが、**このサインインのために作られたもの**だとWorkerが確かめる仕組みです(`src/id-token-nonce.js`)。確かめないと、IDトークンのコピーを、期限が切れるまで、別の人が送り直せます。
+Sign in with Apple / GoogleのIDトークンが、**このサインインのために作られたもの**だとWorkerが確かめる仕組みです(`src/id-token-nonce.ts`)。確かめないと、IDトークンのコピーを、期限が切れるまで、別の人が送り直せます。
 
 1. アプリが、ランダムなnonce(生の値)を作る。
 2. そのSHA-256(小文字の16進)を、Apple / Googleに渡す。IDトークンの`nonce`に入って返ってくる。

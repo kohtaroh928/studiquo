@@ -114,7 +114,7 @@ CloudKit互換性を壊しやすいため、モデル追加・必須属性・関
 
 - 本番Workerの入口は、独自ドメイン`api.studiquo.app`(Cloudflareのゾーン`studiquo.app`に、Workerのカスタムドメインとして割り当てる)だけである。`workers.dev`のアドレスと、バージョンごとのプレビューURLは無効にしている(`wrangler.jsonc`の`workers_dev: false`、`preview_urls: false`)。ステージングは`workers.dev`で動かし、`env.staging`で明示的に有効にしている。
 - ゾーンのWAFに、レート制限ルール(同じIPからの通信が10秒に200件を超えたら、10秒ブロック)を置き、認証より前の連打をWorkerに届く前に止める。無料プランで選べる条件に合わせ、URIパスが`/`で始まる通信を対象にしている。同じゾーンに別のサイトを置くときは、条件を見直す。
-- アプリの接続先(`WorkerAIProvider.defaultEndpoint`)、Passkeyの`RP ID`(`passkeys.js`)、`project.yml`・entitlementsの関連ドメイン(`applinks`、`webcredentials`)は、すべてこのドメインに揃える。ドメインを変えると、登録済みのPasskeyは使えなくなる。
+- アプリの接続先(`WorkerAIProvider.defaultEndpoint`)、Passkeyの`RP ID`(`passkeys.ts`)、`project.yml`・entitlementsの関連ドメイン(`applinks`、`webcredentials`)は、すべてこのドメインに揃える。ドメインを変えると、登録済みのPasskeyは使えなくなる。
 - Worker内でも、認証前後の各経路にレート制限を持つ(Cloudflare Rate Limiting bindingsと`RATE_COUNTER`)。
 
 ### 5.1 リクエスト処理
@@ -131,7 +131,7 @@ Wranglerは`src/worker.js`を読み込み、実処理を`src/app.js`へ委譲す
 
 HTTP本文にはサイズ上限を設け、入力スキーマ、認可、Rate Limitを各境界で確認する。
 
-AIの公開APIでは`ai-privacy.js`が提供条件の承認フラグ、同意バージョン、Google限定モデルを検証する。旧direct-provider経路は初期提供では停止する。退会ジョブ・RevenueCat削除ジョブはKVへ永続化し、`worker.js`の定期ハンドラーから`privacy-retention.js`が再試行と期限超過データ削除を行う。実装の公開条件は[PRIVACY_RELEASE_CHECKLIST.md](PRIVACY_RELEASE_CHECKLIST.md)を参照する。
+AIの公開APIでは`ai-privacy.ts`が提供条件の承認フラグ、同意バージョン、Google限定モデルを検証する。旧direct-provider経路は初期提供では停止する。退会ジョブ・RevenueCat削除ジョブはKVへ永続化し、`worker.js`の定期ハンドラーから`privacy-retention.ts`が再試行と期限超過データ削除を行う。実装の公開条件は[PRIVACY_RELEASE_CHECKLIST.md](PRIVACY_RELEASE_CHECKLIST.md)を参照する。
 
 ### 5.2 Workerの永続化
 

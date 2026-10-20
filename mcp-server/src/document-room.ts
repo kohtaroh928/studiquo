@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./env.ts";
 import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, removeAccountData } from "./document-room-store.ts";
 
-// Mirrors chat-room.js's ChatRoom shape closely — same Durable Object
+// Mirrors chat-room.ts's ChatRoom shape closely — same Durable Object
 // pattern, same per-room SQLite storage, same requireParticipant-throws-
 // Forbidden convention — but for a document's collaborative-review session
 // instead of a chat conversation. See the design's change-tracking step:

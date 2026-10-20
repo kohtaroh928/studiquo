@@ -138,7 +138,7 @@ export async function recordLoginOutcome(env: Env, request: Request, outcome, { 
 }
 
 async function sendSignInNotice(env: Env, email, context, when) {
-  // The "email" kill switch (features.js). Callers treat a notice as best effort.
+  // The "email" kill switch (features.ts). Callers treat a notice as best effort.
   if (featureDisabled(env, "email")) return;
   const place = [context.country, context.region].filter(Boolean).join(" / ");
   const jst = new Date(when.getTime() + 9 * 3_600_000).toISOString().replace("T", " ").slice(0, 16);

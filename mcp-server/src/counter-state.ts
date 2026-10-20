@@ -1,4 +1,4 @@
-// The arithmetic behind RateCounter.take/give (rate-counter.js), kept apart
+// The arithmetic behind RateCounter.take/give (rate-counter.ts), kept apart
 // from the Durable Object so it can be tested without the Workers runtime.
 //
 // A counter's state is `{ count, windowEndsAt }`. A window starts at the first

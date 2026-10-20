@@ -3,10 +3,10 @@ import test from "node:test";
 import { register } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 
-// mcp-inbox.js's MCPInbox extends the real `DurableObject` from
+// mcp-inbox.ts's MCPInbox extends the real `DurableObject` from
 // "cloudflare:workers", a module that only exists inside the Workers
 // runtime. Rather than hand-mirroring its SQL logic in JS (as chat.test.js
-// does for chat-room.js), this shims that one import with a minimal stand-in
+// does for chat-room.ts), this shims that one import with a minimal stand-in
 // so the actual class — actual SQL statements included — can run directly
 // under `node --test`, backed by Node's own built-in SQLite.
 register(
@@ -31,7 +31,7 @@ register(
 
 const { MCPInbox } = await import("./mcp-inbox.ts");
 
-// Wraps a real in-memory SQLite database in the shape mcp-inbox.js expects
+// Wraps a real in-memory SQLite database in the shape mcp-inbox.ts expects
 // from `ctx.storage.sql`: a single `.exec(query, ...params)` that runs the
 // statement and, for a SELECT, returns its rows as a spreadable array —
 // same as Cloudflare's own SqlStorageCursor.

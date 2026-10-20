@@ -5,7 +5,7 @@ import { reserveAttempt, refundAttempt, trustPair, trustExpiryMs } from "./login
 import { touchSeenContext } from "./login-monitor.ts";
 
 // One instance per counted key (an AI usage bucket, a document-collab
-// action, …) — see ai.js's withinQuota and document-collab.js's
+// action, …) — see ai.ts's withinQuota and document-collab.ts's
 // withinLimit, its only callers. A KV+TTL counter used to do this job, but
 // every bump() cost a KV read and a KV write, and those count against the
 // whole Cloudflare account's shared daily KV operation cap alongside every
@@ -42,7 +42,7 @@ export class RateCounter extends DurableObject<Env> {
   /**
    * `bump`, but also says which window the amount was taken from, so a later
    * `give` can return it to that window and no other. `amount` lets one call
-   * cost more than one unit (AI credits, ai-credits.js).
+   * cost more than one unit (AI credits, ai-credits.ts).
    */
   async take(limit, windowSeconds, amount = 1) {
     const result = takeFrom(await this.ctx.storage.get<CounterState>("state"), Date.now(), limit, windowSeconds, amount);
@@ -58,7 +58,7 @@ export class RateCounter extends DurableObject<Env> {
   /**
    * Gives back what an earlier `take` took, for when a later check in the same
    * request refused it. Only touches the window it was taken from (see
-   * counter-state.js).
+   * counter-state.ts).
    */
   async give(amount, windowEndsAt) {
     const next = giveTo(await this.ctx.storage.get<CounterState>("state"), Date.now(), amount, windowEndsAt);
@@ -75,7 +75,7 @@ export class RateCounter extends DurableObject<Env> {
     return { limit, remaining: Math.max(0, limit - used), resetsAt: state?.windowEndsAt ?? null };
   }
 
-  // Failed-login backoff (login-throttle.js owns the policy and the state
+  // Failed-login backoff (login-throttle.ts owns the policy and the state
   // transitions; this object serialises access to them, which is what makes
   // "check the wait, then count the attempt" one atomic step). A name is
   // used either for bump() or for these, never both, so they share the alarm.
@@ -105,7 +105,7 @@ export class RateCounter extends DurableObject<Env> {
     await this.ctx.storage.setAlarm(until);
   }
 
-  // Which country+network an account has signed in from (login-monitor.js).
+  // Which country+network an account has signed in from (login-monitor.ts).
   // Used under its own name, so it shares nothing with bump()/login state.
   async seenContext(key, { maxEntries, ttlSeconds }) {
     const now = Date.now();
@@ -115,7 +115,7 @@ export class RateCounter extends DurableObject<Env> {
     return { isNew: result.isNew, wasEmpty: result.wasEmpty };
   }
 
-  // Per-account password generation (local-auth.js). Deliberately has no
+  // Per-account password generation (local-auth.ts). Deliberately has no
   // alarm: forgetting the count would let a stale record's old generation
   // match again.
   async nextAccountGeneration() {
@@ -161,7 +161,7 @@ export class RateCounter extends DurableObject<Env> {
     });
   }
 
-  // App Attest (app-attest.js): one object per registered app key, holding its
+  // App Attest (app-attest.ts): one object per registered app key, holding its
   // public key and the last assertion counter. Deliberately has no alarm: a key
   // stays valid for as long as the app install does, and forgetting the counter
   // would let an old assertion be sent again.

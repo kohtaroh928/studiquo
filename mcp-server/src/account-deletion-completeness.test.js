@@ -9,7 +9,7 @@ import { VALIDITY_SECONDS, remainingValiditySeconds } from "./token.ts";
 
 // What account deletion must leave nothing of: the synced snapshot kept under a
 // session's token, and collaborative document rooms. The room tests run the
-// real SQL of the room (document-room-store.js) on an in-memory SQLite; the
+// real SQL of the room (document-room-store.ts) on an in-memory SQLite; the
 // Durable Object wrapper around it is the only part replaced.
 
 // ---------------------------------------------------------------------------

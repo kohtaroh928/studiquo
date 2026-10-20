@@ -83,7 +83,7 @@ function freshToken(suffix) {
 }
 
 function request(path, { method = "GET", token, body, authorization } = {}) {
-  // The admin routes sit behind a verified Cloudflare Access login (src/access.js);
+  // The admin routes sit behind a verified Cloudflare Access login (src/access.ts);
   // RevenueCat's webhook is the one exception and authenticates by secret.
   const headers = path.startsWith("/api/admin/") && path !== "/api/admin/revenuecat-webhook" ? { ...ACCESS_HEADERS } : {};
   if (token) headers.authorization = `Bearer ${token}`;
