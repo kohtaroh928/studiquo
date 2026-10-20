@@ -4,7 +4,7 @@ import {
   RECOVERY_DELAY_SECONDS, accountHasPasskey, removeAllPasskeys, cancelPasskeyRecovery, gatePasskeyAccount,
   indexAccountPasskey, listAccountPasskeys, markRecentPasskey, requireRecentPasskey,
 } from "./passkey-policy.js";
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 import { realSession } from "./session.js";
 
 function environment() {

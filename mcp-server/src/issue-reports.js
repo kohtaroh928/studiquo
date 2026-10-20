@@ -9,15 +9,15 @@
 // since it can capture a friend's chat message or private note content.
 // Text and screenshots remain in the Access-protected dashboard. Slack
 // receives only metadata and a dashboard link, never private report content.
-import { accessAllowed } from "./access.js";
+import { accessAllowed } from "./access.ts";
 import { auditAdmin } from "./audit.js";
 import { isRevoked } from "./revocation.js";
-import { isExpired } from "./token.js";
-import { checkRateLimit } from "./rate-limit.js";
-import { bearerToken, sha256Hex } from "./auth.js";
-import { json, binaryHeaders, readJSONLimited } from "./http.js";
+import { isExpired } from "./token.ts";
+import { checkRateLimit } from "./rate-limit.ts";
+import { bearerToken, sha256Hex } from "./auth.ts";
+import { json, binaryHeaders, readJSONLimited } from "./http.ts";
 import { realSession } from "./session.js";
-import { postSlackBlocks } from "./slack.js";
+import { postSlackBlocks } from "./slack.ts";
 
 const MAX_DESCRIPTION_LENGTH = 2_000;
 // A JPEG/PNG screenshot base64-encoded is ~33% larger than its raw bytes;

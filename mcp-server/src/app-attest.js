@@ -37,8 +37,8 @@
 // Not covered: an assertion binds the method, the path and the time, not the
 // body. It proves WHO is calling, not that the body was not altered on the way
 // (TLS does that).
-import { json, readJSONLimited } from "./http.js";
-import { checkRateLimit, clientKey } from "./rate-limit.js";
+import { json, readJSONLimited } from "./http.ts";
+import { checkRateLimit, clientKey } from "./rate-limit.ts";
 
 const encoder = new TextEncoder();
 

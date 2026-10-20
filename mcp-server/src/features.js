@@ -17,7 +17,7 @@
 // "email" (the three places that call Resend; the route that sends the
 // confirmation code is also stopped here, so the app is told instead of waiting
 // for a code that will not come).
-import { json } from "./http.js";
+import { json } from "./http.ts";
 
 export const FEATURES = ["ai", "chat", "collab", "mcp", "signin", "email", "push"];
 

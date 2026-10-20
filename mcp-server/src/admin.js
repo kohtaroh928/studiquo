@@ -8,10 +8,10 @@
 // exception: it is authenticated by its own shared secret instead, the same
 // "authenticated a different way than the rest of the API" shape as
 // issue-reports.js's unauthenticated screenshot GET.
-import { checkRateLimit, clientKey } from "./rate-limit.js";
-import { json, readJSONLimited, htmlHeaders } from "./http.js";
-import { bearerToken, secretsEqual, sha256Hex } from "./auth.js";
-import { isExpired } from "./token.js";
+import { checkRateLimit, clientKey } from "./rate-limit.ts";
+import { json, readJSONLimited, htmlHeaders } from "./http.ts";
+import { bearerToken, secretsEqual, sha256Hex } from "./auth.ts";
+import { isExpired } from "./token.ts";
 import { isRevoked } from "./revocation.js";
 import { realSession } from "./session.js";
 import { productForPlanChange } from "./entitlements.js";

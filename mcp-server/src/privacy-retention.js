@@ -1,4 +1,4 @@
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 
 const DAY = 86_400_000;
 export const PERSONAL_RETENTION_MS = 90 * DAY;

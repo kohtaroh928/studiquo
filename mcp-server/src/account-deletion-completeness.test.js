@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 import { deleteAccount } from "./account-deletion.js";
 import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, purgeRoomData, removeAccountData, removeParticipantData, roomMembershipKey } from "./document-room-store.js";
-import { VALIDITY_SECONDS, remainingValiditySeconds } from "./token.js";
+import { VALIDITY_SECONDS, remainingValiditySeconds } from "./token.ts";
 
 // What account deletion must leave nothing of: the synced snapshot kept under a
 // session's token, and collaborative document rooms. The room tests run the

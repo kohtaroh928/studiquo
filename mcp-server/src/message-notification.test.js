@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chatMessageNotification } from "./message-notification.js";
+import { chatMessageNotification } from "./message-notification.ts";
 
 test("a direct-message banner shows the sender and exact message content", () => {
   const notification = chatMessageNotification({

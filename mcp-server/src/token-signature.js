@@ -22,7 +22,7 @@
 //                           run out (rotation)
 // With no key set nothing is signed or checked, which is how it behaves until the
 // secret is added.
-import { secretsEqual } from "./auth.js";
+import { secretsEqual } from "./auth.ts";
 
 const encoder = new TextEncoder();
 const SESSION_LABEL = "studiquo-session-token-v1:";

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 import { deleteAccount, startAccountDeletion } from "./account-deletion.js";
 import { processPendingDeletions, runPrivacyRetention, runScheduledPrivacyWork } from "./privacy-retention.js";
 import { handleAdminWebhook } from "./admin.js";

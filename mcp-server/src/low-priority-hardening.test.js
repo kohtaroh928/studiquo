@@ -28,10 +28,10 @@ register(
 
 const { UserRegistry } = await import("./user-registry.js");
 const { default: worker } = await import("./app.js");
-const { normalizeIP, clientKey } = await import("./rate-limit.js");
+const { normalizeIP, clientKey } = await import("./rate-limit.ts");
 const { appGateRejection } = await import("./app-gate.js");
-const { isCrossSiteWrite } = await import("./access.js");
-const { ACCESS_ENV, ACCESS_HEADERS } = await import("./test-access.js");
+const { isCrossSiteWrite } = await import("./access.ts");
+const { ACCESS_ENV, ACCESS_HEADERS } = await import("./test-access.ts");
 
 const hash = value => createHash("sha256").update(value).digest("hex");
 const noopCtx = { waitUntil() {} };

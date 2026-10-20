@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { deleteAccount } from "./account-deletion.js";
-import { linkVerifiedEmail } from "./oauth-links.js";
+import { linkVerifiedEmail } from "./oauth-links.ts";
 import worker from "./app.js";
 import { mintSession } from "./session.js";
 import { indexAccountPasskey } from "./passkey-policy.js";
-import { accountGenerationMethods } from "./test-account-generations.js";
+import { accountGenerationMethods } from "./test-account-generations.ts";
 
 function environment() {
   const values = new Map();
@@ -1028,7 +1028,7 @@ test("H-3c. 退会済みのアカウントには、認可コードの交換も�
 });
 
 test("退会するとパスキーの索引と復旧手続きも消え、同じメールで再登録しても強制の名残が残らない", async () => {
-  const { sha256Hex: hash } = await import("./auth.js");
+  const { sha256Hex: hash } = await import("./auth.ts");
   const { indexAccountPasskey, accountHasPasskey } = await import("./passkey-policy.js");
   const env = environment();
   await seedLinked(env, "apple-pk", "pk@example.com", [{ provider: "apple", sub: "apple-pk" }, { provider: "email", sub: "pk@example.com" }]);

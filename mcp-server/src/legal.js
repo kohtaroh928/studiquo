@@ -1,4 +1,4 @@
-import { securityHeaders } from "./http.js";
+import { securityHeaders } from "./http.ts";
 
 // Publicly served legal pages (no bearer token required) — registered in
 // app.js alongside /health and the Apple app-site-association file, before

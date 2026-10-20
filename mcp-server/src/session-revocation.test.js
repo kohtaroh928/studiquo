@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test, { mock } from "node:test";
-import { sha256Hex } from "./auth.js";
+import { sha256Hex } from "./auth.ts";
 import { externalSession, revokeAllConnections } from "./mcp-oauth.js";
 import { mintSession, realSession, revokeSessionsIssuedBefore } from "./session.js";
 

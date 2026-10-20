@@ -7,20 +7,21 @@
 // fetches carry the signed-in session as the CF_Authorization cookie, so that
 // is accepted alongside the Cf-Access-Jwt-Assertion header Access adds itself.
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import type { Env } from "./env.ts";
 
-const actors = new WeakMap();
+const actors = new WeakMap<Request, string | null>();
 
 // Who is signed in through Cloudflare Access: their email (a service token has
 // none, so its common name, else the subject), or null when the login does not
 // verify. Cached per request so the audit log doesn't verify twice.
-export async function accessActor(request, env) {
-  if (actors.has(request)) return actors.get(request);
+export async function accessActor(request: Request, env: Env): Promise<string | null> {
+  if (actors.has(request)) return actors.get(request) ?? null;
   const actor = await verifyActor(request, env);
   actors.set(request, actor);
   return actor;
 }
 
-async function verifyActor(request, env) {
+async function verifyActor(request: Request, env: Env): Promise<string | null> {
   if (!env.ACCESS_AUD || !env.ACCESS_TEAM_DOMAIN) return null;
   const cookie = (request.headers.get("cookie") ?? "")
     .split(";").map(part => part.trim()).find(part => part.startsWith("CF_Authorization="));
@@ -36,7 +37,7 @@ async function verifyActor(request, env) {
   }
 }
 
-export async function accessAllowed(request, env) {
+export async function accessAllowed(request: Request, env: Env): Promise<boolean> {
   return (await accessActor(request, env)) !== null;
 }
 
@@ -47,7 +48,7 @@ export async function accessAllowed(request, env) {
  * match this Worker's origin is refused. A request that names no origin (a
  * script or curl) is not a browser acting on someone's behalf and is let through.
  */
-export function isCrossSiteWrite(request, url) {
+export function isCrossSiteWrite(request: Request, url: URL): boolean {
   const method = request.method.toUpperCase();
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") return false;
   const site = request.headers.get("sec-fetch-site");
@@ -58,6 +59,6 @@ export function isCrossSiteWrite(request, url) {
 
 // Every /api/admin/* route except RevenueCat's webhook, which RevenueCat's
 // servers call (no Access login) and which carries its own shared secret.
-export function isAccessGuardedPath(pathname) {
+export function isAccessGuardedPath(pathname: string): boolean {
   return pathname.startsWith("/api/admin/") && pathname !== "/api/admin/revenuecat-webhook";
 }

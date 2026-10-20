@@ -3,8 +3,8 @@
 // what lets requireRealSession() below refuse a token a client invented on
 // its own in the same "<issued-at epoch>.<random>" shape, rather than
 // trusting the token's own embedded timestamp as proof it's genuine.
-import { sha256Hex } from "./auth.js";
-import { VALIDITY_SECONDS } from "./token.js";
+import { sha256Hex } from "./auth.ts";
+import { VALIDITY_SECONDS } from "./token.ts";
 import { sessionTokenAcceptable, signSessionToken } from "./token-signature.js";
 
 // Which life of the account a record belongs to. Each time a deleted account

@@ -4,7 +4,7 @@
 // This module only verifies the token — it does not (yet) know about
 // accounts, sessions, or KV records beyond the JWKS cache. That comes later,
 // once this verification step is wired into an actual endpoint.
-import { jwksVerifier } from "./jwks-verify.js";
+import { jwksVerifier } from "./jwks-verify.ts";
 
 const { getPublicKeys: getApplePublicKeys, verifyIdentityToken: verifyAppleIdentityToken } = jwksVerifier({
   providerName: "Apple",

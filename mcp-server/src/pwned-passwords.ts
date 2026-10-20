@@ -12,7 +12,7 @@
 const RANGE_URL = "https://api.pwnedpasswords.com/range/";
 const TIMEOUT_MS = 3_000;
 
-async function sha1HexUpper(value) {
+async function sha1HexUpper(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
 }
@@ -22,7 +22,7 @@ async function sha1HexUpper(value) {
  * if that couldn't be determined (see above). `fetchImpl` is injectable so
  * tests never touch the network.
  */
-export async function isBreachedPassword(password, fetchImpl = fetch) {
+export async function isBreachedPassword(password: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
   try {
     const hash = await sha1HexUpper(password);
     const prefix = hash.slice(0, 5);

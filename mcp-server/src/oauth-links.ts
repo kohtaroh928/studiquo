@@ -13,12 +13,25 @@
 // verifying it is exactly the check every caller must pass through
 // (Apple's `is_private_email`-free email is always verified; Google's own
 // `email_verified` claim gates it explicitly).
+import type { Env } from "./env.ts";
+
+export interface LinkedIdentity {
+  provider: string;
+  sub: string;
+}
+
+export interface LinkResult {
+  normalizedEmail: string | null;
+  linkedIdentities: LinkedIdentity[];
+  canonicalIdentityKey?: string;
+}
+
 const EMAIL_LINK_PREFIX = "email-accounts:";
 const EMAIL_OWNER_PREFIX = "email-account-owner:";
 export const IDENTITY_CANONICAL_PREFIX = "identity-canonical:";
 const MAX_LINKED_IDENTITIES = 10;
 
-function normalizeEmail(email) {
+function normalizeEmail(email: unknown): string | null {
   if (typeof email !== "string") return null;
   const trimmed = email.trim().toLowerCase();
   return trimmed.length > 0 && trimmed.length <= 254 && trimmed.includes("@") ? trimmed : null;
@@ -32,7 +45,10 @@ function normalizeEmail(email) {
  * Idempotent: signing in again with the same provider+sub doesn't create a
  * duplicate entry.
  */
-export async function linkVerifiedEmail(env, { provider, sub, email, emailVerified }) {
+export async function linkVerifiedEmail(
+  env: Env,
+  { provider, sub, email, emailVerified }: { provider: string; sub: string; email?: unknown; emailVerified?: unknown },
+): Promise<LinkResult> {
   const normalized = normalizeEmail(email);
   if (!normalized || !emailVerified) return { normalizedEmail: null, linkedIdentities: [] };
 
@@ -51,7 +67,7 @@ export async function linkVerifiedEmail(env, { provider, sub, email, emailVerifi
   const ownerKey = `${EMAIL_OWNER_PREFIX}${normalized}`;
   const ownMappingKey = `${IDENTITY_CANONICAL_PREFIX}${identityKey({ provider, sub })}`;
   const [storedLinks, storedOwner, ownMapping] = await Promise.all([
-    env.STUDIQUO_DATA.get(linkKey, "json"),
+    env.STUDIQUO_DATA.get<LinkedIdentity[]>(linkKey, "json"),
     env.STUDIQUO_DATA.get(ownerKey),
     env.STUDIQUO_DATA.get(ownMappingKey),
   ]);
@@ -73,8 +89,11 @@ export async function linkVerifiedEmail(env, { provider, sub, email, emailVerifi
 // this identity is new, read the owner, write it if missing -- each decision
 // right after its own read. Only the per-identity mappings are now written
 // conditionally.
-async function linkChangingTheIndex(env, { provider, sub, normalized, linkKey, ownerKey }) {
-  const existing = (await env.STUDIQUO_DATA.get(linkKey, "json")) ?? [];
+async function linkChangingTheIndex(
+  env: Env,
+  { provider, sub, normalized, linkKey, ownerKey }: { provider: string; sub: string; normalized: string; linkKey: string; ownerKey: string },
+): Promise<LinkResult> {
+  const existing = (await env.STUDIQUO_DATA.get<LinkedIdentity[]>(linkKey, "json")) ?? [];
   const alreadyLinked = existing.some(identity => identity.provider === provider && identity.sub === sub);
   const updated = alreadyLinked ? existing : [...existing, { provider, sub }].slice(-MAX_LINKED_IDENTITIES);
   if (!alreadyLinked) await env.STUDIQUO_DATA.put(linkKey, JSON.stringify(updated));
@@ -97,7 +116,7 @@ async function linkChangingTheIndex(env, { provider, sub, normalized, linkKey, o
 // missing or wrong. Checking all of them, not just the signing-in identity's,
 // keeps the old self-repair: a mapping that was never written, or was written
 // wrongly, is fixed the next time any identity of this email signs in.
-async function repairMappings(env, canonicalKeys, canonicalIdentityKey, known) {
+async function repairMappings(env: Env, canonicalKeys: string[], canonicalIdentityKey: string, known: Map<string, string | null>): Promise<void> {
   const unread = [...new Set(canonicalKeys.filter(key => !known.has(key)))];
   const values = await Promise.all(unread.map(key => env.STUDIQUO_DATA.get(key)));
   const mappings = new Map(known);
@@ -107,15 +126,15 @@ async function repairMappings(env, canonicalKeys, canonicalIdentityKey, known) {
     .map(key => env.STUDIQUO_DATA.put(key, canonicalIdentityKey)));
 }
 
-export function identityKey(identity) {
+export function identityKey(identity: LinkedIdentity): string {
   if (identity.provider === "google") return `google:${identity.sub}`;
   if (identity.provider === "email") return `email:${identity.sub}`;
   return identity.sub; // Apple keeps its historical bare-sub session key.
 }
 
 /** Returns every `{ provider, sub }` known to share `email` (verified sign-ins only), or `[]`. */
-export async function linkedIdentities(env, email) {
+export async function linkedIdentities(env: Env, email: unknown): Promise<LinkedIdentity[]> {
   const normalized = normalizeEmail(email);
   if (!normalized) return [];
-  return (await env.STUDIQUO_DATA.get(`${EMAIL_LINK_PREFIX}${normalized}`, "json")) ?? [];
+  return (await env.STUDIQUO_DATA.get<LinkedIdentity[]>(`${EMAIL_LINK_PREFIX}${normalized}`, "json")) ?? [];
 }

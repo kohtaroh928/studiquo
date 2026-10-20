@@ -9,7 +9,7 @@
 //    else is refused. (The request's headers, a bearer token among them, already
 //    crossed the network in clear; the client should switch to https and treat the
 //    token as seen.) Local development over http://localhost is left alone.
-import { json } from "./http.js";
+import { json } from "./http.ts";
 
 export const HSTS_VALUE = "max-age=31536000";
 
