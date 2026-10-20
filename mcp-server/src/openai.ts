@@ -24,7 +24,7 @@ const ATTEMPTS = 3;
 const MAX_OUTPUT_TOKENS = 8192;
 
 /** A user turn's content parts: its text, plus any images attached to it. */
-function userContent(turn: any, images: string[]) {
+function userContent(turn: { text?: unknown }, images: string[]) {
   const parts: Record<string, unknown>[] = [{ type: "input_text", text: String(turn.text ?? "") }];
   for (const image of images) {
     parts.push({ type: "input_image", image_url: `data:image/png;base64,${image}`, detail: "auto" });
@@ -80,25 +80,28 @@ export function buildResponsesBody({
  * Gemini dialect they were first written in) and returns strict JSON Schema:
  * lower-case types, no extra properties, every property required.
  */
-export function toStrictJSONSchema(schema: unknown): any {
-  if (Array.isArray(schema)) return schema.map(toStrictJSONSchema);
-  if (!schema || typeof schema !== "object") return schema;
-  const out: Record<string, any> = {};
-  for (const [name, value] of Object.entries(schema as Record<string, any>)) {
+/** A JSON Schema node as toStrictJSONSchema returns it (only the members it sets are named). */
+export interface StrictSchema { type?: string; properties?: Record<string, StrictSchema>; required?: string[]; additionalProperties?: boolean; items?: StrictSchema; [member: string]: unknown }
+
+export function toStrictJSONSchema(schema: unknown): StrictSchema {
+  if (Array.isArray(schema)) return schema.map(toStrictJSONSchema) as unknown as StrictSchema;
+  if (!schema || typeof schema !== "object") return schema as StrictSchema;
+  const out: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(schema)) {
     if (name === "type" && typeof value === "string") out.type = value.toLowerCase();
-    else if (name === "properties") out.properties = Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toStrictJSONSchema(v)]));
+    else if (name === "properties") out.properties = Object.fromEntries(Object.entries(value as object).map(([k, v]) => [k, toStrictJSONSchema(v)]));
     else if (name === "items") out.items = toStrictJSONSchema(value);
     else if (name !== "required") out[name] = value;
   }
   if (out.type === "object") {
     out.additionalProperties = false;
-    out.required = Object.keys(out.properties ?? {});
+    out.required = Object.keys((out.properties ?? {}) as object);
   }
-  return out;
+  return out as StrictSchema;
 }
 
 /** Sends one Responses request, retrying overload/5xx with backoff. Returns the last response. */
-async function postWithRetry(env: Env, body: Record<string,unknown>, apiKey: any) {
+async function postWithRetry(env: Env, body: Record<string,unknown>, apiKey: string | undefined) {
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured on this Worker.");
   const payload = JSON.stringify(body);
   let last: Response | null = null;
@@ -123,14 +126,14 @@ async function postWithRetry(env: Env, body: Record<string,unknown>, apiKey: any
 }
 
 /** Neutral content parts ({text} / {image: base64 PNG}) → Responses input parts. */
-function toInputParts(parts: unknown[]) {
-  return parts.map((part: any) => part.image
+function toInputParts(parts: { image?: string; text?: unknown }[]) {
+  return parts.map((part) => part.image
     ? { type: "input_image", image_url: `data:image/png;base64,${part.image}`, detail: "auto" }
     : { type: "input_text", text: String(part.text ?? "") });
 }
 
 /** A structured (JSON schema) call whose single user message is made of `parts`. */
-export async function callOpenAIStructured(env: Env, { model, systemInstruction, parts, schema, schemaName, safetyId, maxOutputTokens, apiKey = env.OPENAI_API_KEY }: any) {
+export async function callOpenAIStructured(env: Env, { model, systemInstruction, parts, schema, schemaName, safetyId, maxOutputTokens, apiKey = env.OPENAI_API_KEY }: Pick<ResponsesBodyOptions, "model" | "systemInstruction" | "schema" | "schemaName" | "safetyId" | "maxOutputTokens"> & { parts: { image?: string; text?: unknown }[]; apiKey?: string }) {
   const body = buildResponsesBody({ model, systemInstruction, turns: [], safetyId, schema, schemaName, maxOutputTokens });
   body.input = [{ role: "user", content: toInputParts(parts) }];
   return postWithRetry(env, body, apiKey);
@@ -145,7 +148,7 @@ export async function callOpenAIStructured(env: Env, { model, systemInstruction,
  * `apiKey` defaults to this Worker's own `OPENAI_API_KEY`; it is a parameter
  * so a per-user token can be passed here later without touching the body.
  */
-export async function callOpenAIChat(env: Env, { model, systemInstruction, turns, images = [], safetyId, apiKey = env.OPENAI_API_KEY }: any) {
+export async function callOpenAIChat(env: Env, { model, systemInstruction, turns, images = [], safetyId, apiKey = env.OPENAI_API_KEY }: Pick<ResponsesBodyOptions, "model" | "systemInstruction" | "turns" | "images" | "safetyId"> & { apiKey?: string }) {
   return postWithRetry(env, buildResponsesBody({ model, systemInstruction, turns, images, safetyId }), apiKey);
 }
 
@@ -198,7 +201,8 @@ export async function moderationRejection(env: Env, texts: string[], apiKey = en
  * output_item.*, completed, ...) yields "". Responses streams have no
  * terminal `[DONE]` line — ai.ts's pump ends when the body ends.
  */
-export function extractDeltaText(event: any) {
+export function extractDeltaText(raw: unknown) {
+  const event = raw as { type?: string; delta?: unknown } | null | undefined;
   if (event?.type !== "response.output_text.delta") return "";
   return typeof event.delta === "string" ? event.delta : "";
 }

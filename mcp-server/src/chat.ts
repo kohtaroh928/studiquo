@@ -11,7 +11,7 @@ import { chatMessageNotification } from "./message-notification.ts";
 import { handleDeviceRoutes } from "./devices.ts";
 import { fileChatReport } from "./chat-reports.ts";
 import type { Env } from "./env.ts";
-import type { ChatUser, StoredImage } from "./records.ts";
+import type { ChatUser, StoredImage, StudyStats } from "./records.ts";
 
 const MAX_BODY = 16_000;
 // Attachment uploads carry base64-encoded image/file bytes (up to
@@ -79,7 +79,7 @@ async function readBody(request: Request, maxBytes = MAX_BODY) {
   return readJSONLimitedShared(request, maxBytes);
 }
 
-async function ensureUser(env: Env, key: string, name: string | null = null, studyStats: any = null) {
+async function ensureUser(env: Env, key: string, name: string | null = null, studyStats: StudyStats | null = null) {
   const storageKey = `chat:user:${key}`;
   const user = await env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
   if (user) {
@@ -97,7 +97,7 @@ async function ensureUser(env: Env, key: string, name: string | null = null, stu
   return env.USER_REGISTRY.getByName(key).ensureUser(key, name, studyStats);
 }
 
-async function roomID(first: any, second: string) {
+async function roomID(first: string, second: string) {
   return sha256Hex([first, second].sort().join(":"));
 }
 
@@ -149,14 +149,18 @@ function roomForbiddenResponse(error: unknown) {
 // (isMine already tells it everything it needs for exactly two people),
 // but resolving it there too costs one lookup at most and keeps this one
 // code path uniform instead of branching on room kind.
-async function withSenderNames(env: Env, result: any) {
+/** A room message (or a list of them) as the room returns it; `senderKey` is replaced by the sender's code and name. */
+type Sendered = { senderKey?: unknown };
+
+async function withSenderNames(env: Env, result: Sendered | Sendered[]) {
   const messages = Array.isArray(result) ? result : [result];
-  const senderKeys = [...new Set(messages.map(item => item.senderKey).filter(Boolean))];
+  const senderKeys = [...new Set(messages.map(item => item.senderKey as string | null | undefined).filter(Boolean))] as string[];
   const senders = new Map(await Promise.all(senderKeys.map(async senderKey => {
     const user = await env.STUDIQUO_DATA.get<ChatUser>(`chat:user:${senderKey}`, "json");
     return [senderKey, user ? { code: user.code, name: user.name } : null] as const;
   })));
-  const resolved = messages.map(({ senderKey, ...rest }) => {
+  const resolved = messages.map(({ senderKey: rawSenderKey, ...rest }) => {
+    const senderKey = rawSenderKey as string | null | undefined;
     const sender = senderKey ? senders.get(senderKey) : null;
     if (sender) return { ...rest, senderCode: sender.code, senderName: sender.name };
     return senderKey?.startsWith("deleted:")
@@ -166,7 +170,7 @@ async function withSenderNames(env: Env, result: any) {
   return Array.isArray(result) ? resolved : resolved[0];
 }
 
-async function messageRoomResponse(env: Env, promise: any) {
+async function messageRoomResponse(env: Env, promise: Promise<Sendered | Sendered[]>) {
   try {
     return json(await withSenderNames(env, await promise));
   } catch (error) {
@@ -186,7 +190,7 @@ async function roomResponse(promise: unknown) {
   }
 }
 
-async function messageNotificationContext(env: Env, senderKey: string, roomIDValue: any) {
+async function messageNotificationContext(env: Env, senderKey: string, roomIDValue: string) {
   const sender = await ensureUser(env, senderKey);
   const group = (sender.groups ?? []).find(item => item.roomID === roomIDValue);
   if (group) {
@@ -497,7 +501,7 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
     if (result.status === "not_found") return json({ error: "Request not found." }, 404);
     if (result.status === "friends_full") return json({ error: "Friend list is full." }, 400);
     await Promise.all([
-      env.USER_REGISTRY.getByName(otherKey).confirmFriendship(otherKey, { ...result.friend, roomID: room }, { clearOutgoing: true }),
+      env.USER_REGISTRY.getByName(otherKey).confirmFriendship(otherKey, { ...result.friend!, roomID: room }, { clearOutgoing: true }),
       env.CHAT_ROOM.getByName(room).initialize(room, [key, otherKey]),
     ]);
     return json({ code: other.code, name: other.name, roomID: room });

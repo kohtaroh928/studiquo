@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { runPrivacyRetention } from "./privacy-retention.ts";
 import { deleteAccount } from "./account-deletion.ts";
@@ -10,10 +10,10 @@ import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
 
 class FakeD1Statement {
-  db: any;
+  db: DatabaseSync;
   sql: string;
-  params: unknown[];
-  constructor(db: any, sql: string, params: unknown[] = []) { this.db = db; this.sql = sql; this.params = params; }
+  params: SQLInputValue[];
+  constructor(db: DatabaseSync, sql: string, params: SQLInputValue[] = []) { this.db = db; this.sql = sql; this.params = params; }
   bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() { const r = this.db.prepare(this.sql).run(...this.params); return { success: true, meta: { changes: Number(r.changes) } }; }
   async all() { return { results: this.db.prepare(this.sql).all(...this.params) }; }
@@ -42,7 +42,7 @@ function environment(extra = {}) {
 }
 
 const ctx = partialCtx({ waitUntil() {} });
-const call = (env, path, { method = "GET", body, token = ownerToken }: { method?: string; body?: any; token?: any } = {}) => worker.fetch(
+const call = (env, path: string, { method = "GET", body, token = ownerToken }: { method?: string; body?: unknown; token?: string } = {}) => worker.fetch(
   new Request(`https://example.test${path}`, {
     method,
     headers: { ...(token ? { "cf-access-jwt-assertion": token } : {}), ...(body !== undefined ? { "content-type": "application/json" } : {}) },
@@ -164,7 +164,7 @@ test("leaving the app: reports about you go, reports you filed lose who filed th
   const values = new Map();
   const env = environment({
     STUDIQUO_DATA: {
-      async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
       async list({ prefix }) { return { keys: [...values.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
@@ -173,7 +173,7 @@ test("leaving the app: reports about you go, reports you filed lose who filed th
   const keyOf = async name => sha256Hex(`chat-account:${name}`);
   const [a, b, c] = [await keyOf("apple-a"), await keyOf("apple-b"), await keyOf("apple-c")];
   const room = "b".repeat(64);
-  const file = (reporter, reported, id) => env._db.prepare(
+  const file = (reporter: SQLInputValue, reported: SQLInputValue, id: SQLInputValue) => env._db.prepare(
     `INSERT INTO chat_reports (id, room_id, message_id, reporter_key, reported_key, reason, snapshot, created_at, updated_at)
      VALUES (?, ?, 5, ?, ?, 'r', ?, 1, 1)`
   ).run(id, room, reporter, reported, JSON.stringify([{ id: 4, text: "CONTEXT", reported: false }, { id: 5, text: "REPORTED", reported: true }]));
@@ -200,7 +200,7 @@ test("leaving the app: reports about you go, reports you filed lose who filed th
 test("a session issued before two sign-in methods were linked is stopped by a mark on either identity", async () => {
   const values = new Map();
   const env = partialEnv({ STUDIQUO_DATA: {
-    async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+    async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
     async put(key, value) { values.set(key, value); },
     async delete(key) { values.delete(key); },
   } });
@@ -217,7 +217,7 @@ test("a session issued before two sign-in methods were linked is stopped by a ma
 test("a suspended account's session is refused everywhere except where leaving needs it", async () => {
   const values = new Map();
   const env = partialEnv({ STUDIQUO_DATA: {
-    async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+    async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
     async put(key, value) { values.set(key, value); },
     async delete(key) { values.delete(key); },
   } });

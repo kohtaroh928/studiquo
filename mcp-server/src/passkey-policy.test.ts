@@ -13,7 +13,7 @@ function environment() {
   return partialEnv({
     RESEND_API_KEY: "test-key",
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
@@ -25,14 +25,14 @@ function environment() {
 
 function captureMail() {
   const sent = [];
-  const original = mock.method(globalThis, "fetch", async (url, init) => {
+  const original = mock.method(globalThis, "fetch", async (url, init: { body: string; }) => {
     sent.push({ url, body: JSON.parse(init.body) });
     return new Response("{}", { status: 200 });
   });
   return { sent, restore: () => original.mock.restore() };
 }
 
-async function addPasskey(env, id, { account = ACCOUNT, email = EMAIL, createdAt }: { account?: any; email?: any; createdAt?: any } = {}) {
+async function addPasskey(env, id: string, { account = ACCOUNT, email = EMAIL, createdAt }: { account?: string; email?: string; createdAt?: number } = {}) {
   await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify({ id, email, ...(createdAt === undefined ? {} : { createdAt }) }));
   await indexAccountPasskey(env, account, email, id);
 }
@@ -147,7 +147,7 @@ test("passkeys registered before the per-account list existed are found once and
   const env = environment();
   const keys = new Map();
   const base = env.STUDIQUO_DATA;
-  (env.STUDIQUO_DATA as any) = {
+  env.STUDIQUO_DATA = {
     ...base,
     async put(key, value) { keys.set(key, value); return base.put(key, value); },
     async list({ prefix }) {

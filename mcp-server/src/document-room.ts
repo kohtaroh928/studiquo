@@ -36,7 +36,7 @@ export class DocumentRoom extends DurableObject<Env> {
   // collaborating" request from the client can't reset an in-progress
   // session (dropping every invited editor/reviewer back out) partway
   // through.
-  async initialize(ownerKey: string, blocks: any) {
+  async initialize(ownerKey: string, blocks: unknown) {
     const existing = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (existing > 0) return { status: "already_initialized" };
     this.ctx.storage.sql.exec("INSERT OR IGNORE INTO participants (user_key, role) VALUES (?, 'owner')", ownerKey);

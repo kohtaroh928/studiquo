@@ -36,9 +36,9 @@ const { MCPInbox } = await import("./mcp-inbox.ts");
 // from `ctx.storage.sql`: a single `.exec(query, ...params)` that runs the
 // statement and, for a SELECT, returns its rows as a spreadable array —
 // same as Cloudflare's own SqlStorageCursor.
-function makeSql(db) {
+function makeSql(db: DatabaseSync) {
   return {
-    exec(query, ...params) {
+    exec(query: string, ...params) {
       if (query.trim().toUpperCase().startsWith("SELECT")) return db.prepare(query).all(...params);
       if (params.length) db.prepare(query).run(...params);
       else db.exec(query);

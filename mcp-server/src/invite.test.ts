@@ -5,7 +5,7 @@ import { partialCtx, partialEnv } from "./test-env.ts";
 
 const noopCtx = partialCtx({ waitUntil() {} });
 
-function request(path) {
+function request(path: string) {
   return new Request(`https://example.test${path}`);
 }
 

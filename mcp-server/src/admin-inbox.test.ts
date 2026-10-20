@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { compareVersions } from "./app-errors.ts";
 import { INBOX_SCRIPT } from "./admin-inbox-ui.ts";
@@ -11,10 +11,10 @@ import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-en
 // Same shape as admin.test.js's fake: a real in-memory SQLite database built
 // from the real migrations, behind the slice of D1's API the Worker uses.
 class FakeD1Statement {
-  db: any;
+  db: DatabaseSync;
   sql: string;
-  params: unknown[];
-  constructor(db: any, sql: string, params: unknown[] = []) { this.db = db; this.sql = sql; this.params = params; }
+  params: SQLInputValue[];
+  constructor(db: DatabaseSync, sql: string, params: SQLInputValue[] = []) { this.db = db; this.sql = sql; this.params = params; }
   bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() {
     const info = this.db.prepare(this.sql).run(...this.params);
@@ -29,7 +29,7 @@ function fakeD1() {
   for (const file of migrationFiles()) {
     db.exec(readMigration(file));
   }
-  return { raw: db, prepare(sql) { return new FakeD1Statement(db, sql); } };
+  return { raw: db, prepare(sql: string) { return new FakeD1Statement(db, sql); } };
 }
 
 function fakeCloudflareLimiter(limit = 1000) {
@@ -48,7 +48,7 @@ function countingCounter() {
   const counts = new Map();
   return {
     getByName(name) {
-      return { async bump(limit) { const used = (counts.get(name) ?? 0) + 1; if (used > limit) return false; counts.set(name, used); return true; } };
+      return { async bump(limit: number) { const used = (counts.get(name) ?? 0) + 1; if (used > limit) return false; counts.set(name, used); return true; } };
     },
   };
 }
@@ -57,7 +57,7 @@ function environment({ appErrorLimit = 1000 }: { appErrorLimit?: number } = {}) 
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
@@ -83,7 +83,7 @@ function environment({ appErrorLimit = 1000 }: { appErrorLimit?: number } = {}) 
 const noopCtx = partialCtx({ waitUntil() {} });
 const freshToken = suffix => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 
-function request(path, { method = "GET", token, body, contentType }: { method?: string; token?: any; body?: any; contentType?: any } = {}) {
+function request(path: string, { method = "GET", token, body, contentType }: { method?: string; token?: string; body?: unknown; contentType?: string } = {}) {
   // /api/admin/* is verified against the Cloudflare Access login (src/access.ts).
   const headers: Record<string, string> = path.startsWith("/api/admin/") ? { ...ACCESS_HEADERS } : {};
   if (token) headers.authorization = `Bearer ${token}`;
@@ -93,7 +93,7 @@ function request(path, { method = "GET", token, body, contentType }: { method?: 
   });
 }
 
-async function seedSession(env, token, sub) {
+async function seedSession(env: { STUDIQUO_DATA: { put: (arg0: string,arg1: string) => any; }; }, token: string | NodeJS.ArrayBufferView<ArrayBufferLike>, sub: string) {
   const key = createHash("sha256").update(token).digest("hex");
   await env.STUDIQUO_DATA.put(`session:${key}`, JSON.stringify({ sub, issuedAt: Math.floor(Date.now() / 1000) }));
 }
@@ -114,13 +114,13 @@ async function withSlack(run) {
   return posts;
 }
 
-async function signedInUser(env, name) {
+async function signedInUser(env, name: string | any[]) {
   const token = freshToken(name.slice(0, 1));
   await seedSession(env, token, `user-${name}`);
   return token;
 }
 
-async function sendErrors(env, token, errors, extra = {}) {
+async function sendErrors(env, token: string, errors, extra = {}) {
   return worker.fetch(
     request("/api/app-errors", { method: "POST", token, body: { appVersion: "1.0 (10)", osVersion: "27.0", deviceModel: "iPad14,1", errors, ...extra } }),
     env, noopCtx
@@ -415,7 +415,7 @@ test("a report can be moved through its statuses with a note", async () => {
 test("a report that fails to mirror into D1 is still accepted", async () => {
   const env = environment();
   const token = await signedInUser(env, "alice");
-  (env.ADMIN_DB as any) = { prepare() { throw new Error("D1 is down"); } };
+  env.ADMIN_DB = { prepare() { throw new Error("D1 is down"); } };
   const originalError = console.error;
   console.error = () => {};
   try {
@@ -479,7 +479,7 @@ test("the inbox script never writes outside text into the page as markup", () =>
 test("one account can open only 20 new problems a day, but can keep reporting known ones", async () => {
   const env = environment();
   const token = await signedInUser(env, "flooder");
-  const distinct = (from, to) => Array.from({ length: to - from }, (_, i) => crash({ signature: `made-up-${from + i}`, title: `made up ${from + i}` }));
+  const distinct = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => crash({ signature: `made-up-${from + i}`, title: `made up ${from + i}` }));
   const first = await (await sendErrors(env, token, distinct(0, 20))).json();
   assert.equal(first.accepted, 20);
   const second = await (await sendErrors(env, token, distinct(20, 25))).json();

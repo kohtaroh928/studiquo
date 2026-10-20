@@ -3,9 +3,17 @@
 // Response.json(). The source itself is checked, strictly, by tsconfig.json.
 {
   "extends": "./tsconfig.json",
-  // The tests are written loosely (no parameter types, fake Envs), so the strict
-  // mode that tsconfig.json turns on for src is off here.
-  "compilerOptions": { "strict": false },
+  // The tests are written loosely (fake Envs, helpers without parameter types), so the two
+  // flags that need the most of that work, noImplicitAny (about 1,500 errors) and strictNullChecks
+  // (about 490), stay off. The other strict checks are on, as in tsconfig.json.
+  "compilerOptions": {
+    "strict": false,
+    "alwaysStrict": true,
+    "noImplicitThis": true,
+    "strictBindCallApply": true,
+    "strictFunctionTypes": true,
+    "useUnknownInCatchVariables": true
+  },
   "include": ["src/**/*", "test-types/*.d.ts"],
   "exclude": []
 }

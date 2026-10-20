@@ -65,7 +65,7 @@ export const ATTEST_PROTECTED_PATHS = new Set([
 
 // --- encoding helpers --------------------------------------------------------
 
-export function bytesToBase64Url(bytes: Uint8Array<ArrayBuffer>) {
+export function bytesToBase64Url(bytes: Bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
@@ -85,7 +85,9 @@ async function sha256(...parts: Uint8Array[]) {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", joined));
 }
 
-function bytesEqual(a: any, b: any) {
+type Bytes = Uint8Array<ArrayBufferLike>;
+
+function bytesEqual(a: Bytes, b: Bytes) {
   if (a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
@@ -94,7 +96,10 @@ function bytesEqual(a: any, b: any) {
 
 // --- CBOR (just enough for Apple's attestation and assertion objects) --------
 
-export function decodeCBOR(bytes: any) {
+/** A decoded CBOR value (only the types Apple's objects use). */
+export type CborValue = number | string | boolean | null | Bytes | CborValue[] | { [key: string]: CborValue };
+
+export function decodeCBOR(bytes: Bytes): CborValue {
   let offset = 0;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const take = (length: number) => {
@@ -110,7 +115,7 @@ export function decodeCBOR(bytes: any) {
     if (info === 26) { take(4); return view.getUint32(offset - 4); }
     throw new Error("cbor: unsupported length");
   };
-  const read = (depth: number): any => {
+  const read = (depth: number): CborValue => {
     if (depth > 8) throw new Error("cbor: too deep");
     const initial = take(1)[0];
     const major = initial >> 5;
@@ -128,7 +133,7 @@ export function decodeCBOR(bytes: any) {
       case 5: {
         const count = argument(info);
         if (count > bytes.length) throw new Error("cbor: bad count");
-        const map: Record<string, any> = {};
+        const map: Record<string, CborValue> = {};
         for (let i = 0; i < count; i++) {
           const key = read(depth + 1);
           if (typeof key !== "string") throw new Error("cbor: non-text key");
@@ -152,7 +157,10 @@ export function decodeCBOR(bytes: any) {
 // --- DER / X.509 (just enough to check Apple's chain) ------------------------
 
 // A node is { tag, start, end, raw } over the one buffer it was read from.
-function readTLV(bytes: any, offset: number) {
+/** A DER node over the buffer it was read from. */
+interface DerNode { tag: number; start: number; end: number; raw: Bytes; content: Bytes }
+
+function readTLV(bytes: Bytes, offset: number): DerNode {
   if (offset + 2 > bytes.length) throw new Error("der: truncated");
   const tag = bytes[offset];
   let length = bytes[offset + 1];
@@ -169,8 +177,8 @@ function readTLV(bytes: any, offset: number) {
   return { tag, start, end, raw: bytes.subarray(offset, end), content: bytes.subarray(start, end) };
 }
 
-function childrenOf(bytes: Uint8Array<ArrayBufferLike>, node: any) {
-  const out = [];
+function childrenOf(bytes: Bytes, node: Pick<DerNode, 'start' | 'end'>) {
+  const out: DerNode[] = [];
   let offset = node.start;
   while (offset < node.end) {
     const child = readTLV(bytes, offset);
@@ -181,8 +189,8 @@ function childrenOf(bytes: Uint8Array<ArrayBufferLike>, node: any) {
   return out;
 }
 
-function oidString(content: any) {
-  const parts = [];
+function oidString(content: Bytes) {
+  const parts: number[] = [];
   let value = 0;
   for (const byte of content) {
     value = value * 128 + (byte & 0x7f);
@@ -192,7 +200,7 @@ function oidString(content: any) {
   return [Math.min(Math.floor(first / 40), 2), first - 40 * Math.min(Math.floor(first / 40), 2), ...parts].join(".");
 }
 
-function parseTime(node: any) {
+function parseTime(node: DerNode) {
   const text = new TextDecoder().decode(node.content);
   const match = node.tag === 0x17
     ? /^(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/.exec(text)
@@ -209,7 +217,7 @@ const SIGNATURE_ALGORITHMS: Record<string, string> = {
 };
 const CURVES: Record<string, { name: string; size: number }> = { "1.2.840.10045.3.1.7": { name: "P-256", size: 32 }, "1.3.132.0.34": { name: "P-384", size: 48 } };
 
-export function parseCertificate(der: any) {
+export function parseCertificate(der: Bytes) {
   const cert = readTLV(der, 0);
   if (cert.tag !== 0x30 || cert.end !== der.length) throw new Error("x509: bad certificate");
   const [tbs, algorithm, signature] = childrenOf(der, cert);
@@ -225,7 +233,7 @@ export function parseCertificate(der: any) {
   const spkiParts = childrenOf(der, spki);
   const curveOid = oidString(childrenOf(der, spkiParts[0])[1].content);
   const keyBits = spkiParts[1].content;
-  const extensions: Record<string, any> = {};
+  const extensions: Record<string, Bytes> = {};
   const extensionList = fields.find(field => field.tag === 0xa3);
   if (extensionList) {
     for (const extension of childrenOf(der, childrenOf(der, extensionList)[0])) {
@@ -251,11 +259,11 @@ export function parseCertificate(der: any) {
 
 // An ECDSA signature in DER ("SEQUENCE { INTEGER r, INTEGER s }") as the fixed-size
 // r||s that WebCrypto wants.
-export function derSignatureToRaw(der: Uint8Array<ArrayBufferLike>, size: any) {
+export function derSignatureToRaw(der: Bytes, size: number) {
   const sequence = readTLV(der, 0);
   const [r, s] = childrenOf(der, sequence);
   if (sequence.tag !== 0x30 || r?.tag !== 0x02 || s?.tag !== 0x02) throw new Error("bad signature");
-  const fit = (integer: any) => {
+  const fit = (integer: DerNode) => {
     let value = integer.content;
     while (value.length > size && value[0] === 0) value = value.subarray(1);
     if (value.length > size) throw new Error("bad signature");
@@ -269,14 +277,16 @@ export function derSignatureToRaw(der: Uint8Array<ArrayBufferLike>, size: any) {
   return raw;
 }
 
-async function certificateSignedBy(cert: any, issuer: any) {
+type Certificate = ReturnType<typeof parseCertificate>;
+
+async function certificateSignedBy(cert: Certificate, issuer: Certificate) {
   if (!cert.signatureAlgorithm || !issuer.curve) return false;
   const key = await crypto.subtle.importKey("spki", issuer.spki, { name: "ECDSA", namedCurve: issuer.curve.name }, false, ["verify"]);
   const signature = derSignatureToRaw(cert.signature, issuer.curve.size);
   return crypto.subtle.verify({ name: "ECDSA", hash: cert.signatureAlgorithm }, key, signature, cert.tbs);
 }
 
-async function verifyChain(leaf: any, intermediate: any, root: any, now: number) {
+async function verifyChain(leaf: Certificate, intermediate: Certificate, root: Certificate, now: number) {
   for (const cert of [leaf, intermediate, root]) {
     if (now < cert.notBefore || now > cert.notAfter) return false;
   }
@@ -299,8 +309,9 @@ function parseAuthData(authData: Uint8Array<ArrayBufferLike>) {
  * base64url, the key as the 65-byte uncompressed point, base64url), or throws
  * with the step that failed. `rootDer` is only overridden by tests.
  */
-export async function verifyAttestation({ attestation, challenge, keyId, appId, allowDevelop = false, now = Date.now(), rootDer }: any) {
-  const object = decodeCBOR(attestation);
+export async function verifyAttestation({ attestation, challenge, keyId, appId, allowDevelop = false, now = Date.now(), rootDer }: { attestation: Bytes; challenge: string; keyId: string; appId: string; allowDevelop?: boolean; now?: number; rootDer?: Bytes }) {
+  // 形は信用しない: 使う項目は、下で型を確かめてから読む
+  const object = decodeCBOR(attestation) as { fmt?: unknown; attStmt?: { x5c?: unknown }; authData?: unknown };
   if (object.fmt !== "apple-appattest") throw new Error("format");
   const x5c = object.attStmt?.x5c;
   const authData = object.authData;
@@ -341,8 +352,8 @@ export async function verifyAttestation({ attestation, challenge, keyId, appId, 
  * which the caller must then advance in the key's object (a counter that did not
  * go up is a copy). Throws with the step that failed.
  */
-export async function verifyAssertion({ assertion, clientData, publicKey, storedCounter, appId }: any) {
-  const object = decodeCBOR(assertion);
+export async function verifyAssertion({ assertion, clientData, publicKey, storedCounter, appId }: { assertion: Bytes; clientData: string; publicKey: string; storedCounter: number; appId: string }) {
+  const object = decodeCBOR(assertion) as { signature?: unknown; authenticatorData?: unknown };
   const { signature, authenticatorData } = object;
   if (!(signature instanceof Uint8Array) || !(authenticatorData instanceof Uint8Array)) throw new Error("shape");
   const { rpIdHash, counter } = parseAuthData(authenticatorData);
@@ -372,7 +383,7 @@ export async function issueChallenge(env: Env, now = Date.now()) {
   return `${body}.${await challengeSignature(env, body)}`;
 }
 
-export async function challengeIsValid(env: Env, challenge: any, now = Date.now()) {
+export async function challengeIsValid(env: Env, challenge: unknown, now = Date.now()) {
   const match = /^(\d{12,14})\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{43})$/.exec(String(challenge ?? ""));
   if (!match) return false;
   const age = now - Number(match[1]);
@@ -431,7 +442,7 @@ export async function handleAppAttest(url: URL, request: Request, env: Env, { no
       attestation: base64ToBytes(body.attestation),
       challenge: body.challenge,
       keyId,
-      appId: env.APP_ATTEST_APP_ID,
+      appId: env.APP_ATTEST_APP_ID as string, // appAttestMode(env) has checked that it is set
       allowDevelop: env.APP_ATTEST_ALLOW_DEVELOP === "true",
       now,
       rootDer,
@@ -477,7 +488,7 @@ export async function assessAssertion(request: Request, env: Env, url: URL, now 
         clientData: `${request.method}\n${url.pathname}\n${match[2]}`,
         publicKey: record.publicKey,
         storedCounter: record.counter,
-        appId: env.APP_ATTEST_APP_ID,
+        appId: env.APP_ATTEST_APP_ID as string, // appAttestMode(env) has checked that it is set
       });
     } catch (error) {
       return error instanceof Error && error.message === "replay" ? "replay" : "invalid";

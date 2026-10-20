@@ -10,7 +10,7 @@ function environment() {
     ttls,
     STUDIQUO_DATA: {
       async get(key) { return values.get(key) ?? null; },
-      async put(key, value, options) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
+      async put(key, value, options: { expirationTtl: any; }) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
       async delete(key) { values.delete(key); },
     },
   });

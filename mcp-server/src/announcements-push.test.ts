@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { generateKeyPair, exportPKCS8, exportJWK, createLocalJWKSet, SignJWT } from "jose";
 import { handleAnnouncements } from "./announcements.ts";
 import { readMigration } from "./test-env.ts";
 
 class FakeD1Statement {
-  db: any;
+  db: DatabaseSync;
   sql: string;
-  params: unknown[];
-  constructor(db: any, sql: string, params: unknown[] = []) { this.db = db; this.sql = sql; this.params = params; }
+  params: SQLInputValue[];
+  constructor(db: DatabaseSync, sql: string, params: SQLInputValue[] = []) { this.db = db; this.sql = sql; this.params = params; }
   bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() { const info = this.db.prepare(this.sql).run(...this.params); return { success: true, meta: { changes: info.changes } }; }
   async all() { return { results: this.db.prepare(this.sql).all(...this.params) }; }
@@ -35,7 +35,7 @@ async function fixture(extra = {}) {
     APNS_AUTH_KEY: await exportPKCS8(privateKey),
     APNS_KEY_ID: "KEY1234567", APNS_TEAM_ID: "TEAM123456", APNS_TOPIC: "com.yabuko.studiquo",
     STUDIQUO_DATA: {
-      async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
       async list({ prefix, cursor, limit = 1000 }) {
@@ -54,12 +54,12 @@ async function fixture(extra = {}) {
 }
 
 const token = n => String(n).repeat(64).slice(0, 64);
-function seedUser(values, name, devices) {
+function seedUser(values: Map<any,any>, name: string, devices) {
   values.set(`chat:devices:${name}`, JSON.stringify(devices));
 }
 
 // Records every APNs call: which language's text, which device.
-function apns(calls, { failFor = new Set() } = {}) {
+function apns(calls: any[], { failFor = new Set() } = {}) {
   return async (url, init) => {
     const body = JSON.parse(init.body);
     const device = url.split("/").pop();
@@ -68,7 +68,7 @@ function apns(calls, { failFor = new Set() } = {}) {
   };
 }
 
-async function call(env, path, { method = "POST", body, fetchImpl }: { method?: string; body?: any; fetchImpl?: any } = {}) {
+async function call(env, path: string, { method = "POST", body, fetchImpl }: { method?: string; body?: unknown; fetchImpl?: typeof fetch } = {}) {
   const request = new Request(`https://example.test${path}`, {
     method, headers: { "cf-access-jwt-assertion": accessToken, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined,
   });

@@ -17,13 +17,13 @@ function makeAdminEnv() {
         const keys = [...kv.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name }));
         return { keys, list_complete: true };
       },
-      async get(key, type) {
+      async get(key, type: string) {
         const val = kv.get(key) ?? null;
         return type === "json" && val ? JSON.parse(val) : val;
       },
     },
     ADMIN_DB: {
-      prepare(sql) {
+      prepare(sql: string | string[]) {
         return {
           bind(...args) {
             return {
