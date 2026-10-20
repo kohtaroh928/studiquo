@@ -63,7 +63,7 @@ export function selectForJudgement(items: any, state: any, now: any, { fresh = f
 }
 
 /** 新しく得た判定を保存する。現在の指摘に無いIDの判定は捨てる。 */
-export function saveVerdicts(path: any, state: any, entries: any, liveIds: any, now: any, dropIds = []) {
+export function saveVerdicts(path: any, state: any, entries: any, liveIds: any, now: any, dropIds: string[] = []) {
   const live = new Set(liveIds);
   for (const id of dropIds) live.delete(id); // 検証で落ちたキャッシュは捨てる
   const verdicts: Record<string, unknown> = {};

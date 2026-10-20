@@ -76,7 +76,7 @@ async function countDistinctUsers(env: Env) {
 // `updated_at` holds the time of the RevenueCat event that wrote the row, not
 // the time it arrived: webhooks are delivered out of order and retried, and an
 // older event must never overwrite the state a newer one already set.
-async function upsertSubscriber(env: Env, appUserId: any, status: any, productId: any, expiresAt: any, identityHashes: any, occurredAt: any) {
+async function upsertSubscriber(env: Env, appUserId: unknown, status: unknown, productId: unknown, expiresAt: unknown, identityHashes: string[], occurredAt: unknown) {
   await env.ADMIN_DB.prepare(
     `INSERT INTO subscribers (app_user_id, status, product_id, expires_at, updated_at)
      SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS
@@ -187,7 +187,7 @@ export async function handleUsageEvent(url: URL, request: Request, env: Env) {
   return json({ recorded: true });
 }
 
-async function countRecentUniqueUsers(env: Env, sinceMs: any) {
+async function countRecentUniqueUsers(env: Env, sinceMs: unknown) {
   const row = await env.ADMIN_DB.prepare(`SELECT COUNT(DISTINCT user_key) AS count FROM usage_events WHERE occurred_at >= ?`)
     .bind(sinceMs).first();
   return row?.count ?? 0;
@@ -198,7 +198,7 @@ async function countRecentUniqueUsers(env: Env, sinceMs: any) {
 // after they were first seen. Returns null (not 0) when there's no cohort
 // old enough yet to measure, so the dashboard can show "not enough data"
 // instead of a misleading 0%.
-async function retentionRate(env: Env, dayOffset: any) {
+async function retentionRate(env: Env, dayOffset: number) {
   const now = Date.now();
   const row = await env.ADMIN_DB.prepare(
     `SELECT COUNT(DISTINCT u.user_key) AS cohortSize,

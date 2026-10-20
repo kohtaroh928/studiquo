@@ -59,7 +59,7 @@ const INIT_WINDOW_SECONDS = 3_600;
 // resolves one when adding a friend.
 const FRIEND_CODE_PATTERN = /^[A-Z0-9]{6,32}$/;
 
-function parseFriendCode(body: any) {
+function parseFriendCode(body: { code: unknown; }) {
   const code = String(body?.code ?? "").trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
@@ -78,7 +78,7 @@ async function readBody(request: Request, maxBytes = MAX_BODY) {
 // checkRateLimit()/the Cloudflare Rate Limiting binding those use, since
 // that binding is provisioned per endpoint in the Cloudflare dashboard and
 // this endpoint doesn't have one of its own yet.
-async function withinLimit(env: Env, keyPrefix: any, key: string, limit: number, windowSeconds = WINDOW_SECONDS) {
+async function withinLimit(env: Env, keyPrefix: string, key: string, limit: number, windowSeconds = WINDOW_SECONDS) {
   return env.RATE_COUNTER.getByName(`${keyPrefix}:${key}`).bump(limit, windowSeconds);
 }
 
@@ -93,18 +93,18 @@ async function chatUser(env: Env, userKey: string) {
 // Error("Forbidden") for a caller without room access — without this, that
 // propagates uncaught up to app.ts's catch-all and comes back as a generic
 // 500 instead of a proper 403. Mirrors chat.ts's roomForbiddenResponse.
-function roomForbiddenResponse(error: any) {
+function roomForbiddenResponse(error: unknown) {
   if (error instanceof Error && error.message === "Forbidden") {
     return json({ error: "You do not have access to this document room." }, 403);
   }
   return null;
 }
 
-async function recordRoomMembership(env: Env, userKey: string, roomID: string, role: any) {
+async function recordRoomMembership(env: Env, userKey: string, roomID: string, role: string | ArrayBuffer | ArrayBufferView<ArrayBufferLike> | ReadableStream<unknown>) {
   await env.STUDIQUO_DATA.put(roomMembershipKey(userKey, roomID), role);
 }
 
-async function roomResponse(promise: any) {
+async function roomResponse(promise: unknown) {
   try {
     return json(await promise);
   } catch (error) {

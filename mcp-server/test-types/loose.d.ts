@@ -6,3 +6,6 @@ interface Response {
 interface Body {
   json<T = any>(): Promise<T>;
 }
+interface KVNamespace<Key extends string = string> {
+  get<T = any>(key: Key, type: "json"): Promise<T | null>;
+}

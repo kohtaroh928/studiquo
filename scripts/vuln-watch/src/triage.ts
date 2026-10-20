@@ -63,7 +63,7 @@ export function findingId(f: any) {
 }
 
 /** 判定に回す指摘だけを、データとしてまとめる。脆弱性の文章は信頼できない入力。 */
-export function buildTriageInput(ranked: any, { limit = LIMITS.input, generatedAt = null } = {}) {
+export function buildTriageInput(ranked: any, { limit = LIMITS.input, generatedAt = null as string | null } = {}) {
   const picked = ranked.filter((f: any) => f.status === 'needs-review' || ['緊急', '高', '中'].includes(f.tier)).slice(0, limit);
   const items = picked.map((f: any) => ({
       id: f.id ?? findingId(f),

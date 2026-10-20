@@ -30,7 +30,7 @@ const IDENTITY_CANONICAL_PREFIX = "identity-canonical:";
  * identities are cleared, since the provider lists them as aliases of the one
  * customer. Returns false when that could not be done.
  */
-async function clearDeletedCustomerRecords(env: Env, hashes: any) {
+async function clearDeletedCustomerRecords(env: Env, hashes: string | unknown[]) {
   if (!env.ADMIN_DB || hashes.length === 0) return true;
   try {
     await env.ADMIN_DB.prepare("DELETE FROM privacy_deleted_customers WHERE customer_hash IN (SELECT value FROM json_each(?))")
@@ -61,7 +61,7 @@ function newSecretHalf() {
  * `randomValue` and is ignored: the secret half of the token always comes from the
  * Worker (256 random bits, so two logins never share one in practice).
  */
-export async function mintSession(env: Env, identityKey: any, _suppliedByTheApp?: unknown, { originIssuedAtMs }: { originIssuedAtMs?: number } = {}) {
+export async function mintSession(env: Env, identityKey: string, _suppliedByTheApp?: unknown, { originIssuedAtMs }: { originIssuedAtMs?: number } = {}) {
   const issuedAt = Math.floor(Date.now() / 1000);
   // Signed when a signing key is configured (token-signature.ts), so that an
   // invented token can be refused later without a KV read.
@@ -155,7 +155,7 @@ async function isSuspended(env: Env, session: SessionRecord) {
 // An operator's mark of the given kind on this person (account-suspended: or
 // chat-suspended:), under the canonical account and the identity the session
 // was issued to.
-export async function hasModerationMark(env: Env, session: any, prefix: string) {
+export async function hasModerationMark(env: Env, session: SessionRecord, prefix: string) {
   const subs = session.originalSub && session.originalSub !== session.sub ? [session.sub, session.originalSub] : [session.sub];
   const marks = await Promise.all(subs.map(async item =>
     env.STUDIQUO_DATA.get(`${prefix}${await sha256Hex(`chat-account:${item}`)}`)));
@@ -232,7 +232,7 @@ export async function accountIsUnavailable(env: Env, sub: string) {
 
 const CUTOFF_PREFIX = "session-valid-from:";
 
-async function sessionCutoff(env: Env, identityKey: any) {
+async function sessionCutoff(env: Env, identityKey: string) {
   const value = Number(await env.STUDIQUO_DATA.get(`${CUTOFF_PREFIX}${await sha256Hex(identityKey)}`));
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
@@ -244,7 +244,7 @@ async function sessionCutoff(env: Env, identityKey: any) {
  * second. An older record that only has whole seconds is judged as a whole
  * second, and one with no issue time at all can't be shown to be newer.
  */
-export function sessionIsBeforeCutoff(session: any, cutoff: any) {
+export function sessionIsBeforeCutoff(session: any, cutoff: number) {
   if (!cutoff) return false;
   if (Number.isFinite(session.issuedAtMs)) return session.issuedAtMs < cutoff;
   if (Number.isFinite(session.issuedAt)) return (session.issuedAt + 1) * 1000 <= cutoff;

@@ -9,7 +9,7 @@ import { json } from "./http.ts";
 import { postSlackBlocks } from "./slack.ts";
 import type { Env } from "./env.ts";
 
-function roomErrorResponse(error: any) {
+function roomErrorResponse(error: unknown) {
   if (error instanceof Error && error.message === "Forbidden") return json({ error: "Forbidden" }, 403);
   return null;
 }

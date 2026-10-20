@@ -13,7 +13,7 @@ import { json } from "./http.ts";
 
 export const HSTS_VALUE = "max-age=31536000";
 
-function isLocalHost(hostname: any) {
+function isLocalHost(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname.endsWith(".localhost");
 }
 

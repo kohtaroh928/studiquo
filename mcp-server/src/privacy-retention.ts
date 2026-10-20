@@ -14,7 +14,7 @@ export async function eraseReport(env: Env, id: string) {
 }
 
 // Separate durable outbox: a failed remote deletion must survive local erasure.
-export async function queueRevenueCatDeletion(env: Env, identity: any, now = Date.now()) {
+export async function queueRevenueCatDeletion(env: Env, identity: string, now = Date.now()) {
   const hash = await sha256Hex(identity);
   // The job holds the identity in the clear (the provider's DELETE needs it),
   // so it expires with the personal-data retention period instead of staying
@@ -24,7 +24,7 @@ export async function queueRevenueCatDeletion(env: Env, identity: any, now = Dat
   });
 }
 
-export async function retryRevenueCatDeletion(env: Env, key: string, job: any, fetcher = fetch) {
+export async function retryRevenueCatDeletion(env: Env, key: string, job: { identity: string | number | boolean; }, fetcher = fetch) {
   if (!env.REVENUECAT_SECRET_API_KEY) return false;
   const response = await fetcher(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(job.identity)}`, {
     method: "DELETE",
@@ -68,12 +68,12 @@ async function processJobs(env: Env, prefix: string, callback: any, limit = 10) 
 export async function processPendingDeletions(env: Env, fetcher = fetch, { limit = 10 } = {}) {
   // Import lazily to avoid a module cycle with deleteAccount's shared helpers.
   const { deleteAccount } = await import("./account-deletion.ts");
-  await processJobs(env, "privacy-account-delete:", async (_key: any, job: any) => deleteAccount(env, job.canonicalSub), limit);
+  await processJobs(env, "privacy-account-delete:", async (_key: any, job: { canonicalSub: string; }) => deleteAccount(env, job.canonicalSub), limit);
   // Without the provider secret every attempt fails, so skip the pass: it
   // would only spend subrequests and keep cycling the same jobs. Say so when
   // jobs are waiting, so queued erasures don't pile up unnoticed.
   if (env.REVENUECAT_SECRET_API_KEY) {
-    await processJobs(env, "privacy-rc-delete:", (key: string, job: any) => retryRevenueCatDeletion(env, key, job, fetcher), limit);
+    await processJobs(env, "privacy-rc-delete:", (key: string, job: { identity: string | number | boolean; }) => retryRevenueCatDeletion(env, key, job, fetcher), limit);
   } else {
     const waiting = await env.STUDIQUO_DATA.list({ prefix: "privacy-rc-delete:", limit: 1 });
     if (waiting.keys?.length) console.warn(JSON.stringify({ message: "provider deletions are queued but REVENUECAT_SECRET_API_KEY is not configured" }));
@@ -86,7 +86,7 @@ export async function processPendingDeletions(env: Env, fetcher = fetch, { limit
  * deletions, a few at a time: the automatic expiry stays off, but a deletion
  * somebody asked for is never left unfinished.
  */
-export async function runScheduledPrivacyWork(env: Env, scheduledTime: any, fetcher = fetch) {
+export async function runScheduledPrivacyWork(env: Env, scheduledTime: number | undefined, fetcher = fetch) {
   if (env.PRIVACY_RETENTION_ENABLED === "true") return runPrivacyRetention(env, scheduledTime, fetcher);
   await processPendingDeletions(env, fetcher, { limit: 2 });
   return { enabled: false };

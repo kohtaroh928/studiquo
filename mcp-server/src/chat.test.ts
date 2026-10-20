@@ -1,12 +1,11 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import worker from "./app.ts";
 import { mintSession } from "./session.ts";
-import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, exportPKCS8 } from "jose";
+import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
 
 // Regression coverage for "friend requests are approved, not instant": adding
 // a friend by code must create a one-directional pending request instead of
@@ -40,7 +39,7 @@ function fakeChatRoomBinding() {
         if (state.kind !== "group") throw new Error("NotAGroup");
       };
       return {
-        async initialize(_roomID, participants, options = {}) {
+        async initialize(_roomID, participants, options: Record<string, any> = {}) {
           initializeCalls.count += 1;
           const kind = options.kind ?? "direct";
           if (state.participants.size > 0) { state.closed = false; return; }
@@ -369,7 +368,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "removed" };
   }
 
-  async function confirmFriendshipAtomic(key, friend, { clearOutgoing = false } = {}) {
+  async function confirmFriendshipAtomic(key, friend, { clearOutgoing = false }: { clearOutgoing?: boolean } = {}) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -630,7 +629,7 @@ function environment() {
     },
     async put(key, value) { values.set(key, value); },
     async delete(key) { values.delete(key); },
-    async list({ prefix = "", cursor } = {}) {
+    async list({ prefix = "", cursor }: { prefix?: string; cursor?: any } = {}) {
       void cursor;
       return {
         keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })),
@@ -638,7 +637,7 @@ function environment() {
       };
     },
   };
-  return {
+  return partialEnv({
     STUDIQUO_DATA: studiquoData,
     CHAT_ROOM: fakeChatRoomBinding(),
     USER_REGISTRY: fakeUserRegistryBinding(studiquoData),
@@ -649,17 +648,17 @@ function environment() {
     RATE_LIMIT_CHAT_REPORT: fakeCloudflareLimiter(5),
     RATE_LIMIT_CHAT_GROUP_ACTION: fakeCloudflareLimiter(10),
     _kv: values,
-  };
+  });
 }
 
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 
 function freshToken(suffix) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 }
 
-function request(path, { method = "GET", token, body } = {}) {
-  const headers = {};
+function request(path, { method = "GET", token, body }: { method?: string; token?: any; body?: any } = {}) {
+  const headers: Record<string, any> = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers["content-type"] = "application/json";
   return new Request(`https://example.test${path}`, {
@@ -721,7 +720,7 @@ async function rejectRequest(env, token, code) {
   return worker.fetch(request("/api/chat/friends/requests/reject", { method: "POST", token, body: { code } }), env, noopCtx);
 }
 
-async function sendMessage(env, token, roomID, text, clientMessageID) {
+async function sendMessage(env, token, roomID, text, clientMessageID?) {
   const body = clientMessageID === undefined ? { text } : { text, clientMessageID };
   return worker.fetch(request(`/api/chat/rooms/${roomID}/messages`, { method: "POST", token, body }), env, noopCtx);
 }
@@ -838,7 +837,7 @@ async function deletionFriendFixture() {
   return { env, aliceToken, bobToken, aliceSub, bobSub, aliceKey, bobKey, alice, bob, roomID: accepted.roomID };
 }
 
-async function deletionGroupFixture({ acceptInvite = true, solo = false } = {}) {
+async function deletionGroupFixture({ acceptInvite = true, solo = false }: { acceptInvite?: boolean; solo?: boolean } = {}) {
   const fixture = await deletionFriendFixture();
   const createdResponse = await createGroup(
     fixture.env,
@@ -3695,7 +3694,7 @@ test("40: once concurrent deletion removes group membership, the deleting accoun
 // handler that overwrites the whole record would be exposed in.
 function interleaveAfterNextUserRead(env, after) {
   const realGet = env.STUDIQUO_DATA.get;
-  env.STUDIQUO_DATA.get = async (key, type) => {
+  (env.STUDIQUO_DATA as any).get = async (key, type) => {
     const value = await realGet(key, type);
     if (after && key.startsWith("chat:user:")) {
       const run = after;
@@ -3725,7 +3724,7 @@ test("the friends list is read through the user's own object, so a stale KV read
   const fresh = env.STUDIQUO_DATA;
   const removed = await worker.fetch(request(`/api/chat/friends/${bob.code}`, { method: "DELETE", token: aliceToken }), env, noopCtx);
   assert.equal(removed.status, 200);
-  env.STUDIQUO_DATA = {
+  (env.STUDIQUO_DATA as any) = {
     ...fresh,
     get: async (key, type) => (key === `chat:user:${aliceKey}`
       ? (type === "json" ? JSON.parse(beforeRemoval) : beforeRemoval)
@@ -3804,7 +3803,7 @@ test("a chat report is stored with a 90-day expiry", async () => {
   const sent = await (await sendMessage(env, bobToken, accepted.roomID, "hi")).json();
   const ttls = new Map();
   const put = env.STUDIQUO_DATA.put;
-  env.STUDIQUO_DATA.put = async (key, value, options) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
+  (env.STUDIQUO_DATA as any).put = async (key, value, options) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
   assert.equal((await reportMessage(env, aliceToken, accepted.roomID, sent.id, "spam")).status, 200);
   const reportKeys = [...ttls.keys()].filter(key => key.startsWith("report:chat:"));
   assert.equal(reportKeys.length, 1);
@@ -3816,10 +3815,10 @@ test("a chat report is stored with a 90-day expiry", async () => {
 
 function withAdminDB(env) {
   const db = new DatabaseSync(":memory:");
-  for (const file of readdirSync(new URL("../migrations/", import.meta.url)).sort()) {
-    db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  for (const file of migrationFiles()) {
+    db.exec(readMigration(file));
   }
-  env.ADMIN_DB = {
+  (env.ADMIN_DB as any) = {
     prepare: sql => {
       const make = (params = []) => ({
         bind: (...next) => make(next),
@@ -4047,7 +4046,7 @@ test("chat-only suspension blocks chat but not the rest of the account; lifting 
   // The session itself is still good (this route is not chat).
   assert.equal((await worker.fetch(request("/api/account/library-id", { token: bobToken }), env, noopCtx)).status !== 401, true);
   // Sharing documents with friends is part of chat.
-  env.DOCUMENT_ROOM = { getByName() { throw new Error("must not be reached"); } };
+  (env.DOCUMENT_ROOM as any) = { getByName() { throw new Error("must not be reached"); } };
   const document = await worker.fetch(request(`/api/document/rooms/${"d".repeat(64)}/invite`, { method: "POST", token: bobToken, body: { code: "ABC123" } }), env, noopCtx);
   assert.equal(document.status, 403);
   assert.equal((await document.json()).code, "chat_suspended");

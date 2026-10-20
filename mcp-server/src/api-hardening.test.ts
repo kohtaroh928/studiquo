@@ -1,4 +1,3 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 // Request-budget, ordering and header checks for routes that go through the
 // Worker's front door (app.ts): /mcp, /api/snapshot, /api/ai/*, the connection
 // list and the HTML pages.
@@ -6,9 +5,10 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import worker from "./app.ts";
+import { partialCtx, partialEnv } from "./test-env.ts";
 
 const hash = value => createHash("sha256").update(value).digest("hex");
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 const freshToken = suffix => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 
 // A RateCounter double that counts like the real one (true while under the
@@ -41,7 +41,7 @@ function countingRateCounter() {
 
 function environment(extra = {}) {
   const values = new Map();
-  return {
+  return partialEnv({
     raw: values,
     STUDIQUO_DATA: {
       async get(key, type) {
@@ -55,19 +55,19 @@ function environment(extra = {}) {
       },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
-      async list({ prefix = "" } = {}) {
+      async list({ prefix = "" }: { prefix?: string } = {}) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
       },
     },
     RATE_COUNTER: countingRateCounter(),
     ...extra,
-  };
+  });
 }
 
 // A D1 with no subscriber or legacy rows in it.
 const noRows = { prepare() { return { bind() { return { async all() { return { results: [] }; } }; } }; } };
 
-function call(env, path, { method = "GET", token, headers = {}, body } = {}) {
+function call(env, path, { method = "GET", token, headers = {}, body }: { method?: string; token?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
   const all = { ...headers };
   if (token) all.authorization = `Bearer ${token}`;
   return worker.fetch(new Request(`https://example.test${path}`, { method, headers: all, body }), env, noopCtx);

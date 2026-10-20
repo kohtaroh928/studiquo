@@ -14,7 +14,7 @@
 // into the app from those in-app browsers, and it needs a tap.
 import { json, htmlHeaders } from "./http.ts";
 
-function htmlEscape(value: any) {
+function htmlEscape(value: string) {
   return String(value).replace(/[&<>"']/g, character => (({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }) as Record<string, string>)[character]);

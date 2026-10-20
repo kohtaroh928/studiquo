@@ -122,7 +122,7 @@ export class ChatRoom extends DurableObject<Env> {
    * for why a group's roster carries this denormalized copy instead of
    * groups.ts resolving it via a live KV lookup on every listing.
    */
-  async initialize(roomID: string, participants: any, options: RoomOptions = {}) {
+  async initialize(roomID: string, participants: string | unknown[], options: RoomOptions = {}) {
     const kind = options.kind ?? "direct";
     const existing = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (existing > 0) {
@@ -156,7 +156,7 @@ export class ChatRoom extends DurableObject<Env> {
    * confirms `newKey` held a genuine, still-pending invite for this room.
    * `code`/`name` are stored alongside the key — see `groupInfo`'s doc
    * comment. */
-  async addParticipant(newKey: any, code: string | null, name: string | null) {
+  async addParticipant(newKey: string, code: string | null, name: string | null) {
     if (!this.isGroupRoom()) throw new Error("NotAGroup");
     const count = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (count >= MAX_GROUP_MEMBERS) throw new Error("GroupFull");
@@ -179,7 +179,7 @@ export class ChatRoom extends DurableObject<Env> {
   /** Leaving (targetKey === callerKey) and removing another member are the
    * same operation — any current member may do either; groups have no
    * admin/owner concept, matching an ordinary (non-official) LINE group. */
-  async removeParticipant(callerKey: string, targetKey: any) {
+  async removeParticipant(callerKey: string, targetKey: string) {
     this.requireGroup(callerKey);
     this.requireParticipant(targetKey);
     this.ctx.storage.sql.exec("DELETE FROM participants WHERE user_key = ?", targetKey);
@@ -306,7 +306,7 @@ export class ChatRoom extends DurableObject<Env> {
     return row?.user_key ?? null;
   }
 
-  isBlockedBy(blockerKey: any) {
+  isBlockedBy(blockerKey: string | number | ArrayBuffer) {
     const row = this.ctx.storage.sql.exec("SELECT 1 FROM blocks WHERE blocker_key = ?", blockerKey).toArray();
     return row.length > 0;
   }
@@ -486,7 +486,7 @@ export class ChatRoom extends DurableObject<Env> {
   // surface an `editMessage` repair to a message old enough to have
   // scrolled out of that window — this is the fallback that checks
   // specific known-stale ids directly instead.
-  async getMessagesByIDs(userKey: string, ids: any) {
+  async getMessagesByIDs(userKey: string, ids: unknown[]) {
     this.requireParticipant(userKey);
     if (!Array.isArray(ids) || ids.length === 0) return [];
     const placeholders = ids.map(() => "?").join(",");

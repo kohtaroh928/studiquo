@@ -45,7 +45,7 @@ async function readUpdate(request: Request, allowed = STATUSES) {
   return { update };
 }
 
-function issueReportJSON(row: any, origin: any) {
+function issueReportJSON(row: Record<string,unknown>, origin: string) {
   return {
     id: row.id,
     description: row.description,
@@ -63,7 +63,7 @@ function issueReportJSON(row: any, origin: any) {
 
 // The list leaves out the copied messages: reading those is a separate,
 // logged step (GET /api/admin/chat-reports/:id).
-function chatReportJSON(row: any, withSnapshot: any) {
+function chatReportJSON(row: any, withSnapshot: boolean) {
   return {
     id: row.id,
     roomID: row.room_id,

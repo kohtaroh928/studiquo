@@ -51,7 +51,7 @@ const PRIORITY_EXTRA_QUEUED_ARGON2 = 16;
 let activeArgon2 = 0;
 const argon2Waiters: ((value?: unknown) => void)[] = [];
 
-function queueLimit(priority: any) {
+function queueLimit(priority: boolean) {
   return MAX_QUEUED_ARGON2 + (priority ? PRIORITY_EXTRA_QUEUED_ARGON2 : 0);
 }
 
@@ -232,11 +232,11 @@ export async function upsertLocalAccount(env: Env, email: unknown, password: unk
 // as one that does. See verifyLocalAccount.
 const DUMMY_SALT = new Uint8Array(24).fill(0x5a);
 
-function dummyPbkdf2(password: any) {
+function dummyPbkdf2(password: string) {
   return hashers.pbkdf2(password, DUMMY_SALT, PBKDF2_ITERATIONS);
 }
 
-function dummyArgon2(password: any, options: any) {
+function dummyArgon2(password: string, options: Argon2Options | undefined) {
   return hashers.argon2id(password, DUMMY_SALT, ARGON2, options);
 }
 

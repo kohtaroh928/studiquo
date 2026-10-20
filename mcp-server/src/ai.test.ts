@@ -1,7 +1,7 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleAI } from "./ai.ts";
+import { partialCtx, partialEnv } from "./test-env.ts";
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1ZkAAAAASUVORK5CYII=";
 
@@ -34,7 +34,7 @@ function fakeRateCounterBinding() {
 
 function environment(extra = {}) {
   const values = new Map();
-  return {
+  return partialEnv({
     OPENAI_API_KEY: "openai-test-key",
     OPENAI_LUNA_MODEL: "gpt-test-luna",
     OPENAI_TERRA_MODEL: "gpt-test-terra",
@@ -47,7 +47,7 @@ function environment(extra = {}) {
     },
     RATE_COUNTER: fakeRateCounterBinding(),
     ...extra,
-  };
+  });
 }
 
 test("usage reports the tightest remaining allowance without spending any", async () => {
@@ -56,7 +56,7 @@ test("usage reports the tightest remaining allowance without spending any", asyn
     const env = environment();
     const ctx = executionContext();
     const usageRequest = () => new Request("https://example.test/api/ai/usage");
-    const usage = async () => (await handleAI(new URL(usageRequest().url), usageRequest(), env, "device", ctx, { sub: "user-1" }, "standard")).json();
+    const usage = async () => (await handleAI(new URL(usageRequest().url), usageRequest(), env, "device", partialCtx(ctx), { sub: "user-1" }, "standard")).json();
 
     // standard: 40 credits per 5 hours is the tightest window (day 60, month 120).
     assert.deepEqual(await usage(), { limit: 40, remaining: 40, resetsAt: null });
@@ -91,9 +91,9 @@ function responsesOK(text) {
  * (default: nothing flagged) and everything else by `upstream`; `calls`
  * records the Responses requests only.
  */
-function installFetch(upstream, { moderation } = {}) {
+function installFetch(upstream, { moderation }: { moderation?: any } = {}) {
   const original = globalThis.fetch;
-  const state = { calls: [], moderationCalls: [] };
+  const state = { calls: [] as any[], moderationCalls: [] as any[], restore: () => {} };
   globalThis.fetch = async (url, options) => {
     if (String(url).includes("/v1/moderations")) {
       state.moderationCalls.push(JSON.parse(options.body));
@@ -116,7 +116,7 @@ function post(path, body) {
 async function run(path, body, { env = environment(), plan = "standard", sub = "user-1" } = {}) {
   const ctx = executionContext();
   const request = post(path, body);
-  const response = await handleAI(new URL(request.url), request, env, "device", ctx, { sub }, plan);
+  const response = await handleAI(new URL(request.url), request, env, "device", partialCtx(ctx), { sub }, plan);
   const text = await response.text().catch(() => "");
   await Promise.all(ctx.promises);
   return { response, text };
@@ -232,7 +232,7 @@ test("review spends credits from the same allowance as chat", async () => {
     // standard: 40 credits per 5 hours and 5 calls a minute; a review costs 3 x 1 = 3.
     // Drop the minute window so only the 5-hour window is being exercised.
     const original = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-    env.RATE_COUNTER.getByName = name => name.startsWith("ai:cr:min:")
+    (env.RATE_COUNTER as any).getByName = name => name.startsWith("ai:cr:min:")
       ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
       : original(name);
     for (let i = 0; i < 13; i += 1) assert.equal((await run("review", { question: "テスト" }, { env })).response.status, 200, `review ${i + 1}`);
@@ -349,12 +349,12 @@ test("handleAI with no plan argument defaults to the standard plan", async () =>
     const env = environment();
     const ctx = executionContext();
     const request = post("chat", chatBody());
-    const response = await handleAI(new URL(request.url), request, env, "device", ctx);
+    const response = await handleAI(new URL(request.url), request, env, "device", partialCtx(ctx));
     assert.equal(response.status, 200);
     await response.text();
     await Promise.all(ctx.promises);
     const request2 = post("chat", chatBody({ model: "openai-sol" }));
-    assert.equal((await handleAI(new URL(request2.url), request2, env, "device", ctx)).status, 403);
+    assert.equal((await handleAI(new URL(request2.url), request2, env, "device", partialCtx(ctx))).status, 403);
   } finally {
     fetchState.restore();
   }
@@ -421,7 +421,7 @@ test("a heavy model spends more credits: plus fits 20 Sol calls in 5 hours, not 
   try {
     const env = environment();
     const original = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-    env.RATE_COUNTER.getByName = name => name.startsWith("ai:cr:min:")
+    (env.RATE_COUNTER as any).getByName = name => name.startsWith("ai:cr:min:")
       ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
       : original(name);
     for (let i = 0; i < 20; i += 1) assert.equal((await run("chat", chatBody({ model: "openai-sol" }), { env, plan: "plus" })).response.status, 200, `call ${i + 1}`);

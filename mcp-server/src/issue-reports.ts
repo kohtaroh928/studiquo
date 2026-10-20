@@ -34,11 +34,11 @@ const ALLOWED_SCREENSHOT_CONTENT_TYPES = new Set(["image/jpeg", "image/png"]);
 // outlives the session that filed it by much.
 const REPORT_TTL_SECONDS = 90 * 24 * 60 * 60;
 
-function truncate(value: any, max: number) {
+function truncate(value: string | unknown[], max: number) {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 
-async function postToSlack(env: Env, report: any, dashboardURL: any) {
+async function postToSlack(env: Env, report: any, dashboardURL: string) {
   if (!env.SLACK_ISSUE_REPORT_WEBHOOK_URL) return;
   const context = [
     report.appVersion && `v${report.appVersion}`,

@@ -26,16 +26,16 @@ const MAX_NEW_PROBLEMS_PER_DAY = 20;
 const KINDS = new Set(["crash", "hang", "cpu", "disk", "error"]);
 const KIND_LABELS: Record<string, string> = { crash: "クラッシュ", hang: "フリーズ", cpu: "CPU過負荷", disk: "ディスク書き込み過多", error: "エラー" };
 
-function truncate(value: any, max: number) {
+function truncate(value: string | unknown[], max: number) {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 
 // "1.4.0 (23)" -> [1, 4, 0, 23]. Missing parts compare as 0.
-export function versionParts(version: any) {
+export function versionParts(version: {}) {
   return (String(version ?? "").match(/\d+/g) ?? []).map(Number);
 }
 
-export function compareVersions(a: any, b: any) {
+export function compareVersions(a: any, b: {}) {
   const left = versionParts(a);
   const right = versionParts(b);
   const length = Math.max(left.length, right.length);
@@ -46,7 +46,7 @@ export function compareVersions(a: any, b: any) {
   return 0;
 }
 
-function describeContext(error: any) {
+function describeContext(error: { appVersion: unknown; osVersion: unknown; deviceModel: unknown; }) {
   return [
     error.appVersion && `v${error.appVersion}`,
     error.osVersion && `iOS ${error.osVersion}`,
@@ -54,7 +54,7 @@ function describeContext(error: any) {
   ].filter(Boolean).join(" ・ ");
 }
 
-async function notify(env: Env, origin: any, outcome: string, row: any, error: any) {
+async function notify(env: Env, origin: string, outcome: string, row: any, error: { appVersion: unknown; osVersion: unknown; deviceModel: unknown; }) {
   const label = KIND_LABELS[row.kind] ?? "エラー";
   const headline = outcome === "new" ? `🆕 新しい${label}` : `🔁 ${label}が再発`;
   await postSlackBlocks(env, [
@@ -70,7 +70,7 @@ async function notify(env: Env, origin: any, outcome: string, row: any, error: a
 // whether it is worth a Slack message: only a first sighting and a
 // regression are — a problem that is already known and open, or that only
 // old builds still hit, stays quiet.
-async function recordOccurrence(env: Env, fingerprint: any, error: any, userKey: string, now: number) {
+async function recordOccurrence(env: Env, fingerprint: unknown, error: any, userKey: string, now: number) {
   const existing = await env.ADMIN_DB.prepare(
     `SELECT status, resolved_after_version, last_seen_at, last_app_version FROM app_errors WHERE fingerprint = ?`
   ).bind(fingerprint).first();
@@ -120,13 +120,13 @@ async function recordOccurrence(env: Env, fingerprint: any, error: any, userKey:
   return reopens ? "reopened" : null;
 }
 
-async function recordAffectedUser(env: Env, fingerprint: any, userKey: string) {
+async function recordAffectedUser(env: Env, fingerprint: unknown, userKey: string) {
   await env.ADMIN_DB.prepare(`INSERT INTO app_error_users (fingerprint, user_key, last_seen_at) VALUES (?, ?, ?)
     ON CONFLICT(fingerprint, user_key) DO UPDATE SET last_seen_at = excluded.last_seen_at`)
     .bind(fingerprint, userKey, Date.now()).run();
 }
 
-function normalize(raw: any, defaults: any, now: number) {
+function normalize(raw: any, defaults: { appVersion: unknown; osVersion: unknown; deviceModel: unknown; }, now: number) {
   if (!raw || typeof raw !== "object") return null;
   const signature = truncate(raw.signature, 500).trim();
   const title = truncate(raw.title, 200).trim();

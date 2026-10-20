@@ -1,4 +1,3 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 // The smaller hardening items: IPv6 counted per /64, longer friend codes, the
 // operator's maintenance / minimum-build switches, the cross-site check on admin
 // writes, and the absolute lifetime of a login.
@@ -6,6 +5,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { register } from "node:module";
+import { partialCtx, partialEnv, partialState, partialStorage } from "./test-env.ts";
 
 // user-registry.ts extends the real DurableObject from "cloudflare:workers",
 // which only exists inside the Workers runtime; stand in for that one import
@@ -35,7 +35,7 @@ const { isCrossSiteWrite } = await import("./access.ts");
 const { ACCESS_ENV, ACCESS_HEADERS } = await import("./test-access.ts");
 
 const hash = value => createHash("sha256").update(value).digest("hex");
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 
 // ---- IPv6 is counted per /64 ------------------------------------------------
 
@@ -83,18 +83,18 @@ test("clientKey applies the /64 rule, and still says unknown without a header", 
 
 function registryEnvironment() {
   const values = new Map();
-  return {
+  return partialEnv({
     values,
     STUDIQUO_DATA: {
       async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
       async put(key, value) { values.set(key, value); },
     },
-  };
+  });
 }
 
 test("a new account gets a 10-character friend code and invite token", async () => {
   const env = registryEnvironment();
-  const registry = new UserRegistry({ storage: {}, blockConcurrencyWhile: fn => fn() }, env);
+  const registry = new UserRegistry(partialState({ storage: partialStorage({}), blockConcurrencyWhile: fn => fn() }), env);
   const user = await registry.ensureUser("account-key", "Alice");
   assert.match(user.code, /^[A-HJ-NP-Z2-9]{10}$/);
   assert.match(user.linkToken, /^[A-HJ-NP-Z2-9]{10}$/);
@@ -105,15 +105,15 @@ test("a new account gets a 10-character friend code and invite token", async () 
 test("an account that already has a 7-character code keeps it", async () => {
   const env = registryEnvironment();
   env.values.set("chat:user:old", JSON.stringify({ key: "old", name: "Old", code: "ABCDEFG", linkToken: "HJKLMNP", friends: [] }));
-  const registry = new UserRegistry({ storage: {}, blockConcurrencyWhile: fn => fn() }, env);
+  const registry = new UserRegistry(partialState({ storage: partialStorage({}), blockConcurrencyWhile: fn => fn() }), env);
   const user = await registry.ensureUser("old", "Old");
   assert.equal(user.code, "ABCDEFG");
 });
 
 // ---- Maintenance mode and the minimum build ------------------------------------
 
-const gate = (path, { env = {}, userAgent } = {}) =>
-  appGateRejection(new Request(`https://example.test${path}`, { headers: userAgent ? { "user-agent": userAgent } : {} }), env, new URL(`https://example.test${path}`));
+const gate = (path, { env = {}, userAgent }: { env?: any; userAgent?: string } = {}) =>
+  appGateRejection(new Request(`https://example.test${path}`, { headers: userAgent ? { "user-agent": userAgent } : {} }), partialEnv(env), new URL(`https://example.test${path}`));
 
 test("with both switches unset nothing is turned away", () => {
   assert.equal(gate("/api/plan", { userAgent: "studiquo/1 CFNetwork/1 Darwin/27" }), null);
@@ -121,7 +121,7 @@ test("with both switches unset nothing is turned away", () => {
 });
 
 test("maintenance mode answers 503 with Retry-After on app, MCP and OAuth routes", async () => {
-  const env = { MAINTENANCE_MODE: "true" };
+  const env = partialEnv({ MAINTENANCE_MODE: "true" });
   for (const path of ["/api/plan", "/api/chat/inbox", "/api/auth/local/login", "/mcp", "/oauth/token", "/api/passkeys/status"]) {
     const response = gate(path, { env });
     assert.equal(response.status, 503, path);
@@ -131,14 +131,14 @@ test("maintenance mode answers 503 with Retry-After on app, MCP and OAuth routes
 });
 
 test("maintenance mode leaves the health check, association file, public pages and admin alone", () => {
-  const env = { MAINTENANCE_MODE: "true" };
+  const env = partialEnv({ MAINTENANCE_MODE: "true" });
   for (const path of ["/health", "/.well-known/apple-app-site-association", "/invite", "/terms", "/api/announcements", "/api/admin/stats", "/api/admin/revenuecat-webhook", "/admin"]) {
     assert.equal(gate(path, { env }), null, path);
   }
 });
 
 test("an app build below MIN_APP_BUILD is told to update; a newer one and other clients are not", async () => {
-  const env = { MIN_APP_BUILD: "5" };
+  const env = partialEnv({ MIN_APP_BUILD: "5" });
   const old = gate("/api/plan", { env, userAgent: "studiquo/4 CFNetwork/3896.100.1.2.1 Darwin/27.0.0" });
   assert.equal(old.status, 426);
   assert.equal((await old.json()).code, "app_update_required");
@@ -158,9 +158,9 @@ test("a malformed MIN_APP_BUILD turns the check off instead of locking everyone 
 
 test("the gate runs in front of the whole Worker", async () => {
   const response = await worker.fetch(new Request("https://example.test/api/plan", { headers: { "user-agent": "studiquo/1 CFNetwork/1" } }),
-    { MIN_APP_BUILD: "9" }, noopCtx);
+    partialEnv({ MIN_APP_BUILD: "9" }), noopCtx);
   assert.equal(response.status, 426);
-  const health = await worker.fetch(new Request("https://example.test/health"), { MAINTENANCE_MODE: "true" }, noopCtx);
+  const health = await worker.fetch(new Request("https://example.test/health"), partialEnv({ MAINTENANCE_MODE: "true" }), noopCtx);
   assert.equal(health.status, 200);
 });
 
@@ -181,7 +181,7 @@ test("isCrossSiteWrite refuses another origin or a cross-site fetch, and lets re
 });
 
 test("an admin write from another origin is refused even with a valid Access login", async () => {
-  const env = { ...ACCESS_ENV };
+  const env = partialEnv({ ...ACCESS_ENV });
   const post = headers => worker.fetch(new Request("https://example.test/api/admin/issue-reports/import-legacy", {
     method: "POST", headers: { ...ACCESS_HEADERS, ...headers },
   }), env, noopCtx);
@@ -198,7 +198,7 @@ const DAY = 24 * 60 * 60 * 1000;
 
 function sessionEnvironment(extra = {}) {
   const values = new Map();
-  return {
+  return partialEnv({
     values,
     STUDIQUO_DATA: {
       async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
@@ -207,14 +207,14 @@ function sessionEnvironment(extra = {}) {
       async list() { return { keys: [], list_complete: true }; },
     },
     ...extra,
-  };
+  });
 }
 
 // A login whose current token is `tokenAgeDays` old, descended from one that began `originAgeDays` ago.
 async function sessionAged(env, { tokenAgeDays, originAgeDays, withOrigin = true }) {
   const issuedAtMs = Date.now() - tokenAgeDays * DAY;
   const token = `${Math.floor(issuedAtMs / 1000)}.${"t".repeat(40)}`;
-  const record = { sub: "person", issuedAt: Math.floor(issuedAtMs / 1000), issuedAtMs };
+  const record: Record<string, unknown> = { sub: "person", issuedAt: Math.floor(issuedAtMs / 1000), issuedAtMs };
   if (withOrigin) record.originIssuedAtMs = Date.now() - originAgeDays * DAY;
   env.values.set(`session:${hash(token)}`, JSON.stringify(record));
   return token;

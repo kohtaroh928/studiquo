@@ -1,11 +1,12 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   appAttestGate, appAttestMode, assessAssertion, base64ToBytes, bytesToBase64Url, challengeIsValid, decodeCBOR,
   derSignatureToRaw, handleAppAttest, issueChallenge, verifyAssertion, verifyAttestation,
 } from "./app-attest.ts";
+import { partialEnv } from "./test-env.ts";
 
 const APP_ID = "TEAMID1234.com.example.app";
 const NOW = Date.UTC(2026, 9, 18, 12, 0, 0);
@@ -55,7 +56,7 @@ const p256 = () => generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const p384 = () => generateKeyPairSync("ec", { namedCurve: "secp384r1" });
 const pointOf = publicKey => publicKey.export({ type: "spki", format: "der" }).subarray(-65);
 
-function makeWorld({ appId = APP_ID, aaguid = "appattest\0\0\0\0\0\0\0", counter = 0, notAfter } = {}) {
+function makeWorld({ appId = APP_ID, aaguid = "appattest\0\0\0\0\0\0\0", counter = 0, notAfter }: { appId?: any; aaguid?: string; counter?: number; notAfter?: any } = {}) {
   const root = p384();
   const intermediate = p384();
   const device = p256();
@@ -90,7 +91,7 @@ function makeWorld({ appId = APP_ID, aaguid = "appattest\0\0\0\0\0\0\0", counter
 function fakeEnv(extra = {}) {
   const records = new Map();
   const objects = new Map();
-  return {
+  return partialEnv({
     TOKEN_SIGNING_KEY: randomBytes(32).toString("base64"),
     APP_ATTEST_APP_ID: APP_ID,
     APP_ATTEST_MODE: "log",
@@ -112,7 +113,7 @@ function fakeEnv(extra = {}) {
       },
     },
     ...extra,
-  };
+  });
 }
 
 async function failure(promise) {
@@ -195,7 +196,7 @@ test("the mode is off unless fully configured", () => {
   assert.equal(appAttestMode(fakeEnv({ TOKEN_SIGNING_KEY: undefined })), "off");
 });
 
-function post(path, body, headers = {}) {
+function post(path, body?, headers = {}) {
   return new Request(`https://example.test${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 
@@ -238,7 +239,7 @@ test("the rate limit on the attest routes answers 429", async () => {
   assert.equal((await handleAppAttest(new URL("https://example.test/api/attest/challenge"), post("/api/attest/challenge"), env)).status, 429);
 });
 
-async function signedRequest(world, env, path, counter, { method = "POST", timestamp = NOW } = {}) {
+async function signedRequest(world, env, path, counter, { method = "POST", timestamp = NOW }: { method?: string; timestamp?: any } = {}) {
   const header = `${world.keyId}.${timestamp}.${bytesToBase64Url(world.assertion(`${method}\n${path}\n${timestamp}`, counter))}`;
   return new Request(`https://example.test${path}`, { method, headers: { "x-studiquo-attest": header } });
 }
@@ -326,7 +327,7 @@ test("base64 helpers round-trip and reject garbage", () => {
 });
 
 test("the embedded Apple root parses and is self-signed, valid to 2045", async () => {
-  const pem = (await import("node:fs")).readFileSync(new URL("./app-attest.ts", import.meta.url), "utf8");
+  const pem = (await import("node:fs")).readFileSync(fileURLToPath(import.meta.resolve("./app-attest.ts")), "utf8");
   const base64 = /APPLE_ROOT_DER_BASE64 = "([^"]+)"/.exec(pem)[1];
   assert.equal(createHash("sha256").update(Buffer.from(base64, "base64")).digest("hex").toUpperCase(),
     "1CB9823BA28BA6AD2D33A006941DE2AE4F513EF1D4E831B9F7E0FA7B6242C932");

@@ -1,17 +1,19 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.ts";
 import { PRODUCT_BILLING_MONTHS } from "./admin.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
 
 // Wraps a real in-memory SQLite database (seeded from the actual migration
 // file, so tests run against the real schema) in the shape D1 exposes to a
 // Worker: prepare(sql).bind(...params).run()/.all()/.first().
 class FakeD1Statement {
-  constructor(db, sql, params = []) {
+  db: any;
+  sql: string;
+  params: unknown[];
+  constructor(db: any, sql: string, params: unknown[] = []) {
     this.db = db;
     this.sql = sql;
     this.params = params;
@@ -31,8 +33,8 @@ class FakeD1Statement {
 
 function fakeD1() {
   const db = new DatabaseSync(":memory:");
-  for (const file of readdirSync(new URL("../migrations/", import.meta.url)).sort()) {
-    db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  for (const file of migrationFiles()) {
+    db.exec(readMigration(file));
   }
   return { prepare(sql) { return new FakeD1Statement(db, sql); } };
 }
@@ -52,7 +54,7 @@ const WEBHOOK_SECRET = "test-shared-secret";
 
 function environment() {
   const values = new Map();
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) {
         const value = values.get(key) ?? null;
@@ -74,19 +76,19 @@ function environment() {
     REVENUECAT_WEBHOOK_SECRET: WEBHOOK_SECRET,
     ...ACCESS_ENV,
     _kv: values,
-  };
+  });
 }
 
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 
 function freshToken(suffix) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 }
 
-function request(path, { method = "GET", token, body, authorization } = {}) {
+function request(path, { method = "GET", token, body, authorization }: { method?: string; token?: any; body?: any; authorization?: any } = {}) {
   // The admin routes sit behind a verified Cloudflare Access login (src/access.ts);
   // RevenueCat's webhook is the one exception and authenticates by secret.
-  const headers = path.startsWith("/api/admin/") && path !== "/api/admin/revenuecat-webhook" ? { ...ACCESS_HEADERS } : {};
+  const headers: Record<string, string> = path.startsWith("/api/admin/") && path !== "/api/admin/revenuecat-webhook" ? { ...ACCESS_HEADERS } : {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (authorization !== undefined) headers.authorization = authorization;
   if (body !== undefined) headers["content-type"] = "application/json";
@@ -391,7 +393,7 @@ test("MCP connection count reflects mcp:grant: entries in KV", async () => {
 
 test("the webhook endpoint is rate-limited", async () => {
   const env = environment();
-  env.RATE_LIMIT_ADMIN_WEBHOOK = fakeCloudflareLimiter(3);
+  (env.RATE_LIMIT_ADMIN_WEBHOOK as any) = fakeCloudflareLimiter(3);
   let last;
   for (let i = 0; i < 4; i += 1) {
     last = await sendWebhook(env, purchaseEvent({ id: crypto.randomUUID() }));

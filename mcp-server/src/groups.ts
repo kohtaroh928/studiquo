@@ -35,18 +35,18 @@ const MAX_AVATAR_UPLOAD_BODY = 450_000;
 const GROUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const GROUP_CODE_LENGTH = 10;
 
-function parseGroupName(body: any) {
+function parseGroupName(body: { name: unknown; }) {
   const name = String(body?.name ?? "").trim().slice(0, MAX_GROUP_NAME_LENGTH);
   return name || null;
 }
 
-function parseMemberCodes(body: any) {
+function parseMemberCodes(body: { memberCodes: unknown; }) {
   const raw = Array.isArray(body?.memberCodes) ? body.memberCodes : [];
   const codes: string[] = [...new Set<string>(raw.map((item: any) => String(item ?? "").trim().toUpperCase()))];
   return codes.every(code => FRIEND_CODE_PATTERN.test(code)) ? codes : null;
 }
 
-function parseFriendCode(body: any) {
+function parseFriendCode(body: { code: unknown; }) {
   const code = String(body?.code ?? "").trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
@@ -99,7 +99,7 @@ async function ensureGroupMetadata(env: Env, roomID: string): Promise<GroupMetad
   throw new Error("Unable to allocate a group code.");
 }
 
-async function toClientGroup(env: Env, roomID: string, info: any) {
+async function toClientGroup(env: Env, roomID: string, info: { name: string | null; members: { key: string; code: string | null; name: string | null; }[]; }&Disposable) {
   const metadata = await ensureGroupMetadata(env, roomID);
   return {
     roomID,
@@ -115,7 +115,7 @@ async function toClientGroup(env: Env, roomID: string, info: any) {
 // 500. Distinct from chat.ts's own roomForbiddenResponse: a group room
 // never throws "Blocked"/"Closed", and throws a few reasons a direct room
 // never does.
-function groupErrorResponse(error: any) {
+function groupErrorResponse(error: unknown) {
   if (!(error instanceof Error)) return null;
   if (error.message === "Forbidden") return json({ error: "You are not a member of this group." }, 403);
   if (error.message === "NotAGroup") return json({ error: "This is not a group." }, 400);
@@ -125,7 +125,7 @@ function groupErrorResponse(error: any) {
   return null;
 }
 
-async function withGroupErrors(promise: any) {
+async function withGroupErrors(promise: unknown) {
   try {
     return json(await promise);
   } catch (error) {
@@ -139,7 +139,7 @@ async function withGroupErrors(promise: any) {
 // comment in chat-room.ts) — this just strips the internal key before a
 // member list ever reaches a client, the same boundary friends()/messages
 // already keep around a raw user key.
-function toClientMembers(members: any) {
+function toClientMembers(members: unknown[]) {
   return members.map(({ code, name }: any) => ({ code, name }));
 }
 
