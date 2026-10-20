@@ -95,7 +95,7 @@ export async function sendPush(env: Env, userKey: string, notification: PushNoti
   // A device that turned the banner off for this category still gets the
   // notification, but quietly: `passive` goes to the notification centre
   // without lighting the screen, showing a banner or making a sound.
-  const buildPayload = (quiet: any) => JSON.stringify({
+  const buildPayload = (quiet: boolean) => JSON.stringify({
     ...customData,
     aps: {
       alert: { title: String(notification.title ?? ""), body: String(notification.body ?? "") },

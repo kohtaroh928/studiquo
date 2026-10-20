@@ -18,7 +18,7 @@ const ANTHROPIC_VERSION = "2023-06-01";
 const MAX_OUTPUT_TOKENS = 4096;
 
 /** One turn's content blocks: its text, plus any images attached to it. */
-function contentBlocks(turn: any, images: any) {
+function contentBlocks(turn: { text: unknown; }, images: any) {
   const blocks: Record<string, unknown>[] = [{ type: "text", text: String(turn.text ?? "") }];
   for (const image of images) {
     blocks.push({ type: "image", source: { type: "base64", media_type: "image/png", data: image } });
@@ -39,7 +39,7 @@ export async function callAnthropicChat(env: Env, { model, systemInstruction, tu
   if (!key) throw new Error("ANTHROPIC_API_KEY is not configured on this Worker.");
 
   const lastIndex = turns.length - 1;
-  const messages = turns.map((turn: any, index: any) => ({
+  const messages = turns.map((turn: any, index: number) => ({
     role: turn.role === "assistant" ? "assistant" : "user",
     content: contentBlocks(turn, index === lastIndex && turn.role !== "assistant" ? images : []),
   }));

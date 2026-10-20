@@ -41,7 +41,7 @@ export function disabledFeatures(env: Env) {
   return new Set(names.filter(name => FEATURES.includes(name)));
 }
 
-export function featureDisabled(env: Env, feature: any) {
+export function featureDisabled(env: Env, feature: string) {
   return disabledFeatures(env).has(feature);
 }
 

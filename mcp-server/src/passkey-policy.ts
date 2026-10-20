@@ -176,7 +176,7 @@ export async function accountHasEstablishedPasskey(env: Env, accountKey: string,
   return (await listEstablishedPasskeys(env, accountKey, email, now)).length > 0;
 }
 
-export async function indexAccountPasskey(env: Env, accountKey: string, email: string, credentialID: any) {
+export async function indexAccountPasskey(env: Env, accountKey: string, email: string, credentialID: string) {
   for (const key of await passkeyAccountKeys(env, accountKey, email)) {
     const k = await indexKey(key);
     const ids = (await env.STUDIQUO_DATA.get<string[]>(k, "json")) ?? [];
@@ -228,7 +228,7 @@ export async function cancelPasskeyRecovery(env: Env, accountKey: string, email:
   return hadRecovery;
 }
 
-export async function sendPasskeyNotice(env: Env, email: string | null, subject: any, lines: any) {
+export async function sendPasskeyNotice(env: Env, email: string | null, subject: string, lines: unknown[]) {
   if (!env.RESEND_API_KEY || !email) return;
   // The "email" kill switch (features.ts).
   if (featureDisabled(env, "email")) return;
@@ -316,7 +316,7 @@ export async function gatePasskeyAccount(env: Env, accountKey: string, email: st
  * up by the action it was given for, so a stolen copy of the session cannot
  * ride along on the owner's check for something else.
  */
-export async function markRecentPasskey(env: Env, tokenHash: any, action = "*") {
+export async function markRecentPasskey(env: Env, tokenHash: string, action = "*") {
   await env.STUDIQUO_DATA.put(`passkey-reauth:${tokenHash}`, action, { expirationTtl: REAUTH_VALIDITY_SECONDS });
 }
 

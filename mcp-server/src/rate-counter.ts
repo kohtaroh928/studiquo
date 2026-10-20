@@ -61,7 +61,7 @@ export class RateCounter extends DurableObject<Env> {
    * request refused it. Only touches the window it was taken from (see
    * counter-state.ts).
    */
-  async give(amount: any, windowEndsAt: any) {
+  async give(amount: number, windowEndsAt: number) {
     const next = giveTo(await this.ctx.storage.get<CounterState>("state"), Date.now(), amount, windowEndsAt);
     if (next) await this.ctx.storage.put("state", next);
   }
@@ -80,7 +80,7 @@ export class RateCounter extends DurableObject<Env> {
   // transitions; this object serialises access to them, which is what makes
   // "check the wait, then count the attempt" one atomic step). A name is
   // used either for bump() or for these, never both, so they share the alarm.
-  async loginReserve(policy: any, { enforce = true } = {}) {
+  async loginReserve(policy: { freeFailures?: number; baseSeconds?: number; maxSeconds?: number; windowSeconds: number; }, { enforce = true } = {}) {
     const now = Date.now();
     const result = reserveAttempt(await this.ctx.storage.get("login"), now, policy, { enforce });
     if (result.waitSeconds === 0) await this.saveLogin(result.state, now, policy);
@@ -99,7 +99,7 @@ export class RateCounter extends DurableObject<Env> {
     await this.ctx.storage.setAlarm(trustExpiryMs(next) + 3_600_000);
   }
 
-  async saveLogin(state: any, now: number, policy: any) {
+  async saveLogin(state: any, now: number, policy: { windowSeconds: number; }) {
     await this.ctx.storage.put("login", state);
     // Outlives both the failure window and any trust, then reclaims storage.
     const until = Math.max(Math.max(state.blockedUntil ?? 0, now) + policy.windowSeconds * 1000, trustExpiryMs(state) + 3_600_000);
@@ -154,7 +154,7 @@ export class RateCounter extends DurableObject<Env> {
   // The KV write is outside this object's storage, so without the block a
   // nextAccountGeneration() (and the password write that follows it) could
   // run while this put is still in flight and then be overtaken by it.
-  async upgradeAccountIfCurrent(key: string, json: any, expectedGen: any) {
+  async upgradeAccountIfCurrent(key: string, json: string | ArrayBuffer | ArrayBufferView<ArrayBufferLike> | ReadableStream<unknown>, expectedGen: number) {
     return this.ctx.blockConcurrencyWhile(async () => {
       if (((await this.ctx.storage.get<number>("gen")) ?? 0) !== expectedGen) return false;
       await this.env.STUDIQUO_DATA.put(key, json);
@@ -178,7 +178,7 @@ export class RateCounter extends DurableObject<Env> {
 
   // Moves the counter forward only if `counter` is higher than what is stored,
   // as one step, so two requests with the same counter cannot both pass.
-  async attestAdvance(counter: any) {
+  async attestAdvance(counter: number) {
     const record = await this.ctx.storage.get<AttestRecord>("attest");
     if (!record || counter <= record.counter) return false;
     await this.ctx.storage.put("attest", { ...record, counter, lastSeenAt: Date.now() });
