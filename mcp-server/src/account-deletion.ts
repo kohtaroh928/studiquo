@@ -1,19 +1,24 @@
 import { sha256Hex } from "./auth.ts";
-import { queueRevenueCatDeletion } from "./privacy-retention.js";
+import { queueRevenueCatDeletion } from "./privacy-retention.ts";
 import { roomMembershipKey } from "./document-room-store.js";
 import { generationOf } from "./session.ts";
 import { libraryIdObjectName } from "./library-id.ts";
 import { tokenIndexCoversEverything } from "./mcp-oauth.ts";
 import { indexedPasskeyIds, passkeyAccountKeys, passkeyIndexComplete } from "./passkey-policy.ts";
+import type { Device } from "./devices.ts";
+import type { LinkedIdentity } from "./oauth-links.ts";
+import type { Env } from "./env.ts";
+import { nextCursor } from "./kv.ts";
+import type { ChatUser, DeletionJob, DeletionState, IssueReportRecord, PasskeyRecord, SessionRecord } from "./records.ts";
 
 // How long the retired password generation outlives the deletion. KV can serve
 // a stale record for about a minute; a week is a wide margin on top of that.
 const ACCOUNT_GENERATION_RETIREMENT_SECONDS = 7 * 86_400;
 
 // Once accepted, cleanup survives session revocation and request timeouts.
-export async function startAccountDeletion(env, canonicalSub) {
+export async function startAccountDeletion(env: Env, canonicalSub) {
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
-  const state = await env.STUDIQUO_DATA.get(`account-deletion:${await sha256Hex(canonicalSub)}`, "json");
+  const state = await env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(canonicalSub)}`, "json");
   await env.STUDIQUO_DATA.put(jobKey, JSON.stringify({ canonicalSub, requestedAt: Date.now(), generation: generationOf(state) }));
   try {
     await deleteAccount(env, canonicalSub);
@@ -27,8 +32,8 @@ export async function startAccountDeletion(env, canonicalSub) {
 // "deleting" under the same generation. Another run may have finished it, and
 // the person signed in again, since this one began; going on would erase the
 // new account or put "deleted" back over it.
-async function stillDeleting(env, deletionStateKey, generation) {
-  const state = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
+async function stillDeleting(env: Env, deletionStateKey, generation) {
+  const state = await env.STUDIQUO_DATA.get<DeletionState>(deletionStateKey, "json");
   return state?.status === "deleting" && generationOf(state) === generation;
 }
 
@@ -47,7 +52,7 @@ async function stillDeleting(env, deletionStateKey, generation) {
 // single invocation may do; the rest is finished by the retry.
 const MAX_ROOMS_PER_RUN = 40;
 
-async function removeDocumentRooms(env, chatKey) {
+async function removeDocumentRooms(env: Env, chatKey) {
   // Invitations still waiting for this account's answer (document-collab.js).
   for (const key of await entries(env, `doc-invite:${chatKey}:`)) await env.STUDIQUO_DATA.delete(key);
   const prefix = roomMembershipKey(chatKey, "");
@@ -70,18 +75,18 @@ async function removeDocumentRooms(env, chatKey) {
   if (keys.length > MAX_ROOMS_PER_RUN) throw new Error("More document rooms remain to be removed.");
 }
 
-async function entries(env, prefix) {
-  const result = [];
-  let cursor;
+async function entries(env: Env, prefix) {
+  const result: string[] = [];
+  let cursor: string | undefined;
   do {
     const page = await env.STUDIQUO_DATA.list({ prefix, cursor });
     for (const item of page.keys ?? []) result.push(item.name);
-    cursor = page.list_complete ? undefined : page.cursor;
+    cursor = nextCursor(page);
   } while (cursor);
   return result;
 }
 
-async function deleteKeys(env, keys) {
+async function deleteKeys(env: Env, keys: Iterable<string>) {
   await Promise.all([...new Set(keys)].map(key => env.STUDIQUO_DATA.delete(key)));
 }
 
@@ -104,12 +109,12 @@ function linkedIdentityKey(identity) {
  * different account. The aliases left alone for having begun a new account
  * are returned, so the caller can keep them out of the provider-side erasure.
  */
-async function markAliases(env, canonicalSub, identityKeys, state) {
-  const beganNewAccount = new Set();
+async function markAliases(env: Env, canonicalSub, identityKeys, state) {
+  const beganNewAccount = new Set<string>();
   for (const identity of identityKeys) {
     if (identity === canonicalSub) continue;
     const aliasStateKey = `account-deletion:${await sha256Hex(identity)}`;
-    const existing = await env.STUDIQUO_DATA.get(aliasStateKey, "json");
+    const existing = await env.STUDIQUO_DATA.get<DeletionState>(aliasStateKey, "json");
     if (existing?.status === "active") {
       beganNewAccount.add(identity);
       continue;
@@ -120,9 +125,9 @@ async function markAliases(env, canonicalSub, identityKeys, state) {
   return beganNewAccount;
 }
 
-export async function deleteAccount(env, canonicalSub) {
+export async function deleteAccount(env: Env, canonicalSub) {
   const deletionStateKey = `account-deletion:${await sha256Hex(canonicalSub)}`;
-  let previousState = await env.STUDIQUO_DATA.get(deletionStateKey, "json");
+  let previousState: Partial<DeletionState> | null = await env.STUDIQUO_DATA.get<DeletionState>(deletionStateKey, "json");
   const jobKey = `privacy-account-delete:${await sha256Hex(canonicalSub)}`;
   if (previousState?.status === "deleted") {
     await env.STUDIQUO_DATA.delete(jobKey);
@@ -143,11 +148,11 @@ export async function deleteAccount(env, canonicalSub) {
     const isRequestedSince = job => Number.isFinite(job?.generation) && Number.isFinite(activeGeneration)
       ? job.generation === activeGeneration
       : Number.isFinite(startedAt) ? job?.requestedAt >= startedAt : true;
-    let job = await env.STUDIQUO_DATA.get(jobKey, "json");
+    let job = await env.STUDIQUO_DATA.get<DeletionJob>(jobKey, "json");
     if (!isRequestedSince(job)) {
       // Read once more before clearing: the person may have asked to delete
       // the new account in the meantime, and that job must not be removed.
-      job = await env.STUDIQUO_DATA.get(jobKey, "json");
+      job = await env.STUDIQUO_DATA.get<DeletionJob>(jobKey, "json");
       if (!isRequestedSince(job)) {
         if (job) await env.STUDIQUO_DATA.delete(jobKey);
         return { deleted: true };
@@ -165,12 +170,12 @@ export async function deleteAccount(env, canonicalSub) {
 
   const ownerKeys = await entries(env, "email-account-owner:");
   const emails = [...(previousState?.emails ?? [])];
-  const identities = [];
+  const identities: LinkedIdentity[] = [];
   for (const ownerKey of ownerKeys) {
     if (await env.STUDIQUO_DATA.get(ownerKey) !== canonicalSub) continue;
     const email = ownerKey.slice("email-account-owner:".length);
     emails.push(email);
-    const linked = await env.STUDIQUO_DATA.get(`email-accounts:${email}`, "json") ?? [];
+    const linked = await env.STUDIQUO_DATA.get<LinkedIdentity[]>(`email-accounts:${email}`, "json") ?? [];
     identities.push(...linked);
   }
 
@@ -180,7 +185,7 @@ export async function deleteAccount(env, canonicalSub) {
   for (const linkKey of await entries(env, "email-accounts:")) {
     const email = linkKey.slice("email-accounts:".length);
     if (emails.includes(email)) continue;
-    const linked = await env.STUDIQUO_DATA.get(linkKey, "json") ?? [];
+    const linked = await env.STUDIQUO_DATA.get<LinkedIdentity[]>(linkKey, "json") ?? [];
     let belongsToAccount = false;
     for (const identity of linked) {
       const key = linkedIdentityKey(identity);
@@ -207,7 +212,7 @@ export async function deleteAccount(env, canonicalSub) {
   const ownedSessionKeys = [];
   const ownedTokenHashes = [...(previousState?.tokenHashes ?? [])];
   for (const key of sessionKeys) {
-    const session = await env.STUDIQUO_DATA.get(key, "json");
+    const session = await env.STUDIQUO_DATA.get<SessionRecord>(key, "json");
     if (!identityKeys.has(session?.sub)) continue;
     ownedSessionKeys.push(key);
     ownedTokenHashes.push(key.slice("session:".length));
@@ -274,20 +279,20 @@ export async function deleteAccount(env, canonicalSub) {
   for (const email of emails) for (const key of await passkeyAccountKeys(env, `email:${String(email).trim().toLowerCase()}`, email)) listKeys.add(key);
   const listed = (await passkeyIndexComplete(env)) ? await indexedPasskeyIds(env, [...listKeys]) : null;
   if (listed && !listed.full) {
-    const userKeys = new Set();
+    const userKeys = new Set<string>();
     for (const id of listed.ids) {
       ownedCredentialKeys.push(`passkeys:credential:${id}`);
-      const credential = await env.STUDIQUO_DATA.get(`passkeys:credential:${id}`, "json");
+      const credential = await env.STUDIQUO_DATA.get<PasskeyRecord>(`passkeys:credential:${id}`, "json");
       if (credential?.userKey) userKeys.add(`passkeys:user:${credential.userKey}`);
     }
     ownedPasskeyUserKeys.push(...userKeys);
   } else {
     for (const key of await entries(env, "passkeys:credential:")) {
-      const credential = await env.STUDIQUO_DATA.get(key, "json");
+      const credential = await env.STUDIQUO_DATA.get<PasskeyRecord>(key, "json");
       if (emails.includes(String(credential?.email ?? "").toLowerCase())) ownedCredentialKeys.push(key);
     }
     for (const key of await entries(env, "passkeys:user:")) {
-      const credentials = await env.STUDIQUO_DATA.get(key, "json") ?? [];
+      const credentials = await env.STUDIQUO_DATA.get<PasskeyRecord[]>(key, "json") ?? [];
       if (credentials.some(item => emails.includes(String(item.email ?? "").toLowerCase()))) ownedPasskeyUserKeys.push(key);
     }
   }
@@ -296,7 +301,7 @@ export async function deleteAccount(env, canonicalSub) {
   const chatKey = env.USER_REGISTRY
     ? await env.USER_REGISTRY.getByName(chatIdentityHash).resolveChatKey(chatIdentityHash, "")
     : chatIdentityHash;
-  const chatUser = await env.STUDIQUO_DATA.get(`chat:user:${chatKey}`, "json");
+  const chatUser = await env.STUDIQUO_DATA.get<ChatUser>(`chat:user:${chatKey}`, "json");
   if (chatUser && env.USER_REGISTRY && env.CHAT_ROOM) {
     const relatedCodes = new Set([
       ...(chatUser.friends ?? []).map(item => item.code),
@@ -341,7 +346,7 @@ export async function deleteAccount(env, canonicalSub) {
   if (!(await tokenIndexCoversEverything(env))) {
     for (const prefix of ["mcp:access:", "mcp:refresh:"]) {
       for (const key of await entries(env, prefix)) {
-        const value = await env.STUDIQUO_DATA.get(key, "json");
+        const value = await env.STUDIQUO_DATA.get<{ sub?: string }>(key, "json");
         if (identityKeys.has(value?.sub)) mcpKeys.push(key);
       }
     }
@@ -401,7 +406,7 @@ export async function deleteAccount(env, canonicalSub) {
     // index satisfied when several people who reported the same message leave.
     // The copied surrounding messages aren't known to be the reporter's or
     // another member's, so their text is dropped; the reported message stays.
-    const filed = await env.ADMIN_DB.prepare("SELECT id, snapshot FROM chat_reports WHERE reporter_key = ?").bind(chatKey).all();
+    const filed = await env.ADMIN_DB.prepare("SELECT id, snapshot FROM chat_reports WHERE reporter_key = ?").bind(chatKey).all<{ id: string; snapshot: string }>();
     for (const row of filed.results ?? []) {
       const kept = JSON.parse(row.snapshot).map(item => item.reported ? item : { ...item, text: "" });
       await env.ADMIN_DB.prepare("UPDATE chat_reports SET reporter_key = ?, snapshot = ?, reason = '' WHERE id = ?")
@@ -413,13 +418,13 @@ export async function deleteAccount(env, canonicalSub) {
   // durable checkpoint preserves legacy token ownership after revocation.
   const accountHashes = new Set(await Promise.all([...identityKeys].map(identity => sha256Hex(`usage-account:${identity}`))));
   for (const reportKey of await entries(env, "issue-report:")) {
-    const report = await env.STUDIQUO_DATA.get(reportKey, "json");
+    const report = await env.STUDIQUO_DATA.get<IssueReportRecord>(reportKey, "json");
     if (!accountHashes.has(report?.accountKey) && !ownedTokenHashes.includes(report?.reporterKey)) continue;
     checkpointKeys.add(reportKey);
     checkpointKeys.add(`issue-report-screenshot:${reportKey.slice("issue-report:".length)}`);
   }
 
-  const devices = await env.STUDIQUO_DATA.get(`chat:devices:${chatKey}`, "json") ?? [];
+  const devices = await env.STUDIQUO_DATA.get<Device[]>(`chat:devices:${chatKey}`, "json") ?? [];
 
   const cutoffKeys = await Promise.all([...identityKeys].map(async identity => `session-valid-from:${await sha256Hex(identity)}`));
   // The per-account passkey list and any recovery in progress. Left behind they
@@ -500,7 +505,7 @@ export async function deleteAccount(env, canonicalSub) {
   await env.STUDIQUO_DATA.put(deletionStateKey, finishedState);
   // Only this life's job is cleared; a newer request (a higher generation, from
   // after the person signed in again) stays queued.
-  const queuedJob = await env.STUDIQUO_DATA.get(jobKey, "json");
+  const queuedJob = await env.STUDIQUO_DATA.get<DeletionJob>(jobKey, "json");
   if (!queuedJob || generationOf(queuedJob) <= generation) await env.STUDIQUO_DATA.delete(jobKey);
   return { deleted: true };
 }

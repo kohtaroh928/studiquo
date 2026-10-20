@@ -4,8 +4,8 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
-import { compareVersions } from "./app-errors.js";
-import { INBOX_SCRIPT } from "./admin-inbox-ui.js";
+import { compareVersions } from "./app-errors.ts";
+import { INBOX_SCRIPT } from "./admin-inbox-ui.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
 
 // Same shape as admin.test.js's fake: a real in-memory SQLite database built
@@ -497,7 +497,7 @@ test("the new-problem cap is per account", async () => {
 });
 
 test("the moderation section is on the dashboard, builds the page only through textContent, and its script parses", async () => {
-  const { MODERATION_SCRIPT, MODERATION_HTML } = await import("./admin-moderation-ui.js");
+  const { MODERATION_SCRIPT, MODERATION_HTML } = await import("./admin-moderation-ui.ts");
   assert.doesNotMatch(MODERATION_SCRIPT, /innerHTML|insertAdjacentHTML|document\.write|outerHTML/);
   assert.doesNotMatch(MODERATION_SCRIPT + MODERATION_HTML, /\u0060|\$\{/);
   assert.doesNotThrow(() => new Function(MODERATION_SCRIPT));

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { deleteAccount } from "./account-deletion.js";
+import { deleteAccount } from "./account-deletion.ts";
 import { linkVerifiedEmail } from "./oauth-links.ts";
 import worker from "./app.js";
 import { mintSession } from "./session.ts";
@@ -888,7 +888,7 @@ test("M-1b. 旧形式(identityKeys)の完了マーカーでも、再登録で提
 });
 
 test("M-1c. 提携先(RevenueCat)への削除ジョブは期限付きで保存される", async () => {
-  const { queueRevenueCatDeletion } = await import("./privacy-retention.js");
+  const { queueRevenueCatDeletion } = await import("./privacy-retention.ts");
   const puts = [];
   const env = { STUDIQUO_DATA: { async put(key, value, options) { puts.push({ key, options }); } } };
   await queueRevenueCatDeletion(env, "email:x@example.com");

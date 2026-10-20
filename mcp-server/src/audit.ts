@@ -3,10 +3,11 @@
 // write refuses the action: reading a person's report or pushing to every
 // device is not something that should be possible unrecorded.
 import { accessActor } from "./access.ts";
+import type { Env } from "./env.ts";
 
 const MAX_FIELD = 200;
 
-export async function auditAdmin(env, request, action, target = "", detail = "") {
+export async function auditAdmin(env: Env, request: Request, action, target = "", detail = "") {
   if (!env.ADMIN_DB) throw new Error("Audit log unavailable");
   const actor = (await accessActor(request, env)) ?? "unknown";
   await env.ADMIN_DB.prepare(

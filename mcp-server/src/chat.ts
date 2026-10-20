@@ -5,11 +5,13 @@ import { checkRateLimit } from "./rate-limit.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
 import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { realSession, hasModerationMark, CHAT_SUSPENSION_PREFIX } from "./session.ts";
-import { handleGroupRoutes } from "./groups.js";
+import { handleGroupRoutes } from "./groups.ts";
 import { sendPush } from "./push.ts";
 import { chatMessageNotification } from "./message-notification.ts";
 import { handleDeviceRoutes } from "./devices.ts";
-import { fileChatReport } from "./chat-reports.js";
+import { fileChatReport } from "./chat-reports.ts";
+import type { Env } from "./env.ts";
+import type { ChatUser, StoredImage } from "./records.ts";
 
 const MAX_BODY = 16_000;
 // Attachment uploads carry base64-encoded image/file bytes (up to
@@ -73,13 +75,13 @@ function parseStudyStats(body) {
   return { seconds, date };
 }
 
-async function readBody(request, maxBytes = MAX_BODY) {
+async function readBody(request: Request, maxBytes = MAX_BODY) {
   return readJSONLimitedShared(request, maxBytes);
 }
 
-async function ensureUser(env, key, name = null, studyStats = null) {
+async function ensureUser(env: Env, key, name = null, studyStats = null) {
   const storageKey = `chat:user:${key}`;
-  const user = await env.STUDIQUO_DATA.get(storageKey, "json");
+  const user = await env.STUDIQUO_DATA.get<ChatUser>(storageKey, "json");
   if (user) {
     const cleaned = name == null ? "" : String(name).trim().slice(0, 80);
     const needsWrite = (cleaned && cleaned !== user.name) || studyStats || !user.linkToken;
@@ -99,7 +101,7 @@ async function roomID(first, second) {
   return sha256Hex([first, second].sort().join(":"));
 }
 
-async function existingRoomIsBlocked(env, roomIDValue, userKey) {
+async function existingRoomIsBlocked(env: Env, roomIDValue, userKey: string) {
   try {
     const state = await env.CHAT_ROOM.getByName(roomIDValue).blockStatus(userKey);
     return state.blockedByMe || state.blockedByOther;
@@ -147,12 +149,12 @@ function roomForbiddenResponse(error) {
 // (isMine already tells it everything it needs for exactly two people),
 // but resolving it there too costs one lookup at most and keeps this one
 // code path uniform instead of branching on room kind.
-async function withSenderNames(env, result) {
+async function withSenderNames(env: Env, result) {
   const messages = Array.isArray(result) ? result : [result];
   const senderKeys = [...new Set(messages.map(item => item.senderKey).filter(Boolean))];
   const senders = new Map(await Promise.all(senderKeys.map(async senderKey => {
-    const user = await env.STUDIQUO_DATA.get(`chat:user:${senderKey}`, "json");
-    return [senderKey, user ? { code: user.code, name: user.name } : null];
+    const user = await env.STUDIQUO_DATA.get<ChatUser>(`chat:user:${senderKey}`, "json");
+    return [senderKey, user ? { code: user.code, name: user.name } : null] as const;
   })));
   const resolved = messages.map(({ senderKey, ...rest }) => {
     const sender = senderKey ? senders.get(senderKey) : null;
@@ -164,7 +166,7 @@ async function withSenderNames(env, result) {
   return Array.isArray(result) ? resolved : resolved[0];
 }
 
-async function messageRoomResponse(env, promise) {
+async function messageRoomResponse(env: Env, promise) {
   try {
     return json(await withSenderNames(env, await promise));
   } catch (error) {
@@ -184,7 +186,7 @@ async function roomResponse(promise) {
   }
 }
 
-async function messageNotificationContext(env, senderKey, roomIDValue) {
+async function messageNotificationContext(env: Env, senderKey, roomIDValue) {
   const sender = await ensureUser(env, senderKey);
   const group = (sender.groups ?? []).find(item => item.roomID === roomIDValue);
   if (group) {
@@ -200,7 +202,7 @@ async function messageNotificationContext(env, senderKey, roomIDValue) {
   return { senderName: sender.name, groupName: null, recipientKeys: recipientKey ? [recipientKey] : [] };
 }
 
-export async function handleChat(url, request, env, ctx) {
+export async function handleChat(url, request: Request, env: Env, ctx) {
   if (!url.pathname.startsWith("/api/chat/")) return null;
   const token = bearerToken(request);
   if (!token) return json({ error: "Authentication required." }, 401);
@@ -280,7 +282,7 @@ export async function handleChat(url, request, env, ctx) {
     // cached is still current.
     const withLiveDetails = await Promise.all((user.friends ?? []).map(async friend => {
       const friendKey = await env.STUDIQUO_DATA.get(`chat:code:${friend.code}`);
-      const friendRecord = friendKey ? await env.STUDIQUO_DATA.get(`chat:user:${friendKey}`, "json") : null;
+      const friendRecord = friendKey ? await env.STUDIQUO_DATA.get<ChatUser>(`chat:user:${friendKey}`, "json") : null;
       return {
         ...friend,
         name: friendRecord?.name ?? friend.name,
@@ -372,7 +374,7 @@ export async function handleChat(url, request, env, ctx) {
     const isSelf = user.code === targetCode;
     const isFriend = (user.friends ?? []).some(friend => friend.code === targetCode);
     if (!isSelf && !isFriend) return json({ error: "Not found" }, 404);
-    const avatar = await env.STUDIQUO_DATA.get(`chat:avatar:${targetCode}`, "json");
+    const avatar = await env.STUDIQUO_DATA.get<StoredImage>(`chat:avatar:${targetCode}`, "json");
     if (!avatar) return json({ error: "Not found" }, 404);
     const bytes = Uint8Array.from(atob(avatar.data), c => c.charCodeAt(0));
     return new Response(bytes, {

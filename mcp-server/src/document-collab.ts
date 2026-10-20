@@ -2,11 +2,22 @@ import { blockedBetween } from "./block-check.ts";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { sendPush } from "./push.ts";
 import { roomMembershipKey } from "./document-room-store.js";
+import type { Env } from "./env.ts";
+import { nextCursor } from "./kv.ts";
+import type { ChatUser } from "./records.ts";
 
 // A full block snapshot for a modest document (well past what any
 // reasonably-sized study document needs) plus JSON overhead — same
 // reasoning as chat.js's MAX_BODY, scaled up since this carries a whole
 // document instead of one message.
+/** document-invite:<user>:<room>: an offer to join a shared document, until it is answered. */
+interface DocumentInvite {
+  inviterKey: string;
+  inviterName?: string | null;
+  role: string;
+  createdAt: number;
+}
+
 const MAX_BODY = 500_000;
 const PROPOSE_LIMIT_PER_MINUTE = 30;
 // Matches chat.js's own RATE_LIMIT_CHAT_FRIEND_ADD budget — inviting a
@@ -22,18 +33,18 @@ const INVITE_TTL_SECONDS = 14 * 24 * 3_600;
 const MAX_PENDING_INVITES = 20;
 const RESPOND_LIMIT_PER_MINUTE = 20;
 
-export function pendingInviteKey(userKey, roomID) {
+export function pendingInviteKey(userKey: string, roomID) {
   return `doc-invite:${userKey}:${roomID}`;
 }
 
-async function pendingInviteNames(env, userKey) {
+async function pendingInviteNames(env: Env, userKey: string) {
   const prefix = pendingInviteKey(userKey, "");
   const names = [];
   let cursor;
   do {
     const page = await env.STUDIQUO_DATA.list({ prefix, cursor });
     for (const item of page.keys ?? []) names.push(item.name);
-    cursor = page.list_complete ? undefined : page.cursor;
+    cursor = nextCursor(page);
   } while (cursor);
   return names;
 }
@@ -53,12 +64,12 @@ function parseFriendCode(body) {
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
 
-async function friendDisplayName(env, userKey) {
-  const user = await env.STUDIQUO_DATA.get(`chat:user:${userKey}`, "json");
+async function friendDisplayName(env: Env, userKey: string) {
+  const user = await env.STUDIQUO_DATA.get<ChatUser>(`chat:user:${userKey}`, "json");
   return user?.name ?? null;
 }
 
-async function readBody(request, maxBytes = MAX_BODY) {
+async function readBody(request: Request, maxBytes = MAX_BODY) {
   return readJSONLimitedShared(request, maxBytes);
 }
 
@@ -67,15 +78,15 @@ async function readBody(request, maxBytes = MAX_BODY) {
 // checkRateLimit()/the Cloudflare Rate Limiting binding those use, since
 // that binding is provisioned per endpoint in the Cloudflare dashboard and
 // this endpoint doesn't have one of its own yet.
-async function withinLimit(env, keyPrefix, key, limit, windowSeconds = WINDOW_SECONDS) {
+async function withinLimit(env: Env, keyPrefix, key, limit, windowSeconds = WINDOW_SECONDS) {
   return env.RATE_COUNTER.getByName(`${keyPrefix}:${key}`).bump(limit, windowSeconds);
 }
 
 // The caller's own record, read through their registry object when there is
 // one (a plain KV read can be a minute behind a friend removal).
-async function chatUser(env, userKey) {
+async function chatUser(env: Env, userKey: string) {
   const registered = env.USER_REGISTRY ? await env.USER_REGISTRY.getByName(userKey).getUser(userKey) : null;
-  return registered ?? await env.STUDIQUO_DATA.get(`chat:user:${userKey}`, "json");
+  return registered ?? await env.STUDIQUO_DATA.get<ChatUser>(`chat:user:${userKey}`, "json");
 }
 
 // DocumentRoom.requireParticipant/requireReviewer throw a plain
@@ -89,7 +100,7 @@ function roomForbiddenResponse(error) {
   return null;
 }
 
-async function recordRoomMembership(env, userKey, roomID, role) {
+async function recordRoomMembership(env: Env, userKey: string, roomID, role) {
   await env.STUDIQUO_DATA.put(roomMembershipKey(userKey, roomID), role);
 }
 
@@ -120,7 +131,7 @@ async function roomResponse(promise) {
  * does (chat's early registration exists only for its own pre-token
  * sign-in exchange endpoints, which this has no equivalent of).
  */
-export async function handleDocumentCollab(url, request, env, key, ctx) {
+export async function handleDocumentCollab(url, request: Request, env: Env, key, ctx) {
   if (!url.pathname.startsWith("/api/document/")) return null;
 
   const initMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/init$/.exec(url.pathname);
@@ -214,9 +225,9 @@ export async function handleDocumentCollab(url, request, env, key, ctx) {
 
   // The invitations waiting for this person's answer.
   if (url.pathname === "/api/document/invites" && request.method === "GET") {
-    const invites = [];
+    const invites: { roomID: string; role: string; inviterName: string | null; createdAt: number }[] = [];
     for (const name of await pendingInviteNames(env, key)) {
-      const invite = await env.STUDIQUO_DATA.get(name, "json");
+      const invite = await env.STUDIQUO_DATA.get<DocumentInvite>(name, "json");
       if (!invite) continue;
       invites.push({ roomID: name.slice(pendingInviteKey(key, "").length), role: invite.role, inviterName: invite.inviterName ?? null, createdAt: invite.createdAt });
     }
@@ -230,7 +241,7 @@ export async function handleDocumentCollab(url, request, env, key, ctx) {
     }
     const roomID = respondMatch[1];
     const inviteKey = pendingInviteKey(key, roomID);
-    const invite = await env.STUDIQUO_DATA.get(inviteKey, "json");
+    const invite = await env.STUDIQUO_DATA.get<DocumentInvite>(inviteKey, "json");
     if (!invite) return json({ error: "This invitation is no longer available." }, 404);
     if (respondMatch[2] === "decline") {
       await env.STUDIQUO_DATA.delete(inviteKey);

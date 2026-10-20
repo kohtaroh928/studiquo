@@ -2,6 +2,8 @@ import { blockedBetween } from "./block-check.ts";
 import { checkRateLimit } from "./rate-limit.ts";
 import { json, binaryHeaders, isWellFormedBase64, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { sendPush } from "./push.ts";
+import type { Env } from "./env.ts";
+import type { ChatUser, StoredImage } from "./records.ts";
 
 /**
  * Group chat: multiple people sharing one ChatRoom (kind: "group" — see
@@ -40,7 +42,7 @@ function parseGroupName(body) {
 
 function parseMemberCodes(body) {
   const raw = Array.isArray(body?.memberCodes) ? body.memberCodes : [];
-  const codes = [...new Set(raw.map(item => String(item ?? "").trim().toUpperCase()))];
+  const codes: string[] = [...new Set<string>(raw.map(item => String(item ?? "").trim().toUpperCase()))];
   return codes.every(code => FRIEND_CODE_PATTERN.test(code)) ? codes : null;
 }
 
@@ -49,8 +51,8 @@ function parseFriendCode(body) {
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
 
-async function currentUser(env, key) {
-  return env.STUDIQUO_DATA.get(`chat:user:${key}`, "json");
+async function currentUser(env: Env, key) {
+  return env.STUDIQUO_DATA.get<ChatUser>(`chat:user:${key}`, "json");
 }
 
 async function mintRoomID() {
@@ -72,9 +74,15 @@ function mintGroupCode() {
 // Public group metadata is deliberately separate from the internal 64-hex
 // room id. Existing groups predate this record, so the first list/detail
 // request lazily gives them a stable, human-shareable code too.
-async function ensureGroupMetadata(env, roomID) {
+/** chat:group-meta:<roomID>: the public code and avatar version of a group. */
+interface GroupMetadata {
+  code: string;
+  avatarUpdatedAt: number | string | null;
+}
+
+async function ensureGroupMetadata(env: Env, roomID): Promise<GroupMetadata> {
   const metadataKey = `chat:group-meta:${roomID}`;
-  const existing = await env.STUDIQUO_DATA.get(metadataKey, "json");
+  const existing = await env.STUDIQUO_DATA.get<GroupMetadata>(metadataKey, "json");
   if (existing?.code) return existing;
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -82,7 +90,7 @@ async function ensureGroupMetadata(env, roomID) {
     const ownerKey = `chat:group-code:${code}`;
     const owner = await env.STUDIQUO_DATA.get(ownerKey);
     if (owner && owner !== roomID) continue;
-    const avatar = await env.STUDIQUO_DATA.get(`chat:group-avatar:${roomID}`, "json");
+    const avatar = await env.STUDIQUO_DATA.get<StoredImage>(`chat:group-avatar:${roomID}`, "json");
     const metadata = { code, avatarUpdatedAt: avatar?.updatedAt ?? null };
     await env.STUDIQUO_DATA.put(ownerKey, roomID);
     await env.STUDIQUO_DATA.put(metadataKey, JSON.stringify(metadata));
@@ -91,7 +99,7 @@ async function ensureGroupMetadata(env, roomID) {
   throw new Error("Unable to allocate a group code.");
 }
 
-async function toClientGroup(env, roomID, info) {
+async function toClientGroup(env: Env, roomID, info) {
   const metadata = await ensureGroupMetadata(env, roomID);
   return {
     roomID,
@@ -135,12 +143,12 @@ function toClientMembers(members) {
   return members.map(({ code, name }) => ({ code, name }));
 }
 
-export async function handleGroupRoutes(url, request, env, key, ctx) {
+export async function handleGroupRoutes(url, request: Request, env: Env, key, ctx) {
   if (!url.pathname.startsWith("/api/chat/groups") && url.pathname !== "/api/chat/group-invites") {
     return null;
   }
 
-  async function readBody(request, maxBytes = 16_000) {
+  async function readBody(request: Request, maxBytes = 16_000) {
     return readJSONLimitedShared(request, maxBytes);
   }
 
@@ -379,7 +387,7 @@ export async function handleGroupRoutes(url, request, env, key, ctx) {
       if (response) return response;
       throw error;
     }
-    const avatar = await env.STUDIQUO_DATA.get(`chat:group-avatar:${roomID}`, "json");
+    const avatar = await env.STUDIQUO_DATA.get<StoredImage>(`chat:group-avatar:${roomID}`, "json");
     if (!avatar) return json({ error: "Not found" }, 404);
     const bytes = Uint8Array.from(atob(avatar.data), c => c.charCodeAt(0));
     return new Response(bytes, {

@@ -8,9 +8,11 @@
 //   GET  /api/admin/audit-log
 // See docs/RUNBOOK.md RB-17.
 import { json, readJSONLimited } from "./http.ts";
-import { auditAdmin } from "./audit.js";
+import { auditAdmin } from "./audit.ts";
 import { SUSPENSION_PREFIX, CHAT_SUSPENSION_PREFIX } from "./session.ts";
 import { sendPush } from "./push.ts";
+import type { Env } from "./env.ts";
+import { nextCursor } from "./kv.ts";
 
 const WARNING = {
   title: "運営からのお知らせ",
@@ -22,7 +24,7 @@ const NOTE_MAX = 2_000;
 const requireJSON = request => (request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json");
 
 // Adds to the report's note without losing what the operator already wrote.
-async function resolveReport(env, id, line) {
+async function resolveReport(env: Env, id, line) {
   const row = await env.ADMIN_DB.prepare("SELECT admin_note FROM chat_reports WHERE id = ?").bind(id).first();
   const note = [row?.admin_note, line].filter(Boolean).join(" / ").slice(0, NOTE_MAX);
   await env.ADMIN_DB.prepare("UPDATE chat_reports SET status = 'resolved', admin_note = ?, updated_at = ? WHERE id = ?")
@@ -30,8 +32,8 @@ async function resolveReport(env, id, line) {
 }
 
 // The account behind a report's reported chat user, or why it can't be found.
-async function reportedAccount(env, reportID) {
-  const report = await env.ADMIN_DB.prepare("SELECT reported_key FROM chat_reports WHERE id = ?").bind(reportID).first();
+async function reportedAccount(env: Env, reportID) {
+  const report = await env.ADMIN_DB.prepare("SELECT reported_key FROM chat_reports WHERE id = ?").bind(reportID).first<{ reported_key: string }>();
   if (!report) return { response: json({ error: "Not found." }, 404) };
   const identityHash = await env.STUDIQUO_DATA.get(`chat-identity-of:${report.reported_key}`);
   if (!identityHash) {
@@ -43,7 +45,7 @@ async function reportedAccount(env, reportID) {
   return { identityHash };
 }
 
-export async function handleModerationActions(url, request, env) {
+export async function handleModerationActions(url, request: Request, env: Env) {
   const removeMatch = /^\/api\/admin\/chat-reports\/([0-9a-f-]{36})\/remove-message$/.exec(url.pathname);
   const warnMatch = /^\/api\/admin\/chat-reports\/([0-9a-f-]{36})\/warn$/.exec(url.pathname);
   const isAccounts = url.pathname.startsWith("/api/admin/accounts/");
@@ -58,17 +60,17 @@ export async function handleModerationActions(url, request, env) {
 
   if (url.pathname === "/api/admin/accounts/suspended" && request.method === "GET") {
     await auditAdmin(env, request, "account.list_suspended");
-    const suspended = [];
+    const suspended: Record<string, unknown>[] = [];
     for (const [scope, prefix] of Object.entries(PREFIXES)) {
-      const names = [];
-      let cursor;
+      const names: string[] = [];
+      let cursor: string | undefined;
       do {
         const page = await env.STUDIQUO_DATA.list({ prefix, cursor });
         names.push(...page.keys.map(key => key.name));
-        cursor = page.list_complete ? undefined : page.cursor;
+        cursor = nextCursor(page);
       } while (cursor);
       for (const name of names) {
-        suspended.push({ scope, suspensionID: name.slice(prefix.length), ...(await env.STUDIQUO_DATA.get(name, "json")) });
+        suspended.push({ scope, suspensionID: name.slice(prefix.length), ...(await env.STUDIQUO_DATA.get<Record<string, unknown>>(name, "json")) });
       }
     }
     return json({ suspended });
@@ -78,7 +80,7 @@ export async function handleModerationActions(url, request, env) {
   if (!requireJSON(request)) return json({ error: "Content-Type must be application/json." }, 415);
 
   if (removeMatch) {
-    const report = await env.ADMIN_DB.prepare("SELECT room_id, message_id FROM chat_reports WHERE id = ?").bind(removeMatch[1]).first();
+    const report = await env.ADMIN_DB.prepare("SELECT room_id, message_id FROM chat_reports WHERE id = ?").bind(removeMatch[1]).first<{ room_id: string; message_id: string }>();
     if (!report) return json({ error: "Not found." }, 404);
     await auditAdmin(env, request, "chat_report.remove_message", removeMatch[1]);
     const result = await env.CHAT_ROOM.getByName(report.room_id).moderatorRemoveMessage(report.message_id);
@@ -88,7 +90,7 @@ export async function handleModerationActions(url, request, env) {
   }
 
   if (warnMatch) {
-    const report = await env.ADMIN_DB.prepare("SELECT reported_key FROM chat_reports WHERE id = ?").bind(warnMatch[1]).first();
+    const report = await env.ADMIN_DB.prepare("SELECT reported_key FROM chat_reports WHERE id = ?").bind(warnMatch[1]).first<{ reported_key: string }>();
     if (!report) return json({ error: "Not found." }, 404);
     if (report.reported_key.startsWith("deleted:")) return json({ error: "That account has been deleted." }, 410);
     await auditAdmin(env, request, "chat_report.warn", warnMatch[1]);

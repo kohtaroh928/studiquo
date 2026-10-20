@@ -3,9 +3,9 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { sha256Hex } from "./auth.ts";
-import { deleteAccount, startAccountDeletion } from "./account-deletion.js";
-import { processPendingDeletions, runPrivacyRetention, runScheduledPrivacyWork } from "./privacy-retention.js";
-import { handleAdminWebhook } from "./admin.js";
+import { deleteAccount, startAccountDeletion } from "./account-deletion.ts";
+import { processPendingDeletions, runPrivacyRetention, runScheduledPrivacyWork } from "./privacy-retention.ts";
+import { handleAdminWebhook } from "./admin.ts";
 import { mintSession, realSession } from "./session.ts";
 
 // A real (in-memory SQLite) ADMIN_DB with every migration applied, so the

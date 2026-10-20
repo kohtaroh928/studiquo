@@ -10,7 +10,7 @@
 // Text and screenshots remain in the Access-protected dashboard. Slack
 // receives only metadata and a dashboard link, never private report content.
 import { accessAllowed } from "./access.ts";
-import { auditAdmin } from "./audit.js";
+import { auditAdmin } from "./audit.ts";
 import { isRevoked } from "./revocation.ts";
 import { isExpired } from "./token.ts";
 import { checkRateLimit } from "./rate-limit.ts";
@@ -18,6 +18,8 @@ import { bearerToken, sha256Hex } from "./auth.ts";
 import { json, binaryHeaders, readJSONLimited } from "./http.ts";
 import { realSession } from "./session.ts";
 import { postSlackBlocks } from "./slack.ts";
+import type { Env } from "./env.ts";
+import type { IssueReportRecord, StoredImage } from "./records.ts";
 
 const MAX_DESCRIPTION_LENGTH = 2_000;
 // A JPEG/PNG screenshot base64-encoded is ~33% larger than its raw bytes;
@@ -36,7 +38,7 @@ function truncate(value, max) {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 
-async function postToSlack(env, report, dashboardURL) {
+async function postToSlack(env: Env, report, dashboardURL) {
   if (!env.SLACK_ISSUE_REPORT_WEBHOOK_URL) return;
   const context = [
     report.appVersion && `v${report.appVersion}`,
@@ -59,7 +61,7 @@ async function postToSlack(env, report, dashboardURL) {
 // Mirrors the report into D1 so the admin dashboard can list it and track
 // whether it's been handled. The KV copy above stays the durable record, so
 // a D1 hiccup is logged rather than failing the person's report.
-async function recordInDashboard(env, report) {
+async function recordInDashboard(env: Env, report) {
   if (!env.ADMIN_DB) return;
   try {
     await env.ADMIN_DB.prepare(
@@ -75,15 +77,15 @@ async function recordInDashboard(env, report) {
   }
 }
 
-export async function handleIssueReports(url, request, env) {
+export async function handleIssueReports(url, request: Request, env: Env) {
   if (!url.pathname.startsWith("/api/issue-reports")) return null;
 
   const screenshotMatch = /^\/api\/issue-reports\/([0-9a-f-]{36})\/screenshot$/.exec(url.pathname);
   if (screenshotMatch && request.method === "GET") {
     if (!await accessAllowed(request, env)) return json({ error: "Unauthorized." }, 401);
-    const report = await env.STUDIQUO_DATA.get(`issue-report:${screenshotMatch[1]}`, "json");
+    const report = await env.STUDIQUO_DATA.get<IssueReportRecord>(`issue-report:${screenshotMatch[1]}`, "json");
     if (!report || report.createdAt + REPORT_TTL_SECONDS * 1000 <= Date.now()) return json({ error: "Not found" }, 404);
-    const screenshot = await env.STUDIQUO_DATA.get(`issue-report-screenshot:${screenshotMatch[1]}`, "json");
+    const screenshot = await env.STUDIQUO_DATA.get<StoredImage>(`issue-report-screenshot:${screenshotMatch[1]}`, "json");
     if (!screenshot) return json({ error: "Not found" }, 404);
     if (!env.ADMIN_DB) return json({ error: "Unavailable." }, 503);
     await auditAdmin(env, request, "issue_report.screenshot_view", screenshotMatch[1]);

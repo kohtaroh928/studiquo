@@ -14,7 +14,7 @@ import type { DeletionState, SessionRecord } from "./records.ts";
 // states carry the count they were written under. Comparing counts tells an
 // earlier life's leftovers from the current one without trusting clocks that
 // differ between the isolates serving a request and the one running a retry.
-export function generationOf(state: DeletionState | null | undefined): number {
+export function generationOf(state: { generation?: number } | null | undefined): number {
   return Number.isFinite(state?.generation) ? state.generation : 0;
 }
 
