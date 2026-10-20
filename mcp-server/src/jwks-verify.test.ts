@@ -1,13 +1,13 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import { jwksVerifier } from "./jwks-verify.ts";
+import { partialEnv } from "./test-env.ts";
 
 function makeEnv() {
   const store = new Map();
   const puts = [];
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) {
         const raw = store.get(key) ?? null;
@@ -19,7 +19,7 @@ function makeEnv() {
       },
     },
     _puts: puts,
-  };
+  });
 }
 
 async function makeKey(kid = "kid-1") {

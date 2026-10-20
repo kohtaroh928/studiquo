@@ -1,13 +1,13 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import { generateKeyPair, exportPKCS8, jwtVerify } from "jose";
 import test from "node:test";
 import { sendPush } from "./push.ts";
+import { partialEnv } from "./test-env.ts";
 
 async function fixture() {
   const values = new Map();
   const { privateKey, publicKey } = await generateKeyPair("ES256", { extractable: true });
-  const env = {
+  const env = partialEnv({
     APNS_AUTH_KEY: await exportPKCS8(privateKey),
     APNS_KEY_ID: "KEY1234567",
     APNS_TEAM_ID: "TEAM123456",
@@ -20,7 +20,7 @@ async function fixture() {
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
     },
-  };
+  });
   return { env, values, publicKey };
 }
 

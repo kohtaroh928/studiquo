@@ -1,8 +1,8 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import worker from "./app.ts";
+import { partialCtx, partialEnv } from "./test-env.ts";
 
 // Covers app.ts's own usage of the MCP_INBOX contract — how the /mcp tool
 // handlers and the /api/mcp/inbox routes route between a paired external
@@ -55,7 +55,7 @@ function fakeMCPInboxBinding() {
 
 function environment() {
   const values = new Map();
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) {
         const value = values.get(key) ?? null;
@@ -71,10 +71,10 @@ function environment() {
     RATE_LIMIT_MCP_AUTHORIZE: { async limit() { return { success: true }; } },
     RATE_LIMIT_MCP_TOKEN: { async limit() { return { success: true }; } },
     RATE_LIMIT_MCP_PAIR: { async limit() { return { success: true }; } },
-  };
+  });
 }
 
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 
 function freshDeviceToken(suffix) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(64)}`;
@@ -92,7 +92,7 @@ async function signIn(env, deviceToken, sub) {
 // access token — the same sequence mcp-oauth.test.js's one big test
 // performs inline, pulled out here so each test below can ask for exactly
 // the scope it needs.
-async function pairMCPClient(env, deviceToken, { scope } = {}) {
+async function pairMCPClient(env, deviceToken, { scope }: { scope?: any } = {}) {
   const redirectUri = "https://claude.example/callback";
   const registered = await fetchApp(env, "/oauth/register", {
     method: "POST",
@@ -173,7 +173,7 @@ test("a device connection with no paired MCP account queues writes locally inste
   // paired-account shape ({ id, status: "pending" }) — no MCP_INBOX id at all.
   assert.deepEqual(value, { queued: true, deckTitle: "英単語", cardCount: 1 });
 
-  const queued = await env.STUDIQUO_DATA.get(`actions:${hash(deviceToken)}`, "json");
+  const queued: any = await env.STUDIQUO_DATA.get(`actions:${hash(deviceToken)}`, "json");
   assert.equal(queued.length, 1);
   assert.equal(queued[0].type, "create_flashcards");
 });

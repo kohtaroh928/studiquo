@@ -1,4 +1,3 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
@@ -38,7 +37,7 @@ function fakeCloudflareLimiter(limit = 5) {
 
 function environment() {
   const values = new Map();
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) {
         let value = values.get(key) ?? null;
@@ -58,7 +57,7 @@ function environment() {
     RATE_LIMIT_PASSKEY_LOGIN_VERIFY: fakeCloudflareLimiter(),
     RATE_LIMIT_PASSKEY_REGISTER_OPTIONS: fakeCloudflareLimiter(),
     RATE_LIMIT_PASSKEY_REGISTER_VERIFY: fakeCloudflareLimiter(),
-  };
+  });
 }
 
 function registerOptionsRequest(token) {
@@ -106,6 +105,7 @@ test("passkey login resolves to the same canonical account as another verified l
     provider: "google", sub: "google-sub-1", email: "person@example.com", emailVerified: true,
   });
 
+  // @ts-expect-error mintPasskeySession takes two arguments; the third one is ignored
   const token = await mintPasskeySession(env, "person@example.com", "p".repeat(40));
 
   assert.equal((await realSession(env, token)).sub, "google:google-sub-1");
@@ -311,7 +311,7 @@ test("the e-mail check happens before anything is stored for the attempt", async
   await env.STUDIQUO_DATA.put("email-account-owner:victim@example.com", "google:victim-sub");
   const stored = [];
   const realPut = env.STUDIQUO_DATA.put;
-  env.STUDIQUO_DATA.put = async (key, value, options) => { stored.push(key); return realPut(key, value, options); };
+  (env.STUDIQUO_DATA as any).put = async (key, value, options) => { stored.push(key); return realPut(key, value, options); };
   const request = registerFor(freshToken("w"), "victim@example.com");
   await handlePasskeys(new URL(request.url), request, env);
   assert.deepEqual(stored.filter(key => key.startsWith("passkeys:")), [], "no challenge or credential is left behind");
@@ -320,6 +320,7 @@ test("the e-mail check happens before anything is stored for the attempt", async
 // --- reauthentication with a passkey -------------------------------------
 import { generateKeyPairSync, createSign } from "node:crypto";
 import { indexAccountPasskey, requireRecentPasskey } from "./passkey-policy.ts";
+import { partialEnv } from "./test-env.ts";
 
 const RP_ID = "api.studiquo.app";
 const b64url = buffer => Buffer.from(buffer).toString("base64url");
@@ -465,7 +466,7 @@ test("remove-all: needs the passkey's check, even for one registered a moment ag
   );
   await seedPasskey(env, newPasskey(), "cred-new");
   const record = await env.STUDIQUO_DATA.get("passkeys:credential:cred-new", "json");
-  await env.STUDIQUO_DATA.put("passkeys:credential:cred-new", JSON.stringify({ ...record, createdAt: Date.now() }));
+  await env.STUDIQUO_DATA.put("passkeys:credential:cred-new", JSON.stringify({ ...(record as object), createdAt: Date.now() }));
   const refused = await removeAll();
   assert.equal(refused.status, 403);
   assert.equal((await refused.json()).action, "remove-passkeys");
@@ -477,7 +478,7 @@ test("reauth: a passkey registered a moment ago can vouch for the session", asyn
   const token = freshToken("h");
   await seedPasskey(env, newPasskey(), "cred-fresh");
   const record = await env.STUDIQUO_DATA.get("passkeys:credential:cred-fresh", "json");
-  await env.STUDIQUO_DATA.put("passkeys:credential:cred-fresh", JSON.stringify({ ...record, createdAt: Date.now() }));
+  await env.STUDIQUO_DATA.put("passkeys:credential:cred-fresh", JSON.stringify({ ...(record as object), createdAt: Date.now() }));
   assert.equal((await reauthOptions(env, token)).status, 200);
 });
 

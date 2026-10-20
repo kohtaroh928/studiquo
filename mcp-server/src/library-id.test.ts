@@ -1,14 +1,14 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { eraseLibraryID, getOrCreateLibraryID, libraryIdObjectName, newLibraryID } from "./library-id.ts";
+import { partialState } from "./test-env.ts";
 
 function fakeContext() {
   const values = new Map();
   // blockConcurrencyWhile lets one piece of work run at a time, as a Durable
   // Object does.
   let turn = Promise.resolve();
-  return {
+  return partialState({
     storage: {
       async get(key) { return values.get(key); },
       async put(key, value) { values.set(key, value); },
@@ -19,7 +19,7 @@ function fakeContext() {
       turn = run.catch(() => {});
       return run;
     },
-  };
+  });
 }
 
 test("an id is 64 lowercase hex characters, and a new one is different each time", () => {
