@@ -635,3 +635,53 @@ test("a held reply cut off by a broken connection still shows what arrived, filt
     assert.ok(!/evil\.example/.test(result.text));
   } finally { globalThis.fetch = original; }
 });
+
+test("a teen's held reply that was cut off still goes through the moderation screen: a flagged partial gets the notice, a clean one does not", async () => {
+  const original = globalThis.fetch;
+  let flag = true, moderated = 0;
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes("/moderations")) {
+      moderated++;
+      const hit = flag && JSON.parse(options.body).input.some((t) => t.includes("不適切"));
+      return new Response(JSON.stringify({ results: [{ categories: { violence: hit } }] }));
+    }
+    let reads = 0;
+    return new Response(new ReadableStream({
+      pull(controller) {
+        if (reads++ === 0) controller.enqueue(new TextEncoder().encode(sse(["不適切かもしれない回答の途中です。"]).split("data: {\"type\":\"response.completed\"")[0]));
+        else controller.error(new Error("connection reset"));
+      },
+    }));
+  };
+  try {
+    const screened = env({ AI_MODERATION: undefined });
+    const run = (age) => chat(screened, { messages: [{ role: "user", text: "質問" }], noteContext: "共有ノートの本文" }, { "X-Studiquo-Age": age });
+    const teen = textEvents((await run("teen")).text).map((e) => e.text);
+    assert.equal(teen[0], "不適切かもしれない回答の途中です。");
+    assert.match(teen[1], /保護者や先生に相談/);
+    assert.match(teen.at(-1), /通信が中断しました/);
+    flag = false;
+    const clean = textEvents((await run("teen")).text).map((e) => e.text);
+    assert.ok(!clean.some((t) => /保護者や先生/.test(t)));
+    flag = true; moderated = 0;
+    const adult = textEvents((await run("adult")).text).map((e) => e.text);
+    assert.ok(!adult.some((t) => /保護者や先生/.test(t)));
+    assert.equal(moderated, 1, "only the student's note and question were screened for an adult");
+  } finally { globalThis.fetch = original; }
+});
+
+test("a long held reply is cut for the screen by character, never inside a surrogate pair", async () => {
+  const original = globalThis.fetch;
+  const long = "あ".repeat(7999) + "😀" + "い".repeat(50);
+  let screened = "";
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes("/moderations")) { screened = JSON.parse(options.body).input.at(-1); return new Response(JSON.stringify({ results: [{ categories: {} }] })); }
+    return new Response(sse([long]));
+  };
+  try {
+    const result = await chat(env({ AI_MODERATION: undefined }), { messages: [{ role: "user", text: "質問" }], noteContext: "共有ノートの本文" }, { "X-Studiquo-Age": "teen" });
+    assert.equal(textEvents(result.text).map((e) => e.text)[0], long, "the student gets the whole reply");
+    assert.equal(screened, "あ".repeat(7999), "the screen sees 7999 characters, not half of the emoji");
+    assert.ok(!/[\ud800-\udbff]$/u.test(screened));
+  } finally { globalThis.fetch = original; }
+});
