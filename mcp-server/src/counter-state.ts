@@ -6,8 +6,16 @@
 // window's identity, so a refund can tell "the window I took from" apart from
 // a newer one that began after it ended.
 
+/** A fixed window: how much has been taken from it and when it ends (epoch ms). */
+export interface CounterState {
+  count: number;
+  windowEndsAt: number;
+}
+
 /** Takes `amount` if the window (new or current) has room; never creates state when it refuses. */
-export function takeFrom(stored, now, limit, windowSeconds, amount) {
+export function takeFrom(
+  stored: CounterState | null | undefined, now: number, limit: number, windowSeconds: number, amount: number,
+): { ok: false } | { ok: true; state: CounterState; windowEndsAt: number } {
   const state = stored && now < stored.windowEndsAt
     ? { ...stored }
     : { count: 0, windowEndsAt: now + windowSeconds * 1000 };
@@ -22,7 +30,7 @@ export function takeFrom(stored, now, limit, windowSeconds, amount) {
  * the window has already ended, or a different (newer) window is current.
  * The count never goes below zero.
  */
-export function giveTo(stored, now, amount, windowEndsAt) {
+export function giveTo(stored: CounterState | null | undefined, now: number, amount: number, windowEndsAt: number): CounterState | null {
   if (!stored || now >= stored.windowEndsAt || stored.windowEndsAt !== windowEndsAt) return null;
   return { ...stored, count: Math.max(0, stored.count - amount) };
 }

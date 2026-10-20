@@ -29,7 +29,7 @@ export const DOCUMENT_ROOM_SCHEMA = `
 // Erases the whole room (the document text, every proposal, and the member
 // list) and returns the members it had, so the caller can drop their entries
 // in the per-account room index. Safe to run again on an emptied room.
-export function purgeRoomData(sql) {
+export function purgeRoomData(sql: SqlStorage) {
   const members = sql.exec("SELECT user_key FROM participants").toArray().map(row => row.user_key);
   sql.exec("DELETE FROM changes");
   sql.exec("DELETE FROM blocks");
@@ -42,7 +42,7 @@ export function purgeRoomData(sql) {
 // already part of the owner's document and stays, but without their key or the
 // text it replaced. A room left with nobody in it is erased. Returns "removed",
 // "purged" (they were the last one), or "absent".
-export function removeParticipantData(sql, userKey) {
+export function removeParticipantData(sql: SqlStorage, userKey: string) {
   const present = sql.exec("SELECT 1 AS present FROM participants WHERE user_key = ?", userKey).toArray().length > 0;
   sql.exec("DELETE FROM changes WHERE author_key = ? AND status IN ('pending', 'rejected')", userKey);
   sql.exec("UPDATE changes SET author_key = '', previous_text = '' WHERE author_key = ?", userKey);
@@ -58,10 +58,10 @@ export function removeParticipantData(sql, userKey) {
 // The members of the room if `userKey` is its owner, otherwise null. Lets the
 // caller forget the members' index entries before the room is erased, so a
 // failure half-way never leaves entries that nothing can find again.
-export function membersIfOwner(sql, userKey) {
-  const role = sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray()[0]?.role;
+export function membersIfOwner(sql: SqlStorage, userKey: string): string[] | null {
+  const role = sql.exec<{ role: string }>("SELECT role FROM participants WHERE user_key = ?", userKey).toArray()[0]?.role;
   if (role !== "owner") return null;
-  return sql.exec("SELECT user_key FROM participants").toArray().map(row => row.user_key);
+  return sql.exec<{ user_key: string }>("SELECT user_key FROM participants").toArray().map(row => row.user_key);
 }
 
 // Deletes `userKey`'s account from the room, judged by what the room itself
@@ -69,7 +69,7 @@ export function membersIfOwner(sql, userKey) {
 // been erased and re-created by someone else, or an index that is out of date,
 // must never cost another person their document. The owner's room is erased;
 // anyone else is taken out. Returns "purged-owner", "removed", "purged" or "absent".
-export function removeAccountData(sql, userKey) {
+export function removeAccountData(sql: SqlStorage, userKey: string) {
   if (membersIfOwner(sql, userKey)) {
     purgeRoomData(sql);
     return "purged-owner";
@@ -80,6 +80,6 @@ export function removeAccountData(sql, userKey) {
 // `doc-room:<member key>:<room id>` -> the member's role. Lists the rooms an
 // account is in, so deleting the account can find them: a room is reachable
 // only by its id, and knows its members only by opaque keys.
-export function roomMembershipKey(userKey, roomID) {
+export function roomMembershipKey(userKey: string, roomID) {
   return `doc-room:${userKey}:${roomID}`;
 }

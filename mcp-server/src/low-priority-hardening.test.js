@@ -26,7 +26,7 @@ register(
   import.meta.url
 );
 
-const { UserRegistry } = await import("./user-registry.js");
+const { UserRegistry } = await import("./user-registry.ts");
 const { default: worker } = await import("./app.js");
 const { normalizeIP, clientKey } = await import("./rate-limit.ts");
 const { appGateRejection } = await import("./app-gate.ts");

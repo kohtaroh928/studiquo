@@ -1,7 +1,7 @@
 import { blockedBetween } from "./block-check.ts";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { sendPush } from "./push.ts";
-import { roomMembershipKey } from "./document-room-store.js";
+import { roomMembershipKey } from "./document-room-store.ts";
 import type { Env } from "./env.ts";
 import { nextCursor } from "./kv.ts";
 import type { ChatUser } from "./records.ts";

@@ -3,26 +3,23 @@
 // wrangler.jsonc (`wrangler secret put`, the dashboard), so a generated file
 // would leave them out. Keep the bindings in step with wrangler.jsonc.
 import type { JWTVerifyGetKey } from "jose";
-
-// A Durable Object namespace whose stubs accept any method call. Each one gets
-// its class (DurableObjectNamespace<ChatRoom>) in the phase that converts it.
-export type UntypedNamespace = Omit<DurableObjectNamespace, "get" | "getByName" | "getExisting"> & {
-  get(id: DurableObjectId, options?: DurableObjectGetOptions): any;
-  getByName(name: string, options?: DurableObjectGetOptions): any;
-  getExisting(id: DurableObjectId, options?: DurableObjectGetOptions): any;
-};
+import type { ChatRoom } from "./chat-room.ts";
+import type { DocumentRoom } from "./document-room.ts";
+import type { MCPInbox } from "./mcp-inbox.ts";
+import type { RateCounter } from "./rate-counter.ts";
+import type { UserRegistry } from "./user-registry.ts";
 
 export interface Env {
-  // Storage and Durable Objects. See UntypedNamespace above.
+  // Storage and Durable Objects.
   STUDIQUO_DATA: KVNamespace;
   STUDIQUO_SNAPSHOT?: KVNamespace;
   STUDIQUO_ACTIONS?: KVNamespace;
   ADMIN_DB: D1Database;
-  CHAT_ROOM: UntypedNamespace;
-  USER_REGISTRY: UntypedNamespace;
-  DOCUMENT_ROOM: UntypedNamespace;
-  RATE_COUNTER: UntypedNamespace;
-  MCP_INBOX: UntypedNamespace;
+  CHAT_ROOM: DurableObjectNamespace<ChatRoom>;
+  USER_REGISTRY: DurableObjectNamespace<UserRegistry>;
+  DOCUMENT_ROOM: DurableObjectNamespace<DocumentRoom>;
+  RATE_COUNTER: DurableObjectNamespace<RateCounter>;
+  MCP_INBOX: DurableObjectNamespace<MCPInbox>;
 
   // Fixed-window limiters declared under `ratelimits` in wrangler.jsonc.
   RATE_LIMIT_ADMIN_WEBHOOK?: RateLimit;

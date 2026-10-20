@@ -299,7 +299,7 @@ export async function handleGroupRoutes(url, request: Request, env: Env, key, ct
         // actually succeed — see resolveIncomingGroupInvite's own comment.
         // Since it didn't, put the invitee back where they were instead of
         // leaving a phantom group membership with no way to retry.
-        const invite = result.invite ?? {};
+        const invite: { name?: string; inviterCode?: string; inviterName?: string } = result.invite ?? {};
         await env.USER_REGISTRY.getByName(key)
           .undoAcceptedGroupInvite(key, roomID, invite.name, invite.inviterCode, invite.inviterName);
         return response;

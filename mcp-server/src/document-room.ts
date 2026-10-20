@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
-import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, removeAccountData } from "./document-room-store.js";
+import type { Env } from "./env.ts";
+import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, removeAccountData } from "./document-room-store.ts";
 
 // Mirrors chat-room.js's ChatRoom shape closely — same Durable Object
 // pattern, same per-room SQLite storage, same requireParticipant-throws-
@@ -11,8 +12,8 @@ import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, removeAccountData } from "./docum
 // character-level operational-transform merging is needed, since two
 // people's edits to the same block simply sit as two independent pending
 // proposals until a reviewer picks one (or both, in sequence).
-export class DocumentRoom extends DurableObject {
-  constructor(ctx, env) {
+export class DocumentRoom extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       this.ctx.storage.sql.exec(DOCUMENT_ROOM_SCHEMA);
@@ -36,7 +37,7 @@ export class DocumentRoom extends DurableObject {
   // session (dropping every invited editor/reviewer back out) partway
   // through.
   async initialize(ownerKey, blocks) {
-    const existing = this.ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM participants").one().count;
+    const existing = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (existing > 0) return { status: "already_initialized" };
     this.ctx.storage.sql.exec("INSERT OR IGNORE INTO participants (user_key, role) VALUES (?, 'owner')", ownerKey);
     // Capped the same way ChatRoom.initialize caps its participant list —
@@ -69,7 +70,7 @@ export class DocumentRoom extends DurableObject {
 
   async listParticipants(userKey) {
     this.requireParticipant(userKey);
-    return this.ctx.storage.sql.exec("SELECT user_key, role FROM participants").toArray()
+    return this.ctx.storage.sql.exec<{ user_key: string; role: string }>("SELECT user_key, role FROM participants").toArray()
       .map(row => ({ userKey: row.user_key, role: row.role }));
   }
 
@@ -144,7 +145,7 @@ export class DocumentRoom extends DurableObject {
   }
 
   // The room's members if `userKey` is its owner, otherwise null.
-  async ownerMembers(userKey) {
+  async ownerMembers(userKey): Promise<string[] | null> {
     return membersIfOwner(this.ctx.storage.sql, userKey);
   }
 

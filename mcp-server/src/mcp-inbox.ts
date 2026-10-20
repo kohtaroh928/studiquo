@@ -1,13 +1,16 @@
 import { DurableObject } from "cloudflare:workers";
+import type { Env } from "./env.ts";
 
 // One object per Studiquo account serializes submissions and acknowledgements.
-export class MCPInbox extends DurableObject {
+export class MCPInbox extends DurableObject<Env> {
+  declare sql: SqlStorage;
+
   async purge() {
     this.ctx.storage.sql.exec("DELETE FROM items");
     this.ctx.storage.sql.exec("DELETE FROM consumed_tokens");
     return { deleted: true };
   }
-  constructor(ctx, env) {
+  constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS items (
@@ -27,7 +30,7 @@ export class MCPInbox extends DurableObject {
 
   async enqueue(id, kind, payload, source) {
     this.sql.exec("DELETE FROM items WHERE status = 'imported' AND imported_at < ?", Date.now() - 90 * 24 * 3600 * 1000);
-    const pending = [...this.sql.exec("SELECT COUNT(*) AS count FROM items WHERE status = 'pending'")][0].count;
+    const pending = [...this.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM items WHERE status = 'pending'")][0].count;
     if (pending >= 100) throw new Error("Studiquo has 100 pending imports. Open the iPad app before sending more.");
     this.sql.exec(
       "INSERT OR IGNORE INTO items (id, kind, payload, source, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -37,7 +40,7 @@ export class MCPInbox extends DurableObject {
   }
 
   async list() {
-    return [...this.sql.exec(
+    return [...this.sql.exec<{ id: string; kind: string; payload: string; source: string; status: string; created_at: number }>(
       "SELECT id, kind, payload, source, status, created_at FROM items WHERE status = 'pending' ORDER BY created_at LIMIT 100"
     )].map(row => ({ ...row, payload: JSON.parse(row.payload) }));
   }

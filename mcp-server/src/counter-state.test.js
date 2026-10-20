@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { takeFrom, giveTo } from "./counter-state.js";
+import { takeFrom, giveTo } from "./counter-state.ts";
 
 const T0 = 1_000_000;
 
