@@ -1,3 +1,5 @@
+import type { Env } from "./env.ts";
+
 /**
  * Anthropic proxy, the same shape as ai.js's own `callGemini`: the app
  * never holds `ANTHROPIC_API_KEY`, only this Worker does, and this file
@@ -17,7 +19,7 @@ const MAX_OUTPUT_TOKENS = 4096;
 
 /** One turn's content blocks: its text, plus any images attached to it. */
 function contentBlocks(turn, images) {
-  const blocks = [{ type: "text", text: String(turn.text ?? "") }];
+  const blocks: Record<string, unknown>[] = [{ type: "text", text: String(turn.text ?? "") }];
   for (const image of images) {
     blocks.push({ type: "image", source: { type: "base64", media_type: "image/png", data: image } });
   }
@@ -32,7 +34,7 @@ function contentBlocks(turn, images) {
  * turn only, matching how the app's own screenshot-attach flow works —
  * there is always at most one turn with an attachment, the one just sent.
  */
-export async function callAnthropicChat(env, { model, systemInstruction, turns, images = [] }) {
+export async function callAnthropicChat(env: Env, { model, systemInstruction, turns, images = [] }) {
   const key = env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("ANTHROPIC_API_KEY is not configured on this Worker.");
 

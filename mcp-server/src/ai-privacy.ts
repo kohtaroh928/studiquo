@@ -1,6 +1,7 @@
 import { json, readJSONLimited } from "./http.ts";
-import { allowedModelIds } from "./ai.js";
+import { allowedModelIds } from "./ai.ts";
 import { rememberParsedBody } from "./ai-body.ts";
+import type { Env } from "./env.ts";
 
 // The base provider is OpenAI. Its terms forbid directing the service at, or
 // knowingly serving, children under 13, and teens need a guardian's consent,
@@ -9,7 +10,7 @@ import { rememberParsedBody } from "./ai-body.ts";
 export const AI_CONSENT_VERSION = "openai-v1";
 export const AI_AGE_BANDS = new Set(["adult", "teen"]);
 
-export async function aiPrivacyRejection(request, env) {
+export async function aiPrivacyRejection(request: Request, env: Env) {
   if (env.AI_PROVIDER_APPROVED !== "true") {
     return json({ error: "AI機能は公開準備中です。学習資料は送信されません。" }, 503);
   }

@@ -12,12 +12,13 @@
  * response schema, and the app only supplies content.
  */
 
-import { consumeCredits, creditUsage, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES } from "./ai-credits.js";
+import { consumeCredits, creditUsage, accountCounterKey, DEFAULT_MODEL, LIMIT_MESSAGES } from "./ai-credits.ts";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { takeParsedBody } from "./ai-body.ts";
 import { sendPush } from "./push.ts";
-import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.js";
-import { callOpenAIChat, callOpenAIStructured, moderationRejection, MODERATION_UNAVAILABLE, extractDeltaText as openaiDeltaText } from "./openai.js";
+import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.ts";
+import { callOpenAIChat, callOpenAIStructured, moderationRejection, MODERATION_UNAVAILABLE, extractDeltaText as openaiDeltaText } from "./openai.ts";
+import type { Env } from "./env.ts";
 
 /**
  * Which chat models each plan may pick (see entitlements.js's `getPlan` for
@@ -57,7 +58,7 @@ function providerFor(modelId) {
 
 /** Resolves a PLAN_MODELS logical OpenAI name to the real id this Worker is
  * configured with, or `null` if nobody has set it yet (see openai.js). */
-function resolveOpenAIModel(env, logicalName) {
+function resolveOpenAIModel(env: Env, logicalName) {
   if (logicalName === "openai-luna") return env.OPENAI_LUNA_MODEL || null;
   if (logicalName === "openai-terra") return env.OPENAI_TERRA_MODEL || null;
   if (logicalName === "openai-sol") return env.OPENAI_SOL_MODEL || null;
@@ -128,7 +129,7 @@ const DEFAULT_GLOBAL_CHAT_LIMIT = 1500;
 const DEFAULT_GLOBAL_GRADING_LIMIT = 150;
 const DEFAULT_GLOBAL_REVIEW_LIMIT = 500;
 
-async function readJSONLimited(request, maximumBytes = 20_000_000) {
+async function readJSONLimited(request: Request, maximumBytes = 20_000_000) {
   const parsed = takeParsedBody(request);
   if (parsed !== undefined) return parsed;
   return readJSONLimitedShared(request, maximumBytes);
@@ -143,7 +144,7 @@ const DAY_SECONDS = 86_400;
  * when the upstream refuses before producing anything. `kind` is the feature, `model` the
  * model that will answer.
  */
-async function creditGate(env, { account, plan, kind, model, globalBucket, globalLimit }) {
+async function creditGate(env: Env, { account, plan, kind, model, globalBucket, globalLimit }) {
   const result = await consumeCredits(env, { accountKey: account, plan, kind, model, globalBucket, globalLimit });
   if (result.ok) return { response: null, refund: result.refund };
   const response = json({ error: LIMIT_MESSAGES[result.window], code: "ai_limit", window: result.window }, 429);
@@ -156,7 +157,7 @@ async function creditGate(env, { account, plan, kind, model, globalBucket, globa
  * screening is a call to the provider, and an account that is over its limits
  * must be refused without costing one). A rejection hands the credits back.
  */
-async function moderateOrRefund(env, gate, texts) {
+async function moderateOrRefund(env: Env, gate, texts) {
   const blocked = await moderationRejection(env, texts);
   if (!blocked) return null;
   await gate.refund();
@@ -203,7 +204,7 @@ const CHAT_SYSTEM = `あなたは学習アプリ「Studiquo」に組み込まれ
  * to parse regardless of which provider's full event envelope it came
  * from.
  */
-async function handleChat(request, env, key, ctx, plan, account) {
+async function handleChat(request: Request, env: Env, key, ctx, plan, account) {
   const payload = await readJSONLimited(request);
   const turns = Array.isArray(payload?.messages) ? payload.messages : [];
   if (turns.length === 0) return json({ error: "messages is required." }, 400);
@@ -526,7 +527,7 @@ const GRADE_SCHEMA = {
   required: ["score", "maxScore", "verdict", "criteria", "issues"],
 };
 
-async function handleRubric(request, env, key, ctx, plan, account) {
+async function handleRubric(request: Request, env: Env, key, ctx, plan, account) {
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 20_000);
   const modelAnswer = String(payload?.modelAnswer ?? "").trim().slice(0, 30_000);
@@ -684,7 +685,7 @@ function streamJSON(env, { refund = async () => {}, model, account, systemInstru
   });
 }
 
-async function handleGrade(request, env, key, ctx, plan, account) {
+async function handleGrade(request: Request, env: Env, key, ctx, plan, account) {
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 20_000);
   const answerText = String(payload?.answerText ?? "").trim().slice(0, 30_000);
@@ -782,7 +783,7 @@ const REVIEW_SCHEMA = {
   required: ["isStudyRelevant", "explanationMarkdown", "quiz"],
 };
 
-async function handleReview(request, env, key, ctx, plan, account) {
+async function handleReview(request: Request, env: Env, key, ctx, plan, account) {
   const payload = await readJSONLimited(request);
   const question = String(payload?.question ?? "").trim().slice(0, 4_000);
   if (!question) return json({ error: "question is required." }, 400);
@@ -839,12 +840,12 @@ const AI_PATHS = new Set(["/api/ai/chat", "/api/ai/rubric", "/api/ai/grade", "/a
  * from the 403 (model not in your plan) and 429 (daily cap) answers. Exported
  * so app.js can refuse such an account before it reads a request body.
  */
-export function subscriptionRequiredResponse(plan, url, request) {
+export function subscriptionRequiredResponse(plan, url, request: Request) {
   if (request.method !== "POST" || plan !== "free" || !AI_PATHS.has(url.pathname)) return null;
   return json({ error: "AI機能のご利用にはStandard以上のプランが必要です。", code: "subscription_required" }, 402);
 }
 
-export async function handleAI(url, request, env, key, ctx, session, plan) {
+export async function handleAI(url, request: Request, env: Env, key, ctx, session, plan) {
   const effectivePlan = plan ?? "standard";
   // Read-only: what is left of the tightest window, for the usage header. Costs nothing.
   if (url.pathname === "/api/ai/usage" && request.method === "GET") {

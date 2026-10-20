@@ -1,10 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import * as z from "zod/v4";
-import { handleAI, subscriptionRequiredResponse } from "./ai.js";
-import { accountCounterKey } from "./ai-credits.js";
-import { aiPrivacyRejection } from "./ai-privacy.js";
-import { getPlan, paywallEnabled } from "./entitlements.js";
+import { handleAI, subscriptionRequiredResponse } from "./ai.ts";
+import { accountCounterKey } from "./ai-credits.ts";
+import { aiPrivacyRejection } from "./ai-privacy.ts";
+import { getPlan, paywallEnabled } from "./entitlements.ts";
 import { handleDocumentCollab } from "./document-collab.js";
 import { handleLegal } from "./legal.js";
 import { associationFile, handlePasskeys, revokePasskeysForAccount } from "./passkeys.ts";
@@ -22,7 +22,7 @@ import { accessAllowed, isAccessGuardedPath, isCrossSiteWrite } from "./access.t
 import { appGateRejection } from "./app-gate.ts";
 import { handleAppAttest, appAttestGate } from "./app-attest.ts";
 import { plainHttpResponse, withTransportHeaders } from "./transport.js";
-import { disabledFeatures } from "./features.js";
+import { disabledFeatures } from "./features.ts";
 import { idTokenNonceRefused } from "./id-token-nonce.ts";
 import { isRevoked, revoke } from "./revocation.ts";
 import { isExpired, remainingValiditySeconds } from "./token.ts";

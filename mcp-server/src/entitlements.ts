@@ -19,6 +19,8 @@
 // independent listings of the same App Store product ids, not one shared
 // source. Whoever adds a product in one place must add it in the other, or
 // a real purchase grants nothing on the server.
+
+import type { Env } from "./env.ts";
 export const PRODUCT_PLAN_MAP = {
   "com.yabuko.studiquo.standard.yearly": "standard",
   "com.yabuko.studiquo.plus.monthly": "plus",
@@ -53,7 +55,7 @@ const PLAN_RANK = { free: 0, standard: 1, plus: 2, pro: 3 };
 // paywall) unless it is listed in `legacy_standard_accounts` — the accounts
 // that already existed at launch and were moved to Standard. Remove the
 // switch (and the "standard"-by-default branch) after launch.
-export function paywallEnabled(env) {
+export function paywallEnabled(env: Env) {
   return env.PAYWALL_ENABLED === "true";
 }
 
@@ -96,7 +98,7 @@ function planFromRow(row) {
  * two valid entitlements at once must resolve to the single most generous
  * plan — pro over plus — rather than whichever happened to be written last.
  */
-export async function getPlan(env, sub) {
+export async function getPlan(env: Env, sub) {
   // `sub` may be a list: after accounts are linked, session.sub is the
   // canonical identity while RevenueCat's app_user_id (and a legacy grant)
   // may still be under the identity the app signed in with
@@ -112,7 +114,7 @@ export async function getPlan(env, sub) {
   return (await isLegacyAccount(env, subs)) ? "standard" : "free";
 }
 
-async function subscribedPlan(env, subs) {
+async function subscribedPlan(env: Env, subs) {
   const plans = [];
   for (const sub of subs) {
     const { results } = await env.ADMIN_DB.prepare(
@@ -124,7 +126,7 @@ async function subscribedPlan(env, subs) {
   return plans.reduce((best, plan) => (PLAN_RANK[plan] > PLAN_RANK[best] ? plan : best));
 }
 
-async function isLegacyAccount(env, subs) {
+async function isLegacyAccount(env: Env, subs) {
   for (const sub of subs) {
     const { results } = await env.ADMIN_DB.prepare(
       `SELECT app_user_id FROM legacy_standard_accounts WHERE app_user_id = ?`

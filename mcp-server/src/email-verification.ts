@@ -5,7 +5,7 @@
 // cross-provider linking — exactly the same "only a verified email may join
 // two accounts" rule Apple and Google already get from their own tokens.
 import { sha256Hex } from "./auth.ts";
-import { featureDisabled } from "./features.js";
+import { featureDisabled } from "./features.ts";
 import { linkVerifiedEmail } from "./oauth-links.ts";
 import type { Env } from "./env.ts";
 
