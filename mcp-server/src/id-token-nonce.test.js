@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Hex } from "./auth.ts";
-import { idTokenNonceRefused } from "./id-token-nonce.js";
+import { idTokenNonceRefused } from "./id-token-nonce.ts";
 
 function makeEnv({ requireNonce = "false" } = {}) {
   const used = new Set();

@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { takeFrom, giveTo } from "./counter-state.js";
-import { reserveAttempt, refundAttempt, trustPair, trustExpiryMs } from "./login-throttle.js";
-import { touchSeenContext } from "./login-monitor.js";
+import { reserveAttempt, refundAttempt, trustPair, trustExpiryMs } from "./login-throttle.ts";
+import { touchSeenContext } from "./login-monitor.ts";
 
 // One instance per counted key (an AI usage bucket, a document-collab
 // action, …) — see ai.js's withinQuota and document-collab.js's

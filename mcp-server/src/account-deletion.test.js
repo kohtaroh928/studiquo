@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { deleteAccount } from "./account-deletion.js";
+import { deleteAccount } from "./account-deletion.ts";
 import { linkVerifiedEmail } from "./oauth-links.ts";
 import worker from "./app.js";
-import { mintSession } from "./session.js";
-import { indexAccountPasskey } from "./passkey-policy.js";
+import { mintSession } from "./session.ts";
+import { indexAccountPasskey } from "./passkey-policy.ts";
 import { accountGenerationMethods } from "./test-account-generations.ts";
 
 function environment() {
@@ -824,7 +824,7 @@ test("H-2. 連携アプリのgrantとトークンは、別名側のものも消�
 });
 
 test("H-3. 退会中・退会済みのアカウントの連携アプリのトークンは、期限前でも使えない", async () => {
-  const { externalSession } = await import("./mcp-oauth.js");
+  const { externalSession } = await import("./mcp-oauth.ts");
   const env = environment();
   const sub = "mcp-gone-sub";
   const clientId = "studiquo_" + "b".repeat(32);
@@ -845,7 +845,7 @@ test("H-3. 退会中・退会済みのアカウントの連携アプリのトー
 });
 
 test("H-3b. 退会済みのアカウントのセッションは、削除マーカーが残っている間は使えない", async () => {
-  const { realSession } = await import("./session.js");
+  const { realSession } = await import("./session.ts");
   const env = environment();
   const token = `${Math.floor(Date.now() / 1000)}.${"z".repeat(40)}`;
   await env.STUDIQUO_DATA.put(`session:${hash(token)}`, JSON.stringify({ sub: "late-session-sub", issuedAt: Math.floor(Date.now() / 1000) }));
@@ -888,7 +888,7 @@ test("M-1b. 旧形式(identityKeys)の完了マーカーでも、再登録で提
 });
 
 test("M-1c. 提携先(RevenueCat)への削除ジョブは期限付きで保存される", async () => {
-  const { queueRevenueCatDeletion } = await import("./privacy-retention.js");
+  const { queueRevenueCatDeletion } = await import("./privacy-retention.ts");
   const puts = [];
   const env = { STUDIQUO_DATA: { async put(key, value, options) { puts.push({ key, options }); } } };
   await queueRevenueCatDeletion(env, "email:x@example.com");
@@ -1004,7 +1004,7 @@ test("M-A4. 負けた実行は、すでに'deleted'の別名を'deleting'に書�
 });
 
 test("H-3c. 退会済みのアカウントには、認可コードの交換も更新トークンも発行されない", async () => {
-  const { handleMCPOAuth } = await import("./mcp-oauth.js");
+  const { handleMCPOAuth } = await import("./mcp-oauth.ts");
   const env = environment();
   env.RATE_LIMIT_MCP_TOKEN = { async limit() { return { success: true }; } };
   env.MCP_INBOX = { getByName() { return { async consumeOnce() { return true; } }; } };
@@ -1029,7 +1029,7 @@ test("H-3c. 退会済みのアカウントには、認可コードの交換も�
 
 test("退会するとパスキーの索引と復旧手続きも消え、同じメールで再登録しても強制の名残が残らない", async () => {
   const { sha256Hex: hash } = await import("./auth.ts");
-  const { indexAccountPasskey, accountHasPasskey } = await import("./passkey-policy.js");
+  const { indexAccountPasskey, accountHasPasskey } = await import("./passkey-policy.ts");
   const env = environment();
   await seedLinked(env, "apple-pk", "pk@example.com", [{ provider: "apple", sub: "apple-pk" }, { provider: "email", sub: "pk@example.com" }]);
   await env.STUDIQUO_DATA.put("account:local:pk@example.com", "{}");

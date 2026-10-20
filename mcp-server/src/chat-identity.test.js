@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Hex } from "./auth.ts";
-import { resolveChatUserKey } from "./chat-identity.js";
+import { resolveChatUserKey } from "./chat-identity.ts";
 import { takeParsedBody, rememberParsedBody } from "./ai-body.ts";
-import { callAnthropicChat, extractDeltaText } from "./anthropic.js";
+import { callAnthropicChat, extractDeltaText } from "./anthropic.ts";
 
 test("resolveChatUserKey falls back to tokenKey when USER_REGISTRY or sub is absent", async () => {
   assert.equal(await resolveChatUserKey({}, "apple:user-1", "token-key-1"), "token-key-1");

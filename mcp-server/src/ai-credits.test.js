@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { consumeCredits, creditCost, PLAN_BUDGETS, MODEL_CREDITS } from "./ai-credits.js";
+import { consumeCredits, creditCost, PLAN_BUDGETS, MODEL_CREDITS } from "./ai-credits.ts";
 
 function counters() {
   const used = new Map();

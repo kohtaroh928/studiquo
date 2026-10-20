@@ -3,7 +3,7 @@
 // plain Node — `cloudflare:workers` (needed only for the Durable Object
 // export below) doesn't exist outside the Workers runtime.
 import app from "./app.js";
-import { runScheduledPrivacyWork } from "./privacy-retention.js";
+import { runScheduledPrivacyWork } from "./privacy-retention.ts";
 export default {
   ...app,
   async scheduled(controller, env, ctx) {

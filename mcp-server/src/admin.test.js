@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
-import { PRODUCT_BILLING_MONTHS } from "./admin.js";
+import { PRODUCT_BILLING_MONTHS } from "./admin.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
 
 // Wraps a real in-memory SQLite database (seeded from the actual migration

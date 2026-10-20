@@ -23,6 +23,9 @@
 ## 進み具合
 
 - フェーズ1 完了: `access` `ai-body` `auth` `block-check` `http` `jwks-verify` `library-id` `message-notification` `oauth-links` `pwned-passwords` `rate-limit` `slack` `token` `snapshot-crypto` `test-access` `test-account-generations`。他のファイルからの import は `.ts` に書き換え済み。
+- フェーズ2 完了(2a 認証系18、2b AI系7、2c その他のドメイン層17の計42ファイル)。KV に保存する JSON の形は `records.ts`(複数ファイルで共有するもの)と各ファイル内の interface で型にした。KV 一覧の cursor は `kv.ts` の `nextCursor`、D1 の結果は `first<T>()` / `all<T>()` で型を付ける。
+- フェーズ2では `noImplicitAny` を有効にしていないため、引数の型を省いた関数が残っている。フェーズ6で `noImplicitAny` と `strictNullChecks` を有効にして埋める。
+- 型は消えるので、`npm test` が通っても型エラーは見つからない。`npm run typecheck` を別に必ず実行する。
 - 他の末端ファイルの行き先: Durable Object 周り(`chat-room` `mcp-inbox` `counter-state` `document-room-store`)はフェーズ3、`anthropic` `openai` `entitlements` と管理画面の `*-ui` はフェーズ2、`index` `smoke` はフェーズ4。
 - `Env` の Durable Object は暫定の `UntypedNamespace`。フェーズ3で各クラスの型に置き換える。
 - ファイル名を書いた文書(`docs/`、`.claude/agents/`、`.codex/agents/`、`.agents/skills/`)は、全て移行し終わるフェーズ6でまとめて直す。

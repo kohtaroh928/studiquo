@@ -3,10 +3,10 @@ import test from "node:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
-import { runPrivacyRetention } from "./privacy-retention.js";
-import { deleteAccount } from "./account-deletion.js";
+import { runPrivacyRetention } from "./privacy-retention.ts";
+import { deleteAccount } from "./account-deletion.ts";
 import { sha256Hex } from "./auth.ts";
-import { mintSession, realSession, accountIsUnavailable, suspensionKey } from "./session.js";
+import { mintSession, realSession, accountIsUnavailable, suspensionKey } from "./session.ts";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 
 class FakeD1Statement {

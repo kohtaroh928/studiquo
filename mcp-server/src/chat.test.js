@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import worker from "./app.js";
-import { mintSession } from "./session.js";
+import { mintSession } from "./session.ts";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, exportPKCS8 } from "jose";

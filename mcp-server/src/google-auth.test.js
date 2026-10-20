@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
-import { getGooglePublicKeys, verifyGoogleIdentityToken } from "./google-auth.js";
+import { getGooglePublicKeys, verifyGoogleIdentityToken } from "./google-auth.ts";
 
 const REAL_ISSUER = "https://accounts.google.com";
 const REAL_AUDIENCE = "812858933445-q6j9uih0o702884hemnk2okiet26gv1j.apps.googleusercontent.com";

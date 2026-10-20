@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   appAttestGate, appAttestMode, assessAssertion, base64ToBytes, bytesToBase64Url, challengeIsValid, decodeCBOR,
   derSignatureToRaw, handleAppAttest, issueChallenge, verifyAssertion, verifyAttestation,
-} from "./app-attest.js";
+} from "./app-attest.ts";
 
 const APP_ID = "TEAMID1234.com.example.app";
 const NOW = Date.UTC(2026, 9, 18, 12, 0, 0);
@@ -325,11 +325,11 @@ test("base64 helpers round-trip and reject garbage", () => {
 });
 
 test("the embedded Apple root parses and is self-signed, valid to 2045", async () => {
-  const pem = (await import("node:fs")).readFileSync(new URL("./app-attest.js", import.meta.url), "utf8");
+  const pem = (await import("node:fs")).readFileSync(new URL("./app-attest.ts", import.meta.url), "utf8");
   const base64 = /APPLE_ROOT_DER_BASE64 = "([^"]+)"/.exec(pem)[1];
   assert.equal(createHash("sha256").update(Buffer.from(base64, "base64")).digest("hex").toUpperCase(),
     "1CB9823BA28BA6AD2D33A006941DE2AE4F513EF1D4E831B9F7E0FA7B6242C932");
-  const { parseCertificate } = await import("./app-attest.js");
+  const { parseCertificate } = await import("./app-attest.ts");
   const root = parseCertificate(base64ToBytes(base64));
   assert.equal(root.curve.name, "P-384");
   assert.equal(root.notAfter, Date.UTC(2045, 2, 15));

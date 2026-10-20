@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleAdminReports } from "./admin-reports.js";
+import { handleAdminReports } from "./admin-reports.ts";
 
 function makeAdminEnv() {
   const issueReports = new Map();

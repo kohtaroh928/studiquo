@@ -13,7 +13,7 @@ export interface JwksVerifierOptions {
   providerName: string;
   jwksUrl: string;
   cacheKey: string;
-  issuer: string;
+  issuer: string | string[];
   audience: string | string[];
 }
 

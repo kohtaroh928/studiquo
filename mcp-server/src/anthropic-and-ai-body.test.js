@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { callAnthropicChat, extractDeltaText } from "./anthropic.js";
+import { callAnthropicChat, extractDeltaText } from "./anthropic.ts";
 import { rememberParsedBody, takeParsedBody } from "./ai-body.ts";
 
 test("callAnthropicChat throws when ANTHROPIC_API_KEY is missing from env", async () => {
