@@ -142,7 +142,7 @@ test("a deletion arriving after the webhook precheck still blocks both SQL write
 
 // SKIPPED ON PURPOSE (merge of codex/security-scanning into main, 2026-10-19).
 // This test expects a pending provider-side erasure to BLOCK signing in again. Main's
-// account deletion (account-deletion.js / session.js) does the opposite, and the owner
+// account deletion (account-deletion.ts / session.ts) does the opposite, and the owner
 // chose that rule: a person who signs in after the deletion finished starts a new
 // account, and the queued provider DELETEs are dropped so they cannot erase it.
 // Kept (not deleted) so the decision stays visible; see the Notion task.

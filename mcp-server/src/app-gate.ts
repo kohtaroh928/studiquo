@@ -13,7 +13,7 @@
 //                            this check. A request that does not look like the app
 //                            (another client, a browser) is never turned away.
 //
-// Both are unset by default, which turns them off. DISABLED_FEATURES (features.js)
+// Both are unset by default, which turns them off. DISABLED_FEATURES (features.ts)
 // stops single features and is checked here too.
 import { json } from "./http.ts";
 import { featureGateRejection } from "./features.ts";
@@ -32,7 +32,7 @@ export function appGateRejection(request: Request, env: Env, url) {
     response.headers.set("retry-after", "300");
     return response;
   }
-  // One feature stopped on its own (features.js). After maintenance, which stops all.
+  // One feature stopped on its own (features.ts). After maintenance, which stops all.
   const stopped = featureGateRejection(env, url.pathname, request.method);
   if (stopped) return stopped;
   const minimum = Number(env.MIN_APP_BUILD);

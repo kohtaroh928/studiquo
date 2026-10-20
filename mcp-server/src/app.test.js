@@ -508,7 +508,7 @@ test("POST /api/auth/apple: an invalid identityToken is rejected with 401", asyn
 });
 
 // MARK: - Rate limiting: /api/auth/apple is callable with no bearer token at
-// all (it's what mints one), so it's gated by rate-limit.js's two-layer
+// all (it's what mints one), so it's gated by rate-limit.ts's two-layer
 // (Cloudflare binding + KV) check instead.
 
 test("POST /api/auth/apple: allows up to the limit, then 429s, even against invalid tokens", async () => {
@@ -2485,7 +2485,7 @@ test("POST /api/auth/email/confirm-code: the second passkey pass is tried again 
 test("POST /api/auth/email/confirm-code: an account that has a passkey is refused a first password by code, and keeps the passkey", async () => {
   const env = environment({ strictSessions: true });
   await seedPasskey(env, "pk-first@example.com", "owners-passkey", "device-a", 1);
-  // A code can be relayed by a look-alike site, so a passkey account does not accept one (passkey-policy.js).
+  // A code can be relayed by a look-alike site, so a passkey account does not accept one (passkey-policy.ts).
   assert.equal((await resetPasswordWith(env, "pk-first@example.com", "correct-horse-battery", "s".repeat(40))).status, 403);
   assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:owners-passkey"), null, "nothing is removed by a refused request");
 });
@@ -2875,7 +2875,7 @@ test("the library id cannot be worked out from an e-mail address, and a new acco
   for (const guess of ["email:alice@example.com", "library-account:email:alice@example.com"]) {
     assert.notEqual(body.libraryID, sha256Hex(guess), "not a hash anyone could compute");
   }
-  // Erased with the account (account-deletion.js): the next one starts afresh.
+  // Erased with the account (account-deletion.ts): the next one starts afresh.
   for (const object of [...registry._stored.keys()]) registry._stored.delete(object);
   assert.notEqual((await libraryID(env, token)).body.libraryID, body.libraryID);
 });

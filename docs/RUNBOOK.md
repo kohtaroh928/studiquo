@@ -122,7 +122,7 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
 
 - **使う症状**: 通常のノート機能は動くが、AI送信・生成が失敗する。
 - **最初の確認**: 同意バージョン、許可・取消し、承認フラグ、公開モデル、認証、プラン、利用量、エラーstatus。
-- **変更せず調べる**: `ai-privacy.js`、`AIProvider.swift`、上流APIの技術エラー、quota・費用・設定の有効性。prompt・画像はログへ出さない。
+- **変更せず調べる**: `ai-privacy.ts`、`AIProvider.swift`、上流APIの技術エラー、quota・費用・設定の有効性。prompt・画像はログへ出さない。
 - **避ける操作**: 同意を自動付与する、別AI会社へ無断転送する、上限制御を外す、契約未確認で承認フラグをtrueにする。
 - **承認が必要な復旧**: 正当な設定修正、キー更新、異常時のAI停止。`AI_PROVIDER_APPROVED=false`は送信を拒否する現行制御で、設定変更・反映操作には承認が必要。
 - **復旧の判定**: 検証用入力で許可済みの要求が成功し、未許可・取消し・未承認は拒否される。提供条件未承認なら停止継続が正しい。
@@ -193,7 +193,7 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
 - **承認が必要な復旧**: フラグの変更、Workerの切戻し(手順1のバージョンへ)、修正版。
 - **復旧の判定**: 旧形式と新形式の両方のアカウントで、正しいパスワードが成功し、誤りが401になる。未登録のメールも401で、応答時間が大きく違わない。再設定の直後に、旧パスワードが使えない。
 - **未解決時の引継ぎ**: フラグの値、Workerのバージョン、失敗の形式(旧・新)、エラーの種類と件数。パスワードとhashは収集しない。
-- **将来の撤去**: PBKDF2のレコードが残らなくなったら、`local-auth.js`のPBKDF2のダミー計算と、旧レコードの分岐を外す。それまでは、全経路でPBKDF2とArgon2idを1回ずつ実行して、応答時間を揃えている。
+- **将来の撤去**: PBKDF2のレコードが残らなくなったら、`local-auth.ts`のPBKDF2のダミー計算と、旧レコードの分岐を外す。それまでは、全経路でPBKDF2とArgon2idを1回ずつ実行して、応答時間を揃えている。
 
 ### RB-12: ログイン攻撃の疑い・利用者が待たされる
 
@@ -207,7 +207,7 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
   - `newContext`の成功が多い: 漏えいした認証情報で突破されている可能性。影響を受けたアカウントの利用者へ、パスワードの再設定を案内する。再設定は、確認コードで本人確認を行う。
   - `firstSeen`は、この機能の導入後の最初のログインで、多数でも異常ではない。
 - **避ける操作**: 失敗回数・待機・信頼済みの記録(`login-fail-*`、`login-seen:`)の手動の削除、レート制限の無効化、待機を外すための設定変更。待機は他人にも起こされうる性質を持つ(`SECURITY_AND_PRIVACY.md`の6.4)ので、利用者の苦情だけを理由に緩めない。
-- **承認が必要な復旧**: 閾値の変更(`login-throttle.js`、`login-monitor.js`)、特定のASNへの対策、パスワード再設定の案内の送信。
+- **承認が必要な復旧**: 閾値の変更(`login-throttle.ts`、`login-monitor.ts`)、特定のASNへの対策、パスワード再設定の案内の送信。
 - **復旧の判定**: 失敗率と`throttled`が落ち着き、正規の利用者がログインできる。アラートが再び出ない。
 - **漏えいパスワードの照合**: 登録・再設定のとき、HIBPに問い合わせる。HIBPに到達できないと、照合を飛ばして受け付け、`pwned-passwords check skipped`というログを出す。このログが続くときは、HIBPの障害か通信の問題である。照合の停止は、攻撃の強さを変えず、漏えいパスワードの拒否だけを失う。自動の通知はないので、Workers Logsで定期的に確認する。
 - **未解決時の引継ぎ**: アラートの種類・時刻、`outcome`の件数、偏りのある`asn`と`country`、影響を受けた利用者の数(個別のメールは必要最小限)。
@@ -417,17 +417,17 @@ RUNBOOKは「問題が起きたときの対応マニュアル」である。症�
 
 | 名前 | 発行元 | 使い道(コード) | 漏れたときの影響 | 併用 | 失効・入れ替え |
 |---|---|---|---|---|---|
-| `OPENAI_API_KEY` | OpenAI | AIの呼び出し(`ai.js`、`openai.js`) | 他人にAI料金を使われる | 不可(差し替え) | OpenAIで鍵を無効化→新規発行→`secret put`。OpenAI側の利用上限も設定する |
-| `ANTHROPIC_API_KEY` | Anthropic | AIの呼び出し(`anthropic.js`)。未使用なら設定しない | 同上 | 不可 | Anthropicで無効化→新規発行→`secret put` |
-| `REVENUECAT_SECRET_API_KEY` | RevenueCat | 退会時のRevenueCat上の顧客の削除(`privacy-retention.js`) | 顧客の削除、鍵の権限によっては購読情報の読み取り | 不可 | RevenueCatで鍵を取り消し→新規発行→`secret put` |
-| `REVENUECAT_WEBHOOK_SECRET` | RevenueCat(Webhookの認証ヘッダ) | 購入イベントの受信認証(`admin.js`) | 偽の購入イベントを送られ、プランを偽装される | 不可 | RevenueCatのWebhookの`Authorization`ヘッダの値と、`secret put`する値は、**`Bearer `などの接頭辞も含めて完全に同じ**にする(違うとすべて401)。**同時に**入れ替える。間のイベントはRevenueCatが再送する |
-| `TOKEN_SIGNING_KEY` / `_OLD` | 自分で作る(`openssl rand -base64 32`) | セッション・MCPトークンの署名(`token-signature.js`) | 偽のトークンの洪水をKVで受けてしまう(署名がなくてもKVに実在するセッションが要るので、これ単独ではなりすませない) | 可(`_OLD`) | RB-14。旧い値を`_OLD`へ、新しい値を`TOKEN_SIGNING_KEY`へ。旧いトークンが使われなくなるまで(端末のトークンは90日、更新で延び、ログインの絶対期限は既定365日)`_OLD`を残す。**漏えいが確実な場合は`_OLD`に入れない**(漏れた鍵が検査に通り続ける)。全員の再ログインを許容して、新しい鍵だけにする |
-| `SNAPSHOT_ENCRYPTION_KEY` / `_ID` / `_OLD` / `_OLD_ID` | 自分で作る | MCPスナップショットのAES-256-GCM(`snapshot-crypto.js`) | KVを読める人が、スナップショットを復号できる | 可(`_OLD`) | **鍵のIDに注意**: `_ID`が未設定の現行鍵のIDは暗黙の`1`で、保存済みのデータはこのIDで入っている。入れ替えは、旧い値を`_OLD`に、`_OLD_ID`を**必ず`1`**に、新しい値を`KEY`に、`_ID`を**`1`以外**(例: `2`)にする。`_OLD_ID`を空にすると`0`になり、保存済みが復号できなくなる。先にステージングで書き込みと読み出しを1回確かめる。再同期で新しい鍵に替わる。スナップショットは最終同期から90日で消える |
-| `APNS_PRODUCTION_AUTH_KEY` / `APNS_SANDBOX_AUTH_KEY` / `APNS_AUTH_KEY` | Apple Developer(APNsの鍵 .p8) | プッシュ通知の送信(`push.js`) | `.p8`だけでは送れない(端末のデバイストークンも要る)が、持っていれば、トークンを知っている端末に偽の通知を送れる | Apple側は2本まで持てる。**Workerは環境ごとに鍵とKeyIDを1組しか読まない**ので、WorkerでAPNsの鍵を新旧並べることはできない | 新しい鍵を発行→鍵とKeyIDを`npx wrangler secret bulk`で**同時に**入れる(別々に`put`すると、間の数十秒は組が合わず通知が失敗する)→通知を確認→旧い鍵をAppleで取り消す |
+| `OPENAI_API_KEY` | OpenAI | AIの呼び出し(`ai.ts`、`openai.ts`) | 他人にAI料金を使われる | 不可(差し替え) | OpenAIで鍵を無効化→新規発行→`secret put`。OpenAI側の利用上限も設定する |
+| `ANTHROPIC_API_KEY` | Anthropic | AIの呼び出し(`anthropic.ts`)。未使用なら設定しない | 同上 | 不可 | Anthropicで無効化→新規発行→`secret put` |
+| `REVENUECAT_SECRET_API_KEY` | RevenueCat | 退会時のRevenueCat上の顧客の削除(`privacy-retention.ts`) | 顧客の削除、鍵の権限によっては購読情報の読み取り | 不可 | RevenueCatで鍵を取り消し→新規発行→`secret put` |
+| `REVENUECAT_WEBHOOK_SECRET` | RevenueCat(Webhookの認証ヘッダ) | 購入イベントの受信認証(`admin.ts`) | 偽の購入イベントを送られ、プランを偽装される | 不可 | RevenueCatのWebhookの`Authorization`ヘッダの値と、`secret put`する値は、**`Bearer `などの接頭辞も含めて完全に同じ**にする(違うとすべて401)。**同時に**入れ替える。間のイベントはRevenueCatが再送する |
+| `TOKEN_SIGNING_KEY` / `_OLD` | 自分で作る(`openssl rand -base64 32`) | セッション・MCPトークンの署名(`token-signature.ts`) | 偽のトークンの洪水をKVで受けてしまう(署名がなくてもKVに実在するセッションが要るので、これ単独ではなりすませない) | 可(`_OLD`) | RB-14。旧い値を`_OLD`へ、新しい値を`TOKEN_SIGNING_KEY`へ。旧いトークンが使われなくなるまで(端末のトークンは90日、更新で延び、ログインの絶対期限は既定365日)`_OLD`を残す。**漏えいが確実な場合は`_OLD`に入れない**(漏れた鍵が検査に通り続ける)。全員の再ログインを許容して、新しい鍵だけにする |
+| `SNAPSHOT_ENCRYPTION_KEY` / `_ID` / `_OLD` / `_OLD_ID` | 自分で作る | MCPスナップショットのAES-256-GCM(`snapshot-crypto.ts`) | KVを読める人が、スナップショットを復号できる | 可(`_OLD`) | **鍵のIDに注意**: `_ID`が未設定の現行鍵のIDは暗黙の`1`で、保存済みのデータはこのIDで入っている。入れ替えは、旧い値を`_OLD`に、`_OLD_ID`を**必ず`1`**に、新しい値を`KEY`に、`_ID`を**`1`以外**(例: `2`)にする。`_OLD_ID`を空にすると`0`になり、保存済みが復号できなくなる。先にステージングで書き込みと読み出しを1回確かめる。再同期で新しい鍵に替わる。スナップショットは最終同期から90日で消える |
+| `APNS_PRODUCTION_AUTH_KEY` / `APNS_SANDBOX_AUTH_KEY` / `APNS_AUTH_KEY` | Apple Developer(APNsの鍵 .p8) | プッシュ通知の送信(`push.ts`) | `.p8`だけでは送れない(端末のデバイストークンも要る)が、持っていれば、トークンを知っている端末に偽の通知を送れる | Apple側は2本まで持てる。**Workerは環境ごとに鍵とKeyIDを1組しか読まない**ので、WorkerでAPNsの鍵を新旧並べることはできない | 新しい鍵を発行→鍵とKeyIDを`npx wrangler secret bulk`で**同時に**入れる(別々に`put`すると、間の数十秒は組が合わず通知が失敗する)→通知を確認→旧い鍵をAppleで取り消す |
 | `APNS_KEY_ID` / `APNS_*_KEY_ID` / `APNS_TEAM_ID` | Apple Developer | 上の鍵の識別子 | 秘密ではない | - | 鍵を替えるときに一緒に替える |
-| `RESEND_API_KEY` | Resend | 確認コード・新しい環境の通知のメール(`email-verification.js`、`login-monitor.js`、`passkey-policy.js`) | 自分の名前でメールを送られる(確認コードの偽装、迷惑メール) | 不可 | Resendで無効化→新規発行→`secret put`。入れ替えの間は確認コードが届かずログインできない(RB-04) |
-| `SLACK_ISSUE_REPORT_WEBHOOK_URL` | Slack | 問題報告・ログインのアラート(`issue-reports.js`、`slack.js`) | 偽の通知を投稿される | 不可 | SlackでWebhookを作り直す→`secret put`。旧いURLを消す |
-| `ACCESS_AUD` / `ACCESS_TEAM_DOMAIN` / `ACCESS_JWKS` | Cloudflare Access | 管理画面のログイン検証(`access.js`) | 秘密ではない(公開鍵と識別子)。書き換えられると管理画面の保護が壊れる | - | Accessのアプリを作り直したときだけ替える。Cloudflareのアカウントの保護(二要素認証)が前提 |
+| `RESEND_API_KEY` | Resend | 確認コード・新しい環境の通知のメール(`email-verification.ts`、`login-monitor.ts`、`passkey-policy.ts`) | 自分の名前でメールを送られる(確認コードの偽装、迷惑メール) | 不可 | Resendで無効化→新規発行→`secret put`。入れ替えの間は確認コードが届かずログインできない(RB-04) |
+| `SLACK_ISSUE_REPORT_WEBHOOK_URL` | Slack | 問題報告・ログインのアラート(`issue-reports.ts`、`slack.ts`) | 偽の通知を投稿される | 不可 | SlackでWebhookを作り直す→`secret put`。旧いURLを消す |
+| `ACCESS_AUD` / `ACCESS_TEAM_DOMAIN` / `ACCESS_JWKS` | Cloudflare Access | 管理画面のログイン検証(`access.ts`) | 秘密ではない(公開鍵と識別子)。書き換えられると管理画面の保護が壊れる | - | Accessのアプリを作り直したときだけ替える。Cloudflareのアカウントの保護(二要素認証)が前提 |
 
 使っていない名前が残っていたら消す: `GEMINI_API_KEY`(コードに参照がない。2026-10-08の更新で登録された記録がある)、`LIBRARY_ID_SECRET`(RB-16。`npx wrangler secret delete LIBRARY_ID_SECRET --env=""`)。`CSRF_SECRET`はコードに無い(`STAGING_SETUP.md`の手順が古い)。設定してあれば消し、手順の記述も直す。
 

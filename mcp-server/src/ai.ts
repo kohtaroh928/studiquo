@@ -21,7 +21,7 @@ import { callOpenAIChat, callOpenAIStructured, moderationRejection, MODERATION_U
 import type { Env } from "./env.ts";
 
 /**
- * Which chat models each plan may pick (see entitlements.js's `getPlan` for
+ * Which chat models each plan may pick (see entitlements.ts's `getPlan` for
  * how a session resolves to one of these). Kept in sync by hand with
  * `AIModelCatalog.swift`'s model list on the client — the two are
  * independent listings of the same catalog, not one shared source; whoever
@@ -30,7 +30,7 @@ import type { Env } from "./env.ts";
  *
  * The entries are logical names resolved to real OpenAI ids via
  * `env.OPENAI_LUNA_MODEL` / `OPENAI_TERRA_MODEL` / `OPENAI_SOL_MODEL` /
- * `OPENAI_ASTRA_MODEL` (see openai.js). Anthropic ("claude-…") is wired in
+ * `OPENAI_ASTRA_MODEL` (see openai.ts). Anthropic ("claude-…") is wired in
  * `handleChat` but listed for no plan: it stays off until its usage
  * guidelines for apps used by minors are met.
  */
@@ -57,7 +57,7 @@ function providerFor(modelId) {
 }
 
 /** Resolves a PLAN_MODELS logical OpenAI name to the real id this Worker is
- * configured with, or `null` if nobody has set it yet (see openai.js). */
+ * configured with, or `null` if nobody has set it yet (see openai.ts). */
 function resolveOpenAIModel(env: Env, logicalName) {
   if (logicalName === "openai-luna") return env.OPENAI_LUNA_MODEL || null;
   if (logicalName === "openai-terra") return env.OPENAI_TERRA_MODEL || null;
@@ -138,7 +138,7 @@ async function readJSONLimited(request: Request, maximumBytes = 20_000_000) {
 const DAY_SECONDS = 86_400;
 
 /**
- * Takes this call's credits from every window of the plan (ai-credits.js), or
+ * Takes this call's credits from every window of the plan (ai-credits.ts), or
  * answers 429 saying which limit was hit. Called only once the request is known
  * to be valid, so a malformed one never costs credits; `refund` returns them
  * when the upstream refuses before producing anything. `kind` is the feature, `model` the
@@ -825,7 +825,7 @@ const AI_PATHS = new Set(["/api/ai/chat", "/api/ai/rubric", "/api/ai/grade", "/a
  * Returns a `Response`, or `null` when the path is not an AI route.
  *
  * `session`/`plan` are optional — app.js resolves `plan` from
- * entitlements.js's `getPlan(env, session.sub)` once, right before calling
+ * entitlements.ts's `getPlan(env, session.sub)` once, right before calling
  * here, and a caller with no real session (shouldn't happen past app.js's
  * own bearer-token gate, but also every existing test that calls this
  * directly without either) is treated as the "standard" plan: the exact
@@ -835,7 +835,7 @@ const AI_PATHS = new Set(["/api/ai/chat", "/api/ai/rubric", "/api/ai/grade", "/a
  * identity directly rather than just its resolved plan.
  */
 /**
- * Only reachable with PAYWALL_ENABLED (entitlements.js): an account with no
+ * Only reachable with PAYWALL_ENABLED (entitlements.ts): an account with no
  * subscription and no legacy grant. 402 so the app can tell "subscribe" apart
  * from the 403 (model not in your plan) and 429 (daily cap) answers. Exported
  * so app.js can refuse such an account before it reads a request body.

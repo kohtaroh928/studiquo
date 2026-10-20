@@ -25,7 +25,7 @@ status: 決定済み(2026-10-18: 0-A・1-A・2-A・3-C)。段階1を実装中
 | `logout()`はセッションとトークンを消すだけで、資料は消さない。 | `AuthenticationStore.swift:234` |
 | 資料を消す部品は既にある(退会用)。`AccountDataEraser.eraseAll`(全モデル削除)と`AccountFileEraser.erase`(Documents・Caches・tmp・自動バックアップ・共有受信箱・外部ファイルのしおり)。 | `AuthenticationStore.swift:778`、`AccountFileEraser.swift` |
 | **同期ONの端末で`eraseAll`すると、削除がiCloud経由で他の端末の資料も消す。** | CloudKitの仕様 |
-| アプリ内の「誰か」は、Keychainの`OAuthIdentity(provider, subject, email)`(Apple/Google/メール)。同じ人がAppleとGoogleを統合しても、**端末側の識別子は別々**。サーバーは正規ID(canonical)で統合している。 | `AuthenticationStore.swift:672`、`oauth-links.js` |
+| アプリ内の「誰か」は、Keychainの`OAuthIdentity(provider, subject, email)`(Apple/Google/メール)。同じ人がAppleとGoogleを統合しても、**端末側の識別子は別々**。サーバーは正規ID(canonical)で統合している。 | `AuthenticationStore.swift:672`、`oauth-links.ts` |
 | 端末固有の保存先は他にも多い: UserDefaults/`@AppStorage`が約41キー、Keychain、`Documents`のファイル、`AutoBackups`、`ExternalFileBookmarks.json`、共有受信箱(App Group、共有拡張が書く)、通知の予約(暗記カードの復習など、資料に紐づく)。 | grep |
 
 ## Phase 2: 要件と受け入れ条件

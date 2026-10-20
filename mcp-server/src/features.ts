@@ -6,14 +6,14 @@
 // around them; a name that is not in FEATURES is ignored (the list /health shows
 // only the names that took effect, so a typo is visible there). A stopped
 // feature's routes answer 503 with `code: "feature_disabled"` and the feature's
-// name, so the app can say what is paused. MAINTENANCE_MODE (app-gate.js) comes
+// name, so the app can say what is paused. MAINTENANCE_MODE (app-gate.ts) comes
 // first and stops everything.
 //
 // What is never stopped by this: /health, the legal and invite pages, the public
 // announcements, the admin pages, and the account's own exits: deleting the
 // account, signing out and refreshing a session.
 //
-// Two features are side effects, not routes: "push" (sendPush in push.js) and
+// Two features are side effects, not routes: "push" (sendPush in push.ts) and
 // "email" (the three places that call Resend; the route that sends the
 // confirmation code is also stopped here, so the app is told instead of waiting
 // for a code that will not come).

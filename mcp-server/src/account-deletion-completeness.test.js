@@ -4,12 +4,12 @@ import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
 import { sha256Hex } from "./auth.ts";
 import { deleteAccount } from "./account-deletion.ts";
-import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, purgeRoomData, removeAccountData, removeParticipantData, roomMembershipKey } from "./document-room-store.js";
+import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, purgeRoomData, removeAccountData, removeParticipantData, roomMembershipKey } from "./document-room-store.ts";
 import { VALIDITY_SECONDS, remainingValiditySeconds } from "./token.ts";
 
 // What account deletion must leave nothing of: the synced snapshot kept under a
 // session's token, and collaborative document rooms. The room tests run the
-// real SQL of the room (document-room-store.js) on an in-memory SQLite; the
+// real SQL of the room (document-room-store.ts) on an in-memory SQLite; the
 // Durable Object wrapper around it is the only part replaced.
 
 // ---------------------------------------------------------------------------

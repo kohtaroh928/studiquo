@@ -1,5 +1,5 @@
 // The dashboard's inbox: the "ユーザー報告" and "自動エラー" tabs. Plain DOM
-// code that ends up inside admin.js's page. Everything in these lists came
+// code that ends up inside admin.ts's page. Everything in these lists came
 // from outside — a person's free text, an app's crash symbols — so it is
 // only ever put on the page through textContent, never as markup.
 //

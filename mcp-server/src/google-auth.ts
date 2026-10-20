@@ -1,7 +1,7 @@
 // Google Sign-In: server-side verification of the idToken a native client
 // receives from the GoogleSignIn iOS SDK.
 //
-// Mirrors apple-auth.js exactly (both share jwks-verify.js) — just pointed at
+// Mirrors apple-auth.ts exactly (both share jwks-verify.ts) — just pointed at
 // Google's own issuer/keys/audience. The audience is studiquo's *server*
 // OAuth client ID (not the iOS client ID): the iOS app sets that as its
 // `GIDServerClientID`, which is what makes Google mint an idToken addressed

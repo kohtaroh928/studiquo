@@ -63,7 +63,7 @@ function newSecretHalf() {
  */
 export async function mintSession(env: Env, identityKey, _suppliedByTheApp?: unknown, { originIssuedAtMs }: { originIssuedAtMs?: number } = {}) {
   const issuedAt = Math.floor(Date.now() / 1000);
-  // Signed when a signing key is configured (token-signature.js), so that an
+  // Signed when a signing key is configured (token-signature.ts), so that an
   // invented token can be refused later without a KV read.
   const token = await signSessionToken(env, `${issuedAt}.${newSecretHalf()}`);
   const deletionStateKey = `account-deletion:${await sha256Hex(identityKey)}`;
@@ -137,9 +137,9 @@ export async function hasRealSession(env: Env, token, options?: { allowSuspended
   return (await realSession(env, token, options)) !== null;
 }
 
-// An operator suspends an account (moderation-actions.js) by writing this key;
+// An operator suspends an account (moderation-actions.ts) by writing this key;
 // it is named by the same hash the chat identity uses, so a reported chat user
-// can be traced to it (see chat.js, which records chat key -> this hash).
+// can be traced to it (see chat.ts, which records chat key -> this hash).
 export const SUSPENSION_PREFIX = "account-suspended:";
 export async function suspensionKey(canonicalSub) {
   return `${SUSPENSION_PREFIX}${await sha256Hex(`chat-account:${canonicalSub}`)}`;

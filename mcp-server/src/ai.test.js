@@ -4,7 +4,7 @@ import { handleAI } from "./ai.ts";
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1ZkAAAAASUVORK5CYII=";
 
-// Stands in for the real RateCounter Durable Object (rate-counter.js): a
+// Stands in for the real RateCounter Durable Object (rate-counter.ts): a
 // plain in-memory count per name, ignoring windowSeconds entirely since no
 // test here spans a real window boundary.
 function fakeRateCounterBinding() {

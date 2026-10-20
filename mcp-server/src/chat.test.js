@@ -12,7 +12,7 @@ import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, exportPKCS8 } f
 // an immediate mutual friendship, so a stranger who only knows your code
 // can't start messaging you without your consent.
 
-// Stands in for the real ChatRoom Durable Object (chat-room.js): one shared
+// Stands in for the real ChatRoom Durable Object (chat-room.ts): one shared
 // participants/messages record per room name, persisting across separate
 // getByName(name) calls the way a real Durable Object instance would.
 const ATTACHMENT_CONTENT_TYPE_PATTERN = /^[a-zA-Z0-9!#$&\-^_.+]+\/[a-zA-Z0-9!#$&\-^_.+]+$/;
@@ -53,8 +53,8 @@ function fakeChatRoomBinding() {
             state.name = String(options.name ?? "").trim().slice(0, 80) || null;
           }
         },
-        // Mirrors chat-room.js's real addParticipant: always self-initiated
-        // by whoever just had their group invite accepted (see groups.js) —
+        // Mirrors chat-room.ts's real addParticipant: always self-initiated
+        // by whoever just had their group invite accepted (see groups.ts) —
         // the real authorization already happened one level up, so this
         // doesn't require the new member to already be a participant.
         async addParticipant(newKey, code, name) {
@@ -65,7 +65,7 @@ function fakeChatRoomBinding() {
           state.readPositions.set(newKey, state.messages.at(-1)?.id ?? 0);
           return { status: "added" };
         },
-        // Mirrors chat-room.js's real removeParticipant: any current member
+        // Mirrors chat-room.ts's real removeParticipant: any current member
         // may remove any other (or themselves) — no admin/owner concept.
         async removeParticipant(callerKey, targetKey) {
           requireGroup(callerKey);
@@ -115,7 +115,7 @@ function fakeChatRoomBinding() {
           state.readPositions.set(userKey, Math.max(state.readPositions.get(userKey) ?? 0, safeID));
           return { status: "read", throughID: safeID };
         },
-        // Mirrors chat-room.js's real requireParticipant: throws for a
+        // Mirrors chat-room.ts's real requireParticipant: throws for a
         // non-participant, otherwise resolves with nothing meaningful — a
         // pure access-control check, not a data read.
         async requireParticipant(userKey) {
@@ -162,7 +162,7 @@ function fakeChatRoomBinding() {
             .filter(item => item.id > after)
             .map(item => ({ ...item, isMine: item.senderKey === userKey }));
         },
-        // Mirrors chat-room.js's real cancelMessage: only the original
+        // Mirrors chat-room.ts's real cancelMessage: only the original
         // sender may retract it, and the stored text is actually cleared
         // (not just hidden), so every future read of this room sees it gone.
         async cancelMessage(userKey, messageID) {
@@ -181,7 +181,7 @@ function fakeChatRoomBinding() {
           message.text = ""; message.isCanceled = true;
           return { status: was ? "already_removed" : "removed" };
         },
-        // Mirrors chat-room.js's real reportSnapshot.
+        // Mirrors chat-room.ts's real reportSnapshot.
         async reportSnapshot(userKey, messageID) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           const target = state.messages.find(item => item.id === messageID);
@@ -195,7 +195,7 @@ function fakeChatRoomBinding() {
             })),
           };
         },
-        // Mirrors chat-room.js's real editMessage: only the original sender
+        // Mirrors chat-room.ts's real editMessage: only the original sender
         // may edit, and a canceled message can never be resurrected by one.
         async editMessage(userKey, messageID, text) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
@@ -206,7 +206,7 @@ function fakeChatRoomBinding() {
           message.text = text;
           return { status: "edited" };
         },
-        // Mirrors chat-room.js's real getMessagesByIDs: a direct-by-id
+        // Mirrors chat-room.ts's real getMessagesByIDs: a direct-by-id
         // lookup independent of the `after` cursor, for reconciling ids old
         // enough to have scrolled out of the normal rolling window.
         async getMessagesByIDs(userKey, ids) {
@@ -216,10 +216,10 @@ function fakeChatRoomBinding() {
             .filter(item => idSet.has(item.id))
             .map(item => ({ ...item, isMine: item.senderKey === userKey }));
         },
-        // Mirrors chat-room.js's real storeAttachment/getAttachment: same
+        // Mirrors chat-room.ts's real storeAttachment/getAttachment: same
         // validation, same Forbidden gate, same in-room storage — so the
         // fake actually exercises the same access-control path.
-        // Mirrors chat-room.js's opportunistic cleanup too: every new
+        // Mirrors chat-room.ts's opportunistic cleanup too: every new
         // upload purges attachments past the retention window first, since
         // there's no cron/alarm to do it on a schedule.
         async storeAttachment(userKey, contentType, base64Data) {
@@ -287,7 +287,7 @@ function generateRegistryTestCode() {
   return Array.from(bytes, value => REGISTRY_CODE_ALPHABET[value % 32]).join("");
 }
 
-// Stands in for the real UserRegistry Durable Object (user-registry.js):
+// Stands in for the real UserRegistry Durable Object (user-registry.ts):
 // same get-or-create logic against the same KV store, but — like a real
 // Durable Object handling one request at a time per instance — calls for the
 // same key are chained so a second call for a key that's still being
@@ -1518,9 +1518,9 @@ test("a downloaded group photo is cached only privately and only briefly", async
   assert.equal(downloaded.headers.get("cache-control"), "private, max-age=60");
 });
 
-// Boundary coverage for the group member cap: chat-room.js's own
+// Boundary coverage for the group member cap: chat-room.ts's own
 // MAX_GROUP_MEMBERS (50) is the real, hard limit (enforced at accept time),
-// while groups.js's MAX_INVITED_MEMBERS (49) is a matching cap on a single
+// while groups.ts's MAX_INVITED_MEMBERS (49) is a matching cap on a single
 // create-group request's invite list and a "soft", early check on sending a
 // further invite — the two are meant to describe the exact same limit from
 // either side of "creator" vs. "everyone else". Directly seeds a room's
@@ -1621,10 +1621,10 @@ test("inviting a new friend into an already-full (50-member) group is rejected b
 });
 
 // Regression coverage for "accepting into a group that filled up in the
-// meantime leaves the invitee in limbo": groups.js's accept handler
+// meantime leaves the invitee in limbo": groups.ts's accept handler
 // atomically consumes the invitee's pending invite (and optimistically adds
 // the room to their own group list) *before* it knows whether
-// chat-room.js's addParticipant will actually succeed — that ordering exists
+// chat-room.ts's addParticipant will actually succeed — that ordering exists
 // so an accept racing a reject of the very same invite still resolves
 // atomically (see resolveIncomingGroupInvite's own comment). If
 // addParticipant then fails because the group filled up first, that
@@ -1709,7 +1709,7 @@ test("a rejected accept leaves no phantom group in the invitee's own list, and a
 
 // Concurrency coverage for the group member cap: with exactly one seat left,
 // several people accepting their own (independently valid) pending invites
-// at nearly the same moment must not all get in — chat-room.js's
+// at nearly the same moment must not all get in — chat-room.ts's
 // addParticipant is what actually enforces MAX_GROUP_MEMBERS, and it must do
 // so as a genuine "first past the post" race, not let the room's count
 // overshoot 50 just because several accepts were in flight together.
@@ -1757,9 +1757,9 @@ test("when only one seat remains, simultaneous accepts from different people rac
 
 // Coverage for the cap not being a one-way ratchet: a group that has been
 // full stays that way only as long as it actually has 50 members — once one
-// leaves, both of the checks that enforce the cap (groups.js's own
+// leaves, both of the checks that enforce the cap (groups.ts's own
 // early "is this group already full" check on sending an invite, and
-// chat-room.js's addParticipant at accept time) must let it fill back up to
+// chat-room.ts's addParticipant at accept time) must let it fill back up to
 // 50 again, not stay stuck treating a group as full forever just because it
 // once was.
 test("after a full group loses a member, a new invite can be sent and accepted, refilling it back to exactly 50", async () => {

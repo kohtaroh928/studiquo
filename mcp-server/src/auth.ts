@@ -1,6 +1,6 @@
 // Shared by every module that authenticates a request with a Studiquo bearer
 // token, so the extraction rule and the hashing algorithm used to derive a
-// user's storage key can't drift between them. revocation.js and token.js
+// user's storage key can't drift between them. revocation.ts and token.ts
 // both assume every caller hashes the same raw token the same way — a
 // separately-maintained copy of either function here would risk silently
 // breaking that assumption for just one endpoint.

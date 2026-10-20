@@ -1,7 +1,7 @@
 import { blockedBetween } from "./block-check.ts";
 import { json, readJSONLimited as readJSONLimitedShared } from "./http.ts";
 import { sendPush } from "./push.ts";
-import { roomMembershipKey } from "./document-room-store.js";
+import { roomMembershipKey } from "./document-room-store.ts";
 import type { Env } from "./env.ts";
 import { nextCursor } from "./kv.ts";
 import type { ChatUser } from "./records.ts";
@@ -16,11 +16,11 @@ interface DocumentInvite {
 
 // A full block snapshot for a modest document (well past what any
 // reasonably-sized study document needs) plus JSON overhead — same
-// reasoning as chat.js's MAX_BODY, scaled up since this carries a whole
+// reasoning as chat.ts's MAX_BODY, scaled up since this carries a whole
 // document instead of one message.
 const MAX_BODY = 500_000;
 const PROPOSE_LIMIT_PER_MINUTE = 30;
-// Matches chat.js's own RATE_LIMIT_CHAT_FRIEND_ADD budget — inviting a
+// Matches chat.ts's own RATE_LIMIT_CHAT_FRIEND_ADD budget — inviting a
 // collaborator is the same kind of occasional "add a person" action, not a
 // fast-paced one, so it gets the same tight budget rather than propose's
 // higher one meant for ordinary editing.
@@ -53,9 +53,9 @@ async function pendingInviteNames(env: Env, userKey: string) {
 // hourly budget rather than the per-minute one the other actions use.
 const INIT_LIMIT_PER_HOUR = 20;
 const INIT_WINDOW_SECONDS = 3_600;
-// Matches chat.js's own FRIEND_CODE_PATTERN — the client only ever knows a
+// Matches chat.ts's own FRIEND_CODE_PATTERN — the client only ever knows a
 // collaborator by their friend code (as shown in the existing friend list),
-// never their raw userKey, so invite resolves a code the same way chat.js
+// never their raw userKey, so invite resolves a code the same way chat.ts
 // resolves one when adding a friend.
 const FRIEND_CODE_PATTERN = /^[A-Z0-9]{6,32}$/;
 
@@ -73,8 +73,8 @@ async function readBody(request: Request, maxBytes = MAX_BODY) {
   return readJSONLimitedShared(request, maxBytes);
 }
 
-// A RateCounter Durable Object soft cap (see rate-counter.js), the same one
-// ai.js's usage quotas use — deliberately not routed through
+// A RateCounter Durable Object soft cap (see rate-counter.ts), the same one
+// ai.ts's usage quotas use — deliberately not routed through
 // checkRateLimit()/the Cloudflare Rate Limiting binding those use, since
 // that binding is provisioned per endpoint in the Cloudflare dashboard and
 // this endpoint doesn't have one of its own yet.
@@ -92,7 +92,7 @@ async function chatUser(env: Env, userKey: string) {
 // DocumentRoom.requireParticipant/requireReviewer throw a plain
 // Error("Forbidden") for a caller without room access — without this, that
 // propagates uncaught up to app.js's catch-all and comes back as a generic
-// 500 instead of a proper 403. Mirrors chat.js's roomForbiddenResponse.
+// 500 instead of a proper 403. Mirrors chat.ts's roomForbiddenResponse.
 function roomForbiddenResponse(error) {
   if (error instanceof Error && error.message === "Forbidden") {
     return json({ error: "You do not have access to this document room." }, 403);
@@ -299,7 +299,7 @@ export async function handleDocumentCollab(url, request: Request, env: Env, key,
   if (proposeMatch && request.method === "POST") {
     // Without this, a single compromised or misbehaving client could flood
     // a room (and this Durable Object's storage) with unlimited proposals —
-    // same reasoning as chat.js's own message-send limit.
+    // same reasoning as chat.ts's own message-send limit.
     const allowed = await withinLimit(env, "document-propose", key, PROPOSE_LIMIT_PER_MINUTE);
     if (!allowed) return json({ error: "Too many proposed changes. Please slow down." }, 429);
     const body = await readBody(request);

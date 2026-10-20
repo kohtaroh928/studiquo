@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import type { Env } from "./env.ts";
 
 // Raw byte cap on an uploaded attachment (before base64 encoding, which adds
 // ~33%) — bounds both the row size in this room's SQLite storage and how
@@ -9,12 +10,21 @@ const CONTENT_TYPE_PATTERN = /^[a-zA-Z0-9!#$&\-^_.+]+\/[a-zA-Z0-9!#$&\-^_.+]+$/;
 // matches the 90-day convention already used for token expiry elsewhere in
 // this codebase.
 const ATTACHMENT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
-// A studiquo-specific cap, distinct from MAX_FRIENDS in user-registry.js —
+// A studiquo-specific cap, distinct from MAX_FRIENDS in user-registry.ts —
 // sized for a study group/class, not a social contact list.
 const MAX_GROUP_MEMBERS = 50;
 
-export class ChatRoom extends DurableObject {
-  constructor(ctx, env) {
+/** What `initialize` can be told about the room it is created as. */
+interface RoomOptions {
+  kind?: "direct" | "group";
+  creatorCode?: string | null;
+  creatorName?: string | null;
+  name?: string | null;
+  [field: string]: unknown;
+}
+
+export class ChatRoom extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       this.ctx.storage.sql.exec(`
@@ -104,17 +114,17 @@ export class ChatRoom extends DurableObject {
    * blocking) or `"group"` (N participants, no blocking; see requireGroup's
    * callers below). A group's `initialize` is only ever called once, at
    * creation, with just its creator — everyone else joins later through
-   * `addParticipant`, once they've accepted an invitation (see groups.js).
+   * `addParticipant`, once they've accepted an invitation (see groups.ts).
    */
   /**
    * `options.creatorCode`/`options.creatorName` (group only) are stored
    * alongside the sole initial participant — see `groupInfo`'s doc comment
    * for why a group's roster carries this denormalized copy instead of
-   * groups.js resolving it via a live KV lookup on every listing.
+   * groups.ts resolving it via a live KV lookup on every listing.
    */
-  async initialize(roomID, participants, options = {}) {
+  async initialize(roomID, participants, options: RoomOptions = {}) {
     const kind = options.kind ?? "direct";
-    const existing = this.ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM participants").one().count;
+    const existing = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (existing > 0) {
       // Re-friending restores access to the retained conversation.
       this.ctx.storage.sql.exec("DELETE FROM room_state WHERE id = 1");
@@ -138,17 +148,17 @@ export class ChatRoom extends DurableObject {
   }
 
   /** Adds a new member to an existing group. Always self-initiated — called
-   * only once an invitee accepts their invite (see groups.js), at which
+   * only once an invitee accepts their invite (see groups.ts), at which
    * point `newKey` legitimately belongs but, being brand new, can't yet
    * pass a requireParticipant check the way every other group method's
    * caller does. The actual authorization already happened one level up:
-   * groups.js only reaches this call after UserRegistry.resolveIncomingGroupInvite
+   * groups.ts only reaches this call after UserRegistry.resolveIncomingGroupInvite
    * confirms `newKey` held a genuine, still-pending invite for this room.
    * `code`/`name` are stored alongside the key — see `groupInfo`'s doc
    * comment. */
   async addParticipant(newKey, code, name) {
     if (!this.isGroupRoom()) throw new Error("NotAGroup");
-    const count = this.ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM participants").one().count;
+    const count = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (count >= MAX_GROUP_MEMBERS) throw new Error("GroupFull");
     this.ctx.storage.sql.exec(
       "INSERT OR IGNORE INTO participants (user_key, code, name) VALUES (?, ?, ?)", newKey, code ?? null, name ?? null,
@@ -157,7 +167,7 @@ export class ChatRoom extends DurableObject {
     // per-member join marker), but their unread count should only start
     // counting from here — without this, joining an old, active group would
     // instantly show years of history as unread.
-    const latestID = this.ctx.storage.sql.exec("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
+    const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
     this.ctx.storage.sql.exec(
       "INSERT INTO read_positions (user_key, message_id) VALUES (?, ?) " +
       "ON CONFLICT(user_key) DO UPDATE SET message_id = MAX(message_id, excluded.message_id)",
@@ -211,8 +221,8 @@ export class ChatRoom extends DurableObject {
    */
   async groupInfo(callerKey) {
     this.requireGroup(callerKey);
-    const row = this.ctx.storage.sql.exec("SELECT name FROM room_state WHERE id = 1").toArray()[0];
-    const members = this.ctx.storage.sql.exec("SELECT user_key, code, name FROM participants").toArray()
+    const row = this.ctx.storage.sql.exec<{ name: string | null }>("SELECT name FROM room_state WHERE id = 1").toArray()[0];
+    const members = this.ctx.storage.sql.exec<{ user_key: string; code: string | null; name: string | null }>("SELECT user_key, code, name FROM participants").toArray()
       .map(item => ({ key: item.user_key, code: item.code, name: item.name }));
     return { name: row?.name ?? null, members };
   }
@@ -231,7 +241,7 @@ export class ChatRoom extends DurableObject {
 
   async close(userKey) {
     this.requireParticipant(userKey);
-    const latestID = this.ctx.storage.sql.exec("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
+    const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
     for (const participant of this.ctx.storage.sql.exec("SELECT user_key FROM participants").toArray()) {
       this.ctx.storage.sql.exec(
         "INSERT INTO read_positions (user_key, message_id) VALUES (?, ?) " +
@@ -241,7 +251,7 @@ export class ChatRoom extends DurableObject {
     }
     // Not INSERT OR REPLACE: that would overwrite an existing row's kind/name
     // back to their column defaults. close() is only ever called on a direct
-    // room in practice (see removeFriendMatch in chat.js — groups leave
+    // room in practice (see removeFriendMatch in chat.ts — groups leave
     // through removeParticipant instead, never close()), but this stays
     // correct even so.
     this.ctx.storage.sql.exec(
@@ -252,7 +262,7 @@ export class ChatRoom extends DurableObject {
 
   async inboxState(userKey) {
     this.requireParticipant(userKey);
-    const latestID = this.ctx.storage.sql.exec("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
+    const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
     if (this.ctx.storage.sql.exec("SELECT closed FROM room_state WHERE id = 1").toArray()[0]?.closed) {
       return { latestID, unreadCount: 0, closed: true };
     }
@@ -276,7 +286,7 @@ export class ChatRoom extends DurableObject {
 
   async markRead(userKey, throughID) {
     this.requireParticipant(userKey);
-    const latestID = this.ctx.storage.sql.exec("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
+    const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
     const safeID = Math.min(latestID, Math.max(0, Number.isSafeInteger(throughID) ? throughID : 0));
     this.ctx.storage.sql.exec(
       "INSERT INTO read_positions (user_key, message_id) VALUES (?, ?) " +
@@ -356,7 +366,7 @@ export class ChatRoom extends DurableObject {
         // On an existing room's first send after this feature is introduced,
         // begin counting at the previous last message. Otherwise a recipient
         // who has not opened the app yet would miss this first new message.
-        const previousID = this.ctx.storage.sql.exec("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
+        const previousID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
         this.ctx.storage.sql.exec(
           "INSERT INTO read_positions (user_key, message_id) VALUES (?, ?)", other, previousID,
         );
@@ -367,7 +377,7 @@ export class ChatRoom extends DurableObject {
       "INSERT INTO messages (sender_key, text, sent_at, client_message_id) VALUES (?, ?, ?, ?) RETURNING id",
       userKey, text, sentAt, clientMessageID,
     ).one();
-    // senderKey is internal — chat.js strips it and substitutes the
+    // senderKey is internal — chat.ts strips it and substitutes the
     // sender's code/name before this ever reaches a client (see
     // resolveSenderNames). A direct room's own client never needed
     // anything beyond isMine, but a group's does, since "not mine" no
@@ -395,7 +405,7 @@ export class ChatRoom extends DurableObject {
     }));
   }
 
-  // Operator removal (moderation-actions.js): the same end state as the sender
+  // Operator removal (moderation-actions.ts): the same end state as the sender
   // retracting, without being the sender. Reachable only through the Worker's
   // binding from the Access-gated admin API, never from a user's request.
   async moderatorRemoveMessage(messageID) {
@@ -523,7 +533,7 @@ export class ChatRoom extends DurableObject {
 
   async getAttachment(userKey, id) {
     this.requireParticipant(userKey);
-    const row = this.ctx.storage.sql.exec(
+    const row = this.ctx.storage.sql.exec<{ content_type: string; data: string }>(
       "SELECT content_type, data FROM attachments WHERE id = ?", id,
     ).toArray()[0];
     if (!row) return null;

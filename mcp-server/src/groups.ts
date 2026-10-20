@@ -7,13 +7,13 @@ import type { ChatUser, StoredImage } from "./records.ts";
 
 /**
  * Group chat: multiple people sharing one ChatRoom (kind: "group" — see
- * chat-room.js). Reuses that same room's message/attachment/read-position
+ * chat-room.ts). Reuses that same room's message/attachment/read-position
  * machinery as-is; what's new here is membership — who's in a group, and
  * getting there through an invite a person can accept or reject, the same
- * shape as chat.js's own friend-request flow rather than LINE's instant-join.
+ * shape as chat.ts's own friend-request flow rather than LINE's instant-join.
  *
- * Deliberately not a fully independent handler the way ai.js/document-collab.js
- * are: it shares chat.js's `/api/chat/` prefix and its already-resolved
+ * Deliberately not a fully independent handler the way ai.ts/document-collab.js
+ * are: it shares chat.ts's `/api/chat/` prefix and its already-resolved
  * chat identity `key`, so it's called from inside handleChat (after that
  * file's own auth gate) instead of duplicating that gate here. A user
  * record is expected to already exist by the time any of these routes is
@@ -23,11 +23,11 @@ import type { ChatUser, StoredImage } from "./records.ts";
 const MAX_GROUP_NAME_LENGTH = 80;
 // Bounds a single create-group request's member list, chosen so a full
 // list (this many invited + the creator) lands exactly at
-// chat-room.js's own MAX_GROUP_MEMBERS cap — the two numbers describe the
+// chat-room.ts's own MAX_GROUP_MEMBERS cap — the two numbers describe the
 // same limit from either side of "creator" vs. "everyone".
 const MAX_INVITED_MEMBERS = 49;
 const FRIEND_CODE_PATTERN = /^[A-Z0-9]{6,32}$/;
-// Same pair as chat.js's own MAX_AVATAR_BYTES/MAX_AVATAR_UPLOAD_BODY: 300KB
+// Same pair as chat.ts's own MAX_AVATAR_BYTES/MAX_AVATAR_UPLOAD_BODY: 300KB
 // raw is the actual limit, 450KB is just enough room for that raw size's
 // base64 encoding plus the JSON wrapper around it.
 const MAX_AVATAR_BYTES = 300_000;
@@ -56,7 +56,7 @@ async function currentUser(env: Env, key) {
 }
 
 async function mintRoomID() {
-  // Same 64-lowercase-hex shape as chat.js's own sha256-derived room ids,
+  // Same 64-lowercase-hex shape as chat.ts's own sha256-derived room ids,
   // just from a random source instead of a deterministic pair hash — a
   // group's membership changes over time, so its id can't be derived from
   // "who's in it" the way a 1:1 room's id is.
@@ -112,7 +112,7 @@ async function toClientGroup(env: Env, roomID, info) {
 
 // ChatRoom throws plain Error(...) for every failure case — translated here
 // to a proper response instead of propagating uncaught to app.js's generic
-// 500. Distinct from chat.js's own roomForbiddenResponse: a group room
+// 500. Distinct from chat.ts's own roomForbiddenResponse: a group room
 // never throws "Blocked"/"Closed", and throws a few reasons a direct room
 // never does.
 function groupErrorResponse(error) {
@@ -136,7 +136,7 @@ async function withGroupErrors(promise) {
 }
 
 // groupInfo()'s members already carry their own code/name (see its doc
-// comment in chat-room.js) — this just strips the internal key before a
+// comment in chat-room.ts) — this just strips the internal key before a
 // member list ever reaches a client, the same boundary friends()/messages
 // already keep around a raw user key.
 function toClientMembers(members) {
@@ -255,7 +255,7 @@ export async function handleGroupRoutes(url, request: Request, env: Env, key, ct
     const otherKey = await env.STUDIQUO_DATA.get(`chat:code:${code}`);
     if (!otherKey) return json({ error: "Friend not found." }, 404);
     if (info.members.some(member => member.key === otherKey)) return json({ error: "Already a member of this group." }, 400);
-    // A soft, early check for a nicer error — chat-room.js's addParticipant
+    // A soft, early check for a nicer error — chat-room.ts's addParticipant
     // is what actually enforces the cap, at accept time (the true moment of
     // truth: several pending invites can be outstanding at once).
     if (info.members.length > MAX_INVITED_MEMBERS) return json({ error: "This group is full." }, 400);
@@ -299,7 +299,7 @@ export async function handleGroupRoutes(url, request: Request, env: Env, key, ct
         // actually succeed — see resolveIncomingGroupInvite's own comment.
         // Since it didn't, put the invitee back where they were instead of
         // leaving a phantom group membership with no way to retry.
-        const invite = result.invite ?? {};
+        const invite: { name?: string; inviterCode?: string; inviterName?: string } = result.invite ?? {};
         await env.USER_REGISTRY.getByName(key)
           .undoAcceptedGroupInvite(key, roomID, invite.name, invite.inviterCode, invite.inviterName);
         return response;
@@ -363,7 +363,7 @@ export async function handleGroupRoutes(url, request: Request, env: Env, key, ct
     if (!["image/jpeg", "image/png"].includes(contentType) || !data || !isWellFormedBase64(data)) {
       return json({ error: "Invalid avatar." }, 400);
     }
-    // 300KB raw, same cap as a profile photo (chat.js's MAX_AVATAR_BYTES) —
+    // 300KB raw, same cap as a profile photo (chat.ts's MAX_AVATAR_BYTES) —
     // the client resizes before ever sending either.
     if (Math.floor((data.length * 3) / 4) > MAX_AVATAR_BYTES) {
       return json({ error: "Invalid avatar." }, 400);

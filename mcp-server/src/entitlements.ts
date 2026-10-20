@@ -1,7 +1,7 @@
 // Resolves a signed-in account's current subscription plan from the
-// `subscribers` table in D1 (ADMIN_DB) that admin.js's RevenueCat webhook
+// `subscribers` table in D1 (ADMIN_DB) that admin.ts's RevenueCat webhook
 // (`handleAdminWebhook`) keeps up to date — see
-// migrations/0001_admin_dashboard.sql for that table's schema and admin.js's
+// migrations/0001_admin_dashboard.sql for that table's schema and admin.ts's
 // `upsertSubscriber`/`ACTIVATING_EVENT_TYPES` for how a row gets there.
 // Nothing in this file talks to RevenueCat directly; it only reads what the
 // webhook already wrote.
@@ -61,12 +61,12 @@ export function paywallEnabled(env: Env) {
 }
 
 // RevenueCat's CANCELLATION doesn't deactivate a subscriber by itself — see
-// admin.js's ACTIVATING_EVENT_TYPES comment: access lasts until the
+// admin.ts's ACTIVATING_EVENT_TYPES comment: access lasts until the
 // EXPIRATION event fires at the end of the current period, and only then
 // does `status` here become "expired". "billing_issue" (a failed renewal
 // charge) is still entitled during RevenueCat's own grace period, same as
 // an outright "active" subscriber — only EXPIRATION/REFUND ever move a row
-// out of this set (admin.js's DEACTIVATING_EVENT_TYPES).
+// out of this set (admin.ts's DEACTIVATING_EVENT_TYPES).
 const ACTIVE_STATUSES = new Set(["active", "billing_issue"]);
 
 // `null` means "this row grants no plan"; the caller decides what that
@@ -75,7 +75,7 @@ function planFromRow(row) {
   if (!row) return null;
   if (!ACTIVE_STATUSES.has(row.status)) return null;
   // expires_at is null for a subscriber whose event never carried
-  // expiration_at_ms (admin.js falls back to `null` there); null means
+  // expiration_at_ms (admin.ts falls back to `null` there); null means
   // "not known to have an end date", not "expired".
   if (typeof row.expires_at === "number" && row.expires_at > 0 && row.expires_at <= Date.now()) {
     return null;

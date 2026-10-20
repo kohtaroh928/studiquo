@@ -4,7 +4,7 @@ import type { Env } from "./env.ts";
  * OpenAI proxy (Responses API, /v1/responses) — the base provider for every AI
  * feature. The app never holds `OPENAI_API_KEY`, only this Worker does.
  *
- * Model IDs are deliberately NOT hardcoded here: the logical models in ai.js's
+ * Model IDs are deliberately NOT hardcoded here: the logical models in ai.ts's
  * `PLAN_MODELS` ("openai-luna" / "openai-terra" / "openai-sol" / "openai-astra")
  * are resolved to real ids via `env.OPENAI_LUNA_MODEL` / `OPENAI_TERRA_MODEL` /
  * `OPENAI_SOL_MODEL` / `OPENAI_ASTRA_MODEL` (plain `vars`; only
@@ -76,7 +76,7 @@ export function buildResponsesBody({
 }
 
 /**
- * Accepts the schemas written in ai.js (upper-case OBJECT/STRING/… types, the
+ * Accepts the schemas written in ai.ts (upper-case OBJECT/STRING/… types, the
  * Gemini dialect they were first written in) and returns strict JSON Schema:
  * lower-case types, no extra properties, every property required.
  */
@@ -137,7 +137,7 @@ export async function callOpenAIStructured(env: Env, { model, systemInstruction,
 }
 
 /**
- * `turns` is the same provider-agnostic shape ai.js's chat handler already
+ * `turns` is the same provider-agnostic shape ai.ts's chat handler already
  * builds for Gemini (`{ role: "user" | "assistant", text }`). `images`
  * (already-validated PNG base64 strings) are attached to the last turn
  * only, matching how the app's own screenshot-attach flow works.
@@ -196,7 +196,7 @@ export async function moderationRejection(env: Env, texts, apiKey = env.OPENAI_A
  * Pulls the incremental text out of one parsed Responses SSE event. Only
  * `response.output_text.delta` carries text; every other event (created,
  * output_item.*, completed, ...) yields "". Responses streams have no
- * terminal `[DONE]` line — ai.js's pump ends when the body ends.
+ * terminal `[DONE]` line — ai.ts's pump ends when the body ends.
  */
 export function extractDeltaText(event) {
   if (event?.type !== "response.output_text.delta") return "";

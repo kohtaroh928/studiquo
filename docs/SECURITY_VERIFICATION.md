@@ -89,15 +89,15 @@
 | V1 アーキテクチャ・設計 | △ | `ARCHITECTURE.md`、`THREAT_MODEL.md`、信頼境界の整理、段階配備のフラグ | 認可の網羅表が無い(カード「認可の網羅テスト」) |
 | V2 認証 | △ | Argon2id+PBKDF2の旧形式対応(`local-auth.test.js`)、漏えいPW照合(`pwned-passwords.test.js`)、失敗の段階的待機(`login-throttle.test.js`)、確認コードは1回・15分・5回(`email-verification.test.js`)、パスキー(`passkeys.test.js`)、新環境のサインイン通知(`login-monitor.test.js`) | パスワードの最小長が8。多要素の強制(パスキー)は配備待ち |
 | V3 セッション管理 | △ | 絶対期限(90日、更新しても開始から既定365日)、署名つきトークン(`token-signature.test.js`)、実在セッション確認(`session.test.js`)、90日の有効期限と更新(`token.test.js`、`low-priority-hardening.test.js`の「SESSION_MAX_DAYS」)、ログアウトで失効(`app.test.js`「a previously issued token is rejected…after logout revokes it」)、パスワード変更で古いセッションを失効(`session-revocation.test.js`) | 「すべての端末からサインアウト」を利用者が行う機能が無い(カード「すべての端末からサインアウト」) |
-| V4 アクセス制御 | △ | ルーム/文書のメンバー確認(`chat.test.js`「someone outside the room cannot…」、`document-collab.test.js`)、アカウント間の分離(`entitlements.test.js`)、管理APIはAccessで毎回検証(`access.js`、`admin.test.js`)、他サイトからの書き込み拒否(`isCrossSiteWrite`) | 経路の網羅表が無い(同上のカード) |
-| V5 入力の検証・エンコード | ○ | 本文の上限(`app.test.js`「…oversized body is rejected with 413」)、D1は全て`bind`(文字列連結は定数の表名のみ、`privacy-retention.js`)、HTMLは`htmlEscape`+CSP(`api-hardening.test.js`、`invite.test.js`)、プロンプト区切りの無害化(`ai.js`) | ファジングが無い(カード) |
+| V4 アクセス制御 | △ | ルーム/文書のメンバー確認(`chat.test.js`「someone outside the room cannot…」、`document-collab.test.js`)、アカウント間の分離(`entitlements.test.js`)、管理APIはAccessで毎回検証(`access.ts`、`admin.test.js`)、他サイトからの書き込み拒否(`isCrossSiteWrite`) | 経路の網羅表が無い(同上のカード) |
+| V5 入力の検証・エンコード | ○ | 本文の上限(`app.test.js`「…oversized body is rejected with 413」)、D1は全て`bind`(文字列連結は定数の表名のみ、`privacy-retention.ts`)、HTMLは`htmlEscape`+CSP(`api-hardening.test.js`、`invite.test.js`)、プロンプト区切りの無害化(`ai.ts`) | ファジングが無い(カード) |
 | V6 保存時の暗号 | △ | スナップショットはAES-256-GCMで鍵名をAADに束縛(`snapshot-crypto.test.js`)、パスワードはArgon2id、トークンはハッシュで保存 | 鍵が未設定だと平文。チャット本文などのサーバー側暗号化は保留(カード「サーバー側の保存データの暗号化方針」)。配備はカード「スナップショット暗号化…」 |
 | V7 エラー処理・ログ | △ | 本文・画像・鍵をログに出さない運用、`invocation_logs`無効、エラー応答は汎用 | OpenAIのエラー応答の本文(最大300文字)をログに出す箇所(カード「外部エラー応答の本文をログに出す箇所」)。異常検知のアラートが3種だけ(カード「異常検知のアラート」) |
 | V8 データ保護 | △ | 保持期間と削除(`privacy-retention.test.js`、`account-deletion.test.js`)、`store:false`でAIへ送る(`ai.test.js`) | バックアップと復元の訓練が無い(カード「バックアップと復元」) |
 | V9 通信 | △ | TLS、HSTS・平文http拒否はブランチ`claude/net-server`、**未マージ** | `main`はHSTSが無く、平文httpに応答する |
 | V10 悪意あるコード | △ | 秘密スキャンを手動で実施 | CI・静的解析が無い(ブランチ`claude/ci-setup`、**未マージ**。カード「静的解析を入れる…」) |
 | V11 業務ロジック | △ | AI窓ごとの上限+全体上限(`ai-credits.test.js`)、課金の整合(`entitlements.test.js`)、削除の世代管理(`session-revocation.test.js`) | サインアップの自動化への耐性はApp Attest待ち(**未マージ**) |
-| V12 ファイル・リソース | △ | 添付6MB・10回/分(`chat.test.js`)、`nosniff`+sandbox CSP | 添付の種類は形式を検証し(`chat-room.js`の`CONTENT_TYPE_PATTERN`)、配信は`nosniff`・sandbox・`attachment`で返す(`binaryHeaders`)。アバターは`image/jpeg`・`image/png`の許可リスト。残りの確認はカード「ログに残る秘密値とHTTP周りの細かい指摘」 |
+| V12 ファイル・リソース | △ | 添付6MB・10回/分(`chat.test.js`)、`nosniff`+sandbox CSP | 添付の種類は形式を検証し(`chat-room.ts`の`CONTENT_TYPE_PATTERN`)、配信は`nosniff`・sandbox・`attachment`で返す(`binaryHeaders`)。アバターは`image/jpeg`・`image/png`の許可リスト。残りの確認はカード「ログに残る秘密値とHTTP周りの細かい指摘」 |
 | V13 API・Webサービス | △ | JSON、レート制限(`app.test.js`の各ルート、`api-hardening.test.js`)、OAuth PKCE(`mcp-oauth.test.js`) | 動的クライアント登録は誰でもできる(カード「OAuth動的登録…」) |
 | V14 構成 | △ | 秘密はWrangler secrets、台帳(ブランチ`claude/ci-setup`の`RUNBOOK.md`付録A、**未マージ**)、環境の分離(ステージング) | 公開リポジトリ、ブランチ保護なし、`preview_id`が本番と共通 |
 

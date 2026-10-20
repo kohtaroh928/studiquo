@@ -2,7 +2,7 @@ import { VALIDITY_SECONDS } from "./token.ts";
 import type { Env } from "./env.ts";
 // A revoked bearer token's SHA-256 hash is recorded here so every endpoint
 // that authenticates with it can reject it even after logout, regardless of
-// which module first derived the hash (worker.js, chat.js, passkeys.js all
+// which module first derived the hash (worker.js, chat.ts, passkeys.ts all
 // compute the same SHA-256 hex digest of the token).
 const PREFIX = "revoked:";
 
