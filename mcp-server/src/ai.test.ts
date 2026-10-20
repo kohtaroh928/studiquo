@@ -11,10 +11,10 @@ const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAus
 function fakeRateCounterBinding() {
   const counts = new Map();
   return {
-    getByName(name) {
+    getByName(name: string) {
       return {
-        async bump(limit: number, window, amount = 1) { return (await this.take(limit, window, amount)).ok; },
-        async take(limit: number, _window, amount = 1) {
+        async bump(limit: number, window: string, amount = 1) { return (await this.take(limit, window, amount)).ok; },
+        async take(limit: number, _window: string, amount = 1) {
           const used = (counts.get(name) ?? 0) + amount;
           if (used > limit) return { ok: false };
           counts.set(name, used);
@@ -42,8 +42,8 @@ function environment(extra = {}) {
     OPENAI_ASTRA_MODEL: "gpt-test-astra",
     AI_RETRY_BASE_MS: 0,
     STUDIQUO_DATA: {
-      async get(key) { return values.get(key) ?? null; },
-      async put(key, value) { values.set(key, value); },
+      async get(key: string) { return values.get(key) ?? null; },
+      async put(key: string, value: string) { values.set(key, value); },
     },
     RATE_COUNTER: fakeRateCounterBinding(),
     ...extra,
@@ -70,8 +70,8 @@ test("usage reports the tightest remaining allowance without spending any", asyn
 });
 
 function executionContext() {
-  const promises = [];
-  return { promises, waitUntil(promise) { promises.push(promise); } };
+  const promises: any[] = [];
+  return { promises, waitUntil(promise: string) { promises.push(promise); } };
 }
 
 /** Responses-API SSE carrying `text` as one output_text delta. */
@@ -485,8 +485,8 @@ test("self-harm is not refused by the app, and a moderation outage stops the req
 
 test("every prompt shown to a student tells the model to delimit math with $ and $$", async () => {
   const seen = {};
-  let current;
-  const fetchState = installFetch((_url, _options, body: { instructions: any; }) => { seen[current] = body.instructions; return responsesOK("{}"); });
+  let current: string;
+  const fetchState = installFetch((_url: string, _options: string, body: { instructions: any; }) => { seen[current] = body.instructions; return responsesOK("{}"); });
   const bodies = {
     chat: chatBody(),
     review: { question: "解の公式を教えて" },

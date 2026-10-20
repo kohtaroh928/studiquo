@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { register } from "node:module";
-import { partialCtx, partialEnv, partialState, partialStorage } from "./test-env.ts";
+import { partialCtx, partialEnv, partialState, partialStorage, type LooseEnv } from "./test-env.ts";
 
 // user-registry.ts extends the real DurableObject from "cloudflare:workers",
 // which only exists inside the Workers runtime; stand in for that one import
@@ -86,8 +86,8 @@ function registryEnvironment() {
   return partialEnv({
     values,
     STUDIQUO_DATA: {
-      async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
-      async put(key, value) { values.set(key, value); },
+      async get(key: string, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async put(key: string, value: string) { values.set(key, value); },
     },
   });
 }
@@ -201,9 +201,9 @@ function sessionEnvironment(extra = {}) {
   return partialEnv({
     values,
     STUDIQUO_DATA: {
-      async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async get(key: string, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
       async list() { return { keys: [], list_complete: true }; },
     },
     ...extra,
@@ -211,7 +211,7 @@ function sessionEnvironment(extra = {}) {
 }
 
 // A login whose current token is `tokenAgeDays` old, descended from one that began `originAgeDays` ago.
-async function sessionAged(env, { tokenAgeDays, originAgeDays, withOrigin = true }) {
+async function sessionAged(env: LooseEnv, { tokenAgeDays, originAgeDays, withOrigin = true }) {
   const issuedAtMs = Date.now() - tokenAgeDays * DAY;
   const token = `${Math.floor(issuedAtMs / 1000)}.${"t".repeat(40)}`;
   const record: Record<string, unknown> = { sub: "person", issuedAt: Math.floor(issuedAtMs / 1000), issuedAtMs };
@@ -220,7 +220,7 @@ async function sessionAged(env, { tokenAgeDays, originAgeDays, withOrigin = true
   return token;
 }
 
-const refresh = (env, token: string) => worker.fetch(new Request("https://example.test/api/session/refresh", {
+const refresh = (env: LooseEnv, token: string) => worker.fetch(new Request("https://example.test/api/session/refresh", {
   method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
   body: JSON.stringify({ randomValue: "n".repeat(40) }),
 }), env, noopCtx);

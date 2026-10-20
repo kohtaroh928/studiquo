@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import worker from "./app.ts";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv } from "./test-env.ts";
 
 const hash = value => createHash("sha256").update(value).digest("hex");
 const noopCtx = partialCtx({ waitUntil() {} });
@@ -15,12 +15,12 @@ const freshToken = suffix => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(4
 // limit), per name.
 function countingRateCounter() {
   const counts = new Map();
-  const asked = [];
+  const asked: { name: string; limit: number; windowSeconds: any; }[] = [];
   return {
     asked,
-    getByName(name) {
+    getByName(name: string) {
       return {
-        async bump(limit: number, windowSeconds) {
+        async bump(limit: number, windowSeconds: string) {
           asked.push({ name, limit, windowSeconds });
           const used = (counts.get(name) ?? 0) + 1;
           if (used > limit) return false;
@@ -53,8 +53,8 @@ function environment(extra = {}) {
         }
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
       async list({ prefix = "" }: { prefix?: string } = {}) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
       },
@@ -67,7 +67,7 @@ function environment(extra = {}) {
 // A D1 with no subscriber or legacy rows in it.
 const noRows = { prepare() { return { bind() { return { async all() { return { results: [] }; } }; } }; } };
 
-function call(env, path: string, { method = "GET", token, headers = {}, body }: { method?: string; token?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
+function call(env: LooseEnv, path: string, { method = "GET", token, headers = {}, body }: { method?: string; token?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
   const all = { ...headers };
   if (token) all.authorization = `Bearer ${token}`;
   return worker.fetch(new Request(`https://example.test${path}`, { method, headers: all, body }), env, noopCtx);
@@ -149,7 +149,7 @@ test("the list of connected apps shows only what the app displays", async () => 
 
 // ---- HTML pages ------------------------------------------------------------
 
-function assertFrameless(response) {
+function assertFrameless(response: Response) {
   const policy = response.headers.get("content-security-policy");
   assert.match(policy, /frame-ancestors 'none'/);
   assert.match(policy, /base-uri 'none'/);

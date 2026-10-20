@@ -4,7 +4,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 import { compareVersions, resolveTranslation, SUPPORTED_LANGUAGES } from "./announcements.ts";
-import { partialCtx, partialEnv, readMigration } from "./test-env.ts";
+import { partialCtx, partialEnv, readMigration, type LooseEnv } from "./test-env.ts";
 
 class FakeD1Statement {
   db: DatabaseSync;
@@ -40,7 +40,7 @@ function environment(extra = {}) {
 }
 
 const ctx = partialCtx({ waitUntil() {} });
-const call = (env, path: string, { method = "GET", body, headers = { "cf-access-jwt-assertion": validToken } }: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) => worker.fetch(
+const call = (env: LooseEnv, path: string, { method = "GET", body, headers = { "cf-access-jwt-assertion": validToken } }: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) => worker.fetch(
   new Request(`https://example.test${path}`, {
     method,
     headers: body !== undefined ? { "content-type": "application/json", ...headers } : headers,

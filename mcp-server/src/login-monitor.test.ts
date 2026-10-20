@@ -52,7 +52,7 @@ function fakeEnv() {
     RESEND_API_KEY: "test-key",
     SLACK_ISSUE_REPORT_WEBHOOK_URL: "https://hooks.example.test/slack",
     RATE_COUNTER: {
-      getByName(name) {
+      getByName(name: string) {
         return {
           async bump(limit: number) {
             const used = (counts.get(name) ?? 0) + 1;
@@ -79,8 +79,8 @@ function withCf(cf: { country: string; asn: number; region?: string; asOrganizat
 function captureOutbound(run) {
   const original = globalThis.fetch;
   const originalLog = console.log;
-  const sent = [];
-  const logs = [];
+  const sent: { url: string; body: any; }[] = [];
+  const logs: string[] = [];
   globalThis.fetch = async (url, init) => { sent.push({ url: String(url), body: JSON.parse(init.body) }); return new Response("{}", { status: 200 }); };
   console.log = line => logs.push(String(line));
   return run(sent, logs).finally(() => { globalThis.fetch = original; console.log = originalLog; });
@@ -88,7 +88,7 @@ function captureOutbound(run) {
 
 // MARK: - metrics + alerts
 
-test("each outcome is logged as one structured line without the email or IP", () => captureOutbound(async (_sent, logs: any[]) => {
+test("each outcome is logged as one structured line without the email or IP", () => captureOutbound(async (_sent: string, logs: any[]) => {
   const env = fakeEnv();
   const request = withCf({ country: "JP", asn: 2516 });
   await recordLoginOutcome(env, request, "failure");

@@ -7,7 +7,7 @@ import { deleteAccount } from "./account-deletion.ts";
 import { sha256Hex } from "./auth.ts";
 import { mintSession, realSession, accountIsUnavailable, suspensionKey } from "./session.ts";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
-import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv } from "./test-env.ts";
 
 class FakeD1Statement {
   db: DatabaseSync;
@@ -42,7 +42,7 @@ function environment(extra = {}) {
 }
 
 const ctx = partialCtx({ waitUntil() {} });
-const call = (env, path: string, { method = "GET", body, token = ownerToken }: { method?: string; body?: unknown; token?: string } = {}) => worker.fetch(
+const call = (env: LooseEnv, path: string, { method = "GET", body, token = ownerToken }: { method?: string; body?: unknown; token?: string } = {}) => worker.fetch(
   new Request(`https://example.test${path}`, {
     method,
     headers: { ...(token ? { "cf-access-jwt-assertion": token } : {}), ...(body !== undefined ? { "content-type": "application/json" } : {}) },
@@ -52,7 +52,7 @@ const call = (env, path: string, { method = "GET", body, token = ownerToken }: {
 const announcement = { kind: "update", status: "published", translations: { ja: { title: "更新", body: "本文" } } };
 const log = env => env._db.prepare("SELECT * FROM admin_audit_log ORDER BY id").all();
 
-function seedChatReport(env, over: Record<string, any> = {}) {
+function seedChatReport(env: LooseEnv, over: Record<string, any> = {}) {
   const id = over.id ?? crypto.randomUUID();
   env._db.prepare(
     `INSERT INTO chat_reports (id, room_id, message_id, reporter_key, reported_key, reason, snapshot, created_at, updated_at)
@@ -164,9 +164,9 @@ test("leaving the app: reports about you go, reports you filed lose who filed th
   const values = new Map();
   const env = environment({
     STUDIQUO_DATA: {
-      async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async get(key: string, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
       async list({ prefix }) { return { keys: [...values.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
     },
   });
@@ -200,9 +200,9 @@ test("leaving the app: reports about you go, reports you filed lose who filed th
 test("a session issued before two sign-in methods were linked is stopped by a mark on either identity", async () => {
   const values = new Map();
   const env = partialEnv({ STUDIQUO_DATA: {
-    async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
-    async put(key, value) { values.set(key, value); },
-    async delete(key) { values.delete(key); },
+    async get(key: string, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+    async put(key: string, value: string) { values.set(key, value); },
+    async delete(key: string) { values.delete(key); },
   } });
   const token = await mintSession(env, "apple-old");
   values.set("identity-canonical:apple-old", "google:new"); // later linked; canonical is now the Google identity
@@ -217,9 +217,9 @@ test("a session issued before two sign-in methods were linked is stopped by a ma
 test("a suspended account's session is refused everywhere except where leaving needs it", async () => {
   const values = new Map();
   const env = partialEnv({ STUDIQUO_DATA: {
-    async get(key, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
-    async put(key, value) { values.set(key, value); },
-    async delete(key) { values.delete(key); },
+    async get(key: string, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+    async put(key: string, value: string) { values.set(key, value); },
+    async delete(key: string) { values.delete(key); },
   } });
   const token = await mintSession(env, "apple-s");
   assert.equal((await realSession(env, token))?.sub, "apple-s");

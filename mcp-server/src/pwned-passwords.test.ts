@@ -7,8 +7,8 @@ const PREFIX = "5BAA6";
 const SUFFIX = "1E4C9B93F3F0682250B6CF8331B7EE68FD8";
 
 function fakeHibp(body: BodyInit | null | undefined, { status = 200 } = {}) {
-  const calls = [];
-  const fetchImpl = async (url, init) => {
+  const calls: { url: any; init: any; }[] = [];
+  const fetchImpl = async (url: unknown, init: unknown) => {
     calls.push({ url, init });
     return new Response(body, { status });
   };
@@ -62,7 +62,7 @@ test("a network failure or timeout is skipped rather than blocking the caller", 
 }));
 
 test("a skipped check is logged without the password or its hash", async () => {
-  const lines = [];
+  const lines: string[] = [];
   const original = console.error;
   console.error = line => lines.push(String(line));
   try {

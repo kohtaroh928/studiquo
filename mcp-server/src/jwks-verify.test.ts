@@ -6,14 +6,14 @@ import { partialEnv } from "./test-env.ts";
 
 function makeEnv() {
   const store = new Map();
-  const puts = [];
+  const puts: { key: string; value: string; options: any; }[] = [];
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type: string) {
+      async get(key: string, type: string) {
         const raw = store.get(key) ?? null;
         return type === "json" && raw ? JSON.parse(raw) : raw;
       },
-      async put(key, value, options) {
+      async put(key: string, value: string, options: string) {
         store.set(key, value);
         puts.push({ key, value, options });
       },

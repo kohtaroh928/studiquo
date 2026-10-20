@@ -8,7 +8,7 @@ import { mintSession } from "./session.ts";
 import { indexAccountPasskey } from "./passkey-policy.ts";
 import { accountGenerationMethods } from "./test-account-generations.ts";
 import type { RateCounter } from "./rate-counter.ts";
-import { partialCtx, partialEnv, partialNamespace } from "./test-env.ts";
+import { partialCtx, partialEnv, partialNamespace, type LooseEnv } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
@@ -18,18 +18,18 @@ function environment() {
   const appErrorUsers = new Set();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type: string) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
       async list({ prefix }) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
       },
     },
     MCP_INBOX: {
-      getByName(account) {
+      getByName(account: string) {
         return {
           async purge() { inboxes.delete(account); return { status: "purged" }; },
         };
@@ -62,7 +62,7 @@ function environment() {
 
 const hash = value => createHash("sha256").update(value).digest("hex");
 
-async function seedLinked(env, canonical: string, email: string, identities: { provider: string; sub: string; }[]) {
+async function seedLinked(env: LooseEnv, canonical: string, email: string, identities: { provider: string; sub: string; }[]) {
   await env.STUDIQUO_DATA.put(`email-account-owner:${email}`, canonical);
   await env.STUDIQUO_DATA.put(`email-accounts:${email}`, JSON.stringify(identities));
   for (const identity of identities) {
@@ -572,7 +572,7 @@ test("53b. 片方が遅れて始まり、先の実行がセッションを消し
   let heldFirst = false;
   let firstHeld!: () => void;
   const firstIsHeld = new Promise<void>(resolve => { firstHeld = resolve; });
-  kv.get = async (key, type?) => {
+  kv.get = async (key: string, type?: string) => {
     const value = await realGet(key, type);
     if (key === stateKey && ++firstReadsOfState === 1) await slowGate;
     return value;
@@ -676,18 +676,18 @@ test("56. タイムアウト後に再試行すると残りを削除できる", a
 
 // A RATE_COUNTER double that records what happens to each named object, with
 // the same contracts as the real one for the methods deletion uses.
-function fakeRateCounter(env, { failPurgeOnce = false }: { failPurgeOnce?: boolean } = {}) {
+function fakeRateCounter(env: LooseEnv, { failPurgeOnce = false }: { failPurgeOnce?: boolean } = {}) {
   const generations = new Map();
-  const purged = [];
+  const purged: string[] = [];
   const retired = new Map();
-  const log = [];
+  const log: { call: string; name: string; accountStillThere: boolean; }[] = [];
   let shouldFail = failPurgeOnce;
   return partialNamespace<RateCounter, object>({
     purged, retired, generations, log,
     getByName(name: string) {
       return {
         ...accountGenerationMethods(name, generations, () => env.STUDIQUO_DATA),
-        async retireAccountGeneration(ttlSeconds) {
+        async retireAccountGeneration(ttlSeconds: string) {
           // Retired before the account's own keys are touched.
           log.push({ call: "retire", name, accountStillThere: (await env.STUDIQUO_DATA.get("account:local:local@example.com")) !== null });
           generations.set(name, (generations.get(name) ?? 0) + 1);
@@ -821,11 +821,11 @@ test("退会は、大文字小文字の違うメールアドレスでも、同�
 
 // ---- Hardening from the 2026-10 reviews (M-1, M-2, M-3, M-A, M-B) ----
 
-function recordD1(env) {
-  const calls = [];
+function recordD1(env: LooseEnv) {
+  const calls: { sql: string; args: any[]; }[] = [];
   const original = env.ADMIN_DB;
   env.ADMIN_DB = {
-    prepare(sql) {
+    prepare(sql: string) {
       const statement = original.prepare(sql);
       return { bind(...args) { calls.push({ sql, args }); return statement.bind(...args); } };
     },
@@ -850,9 +850,9 @@ test("H-2. 連携アプリのgrantとトークンは、別名側のものも消�
   await env.STUDIQUO_DATA.put(otherAccess, JSON.stringify({ sub: "someone-else", clientId }));
   await env.STUDIQUO_DATA.put(`snapshot:${hash(`mcp-account:${alias}`)}`, "{}");
 
-  const purged = [];
+  const purged: { name: string; grantGone: boolean; accessGone: boolean; }[] = [];
   env.MCP_INBOX = {
-    getByName(name) {
+    getByName(name: string) {
       return {
         async purge() {
           // Credentials must already be gone when the inbox is emptied.
@@ -937,8 +937,8 @@ test("M-1b. 旧形式(identityKeys)の完了マーカーでも、再登録で提
 
 test("M-1c. 提携先(RevenueCat)への削除ジョブは期限付きで保存される", async () => {
   const { queueRevenueCatDeletion } = await import("./privacy-retention.ts");
-  const puts = [];
-  const env = partialEnv({ STUDIQUO_DATA: { async put(key, value, options) { puts.push({ key, options }); } } });
+  const puts: { options: { expirationTtl: unknown; }; }[] | { key: string; options: any; }[] = [];
+  const env = partialEnv({ STUDIQUO_DATA: { async put(key: string, value: string, options) { puts.push({ key, options }); } } });
   await queueRevenueCatDeletion(env, "email:x@example.com");
   assert.equal(puts[0].options.expirationTtl, 90 * 86_400);
 });
@@ -1095,8 +1095,8 @@ test("退会するとパスキーの索引と復旧手続きも消え、同じ�
 
 test("deleting an account erases its library id, so signing up again gives a new one", async () => {
   const env = environment();
-  const erased = [];
-  env.USER_REGISTRY = { getByName(name) { return { async resolveChatKey(hash) { return hash; }, async getUser() { return null; }, async eraseLibraryID() { erased.push(name); } }; } };
+  const erased: any[] = [];
+  env.USER_REGISTRY = { getByName(name: string) { return { async resolveChatKey(hash: string) { return hash; }, async getUser() { return null; }, async eraseLibraryID() { erased.push(name); } }; } };
   await seedLinked(env, "apple:alice", "alice@example.com", [{ provider: "apple", sub: "alice" }, { provider: "google", sub: "alice-g" }]);
   await deleteAccount(env, "apple:alice");
   const named = identity => `library-id:${hash(identity)}`;
@@ -1108,8 +1108,8 @@ test("deleting an account erases its library id, so signing up again gives a new
 
 // ---- Finding an account's data without reading everyone's ------------------------
 
-function recordListings(env) {
-  const prefixes = [];
+function recordListings(env: LooseEnv) {
+  const prefixes: any[] = [];
   const list = env.STUDIQUO_DATA.list;
   env.STUDIQUO_DATA.list = async options => { prefixes.push(options.prefix); return list.call(env.STUDIQUO_DATA, options); };
   return prefixes;

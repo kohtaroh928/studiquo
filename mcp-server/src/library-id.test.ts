@@ -11,8 +11,8 @@ function fakeContext() {
   return partialState({
     storage: {
       async get(key: string) { return values.get(key); },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
     blockConcurrencyWhile(work: ((value: void) => void | PromiseLike<void>) | null | undefined) {
       const run = turn.then(work);
