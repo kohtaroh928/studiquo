@@ -20,9 +20,12 @@ const deltaText = (sse) => sse.split('\n').filter((l) => l.startsWith('data:')).
   .map((e) => (e.type === 'response.output_text.delta' ? e.delta : '')).join('');
 
 export async function main() {
+  // loadOpenAIKey falls back to mcp-server/.dev.vars when nothing is given. A run that spends
+  // money names where its key comes from.
+  if (!process.env.OPENAI_API_KEY && !process.env.STUDIQUO_RAG_OPENAI_KEY_FILE) throw Error('key_source_required');
   const apiKey = loadOpenAIKey(process.env, process.env.STUDIQUO_RAG_OPENAI_KEY_FILE);
   const out = process.argv[2]; if (!out) throw Error('output_required');
-  const samples = Number(process.env.SAMPLES ?? 2); if (QUESTIONS.length * samples > 6) throw Error('too_many_calls');
+  const samples = Number(process.env.SAMPLES ?? 2); if (!Number.isInteger(samples) || samples < 1) throw Error('samples_must_be_a_whole_number'); if (QUESTIONS.length * samples > 6) throw Error('too_many_calls');
   const gate = guardedOpenAITransport({ apiKey }), rows = [];
   for (const q of QUESTIONS) for (let i = 0; i < samples && !gate.isStopped(); i++) {
     const env = qualityEnvironment(), pending = [];
