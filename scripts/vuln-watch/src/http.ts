@@ -6,21 +6,21 @@ import { createHash } from 'node:crypto';
 
 const MAX_BYTES = 20_000_000;
 
-export function createClient({ cacheDir = null, ttlMs = 6 * 3600_000, offline = false, fetchImpl = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+export function createClient({ cacheDir = null as string | null, ttlMs = 6 * 3600_000, offline = false, fetchImpl = globalThis.fetch, sleep = (ms: any) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const lastAt = new Map();
 
-  async function throttle(host, minGapMs) {
+  async function throttle(host: any, minGapMs: any) {
     const wait = (lastAt.get(host) ?? 0) + minGapMs - Date.now();
     if (wait > 0) await sleep(wait);
     lastAt.set(host, Date.now());
   }
 
-  function cachePath(url, body) {
+  function cachePath(url: any, body: any) {
     return `${cacheDir}/${createHash('sha256').update(url + (body ?? '')).digest('hex')}.json`;
   }
 
   /** 本文(文字列)を返す。キャッシュが新しければネットワークに行かない。offline ならキャッシュのみ(古くても使う)。 */
-  async function text(url, { method = 'GET', body = null, headers = {}, minGapMs = 0, retries = 3 } = {}) {
+  async function text(url: any, { method = 'GET', body = null, headers = {}, minGapMs = 0, retries = 3 } = {}) {
     const file = cacheDir ? cachePath(url, body) : null;
     if (file && existsSync(file) && (offline || Date.now() - statSync(file).mtimeMs < ttlMs)) {
       return readFileSync(file, 'utf8');
@@ -47,13 +47,13 @@ export function createClient({ cacheDir = null, ttlMs = 6 * 3600_000, offline = 
         const data = await res.text();
         if (data.length > MAX_BYTES) throw new Error(`応答が大きすぎます(${data.length}文字): ${host}`);
         if (file) {
-          mkdirSync(cacheDir, { recursive: true });
+          mkdirSync(cacheDir!, { recursive: true });
           writeFileSync(file, data);
         }
         return data;
       } catch (e) {
         lastErr = e;
-        if (/^HTTP 4/.test(e.message)) throw e;
+        if (/^HTTP 4/.test((e as Error).message)) throw e;
         await sleep(2000 * 2 ** attempt);
       }
     }
@@ -61,7 +61,7 @@ export function createClient({ cacheDir = null, ttlMs = 6 * 3600_000, offline = 
   }
 
   /** JSONとして読む。 */
-  async function json(url, opts) {
+  async function json(url: any, opts: any) {
     return JSON.parse(await text(url, opts));
   }
 

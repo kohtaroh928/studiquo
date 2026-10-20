@@ -3,12 +3,12 @@
 const KEV_URL = 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
 const EPSS_URL = 'https://api.first.org/data/v1/epss';
 
-export async function fetchKev(client) {
+export async function fetchKev(client: any) {
   const data = await client.json(KEV_URL);
-  return new Map((data.vulnerabilities ?? []).map((v) => [v.cveID, { dueDate: v.dueDate ?? null, ransomware: v.knownRansomwareCampaignUse === 'Known' }]));
+  return new Map((data.vulnerabilities ?? []).map((v: any) => [v.cveID, { dueDate: v.dueDate ?? null, ransomware: v.knownRansomwareCampaignUse === 'Known' }]));
 }
 
-export async function fetchEpss(client, cves) {
+export async function fetchEpss(client: any, cves: any) {
   const out = new Map();
   const list = [...new Set(cves)];
   for (let i = 0; i < list.length; i += 50) {

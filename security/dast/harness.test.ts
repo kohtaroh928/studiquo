@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness, runContracts, allowedRequest } from './harness.mjs';
-import { sanitizeAlerts, sanitizeScannerStatus, sanitizeScanProof, runScan } from './run.mjs';
+import { createHarness, runContracts, allowedRequest } from './harness.ts';
+import { sanitizeAlerts, sanitizeScannerStatus, sanitizeScanProof, runScan } from './run.ts';
 test('gateway forbids remote destinations, writes and unlisted routes', () => {
   assert.equal(allowedRequest('GET', '/api/actions?probe=test'), true);
   for (const [method, path] of [['CONNECT','example.com:443'],['GET','http://example.com/health'],['GET','//example.com/health'],['GET','/api/account'],['DELETE','/api/actions'],['POST','/api/auth/local/login']]) assert.equal(allowedRequest(method,path), false);

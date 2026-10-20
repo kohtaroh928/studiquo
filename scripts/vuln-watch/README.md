@@ -8,9 +8,9 @@ studiquoが使う依存ライブラリ(npm・Swift Package)の脆弱性を、NVD
 
 ```bash
 cd scripts/vuln-watch
-node src/cli.js inventory                 # 資産台帳 inventory.json を作り直す
-node src/cli.js scan                      # 収集→照合→採点。out/latest.md(機械判定のみ)と out/triage-input.json を出す
-node src/cli.js triage-apply --verdicts f # エージェントの返信を検証して反映し、out/latest.md を上書きする
+node src/cli.ts inventory                 # 資産台帳 inventory.json を作り直す
+node src/cli.ts scan                      # 収集→照合→採点。out/latest.md(機械判定のみ)と out/triage-input.json を出す
+node src/cli.ts triage-apply --verdicts f # エージェントの返信を検証して反映し、out/latest.md を上書きする
 npm test                                  # 単体テスト
 ```
 
@@ -25,10 +25,10 @@ npm test                                  # 単体テスト
 主なコマンド:
 
 ```bash
-node src/cli.js scan                              # 収集→採点。判定に回す指摘の件数を出す
-node src/cli.js triage-apply --verdicts out/reply.json   # 判定の返信を検証して反映(返信が不要な回は --no-reply)
-node src/cli.js cards-plan --existing out/cards-existing.json   # Notionカードの操作リスト(out/cards-ops.json)
-node src/cli.js summary --created 1 --updated 0 --commented 0 --failed 0   # 固定書式の要約と NOTIFY= 行
+node src/cli.ts scan                              # 収集→採点。判定に回す指摘の件数を出す
+node src/cli.ts triage-apply --verdicts out/reply.json   # 判定の返信を検証して反映(返信が不要な回は --no-reply)
+node src/cli.ts cards-plan --existing out/cards-existing.json   # Notionカードの操作リスト(out/cards-ops.json)
+node src/cli.ts summary --created 1 --updated 0 --commented 0 --failed 0   # 固定書式の要約と NOTIFY= 行
 ```
 
 ## ファイル

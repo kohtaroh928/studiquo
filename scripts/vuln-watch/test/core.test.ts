@@ -1,13 +1,14 @@
+// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」と同じ方針(外す作業は別カード)。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compareVersions, inCpeRange } from '../src/semver.js';
-import { cvss3BaseScore, severityLabelToScore } from '../src/cvss.js';
-import { swiftUrlName, parseNpmLock, parseSwiftResolved, applyManual, dedupe } from '../src/inventory.js';
-import { matchCve, nvdHintFor } from '../src/nvd.js';
-import { queryOsv, osvFindings, fixedVersionFor } from '../src/osv.js';
-import { scoreFinding, tierFor, mergeFindings, rank } from '../src/score.js';
-import { renderReport } from '../src/report.js';
-import { createClient } from '../src/http.js';
+import { compareVersions, inCpeRange } from '../src/semver.ts';
+import { cvss3BaseScore, severityLabelToScore } from '../src/cvss.ts';
+import { swiftUrlName, parseNpmLock, parseSwiftResolved, applyManual, dedupe } from '../src/inventory.ts';
+import { matchCve, nvdHintFor } from '../src/nvd.ts';
+import { queryOsv, osvFindings, fixedVersionFor } from '../src/osv.ts';
+import { scoreFinding, tierFor, mergeFindings, rank } from '../src/score.ts';
+import { renderReport } from '../src/report.ts';
+import { createClient } from '../src/http.ts';
 
 test('semver: 比較とプレリリース', () => {
   assert.equal(compareVersions('1.2.3', '1.2.3'), 0);
@@ -47,7 +48,7 @@ test('inventory: package-lockのdevはtooling、直接依存を判別', () => {
     },
   };
   const items = parseNpmLock(lock, { dependencies: { jose: '^5' }, devDependencies: { esbuild: '^0.25' } });
-  const by = (n, v) => items.find((i) => i.name === n && i.version === v);
+  const by = (n: any, v: any) => items.find((i) => i.name === n && i.version === v);
   assert.equal(by('jose', '5.10.0').exposure, 'server');
   assert.equal(by('jose', '5.10.0').direct, true);
   assert.equal(by('jose', '4.0.0').direct, false); // 入れ子は間接依存
@@ -79,12 +80,12 @@ test('inventory: 同じ版がruntimeとdevの両方にあればruntimeを優先'
   assert.equal(out[0].exposure, 'server');
 });
 
-const cveWith = (cpeMatch) => ({ id: 'CVE-2099-0001', configurations: [{ nodes: [{ cpeMatch }] }] });
+const cveWith = (cpeMatch: any) => ({ id: 'CVE-2099-0001', configurations: [{ nodes: [{ cpeMatch }] }] });
 const asset = { ecosystem: 'npm', name: 'jose', version: '5.10.0' };
 
 test('nvd: vendor指定+範囲内のみ「確定」、それ以外は「要確認」、範囲外は無関係', () => {
   const hint = { products: ['jose'], vendors: ['panva'] };
-  const m = (extra, vendor = 'panva') => cveWith([{ vulnerable: true, criteria: `cpe:2.3:a:${vendor}:jose:*:*:*:*:*:node.js:*:*`, ...extra }]);
+  const m = (extra: any, vendor = 'panva') => cveWith([{ vulnerable: true, criteria: `cpe:2.3:a:${vendor}:jose:*:*:*:*:*:node.js:*:*`, ...extra }]);
   assert.equal(matchCve(m({ versionEndExcluding: '5.11.0' }), asset, hint), 'affected');
   assert.equal(matchCve(m({ versionEndExcluding: '5.0.0' }), asset, hint), null);
   assert.equal(matchCve(m({}), asset, hint), 'review'); // 範囲が無い=判断不能
@@ -97,7 +98,7 @@ test('nvd: 間接依存はNVDを引かない', () => {
   assert.deepEqual(nvdHintFor({ ecosystem: 'npm', name: '@a/b', direct: true }), { keyword: 'b', products: ['b'] });
 });
 
-const fakeFetch = (routes) => async (url, init) => {
+const fakeFetch = (routes: any) => async (url: any, init: any) => {
   for (const [pat, body] of routes) {
     if (url.includes(pat)) return { ok: true, status: 200, text: async () => JSON.stringify(typeof body === 'function' ? body(init) : body) };
   }
