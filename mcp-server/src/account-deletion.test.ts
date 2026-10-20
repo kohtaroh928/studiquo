@@ -1,4 +1,3 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
@@ -8,6 +7,8 @@ import worker from "./app.ts";
 import { mintSession } from "./session.ts";
 import { indexAccountPasskey } from "./passkey-policy.ts";
 import { accountGenerationMethods } from "./test-account-generations.ts";
+import type { RateCounter } from "./rate-counter.ts";
+import { partialCtx, partialEnv, partialNamespace } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
@@ -15,7 +16,7 @@ function environment() {
   const usageEvents = new Set();
   const usersFirstSeen = new Set();
   const appErrorUsers = new Set();
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) {
         const value = values.get(key) ?? null;
@@ -56,7 +57,7 @@ function environment() {
     _usageEvents: usageEvents,
     _usersFirstSeen: usersFirstSeen,
     _appErrorUsers: appErrorUsers,
-  };
+  });
 }
 
 const hash = value => createHash("sha256").update(value).digest("hex");
@@ -356,7 +357,7 @@ test("44. 削除済みMCPトークンでは資料を作成できない", async (
       method: "tools/call",
       params: { name: "create_document", arguments: { title: "削除後", body: "作成不可" } },
     }),
-  }), env, { waitUntil() {} });
+  }), env, partialCtx({ waitUntil() {} }));
 
   assert.equal(response.status, 401);
   assert.equal(env._inboxes.size, 0);
@@ -515,7 +516,7 @@ test("51. D1削除が失敗した場合に成功レスポンスを返さない",
     method: "DELETE",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ confirmation: "DELETE" }),
-  }), env, { waitUntil() {} });
+  }), env, partialCtx({ waitUntil() {} }));
 
   assert.notEqual(response.status, 200);
   assert.equal((await env.STUDIQUO_DATA.get(`account-deletion:${hash(canonical)}`, "json")).status, "deleting");
@@ -553,7 +554,7 @@ test("54. 大量のセッションやMCP接続があってもページネーシ�
   const canonical = "account-pages-54";
   const originalList = env.STUDIQUO_DATA.list.bind(env.STUDIQUO_DATA);
   void originalList;
-  env.STUDIQUO_DATA.list = async ({ prefix = "", cursor } = {}) => {
+  env.STUDIQUO_DATA.list = async ({ prefix = "", cursor }: { prefix?: string; cursor?: any } = {}) => {
     const keys = [...env._values.keys()].filter(key => key.startsWith(prefix)).sort();
     const start = cursor ? Number(cursor) : 0;
     const page = keys.slice(start, start + 17);
@@ -597,7 +598,7 @@ test("55. 削除途中のアカウントでログイン・書き込みできな�
     method: "PUT",
     headers: { authorization: `Bearer ${oldToken}`, "content-type": "application/json" },
     body: JSON.stringify({ version: 1 }),
-  }), env, { waitUntil() {} });
+  }), env, partialCtx({ waitUntil() {} }));
   assert.equal(write.status, 401);
   releaseD1();
   await deletion;
@@ -629,13 +630,13 @@ test("56. タイムアウト後に再試行すると残りを削除できる", a
 
 // A RATE_COUNTER double that records what happens to each named object, with
 // the same contracts as the real one for the methods deletion uses.
-function fakeRateCounter(env, { failPurgeOnce = false } = {}) {
+function fakeRateCounter(env, { failPurgeOnce = false }: { failPurgeOnce?: boolean } = {}) {
   const generations = new Map();
   const purged = [];
   const retired = new Map();
   const log = [];
   let shouldFail = failPurgeOnce;
-  return {
+  return partialNamespace<RateCounter, any>({
     purged, retired, generations, log,
     getByName(name) {
       return {
@@ -653,7 +654,7 @@ function fakeRateCounter(env, { failPurgeOnce = false } = {}) {
         },
       };
     },
-  };
+  });
 }
 
 const sha = value => createHash("sha256").update(value).digest("hex");
@@ -891,7 +892,7 @@ test("M-1b. 旧形式(identityKeys)の完了マーカーでも、再登録で提
 test("M-1c. 提携先(RevenueCat)への削除ジョブは期限付きで保存される", async () => {
   const { queueRevenueCatDeletion } = await import("./privacy-retention.ts");
   const puts = [];
-  const env = { STUDIQUO_DATA: { async put(key, value, options) { puts.push({ key, options }); } } };
+  const env = partialEnv({ STUDIQUO_DATA: { async put(key, value, options) { puts.push({ key, options }); } } });
   await queueRevenueCatDeletion(env, "email:x@example.com");
   assert.equal(puts[0].options.expirationTtl, 90 * 86_400);
 });

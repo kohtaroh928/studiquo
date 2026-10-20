@@ -59,7 +59,7 @@ export function touchSeenContext(state: { entries?: Record<string, number> } | n
 
 // The network's registered name is chosen by whoever owns the AS, and ends up
 // in a mail to the account owner: keep it to one short printable line.
-function cleanLabel(value: any) {
+function cleanLabel(value: string) {
   return value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim().slice(0, 64);
 }
 
@@ -76,7 +76,7 @@ export function requestContext(request: Request) {
   };
 }
 
-async function countAndAlert(env: Env, counterName: any, threshold: any, title: any, detail: any) {
+async function countAndAlert(env: Env, counterName: string, threshold: number, title: string, detail: string) {
   // Both counters are named for the clock hour they belong to, so "alert at
   // most once" lines up exactly with "count per hour" instead of drifting
   // with whenever each one's first bump happened.
@@ -137,7 +137,7 @@ export async function recordLoginOutcome(env: Env, request: Request, outcome: st
   }
 }
 
-async function sendSignInNotice(env: Env, email: string, context: any, when: any) {
+async function sendSignInNotice(env: Env, email: string, context: { key?: string; country: unknown; region: unknown; network: unknown; asn?: {}; }, when: Date) {
   // The "email" kill switch (features.ts). Callers treat a notice as best effort.
   if (featureDisabled(env, "email")) return;
   const place = [context.country, context.region].filter(Boolean).join(" / ");

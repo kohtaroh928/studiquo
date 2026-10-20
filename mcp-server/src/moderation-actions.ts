@@ -24,7 +24,7 @@ const NOTE_MAX = 2_000;
 const requireJSON = (request: Request) => (request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json");
 
 // Adds to the report's note without losing what the operator already wrote.
-async function resolveReport(env: Env, id: string, line: any) {
+async function resolveReport(env: Env, id: string, line: string) {
   const row = await env.ADMIN_DB.prepare("SELECT admin_note FROM chat_reports WHERE id = ?").bind(id).first();
   const note = [row?.admin_note, line].filter(Boolean).join(" / ").slice(0, NOTE_MAX);
   await env.ADMIN_DB.prepare("UPDATE chat_reports SET status = 'resolved', admin_note = ?, updated_at = ? WHERE id = ?")
@@ -32,7 +32,7 @@ async function resolveReport(env: Env, id: string, line: any) {
 }
 
 // The account behind a report's reported chat user, or why it can't be found.
-async function reportedAccount(env: Env, reportID: any) {
+async function reportedAccount(env: Env, reportID: unknown) {
   const report = await env.ADMIN_DB.prepare("SELECT reported_key FROM chat_reports WHERE id = ?").bind(reportID).first<{ reported_key: string }>();
   if (!report) return { response: json({ error: "Not found." }, 404) };
   const identityHash = await env.STUDIQUO_DATA.get(`chat-identity-of:${report.reported_key}`);

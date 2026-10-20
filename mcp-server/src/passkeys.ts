@@ -42,7 +42,7 @@ async function body(request: Request) {
 // account's own address. The proof lasts three minutes and is used up by the
 // registration it was given for.
 const EMAIL_PROOF_SECONDS = 3 * 60;
-const emailProofKey = (tokenHash: any) => `passkey-email-proof:${tokenHash}`;
+const emailProofKey = (tokenHash: string) => `passkey-email-proof:${tokenHash}`;
 
 function transactionID() {
   return crypto.randomUUID();
@@ -123,7 +123,7 @@ export async function revokePasskeysForAccount(env: Env, { accountKey, emails = 
 async function scanAndRevoke(env: Env, { accountKey, wanted }: any) {
   const emails = new Set(wanted);
   const owners = new Map();
-  const belongs = async (item: any) => {
+  const belongs = async (item: PasskeyRecord | null) => {
     const email = String(item?.email ?? "").trim().toLowerCase();
     if (!email) return false;
     if (emails.has(email)) return true;

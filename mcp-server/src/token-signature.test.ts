@@ -1,4 +1,3 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 // Signed tokens: an invented token is refused WITHOUT a KV read, a real one still
 // works, and nothing changes until a signing key is configured.
 import assert from "node:assert/strict";
@@ -7,9 +6,10 @@ import test from "node:test";
 import worker from "./app.ts";
 import { mintSession } from "./session.ts";
 import { sessionTokenAcceptable, accessTokenAcceptable, signSessionToken, signAccessToken } from "./token-signature.ts";
+import { partialCtx, partialEnv } from "./test-env.ts";
 
 const hash = value => createHash("sha256").update(value).digest("hex");
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 const newKey = () => randomBytes(32).toString("base64");
 const DAY = 24 * 60 * 60 * 1000;
 const nowSeconds = () => Math.floor(Date.now() / 1000);
@@ -18,7 +18,7 @@ const SIGNED_SESSION = /^\d{9,12}\.[A-Za-z0-9_-]{16,200}\.[A-Za-z0-9_-]{43}$/;
 // A KV double that counts how often it is read.
 function environment(extra = {}) {
   const values = new Map();
-  const env = {
+  const env = partialEnv({
     reads: 0,
     values,
     STUDIQUO_DATA: {
@@ -29,18 +29,18 @@ function environment(extra = {}) {
     },
     RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
     ...extra,
-  };
+  });
   return env;
 }
 
-const call = (env, path, { method = "GET", token, body, headers = {} } = {}) => worker.fetch(new Request(`https://example.test${path}`, {
+const call = (env, path, { method = "GET", token, body, headers = {} }: { method?: string; token?: string; body?: BodyInit; headers?: Record<string, string> } = {}) => worker.fetch(new Request(`https://example.test${path}`, {
   method, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers }, body,
 }), env, noopCtx);
 
 // ---- The check itself ---------------------------------------------------------
 
 test("with no key configured every token passes the check and nothing is signed", async () => {
-  const env = {};
+  const env = partialEnv({});
   assert.equal(await sessionTokenAcceptable(env, `${nowSeconds()}.${"r".repeat(40)}`), true);
   assert.equal(await sessionTokenAcceptable(env, `${nowSeconds()}.${"r".repeat(40)}.${"A".repeat(43)}`), true);
   assert.equal(await signSessionToken(env, "123456789.abc"), "123456789.abc");
@@ -49,7 +49,7 @@ test("with no key configured every token passes the check and nothing is signed"
 });
 
 test("a token signed with the key passes; a changed part, a wrong key or a forged signature does not", async () => {
-  const env = { TOKEN_SIGNING_KEY: newKey() };
+  const env = partialEnv({ TOKEN_SIGNING_KEY: newKey() });
   const payload = `${nowSeconds()}.${"r".repeat(40)}`;
   const token = await signSessionToken(env, payload);
   assert.match(token, SIGNED_SESSION);
@@ -61,32 +61,32 @@ test("a token signed with the key passes; a changed part, a wrong key or a forge
   const flipped = mac.slice(0, 20) + (mac[20] === "A" ? "B" : "A") + mac.slice(21);
   assert.equal(await sessionTokenAcceptable(env, `${epoch}.${random}.${flipped}`), false, "signature changed");
   assert.equal(await sessionTokenAcceptable(env, `${epoch}.${random}.${"A".repeat(43)}`), false, "invented signature");
-  assert.equal(await sessionTokenAcceptable({ TOKEN_SIGNING_KEY: newKey() }, token), false, "another key");
+  assert.equal(await sessionTokenAcceptable(partialEnv({ TOKEN_SIGNING_KEY: newKey() }), token), false, "another key");
 });
 
 test("a legacy token (no signature) is accepted until REQUIRE_SIGNED_TOKENS is on", async () => {
   const legacy = `${nowSeconds()}.${"r".repeat(40)}`;
-  assert.equal(await sessionTokenAcceptable({ TOKEN_SIGNING_KEY: newKey() }, legacy), true);
-  assert.equal(await sessionTokenAcceptable({ TOKEN_SIGNING_KEY: newKey(), REQUIRE_SIGNED_TOKENS: "true" }, legacy), false);
-  assert.equal(await sessionTokenAcceptable({ TOKEN_SIGNING_KEY: newKey(), REQUIRE_SIGNED_TOKENS: "false" }, legacy), true);
+  assert.equal(await sessionTokenAcceptable(partialEnv({ TOKEN_SIGNING_KEY: newKey() }), legacy), true);
+  assert.equal(await sessionTokenAcceptable(partialEnv({ TOKEN_SIGNING_KEY: newKey(), REQUIRE_SIGNED_TOKENS: "true" }), legacy), false);
+  assert.equal(await sessionTokenAcceptable(partialEnv({ TOKEN_SIGNING_KEY: newKey(), REQUIRE_SIGNED_TOKENS: "false" }), legacy), true);
 });
 
 test("without a key, REQUIRE_SIGNED_TOKENS cannot lock anyone out", async () => {
-  assert.equal(await sessionTokenAcceptable({ REQUIRE_SIGNED_TOKENS: "true" }, `${nowSeconds()}.${"r".repeat(40)}`), true);
+  assert.equal(await sessionTokenAcceptable(partialEnv({ REQUIRE_SIGNED_TOKENS: "true" }), `${nowSeconds()}.${"r".repeat(40)}`), true);
 });
 
 test("during a key rotation a token signed with the old key still passes, and one from a stranger key does not", async () => {
   const oldKey = newKey();
-  const token = await signSessionToken({ TOKEN_SIGNING_KEY: oldKey }, `${nowSeconds()}.${"r".repeat(40)}`);
-  assert.equal(await sessionTokenAcceptable({ TOKEN_SIGNING_KEY: newKey(), TOKEN_SIGNING_KEY_OLD: oldKey }, token), true);
-  assert.equal(await sessionTokenAcceptable({ TOKEN_SIGNING_KEY: newKey(), TOKEN_SIGNING_KEY_OLD: newKey() }, token), false);
+  const token = await signSessionToken(partialEnv({ TOKEN_SIGNING_KEY: oldKey }), `${nowSeconds()}.${"r".repeat(40)}`);
+  assert.equal(await sessionTokenAcceptable(partialEnv({ TOKEN_SIGNING_KEY: newKey(), TOKEN_SIGNING_KEY_OLD: oldKey }), token), true);
+  assert.equal(await sessionTokenAcceptable(partialEnv({ TOKEN_SIGNING_KEY: newKey(), TOKEN_SIGNING_KEY_OLD: newKey() }), token), false);
   // New tokens are signed with the new key only.
-  const fresh = await signSessionToken({ TOKEN_SIGNING_KEY: newKey(), TOKEN_SIGNING_KEY_OLD: oldKey }, `${nowSeconds()}.${"r".repeat(40)}`);
-  assert.equal(await sessionTokenAcceptable({ TOKEN_SIGNING_KEY: oldKey }, fresh), false);
+  const fresh = await signSessionToken(partialEnv({ TOKEN_SIGNING_KEY: newKey(), TOKEN_SIGNING_KEY_OLD: oldKey }), `${nowSeconds()}.${"r".repeat(40)}`);
+  assert.equal(await sessionTokenAcceptable(partialEnv({ TOKEN_SIGNING_KEY: oldKey }), fresh), false);
 });
 
 test("a session signature is not valid as an MCP access signature, or the other way round", async () => {
-  const env = { TOKEN_SIGNING_KEY: newKey() };
+  const env = partialEnv({ TOKEN_SIGNING_KEY: newKey() });
   const access = await signAccessToken(env, `mcp_${"a".repeat(64)}`);
   assert.match(access, /^mcp_[0-9a-f]{64}\.[A-Za-z0-9_-]{43}$/);
   assert.equal(await accessTokenAcceptable(env, access), true);
@@ -96,7 +96,7 @@ test("a session signature is not valid as an MCP access signature, or the other 
 });
 
 test("a key that is too short is refused instead of used", async () => {
-  await assert.rejects(signSessionToken({ TOKEN_SIGNING_KEY: Buffer.from("short").toString("base64") }, "123456789.abc"));
+  await assert.rejects(signSessionToken(partialEnv({ TOKEN_SIGNING_KEY: Buffer.from("short").toString("base64") }), "123456789.abc"));
 });
 
 // ---- Through the Worker: no KV read for an invented token ---------------------

@@ -28,7 +28,7 @@ export class MCPInbox extends DurableObject<Env> {
     return true;
   }
 
-  async enqueue(id: string, kind: string, payload: any, source: any) {
+  async enqueue(id: string, kind: string, payload: any, source: string) {
     this.sql.exec("DELETE FROM items WHERE status = 'imported' AND imported_at < ?", Date.now() - 90 * 24 * 3600 * 1000);
     const pending = [...this.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM items WHERE status = 'pending'")][0].count;
     if (pending >= 100) throw new Error("Studiquo has 100 pending imports. Open the iPad app before sending more.");

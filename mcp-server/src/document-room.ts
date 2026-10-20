@@ -36,7 +36,7 @@ export class DocumentRoom extends DurableObject<Env> {
   // collaborating" request from the client can't reset an in-progress
   // session (dropping every invited editor/reviewer back out) partway
   // through.
-  async initialize(ownerKey: any, blocks: any) {
+  async initialize(ownerKey: string, blocks: any) {
     const existing = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (existing > 0) return { status: "already_initialized" };
     this.ctx.storage.sql.exec("INSERT OR IGNORE INTO participants (user_key, role) VALUES (?, 'owner')", ownerKey);
@@ -59,7 +59,7 @@ export class DocumentRoom extends DurableObject<Env> {
 
   // Only the owner may invite — an editor/reviewer can't in turn invite
   // someone else into the room.
-  async invite(ownerKey: any, userKey: string, role: any) {
+  async invite(ownerKey: string, userKey: string, role: string) {
     const ownerRole = this.requireParticipant(ownerKey);
     if (ownerRole !== "owner") throw new Error("Forbidden");
     if (role !== "editor" && role !== "reviewer") throw new Error("InvalidRole");
@@ -105,7 +105,7 @@ export class DocumentRoom extends DurableObject<Env> {
   // Records a proposed edit — never applied to `blocks` directly. Only the
   // owner or an editor may propose; a reviewer with no editor role can
   // review but not author changes of their own here.
-  async proposeChange(userKey: string, blockOrder: any, previousText: any, newText: any) {
+  async proposeChange(userKey: string, blockOrder: number, previousText: string, newText: string) {
     const role = this.requireParticipant(userKey);
     if (role !== "owner" && role !== "editor") throw new Error("Forbidden");
     const row = this.ctx.storage.sql.exec(
@@ -120,7 +120,7 @@ export class DocumentRoom extends DurableObject<Env> {
   // changes return their existing status rather than erroring, so a
   // double-tap on "承認" from a slow connection is a harmless no-op instead
   // of a surfaced failure.
-  async reviewChange(userKey: string, changeID: any, decision: any) {
+  async reviewChange(userKey: string, changeID: number, decision: string) {
     this.requireReviewer(userKey);
     if (decision !== "accept" && decision !== "reject") throw new Error("InvalidDecision");
     const change = this.ctx.storage.sql.exec("SELECT * FROM changes WHERE id = ?", changeID).toArray()[0];

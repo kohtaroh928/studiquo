@@ -32,7 +32,7 @@ export async function startAccountDeletion(env: Env, canonicalSub: string) {
 // "deleting" under the same generation. Another run may have finished it, and
 // the person signed in again, since this one began; going on would erase the
 // new account or put "deleted" back over it.
-async function stillDeleting(env: Env, deletionStateKey: any, generation: any) {
+async function stillDeleting(env: Env, deletionStateKey: string, generation: number) {
   const state = await env.STUDIQUO_DATA.get<DeletionState>(deletionStateKey, "json");
   return state?.status === "deleting" && generationOf(state) === generation;
 }
@@ -52,7 +52,7 @@ async function stillDeleting(env: Env, deletionStateKey: any, generation: any) {
 // single invocation may do; the rest is finished by the retry.
 const MAX_ROOMS_PER_RUN = 40;
 
-async function removeDocumentRooms(env: Env, chatKey: any) {
+async function removeDocumentRooms(env: Env, chatKey: string) {
   // Invitations still waiting for this account's answer (document-collab.ts).
   for (const key of await entries(env, `doc-invite:${chatKey}:`)) await env.STUDIQUO_DATA.delete(key);
   const prefix = roomMembershipKey(chatKey, "");
@@ -90,7 +90,7 @@ async function deleteKeys(env: Env, keys: Iterable<string>) {
   await Promise.all([...new Set(keys)].map(key => env.STUDIQUO_DATA.delete(key)));
 }
 
-function linkedIdentityKey(identity: any) {
+function linkedIdentityKey(identity: LinkedIdentity) {
   if (identity.provider === "google") return `google:${identity.sub}`;
   if (identity.provider === "email") return `email:${identity.sub}`;
   return identity.sub;
@@ -109,7 +109,7 @@ function linkedIdentityKey(identity: any) {
  * different account. The aliases left alone for having begun a new account
  * are returned, so the caller can keep them out of the provider-side erasure.
  */
-async function markAliases(env: Env, canonicalSub: string, identityKeys: any, state: any) {
+async function markAliases(env: Env, canonicalSub: string, identityKeys: Set<string>, state: { status: string; of: string; }) {
   const beganNewAccount = new Set<string>();
   for (const identity of identityKeys) {
     if (identity === canonicalSub) continue;
@@ -408,7 +408,7 @@ export async function deleteAccount(env: Env, canonicalSub: string) {
     // another member's, so their text is dropped; the reported message stays.
     const filed = await env.ADMIN_DB.prepare("SELECT id, snapshot FROM chat_reports WHERE reporter_key = ?").bind(chatKey).all<{ id: string; snapshot: string }>();
     for (const row of filed.results ?? []) {
-      const kept = JSON.parse(row.snapshot).map((item: any) => item.reported ? item : { ...item, text: "" });
+      const kept = JSON.parse(row.snapshot).map((item: { reported: unknown; }) => item.reported ? item : { ...item, text: "" });
       await env.ADMIN_DB.prepare("UPDATE chat_reports SET reporter_key = ?, snapshot = ?, reason = '' WHERE id = ?")
         .bind(`deleted:${row.id}`, JSON.stringify(kept), row.id).run();
     }

@@ -37,7 +37,7 @@ export const THROTTLE_POLICIES = {
   ipAccount: { freeFailures: 5, baseSeconds: 15, maxSeconds: 900, windowSeconds: 3_600 },
 };
 
-function streakAlive(state: any, now: number, policy: any) {
+function streakAlive(state: { failures: number; lastFailureAt: number; }, now: number, policy: { windowSeconds: number; }) {
   return Boolean(state) && state.failures > 0 && now < state.lastFailureAt + policy.windowSeconds * 1000;
 }
 
@@ -60,7 +60,7 @@ export function recordFailure(state: any, now: number, policy: any) {
 
 const TRUST_SECONDS = 14 * 86_400;
 
-function waitFor(failures: any, policy: any) {
+function waitFor(failures: number, policy: { freeFailures: number; maxSeconds: number; baseSeconds: number; }) {
   const over = failures - policy.freeFailures;
   return over <= 0 ? 0 : Math.min(policy.maxSeconds, policy.baseSeconds * 2 ** (over - 1));
 }
@@ -78,7 +78,7 @@ export function remainingSeconds(state: any, now: number) {
  * attempt as a failure up front and let it proceed. `trusted` reports whether
  * this key's IP+account pair has signed in successfully before.
  */
-export function reserveAttempt(state: any, now: number, policy: any, { enforce = true } = {}) {
+export function reserveAttempt(state: any, now: number, policy: { windowSeconds: number; }, { enforce = true } = {}) {
   const trusted = Boolean(state) && now < (state.trustedUntil ?? 0);
   const current = streakAlive(state, now, policy) ? state : { ...(state ?? {}), failures: 0, blockedUntil: 0 };
   const waitSeconds = remainingSeconds(current, now);
@@ -89,7 +89,7 @@ export function reserveAttempt(state: any, now: number, policy: any, { enforce =
 }
 
 /** Takes back the failure reserveAttempt counted, once the password turned out correct. */
-export function refundAttempt(state: any, policy: any) {
+export function refundAttempt(state: any, policy: { freeFailures: number; maxSeconds: number; baseSeconds: number; }) {
   if (!state || state.failures <= 0) return state;
   const failures = state.failures - 1;
   const waitSeconds = waitFor(failures, policy);
@@ -97,7 +97,7 @@ export function refundAttempt(state: any, policy: any) {
 }
 
 /** A correct password: forget the streak and remember this IP+account pair as known. */
-export function trustPair(state: any, now: number) {
+export function trustPair(state: unknown, now: number) {
   return { failures: 0, lastFailureAt: now, blockedUntil: 0, trustedUntil: now + TRUST_SECONDS * 1000 };
 }
 
@@ -108,7 +108,7 @@ export function trustExpiryMs(state: any) {
 async function loginKeys(env: Env, request: Request, email: string) {
   const emailHash = await sha256Hex(email.trim().toLowerCase());
   const ip = request.headers.get("cf-connecting-ip") || "unknown";
-  const named = (policy: any, name: string) => ({ policy, stub: env.RATE_COUNTER.getByName(name) });
+  const named = (policy: { freeFailures: number; baseSeconds: number; maxSeconds: number; windowSeconds: number; }, name: string) => ({ policy, stub: env.RATE_COUNTER.getByName(name) });
   const shared: ReturnType<typeof named>[] = [named(THROTTLE_POLICIES.account, `login-fail-account:${emailHash}`)];
   const asn = request.cf?.asn;
   if (asn !== undefined && asn !== null) shared.push(named(THROTTLE_POLICIES.asn, `login-fail-asn:${asn}`));
@@ -154,11 +154,11 @@ export async function beginLoginAttempt(env: Env, request: Request, email: strin
 }
 
 /** Call after the password check. Failures stay counted; a success hands the shared counters their failure back and trusts this IP+account pair. */
-export async function finishLoginAttempt(attempt: any, succeeded: any) {
+export async function finishLoginAttempt(attempt: any, succeeded: boolean) {
   if (!succeeded) return;
   await Promise.all([
     attempt.pair.stub.loginTrust(),
-    ...attempt.held.map((key: any) => key.stub.loginRefund(key.policy)),
+    ...attempt.held.map((key: { stub: { loginRefund: (arg0: unknown) => unknown; }; policy: unknown; }) => key.stub.loginRefund(key.policy)),
   ]);
 }
 

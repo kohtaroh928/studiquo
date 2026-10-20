@@ -38,19 +38,19 @@ export const LEGACY_ACCESS = /^mcp_[0-9a-f]{64}$/;
 
 const importedKeys = new Map();
 
-function base64Bytes(value: any) {
+function base64Bytes(value: string) {
   const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
   return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
 }
 
-function base64Url(bytes: any) {
+function base64Url(bytes: Uint8Array<ArrayBuffer>) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-async function hmacKey(secret: any) {
+async function hmacKey(secret: string | undefined) {
   const cached = importedKeys.get(secret);
   if (cached) return cached;
   const raw = base64Bytes(String(secret).trim());
@@ -60,7 +60,7 @@ async function hmacKey(secret: any) {
   return key;
 }
 
-async function signature(secret: any, label: any, payload: any) {
+async function signature(secret: string | undefined, label: string, payload: string) {
   const digest = await crypto.subtle.sign("HMAC", await hmacKey(secret), encoder.encode(label + payload));
   return base64Url(new Uint8Array(digest));
 }
@@ -73,7 +73,7 @@ function checkingKeys(env: Env) {
   return [env.TOKEN_SIGNING_KEY, env.TOKEN_SIGNING_KEY_OLD].filter(Boolean);
 }
 
-async function matchesAnyKey(env: Env, label: any, payload: any, presented: any) {
+async function matchesAnyKey(env: Env, label: string, payload: string, presented: unknown) {
   for (const secret of checkingKeys(env)) {
     if (await secretsEqual(presented, await signature(secret, label, payload))) return true;
   }
@@ -81,12 +81,12 @@ async function matchesAnyKey(env: Env, label: any, payload: any, presented: any)
 }
 
 /** The token with its signature appended, or `payload` unchanged when no key is configured. */
-export async function signSessionToken(env: Env, payload: any) {
+export async function signSessionToken(env: Env, payload: string) {
   const key = signingKey(env);
   return key ? `${payload}.${await signature(key, SESSION_LABEL, payload)}` : payload;
 }
 
-export async function signAccessToken(env: Env, payload: any) {
+export async function signAccessToken(env: Env, payload: string) {
   const key = signingKey(env);
   return key ? `${payload}.${await signature(key, ACCESS_LABEL, payload)}` : payload;
 }

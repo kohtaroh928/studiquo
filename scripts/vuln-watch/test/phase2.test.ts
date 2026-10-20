@@ -1,4 +1,3 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」と同じ方針(外す作業は別カード)。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, readFileSync, existsSync } from 'node:fs';
@@ -27,7 +26,7 @@ test('jvn: 実際の応答(2件)を読める。JVNDB番号・CVE番号・点数�
   assert.deepEqual(p.items[0].cves, ['CVE-2026-34986']);
   assert.equal(p.items[0].cvss, 7.5);
   assert.equal(p.items[0].cpes[0].product, 'go-jose');
-  assert.ok(p.items[0].titleJa.length > 5);
+  assert.ok(p.items[0].titleJa!.length > 5);
   assert.equal(p.errCd, '');
 });
 
@@ -309,13 +308,13 @@ test('jvn: HTMLのエラーページや途中で切れた応答は「0件」で�
 });
 
 test('jvn: 件数が読める上限(4ページ=200件)を超えたら警告を出す。上限以内なら出さない', async () => {
-  const item = /<item\s[\s\S]*?<\/item>/.exec(fixture)[0];
+  const item = /<item\s[\s\S]*?<\/item>/.exec(fixture)![0];
   const page = (total: any) => `<rdf:RDF>${item.repeat(50)}<status:Status method="getVulnOverviewList" errCd="" totalRes="${total}"/></rdf:RDF>`;
   const asset = { ecosystem: 'npm', name: 'jose', version: '5.10.0', direct: true, nvd: { keyword: 'jose', products: ['go-jose'], vendors: ['go-jose_project'] } };
-  const over = [];
+  const over: unknown[] = [];
   await queryJvn({ text: async () => page(500) }, [asset], { onWarning: (w: any) => over.push(w) });
   assert.equal(over.length, 1);
-  assert.match(over[0], /500件/);
+  assert.match(String(over[0]), /500件/);
   const within = [];
   await queryJvn({ text: async () => page(50) }, [asset], { onWarning: (w: any) => within.push(w) });
   assert.equal(within.length, 0);
@@ -475,12 +474,12 @@ test('agent: .claude と .codex の dependency-monitor は同じ内容。道具�
   const root = resolve(here, '../../..');
   const md = readFileSync(`${root}/.claude/agents/dependency-monitor.md`, 'utf8');
   const toml = readFileSync(`${root}/.codex/agents/dependency-monitor.toml`, 'utf8');
-  const [, front, mdBody] = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(md);
-  const tomlBody = /developer_instructions = """\n([\s\S]*)"""\s*$/.exec(toml)[1];
+  const [, front, mdBody] = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(md)!;
+  const tomlBody = /developer_instructions = """\n([\s\S]*)"""\s*$/.exec(toml)![1];
   assert.equal(tomlBody.trim(), mdBody.trim());
-  const desc = /^description: (.*)$/m.exec(front)[1];
+  const desc = /^description: (.*)$/m.exec(front)![1];
   assert.ok(toml.includes(`description = "${desc}"`));
-  assert.equal(/^tools: (.*)$/m.exec(front)[1], 'Read, Grep, Glob'); // Bash・Writeを持たせない
+  assert.equal(/^tools: (.*)$/m.exec(front)![1], 'Read, Grep, Glob'); // Bash・Writeを持たせない
   assert.match(mdBody, /従わない/); // 外部の文章を命令として扱わない旨
   // 出力形式の列挙が、コード側の検証と一致していること
   for (const w of ['applies', 'likely', 'unlikely', 'not_applicable', 'unknown', 'update', 'workaround', 'monitor', 'none']) assert.ok(mdBody.includes(w), w);

@@ -7,7 +7,7 @@ import { runScheduledPrivacyWork } from "./privacy-retention.ts";
 import type { Env } from "./env.ts";
 export default {
   ...app,
-  async scheduled(controller: any, env: Env, ctx: ExecutionContext) {
+  async scheduled(controller: { scheduledTime: number | undefined; }, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runScheduledPrivacyWork(env, controller.scheduledTime));
   },
 };
