@@ -26,11 +26,18 @@ const URL_CHARS = "A-Za-z0-9\\-._~:/?#\\[\\]@!$&'*+,;=%\\\\";
 // span inside an address is part of the address, whatever is written between its marks.
 // A "$" followed by a space is a plain character, not the start of a math span.
 const URL_BODY = `(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|[${URL_CHARS}]|[^\\x00-\\x7F\\s]+(?=[${URL_CHARS}\`]))+`;
-const URL_RE = new RegExp(`(?:https?:\\/\\/|https?:(?=[A-Za-z0-9])|www\\.(?=[A-Za-z0-9]))${URL_BODY}`, "giu");
-// What is left of a malformed scheme: "https:/e.com", "https:\\e.com", "https:例え.com". The
-// browser reads many of these as a normal address, so everything after "http(s):" up to a
-// space or a sentence mark goes, whichever form it takes.
-const URL_LOOSE_RE = /https?:(?:`[^`\n]*`|\$(?!\s)[^$\n]*(?<!\s)\$|\$|[^\s、。！？)）」』】`$])+/giu;
+// "http:" or "https:". Browsers drop tabs and line breaks anywhere in an address, so
+// "ht\ntps://e.com" and "https:\r\n//e.com" are the same address as "https://e.com". The
+// gap after the colon is accepted only when an address character follows, so a line that
+// merely ends in "https:" does not take the next line with it.
+const GAP = "[\\t\\n\\r]*";
+const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:${GAP}(?=[A-Za-z0-9/\\\\]))?`;
+const URL_RE = new RegExp(`(?:${HTTP}\\/\\/|${HTTP}(?=[A-Za-z0-9])|www\\.(?=[A-Za-z0-9]))${URL_BODY}`, "giu");
+// What is left of a malformed scheme: "https:/e.com", "https:\\e.com", "https:例え.com",
+// "https:`a.evil.com". The browser reads many of these as a normal address, so everything
+// after "http(s):" up to a space or a sentence mark goes, whichever form it takes. A lone
+// "`" or "$" is a plain character here: it does not end the address.
+const URL_LOOSE_RE = new RegExp(`${HTTP}(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|\\$|\`|[^\\s、。！？)）」』】\`$])+`, "giu");
 // A target with any scheme (https:, javascript:, mailto:, tel:, data:, "https:e.com", ...),
 // a leading // or www. is a link; a plain "[0](添字)" is not.
 const LINK_TARGET_RE = /^\s*(?:[a-z][a-z0-9+.-]*:|\/\/|www\.)/iu;
