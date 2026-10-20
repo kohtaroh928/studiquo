@@ -1,14 +1,15 @@
 import { SignJWT, importPKCS8 } from "jose";
-import { loadDevices, removeDevice } from "./devices.js";
+import { loadDevices, removeDevice, type Device } from "./devices.ts";
 import { featureDisabled } from "./features.js";
+import type { Env } from "./env.ts";
 
 const INVALID_TOKEN_REASONS = new Set(["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"]);
 
-function apnsHost(environment) {
+function apnsHost(environment: string) {
   return environment === "sandbox" ? "api.sandbox.push.apple.com" : "api.push.apple.com";
 }
 
-function apnsCredentials(env, environment) {
+function apnsCredentials(env: Env, environment: string) {
   const sandbox = environment === "sandbox";
   return {
     authKey: (sandbox ? env.APNS_SANDBOX_AUTH_KEY : env.APNS_PRODUCTION_AUTH_KEY) ?? env.APNS_AUTH_KEY,
@@ -16,19 +17,19 @@ function apnsCredentials(env, environment) {
   };
 }
 
-export async function createAPNsJWT(env, now = Date.now(), environment = "production") {
+export async function createAPNsJWT(env: Env, now = Date.now(), environment = "production") {
   const credentials = apnsCredentials(env, environment);
-  const key = await importPKCS8(credentials.authKey, "ES256");
+  const key = await importPKCS8(credentials.authKey!, "ES256");
   return new SignJWT({})
     .setProtectedHeader({ alg: "ES256", kid: credentials.keyID })
-    .setIssuer(env.APNS_TEAM_ID)
+    .setIssuer(env.APNS_TEAM_ID!)
     .setIssuedAt(Math.floor(now / 1_000))
     .sign(key);
 }
 
-async function apnsErrorReason(response) {
+async function apnsErrorReason(response: Response) {
   try {
-    const payload = await response.json();
+    const payload = (await response.json()) as { reason?: unknown } | null;
     return typeof payload?.reason === "string" ? payload.reason : null;
   } catch {
     return null;
@@ -39,7 +40,24 @@ async function apnsErrorReason(response) {
  * Best-effort push delivery. It deliberately returns per-device results and
  * never throws into the chat/friend action that triggered it.
  */
-export async function sendPush(env, userKey, notification, options = {}) {
+export interface PushNotification {
+  category?: string;
+  title?: string;
+  body?: string;
+  threadID?: string;
+  data?: Record<string, unknown>;
+  [field: string]: unknown;
+}
+
+export interface SendPushOptions {
+  fetchImpl?: typeof fetch;
+  now?: number;
+  devices?: Device[];
+  excludeInstallationID?: string;
+  [field: string]: unknown;
+}
+
+export async function sendPush(env: Env, userKey: string, notification: PushNotification, options: SendPushOptions = {}) {
   // The "push" kill switch (features.js): nothing is sent, nothing is thrown.
   if (featureDisabled(env, "push")) return [];
   const fetchImpl = options.fetchImpl ?? fetch;

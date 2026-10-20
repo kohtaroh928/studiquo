@@ -39,6 +39,7 @@
 // (TLS does that).
 import { json, readJSONLimited } from "./http.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
+import type { Env } from "./env.ts";
 
 const encoder = new TextEncoder();
 
@@ -118,7 +119,7 @@ export function decodeCBOR(bytes) {
       case 0: return argument(info);
       case 1: return -1 - argument(info);
       case 2: return take(argument(info)).slice();
-      case 3: return new TextDecoder("utf-8", { fatal: true }).decode(take(argument(info)));
+      case 3: return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(take(argument(info)));
       case 4: {
         const count = argument(info);
         if (count > bytes.length) throw new Error("cbor: bad count");
@@ -355,13 +356,13 @@ export async function verifyAssertion({ assertion, clientData, publicKey, stored
 
 // --- challenge -----------------------------------------------------------------
 
-async function challengeKey(env) {
+async function challengeKey(env: Env) {
   const raw = base64ToBytes(String(env.TOKEN_SIGNING_KEY ?? "").trim());
   if (raw.length < 32) throw new Error("TOKEN_SIGNING_KEY must be at least 32 bytes");
   return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
 }
 
-async function challengeSignature(env, body) {
+async function challengeSignature(env: Env, body) {
   return bytesToBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", await challengeKey(env), encoder.encode(CHALLENGE_LABEL + body))));
 }
 
@@ -382,7 +383,7 @@ export async function challengeIsValid(env, challenge, now = Date.now()) {
 
 // --- configuration ---------------------------------------------------------------
 
-export function appAttestMode(env) {
+export function appAttestMode(env: Env) {
   const mode = env.APP_ATTEST_MODE;
   if (mode !== "log" && mode !== "enforce") return "off";
   if (!env.APP_ATTEST_APP_ID || !env.TOKEN_SIGNING_KEY || !env.RATE_COUNTER) return "off";
@@ -394,18 +395,18 @@ export function appAttestMode(env) {
   return mode;
 }
 
-function keyObject(env, keyId) {
+function keyObject(env: Env, keyId) {
   return env.RATE_COUNTER.getByName(`attest-key:${keyId}`);
 }
 
 // --- routes ------------------------------------------------------------------------
 
-async function limited(binding, request) {
+async function limited(binding, request: Request) {
   return binding ? !(await checkRateLimit(binding, clientKey(request))) : false;
 }
 
 /** POST /api/attest/challenge and POST /api/attest/register. null for any other route. */
-export async function handleAppAttest(url, request, env, { now = Date.now(), rootDer } = {}) {
+export async function handleAppAttest(url, request, env, { now = Date.now(), rootDer }: { now?: number; rootDer?: Uint8Array } = {}) {
   if (request.method !== "POST") return null;
   if (url.pathname !== "/api/attest/challenge" && url.pathname !== "/api/attest/register") return null;
   const mode = appAttestMode(env);

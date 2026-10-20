@@ -23,6 +23,7 @@
 // With no key set nothing is signed or checked, which is how it behaves until the
 // secret is added.
 import { secretsEqual } from "./auth.ts";
+import type { Env } from "./env.ts";
 
 const encoder = new TextEncoder();
 const SESSION_LABEL = "studiquo-session-token-v1:";
@@ -64,15 +65,15 @@ async function signature(secret, label, payload) {
   return base64Url(new Uint8Array(digest));
 }
 
-function signingKey(env) {
+function signingKey(env: Env) {
   return env.TOKEN_SIGNING_KEY || null;
 }
 
-function checkingKeys(env) {
+function checkingKeys(env: Env) {
   return [env.TOKEN_SIGNING_KEY, env.TOKEN_SIGNING_KEY_OLD].filter(Boolean);
 }
 
-async function matchesAnyKey(env, label, payload, presented) {
+async function matchesAnyKey(env: Env, label, payload, presented) {
   for (const secret of checkingKeys(env)) {
     if (await secretsEqual(presented, await signature(secret, label, payload))) return true;
   }
@@ -80,17 +81,17 @@ async function matchesAnyKey(env, label, payload, presented) {
 }
 
 /** The token with its signature appended, or `payload` unchanged when no key is configured. */
-export async function signSessionToken(env, payload) {
+export async function signSessionToken(env: Env, payload) {
   const key = signingKey(env);
   return key ? `${payload}.${await signature(key, SESSION_LABEL, payload)}` : payload;
 }
 
-export async function signAccessToken(env, payload) {
+export async function signAccessToken(env: Env, payload) {
   const key = signingKey(env);
   return key ? `${payload}.${await signature(key, ACCESS_LABEL, payload)}` : payload;
 }
 
-function signedRequired(env) {
+function signedRequired(env: Env) {
   return env.REQUIRE_SIGNED_TOKENS === "true";
 }
 
@@ -99,7 +100,7 @@ function signedRequired(env) {
  * carries a wrong signature, and, when REQUIRE_SIGNED_TOKENS is on, for one that
  * carries none. True when no key is configured (nothing can be checked).
  */
-export async function sessionTokenAcceptable(env, token) {
+export async function sessionTokenAcceptable(env: Env, token) {
   if (checkingKeys(env).length === 0) return true;
   const signed = SIGNED_SESSION.exec(token);
   if (!signed) return !signedRequired(env);
@@ -111,7 +112,7 @@ export async function sessionTokenAcceptable(env, token) {
  * neither of the two shapes this Worker issues is refused: nothing legitimate looks
  * like that, and it costs no KV read to say so.
  */
-export async function accessTokenAcceptable(env, token) {
+export async function accessTokenAcceptable(env: Env, token) {
   if (checkingKeys(env).length === 0) return true;
   if (LEGACY_ACCESS.test(token)) return !signedRequired(env);
   const signed = SIGNED_ACCESS.exec(token);

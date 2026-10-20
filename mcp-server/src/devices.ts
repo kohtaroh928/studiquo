@@ -1,6 +1,19 @@
 import { checkRateLimit } from "./rate-limit.ts";
 import { json, readJSONLimited } from "./http.ts";
-import { sendPush } from "./push.js";
+import { sendPush } from "./push.ts";
+import type { Env } from "./env.ts";
+
+/** One registered phone or tablet, as kept under chat:devices:<userKey>. */
+export interface Device {
+  token: string;
+  environment: "sandbox" | "production";
+  installationID?: string;
+  deviceName?: string;
+  language?: string;
+  /** Notification categories the person turned on or off. */
+  preferences?: Record<string, boolean>;
+  banners?: Record<string, boolean>;
+}
 
 const MAX_BODY = 2_000;
 const MAX_DEVICES_PER_USER = 20;
@@ -11,16 +24,16 @@ const NOTIFICATION_CATEGORIES = new Set([
   "flashcardReview", "aiTaskComplete", "studyStreak", "newDeviceLogin", "announcement",
 ]);
 
-export function deviceStorageKey(userKey) {
+export function deviceStorageKey(userKey: string) {
   return `chat:devices:${userKey}`;
 }
 
-export async function loadDevices(env, userKey) {
+export async function loadDevices(env: Env, userKey: string): Promise<Device[]> {
   const value = await env.STUDIQUO_DATA.get(deviceStorageKey(userKey), "json");
   return Array.isArray(value) ? value : [];
 }
 
-export async function removeDevice(env, userKey, deviceToken) {
+export async function removeDevice(env: Env, userKey: string, deviceToken: string): Promise<boolean> {
   const devices = await loadDevices(env, userKey);
   const remaining = devices.filter(device => device.token !== deviceToken);
   if (remaining.length === devices.length) return false;
@@ -31,7 +44,7 @@ export async function removeDevice(env, userKey, deviceToken) {
   return true;
 }
 
-function parseDevice(body) {
+function parseDevice(body: any): Device | null {
   const token = String(body?.deviceToken ?? "").trim().toLowerCase();
   const environment = String(body?.environment ?? "");
   if (!DEVICE_TOKEN_PATTERN.test(token) || token.length % 2 !== 0) return null;
@@ -53,7 +66,7 @@ function parseDevice(body) {
   const banners = booleanMap(body?.banners);
   return {
     token,
-    environment,
+    environment: environment as Device["environment"],
     ...(installationID ? { installationID } : {}),
     ...(deviceName ? { deviceName } : {}),
     ...(language ? { language } : {}),
@@ -63,8 +76,8 @@ function parseDevice(body) {
 }
 
 // Keeps only known categories with boolean values.
-function booleanMap(value) {
-  const result = {};
+function booleanMap(value: unknown): Record<string, boolean> {
+  const result: Record<string, boolean> = {};
   if (value && typeof value === "object" && !Array.isArray(value)) {
     for (const [category, flag] of Object.entries(value)) {
       if (NOTIFICATION_CATEGORIES.has(category) && typeof flag === "boolean") result[category] = flag;
@@ -73,7 +86,7 @@ function booleanMap(value) {
   return result;
 }
 
-export async function handleDeviceRoutes(url, request, env, userKey, ctx) {
+export async function handleDeviceRoutes(url, request: Request, env: Env, userKey: string, ctx) {
   if (url.pathname !== "/api/chat/devices") return null;
 
   if (request.method === "POST") {

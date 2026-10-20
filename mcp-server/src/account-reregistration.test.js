@@ -6,7 +6,7 @@ import { sha256Hex } from "./auth.ts";
 import { deleteAccount, startAccountDeletion } from "./account-deletion.js";
 import { processPendingDeletions, runPrivacyRetention, runScheduledPrivacyWork } from "./privacy-retention.js";
 import { handleAdminWebhook } from "./admin.js";
-import { mintSession, realSession } from "./session.js";
+import { mintSession, realSession } from "./session.ts";
 
 // A real (in-memory SQLite) ADMIN_DB with every migration applied, so the
 // deletion path runs exactly as it does in production, including the

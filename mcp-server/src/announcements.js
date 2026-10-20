@@ -17,8 +17,8 @@ import { accessAllowed } from "./access.ts";
 import { auditAdmin } from "./audit.js";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
 import { json, readJSONLimited, securityHeaders, htmlHeaders } from "./http.ts";
-import { deviceStorageKey, loadDevices } from "./devices.js";
-import { sendPush } from "./push.js";
+import { deviceStorageKey, loadDevices } from "./devices.ts";
+import { sendPush } from "./push.ts";
 
 export const SUPPORTED_LANGUAGES = [
   { code: "ja", label: "日本語" },

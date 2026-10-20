@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPair, exportPKCS8, jwtVerify } from "jose";
 import test from "node:test";
-import { sendPush } from "./push.js";
+import { sendPush } from "./push.ts";
 
 async function fixture() {
   const values = new Map();

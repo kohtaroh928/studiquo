@@ -6,7 +6,7 @@ import worker from "./app.js";
 import { runPrivacyRetention } from "./privacy-retention.js";
 import { deleteAccount } from "./account-deletion.js";
 import { sha256Hex } from "./auth.ts";
-import { mintSession, realSession, accountIsUnavailable, suspensionKey } from "./session.js";
+import { mintSession, realSession, accountIsUnavailable, suspensionKey } from "./session.ts";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 
 class FakeD1Statement {

@@ -1,4 +1,5 @@
 import { sha256Hex } from "./auth.ts";
+import type { Env } from "./env.ts";
 
 // A person's chat identity must not change when their session does: friend
 // codes, chat rooms and document rooms are all recorded under it. The registry
@@ -9,7 +10,7 @@ import { sha256Hex } from "./auth.ts";
 //
 // Without a registry binding (a plain test environment) the session's own
 // token hash is used, which is what these routes did before.
-export async function resolveChatUserKey(env, sub, tokenKey) {
+export async function resolveChatUserKey(env: Env, sub, tokenKey) {
   if (!env.USER_REGISTRY || !sub) return tokenKey;
   const identityHash = await sha256Hex(`chat-account:${sub}`);
   return env.USER_REGISTRY.getByName(identityHash).resolveChatKey(identityHash, tokenKey);

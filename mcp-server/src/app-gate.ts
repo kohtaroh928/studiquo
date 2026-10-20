@@ -17,6 +17,7 @@
 // stops single features and is checked here too.
 import { json } from "./http.ts";
 import { featureGateRejection } from "./features.js";
+import type { Env } from "./env.ts";
 
 function isGuardedRoute(pathname) {
   if (pathname === "/mcp" || pathname.startsWith("/oauth/")) return true;
@@ -24,7 +25,7 @@ function isGuardedRoute(pathname) {
   return !pathname.startsWith("/api/admin/") && pathname !== "/api/announcements";
 }
 
-export function appGateRejection(request, env, url) {
+export function appGateRejection(request: Request, env: Env, url) {
   if (!isGuardedRoute(url.pathname)) return null;
   if (env.MAINTENANCE_MODE === "true") {
     const response = json({ error: "ただいまメンテナンス中です。しばらくしてからもう一度お試しください。", code: "maintenance" }, 503);

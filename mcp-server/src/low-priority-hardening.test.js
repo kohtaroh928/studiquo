@@ -29,7 +29,7 @@ register(
 const { UserRegistry } = await import("./user-registry.js");
 const { default: worker } = await import("./app.js");
 const { normalizeIP, clientKey } = await import("./rate-limit.ts");
-const { appGateRejection } = await import("./app-gate.js");
+const { appGateRejection } = await import("./app-gate.ts");
 const { isCrossSiteWrite } = await import("./access.ts");
 const { ACCESS_ENV, ACCESS_HEADERS } = await import("./test-access.ts");
 
@@ -262,7 +262,7 @@ test("a session record from before the origin was kept counts from its own issue
 });
 
 test("every new login starts its own clock", async () => {
-  const { mintSession } = await import("./session.js");
+  const { mintSession } = await import("./session.ts");
   const env = sessionEnvironment();
   const token = await mintSession(env, "person", "r".repeat(40));
   const stored = JSON.parse(env.values.get(`session:${hash(token)}`));

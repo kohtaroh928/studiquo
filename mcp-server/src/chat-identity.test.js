@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Hex } from "./auth.ts";
-import { resolveChatUserKey } from "./chat-identity.js";
+import { resolveChatUserKey } from "./chat-identity.ts";
 import { takeParsedBody, rememberParsedBody } from "./ai-body.ts";
 import { callAnthropicChat, extractDeltaText } from "./anthropic.js";
 

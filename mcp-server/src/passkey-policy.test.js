@@ -3,9 +3,9 @@ import test, { mock } from "node:test";
 import {
   RECOVERY_DELAY_SECONDS, accountHasPasskey, removeAllPasskeys, cancelPasskeyRecovery, gatePasskeyAccount,
   indexAccountPasskey, listAccountPasskeys, markRecentPasskey, requireRecentPasskey,
-} from "./passkey-policy.js";
+} from "./passkey-policy.ts";
 import { sha256Hex } from "./auth.ts";
-import { realSession } from "./session.js";
+import { realSession } from "./session.ts";
 
 function environment() {
   const values = new Map();

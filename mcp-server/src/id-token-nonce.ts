@@ -19,6 +19,7 @@
 // unless REQUIRE_ID_TOKEN_NONCE is "true", which is turned on once every build
 // in use sends one.
 import { secretsEqual, sha256Hex } from "./auth.ts";
+import type { Env } from "./env.ts";
 
 const RAW_NONCE = /^[A-Za-z0-9_-]{16,200}$/;
 const SINGLE_USE_SECONDS = 3_600;
@@ -42,7 +43,7 @@ function logOutcome(provider, outcome) {
 }
 
 /** `false` when the sign-in may go on, `true` when it is to be refused. */
-export async function idTokenNonceRefused(env, payload, suppliedNonce, provider = "unknown") {
+export async function idTokenNonceRefused(env: Env, payload, suppliedNonce, provider = "unknown") {
   const refuse = outcome => { logOutcome(provider, outcome); return true; };
   if (suppliedNonce === undefined || suppliedNonce === null || suppliedNonce === "") {
     if (env.REQUIRE_ID_TOKEN_NONCE === "true") return refuse("absent_refused");

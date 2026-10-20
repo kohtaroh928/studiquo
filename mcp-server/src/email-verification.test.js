@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sendVerificationCode, confirmVerificationCode } from "./email-verification.js";
+import { sendVerificationCode, confirmVerificationCode } from "./email-verification.ts";
 import { linkedIdentities } from "./oauth-links.ts";
 
 function environment() {

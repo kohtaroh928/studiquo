@@ -1,10 +1,11 @@
 import { bearerToken, secretsEqual, sha256Hex } from "./auth.ts";
 import { json, readJSONLimited, readTextLimited } from "./http.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
-import { accountIsUnavailable } from "./session.js";
-import { resolveChatUserKey } from "./chat-identity.js";
-import { sendPush } from "./push.js";
-import { accessTokenAcceptable, signAccessToken } from "./token-signature.js";
+import { accountIsUnavailable } from "./session.ts";
+import { resolveChatUserKey } from "./chat-identity.ts";
+import { sendPush } from "./push.ts";
+import { accessTokenAcceptable, signAccessToken } from "./token-signature.ts";
+import type { Env } from "./env.ts";
 
 const AUTH_TTL = 600;
 const CODE_TTL = 300;
@@ -14,6 +15,63 @@ const REFRESH_TTL = 90 * 24 * 3600;
 // when the app is connected anew.
 const CLIENT_TTL = 365 * 24 * 3600;
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/** mcp:access:<hash> and mcp:refresh:<hash>: what an issued token stands for. */
+interface IssuedToken {
+  sub: string;
+  clientId: string;
+  scope: string;
+  /** Ties the token to the grant it was issued under (the grant's `nonce`). */
+  grantId?: string;
+}
+
+/** mcp:grant:<sub hash>:<client hash>: a connected app the person approved. */
+interface GrantRecord {
+  clientName: string;
+  kind: string;
+  createdAt: number;
+  nonce: string;
+}
+
+/** mcp:code:<hash>: an authorization code waiting to be exchanged. */
+interface AuthorizationCode {
+  sub: string;
+  clientId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  scope: string;
+}
+
+/** mcp:client:<id>: a dynamically registered client. */
+interface ClientRecord {
+  clientName: string;
+  redirectUris: string[];
+}
+
+/** mcp:auth:<id>: an authorization request that is waiting for the person to approve it. */
+interface PendingAuthorization {
+  clientId: string;
+  clientName: string;
+  redirectUri: string;
+  kind: string;
+  codeChallenge: string;
+  scope: string;
+  state: string;
+}
+
+/** The pairing code the app issues: who it was made for and for which kind of AI app. */
+interface OwnerCode {
+  sub: string;
+  kind: string;
+}
+
+interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  scope: string;
+  refresh_token?: string;
+}
 
 function randomToken(bytes = 32) {
   const data = crypto.getRandomValues(new Uint8Array(bytes));
@@ -64,7 +122,7 @@ async function ownerCodeKey(code) {
  * page. Only the owner's signed-in session can make one, it is for one kind of
  * app, lasts five minutes and works once. A new code replaces the last one.
  */
-export async function issueOwnerCode(env, sub, kind) {
+export async function issueOwnerCode(env: Env, sub, kind) {
   if (!CONNECTION_KINDS.includes(kind)) return null;
   const activeKey = `mcp:owner-code-active:${await sha256Hex(sub)}`;
   const previous = await env.STUDIQUO_DATA.get(activeKey);
@@ -111,18 +169,18 @@ function sameGeneration(grant, token) {
 export const TOKEN_INDEX_STARTED_KEY = "mcp:token-index-since";
 export const TOKEN_INDEX_COVERS_AFTER_MS = (REFRESH_TTL + 24 * 3600) * 1000;
 
-async function markTokenIndexStarted(env) {
+async function markTokenIndexStarted(env: Env) {
   if (!(await env.STUDIQUO_DATA.get(TOKEN_INDEX_STARTED_KEY))) {
     await env.STUDIQUO_DATA.put(TOKEN_INDEX_STARTED_KEY, String(Date.now()));
   }
 }
 
-export async function tokenIndexCoversEverything(env, now = Date.now()) {
+export async function tokenIndexCoversEverything(env: Env, now = Date.now()) {
   const since = Number(await env.STUDIQUO_DATA.get(TOKEN_INDEX_STARTED_KEY));
   return Number.isFinite(since) && since > 0 && now > since + TOKEN_INDEX_COVERS_AFTER_MS;
 }
 
-async function issueTokens(env, sub, clientId, scope, grantId) {
+async function issueTokens(env: Env, sub, clientId, scope, grantId) {
   const generation = grantId ? { grantId } : {};
   // Signed when a key is configured, so a made-up access token is refused before
   // KV is read (token-signature.js).
@@ -131,7 +189,7 @@ async function issueTokens(env, sub, clientId, scope, grantId) {
   await env.STUDIQUO_DATA.put(`mcp:access:${accessHash}`, JSON.stringify({ sub, clientId, scope, ...generation }), { expirationTtl: ACCESS_TTL });
   const subHash = await sha256Hex(sub);
   await env.STUDIQUO_DATA.put(`mcp:token-index:${subHash}:access:${accessHash}`, "1", { expirationTtl: ACCESS_TTL });
-  const result = { access_token: accessToken, token_type: "Bearer", expires_in: ACCESS_TTL, scope };
+  const result: TokenResponse = { access_token: accessToken, token_type: "Bearer", expires_in: ACCESS_TTL, scope };
   const refreshToken = `mcp_refresh_${randomToken()}`;
   const refreshHash = await sha256Hex(refreshToken);
   await env.STUDIQUO_DATA.put(`mcp:refresh:${refreshHash}`, JSON.stringify({ sub, clientId, scope, ...generation }), { expirationTtl: REFRESH_TTL });
@@ -141,13 +199,13 @@ async function issueTokens(env, sub, clientId, scope, grantId) {
   return result;
 }
 
-export async function externalSession(env, request) {
+export async function externalSession(env: Env, request: Request) {
   const token = bearerToken(request);
   if (!token?.startsWith("mcp_")) return null;
   if (!(await accessTokenAcceptable(env, token))) return null;
-  const session = await env.STUDIQUO_DATA.get(`mcp:access:${await sha256Hex(token)}`, "json");
+  const session = await env.STUDIQUO_DATA.get<IssuedToken>(`mcp:access:${await sha256Hex(token)}`, "json");
   if (!session?.sub || !session?.clientId) return null;
-  const grant = await env.STUDIQUO_DATA.get(await grantKey(session.sub, session.clientId), "json");
+  const grant = await env.STUDIQUO_DATA.get<GrantRecord>(await grantKey(session.sub, session.clientId), "json");
   if (!grant || !sameGeneration(grant, session)) return null;
   // A token issued before the account was deleted must stop working at once,
   // not only when its own expiry comes.
@@ -157,7 +215,7 @@ export async function externalSession(env, request) {
 
 // The authorize page's owner typed a right code: grant the app and hand back
 // where to send them, authorization code attached.
-async function approveFlow(env, flowId, pending, sub) {
+async function approveFlow(env: Env, flowId, pending, sub) {
   const authorizationCode = `mcp_code_${randomToken()}`;
   await env.STUDIQUO_DATA.put(`mcp:code:${await sha256Hex(authorizationCode)}`, JSON.stringify({
     sub, clientId: pending.clientId, redirectUri: pending.redirectUri,
@@ -175,7 +233,7 @@ async function approveFlow(env, flowId, pending, sub) {
 
 // Tells the owner's devices that an app was just connected, so a connection
 // they did not make is noticed. Best effort: the connection stands either way.
-async function notifyConnected(env, sub, pending) {
+async function notifyConnected(env: Env, sub, pending) {
   try {
     const userKey = await resolveChatUserKey(env, sub, null);
     if (!userKey) return;
@@ -189,7 +247,7 @@ async function notifyConnected(env, sub, pending) {
   }
 }
 
-export async function listConnections(env, sub) {
+export async function listConnections(env: Env, sub) {
   const prefix = `mcp:grant:${await sha256Hex(sub)}:`;
   const names = [];
   let cursor;
@@ -201,7 +259,7 @@ export async function listConnections(env, sub) {
   // Only what the app lists: the grant's `nonce` is what ties issued tokens to
   // it, so it stays server-side.
   return Promise.all(names.map(async name => {
-    const grant = await env.STUDIQUO_DATA.get(name, "json");
+    const grant = await env.STUDIQUO_DATA.get<GrantRecord>(name, "json");
     return { id: name.slice(prefix.length), clientName: grant?.clientName ?? null, kind: grant?.kind ?? null, createdAt: grant?.createdAt ?? null };
   }));
 }
@@ -212,19 +270,19 @@ export async function listConnections(env, sub) {
  * app approved before two sign-in methods were linked sits under the other
  * identity: pass the account's own key together with every linked identity.
  */
-export async function revokeAllConnections(env, subs) {
+export async function revokeAllConnections(env: Env, subs) {
   for (const sub of new Set(Array.isArray(subs) ? subs : [subs])) {
     for (const connection of await listConnections(env, sub)) await revokeConnection(env, sub, connection.id);
   }
 }
 
-export async function revokeConnection(env, sub, id) {
+export async function revokeConnection(env: Env, sub, id) {
   if (!/^[a-f0-9]{64}$/.test(id)) return false;
   await env.STUDIQUO_DATA.delete(`mcp:grant:${await sha256Hex(sub)}:${id}`);
   return true;
 }
 
-export async function handleMCPOAuth(url, request, env, ctx) {
+export async function handleMCPOAuth(url, request: Request, env: Env, ctx) {
   const origin = url.origin;
   if (url.pathname === "/.well-known/oauth-protected-resource" || url.pathname === "/.well-known/oauth-protected-resource/mcp") {
     return json({ resource: `${origin}/mcp`, authorization_servers: [origin], scopes_supported: ["studiquo.read", "studiquo.write"] });
@@ -260,7 +318,7 @@ export async function handleMCPOAuth(url, request, env, ctx) {
     if (!(await checkRateLimit(env.RATE_LIMIT_MCP_AUTHORIZE, clientKey(request)))) return json({ error: "rate_limited" }, 429);
     const clientId = url.searchParams.get("client_id") ?? "";
     if (!/^studiquo_[a-f0-9]{32}$/.test(clientId)) return json({ error: "invalid_client" }, 400);
-    const client = await env.STUDIQUO_DATA.get(`mcp:client:${clientId}`, "json");
+    const client = await env.STUDIQUO_DATA.get<ClientRecord>(`mcp:client:${clientId}`, "json");
     const redirectUri = url.searchParams.get("redirect_uri") ?? "";
     const codeChallenge = url.searchParams.get("code_challenge") ?? "";
     const scope = url.searchParams.get("scope") || "studiquo.read studiquo.write";
@@ -289,7 +347,7 @@ export async function handleMCPOAuth(url, request, env, ctx) {
     const id = String(body?.id ?? "");
     const code = normalizeCode(body?.code);
     if (!/^[a-f0-9]{64}$/.test(id)) return fail("この画面は期限切れです。AIアプリから接続をやり直してください。");
-    const pending = await env.STUDIQUO_DATA.get(`mcp:auth:${id}`, "json");
+    const pending = await env.STUDIQUO_DATA.get<PendingAuthorization>(`mcp:auth:${id}`, "json");
     if (!pending) return fail("この画面は期限切れです。AIアプリから接続をやり直してください。");
     // Guessing is capped per page and per address; a page that has used up its
     // tries is closed, so the owner starts again from the AI app.
@@ -303,7 +361,7 @@ export async function handleMCPOAuth(url, request, env, ctx) {
     if (!ipOk) return fail("試行が多すぎます。しばらくしてからやり直してください。", 429);
     if (!/^[A-Z2-9]{12}$/.test(code)) return fail("コードが正しくないか、期限が切れています。");
     const key = await ownerCodeKey(code);
-    const issued = await env.STUDIQUO_DATA.get(key, "json");
+    const issued = await env.STUDIQUO_DATA.get<OwnerCode>(key, "json");
     if (!issued?.sub) return fail("コードが正しくないか、期限が切れています。");
     // A code made for one kind of app is not spent on another; it stays valid
     // for the app it was made for.
@@ -327,7 +385,7 @@ export async function handleMCPOAuth(url, request, env, ctx) {
     if (grantType === "authorization_code") {
       const rawCode = String(form.get("code") ?? "");
       const storedKey = `mcp:code:${await sha256Hex(rawCode)}`;
-      const code = await env.STUDIQUO_DATA.get(storedKey, "json");
+      const code = await env.STUDIQUO_DATA.get<AuthorizationCode>(storedKey, "json");
       const verifier = String(form.get("code_verifier") ?? "");
       if (!code || code.clientId !== clientId || code.redirectUri !== String(form.get("redirect_uri") ?? "") ||
           !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) return json({ error: "invalid_grant" }, 400);
@@ -339,7 +397,7 @@ export async function handleMCPOAuth(url, request, env, ctx) {
       if (!(await env.MCP_INBOX.getByName(accountHash).consumeOnce(await sha256Hex(rawCode)))) {
         return json({ error: "invalid_grant" }, 400);
       }
-      const grant = await env.STUDIQUO_DATA.get(await grantKey(code.sub, clientId), "json");
+      const grant = await env.STUDIQUO_DATA.get<GrantRecord>(await grantKey(code.sub, clientId), "json");
       if (!grant) return json({ error: "invalid_grant" }, 400);
       await env.STUDIQUO_DATA.delete(storedKey);
       return json(await issueTokens(env, code.sub, clientId, code.scope, grant.nonce));
@@ -347,20 +405,20 @@ export async function handleMCPOAuth(url, request, env, ctx) {
     if (grantType === "refresh_token") {
       const raw = String(form.get("refresh_token") ?? "");
       const key = `mcp:refresh:${await sha256Hex(raw)}`;
-      const refresh = await env.STUDIQUO_DATA.get(key, "json");
+      const refresh = await env.STUDIQUO_DATA.get<IssuedToken>(key, "json");
       if (!refresh) {
         // A refresh token that was already exchanged is presented again: either a
         // client lost the reply and retried, or a copy of it was stolen. Both
         // holders cannot be told apart, so the connection is cut (the owner
         // approves the app again) and every token issued under it stops working.
-        const spent = await env.STUDIQUO_DATA.get(`mcp:refresh-used:${await sha256Hex(raw)}`, "json");
+        const spent = await env.STUDIQUO_DATA.get<{ sub?: string; clientId?: string }>(`mcp:refresh-used:${await sha256Hex(raw)}`, "json");
         if (spent?.sub && spent.clientId === clientId) {
           await env.STUDIQUO_DATA.delete(await grantKey(spent.sub, clientId));
           console.warn(JSON.stringify({ message: "mcp refresh token reused; connection revoked" }));
         }
         return json({ error: "invalid_grant" }, 400);
       }
-      const grant = refresh && refresh.clientId === clientId ? await env.STUDIQUO_DATA.get(await grantKey(refresh.sub, clientId), "json") : null;
+      const grant = refresh && refresh.clientId === clientId ? await env.STUDIQUO_DATA.get<GrantRecord>(await grantKey(refresh.sub, clientId), "json") : null;
       if (!grant || !sameGeneration(grant, refresh)) {
         return json({ error: "invalid_grant" }, 400);
       }

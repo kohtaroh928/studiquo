@@ -9,8 +9,8 @@
 // See docs/RUNBOOK.md RB-17.
 import { json, readJSONLimited } from "./http.ts";
 import { auditAdmin } from "./audit.js";
-import { SUSPENSION_PREFIX, CHAT_SUSPENSION_PREFIX } from "./session.js";
-import { sendPush } from "./push.js";
+import { SUSPENSION_PREFIX, CHAT_SUSPENSION_PREFIX } from "./session.ts";
+import { sendPush } from "./push.ts";
 
 const WARNING = {
   title: "運営からのお知らせ",

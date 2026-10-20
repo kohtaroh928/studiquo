@@ -4,32 +4,35 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
-import { isRevoked } from "./revocation.js";
+import { isRevoked } from "./revocation.ts";
 import { isExpired } from "./token.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
 import { json, readJSONLimited } from "./http.ts";
-import { confirmVerificationCode, sendVerificationCode } from "./email-verification.js";
-import { mintSession, hasRealSession, realSession } from "./session.js";
+import { confirmVerificationCode, sendVerificationCode } from "./email-verification.ts";
+import { mintSession, hasRealSession, realSession } from "./session.ts";
 import { linkVerifiedEmail } from "./oauth-links.ts";
 import {
   REAUTH_ACTIONS, accountHasPasskey, cancelPasskeyRecovery, dropPasskeyIndex, indexAccountPasskey, indexedPasskeyIds, passkeyAccountKeys,
   passkeyIndexComplete, passkeyRevokedByReset, setPasskeyValidFrom, isEstablishedPasskey, listAccountPasskeys,
   listEstablishedPasskeys, markRecentPasskey, removeAllPasskeys, requireRecentPasskey, sendPasskeyNotice,
-} from "./passkey-policy.js";
+} from "./passkey-policy.ts";
+import type { Env } from "./env.ts";
+import { nextCursor } from "./kv.ts";
+import type { PasskeyChallenge, PasskeyRecord } from "./records.ts";
 
 const RP_ID = "api.studiquo.app";
 const ORIGIN = `https://${RP_ID}`;
 const APP_ID = "972G4VGUA6.com.yabuko.studiquo";
 
-export async function mintPasskeySession(env, email) {
+export async function mintPasskeySession(env: Env, email) {
   const link = await linkVerifiedEmail(env, {
     provider: "email", sub: email, email, emailVerified: true,
   });
   return mintSession(env, link.canonicalIdentityKey ?? `email:${email}`);
 }
 
-async function body(request) {
+async function body(request: Request) {
   return readJSONLimited(request, 100_000);
 }
 
@@ -45,13 +48,13 @@ function transactionID() {
   return crypto.randomUUID();
 }
 
-async function keysWithPrefix(env, prefix) {
-  const names = [];
-  let cursor;
+async function keysWithPrefix(env: Env, prefix) {
+  const names: string[] = [];
+  let cursor: string | undefined;
   do {
     const page = await env.STUDIQUO_DATA.list({ prefix, cursor });
     for (const item of page.keys ?? []) names.push(item.name);
-    cursor = page.list_complete ? undefined : page.cursor;
+    cursor = nextCursor(page);
   } while (cursor);
   return names;
 }
@@ -70,7 +73,7 @@ async function keysWithPrefix(env, prefix) {
 // Throws when it cannot finish, leaving the caller to stop the reset rather
 // than carry on with a passkey that still works. It reads only this account's
 // passkeys (the per-account list), so the cost does not grow with the service.
-export async function revokePasskeysForAccount(env, { accountKey, emails = [] }) {
+export async function revokePasskeysForAccount(env: Env, { accountKey, emails = [] }) {
   const wanted = [...new Set(emails.map(email => String(email).trim().toLowerCase()).filter(Boolean))];
   // Nothing registered before this moment counts any more, whether or not the
   // sweeps below find it (see passkeyRevokedByReset).
@@ -95,7 +98,7 @@ export async function revokePasskeysForAccount(env, { accountKey, emails = [] })
   let removed = 0;
   const userKeys = new Set();
   for (const id of ids) {
-    const record = await env.STUDIQUO_DATA.get(`passkeys:credential:${id}`, "json");
+    const record = await env.STUDIQUO_DATA.get<PasskeyRecord>(`passkeys:credential:${id}`, "json");
     if (!record) continue;
     if (record.userKey) userKeys.add(record.userKey);
     await env.STUDIQUO_DATA.delete(`passkeys:credential:${id}`);
@@ -103,7 +106,7 @@ export async function revokePasskeysForAccount(env, { accountKey, emails = [] })
   }
   const gone = new Set(ids);
   for (const userKey of userKeys) {
-    const list = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
+    const list = await env.STUDIQUO_DATA.get<PasskeyRecord[]>(`passkeys:user:${userKey}`, "json") ?? [];
     const kept = list.filter(item => !gone.has(item.id));
     if (kept.length === list.length) continue;
     if (kept.length === 0) await env.STUDIQUO_DATA.delete(`passkeys:user:${userKey}`);
@@ -117,7 +120,7 @@ export async function revokePasskeysForAccount(env, { accountKey, emails = [] })
 }
 
 // The original sweep, kept for the time before the per-account list is complete.
-async function scanAndRevoke(env, { accountKey, wanted }) {
+async function scanAndRevoke(env: Env, { accountKey, wanted }) {
   const emails = new Set(wanted);
   const owners = new Map();
   const belongs = async item => {
@@ -130,13 +133,13 @@ async function scanAndRevoke(env, { accountKey, wanted }) {
   };
   let removed = 0;
   for (const key of await keysWithPrefix(env, "passkeys:credential:")) {
-    if (await belongs(await env.STUDIQUO_DATA.get(key, "json"))) {
+    if (await belongs(await env.STUDIQUO_DATA.get<PasskeyRecord>(key, "json"))) {
       await env.STUDIQUO_DATA.delete(key);
       removed += 1;
     }
   }
   for (const key of await keysWithPrefix(env, "passkeys:user:")) {
-    const list = await env.STUDIQUO_DATA.get(key, "json") ?? [];
+    const list = await env.STUDIQUO_DATA.get<PasskeyRecord[]>(key, "json") ?? [];
     const kept = [];
     for (const item of list) if (!(await belongs(item))) kept.push(item);
     if (kept.length === list.length) continue;
@@ -160,7 +163,7 @@ export function associationFile() {
   });
 }
 
-export async function handlePasskeys(url, request, env) {
+export async function handlePasskeys(url, request: Request, env: Env) {
   if (!url.pathname.startsWith("/api/passkeys/")) return null;
 
   if (url.pathname === "/api/passkeys/email-code/send" && request.method === "POST") {
@@ -239,13 +242,13 @@ export async function handlePasskeys(url, request, env) {
     if (!(await accountHasPasskey(env, session.sub, email)) && await env.STUDIQUO_DATA.get(emailProofKey(userKey)) !== email) {
       return json({ error: "メールで届いたコードの確認が必要です。", code: "email_code_required" }, 403);
     }
-    const existing = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
+    const existing = await env.STUDIQUO_DATA.get<PasskeyRecord[]>(`passkeys:user:${userKey}`, "json") ?? [];
     const options = await generateRegistrationOptions({
       rpName: "Studiquo",
       rpID: RP_ID,
       userName: email,
       userDisplayName: email,
-      userID: new TextEncoder().encode(userKey),
+      userID: new TextEncoder().encode(userKey) as Uint8Array<ArrayBuffer>,
       attestationType: "none",
       excludeCredentials: existing.map(item => ({ id: item.id, transports: item.transports ?? ["internal"] })),
       authenticatorSelection: {
@@ -270,7 +273,7 @@ export async function handlePasskeys(url, request, env) {
     }
     const payload = await body(request);
     const transaction = String(payload?.transaction ?? "");
-    const pending = await env.STUDIQUO_DATA.get(`passkeys:challenge:${transaction}`, "json");
+    const pending = await env.STUDIQUO_DATA.get<PasskeyChallenge>(`passkeys:challenge:${transaction}`, "json");
     if (!token || !pending || pending.kind !== "registration" || pending.userKey !== await sha256Hex(token)) {
       return json({ error: "Registration expired." }, 400);
     }
@@ -288,7 +291,7 @@ export async function handlePasskeys(url, request, env) {
         requireUserVerification: true,
       });
       if (!verification.verified) return json({ error: "Passkey verification failed." }, 401);
-      const saved = await env.STUDIQUO_DATA.get(`passkeys:user:${pending.userKey}`, "json") ?? [];
+      const saved = await env.STUDIQUO_DATA.get<PasskeyRecord[]>(`passkeys:user:${pending.userKey}`, "json") ?? [];
       const credential = verification.registrationInfo.credential;
       const record = {
         id: credential.id,
@@ -346,8 +349,8 @@ export async function handlePasskeys(url, request, env) {
     const transaction = String(payload?.transaction ?? "");
     const credentialID = String(payload?.credential?.id ?? "");
     const [pending, record] = await Promise.all([
-      env.STUDIQUO_DATA.get(`passkeys:challenge:${transaction}`, "json"),
-      env.STUDIQUO_DATA.get(`passkeys:credential:${credentialID}`, "json"),
+      env.STUDIQUO_DATA.get<PasskeyChallenge>(`passkeys:challenge:${transaction}`, "json"),
+      env.STUDIQUO_DATA.get<PasskeyRecord>(`passkeys:credential:${credentialID}`, "json"),
     ]);
     if (!pending || pending.kind !== "authentication" || !record) return json({ error: "Login expired." }, 400);
     await env.STUDIQUO_DATA.delete(`passkeys:challenge:${transaction}`);
@@ -459,8 +462,8 @@ export async function handlePasskeys(url, request, env) {
     const transaction = String(payload?.transaction ?? "");
     const credentialID = String(payload?.credential?.id ?? "");
     const [pending, record] = await Promise.all([
-      env.STUDIQUO_DATA.get(`passkeys:challenge:${transaction}`, "json"),
-      env.STUDIQUO_DATA.get(`passkeys:credential:${credentialID}`, "json"),
+      env.STUDIQUO_DATA.get<PasskeyChallenge>(`passkeys:challenge:${transaction}`, "json"),
+      env.STUDIQUO_DATA.get<PasskeyRecord>(`passkeys:credential:${credentialID}`, "json"),
     ]);
     // The challenge belongs to this session, and the passkey to this account.
     if (!pending || pending.kind !== "reauth" || pending.tokenHash !== auth.tokenHash || !record) {
@@ -498,7 +501,7 @@ export async function handlePasskeys(url, request, env) {
 
 // The checks every signed-in passkey route shares: a well-formed, unexpired,
 // server-issued, unrevoked token. Returns the session, or the response to send.
-async function authenticatedSession(request, env, options) {
+async function authenticatedSession(request: Request, env: Env, options?: { allowSuspended?: boolean }) {
   const token = bearerToken(request);
   if (!token) return { response: json({ error: "A valid bearer token is required." }, 401) };
   if (isExpired(token)) return { response: json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401) };
