@@ -553,3 +553,53 @@ verifierはadmission/job claimではなく同時成功を排除しない。返�
 ## 原PDF Step5-Bの処理済み台帳整理（2026-10-19）
 
 追加0015で初期無効の内部purgeを実装。精算から48h・過去UTC窓・永続失効/置換・既知時刻・復旧done/leaseなしだけ、粗い候補10件とcursorで有限整理。floor/child/parent/leaseは原子的rollback、writer fenceは停止後も維持。legacy/停止不明/registry参照は保持、将来採用migrationはpre-adoption契約を先に変更して旧purgeを閉じる。server1888件と実local D1同時pass/rollback検証成功。remote未適用、HTTP/cron/flag未有効化。詳細: [Step5-B報告](RAG_PDF_PURGE_IMPLEMENTATION_REPORT.md)。
+
+
+## Step6-A停止証拠基盤（2026-10-19）
+
+停止済みVMの応答とサーバー内task/reader cleanupの終了を分離した停止証拠基盤を追加。両者が同じclaimへ永続化した場合だけtokenなし精算を許可する。証拠保存前のexecutor消失は枠を保持する。本処理/reaperには未接続、既存legacyは自動復旧しない。証拠tableの本文/digest/raw token保存はない。
+
+詳細: [停止証拠の設計](RAG_PDF_STOP_EVIDENCE_DESIGN.md)。
+
+
+## Step6-B停止証拠の実処理接続（2026-10-19）
+
+実PDF処理のtask/reader cleanup/monitor終了と参照解放を停止証拠へ接続し、保存済み両証拠に限りreaperがtokenなし精算する。精算UPDATEでもliveleaseを再検査し、証拠前のexecutor消失は枠保持。同一cleanup cancelは一回。0017は親行消失後のFK cascadeでのみ証拠を整理できる条件を追加し、手動contextだけの単独消去を拒否する。独立Code/Securityの指摘を修正し再レビュー済み。新flag・公開/cronは未有効。
+
+詳細: [Step6-B報告](RAG_PDF_STOP_INTEGRATION_REPORT.md)。
+
+
+## Step5-Cアカウント削除とPDF後片付け（2026-10-20）
+
+account削除はPDFの停止証拠が不足しても他の独立消去を続け、最終deletedだけ保留する。token/hash/メール/device関連keyは独立phase終了時にcheckpointから落とし、必要なidentity対応と固定PDF状態のみ保持。owner専用reaperは64lowerhex必須でnull/undefinedによるglobal化を拒否し、flags offでもcleanup可能。schema不明や証拠不足を削除完了にしない。
+
+詳細: [Step5-C報告](RAG_PDF_ACCOUNT_CLEANUP_REPORT.md)。
+
+
+## Step5-D1 private v2期限境界（2026-10-20）
+
+D1ではprivate入口/DO双方のv2専用モードで旧parse/cancelと旧引数helperを拒否、期限固定・実bytes digest・期限後停止を検証。期限後の空DOでもVM destroy確認が必須でmarkerを新設しない。旧stateへ期限を創作せず保持する。MCP caller移行/finite purgeは未実装で、flagは未設定。
+
+詳細: [D1結果](RAG_DO_V2_BOUNDARY_REPORT.md)。
+
+
+## Step5-D2a v2接続（2026-10-20）
+
+MCPの解析/取消/証拠/reaper/account cleanupを固定v2期限へ接続。dispatch CASと同時にjobへPDF-linkable digestと元notAfterを保存し、取消時にintake情報から復元しない。保存済v2はflags OFFでもv2で停止し、失敗時に旧RPCへfallbackしない。旧pendingは保存deadlineだけでv2取消へdrain可能だがparse契約を後付けしない。新job側digestは取消/account削除後も停止不明/未精算中、およびpurge無効中は残る。既存48h等の条件付き親job purge時にだけ削除。PDF本文/生tokenの永続保存やログ出力はない。remote ackでlocal停止を代用しない。実local RPC/DOは合成VM IOで検証、実VM停止/公開適用は未確認。
+
+詳細: [接続検証](RAG_PDF_RPC_V2_INTEGRATION_REPORT.md)。
+
+
+## D2b-A：停止観測と削除前提（2026-10-20）
+
+private v2のdestroy解決後に固定の停止観測時刻を保存し、保存/clock/alarm失敗やtimeoutは成功ackを返さない。PDF/digest/tokenはDOへ追加保存しない。過去の観測は全task静止/現在停止/削除許可の証明ではなく、失敗後もpoison状態で保持する。全消去後のclock後退で再送が実行可能になる反例から物理削除を保留。再実行防止の外部fence等・clock契約が必要。実Linux停止は再確認、Cloudflare実VMは未確認。
+
+
+## D2b-B：再実行防止の設計（2026-10-20）
+
+DO全消去後の再実行防止は、最小marker保持を既定とし、既存D1で一回だけ許可を消費するCASを第一候補に設計した。privateへADMIN_DB全権を渡さず、専用namedRPCの固定操作だけを予定。許可遅延/元task静止/現在同意/clock/backup復旧の条件が未成立ならpurgeしない。同nonceも再grantせずunknown結果は保持。未実装・新公開APIなし。 [設計正本](RAG_DO_REPLAY_FENCE_DESIGN.md)。
+
+
+## D2b-C1：開始許可のDB部品（2026-10-20）
+
+未接続start gateで最新owner/intake/同意/account/floor/期限と4承認flag＋専用gateを単一CAS前後に確認し、一度消費した許可を再発行しない。unknown/timeout/flag停止後の消費はresetしない。既存floorのno_replaceもschema必須。追加のopaque claim metadataは実VM/停止証拠ではなく、取消/account削除でも保持。新protocol親DELETE保留。HTTP/private/configへの接続、物理DO purge、backup安全性の完成は未実施。 [検証と制約](RAG_PDF_START_GATE_REPORT.md)。

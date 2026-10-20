@@ -79,7 +79,7 @@ account削除は認証失効と停止要求を先にし、PDF cleanup pendingと
 
 現在account-deletion.jsはdeleteAccountRAGの後にcredential/KV等を消すため、PDF専用の非本文checkpointとphase結果を呼出元の削除stateに追加し、セッション/identity mappingを消す前に停止対象と再試行の対応を永続化する設計が必要。成功済みphaseは繰り返さず、最後のstatus=deleted/完了応答は全phaseの完了判定へ結合する。PDFだけ未完なら処理中/残件ありとし、認証情報等が消去済みでも「全処理消去完了」と報告しない。checkpoint/schema unavailableで全完了に進めない。
 
-未解決jobとowner対応は停止確認に必要な範囲で保持し、本文/digestは先に失効させる。削除済みaccountの制限用hashを匿名化済みと説明しない。
+未解決jobとowner対応は停止確認に必要な範囲で保持し、本文は永続保存せず、intake側のdigestは取消・期限切れ・account失効で削減する。Step5-D2aで追加するjob側rpc_pdf_sha256はPDFと結び付くmetadataであり、dispatch時に固定した後は取消・account削除でもNULL化しない。停止不明・未精算の間、およびpurge未接続/無効の間は保持が続く。精算済みでも48時間・過去会計窓・停止証拠等の既存条件を満たし、保守処理が有効化された親jobのpurge時にだけ一緒に削除する。匿名化済みと説明しない。
 
 receiptはStep12〜15の正式採用と整合させる。未解決はageだけで削除せず、terminal後のhash削減/期限付き再送/fence/端末の復旧導線を明文化してから有限削除する。端末の保存とD1の採用を一つのtransactionで済むと仮定しない。
 
@@ -132,3 +132,32 @@ Step4の設計成果は完了。次はStep5-Aの追加schema/時刻/互換gate/�
 ## Step5-Bの具体化（2026-10-19）
 
 [実装と試験](RAG_PDF_PURGE_IMPLEMENTATION_REPORT.md)。0015の別制御を初期無効で追加。永久writer fence、DBclock/lease、coarse候補最大10とcursor、親DELETE trigger内のfloor/child削除、batch全rollbackを実装。receipt導入前にpre-adoption契約を変更し旧purgeを閉じることが必須。48h/過去窓/永続失効/unknown保持の方針は維持。実DBの有効化やC/Dは未実施。
+
+
+## Step5-D1実装の現在地（2026-10-20）
+
+private v2期限固定と旧signature拒否の未接続部品を実装。cancelはjobId/notAfterの固定形でdigest不要、parseは実bytes digestを照合しDO stateにはdigestを保存しない。MCP側永続envelope/全caller移行はD2a、実停止/旧caller閉鎖/grace確定後のfinite purgeはD2b。今回物理purgeはない。[結果と制約](RAG_DO_V2_BOUNDARY_REPORT.md)。
+
+
+## Step5-D2a MCP接続の現在地（2026-10-20）
+
+0018でjobへrpc_version/rpc_pdf_sha256/rpc_not_afterを追加。v2 parseのenvelopeはdispatch CASと同時保存し、deadline=notAfterを固定する。取消・証拠・reaper・account cleanupはintakeに依存せずjobから停止契約を復元。v2 jobはflag OFFでもv2停止、旧pendingは元deadlineだけでv2取消へdrainし、digestやv2 parse契約を補完しない。新規受付flagは未設定、旧schemaでは新v2受付のみ閉じる。
+
+追加のdigest保持は上記条件に従う。既存pre-adoption-stop-v2の親purge/FK/floor条件は維持し、DO stateの削除はしていない。実local workerd/D1/RPC/SQLite DOは合成VM IOで確認、実Container停止は未確認。[詳細と制約](RAG_PDF_RPC_V2_INTEGRATION_REPORT.md)。D2bは実停止・旧caller閉鎖・grace根拠を満たしてから。
+
+
+## D2b-Aの前提確認（2026-10-20）
+
+全消去するとDO内のclock履歴も消える。時計が大幅に戻り古いnotAfterが未来に戻ると空DOだけでは再送を判別できず、graceやlocal lastObservedAtだけでは安全にならない。Map fixtureでこの反例を再現した。外部単調fence/namespace incarnation、またはtrusted clockと異常時全入口停止の契約を別設計とし、今回は物理purgeもmarker縮約も実装しない。retention alarm/grace定数も未導入。
+
+v2 stateのdestroyConfirmedAtはdestroy解決後に保存する最初の観測時刻だけ。保存/時計/alarm失敗は成功ackなし、poison/retry保持。過去の観測を現在の停止・全task静止・削除許可と見なさない。legacy/期限後空DOには追加しない。実Linuxの解析/取消/短縮期限kill/reap/SIGTERMを再確認したが、新v2の実Cloudflare Container停止は未検証。[詳細](RAG_DO_DESTROY_CONFIRMATION_REPORT.md)。
+
+
+## D2b-Bの方式案（2026-10-20、未実装）
+
+当面DO marker保持。有限削除へ進む第一候補は、新storageではなく既存jobの一回限りstart CAS。同nonce含め許可を再発行せず、unknown commitは停止/cleanup/枠保持へ進む。DO start直前の専用RPC、元inflight追跡、D1 terminal/消去、clock/backup復旧、alarm/graceと旧入口閉鎖まで揃わなければpurgeしない。外部DBを復元すると拒否根拠も戻るため、任意backup後の自動安全は保証しない。次C1は追加metadata/不変trigger/内部helperの未接続検証。[正本の比較・段階計画](RAG_DO_REPLAY_FENCE_DESIGN.md)。
+
+
+## C1の保持契約（2026-10-20）
+
+0019によりone-shot-v1の親jobは精算済みでもC1では保持しDELETE拒否、eligible viewをlegacy限定とする。coarse cursorは保持対象を通過でき、既存legacyの整理を止めない。新start claimは取消/account削除で消費をresetしない。新metadataの有限保持はC3/C4の契約成立後。floorのmonotonic/kept/no_replace guardがない新gateは閉じる。停止/精算の既存経路は維持。[C1結果](RAG_PDF_START_GATE_REPORT.md)。
