@@ -29,11 +29,13 @@ const URL_BODY = `(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|[${URL_CHARS}]|
 // "http:" or "https:". Browsers drop tabs and line breaks anywhere in an address, so
 // "ht\ntps://e.com" and "https:\r\n//e.com" are the same address as "https://e.com", and so is
 // "https:\n$e.com" (the same as "https:$e.com", which a browser reads as a web address too).
-// The gap after the colon is taken when anything that is not a space or a sentence mark follows
-// it. A line that ends in "https:" therefore takes the first word of the next line with it, as a
-// browser would; a bare "https:" in the middle of a line, followed by a space, does not.
+// Between the letters any run of tabs and breaks is taken. After the colon only ONE line break
+// (with tabs around it) is taken, and only when something that is not a space or a sentence mark
+// follows it: a line that ends in "https:" takes the first word of the next line, but a blank line,
+// a heading, a code fence or a list marker after it stays. A bare "https:" in the middle of a line,
+// followed by a space, takes nothing. Past a blank line only "//" still counts (https:\n\n//e.com).
 const GAP = "[\\t\\n\\r]*";
-const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:${GAP}(?=[^\\s、。！？)）」』】]))?`;
+const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:(?:\\t*\\r?\\n)?\\t*(?=[^\\s、。！？)）」』】])|${GAP}(?=\\/\\/))?`;
 const URL_RE = new RegExp(`(?:${HTTP}\\/\\/|${HTTP}(?=[A-Za-z0-9])|www\\.(?=[A-Za-z0-9]))${URL_BODY}`, "giu");
 // What is left of a malformed scheme: "https:/e.com", "https:\\e.com", "https:例え.com",
 // "https:`a.evil.com". The browser reads many of these as a normal address, so everything
@@ -119,18 +121,29 @@ function stripMarkdownLinks(text, depth = 0) {
 }
 
 // "`https:`" written as a word in a sentence ("プロトコルは `https:` です") is a description, not an
-// address, and is left alone, provided the closing backtick ends the thought. Followed by "/" or
-// a letter it is the start of an address ("`https:`//e.com" reads as https://e.com once the
-// backticks are gone) and is removed like any other.
-const SCHEME_IN_CODE = /`[ \t]*https?:[ \t]*`(?=[\s、。！？)）」』】,.;:!?]|$)/giu;
+// address, and is left alone, provided the closing backtick ends the thought. Once the backticks
+// are gone, "`https:`//e.com" or "`https:`\n$e.com" reads as an address (browsers drop the line
+// break and the tab), so an address character after the closing backtick, past at most one line
+// break and tabs, means it is not a description and is removed like any other.
+const SCHEME_IN_CODE = /`[ \t]*https?:[ \t]*`/giu;
+// A scheme in backticks that is not a description takes the address after it (past one line break).
+const CODE_SCHEME_ADDRESS = /`[ \t]*https?:[ \t]*`(?:\t*\r?\n)?\t*[^\s、。！？)）」』]*/giu;
+const AFTER_CODE = /(?:\t*\r?\n)?\t*([^]?)([^]?)/uy;
+
+function endsTheThought(text, end) {
+  AFTER_CODE.lastIndex = end;
+  const [, first, second] = AFTER_CODE.exec(text);
+  if (first === "" || /[ \r\n、。！？)）」』】]/u.test(first)) return true;
+  return /[,.;:!?]/u.test(first) && (second === "" || /[ \r\n]/u.test(second));
+}
 
 function protectSchemeInCode(text) {
   const spans = [];
   let mark = null;
   for (let code = 0xe000; code <= 0xf8ff && mark === null; code++) if (!text.includes(String.fromCharCode(code))) mark = String.fromCharCode(code);
-  if (mark === null || !SCHEME_IN_CODE.test(text)) return { text, restore: (value) => value };
-  SCHEME_IN_CODE.lastIndex = 0;
-  const protectedText = text.replace(SCHEME_IN_CODE, (span) => `${mark}${spans.push(span) - 1}${mark}`);
+  if (mark === null) return { text, restore: (value) => value };
+  const protectedText = text.replace(SCHEME_IN_CODE, (span, offset) => (endsTheThought(text, offset + span.length) ? `${mark}${spans.push(span) - 1}${mark}` : span));
+  if (spans.length === 0) return { text, restore: (value) => value };
   const token = new RegExp(`${mark}(\\d+)${mark}`, "gu");
   return { text: protectedText, restore: (value) => value.replace(token, (_, index) => spans[Number(index)] ?? "") };
 }
@@ -140,6 +153,7 @@ function protectSchemeInCode(text) {
 export function redactLinks(text) {
   const kept = protectSchemeInCode(text);
   return kept.restore(stripMarkdownLinks(kept.text)
+    .replace(CODE_SCHEME_ADDRESS, REMOVED)
     .replace(URL_RE, REMOVED)
     .replace(URL_LOOSE_RE, REMOVED)
     .replace(ID_FIELD_RE, "")
