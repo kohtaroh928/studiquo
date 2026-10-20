@@ -1919,17 +1919,6 @@ private struct AIDataDisclosureView: View {
         }
     }
 
-    private enum AgeChoice { case adult, teen, child }
-    @State private var ageChoice: AgeChoice?
-
-    private var chosenBand: AIAgeBand? {
-        switch ageChoice {
-        case .adult: return .adult
-        case .teen: return .teen
-        default: return nil
-        }
-    }
-
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -1956,24 +1945,6 @@ private struct AIDataDisclosureView: View {
                     }
                     .padding(14)
                     .background(Theme.Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Label("年齢の確認", systemImage: "person.badge.shield.checkmark")
-                            .font(.headline)
-                        Text("AI機能は13歳以上の方が利用できます。13〜17歳の方は、保護者の同意を得てからご利用ください。")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        ageOption(.adult, "18歳以上です")
-                        ageOption(.teen, "13〜17歳で、保護者の同意を得ています")
-                        ageOption(.child, "13歳未満です")
-                        if ageChoice == .child {
-                            Text("13歳未満の方はAI機能を利用できません。ノートなどの基本機能はそのままお使いいただけます。")
-                                .font(.footnote)
-                                .foregroundStyle(.red)
-                        }
-                    }
-                    .padding(14)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
 
                     VStack(alignment: .leading, spacing: 10) {
                         Label("年齢の確認", systemImage: "person.badge.shield.checkmark")
