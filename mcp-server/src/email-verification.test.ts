@@ -8,7 +8,7 @@ function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
@@ -28,9 +28,9 @@ function stubResend(handler) {
 // Reads back the code this module itself just generated and sent, so tests
 // don't have to hardcode or guess a code — they intercept the outgoing
 // Resend request the same way a real inbox would receive it.
-async function captureSentCode(env, email) {
+async function captureSentCode(env, email: string) {
   let sentBody = null;
-  const restore = stubResend(async (_url, init) => {
+  const restore = stubResend(async (_url, init: { body: string; }) => {
     sentBody = JSON.parse(init.body);
     return new Response("{}", { status: 200 });
   });
@@ -45,7 +45,7 @@ test("sendVerificationCode emails a 6-digit code to the given address", async ()
   const env = environment();
   let requestedURL = null;
   let sentBody = null;
-  const restore = stubResend(async (url, init) => {
+  const restore = stubResend(async (url, init: { body: string; }) => {
     requestedURL = String(url);
     sentBody = JSON.parse(init.body);
     return new Response("{}", { status: 200 });

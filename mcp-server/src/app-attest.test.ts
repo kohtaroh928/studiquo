@@ -13,7 +13,7 @@ const NOW = Date.UTC(2026, 9, 18, 12, 0, 0);
 
 // --- a tiny DER / CBOR writer, to build the objects Apple would send ---------
 
-function der(tag, ...parts) {
+function der(tag: number, ...parts) {
   const body = Buffer.concat(parts);
   const length = body.length < 128 ? Buffer.from([body.length])
     : body.length < 256 ? Buffer.from([0x81, body.length]) : Buffer.from([0x82, body.length >> 8, body.length & 255]);
@@ -56,7 +56,7 @@ const p256 = () => generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const p384 = () => generateKeyPairSync("ec", { namedCurve: "secp384r1" });
 const pointOf = publicKey => publicKey.export({ type: "spki", format: "der" }).subarray(-65);
 
-function makeWorld({ appId = APP_ID, aaguid = "appattest\0\0\0\0\0\0\0", counter = 0, notAfter }: { appId?: any; aaguid?: string; counter?: number; notAfter?: any } = {}) {
+function makeWorld({ appId = APP_ID, aaguid = "appattest\0\0\0\0\0\0\0", counter = 0, notAfter }: { appId?: string; aaguid?: string; counter?: number; notAfter?: any } = {}) {
   const root = p384();
   const intermediate = p384();
   const device = p256();
@@ -101,7 +101,7 @@ function fakeEnv(extra = {}) {
           objects.set(name, {
             async attestRegister(record) { if (records.has(name)) return false; records.set(name, record); return true; },
             async attestKey() { return records.get(name) ?? null; },
-            async attestAdvance(counter) {
+            async attestAdvance(counter: number) {
               const record = records.get(name);
               if (!record || counter <= record.counter) return false;
               records.set(name, { ...record, counter });
@@ -116,15 +116,15 @@ function fakeEnv(extra = {}) {
   });
 }
 
-async function failure(promise) {
-  try { await promise; } catch (error) { return error.message; }
+async function failure(promise: Promise<number> | Promise<{ keyId: string; publicKey: string; }>) {
+  try { await promise; } catch (error) { return (error as Error).message; }
   return null;
 }
 
 // --- tests ----------------------------------------------------------------------
 
 test("CBOR decodes maps, arrays, bytes, text and integers, and rejects trailing bytes", () => {
-  const value = decodeCBOR(cbor.map([["a", cbor.uint(5)], ["b", cbor.array([cbor.text("x"), cbor.bytes(Buffer.from([1, 2]))])]]));
+  const value = decodeCBOR(cbor.map([["a", cbor.uint(5)], ["b", cbor.array([cbor.text("x"), cbor.bytes(Buffer.from([1, 2]))])]])) as { a: number; b: [string, Uint8Array] };
   assert.equal(value.a, 5);
   assert.equal(value.b[0], "x");
   assert.deepEqual([...value.b[1]], [1, 2]);
@@ -196,7 +196,7 @@ test("the mode is off unless fully configured", () => {
   assert.equal(appAttestMode(fakeEnv({ TOKEN_SIGNING_KEY: undefined })), "off");
 });
 
-function post(path, body?, headers = {}) {
+function post(path: string, body?: { keyId: any; attestation: any; challenge: any; } | undefined, headers = {}) {
   return new Request(`https://example.test${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 
@@ -239,7 +239,7 @@ test("the rate limit on the attest routes answers 429", async () => {
   assert.equal((await handleAppAttest(new URL("https://example.test/api/attest/challenge"), post("/api/attest/challenge"), env)).status, 429);
 });
 
-async function signedRequest(world, env, path, counter, { method = "POST", timestamp = NOW }: { method?: string; timestamp?: any } = {}) {
+async function signedRequest(world, env, path: string, counter: number, { method = "POST", timestamp = NOW }: { method?: string; timestamp?: number } = {}) {
   const header = `${world.keyId}.${timestamp}.${bytesToBase64Url(world.assertion(`${method}\n${path}\n${timestamp}`, counter))}`;
   return new Request(`https://example.test${path}`, { method, headers: { "x-studiquo-attest": header } });
 }

@@ -31,11 +31,11 @@ const { sendVerificationCode } = await import("./email-verification.ts");
 const { sendPasskeyNotice } = await import("./passkey-policy.ts");
 
 const noopCtx = partialCtx({ waitUntil() {}, passThroughOnException() {} });
-const gate = (path, env) => appGateRejection(new Request(`https://example.test${path}`, { method: "POST" }), env, new URL(`https://example.test${path}`));
+const gate = (path: string, env) => appGateRejection(new Request(`https://example.test${path}`, { method: "POST" }), env, new URL(`https://example.test${path}`));
 
 test("an unset or empty DISABLED_FEATURES stops nothing", () => {
   for (const env of [{}, { DISABLED_FEATURES: "" }, { DISABLED_FEATURES: " , " }, undefined]) {
-    assert.equal(disabledFeatures(env as any).size, 0);
+    assert.equal(disabledFeatures(partialEnv(env)).size, 0);
   }
   for (const path of ["/api/chat/inbox", "/api/ai/chat", "/mcp", "/api/auth/local/login"]) assert.equal(gate(path, {}), null, path);
 });

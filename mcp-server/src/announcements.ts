@@ -17,7 +17,7 @@ import { accessAllowed } from "./access.ts";
 import { auditAdmin } from "./audit.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
 import { json, readJSONLimited, securityHeaders, htmlHeaders } from "./http.ts";
-import { deviceStorageKey, loadDevices } from "./devices.ts";
+import { deviceStorageKey, loadDevices, type Device } from "./devices.ts";
 import { sendPush } from "./push.ts";
 import type { Env } from "./env.ts";
 import { nextCursor } from "./kv.ts";
@@ -51,8 +51,31 @@ const PUBLIC_LIMIT = 50;
 const LANG_PATTERN = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/;
 const VERSION_PATTERN = /^\d{1,4}(\.\d{1,4}){0,2}$/;
 
+/** A row of `announcements` (migrations 0003 and 0004). */
+interface AnnouncementRow {
+  id: string;
+  kind: string;
+  status: string;
+  link: string | null;
+  min_app_version: string | null;
+  max_app_version: string | null;
+  publish_at: number | null;
+  expires_at: number | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+  push_state: string | null;
+  push_cursor: string;
+  push_batches: number;
+  push_users: number;
+  push_delivered: number;
+  push_failed: number;
+  push_started_at: number | null;
+  push_sent_at: number | null;
+}
+
 /** "1.10" vs "1.9" → compares numerically per component; missing parts are 0. */
-export function compareVersions(a: string, b: any) {
+export function compareVersions(a: string, b: string) {
   const left = a.split(".").map(Number);
   const right = b.split(".").map(Number);
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
@@ -67,9 +90,9 @@ export function compareVersions(a: string, b: any) {
  * language (zh-Hans → zh), then FALLBACK_LANGUAGES, then anything at all.
  * `translations` is { [lang]: { title, body } }; returns { lang, title, body }.
  */
-export function resolveTranslation(translations: any, requested: string) {
-  const codes = Object.keys(translations);
-  const candidates = [];
+export function resolveTranslation<T>(translations: Record<string, T> | undefined, requested: string | undefined) {
+  const codes = Object.keys(translations as object);
+  const candidates: string[] = [];
   if (requested && LANG_PATTERN.test(requested)) {
     const lower = requested.toLowerCase();
     const exact = codes.find(code => code.toLowerCase() === lower);
@@ -79,8 +102,8 @@ export function resolveTranslation(translations: any, requested: string) {
     if (baseMatch) candidates.push(baseMatch);
   }
   candidates.push(...FALLBACK_LANGUAGES, ...codes);
-  const lang = candidates.find(code => translations[code]);
-  return lang ? { lang, ...translations[lang] } : null;
+  const lang = candidates.find(code => translations![code]);
+  return lang ? { lang, ...translations![lang] } : null;
 }
 
 function cleanString(value: string, max: number) {
@@ -96,9 +119,9 @@ function optionalVersion(value: string | null | undefined) {
     : { ok: false };
 }
 
-function optionalTimestamp(value: any) {
+function optionalTimestamp(value: unknown): { ok: boolean; value?: number | null } {
   if (value === undefined || value === null) return { ok: true, value: null };
-  return Number.isSafeInteger(value) && value > 0 ? { ok: true, value } : { ok: false };
+  return Number.isSafeInteger(value) && (value as number) > 0 ? { ok: true, value: value as number } : { ok: false };
 }
 
 function optionalLink(value: string | unknown[] | URL | null | undefined) {
@@ -112,14 +135,16 @@ function optionalLink(value: string | unknown[] | URL | null | undefined) {
 }
 
 // Validates an admin create/update body. Returns { error } or { value }.
-function parseAnnouncement(body: any, now: number) {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "Invalid request." };
-  if (!KINDS.includes(body.kind)) return { error: "Invalid kind." };
-  if (!STATUSES.includes(body.status)) return { error: "Invalid status." };
+function parseAnnouncement(raw: unknown, now: number) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { error: "Invalid request." };
+  // An admin's request body: each member is checked below before it is used.
+  const body = raw as Record<string, unknown>;
+  if (!KINDS.includes(body.kind as string)) return { error: "Invalid kind." };
+  if (!STATUSES.includes(body.status as string)) return { error: "Invalid status." };
 
-  const link = optionalLink(body.link);
-  const minVersion = optionalVersion(body.minAppVersion);
-  const maxVersion = optionalVersion(body.maxAppVersion);
+  const link = optionalLink(body.link as string | undefined);
+  const minVersion = optionalVersion(body.minAppVersion as string | undefined);
+  const maxVersion = optionalVersion(body.maxAppVersion as string | undefined);
   const publishAt = optionalTimestamp(body.publishAt);
   const expiresAt = optionalTimestamp(body.expiresAt);
   if (!link.ok) return { error: "link must be an https URL." };
@@ -147,14 +172,14 @@ function parseAnnouncement(body: any, now: number) {
   }
   if (!translations[REQUIRED_LANGUAGE]) return { error: `A ${REQUIRED_LANGUAGE} translation is required.` };
 
-  const status = body.status;
+  const status = body.status as string;
   const resolvedPublishAt = status === "published" ? (publishAt.value ?? now) : publishAt.value;
   if (resolvedPublishAt && expiresAt.value && expiresAt.value <= resolvedPublishAt) {
     return { error: "expiresAt must be after publishAt." };
   }
   return {
     value: {
-      kind: body.kind,
+      kind: body.kind as string,
       status,
       link: link.value,
       minAppVersion: minVersion.value,
@@ -175,8 +200,8 @@ async function writeTranslations(env: Env, id: string, translations: Record<stri
   }
 }
 
-async function loadTranslationMap(env: Env, ids: any) {
-  const byId = new Map<unknown, Record<string, { title: string; body: string }>>(ids.map((id: string) => [id, {}]));
+async function loadTranslationMap(env: Env, ids: string[]) {
+  const byId = new Map<unknown, Record<string, { title: string; body: string }>>(ids.map((id) => [id, {}]));
   if (ids.length === 0) return byId;
   const placeholders = ids.map(() => "?").join(",");
   const rows = await env.ADMIN_DB.prepare(
@@ -188,7 +213,7 @@ async function loadTranslationMap(env: Env, ids: any) {
   return byId;
 }
 
-function adminShape(row: any, translations: Record<string,{ title: string; body: string; }> | undefined) {
+function adminShape(row: AnnouncementRow, translations: Record<string,{ title: string; body: string; }> | undefined) {
   return {
     id: row.id,
     kind: row.kind,
@@ -222,13 +247,13 @@ function previewBody(text: string) {
  * (devices that never reported one get the fallback chain). One sendPush per
  * resolved language. Returns { delivered, failed }.
  */
-async function pushToDevices(env: Env, userKey: string, announcement: Record<string,unknown>, translations: Record<string,{ title: string; body: string; }> | undefined, devices: any, options: any, titlePrefix = "") {
-  const groups = new Map();
+async function pushToDevices(env: Env, userKey: string, announcement: Pick<AnnouncementRow, "id">, translations: Record<string,{ title: string; body: string; }> | undefined, devices: Device[], options: { fetchImpl?: typeof fetch }, titlePrefix = "") {
+  const groups = new Map<string, { text: { lang: string; title: string; body: string }; devices: Device[] }>();
   for (const device of devices) {
     const text = resolveTranslation(translations, device.language);
     if (!text) continue;
     if (!groups.has(text.lang)) groups.set(text.lang, { text, devices: [] });
-    groups.get(text.lang).devices.push(device);
+    groups.get(text.lang)!.devices.push(device);
   }
   let delivered = 0;
   let failed = 0;
@@ -246,7 +271,7 @@ async function pushToDevices(env: Env, userKey: string, announcement: Record<str
   return { delivered, failed };
 }
 
-function pushResponse(row: any) {
+function pushResponse(row: Pick<AnnouncementRow, "push_state" | "push_users" | "push_delivered" | "push_failed">) {
   return {
     state: row.push_state,
     users: row.push_users,
@@ -267,7 +292,7 @@ async function pushBatch(env: Env, id: string, options: {}, now: number) {
   if (featureDisabled(env, "push")) {
     return json({ error: "プッシュ通知は停止中です。解除してから送信してください。", code: "feature_disabled", feature: "push" }, 503);
   }
-  let row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first<Record<string, any>>();
+  let row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first<AnnouncementRow>();
   if (!row) return json({ error: "Not found." }, 404);
   if (!PUSHABLE_KINDS.includes(row.kind)) return json({ error: "This kind is not pushed." }, 400);
   if (row.status !== "published" || !row.publish_at || row.publish_at > now || (row.expires_at && row.expires_at <= now)) {
@@ -313,7 +338,7 @@ async function pushBatch(env: Env, id: string, options: {}, now: number) {
     `UPDATE announcements SET push_users = push_users + ?, push_delivered = push_delivered + ?, push_failed = push_failed + ?,
        push_state = ?, push_sent_at = ? WHERE id = ?`
   ).bind(users, delivered, failed, complete ? "sent" : "sending", complete ? now : null, id).run();
-  row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first();
+  row = (await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first<AnnouncementRow>())!;
   return json(pushResponse(row));
 }
 
@@ -324,7 +349,7 @@ async function pushTest(env: Env, id: string, request: Request, options: {}) {
   const body = await readJSONLimited(request, 1_000);
   const code = String(body?.friendCode ?? "").trim().toUpperCase();
   if (!FRIEND_CODE_PATTERN.test(code)) return json({ error: "Invalid friend code." }, 400);
-  const row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first();
+  const row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first<AnnouncementRow>();
   if (!row) return json({ error: "Not found." }, 404);
   const userKey = await env.STUDIQUO_DATA.get(`chat:code:${code}`);
   if (!userKey) return json({ error: "No user has that friend code." }, 404);
@@ -351,7 +376,7 @@ async function handleAdminAnnouncements(url: URL, request: Request, env: Env, op
   if (!id && request.method === "GET") {
     const rows = await env.ADMIN_DB.prepare(
       `SELECT * FROM announcements WHERE deleted_at IS NULL ORDER BY COALESCE(publish_at, created_at) DESC LIMIT 200`
-    ).all();
+    ).all<AnnouncementRow>();
     const results = rows.results ?? [];
     const translations = await loadTranslationMap(env, results.map(row => row.id));
     return json({
@@ -422,7 +447,7 @@ async function handlePublicAnnouncements(url: URL, request: Request, env: Env) {
     `SELECT * FROM announcements
      WHERE deleted_at IS NULL AND status = 'published' AND publish_at <= ? AND (expires_at IS NULL OR expires_at > ?)
      ORDER BY publish_at DESC LIMIT ?`
-  ).bind(now, now, PUBLIC_LIMIT).all();
+  ).bind(now, now, PUBLIC_LIMIT).all<AnnouncementRow>();
   const results = (rows.results ?? []).filter(row =>
     callerVersion === null ||
     ((!row.min_app_version || compareVersions(callerVersion, row.min_app_version) >= 0) &&

@@ -1,12 +1,14 @@
 // 脆弱性の版範囲判定に使う最小限のsemver。外部パッケージは使わない。
 
-export function parseVersion(v: any) {
+import type { NvdCpeMatch } from './types.ts';
+
+export function parseVersion(v: string | null | undefined) {
   const m = /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.\d+)*(?:-([0-9A-Za-z.-]+))?/.exec(String(v ?? '').trim());
   if (!m) return null;
   return { nums: [Number(m[1]), Number(m[2] ?? 0), Number(m[3] ?? 0)], pre: m[4] ?? null };
 }
 
-function comparePre(a: any, b: any) {
+function comparePre(a: string | null, b: string | null) {
   if (a === b) return 0;
   if (a === null) return 1; // 正式版はプレリリースより新しい
   if (b === null) return -1;
@@ -30,7 +32,7 @@ function comparePre(a: any, b: any) {
 }
 
 /** a<b なら負、等しければ0、a>b なら正。解釈できない版は null。 */
-export function compareVersions(a: any, b: any) {
+export function compareVersions(a: string | null | undefined, b: string) {
   const x = parseVersion(a);
   const y = parseVersion(b);
   if (!x || !y) return null;
@@ -44,14 +46,14 @@ export function compareVersions(a: any, b: any) {
  * NVDのcpeMatch形式の範囲に版が入るか。
  * 範囲の指定がまったく無ければ「全版が対象」ではなく null(判断不能)を返す。
  */
-export function inCpeRange(version: any, range: any) {
+export function inCpeRange(version: string | null | undefined, range: Pick<NvdCpeMatch, 'versionStartIncluding' | 'versionStartExcluding' | 'versionEndIncluding' | 'versionEndExcluding'>) {
   const { versionStartIncluding, versionStartExcluding, versionEndIncluding, versionEndExcluding } = range;
   if (!versionStartIncluding && !versionStartExcluding && !versionEndIncluding && !versionEndExcluding) return null;
-  const checks = [
-    [versionStartIncluding, (c: any) => c >= 0],
-    [versionStartExcluding, (c: any) => c > 0],
-    [versionEndIncluding, (c: any) => c <= 0],
-    [versionEndExcluding, (c: any) => c < 0],
+  const checks: [string | undefined, (c: number) => boolean][] = [
+    [versionStartIncluding, (c: number) => c >= 0],
+    [versionStartExcluding, (c: number) => c > 0],
+    [versionEndIncluding, (c: number) => c <= 0],
+    [versionEndExcluding, (c: number) => c < 0],
   ];
   for (const [bound, ok] of checks) {
     if (!bound) continue;

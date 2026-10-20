@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod/v4";
+import type { SnapshotNotebook } from "./records.ts";
 
 const snapshotPath = resolve(process.env.STUDIQUO_SNAPSHOT ?? "./studiquo-mcp-snapshot.json");
 const actionsPath = resolve(process.env.STUDIQUO_ACTIONS ?? "./studiquo-mcp-actions.json");
@@ -41,11 +42,11 @@ server.registerTool("list_notebooks", {
   inputSchema: z.object({})
 }, async () => {
   const data = await snapshot();
-  return result(data.notebooks.map((notebook: { id: unknown; title: unknown; pages: unknown[]; }) => ({
+  return result(data.notebooks.map((notebook: SnapshotNotebook) => ({
     id: notebook.id,
     title: notebook.title,
     pageCount: notebook.pages.length,
-    pages: notebook.pages.map((page: any) => ({ id: page.id, title: page.title }))
+    pages: notebook.pages.map((page) => ({ id: page.id, title: page.title }))
   })));
 });
 
@@ -56,7 +57,7 @@ server.registerTool("search_notes", {
   const data = await snapshot();
   const needle = query.toLocaleLowerCase("ja");
   const matches = data.notebooks
-    .flatMap((notebook: { pages: unknown[]; title: unknown; id: unknown; }) => notebook.pages.flatMap((page: any) => {
+    .flatMap((notebook: SnapshotNotebook) => notebook.pages.flatMap((page) => {
       const haystack = `${notebook.title}\n${page.title}\n${page.recognizedText ?? ""}`.toLocaleLowerCase("ja");
       return haystack.includes(needle)
         ? [{ notebookId: notebook.id, notebookTitle: notebook.title, pageId: page.id, pageTitle: page.title, recognizedText: page.recognizedText ?? "" }]

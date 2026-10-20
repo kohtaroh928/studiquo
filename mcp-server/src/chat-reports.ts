@@ -14,7 +14,7 @@ function roomErrorResponse(error: unknown) {
   return null;
 }
 
-export async function fileChatReport(env: Env, ctx: ExecutionContext, url: URL, { roomID, messageID, reporterKey, reason }: any) {
+export async function fileChatReport(env: Env, ctx: ExecutionContext, url: URL, { roomID, messageID, reporterKey, reason }: { roomID: string; messageID: number; reporterKey: string; reason: string }) {
   let snapshot;
   try {
     snapshot = await env.CHAT_ROOM.getByName(roomID).reportSnapshot(reporterKey, messageID);

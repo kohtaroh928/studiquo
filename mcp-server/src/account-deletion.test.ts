@@ -18,7 +18,7 @@ function environment() {
   const appErrorUsers = new Set();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
@@ -36,9 +36,9 @@ function environment() {
       },
     },
     ADMIN_DB: {
-      prepare(sql) {
+      prepare(sql: string | string[]) {
         return {
-          bind(userKey) {
+          bind(userKey: unknown) {
             return {
               async all() { return { results: [] }; },
               async run() {
@@ -62,7 +62,7 @@ function environment() {
 
 const hash = value => createHash("sha256").update(value).digest("hex");
 
-async function seedLinked(env, canonical, email, identities) {
+async function seedLinked(env, canonical: string, email: string, identities: { provider: string; sub: string; }[]) {
   await env.STUDIQUO_DATA.put(`email-account-owner:${email}`, canonical);
   await env.STUDIQUO_DATA.put(`email-accounts:${email}`, JSON.stringify(identities));
   for (const identity of identities) {
@@ -554,7 +554,7 @@ test("54. 大量のセッションやMCP接続があってもページネーシ�
   const canonical = "account-pages-54";
   const originalList = env.STUDIQUO_DATA.list.bind(env.STUDIQUO_DATA);
   void originalList;
-  env.STUDIQUO_DATA.list = async ({ prefix = "", cursor }: { prefix?: string; cursor?: any } = {}) => {
+  env.STUDIQUO_DATA.list = async ({ prefix = "", cursor }: { prefix?: string; cursor?: string } = {}) => {
     const keys = [...env._values.keys()].filter(key => key.startsWith(prefix)).sort();
     const start = cursor ? Number(cursor) : 0;
     const page = keys.slice(start, start + 17);
@@ -636,9 +636,9 @@ function fakeRateCounter(env, { failPurgeOnce = false }: { failPurgeOnce?: boole
   const retired = new Map();
   const log = [];
   let shouldFail = failPurgeOnce;
-  return partialNamespace<RateCounter, any>({
+  return partialNamespace<RateCounter, object>({
     purged, retired, generations, log,
-    getByName(name) {
+    getByName(name: string) {
       return {
         ...accountGenerationMethods(name, generations, () => env.STUDIQUO_DATA),
         async retireAccountGeneration(ttlSeconds) {

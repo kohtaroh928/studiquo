@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 import { compareVersions, resolveTranslation, SUPPORTED_LANGUAGES } from "./announcements.ts";
 import { partialCtx, partialEnv, readMigration } from "./test-env.ts";
 
 class FakeD1Statement {
-  db: any;
+  db: DatabaseSync;
   sql: string;
-  params: unknown[];
-  constructor(db: any, sql: string, params: unknown[] = []) { this.db = db; this.sql = sql; this.params = params; }
+  params: SQLInputValue[];
+  constructor(db: DatabaseSync, sql: string, params: SQLInputValue[] = []) { this.db = db; this.sql = sql; this.params = params; }
   bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() { this.db.prepare(this.sql).run(...this.params); return { success: true }; }
   async all() { return { results: this.db.prepare(this.sql).all(...this.params) }; }
@@ -21,7 +21,7 @@ class FakeD1Statement {
 const ACCESS = { aud: "test-aud", team: "team.cloudflareaccess.com" };
 const accessKeys = await generateKeyPair("ES256", { extractable: true });
 const accessJWKS = createLocalJWKSet({ keys: [{ ...(await exportJWK(accessKeys.publicKey)), alg: "ES256", use: "sig" }] });
-const sign = (over: Record<string, any> = {}) => new SignJWT({}).setProtectedHeader({ alg: "ES256" })
+const sign = (over: Record<string, string> = {}) => new SignJWT({}).setProtectedHeader({ alg: "ES256" })
   .setIssuer(`https://${over.team ?? ACCESS.team}`).setAudience(over.aud ?? ACCESS.aud)
   .setIssuedAt().setExpirationTime("1h").sign(accessKeys.privateKey);
 const validToken = await sign();
@@ -40,7 +40,7 @@ function environment(extra = {}) {
 }
 
 const ctx = partialCtx({ waitUntil() {} });
-const call = (env, path, { method = "GET", body, headers = { "cf-access-jwt-assertion": validToken } }: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) => worker.fetch(
+const call = (env, path: string, { method = "GET", body, headers = { "cf-access-jwt-assertion": validToken } }: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) => worker.fetch(
   new Request(`https://example.test${path}`, {
     method,
     headers: body !== undefined ? { "content-type": "application/json", ...headers } : headers,

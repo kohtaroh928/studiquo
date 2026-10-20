@@ -13,7 +13,7 @@ async function fixture() {
     APNS_TEAM_ID: "TEAM123456",
     APNS_TOPIC: "com.yabuko.studiquo",
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
@@ -24,7 +24,7 @@ async function fixture() {
   return { env, values, publicKey };
 }
 
-function seedDevices(values, devices) {
+function seedDevices(values: Map<any,any>, devices) {
   values.set("chat:devices:user-a", JSON.stringify(devices));
 }
 

@@ -6,19 +6,19 @@ import { linkVerifiedEmail } from "./oauth-links.ts";
 import { realSession } from "./session.ts";
 import { revoke } from "./revocation.ts";
 
-function sha256Hex(value) {
+function sha256Hex(value: string | NodeJS.ArrayBufferView<ArrayBufferLike>) {
   return createHash("sha256").update(value).digest("hex");
 }
 
 // Tokens are "<issued-at epoch seconds>.<random secret>"; freshToken() mints
 // one that was "just issued" so tests aren't tripped up by the expiry check.
-function freshToken(suffix) {
+function freshToken(suffix: string) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(64)}`;
 }
 
 // The first passkey of an account needs the mailbox confirmed with a code first
 // (the /email-code routes leave this proof behind).
-async function proveMailbox(env, token, email = "student@example.com") {
+async function proveMailbox(env, token: string, email = "student@example.com") {
   await env.STUDIQUO_DATA.put(`passkey-email-proof:${sha256Hex(token)}`, email);
 }
 
@@ -39,7 +39,7 @@ function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         let value = values.get(key) ?? null;
         // These tests aren't exercising session-authenticity enforcement
         // itself (see app.test.js's "requireRealSession" tests) — treat any
@@ -60,7 +60,7 @@ function environment() {
   });
 }
 
-function registerOptionsRequest(token) {
+function registerOptionsRequest(token: string) {
   return new Request("https://example.test/api/passkeys/register/options", {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -68,7 +68,7 @@ function registerOptionsRequest(token) {
   });
 }
 
-function registerVerifyRequest(token) {
+function registerVerifyRequest(token: string) {
   return new Request("https://example.test/api/passkeys/register/verify", {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -270,7 +270,7 @@ test("POST /api/passkeys/register/verify: allows up to the limit, then 429s", as
 
 // --- A passkey can only be registered for an e-mail the signed-in account already owns ---
 
-function registerFor(token, email) {
+function registerFor(token: string, email: string) {
   return new Request("https://example.test/api/passkeys/register/options", {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -311,7 +311,7 @@ test("the e-mail check happens before anything is stored for the attempt", async
   await env.STUDIQUO_DATA.put("email-account-owner:victim@example.com", "google:victim-sub");
   const stored = [];
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => { stored.push(key); return realPut(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key, value, options) => { stored.push(key); return realPut(key, value, options); };
   const request = registerFor(freshToken("w"), "victim@example.com");
   await handlePasskeys(new URL(request.url), request, env);
   assert.deepEqual(stored.filter(key => key.startsWith("passkeys:")), [], "no challenge or credential is left behind");
@@ -338,7 +338,7 @@ function newPasskey() {
   return { privateKey, cose };
 }
 
-function assertionFor({ privateKey }, challenge, id) {
+function assertionFor({ privateKey }, challenge, id: string) {
   const clientDataJSON = Buffer.from(JSON.stringify({
     type: "webauthn.get", challenge, origin: `https://${RP_ID}`, crossOrigin: false,
   }));
@@ -357,7 +357,7 @@ function assertionFor({ privateKey }, challenge, id) {
   };
 }
 
-async function reauthOptions(env, token) {
+async function reauthOptions(env, token: string) {
   const request = new Request("https://example.test/api/passkeys/reauth/options", {
     method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ action: "delete-account" }),
@@ -365,7 +365,7 @@ async function reauthOptions(env, token) {
   return handlePasskeys(new URL(request.url), request, env);
 }
 
-async function reauthVerify(env, token, transaction, credential) {
+async function reauthVerify(env, token: string, transaction, credential) {
   const request = new Request("https://example.test/api/passkeys/reauth/verify", {
     method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ transaction, credential }),
@@ -373,7 +373,7 @@ async function reauthVerify(env, token, transaction, credential) {
   return handlePasskeys(new URL(request.url), request, env);
 }
 
-async function seedPasskey(env, passkey, id, account = "test") {
+async function seedPasskey(env, passkey, id: string, account = "test") {
   await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify({
     id, publicKey: Array.from(passkey.cose), counter: 0, transports: ["internal"], email: "student@example.com",
   }));
@@ -492,7 +492,7 @@ test("reauth: an unknown action is refused", async () => {
   assert.equal((await handlePasskeys(new URL(request.url), request, env)).status, 400);
 });
 
-function emailCodeRequest(path, token, payload) {
+function emailCodeRequest(path: string, token: string, payload: { email: string; code?: string; }) {
   return new Request(`https://example.test/api/passkeys/email-code/${path}`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -500,7 +500,7 @@ function emailCodeRequest(path, token, payload) {
   });
 }
 
-async function withMail(run) {
+async function withMail(run: { (sent: any): Promise<void>; (sent: any): Promise<void>; (arg0: any[]): any; }) {
   const realFetch = globalThis.fetch;
   const sent = [];
   globalThis.fetch = async (_url, init) => { sent.push(JSON.parse(init.body)); return new Response("{}", { status: 200 }); };

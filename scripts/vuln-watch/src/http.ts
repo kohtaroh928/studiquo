@@ -9,21 +9,26 @@ const MAX_BYTES = 20_000_000;
 /** The part of `fetch` this client uses; a test replaces `fetch` with a fake that gives just these members. */
 export type FetchLike = (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 
-export function createClient({ cacheDir = null as string | null, ttlMs = 6 * 3600_000, offline = false, fetchImpl = globalThis.fetch as FetchLike, sleep = (ms: any) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+/** `text` / `json` の指定。 */
+export interface TextOptions { method?: string; body?: string | null; headers?: Record<string, string>; minGapMs?: number; retries?: number }
+
+export type HttpClient = ReturnType<typeof createClient>;
+
+export function createClient({ cacheDir = null as string | null, ttlMs = 6 * 3600_000, offline = false, fetchImpl = globalThis.fetch as FetchLike, sleep = (ms: number | undefined) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const lastAt = new Map();
 
-  async function throttle(host: any, minGapMs: any) {
+  async function throttle(host: string, minGapMs: number) {
     const wait = (lastAt.get(host) ?? 0) + minGapMs - Date.now();
     if (wait > 0) await sleep(wait);
     lastAt.set(host, Date.now());
   }
 
-  function cachePath(url: any, body: any) {
+  function cachePath(url: string, body: string | null) {
     return `${cacheDir}/${createHash('sha256').update(url + (body ?? '')).digest('hex')}.json`;
   }
 
   /** 本文(文字列)を返す。キャッシュが新しければネットワークに行かない。offline ならキャッシュのみ(古くても使う)。 */
-  async function text(url: any, { method = 'GET', body = null, headers = {}, minGapMs = 0, retries = 3 } = {}) {
+  async function text(url: string, { method = 'GET', body = null, headers = {}, minGapMs = 0, retries = 3 }: TextOptions = {}) {
     const file = cacheDir ? cachePath(url, body) : null;
     if (file && existsSync(file) && (offline || Date.now() - statSync(file).mtimeMs < ttlMs)) {
       return readFileSync(file, 'utf8');
@@ -64,7 +69,7 @@ export function createClient({ cacheDir = null as string | null, ttlMs = 6 * 360
   }
 
   /** JSONとして読む。 */
-  async function json(url: any, opts?: any) {
+  async function json<T = unknown>(url: string, opts?: TextOptions): Promise<T> {
     return JSON.parse(await text(url, opts));
   }
 

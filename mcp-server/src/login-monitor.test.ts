@@ -33,7 +33,7 @@ test("touchSeenContext: keeps at most maxEntries, evicting the oldest", () => {
 });
 
 test("requestContext needs both country and ASN, and never exposes the IP", () => {
-  const request = (cf, ip = "198.51.100.7") => Object.defineProperty(
+  const request = (cf: { country: string; asn?: number; region?: string; asOrganization?: string; }, ip = "198.51.100.7") => Object.defineProperty(
     new Request("https://example.test/", { headers: { "cf-connecting-ip": ip } }), "cf", { value: cf }
   );
   assert.equal(requestContext(new Request("https://example.test/")), null);
@@ -54,13 +54,13 @@ function fakeEnv() {
     RATE_COUNTER: {
       getByName(name) {
         return {
-          async bump(limit) {
+          async bump(limit: number) {
             const used = (counts.get(name) ?? 0) + 1;
             if (used > limit) return false;
             counts.set(name, used);
             return true;
           },
-          async seenContext(key, { maxEntries, ttlSeconds }) {
+          async seenContext(key: string, { maxEntries, ttlSeconds }) {
             const result = touchSeenContext(seen.get(name), key, Date.now(), maxEntries, ttlSeconds);
             seen.set(name, result.state);
             return { isNew: result.isNew, wasEmpty: result.wasEmpty };
@@ -72,7 +72,7 @@ function fakeEnv() {
   return env;
 }
 
-function withCf(cf) {
+function withCf(cf: { country: string; asn: number; region?: string; asOrganization?: string; }) {
   return Object.defineProperty(new Request("https://example.test/", { headers: { "cf-connecting-ip": "198.51.100.7" } }), "cf", { value: cf });
 }
 
@@ -88,7 +88,7 @@ function captureOutbound(run) {
 
 // MARK: - metrics + alerts
 
-test("each outcome is logged as one structured line without the email or IP", () => captureOutbound(async (_sent, logs) => {
+test("each outcome is logged as one structured line without the email or IP", () => captureOutbound(async (_sent, logs: any[]) => {
   const env = fakeEnv();
   const request = withCf({ country: "JP", asn: 2516 });
   await recordLoginOutcome(env, request, "failure");
@@ -100,7 +100,7 @@ test("each outcome is logged as one structured line without the email or IP", ()
   assert.ok(!logs.join("").includes("198.51.100.7"));
 }));
 
-test("failures alert Slack exactly once per hour when they cross the threshold", () => captureOutbound(async (sent) => {
+test("failures alert Slack exactly once per hour when they cross the threshold", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   const request = withCf({ country: "JP", asn: 2516 });
   for (let i = 0; i < MONITOR.failureAlert; i++) await recordLoginOutcome(env, request, "failure");
@@ -110,7 +110,7 @@ test("failures alert Slack exactly once per hour when they cross the threshold",
   assert.match(JSON.stringify(sent[0].body), /ログイン失敗が急増/);
 }));
 
-test("throttled tries are counted apart from failures, so hammering one account can't trip or mask the failure alert", () => captureOutbound(async (sent) => {
+test("throttled tries are counted apart from failures, so hammering one account can't trip or mask the failure alert", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   const request = withCf({ country: "JP", asn: 2516 });
   for (let i = 0; i < MONITOR.failureAlert + 50; i++) await recordLoginOutcome(env, request, "throttled");
@@ -123,7 +123,7 @@ test("throttled tries are counted apart from failures, so hammering one account 
   assert.match(JSON.stringify(sent[1].body), /待機が多発/);
 }));
 
-test("new-context successes alert separately, and ordinary successes never do", () => captureOutbound(async (sent) => {
+test("new-context successes alert separately, and ordinary successes never do", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   const request = withCf({ country: "JP", asn: 2516 });
   for (let i = 0; i < 500; i++) await recordLoginOutcome(env, request, "success", { newContext: false });
@@ -145,7 +145,7 @@ test("a Slack or counter failure never throws out of recordLoginOutcome", async 
 
 // MARK: - new-context notice
 
-test("a sign-in from a context the account hasn't used emails the owner, once", () => captureOutbound(async (sent) => {
+test("a sign-in from a context the account hasn't used emails the owner, once", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   const home = withCf({ country: "JP", asn: 2516, region: "Tokyo", asOrganization: "KDDI" });
   const abroad = withCf({ country: "RO", asn: 9050, region: "Bucharest", asOrganization: "Some Hosting" });
@@ -169,14 +169,14 @@ test("a sign-in from a context the account hasn't used emails the owner, once", 
   assert.equal(sent.length, 1);
 }));
 
-test("notice mails are capped per account per day", () => captureOutbound(async (sent) => {
+test("notice mails are capped per account per day", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   await noteSignInContext(env, withCf({ country: "JP", asn: 1 }), "person@example.com", { notify: false });
   for (let i = 0; i < 10; i++) await noteSignInContext(env, withCf({ country: "US", asn: 100 + i }), "person@example.com", { notify: true });
   assert.equal(sent.length, MONITOR.noticesPerDay);
 }));
 
-test("without Cloudflare geo data nothing is recorded or sent", () => captureOutbound(async (sent) => {
+test("without Cloudflare geo data nothing is recorded or sent", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   assert.deepEqual(await noteSignInContext(env, new Request("https://example.test/"), "person@example.com", { notify: true }), { newContext: false, firstSeen: false });
   assert.equal(sent.length, 0);
@@ -210,7 +210,7 @@ test("an account's first recorded sign-in is still mailed but isn't counted as a
   assert.equal(sent.filter(item => item.url.includes("hooks.example")).length, 0, "no spike alert for first-seen sign-ins");
 }));
 
-test("without a mail API key the notice is skipped and the daily allowance isn't spent", () => captureOutbound(async (sent) => {
+test("without a mail API key the notice is skipped and the daily allowance isn't spent", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   delete env.RESEND_API_KEY;
   await noteSignInContext(env, withCf({ country: "JP", asn: 1 }), "person@example.com", { notify: false });
@@ -224,7 +224,7 @@ test("without a mail API key the notice is skipped and the daily allowance isn't
   assert.equal(sent.length, MONITOR.noticesPerDay);
 }));
 
-test("the network name in the mail is a single short printable line", () => captureOutbound(async (sent) => {
+test("the network name in the mail is a single short printable line", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   await noteSignInContext(env, withCf({ country: "JP", asn: 1 }), "person@example.com", { notify: false });
   const hostile = `Evil Net\r\n\r\nあなたのパスワードを https://phish.example で確認してください${"x".repeat(200)}`;
@@ -236,7 +236,7 @@ test("the network name in the mail is a single short printable line", () => capt
   assert.equal(sent[0].body.text.split("\n").filter(row => row.startsWith("ネットワーク")).length, 1);
 }));
 
-test("hashing-saturation refusals alert Slack once per hour, separately from failures", () => captureOutbound(async (sent) => {
+test("hashing-saturation refusals alert Slack once per hour, separately from failures", () => captureOutbound(async (sent: string | any[]) => {
   const env = fakeEnv();
   const request = withCf({ country: "JP", asn: 2516 });
   for (let i = 0; i < MONITOR.busyAlert; i++) await recordLoginOutcome(env, request, "busy");
@@ -250,7 +250,7 @@ test("hashing-saturation refusals alert Slack once per hour, separately from fai
   assert.equal(sent.length, 1);
 }));
 
-test("a stopped email switch sends no sign-in notice but still remembers the context", () => captureOutbound(async (sent) => {
+test("a stopped email switch sends no sign-in notice but still remembers the context", () => captureOutbound(async (sent: string | any[]) => {
   const env = { ...fakeEnv(), DISABLED_FEATURES: "email" };
   const home = withCf({ country: "JP", asn: 2516, region: "Tokyo", asOrganization: "KDDI" });
   const abroad = withCf({ country: "RO", asn: 9050, region: "Bucharest", asOrganization: "Some Hosting" });

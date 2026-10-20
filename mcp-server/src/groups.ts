@@ -42,7 +42,7 @@ function parseGroupName(body: { name: unknown; }) {
 
 function parseMemberCodes(body: { memberCodes: unknown; }) {
   const raw = Array.isArray(body?.memberCodes) ? body.memberCodes : [];
-  const codes: string[] = [...new Set<string>(raw.map((item: any) => String(item ?? "").trim().toUpperCase()))];
+  const codes: string[] = [...new Set<string>(raw.map((item: unknown) => String(item ?? "").trim().toUpperCase()))];
   return codes.every(code => FRIEND_CODE_PATTERN.test(code)) ? codes : null;
 }
 
@@ -139,8 +139,8 @@ async function withGroupErrors(promise: unknown) {
 // comment in chat-room.ts) — this just strips the internal key before a
 // member list ever reaches a client, the same boundary friends()/messages
 // already keep around a raw user key.
-function toClientMembers(members: unknown[]) {
-  return members.map(({ code, name }: any) => ({ code, name }));
+function toClientMembers(members: { code: string | null; name: string | null }[]) {
+  return members.map(({ code, name }) => ({ code, name }));
 }
 
 export async function handleGroupRoutes(url: URL, request: Request, env: Env, key: string, ctx: ExecutionContext) {

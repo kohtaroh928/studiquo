@@ -45,6 +45,7 @@ import { json, readTextLimited, readJSONLimited, securityHeaders } from "./http.
 import { sealSnapshot, openSnapshot } from "./snapshot-crypto.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Env } from "./env.ts";
+import type { SessionRecord, SnapshotNotebook } from "./records.ts";
 
 /** account:<sub>: the sign-in record kept for a user (an email-less record has just the creation time). */
 interface AccountRecord {
@@ -84,7 +85,7 @@ async function queueAction(env: Env, key: string, action: Record<string, unknown
   await env.STUDIQUO_DATA.put(storageKey, JSON.stringify(actions), ttlSeconds ? { expirationTtl: ttlSeconds } : undefined);
 }
 
-function createServer(env: Env, key: string, accountHash: any = null, source = "MCP", canWrite = true, canRead = true, actionTtlSeconds: any = null) {
+function createServer(env: Env, key: string, accountHash: string | null = null, source = "MCP", canWrite = true, canRead = true, actionTtlSeconds: number | null = null) {
   const server = new McpServer(
     { name: "studiquo", version: "0.2.0" },
     { instructions: "Access only the authenticated user's Studiquo data. Write tools queue materials for import when the iPad app next connects; pending does not mean imported." }
@@ -99,12 +100,12 @@ function createServer(env: Env, key: string, accountHash: any = null, source = "
     async () => {
       if (!canRead) return { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] };
       const data = await loadSnapshot(env, key);
-      return toolResult(data.notebooks.map((notebook: { id: unknown; title: unknown; tags: unknown; pages: unknown[]; }) => ({
+      return toolResult(data.notebooks.map((notebook: SnapshotNotebook) => ({
         id: notebook.id,
         title: notebook.title,
         tags: notebook.tags ?? [],
         pageCount: notebook.pages.length,
-        pages: notebook.pages.map((page: any) => ({ id: page.id, title: page.title }))
+        pages: notebook.pages.map((page) => ({ id: page.id, title: page.title }))
       })));
     }
   );
@@ -123,7 +124,7 @@ function createServer(env: Env, key: string, accountHash: any = null, source = "
       const data = await loadSnapshot(env, key);
       const needle = query.toLocaleLowerCase("ja");
       const matches = data.notebooks
-        .flatMap((notebook: { pages: unknown[]; title: unknown; id: unknown; }) => notebook.pages.flatMap((page: any) => {
+        .flatMap((notebook: SnapshotNotebook) => notebook.pages.flatMap((page) => {
           const haystack = `${notebook.title}\n${page.title}\n${page.recognizedText ?? ""}`.toLocaleLowerCase("ja");
           return haystack.includes(needle)
             ? [{
@@ -624,7 +625,7 @@ const REFRESH_MIN_AGE_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_SESSION_MAX_DAYS = 365;
 const REFRESH_OLD_TOKEN_GRACE_SECONDS = 14 * 24 * 60 * 60;
 
-async function handleSessionRefresh(request: Request, env: Env, token: string, session: any) {
+async function handleSessionRefresh(request: Request, env: Env, token: string, session: SessionRecord | null) {
   if (!session) return json({ error: "Sign in again." }, 401);
   const parsed = await readJSONLimited(request, 1_000);
   const issuedAt = Number(token.slice(0, token.indexOf(".")));
