@@ -3,9 +3,9 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { sha256Hex } from "./auth.ts";
-import { runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.js";
-import { deleteAccount, startAccountDeletion } from "./account-deletion.js";
-import { handleAdminWebhook } from "./admin.js";
+import { runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.ts";
+import { deleteAccount, startAccountDeletion } from "./account-deletion.ts";
+import { handleAdminWebhook } from "./admin.ts";
 import { mintSession } from "./session.ts";
 
 function environment() {

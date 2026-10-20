@@ -7,13 +7,14 @@
 // operator is told in Slack — with the id and a link only, never the text.
 import { json } from "./http.ts";
 import { postSlackBlocks } from "./slack.ts";
+import type { Env } from "./env.ts";
 
 function roomErrorResponse(error) {
   if (error instanceof Error && error.message === "Forbidden") return json({ error: "Forbidden" }, 403);
   return null;
 }
 
-export async function fileChatReport(env, ctx, url, { roomID, messageID, reporterKey, reason }) {
+export async function fileChatReport(env: Env, ctx, url, { roomID, messageID, reporterKey, reason }) {
   let snapshot;
   try {
     snapshot = await env.CHAT_ROOM.getByName(roomID).reportSnapshot(reporterKey, messageID);

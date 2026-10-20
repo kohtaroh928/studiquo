@@ -8,8 +8,11 @@
 // write requires a JSON content type: a cross-site HTML form can't send one
 // without a CORS preflight, which this API never answers.
 import { json, readJSONLimited } from "./http.ts";
-import { auditAdmin } from "./audit.js";
-import { PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.js";
+import { auditAdmin } from "./audit.ts";
+import { PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.ts";
+import type { Env } from "./env.ts";
+import { nextCursor } from "./kv.ts";
+import type { IssueReportRecord } from "./records.ts";
 
 const STATUSES = new Set(["open", "in_progress", "resolved"]);
 const CHAT_REPORT_STATUSES = new Set([...STATUSES, "dismissed"]);
@@ -21,15 +24,15 @@ function statusFilter(url, allowed = STATUSES) {
   return status === "all" ? null : allowed.has(status) ? status : "open";
 }
 
-function requireJSON(request) {
+function requireJSON(request: Request) {
   return (request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json");
 }
 
-async function readUpdate(request, allowed = STATUSES) {
+async function readUpdate(request: Request, allowed = STATUSES) {
   if (!requireJSON(request)) return { response: json({ error: "Content-Type must be application/json." }, 415) };
   const body = await readJSONLimited(request, 10_000);
   if (!body || typeof body !== "object") return { response: json({ error: "Invalid request." }, 400) };
-  const update = {};
+  const update: { status?: string; note?: string } = {};
   if (body.status !== undefined) {
     if (!allowed.has(body.status)) return { response: json({ error: "Invalid status." }, 400) };
     update.status = body.status;
@@ -94,7 +97,7 @@ function appErrorJSON(row) {
 // One-off: copies the reports that were only ever in KV (everything filed
 // before the dashboard had an inbox) into D1. Safe to run again — a report
 // that is already there, handled or not, is left exactly as it is.
-async function importLegacyReports(env) {
+async function importLegacyReports(env: Env) {
   let imported = 0;
   let skipped = 0;
   let cursor;
@@ -102,7 +105,7 @@ async function importLegacyReports(env) {
     const page = await env.STUDIQUO_DATA.list({ prefix: "issue-report:", cursor });
     for (const { name } of page.keys) {
       if (name.startsWith("issue-report-screenshot:")) continue;
-      const report = await env.STUDIQUO_DATA.get(name, "json");
+      const report = await env.STUDIQUO_DATA.get<IssueReportRecord>(name, "json");
       if (!report?.id || typeof report.description !== "string") { skipped += 1; continue; }
       const createdAt = Number(report.createdAt) || Date.now();
       if (createdAt <= Date.now() - PERSONAL_RETENTION_MS) { skipped += 1; continue; }
@@ -117,12 +120,12 @@ async function importLegacyReports(env) {
       ).run();
       if ((result.meta?.changes ?? result.meta?.rows_written ?? 0) > 0) imported += 1; else skipped += 1;
     }
-    cursor = page.list_complete ? undefined : page.cursor;
+    cursor = nextCursor(page);
   } while (cursor);
   return { imported, skipped };
 }
 
-export async function handleAdminReports(url, request, env) {
+export async function handleAdminReports(url, request: Request, env: Env) {
   if (!url.pathname.startsWith("/api/admin/issue-reports") && !url.pathname.startsWith("/api/admin/app-errors")
     && !url.pathname.startsWith("/api/admin/chat-reports")) return null;
   if (!env.ADMIN_DB) return json({ error: "Unavailable." }, 503);
@@ -167,7 +170,7 @@ export async function handleAdminReports(url, request, env) {
 
   const chatReportMatch = /^\/api\/admin\/chat-reports\/([0-9a-f-]{36})$/.exec(url.pathname);
   if (chatReportMatch && request.method === "GET") {
-    const row = await env.ADMIN_DB.prepare(`SELECT * FROM chat_reports WHERE id = ?`).bind(chatReportMatch[1]).first();
+    const row = await env.ADMIN_DB.prepare(`SELECT * FROM chat_reports WHERE id = ?`).bind(chatReportMatch[1]).first<Record<string, any>>();
     if (!row) return json({ error: "Not found." }, 404);
     await auditAdmin(env, request, "chat_report.view", row.id);
     return json(chatReportJSON(row, true));

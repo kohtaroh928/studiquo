@@ -1,11 +1,13 @@
 import { sha256Hex } from "./auth.ts";
+import type { Env } from "./env.ts";
+import { nextCursor } from "./kv.ts";
 
 const DAY = 86_400_000;
 export const PERSONAL_RETENTION_MS = 90 * DAY;
 export const ERROR_RETENTION_MS = 180 * DAY;
 export const RETENTION_BATCH_SIZE = 100;
 
-export async function eraseReport(env, id) {
+export async function eraseReport(env: Env, id) {
   await env.STUDIQUO_DATA.delete(`issue-report:${id}`);
   await env.STUDIQUO_DATA.delete(`issue-report-screenshot:${id}`);
   await env.ADMIN_DB.prepare("DELETE FROM issue_reports WHERE id = ?").bind(id).run();
@@ -22,7 +24,7 @@ export async function queueRevenueCatDeletion(env, identity, now = Date.now()) {
   });
 }
 
-export async function retryRevenueCatDeletion(env, key, job, fetcher = fetch) {
+export async function retryRevenueCatDeletion(env: Env, key, job, fetcher = fetch) {
   if (!env.REVENUECAT_SECRET_API_KEY) return false;
   const response = await fetcher(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(job.identity)}`, {
     method: "DELETE",
@@ -39,7 +41,7 @@ export async function retryRevenueCatDeletion(env, key, job, fetcher = fetch) {
   return true;
 }
 
-async function processJobs(env, prefix, callback, limit = 10) {
+async function processJobs(env: Env, prefix, callback, limit = 10) {
   const cursorKey = `privacy-cursor:${prefix}`;
   const cursor = await env.STUDIQUO_DATA.get(cursorKey) || undefined;
   const page = await env.STUDIQUO_DATA.list({ prefix, limit, cursor });
@@ -50,7 +52,7 @@ async function processJobs(env, prefix, callback, limit = 10) {
     catch { console.error(JSON.stringify({ message: "privacy deletion retry failed", kind: prefix })); }
   }
   if (page.list_complete) await env.STUDIQUO_DATA.delete(cursorKey);
-  else await env.STUDIQUO_DATA.put(cursorKey, page.cursor);
+  else await env.STUDIQUO_DATA.put(cursorKey, nextCursor(page)!);
 }
 
 /**
@@ -63,9 +65,9 @@ async function processJobs(env, prefix, callback, limit = 10) {
  * account walks a lot of KV, so a run that is not the full retention job keeps
  * it small.
  */
-export async function processPendingDeletions(env, fetcher = fetch, { limit = 10 } = {}) {
+export async function processPendingDeletions(env: Env, fetcher = fetch, { limit = 10 } = {}) {
   // Import lazily to avoid a module cycle with deleteAccount's shared helpers.
-  const { deleteAccount } = await import("./account-deletion.js");
+  const { deleteAccount } = await import("./account-deletion.ts");
   await processJobs(env, "privacy-account-delete:", async (_key, job) => deleteAccount(env, job.canonicalSub), limit);
   // Without the provider secret every attempt fails, so skip the pass: it
   // would only spend subrequests and keep cycling the same jobs. Say so when
@@ -84,7 +86,7 @@ export async function processPendingDeletions(env, fetcher = fetch, { limit = 10
  * deletions, a few at a time: the automatic expiry stays off, but a deletion
  * somebody asked for is never left unfinished.
  */
-export async function runScheduledPrivacyWork(env, scheduledTime, fetcher = fetch) {
+export async function runScheduledPrivacyWork(env: Env, scheduledTime, fetcher = fetch) {
   if (env.PRIVACY_RETENTION_ENABLED === "true") return runPrivacyRetention(env, scheduledTime, fetcher);
   await processPendingDeletions(env, fetcher, { limit: 2 });
   return { enabled: false };

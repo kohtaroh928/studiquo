@@ -14,11 +14,13 @@
 // language codes, not by a fixed pair.
 import { featureDisabled } from "./features.ts";
 import { accessAllowed } from "./access.ts";
-import { auditAdmin } from "./audit.js";
+import { auditAdmin } from "./audit.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
 import { json, readJSONLimited, securityHeaders, htmlHeaders } from "./http.ts";
 import { deviceStorageKey, loadDevices } from "./devices.ts";
 import { sendPush } from "./push.ts";
+import type { Env } from "./env.ts";
+import { nextCursor } from "./kv.ts";
 
 export const SUPPORTED_LANGUAGES = [
   { code: "ja", label: "日本語" },
@@ -130,8 +132,8 @@ function parseAnnouncement(body, now) {
   if (!body.translations || typeof body.translations !== "object" || Array.isArray(body.translations)) {
     return { error: "translations is required." };
   }
-  const translations = {};
-  for (const [lang, entry] of Object.entries(body.translations)) {
+  const translations: Record<string, { title: string; body: string }> = {};
+  for (const [lang, entry] of Object.entries(body.translations as Record<string, { title?: unknown; body?: unknown } | null>)) {
     if (!LANG_PATTERN.test(lang)) return { error: `Invalid language code: ${lang}` };
     const rawTitle = typeof entry?.title === "string" ? entry.title.trim() : "";
     const rawBody = typeof entry?.body === "string" ? entry.body.trim() : "";
@@ -164,7 +166,7 @@ function parseAnnouncement(body, now) {
   };
 }
 
-async function writeTranslations(env, id, translations) {
+async function writeTranslations(env: Env, id, translations: Record<string, { title: string; body: string }>) {
   await env.ADMIN_DB.prepare(`DELETE FROM announcement_translations WHERE announcement_id = ?`).bind(id).run();
   for (const [lang, { title, body }] of Object.entries(translations)) {
     await env.ADMIN_DB.prepare(
@@ -173,13 +175,13 @@ async function writeTranslations(env, id, translations) {
   }
 }
 
-async function loadTranslationMap(env, ids) {
-  const byId = new Map(ids.map(id => [id, {}]));
+async function loadTranslationMap(env: Env, ids) {
+  const byId = new Map<unknown, Record<string, { title: string; body: string }>>(ids.map(id => [id, {}]));
   if (ids.length === 0) return byId;
   const placeholders = ids.map(() => "?").join(",");
   const rows = await env.ADMIN_DB.prepare(
     `SELECT announcement_id, lang, title, body FROM announcement_translations WHERE announcement_id IN (${placeholders})`
-  ).bind(...ids).all();
+  ).bind(...ids).all<{ announcement_id: unknown; lang: string; title: string; body: string }>();
   for (const row of rows.results ?? []) {
     byId.get(row.announcement_id)[row.lang] = { title: row.title, body: row.body };
   }
@@ -220,7 +222,7 @@ function previewBody(text) {
  * (devices that never reported one get the fallback chain). One sendPush per
  * resolved language. Returns { delivered, failed }.
  */
-async function pushToDevices(env, userKey, announcement, translations, devices, options, titlePrefix = "") {
+async function pushToDevices(env: Env, userKey: string, announcement, translations, devices, options, titlePrefix = "") {
   const groups = new Map();
   for (const device of devices) {
     const text = resolveTranslation(translations, device.language);
@@ -258,14 +260,14 @@ function pushResponse(row) {
 // progress; the admin page keeps calling until `done`. Safe to repeat or to
 // resume after a closed tab: the batch counter's compare-and-set means a
 // batch is only ever claimed by one request.
-async function pushBatch(env, id, options, now) {
+async function pushBatch(env: Env, id, options, now) {
   // The "push" kill switch (features.js). Refused before anything is recorded:
   // sendPush sends nothing while it is on, and a batch counted as sent could not
   // be pushed again once the switch is off.
   if (featureDisabled(env, "push")) {
     return json({ error: "プッシュ通知は停止中です。解除してから送信してください。", code: "feature_disabled", feature: "push" }, 503);
   }
-  let row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first();
+  let row = await env.ADMIN_DB.prepare(`SELECT * FROM announcements WHERE id = ? AND deleted_at IS NULL`).bind(id).first<Record<string, any>>();
   if (!row) return json({ error: "Not found." }, 404);
   if (!PUSHABLE_KINDS.includes(row.kind)) return json({ error: "This kind is not pushed." }, 400);
   if (row.status !== "published" || !row.publish_at || row.publish_at > now || (row.expires_at && row.expires_at <= now)) {
@@ -289,7 +291,7 @@ async function pushBatch(env, id, options, now) {
   const claimed = await env.ADMIN_DB.prepare(
     `UPDATE announcements SET push_cursor = ?, push_batches = push_batches + 1
      WHERE id = ? AND push_state = 'sending' AND push_batches = ?`
-  ).bind(complete ? "" : page.cursor, id, row.push_batches).run();
+  ).bind(complete ? "" : nextCursor(page), id, row.push_batches).run();
   if (!claimed.meta?.changes) return json({ error: "Another batch is in progress. Try again." }, 409);
 
   const translations = (await loadTranslationMap(env, [id])).get(id);
@@ -318,7 +320,7 @@ async function pushBatch(env, id, options, now) {
 // POST /api/admin/announcements/:id/push-test {friendCode} — pushes to one
 // person's devices only (the operator's own, via the friend code shown in the
 // app's profile). Works on drafts and never touches the real push state.
-async function pushTest(env, id, request, options) {
+async function pushTest(env: Env, id, request: Request, options) {
   const body = await readJSONLimited(request, 1_000);
   const code = String(body?.friendCode ?? "").trim().toUpperCase();
   if (!FRIEND_CODE_PATTERN.test(code)) return json({ error: "Invalid friend code." }, 400);
@@ -333,7 +335,7 @@ async function pushTest(env, id, request, options) {
   return json({ devices: devices.length, ...result });
 }
 
-async function handleAdminAnnouncements(url, request, env, options) {
+async function handleAdminAnnouncements(url, request: Request, env: Env, options) {
   const match = url.pathname.match(/^\/api\/admin\/announcements(?:\/([A-Za-z0-9-]{1,64}))?(?:\/(push|push-test))?$/);
   if (!match) return null;
   if (!(await accessAllowed(request, env))) return json({ error: "Forbidden." }, 403);
@@ -406,7 +408,7 @@ async function handleAdminAnnouncements(url, request, env, options) {
 // GET /api/announcements?lang=<bcp47>&appVersion=<x.y.z>: what the app's
 // inbox shows. Only published, already-live, not-expired items whose version
 // range includes the caller; each comes back in the best available language.
-async function handlePublicAnnouncements(url, request, env) {
+async function handlePublicAnnouncements(url, request: Request, env: Env) {
   if (url.pathname !== "/api/announcements" || request.method !== "GET") return null;
   const allowed = await checkRateLimit(env.RATE_LIMIT_ANNOUNCEMENTS, clientKey(request));
   if (!allowed) return json({ error: "Too many requests." }, 429);
@@ -446,7 +448,7 @@ async function handlePublicAnnouncements(url, request, env) {
 }
 
 // `options.fetchImpl` swaps the APNs transport (tests only).
-export async function handleAnnouncements(url, request, env, options = {}) {
+export async function handleAnnouncements(url, request: Request, env: Env, options = {}) {
   return (await handlePublicAnnouncements(url, request, env)) ?? (await handleAdminAnnouncements(url, request, env, options));
 }
 

@@ -16,6 +16,7 @@ import { bearerToken, sha256Hex } from "./auth.ts";
 import { json, readJSONLimited } from "./http.ts";
 import { realSession } from "./session.ts";
 import { postSlackBlocks } from "./slack.ts";
+import type { Env } from "./env.ts";
 
 const MAX_BODY = 200_000;
 const MAX_ERRORS_PER_REQUEST = 20;
@@ -53,7 +54,7 @@ function describeContext(error) {
   ].filter(Boolean).join(" ・ ");
 }
 
-async function notify(env, origin, outcome, row, error) {
+async function notify(env: Env, origin, outcome, row, error) {
   const label = KIND_LABELS[row.kind] ?? "エラー";
   const headline = outcome === "new" ? `🆕 新しい${label}` : `🔁 ${label}が再発`;
   await postSlackBlocks(env, [
@@ -69,7 +70,7 @@ async function notify(env, origin, outcome, row, error) {
 // whether it is worth a Slack message: only a first sighting and a
 // regression are — a problem that is already known and open, or that only
 // old builds still hit, stays quiet.
-async function recordOccurrence(env, fingerprint, error, userKey, now) {
+async function recordOccurrence(env: Env, fingerprint, error, userKey: string, now) {
   const existing = await env.ADMIN_DB.prepare(
     `SELECT status, resolved_after_version, last_seen_at, last_app_version FROM app_errors WHERE fingerprint = ?`
   ).bind(fingerprint).first();
@@ -119,7 +120,7 @@ async function recordOccurrence(env, fingerprint, error, userKey, now) {
   return reopens ? "reopened" : null;
 }
 
-async function recordAffectedUser(env, fingerprint, userKey) {
+async function recordAffectedUser(env: Env, fingerprint, userKey: string) {
   await env.ADMIN_DB.prepare(`INSERT INTO app_error_users (fingerprint, user_key, last_seen_at) VALUES (?, ?, ?)
     ON CONFLICT(fingerprint, user_key) DO UPDATE SET last_seen_at = excluded.last_seen_at`)
     .bind(fingerprint, userKey, Date.now()).run();
@@ -147,7 +148,7 @@ function normalize(raw, defaults, now) {
   };
 }
 
-export async function handleAppErrors(url, request, env) {
+export async function handleAppErrors(url, request: Request, env: Env) {
   if (url.pathname !== "/api/app-errors" || request.method !== "POST") return null;
 
   const token = bearerToken(request);

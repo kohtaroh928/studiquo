@@ -15,8 +15,10 @@ import { isExpired } from "./token.ts";
 import { isRevoked } from "./revocation.ts";
 import { realSession } from "./session.ts";
 import { productForPlanChange } from "./entitlements.ts";
-import { INBOX_CSS, INBOX_HTML, INBOX_SCRIPT } from "./admin-inbox-ui.js";
-import { MODERATION_HTML, MODERATION_SCRIPT } from "./admin-moderation-ui.js";
+import { INBOX_CSS, INBOX_HTML, INBOX_SCRIPT } from "./admin-inbox-ui.ts";
+import { MODERATION_HTML, MODERATION_SCRIPT } from "./admin-moderation-ui.ts";
+import type { Env } from "./env.ts";
+import { nextCursor } from "./kv.ts";
 
 // CANCELLATION isn't here on purpose: it only means "won't auto-renew", not
 // "access ended" — the subscriber stays active until the EXPIRATION event
@@ -32,19 +34,19 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // { "studiquo_pro_monthly": 1, "studiquo_pro_annual": 12 }. A product
 // that's active but missing from this map is treated as monthly (months=1)
 // rather than dropped, so MRR never silently under-counts a real subscriber.
-export const PRODUCT_BILLING_MONTHS = {};
+export const PRODUCT_BILLING_MONTHS: Record<string, number> = {};
 
 function startOfMonthMs(date = new Date()) {
   return new Date(date.getFullYear(), date.getMonth(), 1).getTime();
 }
 
-async function countKVPrefix(env, prefix) {
+async function countKVPrefix(env: Env, prefix) {
   let count = 0;
   let cursor;
   do {
     const page = await env.STUDIQUO_DATA.list({ prefix, cursor });
     count += page.keys.length;
-    cursor = page.list_complete ? undefined : page.cursor;
+    cursor = nextCursor(page);
   } while (cursor);
   return count;
 }
@@ -55,18 +57,18 @@ async function countKVPrefix(env, prefix) {
 // to find its email, if any, and groups by that. O(number of accounts) KV
 // reads — fine at today's scale; move user records into D1 if this ever
 // gets slow enough to matter.
-async function countDistinctUsers(env) {
-  const groups = new Set();
-  let cursor;
+async function countDistinctUsers(env: Env) {
+  const groups = new Set<string>();
+  let cursor: string | undefined;
   do {
     const page = await env.STUDIQUO_DATA.list({ prefix: "account:", cursor });
-    const records = await Promise.all(page.keys.map(k => env.STUDIQUO_DATA.get(k.name, "json")));
+    const records = await Promise.all(page.keys.map(k => env.STUDIQUO_DATA.get<{ email?: unknown; emailIsPrivateRelay?: unknown }>(k.name, "json")));
     records.forEach((record, i) => {
       const email = typeof record?.email === "string" ? record.email.trim().toLowerCase() : null;
       const isPrivateRelay = record?.emailIsPrivateRelay === true;
       groups.add(email && !isPrivateRelay ? `email:${email}` : `identity:${page.keys[i].name}`);
     });
-    cursor = page.list_complete ? undefined : page.cursor;
+    cursor = nextCursor(page);
   } while (cursor);
   return groups.size;
 }
@@ -74,7 +76,7 @@ async function countDistinctUsers(env) {
 // `updated_at` holds the time of the RevenueCat event that wrote the row, not
 // the time it arrived: webhooks are delivered out of order and retried, and an
 // older event must never overwrite the state a newer one already set.
-async function upsertSubscriber(env, appUserId, status, productId, expiresAt, identityHashes, occurredAt) {
+async function upsertSubscriber(env: Env, appUserId, status, productId, expiresAt, identityHashes, occurredAt) {
   await env.ADMIN_DB.prepare(
     `INSERT INTO subscribers (app_user_id, status, product_id, expires_at, updated_at)
      SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS
@@ -86,7 +88,7 @@ async function upsertSubscriber(env, appUserId, status, productId, expiresAt, id
   ).bind(appUserId, status, productId, expiresAt, occurredAt, JSON.stringify(identityHashes)).run();
 }
 
-export async function handleAdminWebhook(url, request, env) {
+export async function handleAdminWebhook(url, request: Request, env: Env) {
   if (url.pathname !== "/api/admin/revenuecat-webhook" || request.method !== "POST") return null;
 
   const allowed = await checkRateLimit(env.RATE_LIMIT_ADMIN_WEBHOOK, clientKey(request));
@@ -155,7 +157,7 @@ export async function handleAdminWebhook(url, request, env) {
 // later task — but the receiving end and its table exist now so that work
 // is just "call this endpoint" when it happens. Authenticated the normal
 // way (a real studiquo bearer token), unlike the two routes above.
-export async function handleUsageEvent(url, request, env) {
+export async function handleUsageEvent(url, request: Request, env: Env) {
   if (url.pathname !== "/api/usage-events" || request.method !== "POST") return null;
 
   const token = bearerToken(request);
@@ -185,7 +187,7 @@ export async function handleUsageEvent(url, request, env) {
   return json({ recorded: true });
 }
 
-async function countRecentUniqueUsers(env, sinceMs) {
+async function countRecentUniqueUsers(env: Env, sinceMs) {
   const row = await env.ADMIN_DB.prepare(`SELECT COUNT(DISTINCT user_key) AS count FROM usage_events WHERE occurred_at >= ?`)
     .bind(sinceMs).first();
   return row?.count ?? 0;
@@ -196,7 +198,7 @@ async function countRecentUniqueUsers(env, sinceMs) {
 // after they were first seen. Returns null (not 0) when there's no cohort
 // old enough yet to measure, so the dashboard can show "not enough data"
 // instead of a misleading 0%.
-async function retentionRate(env, dayOffset) {
+async function retentionRate(env: Env, dayOffset) {
   const now = Date.now();
   const row = await env.ADMIN_DB.prepare(
     `SELECT COUNT(DISTINCT u.user_key) AS cohortSize,
@@ -207,11 +209,11 @@ async function retentionRate(env, dayOffset) {
        AND e.occurred_at >= u.first_seen_at + ?
        AND e.occurred_at < u.first_seen_at + ?
      WHERE u.first_seen_at <= ?`
-  ).bind(dayOffset * DAY_MS, (dayOffset + 1) * DAY_MS, now - (dayOffset + 1) * DAY_MS).first();
+  ).bind(dayOffset * DAY_MS, (dayOffset + 1) * DAY_MS, now - (dayOffset + 1) * DAY_MS).first<{ cohortSize: number; retained: number }>();
   return row?.cohortSize ? row.retained / row.cohortSize : null;
 }
 
-export async function handleAdminStats(url, request, env) {
+export async function handleAdminStats(url, request: Request, env: Env) {
   if (url.pathname !== "/api/admin/stats" || request.method !== "GET") return null;
   // No auth check here on purpose — see this file's header comment.
 
@@ -267,7 +269,7 @@ export async function handleAdminStats(url, request, env) {
            SELECT MAX(occurred_at) FROM revenuecat_events e2
            WHERE e2.app_user_id = s.app_user_id AND e2.event_type IN (${revenuePlaceholders})
          )`
-    ).bind(...REVENUE_EVENT_TYPES, ...REVENUE_EVENT_TYPES).all(),
+    ).bind(...REVENUE_EVENT_TYPES, ...REVENUE_EVENT_TYPES).all<{ app_user_id: string; price: number | null; product_id: string }>(),
     env.ADMIN_DB.prepare(
       `SELECT strftime('%Y-%m', occurred_at / 1000, 'unixepoch') AS month,
               SUM(CASE WHEN event_type IN (${revenuePlaceholders}) THEN price_in_purchased_currency ELSE 0 END) AS revenue,
@@ -291,8 +293,8 @@ export async function handleAdminStats(url, request, env) {
     return sum + (row.price ?? 0) / months;
   }, 0);
 
-  const trialStarters = trialStartersRow?.count ?? 0;
-  const trialConverted = trialConvertedRow?.count ?? 0;
+  const trialStarters = Number(trialStartersRow?.count ?? 0);
+  const trialConverted = Number(trialConvertedRow?.count ?? 0);
 
   return json({
     userCount,
