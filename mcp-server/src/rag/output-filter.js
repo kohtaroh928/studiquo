@@ -33,15 +33,15 @@ const URL_BODY = `(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|[${URL_CHARS}]|
 // (with tabs around it) is taken, and only when something that is not a space or a sentence mark
 // follows it: a line that ends in "https:" takes the first word of the next line, but a blank line,
 // a heading, a code fence or a list marker after it stays. A bare "https:" in the middle of a line,
-// followed by a space, takes nothing. Past a blank line only "//" still counts (https:\n\n//e.com).
+// followed by a space, takes nothing. Past a blank line (or any longer run of breaks) only a word that starts like an address counts: "/", a backslash, a letter or a digit (https:\n\n//e.com, https:\n\ne.com).
 const GAP = "[\\t\\n\\r]*";
-const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:(?:\\t*\\r?\\n)?\\t*(?=[^\\s、。！？)）」』】])|${GAP}(?=\\/\\/))?`;
+const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:(?:\\t*\\r?\\n)?\\t*(?=[^\\s、。！？)）」』】])|${GAP}(?=[/\\\\A-Za-z0-9]))?`;
 const URL_RE = new RegExp(`(?:${HTTP}\\/\\/|${HTTP}(?=[A-Za-z0-9])|www\\.(?=[A-Za-z0-9]))${URL_BODY}`, "giu");
 // What is left of a malformed scheme: "https:/e.com", "https:\\e.com", "https:例え.com",
 // "https:`a.evil.com". The browser reads many of these as a normal address, so everything
 // after "http(s):" up to a space or a sentence mark goes, whichever form it takes. A lone
 // "`" or "$" is a plain character here: it does not end the address.
-const URL_LOOSE_RE = new RegExp(`${HTTP}(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|\\$|\`|[^\\s、。！？)）」』】\`$])+`, "giu");
+const URL_LOOSE_RE = new RegExp(`${HTTP}(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|\\$|\`|[\\t\\r\\n]+(?=[/\\\\])|[^\\s、。！？)）」』】\`$])+`, "giu");
 // A target with any scheme (https:, javascript:, mailto:, tel:, data:, "https:e.com", ...),
 // a leading // or www. is a link; a plain "[0](添字)" is not.
 const LINK_TARGET_RE = /^\s*(?:[a-z][a-z0-9+.-]*:|\/\/|www\.)/iu;
@@ -127,14 +127,17 @@ function stripMarkdownLinks(text, depth = 0) {
 // break and tabs, means it is not a description and is removed like any other.
 const SCHEME_IN_CODE = /`[ \t]*https?:[ \t]*`/giu;
 // A scheme in backticks that is not a description takes the address after it (past one line break).
-const CODE_SCHEME_ADDRESS = /`[ \t]*https?:[ \t]*`(?:\t*\r?\n)?\t*[^\s、。！？)）」』]*/giu;
-const AFTER_CODE = /(?:\t*\r?\n)?\t*([^]?)([^]?)/uy;
+const CODE_SCHEME_ADDRESS = /`[ \t]*https?:[ \t]*`(?:[\t\r\n]*(?=[/\\A-Za-z0-9])|(?:\t*\r?\n)?\t*)(?:[^\s、。！？)）」』]|[\t\r\n]+(?=[/\\]))*/giu;
+const AFTER_CODE = /([\t\r\n]*)([^]?)([^]?)/uy;
 
 function endsTheThought(text, end) {
   AFTER_CODE.lastIndex = end;
-  const [, first, second] = AFTER_CODE.exec(text);
-  if (first === "" || /[ \r\n、。！？)）」』】]/u.test(first)) return true;
-  return /[,.;:!?]/u.test(first) && (second === "" || /[ \r\n]/u.test(second));
+  const [, run, first, second] = AFTER_CODE.exec(text);
+  if (first === "" || /[ 、。！？)）」』】]/u.test(first)) return true;
+  if (/[/\\A-Za-z0-9]/u.test(first)) return false; // reads as an address, past any number of breaks
+  if (run !== "" && !/^\t*\r?\n?\t*$/u.test(run)) return true; // a blank line ends the thought
+  if (/[,.;:!?]/u.test(first)) return second === "" || /[ \r\n]/u.test(second);
+  return false;
 }
 
 function protectSchemeInCode(text) {
