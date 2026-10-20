@@ -36,10 +36,6 @@ async function apnsErrorReason(response: Response) {
   }
 }
 
-/**
- * Best-effort push delivery. It deliberately returns per-device results and
- * never throws into the chat/friend action that triggered it.
- */
 export interface PushNotification {
   category?: string;
   title?: string;
@@ -57,6 +53,10 @@ export interface SendPushOptions {
   [field: string]: unknown;
 }
 
+/**
+ * Best-effort push delivery. It deliberately returns per-device results and
+ * never throws into the chat/friend action that triggered it.
+ */
 export async function sendPush(env: Env, userKey: string, notification: PushNotification, options: SendPushOptions = {}) {
   // The "push" kill switch (features.js): nothing is sent, nothing is thrown.
   if (featureDisabled(env, "push")) return [];

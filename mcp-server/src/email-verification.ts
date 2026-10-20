@@ -71,6 +71,13 @@ export async function sendVerificationCode(env: Env, email) {
   return { sent: true };
 }
 
+/** email-verify:<email>: a code that was sent and has not been used up. */
+interface PendingCode {
+  codeHash: string;
+  expiresAt: number;
+  attempts: number;
+}
+
 /**
  * Checks `code` against the one on file for `email`. On a match, deletes the
  * stored code (one-time use) and links the now-verified email via
@@ -84,13 +91,6 @@ export async function sendVerificationCode(env: Env, email) {
  * expired code too, so callers can't distinguish "never sent" from
  * "exhausted" — nothing a legitimate caller needs to tell those apart for.
  */
-/** email-verify:<email>: a code that was sent and has not been used up. */
-interface PendingCode {
-  codeHash: string;
-  expiresAt: number;
-  attempts: number;
-}
-
 export async function confirmVerificationCode(env: Env, email, code) {
   const normalized = normalizeEmail(email);
   if (!normalized || typeof code !== "string") return { verified: false, attemptsRemaining: 0 };

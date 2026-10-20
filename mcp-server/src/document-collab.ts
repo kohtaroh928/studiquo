@@ -6,10 +6,6 @@ import type { Env } from "./env.ts";
 import { nextCursor } from "./kv.ts";
 import type { ChatUser } from "./records.ts";
 
-// A full block snapshot for a modest document (well past what any
-// reasonably-sized study document needs) plus JSON overhead — same
-// reasoning as chat.js's MAX_BODY, scaled up since this carries a whole
-// document instead of one message.
 /** document-invite:<user>:<room>: an offer to join a shared document, until it is answered. */
 interface DocumentInvite {
   inviterKey: string;
@@ -18,6 +14,10 @@ interface DocumentInvite {
   createdAt: number;
 }
 
+// A full block snapshot for a modest document (well past what any
+// reasonably-sized study document needs) plus JSON overhead — same
+// reasoning as chat.js's MAX_BODY, scaled up since this carries a whole
+// document instead of one message.
 const MAX_BODY = 500_000;
 const PROPOSE_LIMIT_PER_MINUTE = 30;
 // Matches chat.js's own RATE_LIMIT_CHAT_FRIEND_ADD budget — inviting a

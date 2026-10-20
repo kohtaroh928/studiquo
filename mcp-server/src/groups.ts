@@ -71,15 +71,15 @@ function mintGroupCode() {
   return Array.from(bytes, byte => GROUP_CODE_ALPHABET[byte % GROUP_CODE_ALPHABET.length]).join("");
 }
 
-// Public group metadata is deliberately separate from the internal 64-hex
-// room id. Existing groups predate this record, so the first list/detail
-// request lazily gives them a stable, human-shareable code too.
 /** chat:group-meta:<roomID>: the public code and avatar version of a group. */
 interface GroupMetadata {
   code: string;
   avatarUpdatedAt: number | string | null;
 }
 
+// Public group metadata is deliberately separate from the internal 64-hex
+// room id. Existing groups predate this record, so the first list/detail
+// request lazily gives them a stable, human-shareable code too.
 async function ensureGroupMetadata(env: Env, roomID): Promise<GroupMetadata> {
   const metadataKey = `chat:group-meta:${roomID}`;
   const existing = await env.STUDIQUO_DATA.get<GroupMetadata>(metadataKey, "json");
