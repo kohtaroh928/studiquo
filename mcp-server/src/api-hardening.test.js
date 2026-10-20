@@ -1,10 +1,10 @@
 // Request-budget, ordering and header checks for routes that go through the
-// Worker's front door (app.js): /mcp, /api/snapshot, /api/ai/*, the connection
+// Worker's front door (app.ts): /mcp, /api/snapshot, /api/ai/*, the connection
 // list and the HTML pages.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import worker from "./app.js";
+import worker from "./app.ts";
 
 const hash = value => createHash("sha256").update(value).digest("hex");
 const noopCtx = { waitUntil() {} };

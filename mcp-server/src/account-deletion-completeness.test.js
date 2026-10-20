@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import worker from "./app.js";
+import worker from "./app.ts";
 import { sha256Hex } from "./auth.ts";
 import { deleteAccount } from "./account-deletion.ts";
 import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, purgeRoomData, removeAccountData, removeParticipantData, roomMembershipKey } from "./document-room-store.ts";

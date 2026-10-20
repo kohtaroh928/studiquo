@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import worker from "./app.js";
+import worker from "./app.ts";
 
 const noopCtx = { waitUntil() {} };
 

@@ -21,7 +21,7 @@ import { handleInvitePage } from "./invite.ts";
 import { accessAllowed, isAccessGuardedPath, isCrossSiteWrite } from "./access.ts";
 import { appGateRejection } from "./app-gate.ts";
 import { handleAppAttest, appAttestGate } from "./app-attest.ts";
-import { plainHttpResponse, withTransportHeaders } from "./transport.js";
+import { plainHttpResponse, withTransportHeaders } from "./transport.ts";
 import { disabledFeatures } from "./features.ts";
 import { idTokenNonceRefused } from "./id-token-nonce.ts";
 import { isRevoked, revoke } from "./revocation.ts";
@@ -43,8 +43,19 @@ import { recordLoginOutcome, noteSignInContext } from "./login-monitor.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
 import { json, readTextLimited, readJSONLimited, securityHeaders } from "./http.ts";
 import { sealSnapshot, openSnapshot } from "./snapshot-crypto.ts";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { Env } from "./env.ts";
 
-function toolResult(value) {
+/** account:<sub>: the sign-in record kept for a user (an email-less record has just the creation time). */
+interface AccountRecord {
+  email?: string | null;
+  emailVerified?: boolean;
+  emailIsPrivateRelay?: boolean;
+  createdAt?: string;
+  [field: string]: unknown;
+}
+
+function toolResult(value: unknown): CallToolResult {
   return {
     content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
     structuredContent: { result: value }
@@ -55,14 +66,14 @@ function toolResult(value) {
 // session, so it is given its own lifetime: 90 days after the last sync.
 const ACCOUNT_SNAPSHOT_TTL_SECONDS = 90 * 24 * 60 * 60;
 
-async function loadSnapshot(env, key) {
+async function loadSnapshot(env: Env, key) {
   const storageKey = `snapshot:${key}`;
   const text = await openSnapshot(env, storageKey, await env.STUDIQUO_DATA.get(storageKey));
   if (!text) throw new Error("No Studiquo data has been synced for this account yet.");
   return JSON.parse(text);
 }
 
-async function queueAction(env, key, action, ttlSeconds = null) {
+async function queueAction(env: Env, key, action, ttlSeconds = null) {
   const storageKey = `actions:${key}`;
   const existing = await env.STUDIQUO_DATA.get(storageKey, "json");
   const actions = Array.isArray(existing) ? existing : [];
@@ -73,7 +84,7 @@ async function queueAction(env, key, action, ttlSeconds = null) {
   await env.STUDIQUO_DATA.put(storageKey, JSON.stringify(actions), ttlSeconds ? { expirationTtl: ttlSeconds } : undefined);
 }
 
-function createServer(env, key, accountHash = null, source = "MCP", canWrite = true, canRead = true, actionTtlSeconds = null) {
+function createServer(env: Env, key, accountHash = null, source = "MCP", canWrite = true, canRead = true, actionTtlSeconds = null) {
   const server = new McpServer(
     { name: "studiquo", version: "0.2.0" },
     { instructions: "Access only the authenticated user's Studiquo data. Write tools queue materials for import when the iPad app next connects; pending does not mean imported." }
@@ -213,7 +224,7 @@ function createServer(env, key, accountHash = null, source = "MCP", canWrite = t
     }
   );
 
-  const submit = async (kind, payload) => {
+  const submit = async (kind: string, payload: { folderPath?: string; [field: string]: unknown }): Promise<CallToolResult> => {
     if (!canWrite) return { isError: true, content: [{ type: "text", text: "This Studiquo connection is read-only." }] };
     if (!accountHash) throw new Error("Reconnect your Studiquo account before creating materials.");
     if (payload.folderPath) {
@@ -288,7 +299,7 @@ function tooManyRequests(seconds = 60) {
   return Response.json({ error: "Too many requests. Please slow down." }, { status: 429, headers: securityHeaders({ "retry-after": String(seconds) }) });
 }
 
-async function handleMCP(request, env) {
+async function handleMCP(request: Request, env: Env) {
   const token = bearerToken(request);
   const external = token ? await externalSession(env, request) : null;
   if (!external && (!token || token.startsWith("mcp_"))) return Response.json({ error: "Connect your Studiquo account." }, { status: 401, headers: securityHeaders({ "WWW-Authenticate": `Bearer resource_metadata="${new URL(request.url).origin}/.well-known/oauth-protected-resource"` }) });
@@ -309,7 +320,7 @@ async function handleMCP(request, env) {
     headers.delete("content-length");
     request = new Request(request.url, { method: request.method, headers, body: text || undefined });
   }
-  const client = external ? await env.STUDIQUO_DATA.get(`mcp:client:${external.clientId}`, "json") : null;
+  const client = external ? await env.STUDIQUO_DATA.get<{ clientName?: string }>(`mcp:client:${external.clientId}`, "json") : null;
   const server = createServer(env, key, accountHash, client?.clientName ?? "MCP",
     !external || external.scope?.split(" ").includes("studiquo.write"),
     !external || external.scope?.split(" ").includes("studiquo.read"),
@@ -613,7 +624,7 @@ const REFRESH_MIN_AGE_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_SESSION_MAX_DAYS = 365;
 const REFRESH_OLD_TOKEN_GRACE_SECONDS = 14 * 24 * 60 * 60;
 
-async function handleSessionRefresh(request, env, token, session) {
+async function handleSessionRefresh(request: Request, env: Env, token, session) {
   if (!session) return json({ error: "Sign in again." }, 401);
   const parsed = await readJSONLimited(request, 1_000);
   const issuedAt = Number(token.slice(0, token.indexOf(".")));
@@ -643,7 +654,7 @@ async function handleSessionRefresh(request, env, token, session) {
 // POST /api/auth/apple: exchanges a Sign in with Apple identityToken for a
 // studiquo bearer token, in the same "<issued-at epoch>.<random>" format
 // token.ts already expects everywhere else.
-async function handleAppleSignIn(request, env, ctx) {
+async function handleAppleSignIn(request: Request, env: Env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_APPLE_AUTH, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -679,7 +690,7 @@ async function handleAppleSignIn(request, env, ctx) {
   // Email only ever arrives on a user's first authorization, so it's stored
   // once here and never overwritten by later sign-ins (which omit it).
   const accountKey = `account:${sub}`;
-  const existingAccount = await env.STUDIQUO_DATA.get(accountKey, "json");
+  const existingAccount = await env.STUDIQUO_DATA.get<AccountRecord>(accountKey, "json");
   const email = typeof payload.email === "string" ? payload.email : null;
   // Apple sends this as a string ("true"/"false") on some token shapes and a
   // real boolean on others — same defensive pattern as is_private_email
@@ -725,7 +736,7 @@ async function handleAppleSignIn(request, env, ctx) {
 // rate-limit shape, same account-record pattern — except Google resends
 // `email`/`email_verified` on every sign-in (not just the first), so those
 // are refreshed each time rather than written once.
-async function handleGoogleSignIn(request, env, ctx) {
+async function handleGoogleSignIn(request: Request, env: Env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_GOOGLE_AUTH, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -758,7 +769,7 @@ async function handleGoogleSignIn(request, env, ctx) {
   if (typeof sub !== "string" || !sub) return json({ error: "Invalid Google identity token." }, 401);
 
   const accountKey = `account:google:${sub}`;
-  const existingAccount = await env.STUDIQUO_DATA.get(accountKey, "json");
+  const existingAccount = await env.STUDIQUO_DATA.get<AccountRecord>(accountKey, "json");
   const email = typeof payload.email === "string" ? payload.email : null;
   const emailVerified = payload.email_verified === true;
   await env.STUDIQUO_DATA.put(accountKey, JSON.stringify({
@@ -798,7 +809,7 @@ const EMAIL_CODE_WINDOW_SECONDS = 3_600;
 const EMAIL_SEND_LIMIT_PER_WINDOW = 5;
 const EMAIL_CONFIRM_LIMIT_PER_WINDOW = 10;
 
-async function withinEmailCodeBudget(env, action, email, limit) {
+async function withinEmailCodeBudget(env: Env, action, email, limit) {
   const emailHash = await sha256Hex(email.trim().toLowerCase());
   return env.RATE_COUNTER.getByName(`email-code-${action}:${emailHash}`).bump(limit, EMAIL_CODE_WINDOW_SECONDS);
 }
@@ -815,7 +826,7 @@ function inBackground(ctx, work) {
 // re-verified) with. Doesn't authenticate anything itself — it only proves
 // the caller can read mail at that address, which is what lets
 // confirm-code below link it alongside any Apple/Google account sharing it.
-async function handleSendEmailVerification(request, env) {
+async function handleSendEmailVerification(request: Request, env: Env) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_EMAIL_VERIFY_SEND, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -856,7 +867,7 @@ async function handleSendEmailVerification(request, env) {
 // either way — and mints a real session, same as Apple/Google do on their
 // own exchange. `password` is required for this reason:
 // this is the only place a local account's password is ever set.
-async function handleConfirmEmailVerification(request, env, ctx) {
+async function handleConfirmEmailVerification(request: Request, env: Env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_EMAIL_VERIFY_CONFIRM, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -994,7 +1005,7 @@ async function handleConfirmEmailVerification(request, env, ctx) {
 // exchange endpoint, plus an escalating wait (never a hard lock) keyed by
 // account, IP+account and ASN so a distributed credential-stuffing run
 // can't just rotate IPs.
-async function handleLocalLogin(request, env, ctx) {
+async function handleLocalLogin(request: Request, env: Env, ctx) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_LOCAL_LOGIN, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -1080,7 +1091,7 @@ async function handleLocalLogin(request, env, ctx) {
 }
 
 // Every response gets the transport headers, and plain-http requests are answered
-// before the handler reads anything (transport.js).
+// before the handler reads anything (transport.ts).
 export default {
   ...handler,
   async fetch(request, env, ctx) {

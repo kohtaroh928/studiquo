@@ -3,7 +3,7 @@
 // aggregate numbers the dashboard page reads. None of these routes use the
 // app's bearer token: the /admin page is gated by Cloudflare Access at the
 // edge (Google-login restricted to the site owner), and /api/admin/* is
-// verified against that same Access login in app.js (see access.ts) — the
+// verified against that same Access login in app.ts (see access.ts) — the
 // edge alone does not cover /api/admin/*. The RevenueCat webhook is the one
 // exception: it is authenticated by its own shared secret instead, the same
 // "authenticated a different way than the rest of the API" shape as

@@ -4,7 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const transport = new StdioClientTransport({
   command: "node",
-  args: [resolve("src/index.js")],
+  args: [resolve("src/index.ts")],
   env: {
     ...process.env,
     STUDIQUO_SNAPSHOT: resolve("test-fixture.json"),

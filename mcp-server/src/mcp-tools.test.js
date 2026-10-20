@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import worker from "./app.js";
+import worker from "./app.ts";
 
-// Covers app.js's own usage of the MCP_INBOX contract — how the /mcp tool
+// Covers app.ts's own usage of the MCP_INBOX contract — how the /mcp tool
 // handlers and the /api/mcp/inbox routes route between a paired external
 // account (env.MCP_INBOX) and a bare device connection (queueAction's
 // STUDIQUO_DATA fallback) — rather than the Durable Object's own SQL logic,

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import test from "node:test";
-import worker from "./app.js";
+import worker from "./app.ts";
 import { mintSession } from "./session.ts";
 import { sessionTokenAcceptable, accessTokenAcceptable, signSessionToken, signAccessToken } from "./token-signature.ts";
 
