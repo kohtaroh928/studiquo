@@ -1,0 +1,24 @@
+{
+  // JS -> TS migration (docs/notes/ts-migration.md). JS and TS files live side by
+  // side until the last phase, which turns allowJs off and strict on.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023"],
+    "types": ["@cloudflare/workers-types", "node"],
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    // Tests run on Node's own type stripping and the Worker is bundled by
+    // wrangler, so imports name the real `.ts` file and only erasable syntax
+    // (no enum, namespace or parameter properties) is allowed.
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/**/*"]
+}
