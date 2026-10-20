@@ -2,12 +2,12 @@
 // npm/SwiftPMのライブラリはCPEが付かないことが多いので、「確定」にできるのは
 // vendor・product・版範囲がそろったときだけ。それ以外は「要確認」とする。
 
-import { inCpeRange, compareVersions } from './semver.js';
-import { assetKey } from './osv.js';
+import { inCpeRange, compareVersions } from './semver.ts';
+import { assetKey } from './osv.ts';
 
 const BASE = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
 
-export function nvdHintFor(asset) {
+export function nvdHintFor(asset: any) {
   if (asset.nvd) return asset.nvd;
   if (asset.ecosystem === 'npm' && asset.direct) {
     const base = asset.name.replace(/^@[^/]+\//, '');
@@ -16,15 +16,15 @@ export function nvdHintFor(asset) {
   return null; // 間接依存はOSVに任せる(NVDの全件検索は件数が多すぎる)
 }
 
-export function parseCpe(criteria) {
+export function parseCpe(criteria: any) {
   const p = String(criteria).split(':');
   return { part: p[2], vendor: p[3]?.toLowerCase(), product: p[4]?.toLowerCase(), version: p[5] };
 }
 
-const norm = (s) => String(s).toLowerCase().replace(/[-_]/g, '');
+const norm = (s: any) => String(s).toLowerCase().replace(/[-_]/g, '');
 
 /** 1件のCVEが資産に当たるか。'affected' | 'review' | null(無関係)を返す。 */
-export function matchCve(cve, asset, hint) {
+export function matchCve(cve: any, asset: any, hint: any) {
   const products = (hint.products ?? []).map(norm);
   const vendors = (hint.vendors ?? []).map(norm);
   let result = null;
@@ -48,15 +48,15 @@ export function matchCve(cve, asset, hint) {
   return result;
 }
 
-function bestScore(metrics = {}) {
+function bestScore(metrics: Record<string, any> = {}) {
   for (const k of ['cvssMetricV40', 'cvssMetricV31', 'cvssMetricV30']) {
-    const m = metrics[k]?.find((x) => x.type === 'Primary') ?? metrics[k]?.[0];
+    const m = metrics[k]?.find((x: any) => x.type === 'Primary') ?? metrics[k]?.[0];
     if (m) return { cvss: m.cvssData.baseScore, cvssSource: `NVD ${k.replace('cvssMetric', 'CVSS ')}` };
   }
   return { cvss: null, cvssSource: null };
 }
 
-export async function queryNvd(client, assets, { apiKey = null } = {}) {
+export async function queryNvd(client: any, assets: any, { apiKey = null as string | null } = {}) {
   const findings = [];
   const gap = apiKey ? 700 : 6500; // キー無しは30秒5件まで
   const headers = apiKey ? { apiKey } : {};
@@ -76,11 +76,11 @@ export async function queryNvd(client, assets, { apiKey = null } = {}) {
           cve: cve.id,
           sources: ['nvd'],
           asset: assetKey(asset),
-          summary: cve.descriptions?.find((d) => d.lang === 'en')?.value?.split('\n')[0] ?? '',
+          summary: cve.descriptions?.find((d: any) => d.lang === 'en')?.value?.split('\n')[0] ?? '',
           ...bestScore(cve.metrics),
           fixed: null,
           status: verdict === 'affected' ? 'confirmed' : 'needs-review',
-          references: (cve.references ?? []).map((r) => r.url).slice(0, 5),
+          references: (cve.references ?? []).map((r: any) => r.url).slice(0, 5),
           published: cve.published ?? null,
         });
       }

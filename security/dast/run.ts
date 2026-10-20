@@ -4,18 +4,18 @@ import { mkdtemp, chmod, copyFile, writeFile, readFile, rm, mkdir } from 'node:f
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHarness, runContracts, scanPaths, allowedRequest } from './harness.mjs';
+import { createHarness, runContracts, scanPaths, allowedRequest } from './harness.ts';
 export const ZAP_IMAGE = 'zaproxy/zap-stable:2.16.1@sha256:7840969c7c9fead565bf9734b12f49f6886db90b1d35b1f74d79710bbd081dab';
-export function sanitizeAlerts(raw) {
+export function sanitizeAlerts(raw: any) {
   const invalid = () => { throw new Error('Invalid scanner report'); };
   if (!Array.isArray(raw?.site) || !raw.site.length) invalid();
-  return raw.site.flatMap(site => {
+  return raw.site.flatMap((site: any) => {
     if (!Array.isArray(site.alerts)) invalid();
-    return site.alerts.map(alert => {
+    return site.alerts.map((alert: any) => {
       if (!/^[0-9]+$/.test(String(alert.pluginid ?? '')) || !/^[0-3]$/.test(String(alert.riskcode ?? '')) || !Array.isArray(alert.instances)) invalid();
       const count = Number(alert.count ?? alert.instances.length);
       if (!Number.isSafeInteger(count) || count < 0) invalid();
-      const paths = alert.instances.map(instance => {
+      const paths = alert.instances.map((instance: any) => {
         if (typeof instance?.uri !== 'string') invalid();
         try { const url = new URL(instance.uri); return url.origin === 'http://127.0.0.1:8090' && scanPaths.includes(url.pathname) ? url.pathname : '[outside allowlist]'; } catch { invalid(); }
       });
@@ -23,10 +23,10 @@ export function sanitizeAlerts(raw) {
     });
   });
 }
-export function sanitizeScannerStatus(status) {
+export function sanitizeScannerStatus(status: any) {
   const stages = ['initializing', 'scanner-running', 'scanner-completed', 'scanner-failed', 'scanner-timeout'];
   if (!stages.includes(status?.stage)) throw new Error('Invalid scanner status');
-  const result = { stage: status.stage };
+  const result: Record<string, any> = { stage: status.stage };
   if (status.exitCode !== undefined) {
     if (!Number.isSafeInteger(status.exitCode) || status.exitCode < 0 || status.exitCode > 255) throw new Error('Invalid scanner status');
     result.exitCode = status.exitCode;
@@ -37,12 +37,12 @@ export function sanitizeScannerStatus(status) {
   }
   return result;
 }
-export function sanitizeScanProof(proof) {
+export function sanitizeScanProof(proof: any) {
   const positive = ['activeScanCount', 'activeMessageCount', 'enabledActiveRules', 'enabledPassiveRules'];
-  if (!proof || positive.some(key => !Number.isSafeInteger(proof[key]) || proof[key] < 1) || proof.passivePending !== 0 || !Array.isArray(proof.activeProgress) || proof.activeProgress.length !== proof.activeScanCount || proof.activeProgress.some(progress => progress !== 100)) throw new Error('Scanner completion proof invalid');
+  if (!proof || positive.some(key => !Number.isSafeInteger(proof[key]) || proof[key] < 1) || proof.passivePending !== 0 || !Array.isArray(proof.activeProgress) || proof.activeProgress.length !== proof.activeScanCount || proof.activeProgress.some((progress: any) => progress !== 100)) throw new Error('Scanner completion proof invalid');
   return Object.fromEntries([...positive, 'passivePending', 'activeProgress'].map(key => [key, proof[key]]));
 }
-function command(args, timeout = 600000, signal) {
+function command(args: any, timeout = 600000, signal?: any): Promise<number> {
   return new Promise((resolveResult, reject) => {
     if (signal?.aborted) { reject(new Error('Scanner cancelled')); return; }
     const child = spawn('docker', args, { stdio: 'ignore' });
@@ -50,12 +50,12 @@ function command(args, timeout = 600000, signal) {
     signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('Scanner timeout')); }, timeout);
     child.once('error', () => { clearTimeout(timer); reject(new Error('Docker unavailable')); });
-    child.once('close', code => { clearTimeout(timer); signal?.removeEventListener('abort', abort); resolveResult(code); });
+    child.once('close', code => { clearTimeout(timer); signal?.removeEventListener('abort', abort); resolveResult(code as number); });
   });
 }
 export async function runScan({ contractsOnly = false } = {}) {
-  const summary = { status: 'error', mode: contractsOnly ? 'contracts-only' : 'zap', contracts: null, scanner: { status: 'not-run' }, findings: [] };
-  let harness, server, temporary;
+  const summary: Record<string, any> = { status: 'error', mode: contractsOnly ? 'contracts-only' : 'zap', contracts: null, scanner: { status: 'not-run' }, findings: [] };
+  let harness: any, server: any, temporary: any;
   const controller = new AbortController();
   const cancel = () => controller.abort();
   process.once('SIGINT', cancel); process.once('SIGTERM', cancel);
@@ -81,7 +81,7 @@ export async function runScan({ contractsOnly = false } = {}) {
         incoming.resume();
         if (++requests > 10000) gatewayFailed = true;
         if (requests > 10000 || !allowedRequest(incoming.method, incoming.url)) { outgoing.writeHead(403); outgoing.end(); return; }
-        const path = new URL(incoming.url, 'http://127.0.0.1:8090').pathname;
+        const path = new URL(incoming.url!, 'http://127.0.0.1:8090').pathname;
         // Authentication is inserted at the gateway, never exposed to ZAP or reports.
         const response = await harness.request(incoming.url, path.startsWith('/api/') ? harness.users[0].token : null);
         if (response.status >= 300 && response.status < 400) { gatewayFailed = true; outgoing.writeHead(502); outgoing.end(); return; }
@@ -96,7 +96,7 @@ export async function runScan({ contractsOnly = false } = {}) {
     await writeFile(join(temporary, 'openapi.json'), JSON.stringify(openapi), { mode: 0o600 });
     await copyFile(fileURLToPath(new URL('./bridge.py', import.meta.url)), join(temporary, 'bridge.py'));
     await copyFile(fileURLToPath(new URL('./scan_proof.py', import.meta.url)), join(temporary, 'scan_proof.py'));
-    const code = await command(['run', '--rm', '--name', containerName, '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '2g', '--cpus', '2', '--user', `${process.getuid()}:${process.getgid()}`, '--workdir', '/zap/wrk', '-e', 'HOME=/tmp', '-v', `${temporary}:/zap/wrk:rw`, '--entrypoint', 'python3', ZAP_IMAGE, '/zap/wrk/bridge.py'], 660000, controller.signal);
+    const code = await command(['run', '--rm', '--name', containerName, '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--memory', '2g', '--cpus', '2', '--user', `${process.getuid!()}:${process.getgid!()}`, '--workdir', '/zap/wrk', '-e', 'HOME=/tmp', '-v', `${temporary}:/zap/wrk:rw`, '--entrypoint', 'python3', ZAP_IMAGE, '/zap/wrk/bridge.py'], 660000, controller.signal);
     const diagnostics = await readFile(join(temporary, 'scanner-status.json'), 'utf8').then(JSON.parse).then(sanitizeScannerStatus).catch(() => ({ stage: 'diagnostics-unavailable' }));
     summary.scanner = { status: [0, 1, 2].includes(code) ? 'awaiting-validation' : 'execution-failed', exitCode: code, ...diagnostics };
     if (![0, 1, 2].includes(code)) throw new Error('Scanner execution failed');
@@ -111,7 +111,7 @@ export async function runScan({ contractsOnly = false } = {}) {
     summary.status = summary.findings.length ? 'findings' : 'passed';
     if (harness.stats.outboundBlocked) throw new Error('Worker attempted external communication');
   } catch (error) {
-    summary.status = 'error'; summary.error = error.message.startsWith('Contract failed:') ? error.message : ['Scanner cancelled', 'Docker unavailable', 'Scanner timeout', 'Pinned ZAP image missing; pull it before scanning', 'Scanner execution failed', 'Scanner completion proof invalid', 'Gateway safety limit or infrastructure failure', 'Scanner coverage incomplete', 'Worker attempted external communication', 'ZAP isolation requires Linux; use --contracts-only locally'].includes(error.message) ? error.message : 'DAST runtime failed';
+    summary.status = 'error'; summary.error = (error as Error).message.startsWith('Contract failed:') ? (error as Error).message : ['Scanner cancelled', 'Docker unavailable', 'Scanner timeout', 'Pinned ZAP image missing; pull it before scanning', 'Scanner execution failed', 'Scanner completion proof invalid', 'Gateway safety limit or infrastructure failure', 'Scanner coverage incomplete', 'Worker attempted external communication', 'ZAP isolation requires Linux; use --contracts-only locally'].includes((error as Error).message) ? (error as Error).message : 'DAST runtime failed';
   } finally {
     process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel);
     if (!contractsOnly && process.platform === 'linux') await command(['rm', '-f', containerName], 15000).catch(() => {});
@@ -126,9 +126,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const outputIndex = args.indexOf('--output');
   const output = outputIndex < 0 ? fileURLToPath(new URL('../../security-reports/dast.json', import.meta.url)) : args[outputIndex + 1];
   const valid = args.every((arg, index) => arg === '--contracts-only' || arg === '--enforce' || arg === '--output' || (outputIndex >= 0 && index === outputIndex + 1));
-  if (!valid || (outputIndex >= 0 && !output)) throw new Error('Usage: run.mjs [--contracts-only] [--output path]');
+  if (!valid || (outputIndex >= 0 && !output)) throw new Error('Usage: run.ts [--contracts-only] [--output path]');
   const result = await runScan({ contractsOnly: args.includes('--contracts-only') });
   if (output) { await mkdir(dirname(resolve(output)), { recursive: true }); await writeFile(output, `${JSON.stringify(result, null, 2)}\n`); await writeFile(output.replace(/\.json$/, '') + '.md', `# DAST summary\n\nStatus: ${result.status}\n\nContracts: ${result.contracts?.passed ?? 0} passed\n\nScanner: ${result.scanner.status}\n\nFindings: ${result.findings.length}\n${result.error ? `\nError: ${result.error}\n` : ''}`); }
   console.log(JSON.stringify(result));
-  process.exitCode = result.status === 'error' ? 2 : args.includes('--enforce') && result.findings.some(finding => finding.risk >= 3) ? 1 : 0;
+  process.exitCode = result.status === 'error' ? 2 : args.includes('--enforce') && result.findings.some((finding: any) => finding.risk >= 3) ? 1 : 0;
 }

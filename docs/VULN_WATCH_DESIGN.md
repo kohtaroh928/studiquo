@@ -88,7 +88,7 @@ Phase 1だけで`npm audit`より広く、優先度つきの報告が得られ�
 | NVDで引く対象 | npmの直接依存と、`nvd`ヒントを書いた資産だけ | 間接依存(約200件)をキーワード検索するとノイズと時間が増える。間接依存はOSVが版単位で拾う |
 | NVDの「確定」条件 | `nvd.vendors`を書き、CPEのvendor・product・版範囲がそろったときだけ。それ以外は「要確認」(上限は「中」、KEV掲載なら「高」) | CPEの付け方は一定でない(例: minimistのvendorは`substack`)ので、ヒントが無い一致を確定扱いにしない |
 | 版が固定されていない依存 | 照合せず、レポート末尾に「照合できなかった対象」として出す(現在はSwiftMathのみ) | リビジョン固定は版による判定ができない。手動で確認する |
-| スコアの重み | CVSS×6(最大60)+EPSS×20+KEV30、露出面で×1.0(server)/0.9(app)/0.5(tooling)、sensitiveで+10。区分は80以上かKEVが緊急、55以上が高、30以上が中、それ未満が情報 | 初期値。実データで偏りが見えたら`src/score.js`の`WEIGHTS`だけ直す |
+| スコアの重み | CVSS×6(最大60)+EPSS×20+KEV30、露出面で×1.0(server)/0.9(app)/0.5(tooling)、sensitiveで+10。区分は80以上かKEVが緊急、55以上が高、30以上が中、それ未満が情報 | 初期値。実データで偏りが見えたら`src/score.ts`の`WEIGHTS`だけ直す |
 | Notionカードへの対応(Phase 3で実装) | 緊急→重要度「本番を止める」、高→高、中→中、情報→作らない。確定→作業の種類「不具合」、要確認→「確認作業」。領域はserver→サーバー、app→アプリ、tooling→全体 | 既存のスキーマに合わせる |
 
 ### 実装中にわかったこと
@@ -102,8 +102,8 @@ Phase 1だけで`npm audit`より広く、優先度つきの報告が得られ�
 
 ```bash
 cd scripts/vuln-watch
-node src/cli.js inventory   # 台帳を作り直す(Package.resolvedの場所は --swift-resolved で指定可)
-node src/cli.js scan        # 収集→照合→採点→out/latest.md を出力
+node src/cli.ts inventory   # 台帳を作り直す(Package.resolvedの場所は --swift-resolved で指定可)
+node src/cli.ts scan        # 収集→照合→採点→out/latest.md を出力
 npm test                    # 単体テスト
 ```
 
@@ -349,7 +349,7 @@ scan → triage-pack → [判定エージェント。必要な回だけ] → tri
 
 スケジュールタスクは無人で動くので、許可が必要な操作で止まると何も進まない。次だけを、プロジェクトの許可設定に足す(`bypass`は使わない):
 
-- `Bash(node scripts/vuln-watch/src/cli.js:*)`(収集・採点・計画)
+- `Bash(node scripts/vuln-watch/src/cli.ts:*)`(収集・採点・計画)
 - Notionの、カードの検索・取得・作成・更新に必要なツール(ページの削除・列の変更・別ページの作成は含めない)
 - プッシュ通知
 - 判定エージェントの呼び出し
