@@ -27,11 +27,13 @@ const URL_CHARS = "A-Za-z0-9\\-._~:/?#\\[\\]@!$&'*+,;=%\\\\";
 // A "$" followed by a space is a plain character, not the start of a math span.
 const URL_BODY = `(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|[${URL_CHARS}]|[^\\x00-\\x7F\\s]+(?=[${URL_CHARS}\`]))+`;
 // "http:" or "https:". Browsers drop tabs and line breaks anywhere in an address, so
-// "ht\ntps://e.com" and "https:\r\n//e.com" are the same address as "https://e.com". The
-// gap after the colon is accepted only when an address character follows, so a line that
-// merely ends in "https:" does not take the next line with it.
+// "ht\ntps://e.com" and "https:\r\n//e.com" are the same address as "https://e.com", and so is
+// "https:\n$e.com" (the same as "https:$e.com", which a browser reads as a web address too).
+// The gap after the colon is taken when anything that is not a space or a sentence mark follows
+// it. A line that ends in "https:" therefore takes the first word of the next line with it, as a
+// browser would; a bare "https:" in the middle of a line, followed by a space, does not.
 const GAP = "[\\t\\n\\r]*";
-const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:${GAP}(?=[A-Za-z0-9/\\\\]))?`;
+const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:${GAP}(?=[^\\s、。！？)）」』】]))?`;
 const URL_RE = new RegExp(`(?:${HTTP}\\/\\/|${HTTP}(?=[A-Za-z0-9])|www\\.(?=[A-Za-z0-9]))${URL_BODY}`, "giu");
 // What is left of a malformed scheme: "https:/e.com", "https:\\e.com", "https:例え.com",
 // "https:`a.evil.com". The browser reads many of these as a normal address, so everything
@@ -116,14 +118,32 @@ function stripMarkdownLinks(text, depth = 0) {
   return out;
 }
 
+// "`https:`" written as a word in a sentence ("プロトコルは `https:` です") is a description, not an
+// address, and is left alone, provided the closing backtick ends the thought. Followed by "/" or
+// a letter it is the start of an address ("`https:`//e.com" reads as https://e.com once the
+// backticks are gone) and is removed like any other.
+const SCHEME_IN_CODE = /`[ \t]*https?:[ \t]*`(?=[\s、。！？)）」』】,.;:!?]|$)/giu;
+
+function protectSchemeInCode(text) {
+  const spans = [];
+  let mark = null;
+  for (let code = 0xe000; code <= 0xf8ff && mark === null; code++) if (!text.includes(String.fromCharCode(code))) mark = String.fromCharCode(code);
+  if (mark === null || !SCHEME_IN_CODE.test(text)) return { text, restore: (value) => value };
+  SCHEME_IN_CODE.lastIndex = 0;
+  const protectedText = text.replace(SCHEME_IN_CODE, (span) => `${mark}${spans.push(span) - 1}${mark}`);
+  const token = new RegExp(`${mark}(\\d+)${mark}`, "gu");
+  return { text: protectedText, restore: (value) => value.replace(token, (_, index) => spans[Number(index)] ?? "") };
+}
+
 // The links and identifiers removed from `text`, which must already be free of invisible
 // characters (or those characters must not matter).
 export function redactLinks(text) {
-  return stripMarkdownLinks(text)
+  const kept = protectSchemeInCode(text);
+  return kept.restore(stripMarkdownLinks(kept.text)
     .replace(URL_RE, REMOVED)
     .replace(URL_LOOSE_RE, REMOVED)
     .replace(ID_FIELD_RE, "")
-    .replace(HEX_ID_RE, "");
+    .replace(HEX_ID_RE, ""));
 }
 
 // A finished reply, filtered. When nothing had to be removed the model's own text is

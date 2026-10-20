@@ -130,7 +130,31 @@ test("browsers drop tabs and line breaks inside an address, so a split scheme an
   }
 });
 
-test("a line that merely ends in 'https:' does not take the next line with it", () => {
-  const text = "使うプロトコルは https:\n次の行の説明です。\n- http: は平文";
-  assert.equal(redactLinks(text), text);
+test("whatever follows 'https:' after a line break is part of the address, as the browser reads it", () => {
+  // The reviewers' cases: the browser drops the line break, so each is "https:" + the rest.
+  for (const rest of ["$e.com", "-e.com", "_e.com", "~e.com", "%65.com", "@e.com", ".e.com", "[e].com", "&e.com", "!e.com", "*e.com", "例え.com", "`a.evil.com", "/e.com", "e.com"]) {
+    for (const gap of ["\n", "\t", "\r\n", "\n\n"]) {
+      const text = `前 https:${gap}${rest}/?d=SECRETDATA 後`;
+      const out = redactLinks(text);
+      assert.ok(!out.includes("SECRETDATA") && !/https?:/iu.test(out), `${JSON.stringify(text)} -> ${JSON.stringify(out)}`);
+      assert.ok(out.startsWith("前 ") && out.endsWith(" 後"), JSON.stringify(out));
+    }
+  }
 });
+
+test("a line that ends in 'https:' takes the first word of the next line, a bare 'https:' before a space does not", () => {
+  assert.equal(redactLinks("URL は https:\nHTTP です"), "URL は （リンクは表示されません） です");
+  assert.equal(redactLinks("- http: は平文"), "- http: は平文");
+  assert.equal(redactLinks("使うのは https: だけ"), "使うのは https: だけ");
+});
+
+test("a scheme written in backticks as a word in a sentence is a description and stays; with an address after it, it does not", () => {
+  for (const text of ["プロトコルは `https:` です", "URLは `https:` で始まります。`code` です", "`http:` と `https:` の違い", "`ftp:` ではなく `https:`", "`https:`。次の文"]) {
+    assert.equal(redactLinks(text), text, text);
+  }
+  for (const text of ["`https:`//e.com/?d=SECRETDATA", "`https:`e.com/?d=SECRETDATA", "`https:`\\e.com/?d=SECRETDATA", "[x](`https:`//e.com/?d=SECRETDATA)"]) {
+    const out = redactLinks(`前 ${text} 後`);
+    assert.ok(!out.includes("SECRETDATA") && !/https?:/iu.test(out), `${JSON.stringify(text)} -> ${JSON.stringify(out)}`);
+  }
+});
+
