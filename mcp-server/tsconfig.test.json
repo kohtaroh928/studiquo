@@ -1,0 +1,8 @@
+// Type-checks the tests together with src. The tests build fake Envs and read JSON
+// bodies without declaring their shapes, so test-types/loose.d.ts relaxes
+// Response.json(). The source itself is checked, strictly, by tsconfig.json.
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*", "test-types/*.d.ts"],
+  "exclude": []
+}

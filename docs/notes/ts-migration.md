@@ -29,3 +29,13 @@
 - 挙動を変えていないことの確かめ方: `node:module` の `stripTypeScriptTypes` で各 .ts の型を消し、移行前の .js(import の拡張子だけ読み替え)と空白・コメントを無視して比べる。フェーズ3の時点で、差が出るのは `nextCursor` への置き換えなど、レビュー済みの意図した箇所だけ。
 - フェーズ4 完了: `app` `transport` `index` `worker` `smoke` を .ts 化。`wrangler.jsonc` の `main`(`src/worker.ts`)、`package.json` の `start` `smoke`、`security/dast/harness.mjs` のバンドル入口を .ts に直した。MCP のツール結果は SDK の `CallToolResult` で型を付けた。`npm run smoke`(`node src/index.ts` を子プロセスで起動)で .ts のまま Node が動かせることを確かめた。
 - ファイル名を書いたコメントと文書は、.ts にしたファイルの分をフェーズ3の後に直した(`src` のコメント、`docs/`、`mcp-server/README.md`、3つのツールのエージェント定義)。直さないもの: `docs/archive/`・`docs/releases/`(当時の記録)、適用済みの `migrations/`、アプリ側(Swift)のコメント。フェーズ4の分(`app` `worker` `index` `smoke` `transport`)も同じ要領で直した。
+
+## テストの型検査
+
+- フェーズ5で `*.test.js` 57本をすべて `.test.ts` にした。`npm test` は `src/*.test.ts` を Node の型除去で動かす。型を消して移行前の .js と比べると、全て同じ(増えたのは先頭のコメントだけ)。
+- 型検査は2本立て: `tsconfig.json` は `src` をテストを除いて検査し、`tsconfig.test.json` はテストも含めて検査する(`npm run typecheck` が両方を実行)。テスト側は `test-types/loose.d.ts` で `Response.json()` を `any` にしている。
+- 型エラーがあった48本の先頭には `// @ts-nocheck` を付けた。理由は、JS のときは暗黙に許されていた書き方が .ts では型エラーになるため。
+  - 偽の `Env`・偽の KV や Durable Object を、`Env` や各クラスの型として渡している(約600か所)。
+  - テスト内の補助関数が、既定値から引数の型を推論されたり、呼び出しより多くの引数を必須にしたりしている(約300か所)。
+  - 応答の JSON を型なしで読んでいる(`loose.d.ts` で大半は解消済み)。
+- 外す手順の案: 偽の `Env` を作る補助関数(`fakeEnv()` のようなもの)を1つ用意して偽物を `Env` に寄せ、エラーの少ないファイルから `@ts-nocheck` を外す。`@ts-nocheck` の残りは `grep -l "@ts-nocheck" mcp-server/src/*.test.ts` で数えられる。
