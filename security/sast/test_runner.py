@@ -11,9 +11,15 @@ from run import semgrep_report, secret_report, audit_report
 
 class ReportsTest(unittest.TestCase):
     def test_semgrep_rejects_empty_or_partial_coverage(self):
-        for paths in ([], ['app.swift'], ['server.js']):
+        # The server is TypeScript now: a scan that saw only Swift and a stray .js
+        # file has lost its TypeScript coverage and must fail.
+        for paths in ([], ['app.swift'], ['server.ts'], ['app.swift', 'server.js']):
             with self.assertRaises(RuntimeError):
                 semgrep_report({'results': [], 'paths': {'scanned': paths}})
+
+    def test_semgrep_accepts_swift_and_typescript_coverage(self):
+        findings, count = semgrep_report({'results': [], 'paths': {'scanned': ['app.swift', 'server.ts']}})
+        self.assertEqual((findings, count), ([], 2))
 
     def test_semgrep_rejects_parser_error(self):
         with self.assertRaises(RuntimeError):
@@ -40,7 +46,7 @@ class FindingMergeTest(unittest.TestCase):
         duplicate = dict(native[0], tool='semgrep')
         new_rule = dict(duplicate, rule='studiquo.swift.future-rule')
         unmatched = dict(duplicate, line=20)
-        javascript = dict(duplicate, path='server.js')
+        javascript = dict(duplicate, path='server.ts')
         result = run.merge_code_findings([duplicate, new_rule, unmatched, javascript], native)
         self.assertEqual(result, [new_rule, unmatched, javascript, *native])
 
@@ -96,7 +102,7 @@ class RunnerContractTest(unittest.TestCase):
                     code = 3 if parser_error else 0
                     report = {'results': [{'check_id': 'studiquo.swift.credential-log', 'path': 'app.swift',
                                           'start': {'line': 1}, 'extra': {'severity': 'ERROR', 'lines': 'withheld fixture'}}],
-                              'paths': {'scanned': ['app.swift', 'server.js']},
+                              'paths': {'scanned': ['app.swift', 'server.ts']},
                               'errors': [{'type': 'Syntax error', 'path': 'app.swift', 'message': 'withheld fixture'}] if parser_error else []}
                     Path(command[command.index('--output') + 1]).write_text(json.dumps(report))
                 elif command[0] == 'gitleaks':

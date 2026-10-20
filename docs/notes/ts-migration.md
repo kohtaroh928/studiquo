@@ -53,6 +53,6 @@
 - `scripts/vuln-watch`(14+3本)・`security/dast`(3本)・`security/sast/fixtures/javascript.js`(→ `typescript.ts`)を .ts にした。リポジトリに JavaScript(`.js` `.mjs` `.cjs`)は残っていない。
 - 実行は `node src/cli.ts ...` のように .ts を直接指定する(Node が型を除去する)。型検査: `scripts/vuln-watch` は自分の `tsconfig.json` と devDependencies(`typescript` `@types/node`)、`security/dast` は `security/tsconfig.json`(Node の型は `mcp-server` の `node_modules` から)。どちらも `strict`。引数の型は多くが明示の `any`(`mcp-server` と同じ方針)。
 - `security/package.json`(`"type": "module"`)を足した。`.ts` を ESM として読ませるため。
-- SAST: `.semgrep.yml` の規則は元から `[javascript, typescript]` なので、`.ts` もこれまで通り走査される。`security/sast/run.py` の「JavaScript を走査したか」の確認は、`.ts` も数えるようにした(.js が無くなると必ず失敗するため)。移行前と後で Semgrep の指摘は同じ20件(規則・ファイルとも同じ、行番号だけ違う)。
-- CI: `ci.yml` に `scripts` ジョブ(vuln-watch の型検査とテスト)を足し、`security-dast.yml` に DAST スクリプトの型検査を足した。
+- SAST: `.semgrep.yml` の規則は元から `[javascript, typescript]` なので、`.ts` もこれまで通り走査される。`security/sast/run.py` の「JavaScript を走査したか」の確認は、`.ts` を必須にした(コードが全部 .ts になったので、`.ts` の走査が抜けたら失敗させる。`.js` が1本残っていても通さない)。移行前と後で Semgrep の指摘は同じ20件(規則・ファイルとも同じ、行番号だけ違う)。
+- CI: `ci.yml` に `scripts` ジョブ(vuln-watch の型検査とテスト)を足し、`security-dast.yml` に DAST スクリプトの型検査を足した。 `dependabot.yml` に `/scripts/vuln-watch` を足した(typescript と @types/node の更新を見るため)。
 - vuln-watch は Claude Code のスケジュールタスクが `scripts/vuln-watch/RUNBOOK.md` に従って実行する。コマンドが `node src/cli.ts ...` に変わるので、許可設定(`.claude/settings.local.json` の `Bash(node src/cli.js scan)`)も `.ts` に直す必要がある(利用者の設定ファイルなので、ここでは直していない)。

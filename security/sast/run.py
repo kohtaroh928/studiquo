@@ -37,8 +37,8 @@ def semgrep_report(data):
     if data.get("errors") or data.get("skipped_rules"):
         raise RuntimeError("Semgrep reported errors or skipped rules")
     scanned = data.get("paths", {}).get("scanned", [])
-    if not scanned or not any(p.endswith(".swift") for p in scanned) or not any(p.endswith((".ts", ".js")) for p in scanned):
-        raise RuntimeError("Semgrep did not scan both Swift and TypeScript (or JavaScript) files")
+    if not scanned or not any(p.endswith(".swift") for p in scanned) or not any(p.endswith(".ts") for p in scanned):
+        raise RuntimeError("Semgrep did not scan both Swift and TypeScript files")
     findings = []
     for item in data["results"]:
         findings.append({"tool": "semgrep", "rule": field(item["check_id"]),
