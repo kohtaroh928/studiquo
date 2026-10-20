@@ -1,4 +1,3 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
@@ -7,6 +6,7 @@ import { sha256Hex } from "./auth.ts";
 import { deleteAccount } from "./account-deletion.ts";
 import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, purgeRoomData, removeAccountData, removeParticipantData, roomMembershipKey } from "./document-room-store.ts";
 import { VALIDITY_SECONDS, remainingValiditySeconds } from "./token.ts";
+import { partialCtx, partialEnv, partialSql } from "./test-env.ts";
 
 // What account deletion must leave nothing of: the synced snapshot kept under a
 // session's token, and collaborative document rooms. The room tests run the
@@ -31,7 +31,7 @@ function roomSql() {
   return { db, sql };
 }
 
-function seedRoom(sql, members, { changes = [] } = {}) {
+function seedRoom(sql, members, { changes = [] }: { changes?: any } = {}) {
   for (const [key, role] of members) sql.exec("INSERT INTO participants (user_key, role) VALUES (?, ?)", key, role);
   sql.exec("INSERT INTO blocks (block_order, kind, text) VALUES (0, 'paragraph', '本文')");
   for (const [author, status] of changes) {
@@ -48,9 +48,9 @@ test("purging a room erases its text, proposals and members, and reports who was
   const { db, sql } = roomSql();
   seedRoom(sql, [["alice", "owner"], ["bob", "editor"]], { changes: [["bob", "pending"], ["alice", "accepted"]] });
 
-  assert.deepEqual(purgeRoomData(sql).sort(), ["alice", "bob"]);
+  assert.deepEqual(purgeRoomData(partialSql(sql)).sort(), ["alice", "bob"]);
   for (const table of ["participants", "blocks", "changes"]) assert.equal(count(db, table), 0, `${table} is empty`);
-  assert.deepEqual(purgeRoomData(sql), [], "purging an erased room is a no-op");
+  assert.deepEqual(purgeRoomData(partialSql(sql)), [], "purging an erased room is a no-op");
 });
 
 test("removing a member takes what they proposed and did not get accepted, and unlinks what was", () => {
@@ -59,7 +59,7 @@ test("removing a member takes what they proposed and did not get accepted, and u
     changes: [["bob", "pending"], ["bob", "rejected"], ["bob", "accepted"], ["alice", "pending"]],
   });
 
-  assert.equal(removeParticipantData(sql, "bob"), "removed");
+  assert.equal(removeParticipantData(partialSql(sql), "bob"), "removed");
   assert.deepEqual(db.prepare("SELECT user_key FROM participants").all().map(row => row.user_key), ["alice"]);
   const remaining = db.prepare("SELECT author_key, status, previous_text, new_text FROM changes ORDER BY id").all();
   assert.deepEqual(remaining.map(row => `${row.author_key || "(nobody)"}:${row.status}`), ["(nobody):accepted", "alice:pending"],
@@ -73,25 +73,25 @@ test("a room is only erased for its owner, whatever an index says", () => {
   const { db, sql } = roomSql();
   seedRoom(sql, [["alice", "owner"], ["bob", "editor"]], { changes: [["bob", "pending"]] });
 
-  assert.equal(membersIfOwner(sql, "bob"), null, "an editor is not the owner");
-  assert.equal(membersIfOwner(sql, "stranger"), null);
-  assert.deepEqual(membersIfOwner(sql, "alice").sort(), ["alice", "bob"]);
+  assert.equal(membersIfOwner(partialSql(sql), "bob"), null, "an editor is not the owner");
+  assert.equal(membersIfOwner(partialSql(sql), "stranger"), null);
+  assert.deepEqual(membersIfOwner(partialSql(sql), "alice").sort(), ["alice", "bob"]);
 
   // "bob" asking to be removed as if he owned it only removes him.
-  assert.equal(removeAccountData(sql, "bob"), "removed");
+  assert.equal(removeAccountData(partialSql(sql), "bob"), "removed");
   assert.equal(count(db, "blocks"), 1, "the owner's document is untouched");
   assert.deepEqual(db.prepare("SELECT user_key FROM participants").all().map(row => row.user_key), ["alice"]);
 
-  assert.equal(removeAccountData(sql, "alice"), "purged-owner");
+  assert.equal(removeAccountData(partialSql(sql), "alice"), "purged-owner");
   for (const table of ["participants", "blocks", "changes"]) assert.equal(count(db, table), 0);
-  assert.equal(removeAccountData(sql, "alice"), "absent", "running it again is harmless");
+  assert.equal(removeAccountData(partialSql(sql), "alice"), "absent", "running it again is harmless");
 });
 
 test("a room left with nobody in it is erased", () => {
   const { db, sql } = roomSql();
   seedRoom(sql, [["bob", "editor"]], { changes: [["bob", "accepted"]] });
 
-  assert.equal(removeParticipantData(sql, "bob"), "purged");
+  assert.equal(removeParticipantData(partialSql(sql), "bob"), "purged");
   for (const table of ["participants", "blocks", "changes"]) assert.equal(count(db, table), 0);
 });
 
@@ -99,7 +99,7 @@ test("removing someone who is not in the room changes nothing", () => {
   const { db, sql } = roomSql();
   seedRoom(sql, [["alice", "owner"]], { changes: [["alice", "pending"]] });
 
-  assert.equal(removeParticipantData(sql, "stranger"), "absent");
+  assert.equal(removeParticipantData(partialSql(sql), "stranger"), "absent");
   assert.equal(count(db, "participants"), 1);
   assert.equal(count(db, "changes"), 1);
   assert.equal(count(db, "blocks"), 1);
@@ -183,7 +183,7 @@ function fakeRegistry(values) {
 function environment() {
   const values = new Map();
   const puts = [];
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) {
         const value = values.get(key) ?? null;
@@ -201,15 +201,15 @@ function environment() {
     MCP_INBOX: { getByName() { return { async purge() {} }; } },
     _values: values,
     _puts: puts,
-  };
+  });
 }
 
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 let nextToken = 1;
 
 // A signed-in session for `sub`: the token the app would hold, and the server
 // side session row that makes it real.
-async function signIn(env, sub, { ageSeconds = 0 } = {}) {
+async function signIn(env, sub, { ageSeconds = 0 }: { ageSeconds?: number } = {}) {
   const issuedAt = Math.floor(Date.now() / 1000) - ageSeconds;
   const token = `${issuedAt}.${String(nextToken++).padStart(4, "0").repeat(10)}`;
   const tokenHash = await sha256Hex(token);
@@ -217,7 +217,7 @@ async function signIn(env, sub, { ageSeconds = 0 } = {}) {
   return { token, tokenHash };
 }
 
-function call(env, path, { method = "GET", token, body } = {}) {
+function call(env, path, { method = "GET", token, body }: { method?: string; token?: any; body?: any } = {}) {
   const headers = { authorization: `Bearer ${token}` };
   if (body !== undefined) headers["content-type"] = "application/json";
   return worker.fetch(
@@ -327,7 +327,7 @@ test("deletion that failed part-way finishes when it is run again", async () => 
 
   const rooms = env.DOCUMENT_ROOM;
   let fail = true;
-  env.DOCUMENT_ROOM = {
+  (env.DOCUMENT_ROOM as any) = {
     getByName(id) {
       const room = rooms.getByName(id);
       return { ...room, async removeAccount(userKey) { if (fail) throw new Error("storage hiccup"); return room.removeAccount(userKey); } };
@@ -385,7 +385,7 @@ test("a room whose index write failed at creation is still found when the client
 
   const put = env.STUDIQUO_DATA.put;
   let failOnce = true;
-  env.STUDIQUO_DATA.put = async (key, value, options) => {
+  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
     if (failOnce && key.startsWith("doc-room:")) { failOnce = false; throw new Error("kv unavailable"); }
     return put(key, value, options);
   };
@@ -421,7 +421,7 @@ test("the other members' entries are dropped before the room is erased, so no re
 
   const rooms = env.DOCUMENT_ROOM;
   let fail = true;
-  env.DOCUMENT_ROOM = {
+  (env.DOCUMENT_ROOM as any) = {
     getByName(id) {
       const room = rooms.getByName(id);
       return { ...room, async removeAccount(userKey) { if (fail) throw new Error("cut short"); return room.removeAccount(userKey); } };
@@ -445,7 +445,7 @@ test("one room that cannot be removed does not stop the others", async () => {
 
   const rooms = env.DOCUMENT_ROOM;
   let broken = true;
-  env.DOCUMENT_ROOM = {
+  (env.DOCUMENT_ROOM as any) = {
     getByName(id) {
       const room = rooms.getByName(id);
       if (id !== roomIdNumber(2)) return room;

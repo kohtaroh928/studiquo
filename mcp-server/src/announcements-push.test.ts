@@ -1,13 +1,15 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { generateKeyPair, exportPKCS8, exportJWK, createLocalJWKSet, SignJWT } from "jose";
 import { handleAnnouncements } from "./announcements.ts";
+import { readMigration } from "./test-env.ts";
 
 class FakeD1Statement {
-  constructor(db, sql, params = []) { this.db = db; this.sql = sql; this.params = params; }
+  db: any;
+  sql: string;
+  params: unknown[];
+  constructor(db: any, sql: string, params: unknown[] = []) { this.db = db; this.sql = sql; this.params = params; }
   bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() { const info = this.db.prepare(this.sql).run(...this.params); return { success: true, meta: { changes: info.changes } }; }
   async all() { return { results: this.db.prepare(this.sql).all(...this.params) }; }
@@ -23,7 +25,7 @@ const accessToken = await new SignJWT({}).setProtectedHeader({ alg: "ES256" })
 async function fixture(extra = {}) {
   const db = new DatabaseSync(":memory:");
   for (const file of ["0001_admin_dashboard.sql", "0003_announcements.sql", "0004_announcement_push.sql", "0007_moderation.sql"]) {
-    db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+    db.exec(readMigration(file));
   }
   const values = new Map();
   const { privateKey } = await generateKeyPair("ES256", { extractable: true });
@@ -66,7 +68,7 @@ function apns(calls, { failFor = new Set() } = {}) {
   };
 }
 
-async function call(env, path, { method = "POST", body, fetchImpl } = {}) {
+async function call(env, path, { method = "POST", body, fetchImpl }: { method?: string; body?: any; fetchImpl?: any } = {}) {
   const request = new Request(`https://example.test${path}`, {
     method, headers: { "cf-access-jwt-assertion": accessToken, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined,
   });
@@ -160,7 +162,7 @@ test("an overlapping batch request cannot claim the same batch", async () => {
   let arrived = 0;
   let release;
   const barrier = new Promise(resolve => { release = resolve; });
-  env.ADMIN_DB.prepare = sql => {
+  (env.ADMIN_DB as any).prepare = sql => {
     const statement = realPrepare(sql);
     if (!sql.startsWith("SELECT * FROM announcements WHERE id")) return statement;
     return { bind: (...params) => ({ first: async () => {

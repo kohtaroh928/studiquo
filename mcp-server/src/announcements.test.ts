@@ -1,14 +1,16 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.ts";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 import { compareVersions, resolveTranslation, SUPPORTED_LANGUAGES } from "./announcements.ts";
+import { partialCtx, partialEnv, readMigration } from "./test-env.ts";
 
 class FakeD1Statement {
-  constructor(db, sql, params = []) { this.db = db; this.sql = sql; this.params = params; }
+  db: any;
+  sql: string;
+  params: unknown[];
+  constructor(db: any, sql: string, params: unknown[] = []) { this.db = db; this.sql = sql; this.params = params; }
   bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() { this.db.prepare(this.sql).run(...this.params); return { success: true }; }
   async all() { return { results: this.db.prepare(this.sql).all(...this.params) }; }
@@ -19,7 +21,7 @@ class FakeD1Statement {
 const ACCESS = { aud: "test-aud", team: "team.cloudflareaccess.com" };
 const accessKeys = await generateKeyPair("ES256", { extractable: true });
 const accessJWKS = createLocalJWKSet({ keys: [{ ...(await exportJWK(accessKeys.publicKey)), alg: "ES256", use: "sig" }] });
-const sign = (over = {}) => new SignJWT({}).setProtectedHeader({ alg: "ES256" })
+const sign = (over: Record<string, any> = {}) => new SignJWT({}).setProtectedHeader({ alg: "ES256" })
   .setIssuer(`https://${over.team ?? ACCESS.team}`).setAudience(over.aud ?? ACCESS.aud)
   .setIssuedAt().setExpirationTime("1h").sign(accessKeys.privateKey);
 const validToken = await sign();
@@ -27,18 +29,18 @@ const validToken = await sign();
 function environment(extra = {}) {
   const db = new DatabaseSync(":memory:");
   for (const file of ["0001_admin_dashboard.sql", "0003_announcements.sql", "0007_moderation.sql"]) {
-    db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+    db.exec(readMigration(file));
   }
-  return {
+  return partialEnv({
     ADMIN_DB: { prepare: sql => new FakeD1Statement(db, sql) },
     RATE_LIMIT_ANNOUNCEMENTS: { async limit() { return { success: true }; } },
     ACCESS_AUD: ACCESS.aud, ACCESS_TEAM_DOMAIN: ACCESS.team, ACCESS_JWKS: accessJWKS,
     ...extra,
-  };
+  });
 }
 
-const ctx = { waitUntil() {} };
-const call = (env, path, { method = "GET", body, headers = { "cf-access-jwt-assertion": validToken } } = {}) => worker.fetch(
+const ctx = partialCtx({ waitUntil() {} });
+const call = (env, path, { method = "GET", body, headers = { "cf-access-jwt-assertion": validToken } }: { method?: string; body?: unknown; headers?: Record<string, string> } = {}) => worker.fetch(
   new Request(`https://example.test${path}`, {
     method,
     headers: body !== undefined ? { "content-type": "application/json", ...headers } : headers,
@@ -47,7 +49,7 @@ const call = (env, path, { method = "GET", body, headers = { "cf-access-jwt-asse
   env, ctx
 );
 
-const base = (over = {}) => ({
+const base = (over: Record<string, any> = {}) => ({
   kind: "update",
   status: "published",
   translations: { ja: { title: "更新", body: "新機能です" }, en: { title: "Update", body: "New features" } },

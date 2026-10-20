@@ -845,7 +845,7 @@ export function subscriptionRequiredResponse(plan: any, url: URL, request: Reque
   return json({ error: "AI機能のご利用にはStandard以上のプランが必要です。", code: "subscription_required" }, 402);
 }
 
-export async function handleAI(url: URL, request: Request, env: Env, key: string, ctx: ExecutionContext, session: any, plan: any) {
+export async function handleAI(url: URL, request: Request, env: Env, key: string, ctx: ExecutionContext, session?: any, plan?: any) {
   const effectivePlan = plan ?? "standard";
   // Read-only: what is left of the tightest window, for the usage header. Costs nothing.
   if (url.pathname === "/api/ai/usage" && request.method === "GET") {

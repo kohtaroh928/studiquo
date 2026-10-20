@@ -1,13 +1,13 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import { exportPKCS8, generateKeyPair } from "jose";
 import test from "node:test";
 import { handleDeviceRoutes, loadDevices } from "./devices.ts";
+import { partialEnv } from "./test-env.ts";
 
 function environment(limit = 5) {
   const values = new Map();
   let count = 0;
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) {
         const value = values.get(key) ?? null;
@@ -19,7 +19,7 @@ function environment(limit = 5) {
     RATE_LIMIT_CHAT_DEVICE_REGISTER: {
       async limit() { count += 1; return { success: count <= limit }; },
     },
-  };
+  });
 }
 
 function request(method, body) {

@@ -1,7 +1,5 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.ts";
 import { runPrivacyRetention } from "./privacy-retention.ts";
@@ -9,9 +7,13 @@ import { deleteAccount } from "./account-deletion.ts";
 import { sha256Hex } from "./auth.ts";
 import { mintSession, realSession, accountIsUnavailable, suspensionKey } from "./session.ts";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
+import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
 
 class FakeD1Statement {
-  constructor(db, sql, params = []) { this.db = db; this.sql = sql; this.params = params; }
+  db: any;
+  sql: string;
+  params: unknown[];
+  constructor(db: any, sql: string, params: unknown[] = []) { this.db = db; this.sql = sql; this.params = params; }
   bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() { const r = this.db.prepare(this.sql).run(...this.params); return { success: true, meta: { changes: Number(r.changes) } }; }
   async all() { return { results: this.db.prepare(this.sql).all(...this.params) }; }
@@ -27,20 +29,20 @@ const ownerToken = await tokenFor({ email: "owner@example.test", sub: "sub-1" })
 
 function environment(extra = {}) {
   const db = new DatabaseSync(":memory:");
-  for (const file of readdirSync(new URL("../migrations/", import.meta.url)).sort()) {
-    db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+  for (const file of migrationFiles()) {
+    db.exec(readMigration(file));
   }
-  return {
+  return partialEnv({
     _db: db,
     ADMIN_DB: { prepare: sql => new FakeD1Statement(db, sql) },
     RATE_LIMIT_ANNOUNCEMENTS: { async limit() { return { success: true }; } },
     ACCESS_AUD: ACCESS.aud, ACCESS_TEAM_DOMAIN: ACCESS.team, ACCESS_JWKS: accessJWKS,
     ...extra,
-  };
+  });
 }
 
-const ctx = { waitUntil() {} };
-const call = (env, path, { method = "GET", body, token = ownerToken } = {}) => worker.fetch(
+const ctx = partialCtx({ waitUntil() {} });
+const call = (env, path, { method = "GET", body, token = ownerToken }: { method?: string; body?: any; token?: any } = {}) => worker.fetch(
   new Request(`https://example.test${path}`, {
     method,
     headers: { ...(token ? { "cf-access-jwt-assertion": token } : {}), ...(body !== undefined ? { "content-type": "application/json" } : {}) },
@@ -50,7 +52,7 @@ const call = (env, path, { method = "GET", body, token = ownerToken } = {}) => w
 const announcement = { kind: "update", status: "published", translations: { ja: { title: "更新", body: "本文" } } };
 const log = env => env._db.prepare("SELECT * FROM admin_audit_log ORDER BY id").all();
 
-function seedChatReport(env, over = {}) {
+function seedChatReport(env, over: Record<string, any> = {}) {
   const id = over.id ?? crypto.randomUUID();
   env._db.prepare(
     `INSERT INTO chat_reports (id, room_id, message_id, reporter_key, reported_key, reason, snapshot, created_at, updated_at)
@@ -90,7 +92,7 @@ test("deleting an announcement hides it but keeps the row, and it can no longer 
   assert.equal((await (await call(env, "/api/announcements")).json()).announcements.length, 0);
   assert.equal((await call(env, `/api/admin/announcements/${created.id}`, { method: "PUT", body: announcement })).status, 404);
   assert.equal((await call(env, `/api/admin/announcements/${created.id}/push`, { method: "POST" })).status, 404);
-  const kept = env._db.prepare("SELECT deleted_at FROM announcements WHERE id = ?").get(created.id);
+  const kept = env._db.prepare("SELECT deleted_at FROM announcements WHERE id = ?").get(created.id) as Record<string, any>;
   assert.ok(kept.deleted_at > 0);
   assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM announcement_translations").get().n, 1);
   // A second delete is a quiet no-op: no second audit row.
@@ -181,7 +183,7 @@ test("leaving the app: reports about you go, reports you filed lose who filed th
     await values.set(`identity-canonical:${name}`, name);
     await deleteAccount(env, name);
   }
-  const rows = env._db.prepare("SELECT id, reporter_key, snapshot FROM chat_reports ORDER BY id").all();
+  const rows = env._db.prepare("SELECT id, reporter_key, snapshot FROM chat_reports ORDER BY id").all() as Record<string, any>[];
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map(row => row.reporter_key), ["deleted:r1", "deleted:r2"]);
   assert.ok(rows.every(row => !row.snapshot.includes("CONTEXT") && row.snapshot.includes("REPORTED")));
@@ -197,11 +199,11 @@ test("leaving the app: reports about you go, reports you filed lose who filed th
 
 test("a session issued before two sign-in methods were linked is stopped by a mark on either identity", async () => {
   const values = new Map();
-  const env = { STUDIQUO_DATA: {
+  const env = partialEnv({ STUDIQUO_DATA: {
     async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
     async put(key, value) { values.set(key, value); },
     async delete(key) { values.delete(key); },
-  } };
+  } });
   const token = await mintSession(env, "apple-old");
   values.set("identity-canonical:apple-old", "google:new"); // later linked; canonical is now the Google identity
   assert.equal((await realSession(env, token))?.sub, "google:new");
@@ -214,11 +216,11 @@ test("a session issued before two sign-in methods were linked is stopped by a ma
 
 test("a suspended account's session is refused everywhere except where leaving needs it", async () => {
   const values = new Map();
-  const env = { STUDIQUO_DATA: {
+  const env = partialEnv({ STUDIQUO_DATA: {
     async get(key, type) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
     async put(key, value) { values.set(key, value); },
     async delete(key) { values.delete(key); },
-  } };
+  } });
   const token = await mintSession(env, "apple-s");
   assert.equal((await realSession(env, token))?.sub, "apple-s");
   assert.equal(await accountIsUnavailable(env, "apple-s"), false);

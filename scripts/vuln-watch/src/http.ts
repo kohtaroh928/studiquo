@@ -6,7 +6,10 @@ import { createHash } from 'node:crypto';
 
 const MAX_BYTES = 20_000_000;
 
-export function createClient({ cacheDir = null as string | null, ttlMs = 6 * 3600_000, offline = false, fetchImpl = globalThis.fetch, sleep = (ms: any) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+/** The part of `fetch` this client uses; a test replaces `fetch` with a fake that gives just these members. */
+export type FetchLike = (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
+
+export function createClient({ cacheDir = null as string | null, ttlMs = 6 * 3600_000, offline = false, fetchImpl = globalThis.fetch as FetchLike, sleep = (ms: any) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const lastAt = new Map();
 
   async function throttle(host: any, minGapMs: any) {
@@ -61,7 +64,7 @@ export function createClient({ cacheDir = null as string | null, ttlMs = 6 * 360
   }
 
   /** JSONとして読む。 */
-  async function json(url: any, opts: any) {
+  async function json(url: any, opts?: any) {
     return JSON.parse(await text(url, opts));
   }
 
