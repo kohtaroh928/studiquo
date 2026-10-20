@@ -79,7 +79,7 @@ function responsesOK(text) {
   const events = [
     { type: "response.created" },
     { type: "response.output_text.delta", delta: text },
-    { type: "response.completed" },
+    { type: "response.completed", response: { status: "completed" } },
   ];
   return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""), {
     status: 200, headers: { "content-type": "text/event-stream" },

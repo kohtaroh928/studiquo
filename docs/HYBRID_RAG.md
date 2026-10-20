@@ -521,7 +521,7 @@ APIの成功率を汎用RAG精度と扱わない。実Cloudflare検索やiPadは
 
 最新mainのOpenAI Responses API基盤をRAG作業ブランチへ限定反映。Standard=Luna、Plus=Luna/Terra/Sol、ProはAstraも許可。Cloudflare embedding/rerankingとD1/Vectorizeの検索は維持する。旧Google同意とrag-v1をOpenAIの送信許可に読み替えず、openai-v1と年齢区分、新しいrag-openai-v1を要求する。自動索引はaccount/endpoint単位の新しいprocessor同意も必要。OpenAIへの各retry直前に全参照を再認可し、失効後は本文・出典を捨て通常チャットに戻す。本文・prompt・上流error本文をログへ出さない。
 
-新しい固定合成評価runnerは learning-openai-live.mjs。既定は予約・回路のexplain→source_only各2回答、最大6dispatch、60秒本文込み/6分dispatch期限/512KiB、固定Responses送信先とLuna、最初のエラーで停止。store:false、secret非保存、新規private出力、input/reference/config/citation一致を確認する。モデレーションは固定合成probeだけoffとし、本番の挙動と区別する。機械的な完了・出典検証と意味評価を分け、事実pattern未設定はN/A。
+新しい固定合成評価runnerは learning-openai-live.ts。既定は予約・回路のexplain→source_only各2回答、最大6dispatch、60秒本文込み/6分dispatch期限/512KiB、固定Responses送信先とLuna、最初のエラーで停止。store:false、secret非保存、新規private出力、input/reference/config/citation一致を確認する。モデレーションは固定合成probeだけoffとし、本番の挙動と区別する。機械的な完了・出典検証と意味評価を分け、事実pattern未設定はN/A。
 
 この節より前のGemini実評価は履歴であり、Lunaの品質を証明しない。旧Gemini評価CLIは停止し、新runnerへ誘導する。製品設定のRAG_ENABLED/RAG_AUTO_INDEX_ENABLED/AI_PROVIDER_APPROVEDはfalseを維持。remote migration/deployはしない。最新mainの無関係な認証・paywall全面移行は対象外。実Luna回答・実Cloudflare統合・実機は別途検証が必要。
 
@@ -529,7 +529,7 @@ APIの成功率を汎用RAG精度と扱わない。実Cloudflare検索やiPadは
 
 ### 比較の構造化根拠と回答手順（2026-10-14、ローカル実装）
 
-最終認可済みreferencesに限り `rag/comparison-evidence.js` で対象・点灯時間・価格・明示測定条件を整理し、原文quote/offset/citationとともにcomparisonAssessmentをUNTRUSTED contextへ付ける。対象2〜3・参照5以内・本文各24k文字・fact12以内・最終assessment6000bytesの限定処理。認証・検索scope・構造化出典・retry前の参照再認可は維持し、失効時は追加データもcontextごと破棄する。
+最終認可済みreferencesに限り `rag/comparison-evidence.ts` で対象・点灯時間・価格・明示測定条件を整理し、原文quote/offset/citationとともにcomparisonAssessmentをUNTRUSTED contextへ付ける。対象2〜3・参照5以内・本文各24k文字・fact12以内・最終assessment6000bytesの限定処理。認証・検索scope・構造化出典・retry前の参照再認可は維持し、失効時は追加データもcontextごと破棄する。
 
 認識できる明るさ/温度について `comparable / mismatch / unknown / missing` を区別する。comparableは認識できた明示条件の一致だけで、実験条件全体の同一保証ではない。未知方法・複数条件・訂正・範囲値・仮定値を確定値へ昇格させない。条件のない資料を同条件と判断しない。認識対象の測定構文がない場合は既存方針を維持し、この処理で比較可能と認定したとは扱わない。
 

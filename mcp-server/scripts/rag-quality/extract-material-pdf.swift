@@ -1,4 +1,4 @@
-// Compile with the shared app service through extract-material-pdf.mjs. No document text logs.
+// Compile with the shared app service through extract-material-pdf.ts. No document text logs.
 import Foundation
 import PDFKit
 import AppKit

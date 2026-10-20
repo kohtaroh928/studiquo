@@ -25,7 +25,7 @@ function environment(extra = {}) {
   return partialEnv({
     REVENUECAT_WEBHOOK_SECRET: "test-secret",
     RATE_LIMIT_ADMIN_WEBHOOK: { async limit() { return { success: true }; } },
-    ADMIN_DB: { prepare: statement },
+    ADMIN_DB: { prepare: statement, batch: async (statements) => { const results = []; for (const statement of statements) results.push(await statement.run()); return results; } },
     STUDIQUO_DATA: {
       async get(key, type) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
       async put(key, value) { values.set(key, value); },

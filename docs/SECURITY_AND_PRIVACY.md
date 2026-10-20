@@ -501,7 +501,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Anthropic、OpenAI�
 
 ## RAG自動登録のサーバー安全基盤（2026-10-11・ローカルのみ）
 
-新同意・資料資格・世代を`rag/control.js`、本文取得・送信の資格検証を`rag/authorization.js`に分離した。既存realSessionのcanonical userからaccountKeyを生成する。bodyのaccount IDやfolder IDを権限と扱わず、Vectorize account事前filterとD1 owner条件を維持する。
+新同意・資料資格・世代を`rag/control.ts`、本文取得・送信の資格検証を`rag/authorization.ts`に分離した。既存realSessionのcanonical userからaccountKeyを生成する。bodyのaccount IDやfolder IDを権限と扱わず、Vectorize account事前filterとD1 owner条件を維持する。
 
 同意epochとdocument generationはCASで更新する。locked/excluded/trashed/deletedは通常uploadでは解除できない。source IDを変えるだけでも管理情報なしでは登録できない。document IDそのものの所有権を証明する機能ではなく、本人のローカルPDFの申告管理に限定する。共有資料のサーバーACLは別途必要。
 

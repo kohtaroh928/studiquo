@@ -1,1 +1,1 @@
-{"name":"studiquo-private-docling-worker","private":true,"type":"module","scripts":{"test":"node --test *.test.js"}}
+{"name":"studiquo-private-docling-worker","private":true,"type":"module","scripts":{"test":"node --test *.test.ts"}}

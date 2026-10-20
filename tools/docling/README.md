@@ -86,7 +86,7 @@ row/column/cell structure rather than an LLM-generated summary.
 ```
 
 It can be supplied as `pagesFile` to
-`mcp-server/scripts/rag-quality/real-material-evaluate.mjs` or an explicit local
+`mcp-server/scripts/rag-quality/real-material-evaluate.ts` or an explicit local
 indexing preparation step. No upload is performed here. The optional pages
 export fails with `review_required` if pages are blank or elements cannot be
 attributed to exactly one page; rerun **without** `--pages-output` to inspect the

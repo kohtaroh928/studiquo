@@ -24,8 +24,8 @@ cd studiquo-rag-prompt
 git status --short
 git switch -c codex/rag-prompt-completeness
 node --version
-node collaboration/rag-prompt/workspace.mjs check
-node --test collaboration/rag-prompt/workspace.test.mjs
+node collaboration/rag-prompt/workspace.ts check
+node --test collaboration/rag-prompt/workspace.test.ts
 ```
 
 この共同開発キットがGitHubへ保存されてからcloneする。見つからない場合はmainへ切り替えて代用せず、統合担当へ公開したbranch/commitを確認する。同名の作業branchが既にある場合は別名を使う。統合担当の既存rag-wip worktreeを友人と共有しない。
@@ -50,8 +50,8 @@ AIの契約・利用枠は各自のものを使う。CLIの認証ファイルや
 ```sh
 cp collaboration/rag-prompt/candidates/example.json collaboration/rag-prompt/candidates/completeness-v1.json
 # idとadditionalInstructionsを編集する
-node collaboration/rag-prompt/workspace.mjs check completeness-v1
-node collaboration/rag-prompt/workspace.mjs prepare completeness-v1 trial-01
+node collaboration/rag-prompt/workspace.ts check completeness-v1
+node collaboration/rag-prompt/workspace.ts prepare completeness-v1 trial-01
 ```
 
 prepareは `.local/trial-01/pairs.json` と `review.json` を新規生成する。既存runを上書きしない。別の候補/試行には新しいrun名を使う。.localはGit対象外。stdoutはhash/件数だけで、資料/回答を出さない。

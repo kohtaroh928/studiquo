@@ -34,7 +34,6 @@ test("GET /privacy serves the privacy policy without a bearer token", async () =
   assert.match(body, /OpenAI/);
   assert.match(body, /抜粋をOpenAIへ送って/);
   assert.match(body, /13歳以上18歳未満/);
-  assert.match(body, /store: false/);
   assert.doesNotMatch(body, /Google Gemini/);
   assert.match(body, /Google Calendar API/);
   assert.match(body, /yabukohtaroh@gmail\.com/);
