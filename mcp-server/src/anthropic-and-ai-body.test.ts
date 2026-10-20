@@ -1,13 +1,13 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { callAnthropicChat, extractDeltaText } from "./anthropic.ts";
 import { rememberParsedBody, takeParsedBody } from "./ai-body.ts";
+import { partialEnv } from "./test-env.ts";
 
 test("callAnthropicChat throws when ANTHROPIC_API_KEY is missing from env", async () => {
   await assert.rejects(
     () =>
-      callAnthropicChat({}, {
+      callAnthropicChat(partialEnv({}), {
         model: "claude-sonnet-4-5",
         systemInstruction: "You are a tutor.",
         turns: [{ role: "user", text: "Hello" }],
@@ -27,7 +27,7 @@ test("callAnthropicChat sends x-api-key header (never in URL), attaches images o
   };
 
   try {
-    const fakeEnv = { ANTHROPIC_API_KEY: "test-placeholder-key-not-real" };
+    const fakeEnv = partialEnv({ ANTHROPIC_API_KEY: "test-placeholder-key-not-real" });
     await callAnthropicChat(fakeEnv, {
       model: "claude-sonnet-4-5",
       systemInstruction: "Teach math step by step.",
@@ -82,7 +82,7 @@ test("callAnthropicChat does not attach images if the final turn is an assistant
 
   try {
     await callAnthropicChat(
-      { ANTHROPIC_API_KEY: "test-placeholder-key" },
+      partialEnv({ ANTHROPIC_API_KEY: "test-placeholder-key" }),
       {
         model: "claude-sonnet-4-5",
         systemInstruction: "System",

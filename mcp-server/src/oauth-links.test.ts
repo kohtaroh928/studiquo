@@ -1,20 +1,20 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { linkVerifiedEmail, linkedIdentities } from "./oauth-links.ts";
+import { partialEnv } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) {
         const value = values.get(key) ?? null;
-        return type === "json" && value ? JSON.parse(value) : value;
+        return type === "json" && value ? JSON.parse(value as string) : value;
       },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
     },
-  };
+  });
 }
 
 test("links a provider identity to a verified email", async () => {
@@ -129,7 +129,7 @@ function countingEnvironment(seed = {}) {
   const stats = { gets: 0, puts: 0, putKeys: [], maxConcurrentGets: 0, inFlightGets: 0, readRounds: 0 };
   // Yields to the event loop without a timer's minimum delay, so operations still interleave.
   const pause = () => new Promise(resolve => setImmediate(resolve));
-  return {
+  return partialEnv({
     stats,
     values,
     STUDIQUO_DATA: {
@@ -141,12 +141,12 @@ function countingEnvironment(seed = {}) {
         await pause();
         stats.inFlightGets -= 1;
         const value = values.get(key) ?? null;
-        return type === "json" && value ? JSON.parse(value) : value;
+        return type === "json" && value ? JSON.parse(value as string) : value;
       },
       async put(key, value) { stats.puts += 1; stats.putKeys.push(key); await pause(); values.set(key, value); },
       async delete(key) { values.delete(key); },
     },
-  };
+  });
 }
 
 const apple = { provider: "apple", sub: "apple-sub-1", email: "person@example.com", emailVerified: true };
@@ -316,7 +316,7 @@ test("two first sign-ins for the same address arriving together end exactly as t
   await linkVerifiedEmail(newEnv, apple);
   await linkVerifiedEmail(newEnv, google);
   const owner = newEnv.values.get("email-account-owner:person@example.com");
-  const listed = JSON.parse(newEnv.values.get("email-accounts:person@example.com"));
+  const listed = JSON.parse(newEnv.values.get("email-accounts:person@example.com") as string);
   for (const identity of listed) {
     const key = identity.provider === "google" ? `google:${identity.sub}` : identity.sub;
     assert.equal(newEnv.values.get(`identity-canonical:${key}`), owner, `${key} should map to the owner`);
@@ -333,7 +333,7 @@ test("more than ten linked identities keep only the latest ten, exactly as befor
     assert.deepEqual(actual, expected, `identity ${i}`);
   }
   assert.deepEqual([...newEnv.values.entries()].sort(), [...oldEnv.values.entries()].sort());
-  const listed = JSON.parse(newEnv.values.get("email-accounts:person@example.com"));
+  const listed = JSON.parse(newEnv.values.get("email-accounts:person@example.com") as string);
   assert.equal(listed.length, 10);
   assert.equal(listed[0].sub, "g-5");
   assert.equal(listed[9].sub, "g-14");
@@ -365,7 +365,7 @@ test("differential, long histories on one address (reaches the ten-identity limi
 test("if the link-list write fails, nothing after it is written (the original order is kept for anything that changes the index)", async () => {
   const env = countingEnvironment();
   const realPut = env.STUDIQUO_DATA.put;
-  env.STUDIQUO_DATA.put = async (key, value) => {
+  (env.STUDIQUO_DATA as any).put = async (key, value) => {
     if (key.startsWith("email-accounts:")) throw new Error("KV write failed");
     return realPut(key, value);
   };
@@ -379,7 +379,7 @@ test("an identity that is already linked but whose owner record is missing is ha
   // The owner shows up between the first read and the decision: the later read must win.
   const realGet = env.STUDIQUO_DATA.get;
   let ownerReads = 0;
-  env.STUDIQUO_DATA.get = async (key, type) => {
+  (env.STUDIQUO_DATA as any).get = async (key, type) => {
     if (key === "email-account-owner:person@example.com") {
       ownerReads += 1;
       if (ownerReads >= 2) return "google:somebody-else";
@@ -397,7 +397,7 @@ test("the common case never takes the slow path: no second read of the list or t
   await linkVerifiedEmail(env, apple);
   const reads = [];
   const realGet = env.STUDIQUO_DATA.get;
-  env.STUDIQUO_DATA.get = async (key, type) => { reads.push(key); return realGet(key, type); };
+  (env.STUDIQUO_DATA as any).get = async (key, type) => { reads.push(key); return realGet(key, type); };
   await linkVerifiedEmail(env, apple);
   assert.equal(reads.filter(key => key === "email-accounts:person@example.com").length, 1);
   assert.equal(reads.filter(key => key === "email-account-owner:person@example.com").length, 1);

@@ -1,8 +1,8 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "./app.ts";
 import { sha256Hex } from "./auth.ts";
+import { partialCtx, partialEnv } from "./test-env.ts";
 
 // Stands in for the real DocumentRoom Durable Object (document-room.ts): one
 // shared participants/blocks/changes record per room id, persisting across
@@ -63,7 +63,7 @@ function fakeDocumentRoomBinding() {
         async getState(userKey) {
           requireParticipant(state, userKey);
           return {
-            blocks: Array.from(state.blocks.values()).sort((a, b) => a.order - b.order),
+            blocks: Array.from(state.blocks.values()).sort((a: any, b: any) => a.order - b.order),
             pendingChanges: state.changes.filter(change => change.status === "pending"),
           };
         },
@@ -139,12 +139,12 @@ function environment() {
       return { keys: [...values.keys()].filter(name => name.startsWith(prefix)).map(name => ({ name })), list_complete: true };
     },
   };
-  return {
+  return partialEnv({
     STUDIQUO_DATA: studiquoData,
     DOCUMENT_ROOM: fakeDocumentRoomBinding(),
     RATE_COUNTER: fakeRateCounterBinding(),
     CHAT_ROOM: fakeChatRoomBinding(),
-  };
+  });
 }
 
 // Stands in for ChatRoom's blockStatus (chat-room.ts): nothing is blocked
@@ -157,14 +157,14 @@ function fakeChatRoomBinding(blockedRooms = new Set()) {
   };
 }
 
-const noopCtx = { waitUntil() {} };
+const noopCtx = partialCtx({ waitUntil() {} });
 
 function freshToken(suffix) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 }
 
-function request(path, { method = "GET", token, body } = {}) {
-  const headers = {};
+function request(path, { method = "GET", token, body }: { method?: string; token?: any; body?: any } = {}) {
+  const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers["content-type"] = "application/json";
   return new Request(`https://example.test${path}`, {
@@ -190,7 +190,7 @@ let nextTestCode = 1;
 // would create for a real account, so invite() below can resolve a friend
 // code to a userKey exactly the way the live handler does. Returns the
 // minted code.
-async function registerFriend(env, token, name, { befriendedBy } = {}) {
+async function registerFriend(env, token, name, { befriendedBy }: { befriendedBy?: any } = {}) {
   const userKey = await sha256Hex(token);
   const code = `TESTCODE${String(nextTestCode++).padStart(4, "0")}`;
   await env.STUDIQUO_DATA.put(`chat:user:${userKey}`, JSON.stringify({ key: userKey, name, code, friends: [] }));
@@ -212,7 +212,7 @@ async function befriend(env, token, friend) {
 // `inviteeToken` is the token belonging to the person being invited — the
 // route resolves their friend code to a userKey server-side (the same way
 // chat.ts resolves one when adding a friend), so this registers them first.
-async function sendInvite(env, ownerToken, inviteeToken, role, { name = "友人" } = {}) {
+async function sendInvite(env, ownerToken, inviteeToken, role, { name = "友人" }: { name?: string } = {}) {
   const code = await registerFriend(env, inviteeToken, name, { befriendedBy: ownerToken });
   return worker.fetch(
     request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: ownerToken, body: { code, role } }),
@@ -224,7 +224,7 @@ async function sendInvite(env, ownerToken, inviteeToken, role, { name = "友人"
 // An invitation only seats the person once they accept it. Most tests are about
 // what a participant can do, so this sends the invitation and has the invitee
 // accept it; the response is the invitation's, as before.
-async function invite(env, ownerToken, inviteeToken, role, options) {
+async function invite(env, ownerToken, inviteeToken, role, options?) {
   const response = await sendInvite(env, ownerToken, inviteeToken, role, options);
   if (response.status === 200) {
     const accepted = await worker.fetch(
@@ -518,7 +518,7 @@ test("a friend the owner has blocked cannot be invited", async () => {
   const friend = freshToken("2");
   await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
   const code = await registerFriend(env, friend, "友人", { befriendedBy: owner });
-  env.CHAT_ROOM = fakeChatRoomBinding(new Set([`room-${code}`]));
+  (env.CHAT_ROOM as any) = fakeChatRoomBinding(new Set([`room-${code}`]));
   const response = await worker.fetch(
     request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: owner, body: { code, role: "editor" } }),
     env,
@@ -570,7 +570,7 @@ test("an invitee whose account is deleted while the invite is being made is left
   const inviteeKey = await sha256Hex(invitee);
   // The deletion lands after the code was resolved and the invitation was written.
   const put = env.STUDIQUO_DATA.put;
-  env.STUDIQUO_DATA.put = async (name, value, options) => {
+  (env.STUDIQUO_DATA as any).put = async (name, value, options) => {
     const result = await put.call(env.STUDIQUO_DATA, name, value, options);
     if (name.startsWith("doc-invite:")) await env.STUDIQUO_DATA.delete(`chat:user:${inviteeKey}`);
     return result;
@@ -662,7 +662,7 @@ test("an invitation lapses after two weeks", async () => {
   await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
   const ttls = [];
   const put = env.STUDIQUO_DATA.put;
-  env.STUDIQUO_DATA.put = async (name, value, options) => { if (name.startsWith("doc-invite:")) ttls.push(options?.expirationTtl); return put.call(env.STUDIQUO_DATA, name, value, options); };
+  (env.STUDIQUO_DATA as any).put = async (name, value, options) => { if (name.startsWith("doc-invite:")) ttls.push(options?.expirationTtl); return put.call(env.STUDIQUO_DATA, name, value, options); };
   await sendInvite(env, owner, friend, "editor");
   assert.deepEqual(ttls, [14 * 24 * 3600]);
 });

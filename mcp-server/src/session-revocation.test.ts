@@ -1,13 +1,13 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test, { mock } from "node:test";
 import { sha256Hex } from "./auth.ts";
 import { externalSession, revokeAllConnections } from "./mcp-oauth.ts";
 import { mintSession, realSession, revokeSessionsIssuedBefore } from "./session.ts";
+import { partialEnv } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
       async put(key, value) { values.set(key, value); },
@@ -15,7 +15,7 @@ function environment() {
       async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
     },
     _values: values,
-  };
+  });
 }
 
 const RANDOM = "r".repeat(40);
@@ -133,7 +133,7 @@ test("the cut-off expires once no session old enough to be affected can exist", 
   const env = environment();
   let ttl;
   const realPut = env.STUDIQUO_DATA.put;
-  env.STUDIQUO_DATA.put = async (key, value, options) => { if (key === await cutoffKey("email:ttl@example.com")) ttl = options?.expirationTtl; return realPut(key, value, options); };
+  (env.STUDIQUO_DATA as any).put = async (key, value, options) => { if (key === await cutoffKey("email:ttl@example.com")) ttl = options?.expirationTtl; return realPut(key, value, options); };
   await revokeSessionsIssuedBefore(env, "email:ttl@example.com");
   assert.ok(ttl >= 90 * 86_400, `ttl ${ttl}`);
 });
@@ -183,7 +183,7 @@ test("H-1: disconnecting reads every page of grants, not just the first", async 
   const sub = "email:many-apps@example.com";
   for (let index = 0; index < 5; index += 1) await connectApp(env, sub, `client-${index}`, `mcp_many_${index}_` + "x".repeat(40));
   const realList = env.STUDIQUO_DATA.list;
-  env.STUDIQUO_DATA.list = async ({ prefix, cursor }) => {
+  (env.STUDIQUO_DATA as any).list = async ({ prefix, cursor }) => {
     const all = (await realList({ prefix })).keys;
     const start = cursor ? Number(cursor) : 0;
     const keys = all.slice(start, start + 2);

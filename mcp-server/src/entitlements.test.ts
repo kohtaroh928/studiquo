@@ -1,7 +1,7 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getPlan, PRODUCT_PLAN_MAP } from "./entitlements.ts";
+import { partialEnv } from "./test-env.ts";
 
 // A hand-rolled stand-in for the ADMIN_DB D1 binding: real SQL text is
 // ignored (admin.test.js already exercises the real schema against a real
@@ -12,7 +12,7 @@ import { getPlan, PRODUCT_PLAN_MAP } from "./entitlements.ts";
 // primary key) can actually produce, but exactly the shape `getPlan` is
 // written to tolerate; see its own doc comment.
 function fakeAdminDB(subscribers) {
-  return {
+  return partialEnv({
     ADMIN_DB: {
       prepare() {
         return {
@@ -26,7 +26,7 @@ function fakeAdminDB(subscribers) {
         };
       },
     },
-  };
+  });
 }
 
 const FAR_FUTURE = Date.now() + 365 * 24 * 60 * 60 * 1000;
@@ -120,8 +120,8 @@ test("PRODUCT_PLAN_MAP maps every plus/pro product id to the right plan", () => 
 
 // Like fakeAdminDB, but routes by SQL text so the legacy-account lookup can
 // be answered separately from the subscribers lookup.
-function fakePaywallDB({ subscribers = [], legacy = [], paywall = true } = {}) {
-  return {
+function fakePaywallDB({ subscribers = [], legacy = [], paywall = true }: { subscribers?: any; legacy?: any; paywall?: boolean } = {}) {
+  return partialEnv({
     ...(paywall ? { PAYWALL_ENABLED: "true" } : {}),
     ADMIN_DB: {
       prepare(sql) {
@@ -139,7 +139,7 @@ function fakePaywallDB({ subscribers = [], legacy = [], paywall = true } = {}) {
         };
       },
     },
-  };
+  });
 }
 
 const STANDARD_YEARLY = "com.yabuko.studiquo.standard.yearly";

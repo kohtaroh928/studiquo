@@ -1,7 +1,7 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { register } from "node:module";
+import { partialCtx, partialEnv } from "./test-env.ts";
 
 // app.ts pulls in Durable Object classes that extend "cloudflare:workers", which
 // only exists in the Workers runtime; stand in for that one import (as
@@ -30,20 +30,20 @@ const { sendPush } = await import("./push.ts");
 const { sendVerificationCode } = await import("./email-verification.ts");
 const { sendPasskeyNotice } = await import("./passkey-policy.ts");
 
-const noopCtx = { waitUntil() {}, passThroughOnException() {} };
+const noopCtx = partialCtx({ waitUntil() {}, passThroughOnException() {} });
 const gate = (path, env) => appGateRejection(new Request(`https://example.test${path}`, { method: "POST" }), env, new URL(`https://example.test${path}`));
 
 test("an unset or empty DISABLED_FEATURES stops nothing", () => {
   for (const env of [{}, { DISABLED_FEATURES: "" }, { DISABLED_FEATURES: " , " }, undefined]) {
-    assert.equal(disabledFeatures(env).size, 0);
+    assert.equal(disabledFeatures(env as any).size, 0);
   }
   for (const path of ["/api/chat/inbox", "/api/ai/chat", "/mcp", "/api/auth/local/login"]) assert.equal(gate(path, {}), null, path);
 });
 
 test("names are case-insensitive, trimmed, and unknown names are ignored", () => {
-  assert.deepEqual([...disabledFeatures({ DISABLED_FEATURES: " Chat , EMAIL,nonsense,,push " })].sort(), ["chat", "email", "push"]);
-  assert.equal(featureDisabled({ DISABLED_FEATURES: "CHAT" }, "chat"), true);
-  assert.equal(featureDisabled({ DISABLED_FEATURES: "chat" }, "ai"), false);
+  assert.deepEqual([...disabledFeatures(partialEnv({ DISABLED_FEATURES: " Chat , EMAIL,nonsense,,push " }))].sort(), ["chat", "email", "push"]);
+  assert.equal(featureDisabled(partialEnv({ DISABLED_FEATURES: "CHAT" }), "chat"), true);
+  assert.equal(featureDisabled(partialEnv({ DISABLED_FEATURES: "chat" }), "ai"), false);
 });
 
 test("every route belongs to the feature it should", () => {
@@ -73,7 +73,7 @@ test("the account's own exits and the public pages are never covered", () => {
 });
 
 test("a stopped feature answers 503 feature_disabled with its name and Retry-After; the others keep working", async () => {
-  const env = { DISABLED_FEATURES: "chat" };
+  const env = partialEnv({ DISABLED_FEATURES: "chat" });
   const response = gate("/api/chat/inbox", env);
   assert.equal(response.status, 503);
   assert.equal(response.headers.get("retry-after"), "300");
@@ -90,7 +90,7 @@ test("a stopped feature answers 503 feature_disabled with its name and Retry-Aft
 test("each feature stops only its own routes", async () => {
   const probes = { ai: "/api/ai/chat", chat: "/api/chat/inbox", collab: "/api/document/invites", mcp: "/mcp", signin: "/api/auth/google", email: "/api/auth/email/send-code" };
   for (const [feature, path] of Object.entries(probes)) {
-    const env = { DISABLED_FEATURES: feature };
+    const env = partialEnv({ DISABLED_FEATURES: feature });
     assert.equal((await gate(path, env).json()).feature, feature);
     for (const [other, otherPath] of Object.entries(probes)) {
       if (other !== feature) assert.equal(gate(otherPath, env), null, `${feature} must not stop ${other}`);
@@ -101,28 +101,28 @@ test("each feature stops only its own routes", async () => {
 test("maintenance mode comes first, and a stopped feature does not outrank the update prompt", async () => {
   const both = gate("/api/chat/inbox", { MAINTENANCE_MODE: "true", DISABLED_FEATURES: "chat" });
   assert.equal((await both.json()).code, "maintenance");
-  assert.equal(featureGateRejection({ DISABLED_FEATURES: "chat" }, "/api/plan"), null);
+  assert.equal(featureGateRejection(partialEnv({ DISABLED_FEATURES: "chat" }), "/api/plan"), null);
 });
 
 test("/health lists only the features that took effect, and the Worker enforces the switch", async () => {
-  const health = await worker.fetch(new Request("https://example.test/health"), { DISABLED_FEATURES: "chat, bogus ,push" }, noopCtx);
+  const health = await worker.fetch(new Request("https://example.test/health"), partialEnv({ DISABLED_FEATURES: "chat, bogus ,push" }), noopCtx);
   assert.equal(health.status, 200);
   assert.deepEqual((await health.json()).disabledFeatures.sort(), ["chat", "push"]);
-  const plain = await (await worker.fetch(new Request("https://example.test/health"), {}, noopCtx)).json();
+  const plain = await (await worker.fetch(new Request("https://example.test/health"), partialEnv({}), noopCtx)).json();
   assert.equal("disabledFeatures" in plain, false, "nothing is added to /health when nothing is stopped");
 
-  const stopped = await worker.fetch(new Request("https://example.test/api/chat/inbox", { headers: { authorization: "Bearer x" } }), { DISABLED_FEATURES: "chat" }, noopCtx);
+  const stopped = await worker.fetch(new Request("https://example.test/api/chat/inbox", { headers: { authorization: "Bearer x" } }), partialEnv({ DISABLED_FEATURES: "chat" }), noopCtx);
   assert.equal(stopped.status, 503);
   assert.equal((await stopped.json()).code, "feature_disabled");
-  const other = await worker.fetch(new Request("https://example.test/api/plan"), { DISABLED_FEATURES: "chat" }, noopCtx);
+  const other = await worker.fetch(new Request("https://example.test/api/plan"), partialEnv({ DISABLED_FEATURES: "chat" }), noopCtx);
   assert.equal(other.status, 401, "an unrelated route still reaches its own checks");
 });
 
 test("a stopped push sends nothing and reads nothing", async () => {
-  const env = {
+  const env = partialEnv({
     DISABLED_FEATURES: "push", APNS_TEAM_ID: "T", APNS_TOPIC: "x",
     STUDIQUO_DATA: { get() { throw new Error("must not read devices"); }, list() { throw new Error("no"); } },
-  };
+  });
   assert.deepEqual(await sendPush(env, "user", { title: "t", body: "b" }, { fetchImpl: () => { throw new Error("must not send"); } }), []);
 });
 
@@ -131,7 +131,7 @@ test("stopped email sends nothing and stores no code", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = (...args) => { calls.push(args); throw new Error("must not send"); };
   try {
-    const env = { DISABLED_FEATURES: "email", RESEND_API_KEY: "k", STUDIQUO_DATA: { put() { throw new Error("must not store a code"); } } };
+    const env = partialEnv({ DISABLED_FEATURES: "email", RESEND_API_KEY: "k", STUDIQUO_DATA: { put() { throw new Error("must not store a code"); } } });
     await assert.rejects(sendVerificationCode(env, "someone@example.com"), /paused/);
     await sendPasskeyNotice(env, "someone@example.com", "subject", ["line"]);
     assert.equal(calls.length, 0);
@@ -145,7 +145,7 @@ test("disconnecting an AI app stays possible while mcp is stopped, and nothing e
   assert.equal(featureForPath("/api/mcp/connections/abc", "GET"), "mcp");
   assert.equal(featureForPath("/api/mcp/connections", "GET"), "mcp");
   assert.equal(featureForPath("/api/mcp/pairing-code", "POST"), "mcp");
-  const env = { DISABLED_FEATURES: "mcp" };
+  const env = partialEnv({ DISABLED_FEATURES: "mcp" });
   const request = new Request("https://example.test/api/mcp/connections/abc", { method: "DELETE" });
   assert.equal(appGateRejection(request, env, new URL(request.url)), null);
 });
@@ -155,9 +155,9 @@ test("a name that stops nothing is logged once and does not take effect", () => 
   const original = console.warn;
   console.warn = line => lines.push(line);
   try {
-    assert.equal(disabledFeatures({ DISABLED_FEATURES: "chats" }).size, 0);
-    assert.equal(disabledFeatures({ DISABLED_FEATURES: "chats" }).size, 0);
-    assert.equal(disabledFeatures({ DISABLED_FEATURES: "chat,Chats" }).has("chat"), true);
+    assert.equal(disabledFeatures(partialEnv({ DISABLED_FEATURES: "chats" })).size, 0);
+    assert.equal(disabledFeatures(partialEnv({ DISABLED_FEATURES: "chats" })).size, 0);
+    assert.equal(disabledFeatures(partialEnv({ DISABLED_FEATURES: "chat,Chats" })).has("chat"), true);
   } finally {
     console.warn = original;
   }
@@ -166,7 +166,7 @@ test("a name that stops nothing is logged once and does not take effect", () => 
 });
 
 test("the account's exits go through the Worker while every feature is stopped", async () => {
-  const env = { DISABLED_FEATURES: FEATURES.join(",") };
+  const env = partialEnv({ DISABLED_FEATURES: FEATURES.join(",") });
   for (const [method, path] of [["DELETE", "/api/account"], ["POST", "/api/session/revoke"], ["POST", "/api/session/refresh"]]) {
     const response = await worker.fetch(new Request(`https://example.test${path}`, { method }), env, noopCtx);
     assert.equal(response.status, 401, `${method} ${path} must reach its own auth check, not a 503`);
@@ -176,6 +176,6 @@ test("the account's exits go through the Worker while every feature is stopped",
 test("the AI switch is separate from the provider approval and either one stops AI", async () => {
   const request = new Request("https://example.test/api/ai/chat", { method: "POST" });
   const url = new URL(request.url);
-  assert.equal((await appGateRejection(request, { DISABLED_FEATURES: "ai", AI_PROVIDER_APPROVED: "true" }, url).json()).feature, "ai");
-  assert.equal(appGateRejection(request, { AI_PROVIDER_APPROVED: "false" }, url), null, "the approval flag answers later, in the AI handler");
+  assert.equal((await appGateRejection(request, partialEnv({ DISABLED_FEATURES: "ai", AI_PROVIDER_APPROVED: "true" }), url).json()).feature, "ai");
+  assert.equal(appGateRejection(request, partialEnv({ AI_PROVIDER_APPROVED: "false" }), url), null, "the approval flag answers later, in the AI handler");
 });

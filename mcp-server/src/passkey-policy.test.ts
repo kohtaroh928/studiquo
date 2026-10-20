@@ -1,4 +1,3 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test, { mock } from "node:test";
 import {
@@ -7,10 +6,11 @@ import {
 } from "./passkey-policy.ts";
 import { sha256Hex } from "./auth.ts";
 import { realSession } from "./session.ts";
+import { partialEnv } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
-  return {
+  return partialEnv({
     RESEND_API_KEY: "test-key",
     STUDIQUO_DATA: {
       async get(key, type) {
@@ -20,7 +20,7 @@ function environment() {
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
     },
-  };
+  });
 }
 
 function captureMail() {
@@ -32,7 +32,7 @@ function captureMail() {
   return { sent, restore: () => original.mock.restore() };
 }
 
-async function addPasskey(env, id, { account = ACCOUNT, email = EMAIL, createdAt } = {}) {
+async function addPasskey(env, id, { account = ACCOUNT, email = EMAIL, createdAt }: { account?: any; email?: any; createdAt?: any } = {}) {
   await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify({ id, email, ...(createdAt === undefined ? {} : { createdAt }) }));
   await indexAccountPasskey(env, account, email, id);
 }
@@ -147,7 +147,7 @@ test("passkeys registered before the per-account list existed are found once and
   const env = environment();
   const keys = new Map();
   const base = env.STUDIQUO_DATA;
-  env.STUDIQUO_DATA = {
+  (env.STUDIQUO_DATA as any) = {
     ...base,
     async put(key, value) { keys.set(key, value); return base.put(key, value); },
     async list({ prefix }) {

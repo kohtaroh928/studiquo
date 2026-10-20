@@ -1,13 +1,13 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Hex } from "./auth.ts";
 import { idTokenNonceRefused } from "./id-token-nonce.ts";
+import { partialEnv } from "./test-env.ts";
 
-function makeEnv({ requireNonce = "false" } = {}) {
+function makeEnv({ requireNonce = "false" }: { requireNonce?: string } = {}) {
   const used = new Set();
   const ttlRecorded = new Map();
-  return {
+  return partialEnv({
     REQUIRE_ID_TOKEN_NONCE: requireNonce,
     RATE_COUNTER: {
       getByName(name) {
@@ -22,7 +22,7 @@ function makeEnv({ requireNonce = "false" } = {}) {
       },
     },
     _ttlRecorded: ttlRecorded,
-  };
+  });
 }
 
 async function captureLogs(fn) {

@@ -1,15 +1,15 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import { getApplePublicKeys, verifyAppleIdentityToken } from "./apple-auth.ts";
+import { partialEnv } from "./test-env.ts";
 
 const REAL_ISSUER = "https://appleid.apple.com";
 const REAL_AUDIENCE = "com.yabuko.studiquo";
 
 function environment() {
   const values = new Map();
-  return {
+  return partialEnv({
     STUDIQUO_DATA: {
       async get(key, type) {
         const value = values.get(key) ?? null;
@@ -18,7 +18,7 @@ function environment() {
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
     },
-  };
+  });
 }
 
 // A local, throwaway RS256 keypair stands in for Apple's own signing key —
@@ -37,7 +37,7 @@ async function seedJWKS(env, jwk) {
   await env.STUDIQUO_DATA.put("apple:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signToken(privateKey, kid, { issuer = REAL_ISSUER, audience = REAL_AUDIENCE, expiresInSeconds = 600, issuedAtSecondsAgo = 0 } = {}) {
+function signToken(privateKey, kid, { issuer = REAL_ISSUER, audience = REAL_AUDIENCE, expiresInSeconds = 600, issuedAtSecondsAgo = 0 }: { issuer?: any; audience?: any; expiresInSeconds?: number; issuedAtSecondsAgo?: number } = {}) {
   const now = Math.floor(Date.now() / 1000) - issuedAtSecondsAgo;
   return new SignJWT({ sub: "000123.abcdef.4567" })
     .setProtectedHeader({ alg: "RS256", kid })
