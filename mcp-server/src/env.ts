@@ -21,12 +21,20 @@ export interface Env {
   RATE_COUNTER: DurableObjectNamespace<RateCounter>;
   MCP_INBOX: DurableObjectNamespace<MCPInbox>;
 
+  // Retrieval (RAG): Workers AI and Vectorize bindings, plus the private PDF processor service.
+  AI: Ai;
+  RAG_VECTORIZE: VectorizeIndex;
+  DOCLING_PROCESSOR?: Fetcher;
+
   // Fixed-window limiters declared under `ratelimits` in wrangler.jsonc (both environments).
   RATE_LIMIT_ADMIN_WEBHOOK: RateLimit;
   RATE_LIMIT_ANNOUNCEMENTS: RateLimit;
   RATE_LIMIT_APPLE_AUTH: RateLimit;
   RATE_LIMIT_APP_ERROR: RateLimit;
   RATE_LIMIT_ATTEST_ASSERT: RateLimit;
+  RATE_LIMIT_RAG_INDEX: RateLimit;
+  RATE_LIMIT_RAG_PDF: RateLimit;
+  RATE_LIMIT_RAG_SEARCH: RateLimit;
   RATE_LIMIT_ATTEST_CHALLENGE: RateLimit;
   RATE_LIMIT_ATTEST_REGISTER: RateLimit;
   RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD: RateLimit;
@@ -100,6 +108,15 @@ export interface Env {
   ALLOW_SANDBOX_PURCHASES?: string;
   AI_PROVIDER_APPROVED?: string;
   AI_MODERATION?: string;
+  RAG_ENABLED?: string;
+  RAG_AUTO_INDEX_ENABLED?: string;
+  RAG_CONTEXT_AS_INPUT?: string;
+  RAG_PDF_PROCESSING_ENABLED?: string;
+  RAG_PDF_CLEANUP_ENABLED?: string;
+  RAG_PDF_RETENTION_ENABLED?: string;
+  RAG_PDF_JOB_PURGE_ENABLED?: string;
+  RAG_PDF_ADMISSION_POLICY?: string;
+  RAG_PDF_INTAKE_LIMITS?: string;
 
   // Cloudflare Access's key set; only tests supply it, otherwise it is fetched.
   ACCESS_JWKS?: JWTVerifyGetKey;

@@ -44,13 +44,13 @@ deploy、migration適用、push、merge、release、本番データ操作は新�
 対の8問の独立review依頼はモデル混雑で実行不能。次回は同じ設定のままこのreviewから再開し、モデル等を切り替えて回避しない。JSON整合のみ確認済み、独立review/UTF16許容注釈は未完了。
 
 
-2026-10-15復帰後: 通常枠利用可、並行作業なしを確認。代表8問13scopeのspan独立レビュー完了、High/Mediumなし。Low比較観点表現を反映済み。別 `paired-task-planner-request.mjs` で固定8問×baseline/candidateのオフライン入力を準備、一般規約5項目追記だけを差分とし旧6body/sourcehash不変。対象4/関連23/独立4成功。追加API0、モデル品質未評価。次は新8問用response bindingと有限比較runを設計/安全レビュー（旧6parser indexを流用しない）。人間gold/許容spanの全網羅性はpending。
+2026-10-15復帰後: 通常枠利用可、並行作業なしを確認。代表8問13scopeのspan独立レビュー完了、High/Mediumなし。Low比較観点表現を反映済み。別 `paired-task-planner-request.ts` で固定8問×baseline/candidateのオフライン入力を準備、一般規約5項目追記だけを差分とし旧6body/sourcehash不変。対象4/関連23/独立4成功。追加API0、モデル品質未評価。次は新8問用response bindingと有限比較runを設計/安全レビュー（旧6parser indexを流用しない）。人間gold/許容spanの全網羅性はpending。
 
 
 2026-10-15新8問応答binding: paired-task-planner-responseをoffline追加。対象7/関連18/独立7/Worker1361成功、High/Mediumなし。旧6sourcehash不変。variantのexpected requestHashは送信証明ではなく、同planが両版で形式合格することを許す。形が通るrole誤りは意味pending。次はpaired設計書のHigh単位: 同一manifest/ledgerで3対+3対+2対=6+6+4、各予約8192microUSD・累計131072案、同時lock/履歴再検証/失敗後全stage停止を実装・独立安全レビュー。新8問実APIは未送信、キー読取0、本番v1/未使用20問保持。
 
 
-2026-10-15有限比較: 6+6+4の同ledger制御を実装しmock/独立安全gate通過後に固定run `studiquo-rag-paired-planner-20261015-01` を開始したが、最初のordinal0 baselineでfailed、完了0、後続15未送信、lock保持。generic failureのみで原因/usage/実費は不明。予約8192microUSDを保持し、別path再送なし。元sourceをbaselines/20261015-paired-first-attempt/paired-task-planner-live.mjs.txtへ退避しhash一致。現runnerへ本文なしphase/HTTPstatus/固定reason診断を追加。対象13/関連24/Worker1374/独立コード13/安全13成功、旧6source/runtimev1不変。詳しくはRAG_PAIRED_PLANNER_LIVE_REPORT.md/RESULTS。
+2026-10-15有限比較: 6+6+4の同ledger制御を実装しmock/独立安全gate通過後に固定run `studiquo-rag-paired-planner-20261015-01` を開始したが、最初のordinal0 baselineでfailed、完了0、後続15未送信、lock保持。generic failureのみで原因/usage/実費は不明。予約8192microUSDを保持し、別path再送なし。元sourceをbaselines/20261015-paired-first-attempt/paired-task-planner-live.ts.txtへ退避しhash一致。現runnerへ本文なしphase/HTTPstatus/固定reason診断を追加。対象13/関連24/Worker1374/独立コード13/安全13成功、旧6source/runtimev1不変。詳しくはRAG_PAIRED_PLANNER_LIVE_REPORT.md/RESULTS。
 次はユーザー判断待ち: 診断版で第1段階だけ最大6固定送信/予約0.049152USDを新しい承認runで再評価する案。既定の不明送信自動再送禁止のため承認前に実行しない。heartbeatで重複再質問・再送・lock削除をしない。承認なしでも旧原因が判明したとは記録しない。比較品質/人間gold/実検索実機は未完了。
 
 

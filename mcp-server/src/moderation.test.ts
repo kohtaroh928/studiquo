@@ -34,7 +34,7 @@ function environment(extra = {}) {
   }
   return partialEnv({
     _db: db,
-    ADMIN_DB: { prepare: sql => new FakeD1Statement(db, sql) },
+    ADMIN_DB: { prepare: sql => new FakeD1Statement(db, sql), batch: async (statements) => { const results = []; for (const statement of statements) results.push(await statement.run()); return results; } },
     RATE_LIMIT_ANNOUNCEMENTS: { async limit() { return { success: true }; } },
     ACCESS_AUD: ACCESS.aud, ACCESS_TEAM_DOMAIN: ACCESS.team, ACCESS_JWKS: accessJWKS,
     ...extra,

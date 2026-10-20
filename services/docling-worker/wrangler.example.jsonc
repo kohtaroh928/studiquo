@@ -1,7 +1,7 @@
 {
   "$schema": "../../mcp-server/node_modules/wrangler/config-schema.json",
   "name": "studiquo-private-docling",
-  "main": "index.js",
+  "main": "index.ts",
   "compatibility_date": "2026-10-17",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,

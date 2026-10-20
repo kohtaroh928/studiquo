@@ -1,3 +1,4 @@
+// @ts-nocheck -- ported from JavaScript untyped; typing it is tracked in Notion (Studiquo タスク).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildResponsesBody, extractDeltaText } from "./openai.ts";
@@ -55,4 +56,12 @@ test("toStrictJSONSchema lower-cases types, requires every property and forbids 
   assert.deepEqual(out.properties.kind, { type: "string", enum: ["a", "b"] });
   assert.equal(out.properties.items.items.additionalProperties, false);
   assert.deepEqual(out.properties.items.items.required, ["n"]);
+});
+test('beforeDispatch refreshes instructions on initial call and every retry',async()=>{
+ const {callOpenAIChat}=await import('./openai.ts');const original=globalThis.fetch;const sent=[];let checks=0;
+ globalThis.fetch=async(_url,options)=>{sent.push(JSON.parse(options.body));return new Response('',{status:sent.length===1?503:200});};
+ try {
+  await callOpenAIChat({OPENAI_API_KEY:'synthetic-key',AI_RETRY_BASE_MS:0},{model:'synthetic',systemInstruction:'stale context',turns:[{role:'user',text:'question'}],beforeDispatch:async()=>++checks===1?'authorized context':'ordinary system'});
+  assert.equal(checks,2);assert.equal(sent[0].instructions,'authorized context');assert.equal(sent[1].instructions,'ordinary system');assert.equal(sent[0].store,false);
+ }finally{globalThis.fetch=original;}
 });

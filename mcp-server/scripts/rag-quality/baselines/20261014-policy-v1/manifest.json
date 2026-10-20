@@ -26,31 +26,31 @@
   },
   "sources": [
     {
-      "path": "src/rag/answer-policy.js",
+      "path": "src/rag/answer-policy.ts",
       "hash": "dcefcc9016025af1d994bbd496952fad94da1f80ccf3cba58995be7accc94ec4"
     },
     {
-      "path": "src/ai.js",
+      "path": "src/ai.ts",
       "hash": "41ed1ef598f0e1e17b3ac0c0f9004c94a3997e5f91a93d79ebc413fd4c288d1a"
     },
     {
-      "path": "src/openai.js",
+      "path": "src/openai.ts",
       "hash": "fa8039983b57f32a5987eeb1a5c17b77525dfa29448dc9b2e000b45cb3023457"
     },
     {
-      "path": "src/rag/retrieval.js",
+      "path": "src/rag/retrieval.ts",
       "hash": "ed8a8e848d6f319d2fa6e6c3a130789f764de5a322bbe1eff2db4900d44353a7"
     },
     {
-      "path": "src/rag/answerability.js",
+      "path": "src/rag/answerability.ts",
       "hash": "dabc97f3e3edfba5fe746d2818e8ee7e55b90c2ef149b0ad041b7bf7a40e63dc"
     },
     {
-      "path": "src/rag/query.js",
+      "path": "src/rag/query.ts",
       "hash": "7c65c6be824584c5f0822fd895e3b1a928e7b73f3f938baa305b9ed04037047a"
     },
     {
-      "path": "src/rag/comparison-evidence.js",
+      "path": "src/rag/comparison-evidence.ts",
       "hash": "69166d44e6da6e09c83e4f47419ce6710780dc414350a340f716df8d8748dbbb"
     },
     {
@@ -58,19 +58,19 @@
       "hash": "684b71c0905d4d16f54b5308bc955c0014c9a4ab8cab170508663fca744743e3"
     },
     {
-      "path": "scripts/rag-quality/evaluation-50.mjs",
+      "path": "scripts/rag-quality/evaluation-50.ts",
       "hash": "48a4d812eaaec88f331ad0f75a8d126d6fd16946f30a3f003e772bbec6652a54"
     },
     {
-      "path": "scripts/rag-quality/evaluation-50-live.mjs",
+      "path": "scripts/rag-quality/evaluation-50-live.ts",
       "hash": "9874d86d4c93d0e858e326676eb15aa1c7f25a8deded661c83c604a86a20b4a9"
     },
     {
-      "path": "scripts/rag-quality/evaluation-50-production.mjs",
+      "path": "scripts/rag-quality/evaluation-50-production.ts",
       "hash": "6e564a4fdddfaf029b3c723e09b1106794cc33d5520c39e1543b3a6dfac8cf75"
     },
     {
-      "path": "scripts/rag-quality/comparison-boundary-fixture.mjs",
+      "path": "scripts/rag-quality/comparison-boundary-fixture.ts",
       "hash": "7a31f41d9b623eefad82e0f57e41ea07494359e97bd9a02f6015837f61a6a39f"
     }
   ],
