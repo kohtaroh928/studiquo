@@ -16,7 +16,7 @@ function fakeAdminDB(subscribers: any[]) {
     ADMIN_DB: {
       prepare() {
         return {
-          bind(appUserId) {
+          bind(appUserId: string) {
             return {
               async all() {
                 return { results: subscribers.filter(row => row.app_user_id === appUserId) };
@@ -126,7 +126,7 @@ function fakePaywallDB({ subscribers = [], legacy = [], paywall = true }: { subs
     ADMIN_DB: {
       prepare(sql: string | string[]) {
         return {
-          bind(appUserId) {
+          bind(appUserId: string) {
             return {
               async all() {
                 if (sql.includes("legacy_standard_accounts")) {

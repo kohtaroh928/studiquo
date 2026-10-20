@@ -13,18 +13,18 @@ async function fixture() {
     APNS_TEAM_ID: "TEAM123456",
     APNS_TOPIC: "com.yabuko.studiquo",
     STUDIQUO_DATA: {
-      async get(key, type: string) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
   });
   return { env, values, publicKey };
 }
 
-function seedDevices(values: Map<any,any>, devices) {
+function seedDevices(values: Map<any,any>, devices: unknown[]) {
   values.set("chat:devices:user-a", JSON.stringify(devices));
 }
 
@@ -65,7 +65,7 @@ test("one JWT is reused for every device in a multi-device send", async () => {
     { token: sandboxToken, environment: "sandbox", updatedAt: 1 },
     { token: productionToken, environment: "production", updatedAt: 2 },
   ]);
-  const authorizationHeaders = [];
+  const authorizationHeaders: any[] = [];
   await sendPush(env, "user-a", notification, {
     fetchImpl: async (_url, init) => {
       authorizationHeaders.push(init.headers.authorization);
@@ -212,7 +212,7 @@ test("a device that turned the banner off gets a quiet (passive, soundless) noti
     { token: sandboxToken, environment: "sandbox", updatedAt: 1, banners: { friendMessage: false } },
     { token: productionToken, environment: "production", updatedAt: 1 },
   ]);
-  const sent = [];
+  const sent: { token: any; headers: HeadersInit; aps: any; }[] = [];
   await sendPush(env, "user-a", notification, {
     fetchImpl: async (url, init) => {
       sent.push({ token: url.split("/").pop(), headers: init.headers, aps: JSON.parse(init.body).aps });

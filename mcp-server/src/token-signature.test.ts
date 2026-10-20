@@ -6,7 +6,7 @@ import test from "node:test";
 import worker from "./app.ts";
 import { mintSession } from "./session.ts";
 import { sessionTokenAcceptable, accessTokenAcceptable, signSessionToken, signAccessToken } from "./token-signature.ts";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv } from "./test-env.ts";
 
 const hash = value => createHash("sha256").update(value).digest("hex");
 const noopCtx = partialCtx({ waitUntil() {} });
@@ -22,9 +22,9 @@ function environment(extra = {}) {
     reads: 0,
     values,
     STUDIQUO_DATA: {
-      async get(key, type: string) { env.reads += 1; const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async get(key: string, type: string) { env.reads += 1; const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
       async list() { return { keys: [], list_complete: true }; },
     },
     RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
@@ -33,7 +33,7 @@ function environment(extra = {}) {
   return env;
 }
 
-const call = (env, path: string, { method = "GET", token, body, headers = {} }: { method?: string; token?: string; body?: BodyInit; headers?: Record<string, string> } = {}) => worker.fetch(new Request(`https://example.test${path}`, {
+const call = (env: LooseEnv, path: string, { method = "GET", token, body, headers = {} }: { method?: string; token?: string; body?: BodyInit; headers?: Record<string, string> } = {}) => worker.fetch(new Request(`https://example.test${path}`, {
   method, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers }, body,
 }), env, noopCtx);
 

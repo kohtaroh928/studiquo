@@ -5,7 +5,7 @@ import worker from "./app.ts";
 import { mintSession } from "./session.ts";
 import { DatabaseSync } from "node:sqlite";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, exportPKCS8 } from "jose";
-import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv } from "./test-env.ts";
 
 // Regression coverage for "friend requests are approved, not instant": adding
 // a friend by code must create a one-directional pending request instead of
@@ -24,14 +24,14 @@ function fakeChatRoomBinding() {
   const initializeCalls = { count: 0 };
   let nextAttachmentId = 1;
   const FAKE_MAX_GROUP_MEMBERS = 50;
-  function room(name) {
+  function room(name: string) {
     if (!rooms.has(name)) rooms.set(name, { participants: new Set(), memberInfo: new Map(), messages: [], attachments: new Map(), blocks: new Set(), readPositions: new Map(), closed: false, kind: "direct", name: null });
     return rooms.get(name);
   }
   return {
     initializeCalls,
     _rooms: rooms,
-    getByName(name) {
+    getByName(name: string) {
       const state = room(name);
       const other = userKey => [...state.participants].find(candidate => candidate !== userKey) ?? null;
       const requireGroup = userKey => {
@@ -39,7 +39,7 @@ function fakeChatRoomBinding() {
         if (state.kind !== "group") throw new Error("NotAGroup");
       };
       return {
-        async initialize(_roomID, participants: string | any[], options: Record<string, unknown> = {}) {
+        async initialize(_roomID: string, participants: string | any[], options: Record<string, unknown> = {}) {
           initializeCalls.count += 1;
           const kind = options.kind ?? "direct";
           if (state.participants.size > 0) { state.closed = false; return; }
@@ -57,7 +57,7 @@ function fakeChatRoomBinding() {
         // by whoever just had their group invite accepted (see groups.ts) —
         // the real authorization already happened one level up, so this
         // doesn't require the new member to already be a participant.
-        async addParticipant(newKey, code, name) {
+        async addParticipant(newKey: string, code: string, name: string) {
           if (state.kind !== "group") throw new Error("NotAGroup");
           if (state.participants.size >= FAKE_MAX_GROUP_MEMBERS) throw new Error("GroupFull");
           state.participants.add(newKey);
@@ -67,7 +67,7 @@ function fakeChatRoomBinding() {
         },
         // Mirrors chat-room.ts's real removeParticipant: any current member
         // may remove any other (or themselves) — no admin/owner concept.
-        async removeParticipant(callerKey, targetKey) {
+        async removeParticipant(callerKey: string, targetKey: string) {
           requireGroup(callerKey);
           if (!state.participants.has(targetKey)) throw new Error("Forbidden");
           state.participants.delete(targetKey);
@@ -75,14 +75,14 @@ function fakeChatRoomBinding() {
           state.readPositions.delete(targetKey);
           return { status: "removed" };
         },
-        async renameRoom(callerKey, name) {
+        async renameRoom(callerKey: string, name: string) {
           requireGroup(callerKey);
           const trimmed = String(name ?? "").trim().slice(0, 80);
           if (!trimmed) throw new Error("InvalidName");
           state.name = trimmed;
           return { status: "renamed", name: trimmed };
         },
-        async groupInfo(callerKey) {
+        async groupInfo(callerKey: string) {
           requireGroup(callerKey);
           const members = [...state.participants].map(participantKey => ({
             key: participantKey,
@@ -91,14 +91,14 @@ function fakeChatRoomBinding() {
           }));
           return { name: state.name, members };
         },
-        async close(userKey) {
+        async close(userKey: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           const latestID = state.messages.at(-1)?.id ?? 0;
           for (const participant of state.participants) state.readPositions.set(participant, latestID);
           state.closed = true;
           return { status: "closed" };
         },
-        async inboxState(userKey) {
+        async inboxState(userKey: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           const latestID = state.messages.at(-1)?.id ?? 0;
           if (state.closed) return { latestID, unreadCount: 0, closed: true };
@@ -109,7 +109,7 @@ function fakeChatRoomBinding() {
             closed: false,
           };
         },
-        async markRead(userKey, throughID: number) {
+        async markRead(userKey: string, throughID: number) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           const safeID = Math.min(state.messages.at(-1)?.id ?? 0, throughID);
           state.readPositions.set(userKey, Math.max(state.readPositions.get(userKey) ?? 0, safeID));
@@ -118,22 +118,22 @@ function fakeChatRoomBinding() {
         // Mirrors chat-room.ts's real requireParticipant: throws for a
         // non-participant, otherwise resolves with nothing meaningful — a
         // pure access-control check, not a data read.
-        async requireParticipant(userKey) {
+        async requireParticipant(userKey: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
         },
-        async blockOtherParticipant(userKey) {
+        async blockOtherParticipant(userKey: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           if (state.kind === "group") throw new Error("NotSupported");
           state.blocks.add(userKey);
           return { status: "blocked" };
         },
-        async unblockOtherParticipant(userKey) {
+        async unblockOtherParticipant(userKey: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           if (state.kind === "group") throw new Error("NotSupported");
           state.blocks.delete(userKey);
           return { status: "unblocked" };
         },
-        async blockStatus(userKey) {
+        async blockStatus(userKey: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           if (state.kind === "group") throw new Error("NotSupported");
           const theOther = other(userKey);
@@ -142,7 +142,7 @@ function fakeChatRoomBinding() {
             blockedByOther: theOther ? state.blocks.has(theOther) : false,
           };
         },
-        async sendMessage(userKey, text, clientMessageID = null) {
+        async sendMessage(userKey: string, text: string, clientMessageID = null) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           if (state.closed) throw new Error("Closed");
           if (state.kind !== "group") {
@@ -156,7 +156,7 @@ function fakeChatRoomBinding() {
           state.messages.push(message);
           return message;
         },
-        async listMessages(userKey, after = 0) {
+        async listMessages(userKey: string, after = 0) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           return state.messages
             .filter(item => item.id > after)
@@ -165,7 +165,7 @@ function fakeChatRoomBinding() {
         // Mirrors chat-room.ts's real cancelMessage: only the original
         // sender may retract it, and the stored text is actually cleared
         // (not just hidden), so every future read of this room sees it gone.
-        async cancelMessage(userKey, messageID) {
+        async cancelMessage(userKey: string, messageID: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           const message = state.messages.find(item => item.id === messageID);
           if (!message) return { status: "not_found" };
@@ -174,7 +174,7 @@ function fakeChatRoomBinding() {
           message.isCanceled = true;
           return { status: "canceled" };
         },
-        async moderatorRemoveMessage(messageID) {
+        async moderatorRemoveMessage(messageID: string) {
           const message = state.messages.find(item => item.id === messageID);
           if (!message) return { status: "not_found" };
           const was = message.isCanceled;
@@ -182,7 +182,7 @@ function fakeChatRoomBinding() {
           return { status: was ? "already_removed" : "removed" };
         },
         // Mirrors chat-room.ts's real reportSnapshot.
-        async reportSnapshot(userKey, messageID: number) {
+        async reportSnapshot(userKey: string, messageID: number) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           const target = state.messages.find(item => item.id === messageID);
           if (!target) return null;
@@ -197,7 +197,7 @@ function fakeChatRoomBinding() {
         },
         // Mirrors chat-room.ts's real editMessage: only the original sender
         // may edit, and a canceled message can never be resurrected by one.
-        async editMessage(userKey, messageID, text) {
+        async editMessage(userKey: string, messageID: string, text: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           const message = state.messages.find(item => item.id === messageID);
           if (!message) return { status: "not_found" };
@@ -209,7 +209,7 @@ function fakeChatRoomBinding() {
         // Mirrors chat-room.ts's real getMessagesByIDs: a direct-by-id
         // lookup independent of the `after` cursor, for reconciling ids old
         // enough to have scrolled out of the normal rolling window.
-        async getMessagesByIDs(userKey, ids: Iterable<unknown> | null | undefined) {
+        async getMessagesByIDs(userKey: string, ids: Iterable<unknown> | null | undefined) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           const idSet = new Set(ids);
           return state.messages
@@ -222,7 +222,7 @@ function fakeChatRoomBinding() {
         // Mirrors chat-room.ts's opportunistic cleanup too: every new
         // upload purges attachments past the retention window first, since
         // there's no cron/alarm to do it on a schedule.
-        async storeAttachment(userKey, contentType, base64Data) {
+        async storeAttachment(userKey: string, contentType: string, base64Data: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           if (state.closed) throw new Error("Closed");
           const type = String(contentType ?? "").slice(0, 100);
@@ -237,14 +237,14 @@ function fakeChatRoomBinding() {
           state.attachments.set(id, { contentType: type, data, createdAt: Date.now(), uploadedBy: userKey });
           return { id };
         },
-        async getAttachment(userKey, id) {
+        async getAttachment(userKey: string, id: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           return state.attachments.get(id) ?? null;
         },
         // Test-only hook: backdates an attachment's stored timestamp to
         // simulate one uploaded long ago, without needing to actually wait
         // out the retention window.
-        async _setAttachmentCreatedAtForTesting(id, createdAt) {
+        async _setAttachmentCreatedAtForTesting(id: string, createdAt: string) {
           const entry = state.attachments.get(id);
           if (entry) entry.createdAt = createdAt;
         },
@@ -296,7 +296,7 @@ function fakeUserRegistryBinding(studiquoData) {
   const queues = new Map();
   const chatIdentityKeys = new Map();
 
-  async function ensureUserAtomic(key, name: null, studyStats = null, bio = undefined) {
+  async function ensureUserAtomic(key: string, name: null, studyStats = null, bio = undefined) {
     const storageKey = `chat:user:${key}`;
     let user = await studiquoData.get(storageKey, "json");
     if (user) {
@@ -341,7 +341,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return user;
   }
 
-  async function addFriendDirectlyAtomic(key, otherCode, otherName, roomID) {
+  async function addFriendDirectlyAtomic(key: string, otherCode: string, otherName: string, roomID: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -356,7 +356,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "added", friend: { code: user.code, name: user.name } };
   }
 
-  async function removeFriendAtomic(key, otherCode, blockedContact = null) {
+  async function removeFriendAtomic(key: string, otherCode: string, blockedContact = null) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -368,7 +368,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "removed" };
   }
 
-  async function confirmFriendshipAtomic(key, friend: { code: any; }, { clearOutgoing = false }: { clearOutgoing?: boolean } = {}) {
+  async function confirmFriendshipAtomic(key: string, friend: { code: any; }, { clearOutgoing = false }: { clearOutgoing?: boolean } = {}) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -380,7 +380,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "confirmed" };
   }
 
-  async function setAvatarUpdatedAtAtomic(key, updatedAt) {
+  async function setAvatarUpdatedAtAtomic(key: string, updatedAt: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -389,7 +389,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "updated" };
   }
 
-  async function removeAccountReferencesAtomic(key, deletedCode) {
+  async function removeAccountReferencesAtomic(key: string, deletedCode: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -408,7 +408,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "removed" };
   }
 
-  async function addIncomingRequestAtomic(key, requesterCode, requesterName) {
+  async function addIncomingRequestAtomic(key: string, requesterCode: string, requesterName: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -425,7 +425,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "pending", recipient: { code: user.code, name: user.name } };
   }
 
-  async function addOutgoingRequestAtomic(key, recipientCode, recipientName) {
+  async function addOutgoingRequestAtomic(key: string, recipientCode: string, recipientName: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return;
@@ -438,7 +438,7 @@ function fakeUserRegistryBinding(studiquoData) {
     }
   }
 
-  async function removeOutgoingRequestAtomic(key, recipientCode) {
+  async function removeOutgoingRequestAtomic(key: string, recipientCode: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return;
@@ -449,7 +449,7 @@ function fakeUserRegistryBinding(studiquoData) {
     }
   }
 
-  async function resolveIncomingRequestAtomic(key, action: string, otherCode, otherName, roomID) {
+  async function resolveIncomingRequestAtomic(key: string, action: string, otherCode: string, otherName: string, roomID: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user || !(user.incomingRequests ?? []).some(item => item.code === otherCode)) {
@@ -468,7 +468,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "accepted", friend: { code: user.code, name: user.name } };
   }
 
-  async function addGroupForCreatorAtomic(key, roomID) {
+  async function addGroupForCreatorAtomic(key: string, roomID: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -477,7 +477,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "added" };
   }
 
-  async function addIncomingGroupInviteAtomic(key, roomID, name, inviterCode, inviterName) {
+  async function addIncomingGroupInviteAtomic(key: string, roomID: string, name: string, inviterCode: string, inviterName: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -491,7 +491,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "pending" };
   }
 
-  async function resolveIncomingGroupInviteAtomic(key, action: string, roomID) {
+  async function resolveIncomingGroupInviteAtomic(key: string, action: string, roomID: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     const invite = (user?.incomingGroupInvites ?? []).find(item => item.roomID === roomID);
@@ -506,7 +506,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: action === "accept" ? "accepted" : "rejected", invite };
   }
 
-  async function undoAcceptedGroupInviteAtomic(key, roomID, name, inviterCode, inviterName) {
+  async function undoAcceptedGroupInviteAtomic(key: string, roomID: string, name: string, inviterCode: string, inviterName: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -521,7 +521,7 @@ function fakeUserRegistryBinding(studiquoData) {
     return { status: "restored" };
   }
 
-  async function removeGroupAtomic(key, roomID) {
+  async function removeGroupAtomic(key: string, roomID: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
@@ -534,7 +534,7 @@ function fakeUserRegistryBinding(studiquoData) {
   // All methods share the same per-key queue, mirroring how a single real
   // Durable Object instance serializes every call it receives — regardless
   // of which method is called — one at a time.
-  function enqueue(key, run) {
+  function enqueue(key: string, run: unknown) {
     const previous = queues.get(key) ?? Promise.resolve();
     const next = previous.then(run);
     queues.set(key, next.catch(() => {}));
@@ -542,10 +542,10 @@ function fakeUserRegistryBinding(studiquoData) {
   }
 
   return {
-    getByName(key) {
+    getByName(key: string) {
       return {
         async eraseLibraryID() {},
-        resolveChatKey(identityHash, legacyTokenHash) {
+        resolveChatKey(identityHash: string, legacyTokenHash: string) {
           return enqueue(key, async () => {
             if (chatIdentityKeys.has(identityHash)) return chatIdentityKeys.get(identityHash);
             const chatKey = await studiquoData.get(`chat:user:${legacyTokenHash}`)
@@ -554,52 +554,52 @@ function fakeUserRegistryBinding(studiquoData) {
             return chatKey;
           });
         },
-        ensureUser(k, name: null, studyStats: null | undefined, bio: undefined) {
+        ensureUser(k: string, name: null, studyStats: null | undefined, bio: undefined) {
           return enqueue(key, () => ensureUserAtomic(k, name, studyStats, bio));
         },
-        getUser(k) {
+        getUser(k: string) {
           return enqueue(key, () => studiquoData.get(`chat:user:${k}`, "json"));
         },
-        addIncomingRequest(k, requesterCode, requesterName) {
+        addIncomingRequest(k: string, requesterCode: string, requesterName: string) {
           return enqueue(key, () => addIncomingRequestAtomic(k, requesterCode, requesterName));
         },
-        addOutgoingRequest(k, recipientCode, recipientName) {
+        addOutgoingRequest(k: string, recipientCode: string, recipientName: string) {
           return enqueue(key, () => addOutgoingRequestAtomic(k, recipientCode, recipientName));
         },
-        removeOutgoingRequest(k, recipientCode) {
+        removeOutgoingRequest(k: string, recipientCode: string) {
           return enqueue(key, () => removeOutgoingRequestAtomic(k, recipientCode));
         },
-        resolveIncomingRequest(k, action: string, otherCode, otherName, roomID) {
+        resolveIncomingRequest(k: string, action: string, otherCode: string, otherName: string, roomID: string) {
           return enqueue(key, () => resolveIncomingRequestAtomic(k, action, otherCode, otherName, roomID));
         },
-        addFriendDirectly(k, otherCode, otherName, roomID) {
+        addFriendDirectly(k: string, otherCode: string, otherName: string, roomID: string) {
           return enqueue(key, () => addFriendDirectlyAtomic(k, otherCode, otherName, roomID));
         },
-        removeFriend(k, otherCode, blockedContact: null | undefined) {
+        removeFriend(k: string, otherCode: string, blockedContact: null | undefined) {
           return enqueue(key, () => removeFriendAtomic(k, otherCode, blockedContact));
         },
-        confirmFriendship(k, friend: { code: any; }, options: { clearOutgoing?: boolean; } | undefined) {
+        confirmFriendship(k: string, friend: { code: any; }, options: { clearOutgoing?: boolean; } | undefined) {
           return enqueue(key, () => confirmFriendshipAtomic(k, friend, options));
         },
-        setAvatarUpdatedAt(k, updatedAt) {
+        setAvatarUpdatedAt(k: string, updatedAt: string) {
           return enqueue(key, () => setAvatarUpdatedAtAtomic(k, updatedAt));
         },
-        removeAccountReferences(k, deletedCode) {
+        removeAccountReferences(k: string, deletedCode: string) {
           return enqueue(key, () => removeAccountReferencesAtomic(k, deletedCode));
         },
-        addGroupForCreator(k, roomID) {
+        addGroupForCreator(k: string, roomID: string) {
           return enqueue(key, () => addGroupForCreatorAtomic(k, roomID));
         },
-        addIncomingGroupInvite(k, roomID, name, inviterCode, inviterName) {
+        addIncomingGroupInvite(k: string, roomID: string, name: string, inviterCode: string, inviterName: string) {
           return enqueue(key, () => addIncomingGroupInviteAtomic(k, roomID, name, inviterCode, inviterName));
         },
-        resolveIncomingGroupInvite(k, action: string, roomID) {
+        resolveIncomingGroupInvite(k: string, action: string, roomID: string) {
           return enqueue(key, () => resolveIncomingGroupInviteAtomic(k, action, roomID));
         },
-        undoAcceptedGroupInvite(k, roomID, name, inviterCode, inviterName) {
+        undoAcceptedGroupInvite(k: string, roomID: string, name: string, inviterCode: string, inviterName: string) {
           return enqueue(key, () => undoAcceptedGroupInviteAtomic(k, roomID, name, inviterCode, inviterName));
         },
-        removeGroup(k, roomID) {
+        removeGroup(k: string, roomID: string) {
           return enqueue(key, () => removeGroupAtomic(k, roomID));
         },
       };
@@ -627,8 +627,8 @@ function environment() {
       }
       return type === "json" && value ? JSON.parse(value) : value;
     },
-    async put(key, value) { values.set(key, value); },
-    async delete(key) { values.delete(key); },
+    async put(key: string, value: string) { values.set(key, value); },
+    async delete(key: string) { values.delete(key); },
     async list({ prefix = "", cursor }: { prefix?: string; cursor?: string } = {}) {
       void cursor;
       return {
@@ -668,7 +668,7 @@ function request(path: string, { method = "GET", token, body }: { method?: strin
   });
 }
 
-async function registerUser(env, token: string | null, name: string) {
+async function registerUser(env: LooseEnv, token: string | null, name: string) {
   const response = await worker.fetch(
     request("/api/chat/me", { method: "POST", token, body: { name } }),
     env,
@@ -678,7 +678,7 @@ async function registerUser(env, token: string | null, name: string) {
   return response.json();
 }
 
-async function reportStudyStats(env, token: string, todayStudySeconds, studyDate) {
+async function reportStudyStats(env: LooseEnv, token: string, todayStudySeconds: unknown, studyDate: unknown) {
   return worker.fetch(
     request("/api/chat/me", { method: "POST", token, body: { todayStudySeconds, studyDate } }),
     env,
@@ -686,50 +686,50 @@ async function reportStudyStats(env, token: string, todayStudySeconds, studyDate
   );
 }
 
-async function friends(env, token) {
+async function friends(env: LooseEnv, token: string) {
   const response = await worker.fetch(request("/api/chat/friends", { token }), env, noopCtx);
   assert.equal(response.status, 200);
   return response.json();
 }
 
-async function incomingRequests(env, token: string | null) {
+async function incomingRequests(env: LooseEnv, token: string | null) {
   const response = await worker.fetch(request("/api/chat/friends/requests", { token }), env, noopCtx);
   assert.equal(response.status, 200);
   return response.json();
 }
 
-async function outgoingRequests(env, token: string | null) {
+async function outgoingRequests(env: LooseEnv, token: string | null) {
   const response = await worker.fetch(request("/api/chat/friends/outgoing", { token }), env, noopCtx);
   assert.equal(response.status, 200);
   return response.json();
 }
 
-async function addFriend(env, token: string, code: string) {
+async function addFriend(env: LooseEnv, token: string, code: string) {
   return worker.fetch(request("/api/chat/friends", { method: "POST", token, body: { code } }), env, noopCtx);
 }
 
-async function addFriendViaLink(env, token: string, linkToken: string) {
+async function addFriendViaLink(env: LooseEnv, token: string, linkToken: string) {
   return worker.fetch(request("/api/chat/friends/link-add", { method: "POST", token, body: { token: linkToken } }), env, noopCtx);
 }
 
-async function acceptRequest(env, token: string, code: string) {
+async function acceptRequest(env: LooseEnv, token: string, code: string) {
   return worker.fetch(request("/api/chat/friends/requests/accept", { method: "POST", token, body: { code } }), env, noopCtx);
 }
 
-async function rejectRequest(env, token: string, code: string) {
+async function rejectRequest(env: LooseEnv, token: string, code: string) {
   return worker.fetch(request("/api/chat/friends/requests/reject", { method: "POST", token, body: { code } }), env, noopCtx);
 }
 
-async function sendMessage(env, token: string, roomID: string, text: string, clientMessageID?: string | undefined) {
+async function sendMessage(env: LooseEnv, token: string, roomID: string, text: string, clientMessageID?: string | undefined) {
   const body = clientMessageID === undefined ? { text } : { text, clientMessageID };
   return worker.fetch(request(`/api/chat/rooms/${roomID}/messages`, { method: "POST", token, body }), env, noopCtx);
 }
 
-async function cancelMessage(env, token: string, roomID, messageID: number) {
+async function cancelMessage(env: LooseEnv, token: string, roomID: string, messageID: number) {
   return worker.fetch(request(`/api/chat/rooms/${roomID}/messages/${messageID}/cancel`, { method: "POST", token }), env, noopCtx);
 }
 
-async function editMessage(env, token: string, roomID, messageID: number, text: string) {
+async function editMessage(env: LooseEnv, token: string, roomID: string, messageID: number, text: string) {
   return worker.fetch(
     request(`/api/chat/rooms/${roomID}/messages/${messageID}/edit`, { method: "POST", token, body: { text } }),
     env,
@@ -737,7 +737,7 @@ async function editMessage(env, token: string, roomID, messageID: number, text: 
   );
 }
 
-async function lookupMessages(env, token: string, roomID, ids: any[]) {
+async function lookupMessages(env: LooseEnv, token: string, roomID: string, ids: any[]) {
   return worker.fetch(
     request(`/api/chat/rooms/${roomID}/messages/lookup`, { method: "POST", token, body: { ids } }),
     env,
@@ -745,31 +745,31 @@ async function lookupMessages(env, token: string, roomID, ids: any[]) {
   );
 }
 
-async function readMessages(env, token: string, roomID) {
+async function readMessages(env: LooseEnv, token: string, roomID: string) {
   const response = await worker.fetch(request(`/api/chat/rooms/${roomID}/messages`, { token }), env, noopCtx);
   return response;
 }
 
-async function readMessagesWithAfter(env, token: string, roomID, afterRaw: string | number | boolean) {
+async function readMessagesWithAfter(env: LooseEnv, token: string, roomID: string, afterRaw: string | number | boolean) {
   const path = `/api/chat/rooms/${roomID}/messages?after=${encodeURIComponent(afterRaw)}`;
   return worker.fetch(request(path, { token }), env, noopCtx);
 }
 
-async function blockOtherParticipant(env, token: string, roomID) {
+async function blockOtherParticipant(env: LooseEnv, token: string, roomID: string) {
   return worker.fetch(request(`/api/chat/rooms/${roomID}/block`, { method: "POST", token }), env, noopCtx);
 }
 
-async function unblockOtherParticipant(env, token: string, roomID) {
+async function unblockOtherParticipant(env: LooseEnv, token: string, roomID: string) {
   return worker.fetch(request(`/api/chat/rooms/${roomID}/unblock`, { method: "POST", token }), env, noopCtx);
 }
 
-async function blockStatus(env, token: string, roomID) {
+async function blockStatus(env: LooseEnv, token: string, roomID: string) {
   const response = await worker.fetch(request(`/api/chat/rooms/${roomID}/block-status`, { token }), env, noopCtx);
   assert.equal(response.status, 200);
   return response.json();
 }
 
-async function reportMessage(env, token: string, roomID, messageID: number, reason: string) {
+async function reportMessage(env: LooseEnv, token: string, roomID: string, messageID: number, reason: string) {
   return worker.fetch(
     request(`/api/chat/rooms/${roomID}/messages/${messageID}/report`, { method: "POST", token, body: { reason } }),
     env,
@@ -777,7 +777,7 @@ async function reportMessage(env, token: string, roomID, messageID: number, reas
   );
 }
 
-async function uploadAttachment(env, token: string, roomID, contentType: string, data: string) {
+async function uploadAttachment(env: LooseEnv, token: string, roomID: string, contentType: string, data: string) {
   return worker.fetch(
     request(`/api/chat/rooms/${roomID}/attachments`, { method: "POST", token, body: { contentType, data } }),
     env,
@@ -785,26 +785,26 @@ async function uploadAttachment(env, token: string, roomID, contentType: string,
   );
 }
 
-async function downloadAttachment(env, token: string, roomID, id: string) {
+async function downloadAttachment(env: LooseEnv, token: string, roomID: string, id: string) {
   return worker.fetch(request(`/api/chat/rooms/${roomID}/attachments/${id}`, { token }), env, noopCtx);
 }
 
-async function uploadAvatar(env, token: string, contentType: string, data: string) {
+async function uploadAvatar(env: LooseEnv, token: string, contentType: string, data: string) {
   return worker.fetch(request("/api/chat/me/avatar", { method: "POST", token, body: { contentType, data } }), env, noopCtx);
 }
 
-async function downloadAvatar(env, token: string, code) {
+async function downloadAvatar(env: LooseEnv, token: string, code: string) {
   return worker.fetch(request(`/api/chat/avatar/${code}`, { token }), env, noopCtx);
 }
 
-async function seedAccountSession(env, token: string | NodeJS.ArrayBufferView<ArrayBufferLike>, sub: string) {
+async function seedAccountSession(env: LooseEnv, token: string | NodeJS.ArrayBufferView<ArrayBufferLike>, sub: string) {
   const tokenHash = createHash("sha256").update(token).digest("hex");
   await env.STUDIQUO_DATA.put(`session:${tokenHash}`, JSON.stringify({ sub, issuedAt: Math.floor(Date.now() / 1000) }));
   await env.STUDIQUO_DATA.put(`identity-canonical:${sub}`, sub);
   return createHash("sha256").update(`chat-account:${sub}`).digest("hex");
 }
 
-async function deleteAccount(env, token: string) {
+async function deleteAccount(env: LooseEnv, token: string) {
   return worker.fetch(request("/api/account", { method: "DELETE", token, body: { confirmation: "DELETE" } }), env, noopCtx);
 }
 
@@ -853,50 +853,50 @@ async function deletionGroupFixture({ acceptInvite = true, solo = false }: { acc
   return { ...fixture, groupRoomID: created.roomID };
 }
 
-async function createGroup(env, token: string, name: string, memberCodes: any[]) {
+async function createGroup(env: LooseEnv, token: string, name: string, memberCodes: any[]) {
   return worker.fetch(request("/api/chat/groups", { method: "POST", token, body: { name, memberCodes } }), env, noopCtx);
 }
 
-async function groups(env, token: string) {
+async function groups(env: LooseEnv, token: string) {
   const response = await worker.fetch(request("/api/chat/groups", { token }), env, noopCtx);
   assert.equal(response.status, 200);
   return response.json();
 }
 
-async function groupInvites(env, token: string) {
+async function groupInvites(env: LooseEnv, token: string) {
   const response = await worker.fetch(request("/api/chat/group-invites", { token }), env, noopCtx);
   assert.equal(response.status, 200);
   return response.json();
 }
 
-async function inviteToGroup(env, token: string, roomID: string, code) {
+async function inviteToGroup(env: LooseEnv, token: string, roomID: string, code: string) {
   return worker.fetch(request(`/api/chat/groups/${roomID}/invites`, { method: "POST", token, body: { code } }), env, noopCtx);
 }
 
-async function acceptGroupInvite(env, token: string, roomID: string) {
+async function acceptGroupInvite(env: LooseEnv, token: string, roomID: string) {
   return worker.fetch(request(`/api/chat/groups/${roomID}/invites/accept`, { method: "POST", token }), env, noopCtx);
 }
 
-async function rejectGroupInvite(env, token: string, roomID) {
+async function rejectGroupInvite(env: LooseEnv, token: string, roomID: string) {
   return worker.fetch(request(`/api/chat/groups/${roomID}/invites/reject`, { method: "POST", token }), env, noopCtx);
 }
 
-async function renameGroup(env, token, roomID, name: string) {
+async function renameGroup(env: LooseEnv, token: string, roomID: string, name: string) {
   return worker.fetch(request(`/api/chat/groups/${roomID}`, { method: "PATCH", token, body: { name } }), env, noopCtx);
 }
 
-async function removeGroupMember(env, token, roomID, code) {
+async function removeGroupMember(env: LooseEnv, token: string, roomID: string, code: string) {
   return worker.fetch(request(`/api/chat/groups/${roomID}/members/${code}`, { method: "DELETE", token }), env, noopCtx);
 }
 
-async function uploadGroupAvatar(env, token: string, roomID: string, contentType: string, data: string) {
+async function uploadGroupAvatar(env: LooseEnv, token: string, roomID: string, contentType: string, data: string) {
   return worker.fetch(
     request(`/api/chat/groups/${roomID}/avatar`, { method: "POST", token, body: { contentType, data } }),
     env, noopCtx
   );
 }
 
-async function downloadGroupAvatar(env, token: string, roomID: string) {
+async function downloadGroupAvatar(env: LooseEnv, token: string, roomID: string) {
   return worker.fetch(request(`/api/chat/groups/${roomID}/avatar`, { token }), env, noopCtx);
 }
 
@@ -904,7 +904,7 @@ async function downloadGroupAvatar(env, token: string, roomID: string) {
 // friends) and returns their tokens/codes, so group tests can start from
 // "three people who could plausibly form a group" without repeating the
 // same three-way friend setup in every test.
-async function threeMutualFriends(env, suffix: string) {
+async function threeMutualFriends(env: LooseEnv, suffix: string) {
   const aliceToken = freshToken(`${suffix}a`);
   const bobToken = freshToken(`${suffix}b`);
   const carolToken = freshToken(`${suffix}c`);
@@ -1548,7 +1548,7 @@ test("a downloaded group photo is cached only privately and only briefly", async
 // same shortcut the 500-friend-cap test below uses — these codes are never
 // looked up as real users, so a create-group request that only cares about
 // "how many codes were passed" doesn't need real registered friends.
-async function seedFakeFriends(env, key, count: number, prefix: string) {
+async function seedFakeFriends(env: LooseEnv, key: string, count: number, prefix: string) {
   const storageKey = `chat:user:${key}`;
   const user = await env.STUDIQUO_DATA.get(storageKey, "json");
   user.friends = [
@@ -3692,9 +3692,9 @@ test("40: once concurrent deletion removes group membership, the deleting accoun
 // Runs `after` once, right after the next `chat:user:*` read has returned its
 // (soon to be stale) value — i.e. exactly in the read-modify-write window a
 // handler that overwrites the whole record would be exposed in.
-function interleaveAfterNextUserRead(env, after: { (): Promise<void>; (): Promise<void>; } | null) {
+function interleaveAfterNextUserRead(env: LooseEnv, after: { (): Promise<void>; (): Promise<void>; } | null) {
   const realGet = env.STUDIQUO_DATA.get;
-  env.STUDIQUO_DATA.get = async (key: string, type) => {
+  env.STUDIQUO_DATA.get = async (key: string, type: string) => {
     const value = await realGet(key, type);
     if (after && key.startsWith("chat:user:")) {
       const run = after;
@@ -3803,7 +3803,7 @@ test("a chat report is stored with a 90-day expiry", async () => {
   const sent = await (await sendMessage(env, bobToken, accepted.roomID, "hi")).json();
   const ttls = new Map();
   const put = env.STUDIQUO_DATA.put;
-  env.STUDIQUO_DATA.put = async (key, value, options: { expirationTtl: any; }) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: { expirationTtl: any; }) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
   assert.equal((await reportMessage(env, aliceToken, accepted.roomID, sent.id, "spam")).status, 200);
   const reportKeys = [...ttls.keys()].filter(key => key.startsWith("report:chat:"));
   assert.equal(reportKeys.length, 1);
@@ -3813,7 +3813,7 @@ test("a chat report is stored with a 90-day expiry", async () => {
 
 // ---- Moderation: reports reach the operator, blocks cover group invites ----
 
-function withAdminDB(env) {
+function withAdminDB(env: LooseEnv) {
   const db = new DatabaseSync(":memory:");
   for (const file of migrationFiles()) {
     db.exec(readMigration(file));
@@ -3833,7 +3833,7 @@ function withAdminDB(env) {
   return env;
 }
 
-async function befriended(env, suffixA: string, suffixB: string) {
+async function befriended(env: LooseEnv, suffixA: string, suffixB: string) {
   const aliceToken = freshToken(suffixA);
   const bobToken = freshToken(suffixB);
   const alice = await registerUser(env, aliceToken, "Alice");
@@ -3947,12 +3947,12 @@ const adminKeys = await generateKeyPair("ES256", { extractable: true });
 const adminJWT = await new SignJWT({ email: "owner@example.test" }).setProtectedHeader({ alg: "ES256" })
   .setIssuer("https://team.cloudflareaccess.com").setAudience("aud").setIssuedAt().setExpirationTime("1h").sign(adminKeys.privateKey);
 
-function asOperator(env) {
+function asOperator(env: LooseEnv) {
   env.ACCESS_AUD = "aud";
   env.ACCESS_TEAM_DOMAIN = "team.cloudflareaccess.com";
   return env;
 }
-async function admin(env, path: string, { method = "POST", body = {} } = {}) {
+async function admin(env: LooseEnv, path: string, { method = "POST", body = {} } = {}) {
   env.ACCESS_JWKS = createLocalJWKSet({ keys: [{ ...(await exportJWK(adminKeys.publicKey)), alg: "ES256", use: "sig" }] });
   return worker.fetch(new Request(`https://example.test${path}`, {
     method,

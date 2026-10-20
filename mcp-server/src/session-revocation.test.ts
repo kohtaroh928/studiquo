@@ -3,15 +3,15 @@ import test, { mock } from "node:test";
 import { sha256Hex } from "./auth.ts";
 import { externalSession, revokeAllConnections } from "./mcp-oauth.ts";
 import { mintSession, realSession, revokeSessionsIssuedBefore } from "./session.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type: string) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async get(key: string, type: string) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
       async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
     },
     _values: values,
@@ -133,7 +133,7 @@ test("the cut-off expires once no session old enough to be affected can exist", 
   const env = environment();
   let ttl;
   const realPut = env.STUDIQUO_DATA.put;
-  env.STUDIQUO_DATA.put = async (key: string, value, options: { expirationTtl: any; }) => { if (key === await cutoffKey("email:ttl@example.com")) ttl = options?.expirationTtl; return realPut(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: { expirationTtl: any; }) => { if (key === await cutoffKey("email:ttl@example.com")) ttl = options?.expirationTtl; return realPut(key, value, options); };
   await revokeSessionsIssuedBefore(env, "email:ttl@example.com");
   assert.ok(ttl >= 90 * 86_400, `ttl ${ttl}`);
 });
@@ -141,7 +141,7 @@ test("the cut-off expires once no session old enough to be affected can exist", 
 // --- H-1: connected apps (MCP) ---
 
 const sha = value => sha256Hex(value);
-async function connectApp(env, sub: string, clientId: string, accessToken: string) {
+async function connectApp(env: LooseEnv, sub: string, clientId: string, accessToken: string) {
   await env._values.set(`mcp:grant:${await sha(sub)}:${await sha(clientId)}`, JSON.stringify({ clientName: "Test app", createdAt: Date.now() }));
   await env._values.set(`mcp:access:${await sha(accessToken)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read" }));
   await env._values.set(`mcp:refresh:${await sha("refresh-" + accessToken)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read" }));

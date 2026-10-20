@@ -6,7 +6,7 @@ import {
   appAttestGate, appAttestMode, assessAssertion, base64ToBytes, bytesToBase64Url, challengeIsValid, decodeCBOR,
   derSignatureToRaw, handleAppAttest, issueChallenge, verifyAssertion, verifyAttestation,
 } from "./app-attest.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv } from "./test-env.ts";
 
 const APP_ID = "TEAMID1234.com.example.app";
 const NOW = Date.UTC(2026, 9, 18, 12, 0, 0);
@@ -79,7 +79,7 @@ function makeWorld({ appId = APP_ID, aaguid = "appattest\0\0\0\0\0\0\0", counter
       ["authData", cbor.bytes(authData)],
     ]);
   };
-  const assert_ = (clientData, assertionCounter, appIdForAssertion = appId, signingKey = device.privateKey) => {
+  const assert_ = (clientData: string, assertionCounter: number, appIdForAssertion = appId, signingKey = device.privateKey) => {
     const authenticatorData = Buffer.concat([sha(Buffer.from(appIdForAssertion)), Buffer.from([0]), Buffer.from([0, 0, 0, assertionCounter])]);
     const signature = sign("sha256", sha(authenticatorData, sha(Buffer.from(clientData))), signingKey);
     return cbor.map([["signature", cbor.bytes(signature)], ["authenticatorData", cbor.bytes(authenticatorData)]]);
@@ -96,10 +96,10 @@ function fakeEnv(extra = {}) {
     APP_ATTEST_APP_ID: APP_ID,
     APP_ATTEST_MODE: "log",
     RATE_COUNTER: {
-      getByName(name) {
+      getByName(name: string) {
         if (!objects.has(name)) {
           objects.set(name, {
-            async attestRegister(record) { if (records.has(name)) return false; records.set(name, record); return true; },
+            async attestRegister(record: string) { if (records.has(name)) return false; records.set(name, record); return true; },
             async attestKey() { return records.get(name) ?? null; },
             async attestAdvance(counter: number) {
               const record = records.get(name);
@@ -200,7 +200,7 @@ function post(path: string, body?: { keyId: any; attestation: any; challenge: an
   return new Request(`https://example.test${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 
-async function register(env, world, overrides = {}) {
+async function register(env: LooseEnv, world, overrides = {}) {
   const challenge = (await (await handleAppAttest(new URL("https://example.test/api/attest/challenge"), post("/api/attest/challenge"), env, { now: NOW })).json()).challenge;
   const body = { keyId: world.keyIdStd, attestation: world.attest(challenge).toString("base64"), challenge, ...overrides };
   return handleAppAttest(new URL("https://example.test/api/attest/register"), post("/api/attest/register", body), env, { now: NOW, rootDer: world.rootDer });
@@ -239,7 +239,7 @@ test("the rate limit on the attest routes answers 429", async () => {
   assert.equal((await handleAppAttest(new URL("https://example.test/api/attest/challenge"), post("/api/attest/challenge"), env)).status, 429);
 });
 
-async function signedRequest(world, env, path: string, counter: number, { method = "POST", timestamp = NOW }: { method?: string; timestamp?: number } = {}) {
+async function signedRequest(world, env: LooseEnv, path: string, counter: number, { method = "POST", timestamp = NOW }: { method?: string; timestamp?: number } = {}) {
   const header = `${world.keyId}.${timestamp}.${bytesToBase64Url(world.assertion(`${method}\n${path}\n${timestamp}`, counter))}`;
   return new Request(`https://example.test${path}`, { method, headers: { "x-studiquo-attest": header } });
 }
@@ -274,7 +274,7 @@ test("assertions are judged absent, malformed, stale, unknown or invalid", async
 
 test("log mode never refuses and writes one line saying how the request fared", async () => {
   const env = fakeEnv();
-  const lines = [];
+  const lines: any[] = [];
   const original = console.log;
   console.log = line => lines.push(line);
   try {

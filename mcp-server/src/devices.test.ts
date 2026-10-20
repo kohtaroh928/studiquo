@@ -9,12 +9,12 @@ function environment(limit = 5) {
   let count = 0;
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type: string) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
     RATE_LIMIT_CHAT_DEVICE_REGISTER: {
       async limit() { count += 1; return { success: count <= limit }; },
@@ -22,7 +22,7 @@ function environment(limit = 5) {
   });
 }
 
-function request(method: string, body) {
+function request(method: string, body: unknown) {
   return new Request("https://example.test/api/chat/devices", {
     method,
     headers: { "content-type": "application/json" },

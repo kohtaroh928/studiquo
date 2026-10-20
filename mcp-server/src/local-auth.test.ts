@@ -3,7 +3,7 @@ import test from "node:test";
 import { sha256Hex } from "./auth.ts";
 import { accountGenerationMethods } from "./test-account-generations.ts";
 import { Argon2BusyError, argon2QueueState, engine, hashers, upsertLocalAccount, verifyLocalAccount } from "./local-auth.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv } from "./test-env.ts";
 
 function environment({ argon2Write = true }: { argon2Write?: boolean } = {}) {
   const values = new Map();
@@ -14,12 +14,12 @@ function environment({ argon2Write = true }: { argon2Write?: boolean } = {}) {
       getByName: name => accountGenerationMethods(name, generations, () => env.STUDIQUO_DATA),
     },
     STUDIQUO_DATA: {
-      async get(key, type: string) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
   });
   return env;
@@ -89,12 +89,12 @@ test("email matching is case- and whitespace-insensitive", async () => {
 
 // MARK: - Argon2id and the PBKDF2 migration
 
-function storedRecord(env, email: string) {
+function storedRecord(env: LooseEnv, email: string) {
   return env.STUDIQUO_DATA.get(`account:local:${email}`, "json");
 }
 
 // A pre-migration account, written exactly as the old code did.
-async function seedLegacyAccount(env, email: string, password: string | undefined, { iterations = 100_000 }: { iterations?: number } = {}) {
+async function seedLegacyAccount(env: LooseEnv, email: string, password: string | undefined, { iterations = 100_000 }: { iterations?: number } = {}) {
   const salt = crypto.getRandomValues(new Uint8Array(24));
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations, hash: "SHA-256" }, key, 256);
@@ -497,7 +497,7 @@ test("a legacy sign-in whose optional upgrade finds the queue full still succeed
   await seedLegacyAccount(env, "person@example.com", "correct-horse-battery");
   const before = JSON.stringify(await storedRecord(env, "person@example.com"));
   const originalError = console.error;
-  const logs = [];
+  const logs: any[] = [];
   console.error = line => logs.push(String(line));
   const original = hashers.argon2id;
   let calls = 0;

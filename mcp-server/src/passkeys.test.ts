@@ -18,7 +18,7 @@ function freshToken(suffix: string) {
 
 // The first passkey of an account needs the mailbox confirmed with a code first
 // (the /email-code routes leave this proof behind).
-async function proveMailbox(env, token: string, email = "student@example.com") {
+async function proveMailbox(env: LooseEnv, token: string, email = "student@example.com") {
   await env.STUDIQUO_DATA.put(`passkey-email-proof:${sha256Hex(token)}`, email);
 }
 
@@ -50,8 +50,8 @@ function environment() {
         }
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
     RATE_LIMIT_PASSKEY_LOGIN_OPTIONS: fakeCloudflareLimiter(),
     RATE_LIMIT_PASSKEY_LOGIN_VERIFY: fakeCloudflareLimiter(),
@@ -309,9 +309,9 @@ test("the owner of an e-mail can register a passkey for it, including through a 
 test("the e-mail check happens before anything is stored for the attempt", async () => {
   const env = environment();
   await env.STUDIQUO_DATA.put("email-account-owner:victim@example.com", "google:victim-sub");
-  const stored = [];
+  const stored: string[] = [];
   const realPut = env.STUDIQUO_DATA.put;
-  env.STUDIQUO_DATA.put = async (key, value, options) => { stored.push(key); return realPut(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: string) => { stored.push(key); return realPut(key, value, options); };
   const request = registerFor(freshToken("w"), "victim@example.com");
   await handlePasskeys(new URL(request.url), request, env);
   assert.deepEqual(stored.filter(key => key.startsWith("passkeys:")), [], "no challenge or credential is left behind");
@@ -320,7 +320,7 @@ test("the e-mail check happens before anything is stored for the attempt", async
 // --- reauthentication with a passkey -------------------------------------
 import { generateKeyPairSync, createSign } from "node:crypto";
 import { indexAccountPasskey, requireRecentPasskey } from "./passkey-policy.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv } from "./test-env.ts";
 
 const RP_ID = "api.studiquo.app";
 const b64url = buffer => Buffer.from(buffer).toString("base64url");
@@ -338,7 +338,7 @@ function newPasskey() {
   return { privateKey, cose };
 }
 
-function assertionFor({ privateKey }, challenge, id: string) {
+function assertionFor({ privateKey }, challenge: string, id: string) {
   const clientDataJSON = Buffer.from(JSON.stringify({
     type: "webauthn.get", challenge, origin: `https://${RP_ID}`, crossOrigin: false,
   }));
@@ -357,7 +357,7 @@ function assertionFor({ privateKey }, challenge, id: string) {
   };
 }
 
-async function reauthOptions(env, token: string) {
+async function reauthOptions(env: LooseEnv, token: string) {
   const request = new Request("https://example.test/api/passkeys/reauth/options", {
     method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ action: "delete-account" }),
@@ -365,7 +365,7 @@ async function reauthOptions(env, token: string) {
   return handlePasskeys(new URL(request.url), request, env);
 }
 
-async function reauthVerify(env, token: string, transaction, credential) {
+async function reauthVerify(env: LooseEnv, token: string, transaction: string, credential: unknown) {
   const request = new Request("https://example.test/api/passkeys/reauth/verify", {
     method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ transaction, credential }),
@@ -373,7 +373,7 @@ async function reauthVerify(env, token: string, transaction, credential) {
   return handlePasskeys(new URL(request.url), request, env);
 }
 
-async function seedPasskey(env, passkey, id: string, account = "test") {
+async function seedPasskey(env: LooseEnv, passkey, id: string, account = "test") {
   await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify({
     id, publicKey: Array.from(passkey.cose), counter: 0, transports: ["internal"], email: "student@example.com",
   }));
@@ -502,7 +502,7 @@ function emailCodeRequest(path: string, token: string, payload: { email: string;
 
 async function withMail(run: { (sent: any): Promise<void>; (sent: any): Promise<void>; (arg0: any[]): any; }) {
   const realFetch = globalThis.fetch;
-  const sent = [];
+  const sent: any[] = [];
   globalThis.fetch = async (_url, init) => { sent.push(JSON.parse(init.body)); return new Response("{}", { status: 200 }); };
   try { return await run(sent); } finally { globalThis.fetch = realFetch; }
 }
