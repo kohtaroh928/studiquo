@@ -25,7 +25,7 @@ const RP_ID = "api.studiquo.app";
 const ORIGIN = `https://${RP_ID}`;
 const APP_ID = "972G4VGUA6.com.yabuko.studiquo";
 
-export async function mintPasskeySession(env: Env, email) {
+export async function mintPasskeySession(env: Env, email: string) {
   const link = await linkVerifiedEmail(env, {
     provider: "email", sub: email, email, emailVerified: true,
   });
@@ -42,13 +42,13 @@ async function body(request: Request) {
 // account's own address. The proof lasts three minutes and is used up by the
 // registration it was given for.
 const EMAIL_PROOF_SECONDS = 3 * 60;
-const emailProofKey = tokenHash => `passkey-email-proof:${tokenHash}`;
+const emailProofKey = (tokenHash: any) => `passkey-email-proof:${tokenHash}`;
 
 function transactionID() {
   return crypto.randomUUID();
 }
 
-async function keysWithPrefix(env: Env, prefix) {
+async function keysWithPrefix(env: Env, prefix: string) {
   const names: string[] = [];
   let cursor: string | undefined;
   do {
@@ -73,8 +73,8 @@ async function keysWithPrefix(env: Env, prefix) {
 // Throws when it cannot finish, leaving the caller to stop the reset rather
 // than carry on with a passkey that still works. It reads only this account's
 // passkeys (the per-account list), so the cost does not grow with the service.
-export async function revokePasskeysForAccount(env: Env, { accountKey, emails = [] }) {
-  const wanted = [...new Set(emails.map(email => String(email).trim().toLowerCase()).filter(Boolean))];
+export async function revokePasskeysForAccount(env: Env, { accountKey, emails = [] }: any) {
+  const wanted: string[] = [...new Set<string>(emails.map((email: any) => String(email).trim().toLowerCase()).filter(Boolean))];
   // Nothing registered before this moment counts any more, whether or not the
   // sweeps below find it (see passkeyRevokedByReset).
   const keys = new Set();
@@ -120,10 +120,10 @@ export async function revokePasskeysForAccount(env: Env, { accountKey, emails = 
 }
 
 // The original sweep, kept for the time before the per-account list is complete.
-async function scanAndRevoke(env: Env, { accountKey, wanted }) {
+async function scanAndRevoke(env: Env, { accountKey, wanted }: any) {
   const emails = new Set(wanted);
   const owners = new Map();
-  const belongs = async item => {
+  const belongs = async (item: any) => {
     const email = String(item?.email ?? "").trim().toLowerCase();
     if (!email) return false;
     if (emails.has(email)) return true;
@@ -163,7 +163,7 @@ export function associationFile() {
   });
 }
 
-export async function handlePasskeys(url, request: Request, env: Env) {
+export async function handlePasskeys(url: URL, request: Request, env: Env) {
   if (!url.pathname.startsWith("/api/passkeys/")) return null;
 
   if (url.pathname === "/api/passkeys/email-code/send" && request.method === "POST") {
@@ -308,12 +308,12 @@ export async function handlePasskeys(url, request: Request, env: Env) {
       // deleting an account finds its passkeys through this list, so a record
       // must never exist without an entry in it.
       const owner = await realSession(env, token);
-      await indexAccountPasskey(env, owner?.sub ?? `email:${pending.email}`, pending.email, record.id);
+      await indexAccountPasskey(env, owner?.sub ?? `email:${pending.email}`, pending.email!, record.id);
       await Promise.all([
         env.STUDIQUO_DATA.put(`passkeys:user:${pending.userKey}`, JSON.stringify(updated)),
         env.STUDIQUO_DATA.put(`passkeys:credential:${record.id}`, JSON.stringify(record)),
       ]);
-      await sendPasskeyNotice(env, pending.email, "Studiquoにパスキーが追加されました", [
+      await sendPasskeyNotice(env, pending.email!, "Studiquoにパスキーが追加されました", [
         "お使いのStudiquoアカウントに、パスキーが追加されました。",
         "",
         "このパスキーは登録した時点から有効です。以降、パスワード、メールのコード、Apple、Googleによるログインはできなくなります(パスキーを使えない場合の復旧手続きを除く)。",
@@ -420,7 +420,7 @@ export async function handlePasskeys(url, request: Request, env: Env) {
     const auth = await authenticatedSession(request, env);
     if (auth.response) return auth.response;
     const token = bearerToken(request);
-    const needsPasskey = await requireRecentPasskey(env, token, auth.session, "remove-passkeys");
+    const needsPasskey = await requireRecentPasskey(env, token!, auth.session, "remove-passkeys");
     if (needsPasskey) return needsPasskey;
     await removeAllPasskeys(env, auth.session.sub, null);
     return json({ removed: true });

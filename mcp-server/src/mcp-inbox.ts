@@ -21,14 +21,14 @@ export class MCPInbox extends DurableObject<Env> {
     this.sql.exec("CREATE TABLE IF NOT EXISTS consumed_tokens (id TEXT PRIMARY KEY, used_at INTEGER NOT NULL)");
   }
 
-  async consumeOnce(id) {
+  async consumeOnce(id: string) {
     if ([...this.sql.exec("SELECT id FROM consumed_tokens WHERE id = ?", id)].length) return false;
     this.sql.exec("INSERT INTO consumed_tokens (id, used_at) VALUES (?, ?)", id, Date.now());
     this.sql.exec("DELETE FROM consumed_tokens WHERE used_at < ?", Date.now() - 90 * 24 * 3600 * 1000);
     return true;
   }
 
-  async enqueue(id, kind, payload, source) {
+  async enqueue(id: string, kind: string, payload: any, source: any) {
     this.sql.exec("DELETE FROM items WHERE status = 'imported' AND imported_at < ?", Date.now() - 90 * 24 * 3600 * 1000);
     const pending = [...this.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM items WHERE status = 'pending'")][0].count;
     if (pending >= 100) throw new Error("Studiquo has 100 pending imports. Open the iPad app before sending more.");
@@ -45,7 +45,7 @@ export class MCPInbox extends DurableObject<Env> {
     )].map(row => ({ ...row, payload: JSON.parse(row.payload) }));
   }
 
-  async acknowledge(id) {
+  async acknowledge(id: string) {
     this.sql.exec(
       "UPDATE items SET status = 'imported', imported_at = ? WHERE id = ? AND status = 'pending'",
       Date.now(), id
@@ -53,7 +53,7 @@ export class MCPInbox extends DurableObject<Env> {
     return { id, status: [...this.sql.exec("SELECT status FROM items WHERE id = ?", id)][0]?.status ?? "missing" };
   }
 
-  async status(id) {
+  async status(id: string) {
     return [...this.sql.exec("SELECT id, status, imported_at FROM items WHERE id = ?", id)][0] ?? null;
   }
 }

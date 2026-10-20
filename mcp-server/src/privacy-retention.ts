@@ -7,14 +7,14 @@ export const PERSONAL_RETENTION_MS = 90 * DAY;
 export const ERROR_RETENTION_MS = 180 * DAY;
 export const RETENTION_BATCH_SIZE = 100;
 
-export async function eraseReport(env: Env, id) {
+export async function eraseReport(env: Env, id: string) {
   await env.STUDIQUO_DATA.delete(`issue-report:${id}`);
   await env.STUDIQUO_DATA.delete(`issue-report-screenshot:${id}`);
   await env.ADMIN_DB.prepare("DELETE FROM issue_reports WHERE id = ?").bind(id).run();
 }
 
 // Separate durable outbox: a failed remote deletion must survive local erasure.
-export async function queueRevenueCatDeletion(env, identity, now = Date.now()) {
+export async function queueRevenueCatDeletion(env: Env, identity: any, now = Date.now()) {
   const hash = await sha256Hex(identity);
   // The job holds the identity in the clear (the provider's DELETE needs it),
   // so it expires with the personal-data retention period instead of staying
@@ -24,7 +24,7 @@ export async function queueRevenueCatDeletion(env, identity, now = Date.now()) {
   });
 }
 
-export async function retryRevenueCatDeletion(env: Env, key, job, fetcher = fetch) {
+export async function retryRevenueCatDeletion(env: Env, key: string, job: any, fetcher = fetch) {
   if (!env.REVENUECAT_SECRET_API_KEY) return false;
   const response = await fetcher(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(job.identity)}`, {
     method: "DELETE",
@@ -41,7 +41,7 @@ export async function retryRevenueCatDeletion(env: Env, key, job, fetcher = fetc
   return true;
 }
 
-async function processJobs(env: Env, prefix, callback, limit = 10) {
+async function processJobs(env: Env, prefix: string, callback: any, limit = 10) {
   const cursorKey = `privacy-cursor:${prefix}`;
   const cursor = await env.STUDIQUO_DATA.get(cursorKey) || undefined;
   const page = await env.STUDIQUO_DATA.list({ prefix, limit, cursor });
@@ -68,12 +68,12 @@ async function processJobs(env: Env, prefix, callback, limit = 10) {
 export async function processPendingDeletions(env: Env, fetcher = fetch, { limit = 10 } = {}) {
   // Import lazily to avoid a module cycle with deleteAccount's shared helpers.
   const { deleteAccount } = await import("./account-deletion.ts");
-  await processJobs(env, "privacy-account-delete:", async (_key, job) => deleteAccount(env, job.canonicalSub), limit);
+  await processJobs(env, "privacy-account-delete:", async (_key: any, job: any) => deleteAccount(env, job.canonicalSub), limit);
   // Without the provider secret every attempt fails, so skip the pass: it
   // would only spend subrequests and keep cycling the same jobs. Say so when
   // jobs are waiting, so queued erasures don't pile up unnoticed.
   if (env.REVENUECAT_SECRET_API_KEY) {
-    await processJobs(env, "privacy-rc-delete:", (key, job) => retryRevenueCatDeletion(env, key, job, fetcher), limit);
+    await processJobs(env, "privacy-rc-delete:", (key: string, job: any) => retryRevenueCatDeletion(env, key, job, fetcher), limit);
   } else {
     const waiting = await env.STUDIQUO_DATA.list({ prefix: "privacy-rc-delete:", limit: 1 });
     if (waiting.keys?.length) console.warn(JSON.stringify({ message: "provider deletions are queued but REVENUECAT_SECRET_API_KEY is not configured" }));
@@ -86,13 +86,13 @@ export async function processPendingDeletions(env: Env, fetcher = fetch, { limit
  * deletions, a few at a time: the automatic expiry stays off, but a deletion
  * somebody asked for is never left unfinished.
  */
-export async function runScheduledPrivacyWork(env: Env, scheduledTime, fetcher = fetch) {
+export async function runScheduledPrivacyWork(env: Env, scheduledTime: any, fetcher = fetch) {
   if (env.PRIVACY_RETENTION_ENABLED === "true") return runPrivacyRetention(env, scheduledTime, fetcher);
   await processPendingDeletions(env, fetcher, { limit: 2 });
   return { enabled: false };
 }
 
-export async function runPrivacyRetention(env, now = Date.now(), fetcher = fetch) {
+export async function runPrivacyRetention(env: Env, now = Date.now(), fetcher = fetch) {
   if (env.PRIVACY_RETENTION_ENABLED !== "true") return { enabled: false };
   if (!env.ADMIN_DB) throw new Error("Privacy retention requires ADMIN_DB");
   await processPendingDeletions(env, fetcher);
@@ -100,7 +100,7 @@ export async function runPrivacyRetention(env, now = Date.now(), fetcher = fetch
   const personalCutoff = now - PERSONAL_RETENTION_MS;
   const reports = await env.ADMIN_DB.prepare(
     "SELECT id FROM issue_reports WHERE created_at <= ? ORDER BY created_at LIMIT ?"
-  ).bind(personalCutoff, RETENTION_BATCH_SIZE).all();
+  ).bind(personalCutoff, RETENTION_BATCH_SIZE).all<{ id: string }>();
   for (const report of reports.results) await eraseReport(env, report.id);
   // Each invocation bounds work. Backlogs are drained by subsequent runs.
   for (const [table, timeColumn, cutoff] of [

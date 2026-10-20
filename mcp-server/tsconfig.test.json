@@ -3,6 +3,9 @@
 // Response.json(). The source itself is checked, strictly, by tsconfig.json.
 {
   "extends": "./tsconfig.json",
+  // The tests are written loosely (no parameter types, fake Envs), so the strict
+  // mode that tsconfig.json turns on for src is off here.
+  "compilerOptions": { "strict": false },
   "include": ["src/**/*", "test-types/*.d.ts"],
   "exclude": []
 }

@@ -20,10 +20,11 @@
 // day (Japan time) and per month (Japan time). They are counted per account
 // (not per device or per session), under a hash of the account id.
 import { sha256Hex } from "./auth.ts";
+import type { Env } from "./env.ts";
 
 export const DEFAULT_MODEL = "openai-luna";
 
-export const MODEL_CREDITS = {
+export const MODEL_CREDITS: Record<string, number> = {
   "openai-luna": 1,
   "claude-sonnet-5-5": 20,
   "openai-sol": 20,
@@ -34,9 +35,9 @@ export const MODEL_CREDITS = {
 
 // Non-chat features send long prompts and images, so they cost more than a
 // chat turn on the same model.
-export const KIND_MULTIPLIER = { chat: 1, rubric: 2, grade: 3, review: 3 };
+export const KIND_MULTIPLIER: Record<string, number> = { chat: 1, rubric: 2, grade: 3, review: 3 };
 
-export const PLAN_BUDGETS = {
+export const PLAN_BUDGETS: Record<string, Record<string, number>> = {
   free: { perMinute: 0, fiveHours: 0, day: 0, month: 0 },
   // Standard is sized as "about 120 Luna chat turns a month" (1 credit each).
   standard: { perMinute: 5, fiveHours: 40, day: 60, month: 120 },
@@ -46,15 +47,15 @@ export const PLAN_BUDGETS = {
 
 const UNKNOWN_MODEL_CREDITS = 100; // never cheaper than the dearest model
 
-export function creditCost(kind, modelId) {
+export function creditCost(kind: string, modelId: string) {
   const model = MODEL_CREDITS[modelId ?? DEFAULT_MODEL] ?? UNKNOWN_MODEL_CREDITS;
   return model * (KIND_MULTIPLIER[kind] ?? 1);
 }
 
 const JST_OFFSET_MS = 9 * 3_600_000;
-const pad = n => String(n).padStart(2, "0");
+const pad = (n: any) => String(n).padStart(2, "0");
 
-function windowsFor(accountHash, now) {
+function windowsFor(accountHash: any, now: number) {
   const jst = new Date(now + JST_OFFSET_MS);
   const month = `${jst.getUTCFullYear()}${pad(jst.getUTCMonth() + 1)}`;
   const day = `${month}${pad(jst.getUTCDate())}`;
@@ -68,7 +69,7 @@ function windowsFor(accountHash, now) {
   ];
 }
 
-export const LIMIT_MESSAGES = {
+export const LIMIT_MESSAGES: Record<string, string> = {
   minute: "短い時間にたくさん送信されました。少し待ってからもう一度お試しください。",
   fiveHours: "5時間あたりのAI利用量の上限に達しました。しばらくしてからもう一度お試しください。",
   day: "今日のAI利用量の上限に達しました。明日また使えます。",
@@ -76,7 +77,7 @@ export const LIMIT_MESSAGES = {
   global: "現在AIが混み合っています。しばらくしてからもう一度お試しください。",
 };
 
-export async function accountCounterKey(sub, fallback) {
+export async function accountCounterKey(sub: string | undefined, fallback: any) {
   return sub ? sha256Hex(`usage-account:${sub}`) : fallback;
 }
 
@@ -89,10 +90,10 @@ export async function accountCounterKey(sub, fallback) {
  * the first limit that was hit ("global" for the service-wide one). `refund()`
  * hands the credits back, for a call that fails before producing anything.
  */
-export async function consumeCredits(env, { accountKey, plan, kind, model, globalBucket, globalLimit, now = Date.now() }) {
+export async function consumeCredits(env: Env, { accountKey, plan, kind, model, globalBucket, globalLimit, now = Date.now() }: any) {
   const budget = PLAN_BUDGETS[plan] ?? PLAN_BUDGETS.free;
   const cost = creditCost(kind, model);
-  const taken = [];
+  const taken: { name: string; amount: number; windowEndsAt: number }[] = [];
   // Every give is attempted even if one fails, and each goes back to the exact
   // window it was taken from. Safe to call once; a second call does nothing.
   let refunded = false;
@@ -106,7 +107,7 @@ export async function consumeCredits(env, { accountKey, plan, kind, model, globa
   const globalName = `ai:global:${globalBucket}`;
   const globalTake = await env.RATE_COUNTER.getByName(globalName).take(globalLimit, 86_400, 1);
   if (!globalTake.ok) return { ok: false, window: "global" };
-  taken.push({ name: globalName, amount: 1, windowEndsAt: globalTake.windowEndsAt });
+  taken.push({ name: globalName, amount: 1, windowEndsAt: globalTake.windowEndsAt as number });
 
   for (const window of windowsFor(accountKey, now)) {
     const amount = window.perCall ? 1 : cost;
@@ -115,7 +116,7 @@ export async function consumeCredits(env, { accountKey, plan, kind, model, globa
       await refund();
       return { ok: false, window: window.id };
     }
-    taken.push({ name: window.name, amount, windowEndsAt: result.windowEndsAt });
+    taken.push({ name: window.name, amount, windowEndsAt: result.windowEndsAt as number });
   }
   return { ok: true, refund };
 }
@@ -125,7 +126,7 @@ export async function consumeCredits(env, { accountKey, plan, kind, model, globa
  * month), without spending anything — the figure the app shows as "remaining".
  * The per-minute window is a burst guard, not an allowance, so it is skipped.
  */
-export async function creditUsage(env, { accountKey, plan, now = Date.now() }) {
+export async function creditUsage(env: Env, { accountKey, plan, now = Date.now() }: any) {
   const budget = PLAN_BUDGETS[plan] ?? PLAN_BUDGETS.free;
   let tightest = null;
   for (const window of windowsFor(accountKey, now)) {

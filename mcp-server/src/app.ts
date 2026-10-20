@@ -66,14 +66,14 @@ function toolResult(value: unknown): CallToolResult {
 // session, so it is given its own lifetime: 90 days after the last sync.
 const ACCOUNT_SNAPSHOT_TTL_SECONDS = 90 * 24 * 60 * 60;
 
-async function loadSnapshot(env: Env, key) {
+async function loadSnapshot(env: Env, key: string) {
   const storageKey = `snapshot:${key}`;
   const text = await openSnapshot(env, storageKey, await env.STUDIQUO_DATA.get(storageKey));
   if (!text) throw new Error("No Studiquo data has been synced for this account yet.");
   return JSON.parse(text);
 }
 
-async function queueAction(env: Env, key, action, ttlSeconds = null) {
+async function queueAction(env: Env, key: string, action: Record<string, unknown>, ttlSeconds: number | null = null) {
   const storageKey = `actions:${key}`;
   const existing = await env.STUDIQUO_DATA.get(storageKey, "json");
   const actions = Array.isArray(existing) ? existing : [];
@@ -84,7 +84,7 @@ async function queueAction(env: Env, key, action, ttlSeconds = null) {
   await env.STUDIQUO_DATA.put(storageKey, JSON.stringify(actions), ttlSeconds ? { expirationTtl: ttlSeconds } : undefined);
 }
 
-function createServer(env: Env, key, accountHash = null, source = "MCP", canWrite = true, canRead = true, actionTtlSeconds = null) {
+function createServer(env: Env, key: string, accountHash: any = null, source = "MCP", canWrite = true, canRead = true, actionTtlSeconds: any = null) {
   const server = new McpServer(
     { name: "studiquo", version: "0.2.0" },
     { instructions: "Access only the authenticated user's Studiquo data. Write tools queue materials for import when the iPad app next connects; pending does not mean imported." }
@@ -99,12 +99,12 @@ function createServer(env: Env, key, accountHash = null, source = "MCP", canWrit
     async () => {
       if (!canRead) return { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] };
       const data = await loadSnapshot(env, key);
-      return toolResult(data.notebooks.map(notebook => ({
+      return toolResult(data.notebooks.map((notebook: any) => ({
         id: notebook.id,
         title: notebook.title,
         tags: notebook.tags ?? [],
         pageCount: notebook.pages.length,
-        pages: notebook.pages.map(page => ({ id: page.id, title: page.title }))
+        pages: notebook.pages.map((page: any) => ({ id: page.id, title: page.title }))
       })));
     }
   );
@@ -123,7 +123,7 @@ function createServer(env: Env, key, accountHash = null, source = "MCP", canWrit
       const data = await loadSnapshot(env, key);
       const needle = query.toLocaleLowerCase("ja");
       const matches = data.notebooks
-        .flatMap(notebook => notebook.pages.flatMap(page => {
+        .flatMap((notebook: any) => notebook.pages.flatMap((page: any) => {
           const haystack = `${notebook.title}\n${page.title}\n${page.recognizedText ?? ""}`.toLocaleLowerCase("ja");
           return haystack.includes(needle)
             ? [{
@@ -149,7 +149,7 @@ function createServer(env: Env, key, accountHash = null, source = "MCP", canWrit
     async ({ includeCards }) => {
       if (!canRead) return { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] };
       const data = await loadSnapshot(env, key);
-      return toolResult(data.flashcardDecks.map(deck => includeCards ? deck : ({
+      return toolResult(data.flashcardDecks.map((deck: any) => includeCards ? deck : ({
         id: deck.id,
         title: deck.title,
         cardCount: deck.cards.length
@@ -188,7 +188,7 @@ function createServer(env: Env, key, accountHash = null, source = "MCP", canWrit
       if (accountHash) {
         if (folderPath) {
           const data = await loadSnapshot(env, key);
-          if (!(data.folders ?? []).some(folder => folder.path === folderPath)) {
+          if (!(data.folders ?? []).some((folder: any) => folder.path === folderPath)) {
             return { isError: true, content: [{ type: "text", text: "That Studiquo folder does not exist. Run sync in the iPad app and choose a path from list_folders." }] };
           }
         }
@@ -229,7 +229,7 @@ function createServer(env: Env, key, accountHash = null, source = "MCP", canWrit
     if (!accountHash) throw new Error("Reconnect your Studiquo account before creating materials.");
     if (payload.folderPath) {
       const data = await loadSnapshot(env, key);
-      if (!(data.folders ?? []).some(folder => folder.path === payload.folderPath)) {
+      if (!(data.folders ?? []).some((folder: any) => folder.path === payload.folderPath)) {
         return { isError: true, content: [{ type: "text", text: "That Studiquo folder does not exist. Run sync in the iPad app and choose a path from list_folders." }] };
       }
     }
@@ -303,12 +303,12 @@ async function handleMCP(request: Request, env: Env) {
   const token = bearerToken(request);
   const external = token ? await externalSession(env, request) : null;
   if (!external && (!token || token.startsWith("mcp_"))) return Response.json({ error: "Connect your Studiquo account." }, { status: 401, headers: securityHeaders({ "WWW-Authenticate": `Bearer resource_metadata="${new URL(request.url).origin}/.well-known/oauth-protected-resource"` }) });
-  if (!external && isExpired(token)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
-  if (!external && !(await hasRealSession(env, token))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
-  const deviceKey = external ? null : await sha256Hex(token);
-  if (!external && await isRevoked(env, deviceKey)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
+  if (!external && isExpired(token!)) return json({ error: "This token has expired. Reconnect from Studiquo to get a new one." }, 401);
+  if (!external && !(await hasRealSession(env, token!))) return json({ error: "Reconnect from Studiquo to get a new token." }, 401);
+  const deviceKey = external ? null : await sha256Hex(token!);
+  if (!external && await isRevoked(env, deviceKey!)) return json({ error: "This token has been revoked. Reconnect from Studiquo to get a new one." }, 401);
   const accountHash = external ? await sha256Hex(`mcp-account:${external.sub}`) : null;
-  const key = accountHash ?? deviceKey;
+  const key = (accountHash ?? deviceKey)!;
   if (!(await env.RATE_COUNTER.getByName(`mcp-call:${key}`).bump(MCP_CALLS_PER_MINUTE, 60))) return tooManyRequests();
   if (!external && !(await env.STUDIQUO_DATA.get(`snapshot:${key}`))) {
     return json({ error: "Run sync in Studiquo before connecting an AI client." }, 401);
@@ -324,7 +324,7 @@ async function handleMCP(request: Request, env: Env) {
   const server = createServer(env, key, accountHash, client?.clientName ?? "MCP",
     !external || external.scope?.split(" ").includes("studiquo.write"),
     !external || external.scope?.split(" ").includes("studiquo.read"),
-    external ? null : remainingValiditySeconds(token));
+    external ? null : remainingValiditySeconds(token!));
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -334,7 +334,7 @@ async function handleMCP(request: Request, env: Env) {
 }
 
 const handler = {
-  async fetch(request, env, ctx) {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     try {
       const url = new URL(request.url);
       if (url.pathname === "/health") {
@@ -476,7 +476,7 @@ const handler = {
         if (!session) return json({ error: "Sign in again." }, 401);
         const needsPasskey = await requireRecentPasskey(env, token, session, "approve-app");
         if (needsPasskey) return needsPasskey;
-        if (!(await checkRateLimit(env.RATE_LIMIT_MCP_PAIR, accountHash))) return json({ error: "Too many attempts." }, 429);
+        if (!(await checkRateLimit(env.RATE_LIMIT_MCP_PAIR, accountHash!))) return json({ error: "Too many attempts." }, 429);
         const body = await readJSONLimited(request, 1000);
         const issued = await issueOwnerCode(env, session.sub, String(body?.kind ?? ""));
         return issued ? json(issued) : json({ error: "Unknown kind." }, 400);
@@ -485,13 +485,13 @@ const handler = {
         return session ? json(await listConnections(env, session.sub)) : json({ error: "Sign in again." }, 401);
       }
       if (url.pathname.startsWith("/api/mcp/connections/") && request.method === "DELETE") {
-        return session ? json({ revoked: await revokeConnection(env, session.sub, url.pathname.split("/").pop()) }) : json({ error: "Sign in again." }, 401);
+        return session ? json({ revoked: await revokeConnection(env, session.sub, url.pathname.split("/").pop()!) }) : json({ error: "Sign in again." }, 401);
       }
       if (url.pathname === "/api/mcp/inbox" && request.method === "GET") {
         return accountHash ? json(await env.MCP_INBOX.getByName(accountHash).list()) : json({ error: "Sign in again." }, 401);
       }
       if (url.pathname.startsWith("/api/mcp/inbox/") && request.method === "POST") {
-        const id = url.pathname.split("/").pop();
+        const id = url.pathname.split("/").pop()!;
         if (!accountHash || !/^[0-9a-f-]{36}$/.test(id)) return json({ error: "Invalid request." }, 400);
         return json(await env.MCP_INBOX.getByName(accountHash).acknowledge(id));
       }
@@ -624,7 +624,7 @@ const REFRESH_MIN_AGE_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_SESSION_MAX_DAYS = 365;
 const REFRESH_OLD_TOKEN_GRACE_SECONDS = 14 * 24 * 60 * 60;
 
-async function handleSessionRefresh(request: Request, env: Env, token, session) {
+async function handleSessionRefresh(request: Request, env: Env, token: string, session: any) {
   if (!session) return json({ error: "Sign in again." }, 401);
   const parsed = await readJSONLimited(request, 1_000);
   const issuedAt = Number(token.slice(0, token.indexOf(".")));
@@ -654,7 +654,7 @@ async function handleSessionRefresh(request: Request, env: Env, token, session) 
 // POST /api/auth/apple: exchanges a Sign in with Apple identityToken for a
 // studiquo bearer token, in the same "<issued-at epoch>.<random>" format
 // token.ts already expects everywhere else.
-async function handleAppleSignIn(request: Request, env: Env, ctx) {
+async function handleAppleSignIn(request: Request, env: Env, ctx: ExecutionContext) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_APPLE_AUTH, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -736,7 +736,7 @@ async function handleAppleSignIn(request: Request, env: Env, ctx) {
 // rate-limit shape, same account-record pattern — except Google resends
 // `email`/`email_verified` on every sign-in (not just the first), so those
 // are refreshed each time rather than written once.
-async function handleGoogleSignIn(request: Request, env: Env, ctx) {
+async function handleGoogleSignIn(request: Request, env: Env, ctx: ExecutionContext) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_GOOGLE_AUTH, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -809,14 +809,14 @@ const EMAIL_CODE_WINDOW_SECONDS = 3_600;
 const EMAIL_SEND_LIMIT_PER_WINDOW = 5;
 const EMAIL_CONFIRM_LIMIT_PER_WINDOW = 10;
 
-async function withinEmailCodeBudget(env: Env, action, email, limit) {
+async function withinEmailCodeBudget(env: Env, action: string, email: string, limit: number) {
   const emailHash = await sha256Hex(email.trim().toLowerCase());
   return env.RATE_COUNTER.getByName(`email-code-${action}:${emailHash}`).bump(limit, EMAIL_CODE_WINDOW_SECONDS);
 }
 
 // Monitoring must never delay or fail a sign-in: run it after the response
 // where the runtime allows, and in any case swallow its errors.
-function inBackground(ctx, work) {
+function inBackground(ctx: ExecutionContext, work: any) {
   if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
   return work;
 }
@@ -867,7 +867,7 @@ async function handleSendEmailVerification(request: Request, env: Env) {
 // either way — and mints a real session, same as Apple/Google do on their
 // own exchange. `password` is required for this reason:
 // this is the only place a local account's password is ever set.
-async function handleConfirmEmailVerification(request: Request, env: Env, ctx) {
+async function handleConfirmEmailVerification(request: Request, env: Env, ctx: ExecutionContext) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_EMAIL_VERIFY_CONFIRM, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -1005,7 +1005,7 @@ async function handleConfirmEmailVerification(request: Request, env: Env, ctx) {
 // exchange endpoint, plus an escalating wait (never a hard lock) keyed by
 // account, IP+account and ASN so a distributed credential-stuffing run
 // can't just rotate IPs.
-async function handleLocalLogin(request: Request, env: Env, ctx) {
+async function handleLocalLogin(request: Request, env: Env, ctx: ExecutionContext) {
   const allowed = await checkRateLimit(env.RATE_LIMIT_LOCAL_LOGIN, clientKey(request));
   if (!allowed) return json({ error: "Too many attempts. Please try again later." }, 429);
 
@@ -1094,7 +1094,7 @@ async function handleLocalLogin(request: Request, env: Env, ctx) {
 // before the handler reads anything (transport.ts).
 export default {
   ...handler,
-  async fetch(request, env, ctx) {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const plain = plainHttpResponse(request, new URL(request.url));
     if (plain) return plain;
     return withTransportHeaders(await handler.fetch(request, env, ctx));

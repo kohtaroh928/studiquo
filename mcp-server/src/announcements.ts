@@ -52,7 +52,7 @@ const LANG_PATTERN = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/;
 const VERSION_PATTERN = /^\d{1,4}(\.\d{1,4}){0,2}$/;
 
 /** "1.10" vs "1.9" → compares numerically per component; missing parts are 0. */
-export function compareVersions(a, b) {
+export function compareVersions(a: any, b: any) {
   const left = a.split(".").map(Number);
   const right = b.split(".").map(Number);
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
@@ -67,7 +67,7 @@ export function compareVersions(a, b) {
  * language (zh-Hans → zh), then FALLBACK_LANGUAGES, then anything at all.
  * `translations` is { [lang]: { title, body } }; returns { lang, title, body }.
  */
-export function resolveTranslation(translations, requested) {
+export function resolveTranslation(translations: any, requested: any) {
   const codes = Object.keys(translations);
   const candidates = [];
   if (requested && LANG_PATTERN.test(requested)) {
@@ -83,25 +83,25 @@ export function resolveTranslation(translations, requested) {
   return lang ? { lang, ...translations[lang] } : null;
 }
 
-function cleanString(value, max) {
+function cleanString(value: any, max: number) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed.length <= max ? trimmed : null;
 }
 
-function optionalVersion(value) {
+function optionalVersion(value: any) {
   if (value === undefined || value === null || value === "") return { ok: true, value: null };
   return typeof value === "string" && VERSION_PATTERN.test(value.trim())
     ? { ok: true, value: value.trim() }
     : { ok: false };
 }
 
-function optionalTimestamp(value) {
+function optionalTimestamp(value: any) {
   if (value === undefined || value === null) return { ok: true, value: null };
   return Number.isSafeInteger(value) && value > 0 ? { ok: true, value } : { ok: false };
 }
 
-function optionalLink(value) {
+function optionalLink(value: any) {
   if (value === undefined || value === null || value === "") return { ok: true, value: null };
   if (typeof value !== "string" || value.length > MAX_LINK) return { ok: false };
   try {
@@ -112,7 +112,7 @@ function optionalLink(value) {
 }
 
 // Validates an admin create/update body. Returns { error } or { value }.
-function parseAnnouncement(body, now) {
+function parseAnnouncement(body: any, now: number) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "Invalid request." };
   if (!KINDS.includes(body.kind)) return { error: "Invalid kind." };
   if (!STATUSES.includes(body.status)) return { error: "Invalid status." };
@@ -166,7 +166,7 @@ function parseAnnouncement(body, now) {
   };
 }
 
-async function writeTranslations(env: Env, id, translations: Record<string, { title: string; body: string }>) {
+async function writeTranslations(env: Env, id: string, translations: Record<string, { title: string; body: string }>) {
   await env.ADMIN_DB.prepare(`DELETE FROM announcement_translations WHERE announcement_id = ?`).bind(id).run();
   for (const [lang, { title, body }] of Object.entries(translations)) {
     await env.ADMIN_DB.prepare(
@@ -175,20 +175,20 @@ async function writeTranslations(env: Env, id, translations: Record<string, { ti
   }
 }
 
-async function loadTranslationMap(env: Env, ids) {
-  const byId = new Map<unknown, Record<string, { title: string; body: string }>>(ids.map(id => [id, {}]));
+async function loadTranslationMap(env: Env, ids: any) {
+  const byId = new Map<unknown, Record<string, { title: string; body: string }>>(ids.map((id: string) => [id, {}]));
   if (ids.length === 0) return byId;
   const placeholders = ids.map(() => "?").join(",");
   const rows = await env.ADMIN_DB.prepare(
     `SELECT announcement_id, lang, title, body FROM announcement_translations WHERE announcement_id IN (${placeholders})`
   ).bind(...ids).all<{ announcement_id: unknown; lang: string; title: string; body: string }>();
   for (const row of rows.results ?? []) {
-    byId.get(row.announcement_id)[row.lang] = { title: row.title, body: row.body };
+    byId.get(row.announcement_id)![row.lang] = { title: row.title, body: row.body };
   }
   return byId;
 }
 
-function adminShape(row, translations) {
+function adminShape(row: any, translations: any) {
   return {
     id: row.id,
     kind: row.kind,
@@ -212,7 +212,7 @@ function adminShape(row, translations) {
 
 // ---- Push ---------------------------------------------------------------
 
-function previewBody(text) {
+function previewBody(text: string) {
   const chars = Array.from(text);
   return chars.length <= PUSH_BODY_PREVIEW ? text : `${chars.slice(0, PUSH_BODY_PREVIEW).join("")}…`;
 }
@@ -222,7 +222,7 @@ function previewBody(text) {
  * (devices that never reported one get the fallback chain). One sendPush per
  * resolved language. Returns { delivered, failed }.
  */
-async function pushToDevices(env: Env, userKey: string, announcement, translations, devices, options, titlePrefix = "") {
+async function pushToDevices(env: Env, userKey: string, announcement: any, translations: any, devices: any, options: any, titlePrefix = "") {
   const groups = new Map();
   for (const device of devices) {
     const text = resolveTranslation(translations, device.language);
@@ -246,7 +246,7 @@ async function pushToDevices(env: Env, userKey: string, announcement, translatio
   return { delivered, failed };
 }
 
-function pushResponse(row) {
+function pushResponse(row: any) {
   return {
     state: row.push_state,
     users: row.push_users,
@@ -260,7 +260,7 @@ function pushResponse(row) {
 // progress; the admin page keeps calling until `done`. Safe to repeat or to
 // resume after a closed tab: the batch counter's compare-and-set means a
 // batch is only ever claimed by one request.
-async function pushBatch(env: Env, id, options, now) {
+async function pushBatch(env: Env, id: string, options: any, now: number) {
   // The "push" kill switch (features.ts). Refused before anything is recorded:
   // sendPush sends nothing while it is on, and a batch counted as sent could not
   // be pushed again once the switch is off.
@@ -320,7 +320,7 @@ async function pushBatch(env: Env, id, options, now) {
 // POST /api/admin/announcements/:id/push-test {friendCode} — pushes to one
 // person's devices only (the operator's own, via the friend code shown in the
 // app's profile). Works on drafts and never touches the real push state.
-async function pushTest(env: Env, id, request: Request, options) {
+async function pushTest(env: Env, id: string, request: Request, options: any) {
   const body = await readJSONLimited(request, 1_000);
   const code = String(body?.friendCode ?? "").trim().toUpperCase();
   if (!FRIEND_CODE_PATTERN.test(code)) return json({ error: "Invalid friend code." }, 400);
@@ -335,7 +335,7 @@ async function pushTest(env: Env, id, request: Request, options) {
   return json({ devices: devices.length, ...result });
 }
 
-async function handleAdminAnnouncements(url, request: Request, env: Env, options) {
+async function handleAdminAnnouncements(url: URL, request: Request, env: Env, options: any) {
   const match = url.pathname.match(/^\/api\/admin\/announcements(?:\/([A-Za-z0-9-]{1,64}))?(?:\/(push|push-test))?$/);
   if (!match) return null;
   if (!(await accessAllowed(request, env))) return json({ error: "Forbidden." }, 403);
@@ -365,7 +365,7 @@ async function handleAdminAnnouncements(url, request: Request, env: Env, options
   if (!id && request.method === "POST") {
     const parsed = parseAnnouncement(await readJSONLimited(request, MAX_ADMIN_BODY), now);
     if (parsed.error) return json({ error: parsed.error }, 400);
-    const a = parsed.value;
+    const a = parsed.value!;
     const newID = crypto.randomUUID();
     await auditAdmin(env, request, "announcement.create", newID, a.status);
     await env.ADMIN_DB.prepare(
@@ -381,7 +381,7 @@ async function handleAdminAnnouncements(url, request: Request, env: Env, options
     if (!existing) return json({ error: "Not found." }, 404);
     const parsed = parseAnnouncement(await readJSONLimited(request, MAX_ADMIN_BODY), now);
     if (parsed.error) return json({ error: parsed.error }, 400);
-    const a = parsed.value;
+    const a = parsed.value!;
     await auditAdmin(env, request, "announcement.update", id, a.status);
     await env.ADMIN_DB.prepare(
       `UPDATE announcements SET kind = ?, status = ?, link = ?, min_app_version = ?, max_app_version = ?,
@@ -408,7 +408,7 @@ async function handleAdminAnnouncements(url, request: Request, env: Env, options
 // GET /api/announcements?lang=<bcp47>&appVersion=<x.y.z>: what the app's
 // inbox shows. Only published, already-live, not-expired items whose version
 // range includes the caller; each comes back in the best available language.
-async function handlePublicAnnouncements(url, request: Request, env: Env) {
+async function handlePublicAnnouncements(url: URL, request: Request, env: Env) {
   if (url.pathname !== "/api/announcements" || request.method !== "GET") return null;
   const allowed = await checkRateLimit(env.RATE_LIMIT_ANNOUNCEMENTS, clientKey(request));
   if (!allowed) return json({ error: "Too many requests." }, 429);
@@ -448,7 +448,7 @@ async function handlePublicAnnouncements(url, request: Request, env: Env) {
 }
 
 // `options.fetchImpl` swaps the APNs transport (tests only).
-export async function handleAnnouncements(url, request: Request, env: Env, options = {}) {
+export async function handleAnnouncements(url: URL, request: Request, env: Env, options = {}) {
   return (await handlePublicAnnouncements(url, request, env)) ?? (await handleAdminAnnouncements(url, request, env, options));
 }
 
@@ -616,7 +616,7 @@ load().catch(() => { $('error').textContent = '読み込みに失敗しました
 </script>
 </html>`;
 
-export function handleAnnouncementsPage(url) {
+export function handleAnnouncementsPage(url: URL) {
   if (url.pathname !== "/admin/announcements") return null;
   return new Response(ADMIN_PAGE_HTML, { headers: htmlHeaders({ connect: true }) });
 }

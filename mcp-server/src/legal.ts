@@ -210,7 +210,7 @@ function privacyPolicyHTML() {
 `;
 }
 
-export function handleLegal(url) {
+export function handleLegal(url: URL) {
   if (url.pathname === "/googlea95d7e8605a2e940.html") {
     return new Response("google-site-verification: googlea95d7e8605a2e940.html", {
       status: 200,

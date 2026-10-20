@@ -9,12 +9,12 @@ import { json } from "./http.ts";
 import { postSlackBlocks } from "./slack.ts";
 import type { Env } from "./env.ts";
 
-function roomErrorResponse(error) {
+function roomErrorResponse(error: any) {
   if (error instanceof Error && error.message === "Forbidden") return json({ error: "Forbidden" }, 403);
   return null;
 }
 
-export async function fileChatReport(env: Env, ctx, url, { roomID, messageID, reporterKey, reason }) {
+export async function fileChatReport(env: Env, ctx: ExecutionContext, url: URL, { roomID, messageID, reporterKey, reason }: any) {
   let snapshot;
   try {
     snapshot = await env.CHAT_ROOM.getByName(roomID).reportSnapshot(reporterKey, messageID);

@@ -80,6 +80,6 @@ export function removeAccountData(sql: SqlStorage, userKey: string) {
 // `doc-room:<member key>:<room id>` -> the member's role. Lists the rooms an
 // account is in, so deleting the account can find them: a room is reachable
 // only by its id, and knows its members only by opaque keys.
-export function roomMembershipKey(userKey: string, roomID) {
+export function roomMembershipKey(userKey: string, roomID: string) {
   return `doc-room:${userKey}:${roomID}`;
 }

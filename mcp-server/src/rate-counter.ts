@@ -17,7 +17,8 @@ import { touchSeenContext } from "./login-monitor.ts";
 // reading the same stale count.
 /** The App Attest key registered under an `attest-key:` name: its public key and the last assertion counter seen. */
 export interface AttestRecord {
-  publicKey: Uint8Array;
+  /** The key as base64url text (bytesToBase64Url in app-attest.ts). */
+  publicKey: string;
   counter: number;
   createdAt?: number;
   lastSeenAt?: number;
@@ -35,7 +36,7 @@ export class RateCounter extends DurableObject<Env> {
    * exact one, same as the KV version was, just without its burst-at-the
    * -boundary quirk.
    */
-  async bump(limit, windowSeconds, amount = 1) {
+  async bump(limit: number, windowSeconds: number, amount = 1) {
     return (await this.take(limit, windowSeconds, amount)).ok;
   }
 
@@ -44,7 +45,7 @@ export class RateCounter extends DurableObject<Env> {
    * `give` can return it to that window and no other. `amount` lets one call
    * cost more than one unit (AI credits, ai-credits.ts).
    */
-  async take(limit, windowSeconds, amount = 1) {
+  async take(limit: number, windowSeconds: number, amount = 1) {
     const result = takeFrom(await this.ctx.storage.get<CounterState>("state"), Date.now(), limit, windowSeconds, amount);
     if (!result.ok) return { ok: false };
     await this.ctx.storage.put("state", result.state);
@@ -60,14 +61,14 @@ export class RateCounter extends DurableObject<Env> {
    * request refused it. Only touches the window it was taken from (see
    * counter-state.ts).
    */
-  async give(amount, windowEndsAt) {
+  async give(amount: any, windowEndsAt: any) {
     const next = giveTo(await this.ctx.storage.get<CounterState>("state"), Date.now(), amount, windowEndsAt);
     if (next) await this.ctx.storage.put("state", next);
   }
 
   // Reads a quota without incrementing it. The AI header uses the exact same
   // per-device counter enforced by bump(), rather than a client-side estimate.
-  async usage(limit, windowSeconds) {
+  async usage(limit: number, windowSeconds: number) {
     const now = Date.now();
     const stored = await this.ctx.storage.get<CounterState>("state");
     const state = stored && now < stored.windowEndsAt ? stored : null;
@@ -79,14 +80,14 @@ export class RateCounter extends DurableObject<Env> {
   // transitions; this object serialises access to them, which is what makes
   // "check the wait, then count the attempt" one atomic step). A name is
   // used either for bump() or for these, never both, so they share the alarm.
-  async loginReserve(policy, { enforce = true } = {}) {
+  async loginReserve(policy: any, { enforce = true } = {}) {
     const now = Date.now();
     const result = reserveAttempt(await this.ctx.storage.get("login"), now, policy, { enforce });
     if (result.waitSeconds === 0) await this.saveLogin(result.state, now, policy);
     return { waitSeconds: result.waitSeconds, trusted: result.trusted };
   }
 
-  async loginRefund(policy) {
+  async loginRefund(policy: any) {
     const stored = await this.ctx.storage.get("login");
     if (stored) await this.saveLogin(refundAttempt(stored, policy), Date.now(), policy);
   }
@@ -98,7 +99,7 @@ export class RateCounter extends DurableObject<Env> {
     await this.ctx.storage.setAlarm(trustExpiryMs(next) + 3_600_000);
   }
 
-  async saveLogin(state, now, policy) {
+  async saveLogin(state: any, now: number, policy: any) {
     await this.ctx.storage.put("login", state);
     // Outlives both the failure window and any trust, then reclaims storage.
     const until = Math.max(Math.max(state.blockedUntil ?? 0, now) + policy.windowSeconds * 1000, trustExpiryMs(state) + 3_600_000);
@@ -107,7 +108,7 @@ export class RateCounter extends DurableObject<Env> {
 
   // Which country+network an account has signed in from (login-monitor.ts).
   // Used under its own name, so it shares nothing with bump()/login state.
-  async seenContext(key, { maxEntries, ttlSeconds }) {
+  async seenContext(key: string, { maxEntries, ttlSeconds }: any) {
     const now = Date.now();
     const result = touchSeenContext(await this.ctx.storage.get("seen"), key, now, maxEntries, ttlSeconds);
     await this.ctx.storage.put("seen", result.state);
@@ -133,7 +134,7 @@ export class RateCounter extends DurableObject<Env> {
   // that refuse. Nothing but a counter is kept, and only for as long as KV can
   // serve a stale read (about a minute) plus a wide margin; then the alarm
   // clears it. Setting a password again before then cancels the alarm.
-  async retireAccountGeneration(ttlSeconds) {
+  async retireAccountGeneration(ttlSeconds: number) {
     const next = ((await this.ctx.storage.get<number>("gen")) ?? 0) + 1;
     await this.ctx.storage.put("gen", next);
     await this.ctx.storage.setAlarm(Date.now() + ttlSeconds * 1000);
@@ -153,7 +154,7 @@ export class RateCounter extends DurableObject<Env> {
   // The KV write is outside this object's storage, so without the block a
   // nextAccountGeneration() (and the password write that follows it) could
   // run while this put is still in flight and then be overtaken by it.
-  async upgradeAccountIfCurrent(key, json, expectedGen) {
+  async upgradeAccountIfCurrent(key: string, json: any, expectedGen: any) {
     return this.ctx.blockConcurrencyWhile(async () => {
       if (((await this.ctx.storage.get<number>("gen")) ?? 0) !== expectedGen) return false;
       await this.env.STUDIQUO_DATA.put(key, json);
@@ -177,7 +178,7 @@ export class RateCounter extends DurableObject<Env> {
 
   // Moves the counter forward only if `counter` is higher than what is stored,
   // as one step, so two requests with the same counter cannot both pass.
-  async attestAdvance(counter) {
+  async attestAdvance(counter: any) {
     const record = await this.ctx.storage.get<AttestRecord>("attest");
     if (!record || counter <= record.counter) return false;
     await this.ctx.storage.put("attest", { ...record, counter, lastSeenAt: Date.now() });
