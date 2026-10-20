@@ -14,7 +14,7 @@ import { bearerToken, secretsEqual, sha256Hex } from "./auth.ts";
 import { isExpired } from "./token.ts";
 import { isRevoked } from "./revocation.ts";
 import { realSession } from "./session.ts";
-import { productForPlanChange } from "./entitlements.js";
+import { productForPlanChange } from "./entitlements.ts";
 import { INBOX_CSS, INBOX_HTML, INBOX_SCRIPT } from "./admin-inbox-ui.js";
 import { MODERATION_HTML, MODERATION_SCRIPT } from "./admin-moderation-ui.js";
 

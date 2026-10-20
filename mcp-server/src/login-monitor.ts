@@ -15,7 +15,7 @@
 // ctx.waitUntil, and every failure is only logged.
 import { sha256Hex } from "./auth.ts";
 import { postSlackBlocks } from "./slack.ts";
-import { featureDisabled } from "./features.js";
+import { featureDisabled } from "./features.ts";
 import type { Env } from "./env.ts";
 
 export const MONITOR = {

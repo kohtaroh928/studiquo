@@ -12,7 +12,7 @@
 // Adding a language: add one entry to SUPPORTED_LANGUAGES. Nothing else —
 // storage, the admin form and the app's fallback logic are all driven by
 // language codes, not by a fixed pair.
-import { featureDisabled } from "./features.js";
+import { featureDisabled } from "./features.ts";
 import { accessAllowed } from "./access.ts";
 import { auditAdmin } from "./audit.js";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildResponsesBody, extractDeltaText } from "./openai.js";
+import { buildResponsesBody, extractDeltaText } from "./openai.ts";
 
 test("request body uses Responses API fields and does not store the conversation", () => {
   const body = buildResponsesBody({
@@ -44,7 +44,7 @@ test("extractDeltaText returns only output_text deltas", () => {
   assert.equal(extractDeltaText(null), "");
 });
 
-import { toStrictJSONSchema } from "./openai.js";
+import { toStrictJSONSchema } from "./openai.ts";
 test("toStrictJSONSchema lower-cases types, requires every property and forbids extras, keeping enums", () => {
   const out = toStrictJSONSchema({
     type: "OBJECT",

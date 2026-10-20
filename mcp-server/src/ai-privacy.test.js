@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { takeParsedBody } from "./ai-body.ts";
-import { aiPrivacyRejection, AI_CONSENT_VERSION } from "./ai-privacy.js";
+import { aiPrivacyRejection, AI_CONSENT_VERSION } from "./ai-privacy.ts";
 
 const APPROVED = { AI_PROVIDER_APPROVED: "true", PAYWALL_ENABLED: "true" };
 

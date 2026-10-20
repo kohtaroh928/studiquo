@@ -16,7 +16,7 @@
 // Both are unset by default, which turns them off. DISABLED_FEATURES (features.js)
 // stops single features and is checked here too.
 import { json } from "./http.ts";
-import { featureGateRejection } from "./features.js";
+import { featureGateRejection } from "./features.ts";
 import type { Env } from "./env.ts";
 
 function isGuardedRoute(pathname) {

@@ -14,7 +14,7 @@
 // way back after losing it is the e-mailed recovery below.
 import { sha256Hex } from "./auth.ts";
 import { json } from "./http.ts";
-import { featureDisabled } from "./features.js";
+import { featureDisabled } from "./features.ts";
 import { revokeAllConnections } from "./mcp-oauth.ts";
 import { revokeSessionsIssuedBefore } from "./session.ts";
 import type { Env } from "./env.ts";

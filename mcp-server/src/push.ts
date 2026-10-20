@@ -1,6 +1,6 @@
 import { SignJWT, importPKCS8 } from "jose";
 import { loadDevices, removeDevice, type Device } from "./devices.ts";
-import { featureDisabled } from "./features.js";
+import { featureDisabled } from "./features.ts";
 import type { Env } from "./env.ts";
 
 const INVALID_TOKEN_REASONS = new Set(["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"]);

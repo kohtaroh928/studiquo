@@ -18,6 +18,7 @@
 // confirmation code is also stopped here, so the app is told instead of waiting
 // for a code that will not come).
 import { json } from "./http.ts";
+import type { Env } from "./env.ts";
 
 export const FEATURES = ["ai", "chat", "collab", "mcp", "signin", "email", "push"];
 
@@ -26,7 +27,7 @@ export const FEATURES = ["ai", "chat", "collab", "mcp", "signin", "email", "push
 // /health lists only the names that took effect.
 const warnedNames = new Set();
 
-export function disabledFeatures(env) {
+export function disabledFeatures(env: Env) {
   const names = String(env?.DISABLED_FEATURES ?? "")
     .split(",")
     .map(name => name.trim().toLowerCase())
@@ -40,7 +41,7 @@ export function disabledFeatures(env) {
   return new Set(names.filter(name => FEATURES.includes(name)));
 }
 
-export function featureDisabled(env, feature) {
+export function featureDisabled(env: Env, feature) {
   return disabledFeatures(env).has(feature);
 }
 
@@ -66,7 +67,7 @@ export function featureForPath(pathname, method = "GET") {
 }
 
 /** A 503 for a request whose feature is stopped, or null. */
-export function featureGateRejection(env, pathname, method = "GET") {
+export function featureGateRejection(env: Env, pathname, method = "GET") {
   const feature = featureForPath(pathname, method);
   if (!feature || !featureDisabled(env, feature)) return null;
   const response = json({

@@ -22,7 +22,7 @@ register(
   import.meta.url
 );
 
-const { FEATURES, disabledFeatures, featureDisabled, featureForPath, featureGateRejection } = await import("./features.js");
+const { FEATURES, disabledFeatures, featureDisabled, featureForPath, featureGateRejection } = await import("./features.ts");
 const { appGateRejection } = await import("./app-gate.ts");
 const { default: worker } = await import("./app.js");
 const { sendPush } = await import("./push.ts");
