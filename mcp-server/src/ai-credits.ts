@@ -53,7 +53,7 @@ export function creditCost(kind: string, modelId: string) {
 }
 
 const JST_OFFSET_MS = 9 * 3_600_000;
-const pad = (n: any) => String(n).padStart(2, "0");
+const pad = (n: number) => String(n).padStart(2, "0");
 
 function windowsFor(accountHash: any, now: number) {
   const jst = new Date(now + JST_OFFSET_MS);
@@ -77,7 +77,7 @@ export const LIMIT_MESSAGES: Record<string, string> = {
   global: "現在AIが混み合っています。しばらくしてからもう一度お試しください。",
 };
 
-export async function accountCounterKey(sub: string | undefined, fallback: any) {
+export async function accountCounterKey(sub: string | undefined, fallback: string) {
   return sub ? sha256Hex(`usage-account:${sub}`) : fallback;
 }
 

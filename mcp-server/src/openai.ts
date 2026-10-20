@@ -24,7 +24,7 @@ const ATTEMPTS = 3;
 const MAX_OUTPUT_TOKENS = 8192;
 
 /** A user turn's content parts: its text, plus any images attached to it. */
-function userContent(turn: any, images: any) {
+function userContent(turn: any, images: string[]) {
   const parts: Record<string, unknown>[] = [{ type: "input_text", text: String(turn.text ?? "") }];
   for (const image of images) {
     parts.push({ type: "input_image", image_url: `data:image/png;base64,${image}`, detail: "auto" });
@@ -80,7 +80,7 @@ export function buildResponsesBody({
  * Gemini dialect they were first written in) and returns strict JSON Schema:
  * lower-case types, no extra properties, every property required.
  */
-export function toStrictJSONSchema(schema: any): any {
+export function toStrictJSONSchema(schema: unknown): any {
   if (Array.isArray(schema)) return schema.map(toStrictJSONSchema);
   if (!schema || typeof schema !== "object") return schema;
   const out: Record<string, any> = {};
@@ -98,7 +98,7 @@ export function toStrictJSONSchema(schema: any): any {
 }
 
 /** Sends one Responses request, retrying overload/5xx with backoff. Returns the last response. */
-async function postWithRetry(env: Env, body: any, apiKey: any) {
+async function postWithRetry(env: Env, body: Record<string,unknown>, apiKey: any) {
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured on this Worker.");
   const payload = JSON.stringify(body);
   let last: Response | null = null;
@@ -123,7 +123,7 @@ async function postWithRetry(env: Env, body: any, apiKey: any) {
 }
 
 /** Neutral content parts ({text} / {image: base64 PNG}) → Responses input parts. */
-function toInputParts(parts: any) {
+function toInputParts(parts: unknown[]) {
   return parts.map((part: any) => part.image
     ? { type: "input_image", image_url: `data:image/png;base64,${part.image}`, detail: "auto" }
     : { type: "input_text", text: String(part.text ?? "") });
@@ -160,7 +160,7 @@ export async function callOpenAIChat(env: Env, { model, systemInstruction, turns
  */
 export const MODERATION_UNAVAILABLE = Object.freeze({ unavailable: true });
 
-export async function moderationRejection(env: Env, texts: any, apiKey = env.OPENAI_API_KEY) {
+export async function moderationRejection(env: Env, texts: string[], apiKey = env.OPENAI_API_KEY) {
   if (env.AI_MODERATION === "off" || !apiKey) return null;
   const input = texts.map((text: string) => String(text ?? "").slice(0, 8000)).filter(Boolean);
   if (input.length === 0) return null;

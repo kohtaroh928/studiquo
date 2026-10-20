@@ -52,7 +52,7 @@ const LANG_PATTERN = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/;
 const VERSION_PATTERN = /^\d{1,4}(\.\d{1,4}){0,2}$/;
 
 /** "1.10" vs "1.9" → compares numerically per component; missing parts are 0. */
-export function compareVersions(a: any, b: any) {
+export function compareVersions(a: string, b: any) {
   const left = a.split(".").map(Number);
   const right = b.split(".").map(Number);
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
@@ -67,7 +67,7 @@ export function compareVersions(a: any, b: any) {
  * language (zh-Hans → zh), then FALLBACK_LANGUAGES, then anything at all.
  * `translations` is { [lang]: { title, body } }; returns { lang, title, body }.
  */
-export function resolveTranslation(translations: any, requested: any) {
+export function resolveTranslation(translations: any, requested: string) {
   const codes = Object.keys(translations);
   const candidates = [];
   if (requested && LANG_PATTERN.test(requested)) {
@@ -83,13 +83,13 @@ export function resolveTranslation(translations: any, requested: any) {
   return lang ? { lang, ...translations[lang] } : null;
 }
 
-function cleanString(value: any, max: number) {
+function cleanString(value: string, max: number) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 && trimmed.length <= max ? trimmed : null;
 }
 
-function optionalVersion(value: any) {
+function optionalVersion(value: string | null | undefined) {
   if (value === undefined || value === null || value === "") return { ok: true, value: null };
   return typeof value === "string" && VERSION_PATTERN.test(value.trim())
     ? { ok: true, value: value.trim() }
@@ -101,7 +101,7 @@ function optionalTimestamp(value: any) {
   return Number.isSafeInteger(value) && value > 0 ? { ok: true, value } : { ok: false };
 }
 
-function optionalLink(value: any) {
+function optionalLink(value: string | unknown[] | URL | null | undefined) {
   if (value === undefined || value === null || value === "") return { ok: true, value: null };
   if (typeof value !== "string" || value.length > MAX_LINK) return { ok: false };
   try {
@@ -188,7 +188,7 @@ async function loadTranslationMap(env: Env, ids: any) {
   return byId;
 }
 
-function adminShape(row: any, translations: any) {
+function adminShape(row: any, translations: Record<string,{ title: string; body: string; }> | undefined) {
   return {
     id: row.id,
     kind: row.kind,
@@ -222,7 +222,7 @@ function previewBody(text: string) {
  * (devices that never reported one get the fallback chain). One sendPush per
  * resolved language. Returns { delivered, failed }.
  */
-async function pushToDevices(env: Env, userKey: string, announcement: any, translations: any, devices: any, options: any, titlePrefix = "") {
+async function pushToDevices(env: Env, userKey: string, announcement: Record<string,unknown>, translations: Record<string,{ title: string; body: string; }> | undefined, devices: any, options: any, titlePrefix = "") {
   const groups = new Map();
   for (const device of devices) {
     const text = resolveTranslation(translations, device.language);
@@ -260,7 +260,7 @@ function pushResponse(row: any) {
 // progress; the admin page keeps calling until `done`. Safe to repeat or to
 // resume after a closed tab: the batch counter's compare-and-set means a
 // batch is only ever claimed by one request.
-async function pushBatch(env: Env, id: string, options: any, now: number) {
+async function pushBatch(env: Env, id: string, options: {}, now: number) {
   // The "push" kill switch (features.ts). Refused before anything is recorded:
   // sendPush sends nothing while it is on, and a batch counted as sent could not
   // be pushed again once the switch is off.
@@ -320,7 +320,7 @@ async function pushBatch(env: Env, id: string, options: any, now: number) {
 // POST /api/admin/announcements/:id/push-test {friendCode} — pushes to one
 // person's devices only (the operator's own, via the friend code shown in the
 // app's profile). Works on drafts and never touches the real push state.
-async function pushTest(env: Env, id: string, request: Request, options: any) {
+async function pushTest(env: Env, id: string, request: Request, options: {}) {
   const body = await readJSONLimited(request, 1_000);
   const code = String(body?.friendCode ?? "").trim().toUpperCase();
   if (!FRIEND_CODE_PATTERN.test(code)) return json({ error: "Invalid friend code." }, 400);
@@ -335,7 +335,7 @@ async function pushTest(env: Env, id: string, request: Request, options: any) {
   return json({ devices: devices.length, ...result });
 }
 
-async function handleAdminAnnouncements(url: URL, request: Request, env: Env, options: any) {
+async function handleAdminAnnouncements(url: URL, request: Request, env: Env, options: {}) {
   const match = url.pathname.match(/^\/api\/admin\/announcements(?:\/([A-Za-z0-9-]{1,64}))?(?:\/(push|push-test))?$/);
   if (!match) return null;
   if (!(await accessAllowed(request, env))) return json({ error: "Forbidden." }, 403);

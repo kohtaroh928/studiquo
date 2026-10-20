@@ -38,7 +38,7 @@ const SINGLE_USE_SECONDS = 3_600;
  *   mismatch         the nonce does not belong to the ID token
  *   replayed         the nonce was already used
  */
-function logOutcome(provider: any, outcome: string) {
+function logOutcome(provider: string, outcome: string) {
   console.log(JSON.stringify({ event: "id_token_nonce", provider, outcome }));
 }
 

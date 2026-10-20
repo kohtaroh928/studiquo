@@ -95,13 +95,13 @@ const IP_ATTEMPT_WINDOW = 600;
 // owner back to. Anyone can register a client under any name, but not under
 // someone else's address, so the address is what the kind rests on. A code made
 // for "claude" therefore cannot be spent on a client that is not at claude.ai.
-export function classifyClient(client: any) {
+export function classifyClient(client: ClientRecord) {
   const hosts = [];
   for (const value of client?.redirectUris ?? []) {
     try { hosts.push(new URL(value).hostname); } catch { /* ignored */ }
   }
   if (hosts.length === 0) return "other";
-  const under = (host: any, domain: any) => host === domain || host.endsWith(`.${domain}`);
+  const under = (host: string, domain: string) => host === domain || host.endsWith(`.${domain}`);
   if (hosts.every(host => under(host, "claude.ai") || under(host, "claude.com"))) return "claude";
   if (hosts.every(host => under(host, "chatgpt.com") || under(host, "chat.openai.com") || under(host, "openai.com"))) return "chatgpt";
   const loopback = hosts.every(host => ["localhost", "127.0.0.1", "[::1]"].includes(host));
@@ -134,13 +134,13 @@ export async function issueOwnerCode(env: Env, sub: string, kind: string) {
   return { code, kind, expiresInSeconds: OWNER_CODE_TTL };
 }
 
-function htmlEscape(value: any) {
+function htmlEscape(value: string) {
   return String(value).replace(/[&<>"']/g, character => (({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }) as Record<string, string>)[character]);
 }
 
-function validRedirect(value: any) {
+function validRedirect(value: string | URL) {
   try {
     const url = new URL(value);
     return !url.username && !url.password && !url.hash &&
@@ -148,7 +148,7 @@ function validRedirect(value: any) {
   } catch { return false; }
 }
 
-async function grantKey(sub: string, clientId: any) {
+async function grantKey(sub: string, clientId: string) {
   return `mcp:grant:${await sha256Hex(sub)}:${await sha256Hex(clientId)}`;
 }
 
@@ -180,7 +180,7 @@ export async function tokenIndexCoversEverything(env: Env, now = Date.now()) {
   return Number.isFinite(since) && since > 0 && now > since + TOKEN_INDEX_COVERS_AFTER_MS;
 }
 
-async function issueTokens(env: Env, sub: string, clientId: any, scope: any, grantId: any) {
+async function issueTokens(env: Env, sub: string, clientId: string, scope: string, grantId: string) {
   const generation = grantId ? { grantId } : {};
   // Signed when a key is configured, so a made-up access token is refused before
   // KV is read (token-signature.ts).
@@ -215,7 +215,7 @@ export async function externalSession(env: Env, request: Request) {
 
 // The authorize page's owner typed a right code: grant the app and hand back
 // where to send them, authorization code attached.
-async function approveFlow(env: Env, flowId: any, pending: any, sub: string) {
+async function approveFlow(env: Env, flowId: string, pending: PendingAuthorization, sub: string) {
   const authorizationCode = `mcp_code_${randomToken()}`;
   await env.STUDIQUO_DATA.put(`mcp:code:${await sha256Hex(authorizationCode)}`, JSON.stringify({
     sub, clientId: pending.clientId, redirectUri: pending.redirectUri,
@@ -233,7 +233,7 @@ async function approveFlow(env: Env, flowId: any, pending: any, sub: string) {
 
 // Tells the owner's devices that an app was just connected, so a connection
 // they did not make is noticed. Best effort: the connection stands either way.
-async function notifyConnected(env: Env, sub: string, pending: any) {
+async function notifyConnected(env: Env, sub: string, pending: PendingAuthorization) {
   try {
     const userKey = await resolveChatUserKey(env, sub, null);
     if (!userKey) return;
@@ -270,7 +270,7 @@ export async function listConnections(env: Env, sub: string) {
  * app approved before two sign-in methods were linked sits under the other
  * identity: pass the account's own key together with every linked identity.
  */
-export async function revokeAllConnections(env: Env, subs: any) {
+export async function revokeAllConnections(env: Env, subs: Iterable<unknown> | null | undefined) {
   for (const sub of new Set(Array.isArray(subs) ? subs : [subs])) {
     for (const connection of await listConnections(env, sub)) await revokeConnection(env, sub, connection.id);
   }
@@ -341,7 +341,7 @@ export async function handleMCPOAuth(url: URL, request: Request, env: Env, ctx?:
     return new Response(page, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });
   }
   if (url.pathname === "/oauth/pair" && request.method === "POST") {
-    const fail = (message: any, status = 400) => json({ error: "invalid_code", message }, status);
+    const fail = (message: string, status = 400) => json({ error: "invalid_code", message }, status);
     if (!(await checkRateLimit(env.RATE_LIMIT_MCP_PAIR, clientKey(request)))) return fail("試行が多すぎます。しばらくしてからやり直してください。", 429);
     const body = await readJSONLimited(request, 1_000);
     const id = String(body?.id ?? "");

@@ -41,7 +41,7 @@ server.registerTool("list_notebooks", {
   inputSchema: z.object({})
 }, async () => {
   const data = await snapshot();
-  return result(data.notebooks.map((notebook: any) => ({
+  return result(data.notebooks.map((notebook: { id: unknown; title: unknown; pages: unknown[]; }) => ({
     id: notebook.id,
     title: notebook.title,
     pageCount: notebook.pages.length,
@@ -56,7 +56,7 @@ server.registerTool("search_notes", {
   const data = await snapshot();
   const needle = query.toLocaleLowerCase("ja");
   const matches = data.notebooks
-    .flatMap((notebook: any) => notebook.pages.flatMap((page: any) => {
+    .flatMap((notebook: { pages: unknown[]; title: unknown; id: unknown; }) => notebook.pages.flatMap((page: any) => {
       const haystack = `${notebook.title}\n${page.title}\n${page.recognizedText ?? ""}`.toLocaleLowerCase("ja");
       return haystack.includes(needle)
         ? [{ notebookId: notebook.id, notebookTitle: notebook.title, pageId: page.id, pageTitle: page.title, recognizedText: page.recognizedText ?? "" }]
@@ -71,7 +71,7 @@ server.registerTool("list_flashcard_decks", {
   inputSchema: z.object({ includeCards: z.boolean().default(false) })
 }, async ({ includeCards }) => {
   const data = await snapshot();
-  return result(data.flashcardDecks.map((deck: any) => includeCards ? deck : ({ id: deck.id, title: deck.title, cardCount: deck.cards.length })));
+  return result(data.flashcardDecks.map((deck: { id: unknown; title: unknown; cards: string | unknown[]; }) => includeCards ? deck : ({ id: deck.id, title: deck.title, cardCount: deck.cards.length })));
 });
 
 server.registerTool("list_calendar_events", {

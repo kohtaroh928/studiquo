@@ -99,7 +99,7 @@ function createServer(env: Env, key: string, accountHash: any = null, source = "
     async () => {
       if (!canRead) return { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] };
       const data = await loadSnapshot(env, key);
-      return toolResult(data.notebooks.map((notebook: any) => ({
+      return toolResult(data.notebooks.map((notebook: { id: unknown; title: unknown; tags: unknown; pages: unknown[]; }) => ({
         id: notebook.id,
         title: notebook.title,
         tags: notebook.tags ?? [],
@@ -123,7 +123,7 @@ function createServer(env: Env, key: string, accountHash: any = null, source = "
       const data = await loadSnapshot(env, key);
       const needle = query.toLocaleLowerCase("ja");
       const matches = data.notebooks
-        .flatMap((notebook: any) => notebook.pages.flatMap((page: any) => {
+        .flatMap((notebook: { pages: unknown[]; title: unknown; id: unknown; }) => notebook.pages.flatMap((page: any) => {
           const haystack = `${notebook.title}\n${page.title}\n${page.recognizedText ?? ""}`.toLocaleLowerCase("ja");
           return haystack.includes(needle)
             ? [{
@@ -149,7 +149,7 @@ function createServer(env: Env, key: string, accountHash: any = null, source = "
     async ({ includeCards }) => {
       if (!canRead) return { isError: true, content: [{ type: "text", text: "This Studiquo connection cannot read materials." }] };
       const data = await loadSnapshot(env, key);
-      return toolResult(data.flashcardDecks.map((deck: any) => includeCards ? deck : ({
+      return toolResult(data.flashcardDecks.map((deck: { id: unknown; title: unknown; cards: string | unknown[]; }) => includeCards ? deck : ({
         id: deck.id,
         title: deck.title,
         cardCount: deck.cards.length
@@ -188,7 +188,7 @@ function createServer(env: Env, key: string, accountHash: any = null, source = "
       if (accountHash) {
         if (folderPath) {
           const data = await loadSnapshot(env, key);
-          if (!(data.folders ?? []).some((folder: any) => folder.path === folderPath)) {
+          if (!(data.folders ?? []).some((folder: { path: string; }) => folder.path === folderPath)) {
             return { isError: true, content: [{ type: "text", text: "That Studiquo folder does not exist. Run sync in the iPad app and choose a path from list_folders." }] };
           }
         }
@@ -229,7 +229,7 @@ function createServer(env: Env, key: string, accountHash: any = null, source = "
     if (!accountHash) throw new Error("Reconnect your Studiquo account before creating materials.");
     if (payload.folderPath) {
       const data = await loadSnapshot(env, key);
-      if (!(data.folders ?? []).some((folder: any) => folder.path === payload.folderPath)) {
+      if (!(data.folders ?? []).some((folder: { path: string | undefined; }) => folder.path === payload.folderPath)) {
         return { isError: true, content: [{ type: "text", text: "That Studiquo folder does not exist. Run sync in the iPad app and choose a path from list_folders." }] };
       }
     }
@@ -816,7 +816,7 @@ async function withinEmailCodeBudget(env: Env, action: string, email: string, li
 
 // Monitoring must never delay or fail a sign-in: run it after the response
 // where the runtime allows, and in any case swallow its errors.
-function inBackground(ctx: ExecutionContext, work: any) {
+function inBackground(ctx: ExecutionContext, work: Promise<unknown>) {
   if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
   return work;
 }

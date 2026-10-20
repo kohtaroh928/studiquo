@@ -40,7 +40,7 @@ const REPORT_TTL_SECONDS = 90 * 24 * 60 * 60;
 // `code` from ever reaching a KV lookup keyed on it.
 const FRIEND_CODE_PATTERN = /^[A-Z0-9]{6,32}$/;
 
-function parseFriendCode(body: any) {
+function parseFriendCode(body: { code: unknown; }) {
   const code = String(body?.code ?? "").trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(code) ? code : null;
 }
@@ -49,7 +49,7 @@ function parseFriendCode(body: any) {
 // generated the same way, just stored under a different KV prefix so a
 // link token can never be confused with, or substituted for, a manually
 // typed friend code.
-function parseLinkToken(body: any) {
+function parseLinkToken(body: { token: unknown; }) {
   const token = String(body?.token ?? "").trim().toUpperCase();
   return FRIEND_CODE_PATTERN.test(token) ? token : null;
 }
@@ -57,7 +57,7 @@ function parseLinkToken(body: any) {
 // `Number("1e400")` and friends parse to Infinity, which SQLite's bind
 // rejects with an exception — this turns that into a clean fallback instead
 // of a 500 from chat-room.ts's query.
-function parseAfter(rawValue: any) {
+function parseAfter(rawValue: string | null) {
   const number = Number(rawValue ?? 0);
   return Number.isSafeInteger(number) && number >= 0 ? number : 0;
 }
@@ -67,7 +67,7 @@ function parseAfter(rawValue: any) {
 // just stores and relays this as-is. Deciding whether a friend's reported
 // date still counts as "today" is left to the viewer's own client, which is
 // the only side that actually knows what day it is for the viewer.
-function parseStudyStats(body: any) {
+function parseStudyStats(body: { todayStudySeconds: unknown; studyDate: unknown; }) {
   const seconds = Number(body?.todayStudySeconds);
   const date = String(body?.studyDate ?? "");
   if (!Number.isSafeInteger(seconds) || seconds < 0 || seconds > 86_400) return null;
@@ -97,11 +97,11 @@ async function ensureUser(env: Env, key: string, name: string | null = null, stu
   return env.USER_REGISTRY.getByName(key).ensureUser(key, name, studyStats);
 }
 
-async function roomID(first: any, second: any) {
+async function roomID(first: any, second: string) {
   return sha256Hex([first, second].sort().join(":"));
 }
 
-async function existingRoomIsBlocked(env: Env, roomIDValue: any, userKey: string) {
+async function existingRoomIsBlocked(env: Env, roomIDValue: string, userKey: string) {
   try {
     const state = await env.CHAT_ROOM.getByName(roomIDValue).blockStatus(userKey);
     return state.blockedByMe || state.blockedByOther;
@@ -121,7 +121,7 @@ async function existingRoomIsBlocked(env: Env, roomIDValue: any, userKey: string
 // has blocked the caller — translated here to a deliberately vague message
 // rather than "you have been blocked", the same discretion ordinary blocking
 // UX gives every other messaging app: the blocked person isn't told why.
-function roomForbiddenResponse(error: any) {
+function roomForbiddenResponse(error: unknown) {
   if (error instanceof Error && error.message === "Forbidden") {
     return json({ error: "You are not a participant in this room." }, 403);
   }
@@ -176,7 +176,7 @@ async function messageRoomResponse(env: Env, promise: any) {
   }
 }
 
-async function roomResponse(promise: any) {
+async function roomResponse(promise: unknown) {
   try {
     return json(await promise);
   } catch (error) {
@@ -186,7 +186,7 @@ async function roomResponse(promise: any) {
   }
 }
 
-async function messageNotificationContext(env: Env, senderKey: any, roomIDValue: any) {
+async function messageNotificationContext(env: Env, senderKey: string, roomIDValue: any) {
   const sender = await ensureUser(env, senderKey);
   const group = (sender.groups ?? []).find(item => item.roomID === roomIDValue);
   if (group) {

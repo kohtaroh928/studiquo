@@ -65,13 +65,13 @@ export const ATTEST_PROTECTED_PATHS = new Set([
 
 // --- encoding helpers --------------------------------------------------------
 
-export function bytesToBase64Url(bytes: any) {
+export function bytesToBase64Url(bytes: Uint8Array<ArrayBuffer>) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-export function base64ToBytes(value: any) {
+export function base64ToBytes(value: string) {
   const normalized = String(value).replaceAll("-", "+").replaceAll("_", "/");
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) throw new Error("bad base64");
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
@@ -97,20 +97,20 @@ function bytesEqual(a: any, b: any) {
 export function decodeCBOR(bytes: any) {
   let offset = 0;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const take = (length: any) => {
+  const take = (length: number) => {
     if (length < 0 || offset + length > bytes.length) throw new Error("cbor: truncated");
     const slice = bytes.subarray(offset, offset + length);
     offset += length;
     return slice;
   };
-  const argument = (info: any) => {
+  const argument = (info: number) => {
     if (info < 24) return info;
     if (info === 24) return take(1)[0];
     if (info === 25) { take(2); return view.getUint16(offset - 2); }
     if (info === 26) { take(4); return view.getUint32(offset - 4); }
     throw new Error("cbor: unsupported length");
   };
-  const read = (depth: any): any => {
+  const read = (depth: number): any => {
     if (depth > 8) throw new Error("cbor: too deep");
     const initial = take(1)[0];
     const major = initial >> 5;
@@ -152,7 +152,7 @@ export function decodeCBOR(bytes: any) {
 // --- DER / X.509 (just enough to check Apple's chain) ------------------------
 
 // A node is { tag, start, end, raw } over the one buffer it was read from.
-function readTLV(bytes: any, offset: any) {
+function readTLV(bytes: any, offset: number) {
   if (offset + 2 > bytes.length) throw new Error("der: truncated");
   const tag = bytes[offset];
   let length = bytes[offset + 1];
@@ -169,7 +169,7 @@ function readTLV(bytes: any, offset: any) {
   return { tag, start, end, raw: bytes.subarray(offset, end), content: bytes.subarray(start, end) };
 }
 
-function childrenOf(bytes: any, node: any) {
+function childrenOf(bytes: Uint8Array<ArrayBufferLike>, node: any) {
   const out = [];
   let offset = node.start;
   while (offset < node.end) {
@@ -251,7 +251,7 @@ export function parseCertificate(der: any) {
 
 // An ECDSA signature in DER ("SEQUENCE { INTEGER r, INTEGER s }") as the fixed-size
 // r||s that WebCrypto wants.
-export function derSignatureToRaw(der: any, size: any) {
+export function derSignatureToRaw(der: Uint8Array<ArrayBufferLike>, size: any) {
   const sequence = readTLV(der, 0);
   const [r, s] = childrenOf(der, sequence);
   if (sequence.tag !== 0x30 || r?.tag !== 0x02 || s?.tag !== 0x02) throw new Error("bad signature");
@@ -286,7 +286,7 @@ async function verifyChain(leaf: any, intermediate: any, root: any, now: number)
 
 // --- attestation and assertion -----------------------------------------------
 
-function parseAuthData(authData: any) {
+function parseAuthData(authData: Uint8Array<ArrayBufferLike>) {
   if (authData.length < 37) throw new Error("authData too short");
   return {
     rpIdHash: authData.subarray(0, 32),
@@ -362,7 +362,7 @@ async function challengeKey(env: Env) {
   return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
 }
 
-async function challengeSignature(env: Env, body: any) {
+async function challengeSignature(env: Env, body: string) {
   return bytesToBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", await challengeKey(env), encoder.encode(CHALLENGE_LABEL + body))));
 }
 
@@ -395,13 +395,13 @@ export function appAttestMode(env: Env) {
   return mode;
 }
 
-function keyObject(env: Env, keyId: any) {
+function keyObject(env: Env, keyId: string) {
   return env.RATE_COUNTER.getByName(`attest-key:${keyId}`);
 }
 
 // --- routes ------------------------------------------------------------------------
 
-async function limited(binding: any, request: Request) {
+async function limited(binding: RateLimit, request: Request) {
   return binding ? !(await checkRateLimit(binding, clientKey(request))) : false;
 }
 
