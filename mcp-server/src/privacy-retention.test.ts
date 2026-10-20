@@ -13,7 +13,7 @@ function environment() {
   const db = new DatabaseSync(":memory:");
   for (const name of readdirSync(new URL("../migrations/", import.meta.url) as any).sort()) db.exec(readFileSync(new URL(`../migrations/${name}`, import.meta.url) as any, "utf8"));
   const values = new Map();
-  const statement = (sql, params = []) => ({
+  const statement = (sql: string, params = []) => ({
     bind(...args) { return statement(sql, args); },
     async run() { return { success: true, meta: db.prepare(sql).run(...params) }; },
     async all() { return { results: db.prepare(sql).all(...params) }; },
@@ -24,7 +24,7 @@ function environment() {
     RATE_LIMIT_ADMIN_WEBHOOK: { async limit() { return { success: true }; } },
     ADMIN_DB: { prepare: statement },
     STUDIQUO_DATA: {
-      async get(key, type) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
+      async get(key, type: string) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
       async list({ prefix, limit = 1000 }) { const keys = [...values.keys()].filter(key => key.startsWith(prefix)).slice(0, limit); return { keys: keys.map(name => ({ name })), list_complete: true }; },
@@ -87,11 +87,11 @@ test("accepted erasure resumes without any live session after temporary failure"
   env._values.set("session:retry-token", JSON.stringify({ sub }));
   env._values.set("snapshot:retry-token", "{}");
   const original = env.ADMIN_DB.prepare;
-  (env.ADMIN_DB as any).prepare = () => ({ bind() { return { async run() { throw new Error("temporary storage outage"); } }; } });
+  env.ADMIN_DB.prepare = () => ({ bind() { return { async run() { throw new Error("temporary storage outage"); } }; } });
   assert.deepEqual(await startAccountDeletion(env, sub), { deleted: false, cleanupPending: true });
   assert.equal(env._values.has("session:retry-token"), false);
   assert.equal(env._values.has(`privacy-account-delete:${await sha256Hex(sub)}`), true);
-  (env.ADMIN_DB as any).prepare = original;
+  env.ADMIN_DB.prepare = original;
   await runPrivacyRetention(env);
   assert.equal(env._values.has("snapshot:retry-token"), false);
   assert.equal(env._values.has(`privacy-account-delete:${await sha256Hex(sub)}`), false);
@@ -123,7 +123,7 @@ test("a deletion arriving after the webhook precheck still blocks both SQL write
   const env = environment(); env.REVENUECAT_WEBHOOK_SECRET = "test-secret";
   const hash = await sha256Hex("race-owner");
   const original = env.ADMIN_DB.prepare;
-  (env.ADMIN_DB as any).prepare = sql => {
+  env.ADMIN_DB.prepare = sql => {
     const statement = original(sql);
     if (!sql.startsWith("SELECT customer_hash")) return statement;
     return { bind(...args) {

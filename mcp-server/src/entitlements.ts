@@ -71,7 +71,7 @@ const ACTIVE_STATUSES = new Set(["active", "billing_issue"]);
 
 // `null` means "this row grants no plan"; the caller decides what that
 // falls back to (see `getPlan`).
-function planFromRow(row: any) {
+function planFromRow(row: { status: string; expires_at: number | null; product_id: string } | null | undefined) {
   if (!row) return null;
   if (!ACTIVE_STATUSES.has(row.status)) return null;
   // expires_at is null for a subscriber whose event never carried
@@ -120,7 +120,7 @@ async function subscribedPlan(env: Env, subs: (string | undefined)[]) {
   for (const sub of subs) {
     const { results } = await env.ADMIN_DB.prepare(
       `SELECT status, product_id, expires_at FROM subscribers WHERE app_user_id = ?`
-    ).bind(sub).all();
+    ).bind(sub).all<{ status: string; expires_at: number | null; product_id: string }>();
     plans.push(...(results ?? []).map(planFromRow).filter((plan): plan is string => Boolean(plan)));
   }
   if (plans.length === 0) return null;

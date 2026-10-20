@@ -13,12 +13,12 @@ function fakeDocumentRoomBinding() {
     if (!rooms.has(id)) rooms.set(id, { participants: new Map(), blocks: new Map(), changes: [], nextChangeID: 1 });
     return rooms.get(id);
   }
-  function requireParticipant(state, userKey) {
+  function requireParticipant(state: { participants: { get: (arg0: any) => any; }; }, userKey) {
     const role = state.participants.get(userKey);
     if (!role) throw new Error("Forbidden");
     return role;
   }
-  function requireReviewer(state, userKey) {
+  function requireReviewer(state: { participants: { get: (arg0: any) => any; }; }, userKey) {
     const role = requireParticipant(state, userKey);
     if (role !== "owner" && role !== "reviewer") throw new Error("Forbidden");
   }
@@ -41,7 +41,7 @@ function fakeDocumentRoomBinding() {
           }
           return { status: "initialized" };
         },
-        async invite(ownerKey, userKey, role) {
+        async invite(ownerKey, userKey, role: string) {
           const ownerRole = requireParticipant(state, ownerKey);
           if (ownerRole !== "owner") throw new Error("Forbidden");
           if (role !== "editor" && role !== "reviewer") throw new Error("InvalidRole");
@@ -63,7 +63,7 @@ function fakeDocumentRoomBinding() {
         async getState(userKey) {
           requireParticipant(state, userKey);
           return {
-            blocks: Array.from(state.blocks.values()).sort((a: any, b: any) => a.order - b.order),
+            blocks: Array.from(state.blocks.values()).sort((a, b) => (a as { order: number }).order - (b as { order: number }).order),
             pendingChanges: state.changes.filter(change => change.status === "pending"),
           };
         },
@@ -82,7 +82,7 @@ function fakeDocumentRoomBinding() {
           state.changes.push(change);
           return { id: change.id, status: "pending" };
         },
-        async reviewChange(userKey, changeID, decision) {
+        async reviewChange(userKey, changeID, decision: string) {
           requireReviewer(state, userKey);
           if (decision !== "accept" && decision !== "reject") throw new Error("InvalidDecision");
           const change = state.changes.find(item => item.id === changeID);
@@ -108,7 +108,7 @@ function fakeRateCounterBinding() {
   return {
     getByName(name) {
       return {
-        async bump(limit) {
+        async bump(limit: number) {
           const used = (counts.get(name) ?? 0) + 1;
           if (used > limit) return false;
           counts.set(name, used);
@@ -122,7 +122,7 @@ function fakeRateCounterBinding() {
 function environment() {
   const values = new Map();
   const studiquoData = {
-    async get(key, type) {
+    async get(key: string, type: string) {
       await new Promise(resolve => setImmediate(resolve));
       let value = values.get(key) ?? null;
       // These tests aren't exercising session-authenticity enforcement
@@ -151,7 +151,7 @@ function environment() {
 // unless a test lists the room id.
 function fakeChatRoomBinding(blockedRooms = new Set()) {
   return {
-    getByName(id) {
+    getByName(id: unknown) {
       return { async blockStatus() { return { blockedByMe: blockedRooms.has(id), blockedByOther: false }; } };
     },
   };
@@ -159,11 +159,11 @@ function fakeChatRoomBinding(blockedRooms = new Set()) {
 
 const noopCtx = partialCtx({ waitUntil() {} });
 
-function freshToken(suffix) {
+function freshToken(suffix: string) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 }
 
-function request(path, { method = "GET", token, body }: { method?: string; token?: any; body?: any } = {}) {
+function request(path: string, { method = "GET", token, body }: { method?: string; token?: string; body?: unknown } = {}) {
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers["content-type"] = "application/json";
@@ -176,7 +176,7 @@ function request(path, { method = "GET", token, body }: { method?: string; token
 
 const ROOM_ID = "a".repeat(64);
 
-function initRoom(env, token, blocks) {
+function initRoom(env, token: string, blocks: { order: number; kind: string; text: string; }[]) {
   return worker.fetch(
     request(`/api/document/rooms/${ROOM_ID}/init`, { method: "POST", token, body: { blocks } }),
     env,
@@ -190,7 +190,7 @@ let nextTestCode = 1;
 // would create for a real account, so invite() below can resolve a friend
 // code to a userKey exactly the way the live handler does. Returns the
 // minted code.
-async function registerFriend(env, token, name, { befriendedBy }: { befriendedBy?: any } = {}) {
+async function registerFriend(env, token: string, name: string, { befriendedBy }: { befriendedBy?: string } = {}) {
   const userKey = await sha256Hex(token);
   const code = `TESTCODE${String(nextTestCode++).padStart(4, "0")}`;
   await env.STUDIQUO_DATA.put(`chat:user:${userKey}`, JSON.stringify({ key: userKey, name, code, friends: [] }));
@@ -201,7 +201,7 @@ async function registerFriend(env, token, name, { befriendedBy }: { befriendedBy
 
 // Adds `friend` to the friends list of the account that owns `token`, creating
 // that account's record first if it has none.
-async function befriend(env, token, friend) {
+async function befriend(env, token: string, friend: { code: string; name: any; roomID: string; }) {
   const userKey = await sha256Hex(token);
   const existing = await env.STUDIQUO_DATA.get(`chat:user:${userKey}`, "json")
     ?? { key: userKey, name: "owner", code: `OWNER${userKey.slice(0, 6).toUpperCase()}`, friends: [] };
@@ -212,7 +212,7 @@ async function befriend(env, token, friend) {
 // `inviteeToken` is the token belonging to the person being invited — the
 // route resolves their friend code to a userKey server-side (the same way
 // chat.ts resolves one when adding a friend), so this registers them first.
-async function sendInvite(env, ownerToken, inviteeToken, role, { name = "友人" }: { name?: string } = {}) {
+async function sendInvite(env, ownerToken: string, inviteeToken: string, role: string, { name = "友人" }: { name?: string } = {}) {
   const code = await registerFriend(env, inviteeToken, name, { befriendedBy: ownerToken });
   return worker.fetch(
     request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: ownerToken, body: { code, role } }),
@@ -224,7 +224,7 @@ async function sendInvite(env, ownerToken, inviteeToken, role, { name = "友人"
 // An invitation only seats the person once they accept it. Most tests are about
 // what a participant can do, so this sends the invitation and has the invitee
 // accept it; the response is the invitation's, as before.
-async function invite(env, ownerToken, inviteeToken, role, options?) {
+async function invite(env, ownerToken: string, inviteeToken: string, role: string, options?: { name?: string; } | undefined) {
   const response = await sendInvite(env, ownerToken, inviteeToken, role, options);
   if (response.status === 200) {
     const accepted = await worker.fetch(
@@ -236,11 +236,11 @@ async function invite(env, ownerToken, inviteeToken, role, options?) {
   return response;
 }
 
-function getState(env, token) {
+function getState(env, token: string) {
   return worker.fetch(request(`/api/document/rooms/${ROOM_ID}/state`, { token }), env, noopCtx);
 }
 
-function propose(env, token, blockOrder, previousText, newText) {
+function propose(env, token: string, blockOrder: number, previousText: string, newText: string) {
   return worker.fetch(
     request(`/api/document/rooms/${ROOM_ID}/propose`, { method: "POST", token, body: { blockOrder, previousText, newText } }),
     env,
@@ -248,7 +248,7 @@ function propose(env, token, blockOrder, previousText, newText) {
   );
 }
 
-function review(env, token, changeID, decision) {
+function review(env, token: string, changeID: number, decision: string) {
   return worker.fetch(
     request(`/api/document/rooms/${ROOM_ID}/changes/${changeID}/review`, { method: "POST", token, body: { decision } }),
     env,
@@ -518,7 +518,7 @@ test("a friend the owner has blocked cannot be invited", async () => {
   const friend = freshToken("2");
   await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
   const code = await registerFriend(env, friend, "友人", { befriendedBy: owner });
-  (env.CHAT_ROOM as any) = fakeChatRoomBinding(new Set([`room-${code}`]));
+  env.CHAT_ROOM = fakeChatRoomBinding(new Set([`room-${code}`]));
   const response = await worker.fetch(
     request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: owner, body: { code, role: "editor" } }),
     env,
@@ -570,7 +570,7 @@ test("an invitee whose account is deleted while the invite is being made is left
   const inviteeKey = await sha256Hex(invitee);
   // The deletion lands after the code was resolved and the invitation was written.
   const put = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (name, value, options) => {
+  env.STUDIQUO_DATA.put = async (name: string, value, options) => {
     const result = await put.call(env.STUDIQUO_DATA, name, value, options);
     if (name.startsWith("doc-invite:")) await env.STUDIQUO_DATA.delete(`chat:user:${inviteeKey}`);
     return result;
@@ -662,7 +662,7 @@ test("an invitation lapses after two weeks", async () => {
   await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
   const ttls = [];
   const put = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (name, value, options) => { if (name.startsWith("doc-invite:")) ttls.push(options?.expirationTtl); return put.call(env.STUDIQUO_DATA, name, value, options); };
+  env.STUDIQUO_DATA.put = async (name: string, value, options: { expirationTtl: any; }) => { if (name.startsWith("doc-invite:")) ttls.push(options?.expirationTtl); return put.call(env.STUDIQUO_DATA, name, value, options); };
   await sendInvite(env, owner, friend, "editor");
   assert.deepEqual(ttls, [14 * 24 * 3600]);
 });

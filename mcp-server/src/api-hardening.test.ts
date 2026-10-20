@@ -20,14 +20,14 @@ function countingRateCounter() {
     asked,
     getByName(name) {
       return {
-        async bump(limit, windowSeconds) {
+        async bump(limit: number, windowSeconds) {
           asked.push({ name, limit, windowSeconds });
           const used = (counts.get(name) ?? 0) + 1;
           if (used > limit) return false;
           counts.set(name, used);
           return true;
         },
-        async take(limit, windowSeconds, amount = 1) {
+        async take(limit: number, windowSeconds: number, amount = 1) {
           const used = (counts.get(name) ?? 0) + amount;
           if (used > limit) return { ok: false };
           counts.set(name, used);
@@ -44,7 +44,7 @@ function environment(extra = {}) {
   return partialEnv({
     raw: values,
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         let value = values.get(key) ?? null;
         // A well-formed bearer token counts as a real sign-in unless the test
         // seeded its own session.
@@ -67,7 +67,7 @@ function environment(extra = {}) {
 // A D1 with no subscriber or legacy rows in it.
 const noRows = { prepare() { return { bind() { return { async all() { return { results: [] }; } }; } }; } };
 
-function call(env, path, { method = "GET", token, headers = {}, body }: { method?: string; token?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
+function call(env, path: string, { method = "GET", token, headers = {}, body }: { method?: string; token?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
   const all = { ...headers };
   if (token) all.authorization = `Bearer ${token}`;
   return worker.fetch(new Request(`https://example.test${path}`, { method, headers: all, body }), env, noopCtx);

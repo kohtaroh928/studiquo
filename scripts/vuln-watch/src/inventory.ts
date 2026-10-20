@@ -2,9 +2,10 @@
 // exposure: server=Workerに入って公開側で動く / app=iPadアプリに同梱 / tooling=開発・ビルド用のみ
 
 import { readFileSync, existsSync } from 'node:fs';
+import type { Asset, ManualAssets, NpmLock, SwiftPin, SwiftResolved } from './types.ts';
 
 /** OSV(SwiftURL)のパッケージ名は「github.com/owner/repo」。スキームと.gitは付けない。 */
-export function swiftUrlName(location: any) {
+export function swiftUrlName(location: string) {
   return String(location)
     .replace(/^[a-z+]+:\/\//i, '')
     .replace(/^git@([^:]+):/, '$1/')
@@ -12,13 +13,13 @@ export function swiftUrlName(location: any) {
     .replace(/\/$/, '');
 }
 
-export function parseNpmLock(lock: any, pkgJson: any = {}) {
+export function parseNpmLock(lock: NpmLock, pkgJson: { dependencies?: object; devDependencies?: object } = {}): Asset[] {
   const direct = new Set([
     ...Object.keys(pkgJson.dependencies ?? {}),
     ...Object.keys(pkgJson.devDependencies ?? {}),
   ]);
-  const items: any[] = [];
-  for (const [path, meta] of Object.entries<any>(lock.packages ?? {})) {
+  const items: Asset[] = [];
+  for (const [path, meta] of Object.entries(lock.packages ?? {})) {
     if (!path.includes('node_modules/')) continue; // ルート自身は除く
     const name = path.slice(path.lastIndexOf('node_modules/') + 'node_modules/'.length);
     if (!meta.version || meta.link) continue;
@@ -33,9 +34,9 @@ export function parseNpmLock(lock: any, pkgJson: any = {}) {
   return items;
 }
 
-export function parseSwiftResolved(resolved: any) {
+export function parseSwiftResolved(resolved: SwiftResolved): Asset[] {
   const pins = resolved.pins ?? resolved.object?.pins ?? [];
-  return pins.map((p: any) => {
+  return pins.map((p: SwiftPin) => {
     const location = p.location ?? p.repositoryURL ?? '';
     const identity = p.identity ?? String(p.package ?? '').toLowerCase();
     return {
@@ -50,8 +51,8 @@ export function parseSwiftResolved(resolved: any) {
 }
 
 /** 手書き補足(assets.manual.json)を重ねる。キーは「ecosystem:name」または「SwiftURL:identity」。 */
-export function applyManual(items: any, manual: any) {
-  return items.map((it: any) => {
+export function applyManual(items: Asset[], manual: ManualAssets): Asset[] {
+  return items.map((it) => {
     const hint = manual.assets?.[`${it.ecosystem}:${it.name}`] ?? manual.assets?.[`${it.ecosystem}:${it.identity}`] ?? {};
     return {
       ...it,
@@ -63,12 +64,12 @@ export function applyManual(items: any, manual: any) {
   });
 }
 
-function key(it: any) {
+function key(it: Asset) {
   return `${it.ecosystem}:${it.name}@${it.version ?? it.revision}`;
 }
 
-export function dedupe(items: any) {
-  const seen = new Map();
+export function dedupe(items: Asset[]): Asset[] {
+  const seen = new Map<string, Asset>();
   for (const it of items) {
     const k = key(it);
     const prev = seen.get(k);
@@ -78,21 +79,21 @@ export function dedupe(items: any) {
   return [...seen.values()].sort((a, b) => key(a).localeCompare(key(b)));
 }
 
-const readJson = (p: any) => JSON.parse(readFileSync(p, 'utf8'));
+const readJson = (p: string) => JSON.parse(readFileSync(p, 'utf8'));
 
 /**
  * @param {{npmDir:string, swiftResolved:string|null, manualPath:string, previous?:object}} o
  * Package.resolved はgit管理外(xcodeprojが無視されるため)。見つからなければ前回の台帳のSwift分を引き継ぐ。
  */
-export function buildInventory({ npmDir, swiftResolved, manualPath, previous = null }: any) {
-  const warnings = [];
+export function buildInventory({ npmDir, swiftResolved, manualPath, previous = null }: { npmDir: string; swiftResolved: string | null; manualPath: string; previous?: { items?: Asset[] } | null }) {
+  const warnings: string[] = [];
   const manual = existsSync(manualPath) ? readJson(manualPath) : {};
   let items = parseNpmLock(readJson(`${npmDir}/package-lock.json`), readJson(`${npmDir}/package.json`));
 
   if (swiftResolved && existsSync(swiftResolved)) {
     items = items.concat(parseSwiftResolved(readJson(swiftResolved)));
   } else {
-    const carried = (previous?.items ?? []).filter((i: any) => i.ecosystem === 'SwiftURL');
+    const carried = (previous?.items ?? []).filter((i: { ecosystem: string; }) => i.ecosystem === 'SwiftURL');
     warnings.push(
       carried.length
         ? `Package.resolved が見つからないため、前回の台帳のSwift分(${carried.length}件)を引き継ぎました。`

@@ -9,7 +9,7 @@ function environment(limit = 5) {
   let count = 0;
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
@@ -22,7 +22,7 @@ function environment(limit = 5) {
   });
 }
 
-function request(method, body) {
+function request(method: string, body) {
   return new Request("https://example.test/api/chat/devices", {
     method,
     headers: { "content-type": "application/json" },

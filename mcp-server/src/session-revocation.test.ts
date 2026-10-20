@@ -9,7 +9,7 @@ function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
+      async get(key, type: string) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
       async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
@@ -133,7 +133,7 @@ test("the cut-off expires once no session old enough to be affected can exist", 
   const env = environment();
   let ttl;
   const realPut = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => { if (key === await cutoffKey("email:ttl@example.com")) ttl = options?.expirationTtl; return realPut(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key: string, value, options: { expirationTtl: any; }) => { if (key === await cutoffKey("email:ttl@example.com")) ttl = options?.expirationTtl; return realPut(key, value, options); };
   await revokeSessionsIssuedBefore(env, "email:ttl@example.com");
   assert.ok(ttl >= 90 * 86_400, `ttl ${ttl}`);
 });
@@ -141,7 +141,7 @@ test("the cut-off expires once no session old enough to be affected can exist", 
 // --- H-1: connected apps (MCP) ---
 
 const sha = value => sha256Hex(value);
-async function connectApp(env, sub, clientId, accessToken) {
+async function connectApp(env, sub: string, clientId: string, accessToken: string) {
   await env._values.set(`mcp:grant:${await sha(sub)}:${await sha(clientId)}`, JSON.stringify({ clientName: "Test app", createdAt: Date.now() }));
   await env._values.set(`mcp:access:${await sha(accessToken)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read" }));
   await env._values.set(`mcp:refresh:${await sha("refresh-" + accessToken)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read" }));
@@ -183,7 +183,7 @@ test("H-1: disconnecting reads every page of grants, not just the first", async 
   const sub = "email:many-apps@example.com";
   for (let index = 0; index < 5; index += 1) await connectApp(env, sub, `client-${index}`, `mcp_many_${index}_` + "x".repeat(40));
   const realList = env.STUDIQUO_DATA.list;
-  (env.STUDIQUO_DATA as any).list = async ({ prefix, cursor }) => {
+  env.STUDIQUO_DATA.list = async ({ prefix, cursor }) => {
     const all = (await realList({ prefix })).keys;
     const start = cursor ? Number(cursor) : 0;
     const keys = all.slice(start, start + 2);

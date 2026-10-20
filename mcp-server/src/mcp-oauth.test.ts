@@ -12,7 +12,7 @@ function environment() {
   const consumed = new Set();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
@@ -41,13 +41,13 @@ function environment() {
 
 // The owner makes a code in the app; the AI app's page takes it. Returns the
 // answer of the page's POST /oauth/pair.
-async function enterOwnerCode(env, flowId, sub, kind = "other") {
+async function enterOwnerCode(env, flowId: string, sub: string, kind = "other") {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const { code } = await issueOwnerCode(env, sub, kind);
   return fetch(env, "/oauth/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: flowId, code }) });
 }
 
-const fetch = (env, path, options = {}) => worker.fetch(new Request(`https://example.test${path}`, options), env, partialCtx({ waitUntil() {} }));
+const fetch = (env, path: string, options = {}) => worker.fetch(new Request(`https://example.test${path}`, options), env, partialCtx({ waitUntil() {} }));
 
 test("MCP connector pairs through the logged-in iPad, imports by account, and can be revoked", async () => {
   const env = environment();
@@ -137,7 +137,7 @@ test("a refresh token from before a revocation stays dead when the same app is a
   });
 
   // Approve once and take the refresh token the app now holds.
-  const approve = async (id, code) => {
+  const approve = async (id: string, code: string) => {
     await env.STUDIQUO_DATA.put(`mcp:auth:${id}`, JSON.stringify({ kind: "other", clientId, clientName: "App", redirectUri, codeChallenge: "c".repeat(43), scope: "studiquo.read" }));
     assert.equal((await enterOwnerCode(env, id, sub)).status, 200);
   };
@@ -160,7 +160,7 @@ test("a registered client expires after a year instead of staying forever", asyn
   const env = environment();
   const ttls = new Map();
   const put = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key, value, options: { expirationTtl: any; }) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
   const response = await fetch(env, "/oauth/register", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ client_name: "Claude", redirect_uris: ["https://claude.ai/callback"] }),
@@ -221,7 +221,7 @@ test("an unknown refresh token revokes nothing", async () => {
 // A counter that really counts, so single-use and attempt limits can be tested.
 function countingCounter() {
   const counts = new Map();
-  return { getByName(name) { return { async bump(limit, _window, amount = 1) {
+  return { getByName(name) { return { async bump(limit: number, _window, amount = 1) {
     const used = (counts.get(name) ?? 0) + amount;
     if (used > limit) return false;
     counts.set(name, used);
@@ -229,7 +229,7 @@ function countingCounter() {
   } }; } };
 }
 
-async function startFlow(env, redirectUri, clientName = "Client") {
+async function startFlow(env, redirectUri: string | number | boolean, clientName = "Client") {
   const registered = await fetch(env, "/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ client_name: clientName, redirect_uris: [redirectUri] }) });
   const { client_id: clientId } = await registered.json();
   const challenge = createHash("sha256").update("v".repeat(43)).digest("base64url");
@@ -237,7 +237,7 @@ async function startFlow(env, redirectUri, clientName = "Client") {
   return page.match(/id:'([a-f0-9]{64})'/)[1];
 }
 
-const submit = (env, id, code) => fetch(env, "/oauth/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, code }) });
+const submit = (env, id: string, code: string) => fetch(env, "/oauth/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, code }) });
 
 test("clients are sorted into Claude, ChatGPT, Codex or other by where they send the owner back to", async () => {
   const { classifyClient } = await import("./mcp-oauth.ts");
@@ -255,7 +255,7 @@ test("clients are sorted into Claude, ChatGPT, Codex or other by where they send
 test("a code made for one kind of app is refused by another kind and is not used up", async () => {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const claudeFlow = await startFlow(env, "https://claude.ai/api/mcp/auth_callback", "Claude");
   const otherFlow = await startFlow(env, "https://attacker.example/callback", "Claude");
   const { code } = await issueOwnerCode(env, "apple:owner", "claude");
@@ -270,7 +270,7 @@ test("a code made for one kind of app is refused by another kind and is not used
 test("a code works once", async () => {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const first = await startFlow(env, "https://client.example/a");
   const second = await startFlow(env, "https://client.example/b");
   const { code } = await issueOwnerCode(env, "apple:owner", "other");
@@ -281,7 +281,7 @@ test("a code works once", async () => {
 test("the code is accepted with spaces, hyphens and lower case, as the owner types it", async () => {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const id = await startFlow(env, "https://client.example/a");
   const { code } = await issueOwnerCode(env, "apple:owner", "other");
   const typed = `${code.slice(0, 4)}-${code.slice(4, 8)} ${code.slice(8)}`.toLowerCase();
@@ -291,10 +291,10 @@ test("the code is accepted with spaces, hyphens and lower case, as the owner typ
 test("a new code replaces the last one, and an expired code is gone", async () => {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const ttls = new Map();
   const put = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => { ttls.set(key.split(":").slice(0, 2).join(":"), options?.expirationTtl); return put(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key: string, value, options: { expirationTtl: any; }) => { ttls.set(key.split(":").slice(0, 2).join(":"), options?.expirationTtl); return put(key, value, options); };
   const id = await startFlow(env, "https://client.example/a");
   const old = await issueOwnerCode(env, "apple:owner", "other");
   const fresh = await issueOwnerCode(env, "apple:owner", "other");
@@ -307,7 +307,7 @@ test("a new code replaces the last one, and an expired code is gone", async () =
 test("a page that keeps guessing is closed after five wrong tries, even if the next one is right", async () => {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const id = await startFlow(env, "https://client.example/a");
   const { code } = await issueOwnerCode(env, "apple:owner", "other");
   for (let i = 0; i < 5; i++) assert.equal((await submit(env, id, "AAAAAAAAAAAA")).status, 400);
@@ -318,7 +318,7 @@ test("a page that keeps guessing is closed after five wrong tries, even if the n
 
 test("guesses from one address are capped across pages", async () => {
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   let last;
   for (let i = 0; i < 21; i++) {
     const id = await startFlow(env, `https://client.example/${i}`);
@@ -330,7 +330,7 @@ test("guesses from one address are capped across pages", async () => {
 test("connecting an app tells the owner's devices, and a failed notice does not undo the connection", async () => {
   const { issueOwnerCode, listConnections } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const errors = mock.method(console, "error", () => {});
   try {
     const id = await startFlow(env, "https://claude.ai/api/mcp/auth_callback", "Claude");
@@ -344,7 +344,7 @@ test("connecting an app tells the owner's devices, and a failed notice does not 
 
 test("issued tokens are listed under their account, and the first listing starts the clock for deletions", async () => {
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const redirectUri = "https://client.example/a";
   const registered = await fetch(env, "/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ client_name: "C", redirect_uris: [redirectUri] }) });
   const { client_id: clientId } = await registered.json();

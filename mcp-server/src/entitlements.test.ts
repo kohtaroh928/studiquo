@@ -11,7 +11,7 @@ import { partialEnv } from "./test-env.ts";
 // app_user_id — not something today's real schema (app_user_id is its
 // primary key) can actually produce, but exactly the shape `getPlan` is
 // written to tolerate; see its own doc comment.
-function fakeAdminDB(subscribers) {
+function fakeAdminDB(subscribers: any[]) {
   return partialEnv({
     ADMIN_DB: {
       prepare() {
@@ -124,7 +124,7 @@ function fakePaywallDB({ subscribers = [], legacy = [], paywall = true }: { subs
   return partialEnv({
     ...(paywall ? { PAYWALL_ENABLED: "true" } : {}),
     ADMIN_DB: {
-      prepare(sql) {
+      prepare(sql: string | string[]) {
         return {
           bind(appUserId) {
             return {

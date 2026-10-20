@@ -10,11 +10,11 @@ function fakeContext() {
   let turn = Promise.resolve();
   return partialState({
     storage: {
-      async get(key) { return values.get(key); },
+      async get(key: string) { return values.get(key); },
       async put(key, value) { values.set(key, value); },
       async delete(key) { values.delete(key); },
     },
-    blockConcurrencyWhile(work) {
+    blockConcurrencyWhile(work: ((value: void) => void | PromiseLike<void>) | null | undefined) {
       const run = turn.then(work);
       turn = run.catch(() => {});
       return run;

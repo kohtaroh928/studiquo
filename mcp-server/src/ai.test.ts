@@ -13,8 +13,8 @@ function fakeRateCounterBinding() {
   return {
     getByName(name) {
       return {
-        async bump(limit, window, amount = 1) { return (await this.take(limit, window, amount)).ok; },
-        async take(limit, _window, amount = 1) {
+        async bump(limit: number, window, amount = 1) { return (await this.take(limit, window, amount)).ok; },
+        async take(limit: number, _window, amount = 1) {
           const used = (counts.get(name) ?? 0) + amount;
           if (used > limit) return { ok: false };
           counts.set(name, used);
@@ -23,7 +23,7 @@ function fakeRateCounterBinding() {
         async give(amount = 1) {
           counts.set(name, Math.max(0, (counts.get(name) ?? 0) - amount));
         },
-        async usage(limit) {
+        async usage(limit: number) {
           const used = counts.get(name) ?? 0;
           return { limit, remaining: Math.max(0, limit - used), resetsAt: null };
         },
@@ -75,7 +75,7 @@ function executionContext() {
 }
 
 /** Responses-API SSE carrying `text` as one output_text delta. */
-function responsesOK(text) {
+function responsesOK(text: string) {
   const events = [
     { type: "response.created" },
     { type: "response.output_text.delta", delta: text },
@@ -91,7 +91,7 @@ function responsesOK(text) {
  * (default: nothing flagged) and everything else by `upstream`; `calls`
  * records the Responses requests only.
  */
-function installFetch(upstream, { moderation }: { moderation?: any } = {}) {
+function installFetch(upstream, { moderation }: { moderation?: (options: unknown) => Response } = {}) {
   const original = globalThis.fetch;
   const state = { calls: [] as any[], moderationCalls: [] as any[], restore: () => {} };
   globalThis.fetch = async (url, options) => {
@@ -107,7 +107,7 @@ function installFetch(upstream, { moderation }: { moderation?: any } = {}) {
   return state;
 }
 
-function post(path, body) {
+function post(path: string, body: { messages: { role: string; text: string; }[]; }) {
   return new Request(`https://example.test/api/ai/${path}`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
   });
@@ -232,7 +232,7 @@ test("review spends credits from the same allowance as chat", async () => {
     // standard: 40 credits per 5 hours and 5 calls a minute; a review costs 3 x 1 = 3.
     // Drop the minute window so only the 5-hour window is being exercised.
     const original = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-    (env.RATE_COUNTER as any).getByName = name => name.startsWith("ai:cr:min:")
+    env.RATE_COUNTER.getByName = name => name.startsWith("ai:cr:min:")
       ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
       : original(name);
     for (let i = 0; i < 13; i += 1) assert.equal((await run("review", { question: "テスト" }, { env })).response.status, 200, `review ${i + 1}`);
@@ -421,7 +421,7 @@ test("a heavy model spends more credits: plus fits 20 Sol calls in 5 hours, not 
   try {
     const env = environment();
     const original = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-    (env.RATE_COUNTER as any).getByName = name => name.startsWith("ai:cr:min:")
+    env.RATE_COUNTER.getByName = name => name.startsWith("ai:cr:min:")
       ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
       : original(name);
     for (let i = 0; i < 20; i += 1) assert.equal((await run("chat", chatBody({ model: "openai-sol" }), { env, plan: "plus" })).response.status, 200, `call ${i + 1}`);
@@ -486,7 +486,7 @@ test("self-harm is not refused by the app, and a moderation outage stops the req
 test("every prompt shown to a student tells the model to delimit math with $ and $$", async () => {
   const seen = {};
   let current;
-  const fetchState = installFetch((_url, _options, body) => { seen[current] = body.instructions; return responsesOK("{}"); });
+  const fetchState = installFetch((_url, _options, body: { instructions: any; }) => { seen[current] = body.instructions; return responsesOK("{}"); });
   const bodies = {
     chat: chatBody(),
     review: { question: "解の公式を教えて" },

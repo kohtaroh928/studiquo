@@ -8,12 +8,12 @@ const W: Record<string, Record<string, number>> = {
   CIA: { H: 0.56, L: 0.22, N: 0 },
 };
 
-function roundUp1(x: any) {
+function roundUp1(x: number) {
   const i = Math.round(x * 100000);
   return i % 10000 === 0 ? i / 100000 : (Math.floor(i / 10000) + 1) / 10;
 }
 
-export function cvss3BaseScore(vector: any) {
+export function cvss3BaseScore(vector: string) {
   if (typeof vector !== 'string' || !/^CVSS:3\.[01]\//.test(vector)) return null;
   const m: Record<string, string> = Object.fromEntries(vector.split('/').slice(1).map((p: string) => p.split(':')));
   const changed = m.S === 'C';
@@ -29,6 +29,6 @@ export function cvss3BaseScore(vector: any) {
 }
 
 /** GHSAなどの文字の深刻度を、数値が無いときの代用点にする。 */
-export function severityLabelToScore(label: any) {
+export function severityLabelToScore(label: string | null | undefined) {
   return { CRITICAL: 9.5, HIGH: 8, MODERATE: 5.5, MEDIUM: 5.5, LOW: 2.5 }[String(label ?? '').toUpperCase()] ?? null;
 }

@@ -63,7 +63,7 @@ function issueReportJSON(row: Record<string,unknown>, origin: string) {
 
 // The list leaves out the copied messages: reading those is a separate,
 // logged step (GET /api/admin/chat-reports/:id).
-function chatReportJSON(row: any, withSnapshot: boolean) {
+function chatReportJSON(row: Record<string, unknown>, withSnapshot: boolean) {
   return {
     id: row.id,
     roomID: row.room_id,
@@ -72,11 +72,11 @@ function chatReportJSON(row: any, withSnapshot: boolean) {
     status: row.status,
     note: row.admin_note,
     createdAt: row.created_at,
-    ...(withSnapshot ? { messages: JSON.parse(row.snapshot), reporterKey: row.reporter_key, reportedKey: row.reported_key } : {}),
+    ...(withSnapshot ? { messages: JSON.parse(row.snapshot as string), reporterKey: row.reporter_key, reportedKey: row.reported_key } : {}),
   };
 }
 
-function appErrorJSON(row: any) {
+function appErrorJSON(row: Record<string, unknown>) {
   return {
     fingerprint: row.fingerprint,
     kind: row.kind,
@@ -170,9 +170,9 @@ export async function handleAdminReports(url: URL, request: Request, env: Env) {
 
   const chatReportMatch = /^\/api\/admin\/chat-reports\/([0-9a-f-]{36})$/.exec(url.pathname);
   if (chatReportMatch && request.method === "GET") {
-    const row = await env.ADMIN_DB.prepare(`SELECT * FROM chat_reports WHERE id = ?`).bind(chatReportMatch[1]).first<Record<string, any>>();
+    const row = await env.ADMIN_DB.prepare(`SELECT * FROM chat_reports WHERE id = ?`).bind(chatReportMatch[1]).first<Record<string, unknown>>();
     if (!row) return json({ error: "Not found." }, 404);
-    await auditAdmin(env, request, "chat_report.view", row.id);
+    await auditAdmin(env, request, "chat_report.view", row.id as string);
     return json(chatReportJSON(row, true));
   }
   if (chatReportMatch && request.method === "POST") {

@@ -109,7 +109,7 @@ export function classifyClient(client: ClientRecord) {
   return "other";
 }
 
-export function normalizeCode(value: any) {
+export function normalizeCode(value: unknown) {
   return String(value ?? "").toUpperCase().replace(/[\s-]/g, "");
 }
 
@@ -253,7 +253,7 @@ export async function listConnections(env: Env, sub: string) {
   let cursor;
   do {
     const page: KVNamespaceListResult<unknown> = await env.STUDIQUO_DATA.list({ prefix, ...(cursor ? { cursor } : {}) });
-    names.push(...page.keys.map((key: any) => key.name));
+    names.push(...page.keys.map((key) => key.name));
     cursor = page.list_complete === false ? page.cursor : undefined;
   } while (cursor);
   // Only what the app lists: the grant's `nonce` is what ties issued tokens to

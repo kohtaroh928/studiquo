@@ -34,11 +34,25 @@ const ALLOWED_SCREENSHOT_CONTENT_TYPES = new Set(["image/jpeg", "image/png"]);
 // outlives the session that filed it by much.
 const REPORT_TTL_SECONDS = 90 * 24 * 60 * 60;
 
-function truncate(value: string | unknown[], max: number) {
+function truncate(value: unknown, max: number) {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 
-async function postToSlack(env: Env, report: any, dashboardURL: string) {
+/** A filed report as kept in `issue-report:<id>` (the screenshot is stored apart). */
+interface IssueReport {
+  id: string;
+  reporterKey: string;
+  accountKey: string;
+  description: string;
+  appVersion: string;
+  osVersion: string;
+  deviceModel: string;
+  language: string;
+  hasScreenshot: boolean;
+  createdAt: number;
+}
+
+async function postToSlack(env: Env, report: IssueReport, dashboardURL: string) {
   if (!env.SLACK_ISSUE_REPORT_WEBHOOK_URL) return;
   const context = [
     report.appVersion && `v${report.appVersion}`,
@@ -61,7 +75,7 @@ async function postToSlack(env: Env, report: any, dashboardURL: string) {
 // Mirrors the report into D1 so the admin dashboard can list it and track
 // whether it's been handled. The KV copy above stays the durable record, so
 // a D1 hiccup is logged rather than failing the person's report.
-async function recordInDashboard(env: Env, report: any) {
+async function recordInDashboard(env: Env, report: IssueReport) {
   if (!env.ADMIN_DB) return;
   try {
     await env.ADMIN_DB.prepare(

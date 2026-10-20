@@ -6,7 +6,7 @@ import { isBreachedPassword } from "./pwned-passwords.ts";
 const PREFIX = "5BAA6";
 const SUFFIX = "1E4C9B93F3F0682250B6CF8331B7EE68FD8";
 
-function fakeHibp(body, { status = 200 } = {}) {
+function fakeHibp(body: BodyInit | null | undefined, { status = 200 } = {}) {
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push({ url, init });
@@ -15,7 +15,7 @@ function fakeHibp(body, { status = 200 } = {}) {
   return { fetchImpl, calls };
 }
 
-function silenceErrors(run) {
+function silenceErrors(run: { (): Promise<void>; (): Promise<void>; (): Promise<any>; }) {
   const original = console.error;
   console.error = () => {};
   return run().finally(() => { console.error = original; });

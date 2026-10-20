@@ -5,7 +5,7 @@ import { THROTTLE_POLICIES, recordFailure, refundAttempt, remainingSeconds, rese
 const policy = { freeFailures: 3, baseSeconds: 10, maxSeconds: 60, windowSeconds: 600 };
 const T0 = 1_000_000;
 
-function failTimes(count, start = T0, step = 1_000) {
+function failTimes(count: number, start = T0, step = 1_000) {
   let state;
   for (let i = 0; i < count; i++) state = recordFailure(state, start + i * step, policy);
   return state;
@@ -55,7 +55,7 @@ test("production policies tolerate a typo streak before slowing anyone", () => {
   for (const p of Object.values(THROTTLE_POLICIES)) assert.ok(p.maxSeconds <= 900);
 });
 
-function reserveTimes(count, start = T0, step = 1_000) {
+function reserveTimes(count: number, start = T0, step = 1_000) {
   let state;
   const results = [];
   for (let i = 0; i < count; i++) {

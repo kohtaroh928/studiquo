@@ -169,7 +169,7 @@ async function sendSignInNotice(env: Env, email: string, context: { key?: string
  * when `notify` is set and it's one the account hasn't used lately — emails
  * the owner. Returns `{ newContext, firstSeen }` for the metrics. Never throws.
  */
-export async function noteSignInContext(env: Env, request: Request, email: string, { notify }: any) {
+export async function noteSignInContext(env: Env, request: Request, email: string, { notify }: { notify: boolean }) {
   try {
     const context = requestContext(request);
     if (!context) return { newContext: false, firstSeen: false };

@@ -41,7 +41,7 @@ test("approved OpenAI requests remain readable by the actual handler", async () 
   assert.equal(await aiPrivacyRejection(input, APPROVED), null);
   // The body is parsed once, here, and the handler takes the result from
   // ai-body.ts instead of reading the stream again.
-  assert.equal((takeParsedBody(input) as any).messages[0].text, "test");
+  assert.equal((takeParsedBody(input) as { messages: { text: string }[] }).messages[0].text, "test");
   assert.equal(takeParsedBody(input), undefined);
 });
 test("an empty or padded model name is treated like the handler treats it", async () => {
