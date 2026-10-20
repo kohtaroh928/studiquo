@@ -1,0 +1,198 @@
+{
+  "model": "gpt-6-luna",
+  "samples": 2,
+  "calls": 10,
+  "failedStatus": null,
+  "rows": [
+    {
+      "sample": 0,
+      "id": "rag-short",
+      "kind": "rag",
+      "upstream": {
+        "firstToken": 3436,
+        "done": 3760,
+        "chars": 22
+      },
+      "client": {
+        "firstText": 3762,
+        "last": 3762,
+        "textEvents": 1,
+        "keepalives": 0,
+        "textChars": 22,
+        "bytes": 285
+      },
+      "totalMs": 3763
+    },
+    {
+      "sample": 1,
+      "id": "rag-short",
+      "kind": "rag",
+      "upstream": {
+        "firstToken": 2068,
+        "done": 2344,
+        "chars": 22
+      },
+      "client": {
+        "firstText": 2345,
+        "last": 2345,
+        "textEvents": 1,
+        "keepalives": 0,
+        "textChars": 22,
+        "bytes": 285
+      },
+      "totalMs": 2345
+    },
+    {
+      "sample": 0,
+      "id": "rag-long",
+      "kind": "rag",
+      "upstream": {
+        "firstToken": 7200,
+        "done": 12550,
+        "chars": 705
+      },
+      "client": {
+        "firstText": 12551,
+        "last": 12551,
+        "textEvents": 1,
+        "keepalives": 0,
+        "textChars": 705,
+        "bytes": 2102
+      },
+      "totalMs": 12555
+    },
+    {
+      "sample": 1,
+      "id": "rag-long",
+      "kind": "rag",
+      "upstream": {
+        "firstToken": 7503,
+        "done": 11411,
+        "chars": 497
+      },
+      "client": {
+        "firstText": 11412,
+        "last": 11412,
+        "textEvents": 1,
+        "keepalives": 0,
+        "textChars": 497,
+        "bytes": 1525
+      },
+      "totalMs": 11412
+    },
+    {
+      "sample": 0,
+      "id": "note-short",
+      "kind": "note",
+      "upstream": {
+        "firstToken": 6406,
+        "done": 7135,
+        "chars": 75
+      },
+      "client": {
+        "firstText": 7135,
+        "last": 7135,
+        "textEvents": 1,
+        "keepalives": 0,
+        "textChars": 75,
+        "bytes": 238
+      },
+      "totalMs": 7135
+    },
+    {
+      "sample": 1,
+      "id": "note-short",
+      "kind": "note",
+      "upstream": {
+        "firstToken": 7643,
+        "done": 8269,
+        "chars": 44
+      },
+      "client": {
+        "firstText": 8270,
+        "last": 8270,
+        "textEvents": 1,
+        "keepalives": 0,
+        "textChars": 44,
+        "bytes": 151
+      },
+      "totalMs": 8270
+    },
+    {
+      "sample": 0,
+      "id": "note-long",
+      "kind": "note",
+      "upstream": {
+        "firstToken": 8843,
+        "done": 18761,
+        "chars": 1300
+      },
+      "client": {
+        "firstText": 18761,
+        "last": 18761,
+        "textEvents": 1,
+        "keepalives": 1,
+        "textChars": 1300,
+        "bytes": 3477
+      },
+      "totalMs": 18762
+    },
+    {
+      "sample": 1,
+      "id": "note-long",
+      "kind": "note",
+      "upstream": {
+        "firstToken": 7501,
+        "done": 17208,
+        "chars": 1317
+      },
+      "client": {
+        "firstText": 17208,
+        "last": 17208,
+        "textEvents": 1,
+        "keepalives": 1,
+        "textChars": 1317,
+        "bytes": 3498
+      },
+      "totalMs": 17209
+    },
+    {
+      "sample": 0,
+      "id": "plain-long",
+      "kind": "plain",
+      "upstream": {
+        "firstToken": 10479,
+        "done": 19549,
+        "chars": 1490
+      },
+      "client": {
+        "firstText": 10479,
+        "last": 19035,
+        "textEvents": 1078,
+        "keepalives": 0,
+        "textChars": 1490,
+        "bytes": 24260
+      },
+      "totalMs": 19549
+    },
+    {
+      "sample": 1,
+      "id": "plain-long",
+      "kind": "plain",
+      "upstream": {
+        "firstToken": 13486,
+        "done": 22788,
+        "chars": 1453
+      },
+      "client": {
+        "firstText": 13487,
+        "last": 22608,
+        "textEvents": 1046,
+        "keepalives": 0,
+        "textChars": 1453,
+        "bytes": 23512
+      },
+      "totalMs": 22788
+    }
+  ]
+}

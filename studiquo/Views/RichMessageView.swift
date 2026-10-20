@@ -11,6 +11,9 @@ struct RichMessageView: View {
     let source: String
     var fontSize: CGFloat = 17
     var color: UIColor = .label
+    /// A hard switch: false means this view never offers a link. Links are otherwise
+    /// opened only for the sites `AILinkPolicy` allows.
+    var allowLinks = true
 
     private final class ParseCache {
         var source = ""
@@ -27,7 +30,7 @@ struct RichMessageView: View {
     }
 
     var body: some View {
-        RichBlocksView(blocks: blocks, style: RichStyle(fontSize: fontSize, color: color))
+        RichBlocksView(blocks: blocks, style: RichStyle(fontSize: fontSize, color: color, allowLinks: allowLinks))
             .frame(maxWidth: .infinity, alignment: .leading)
             // One element read as plain words: the typeset formulas are images with no text of their own.
             .accessibilityRepresentation { Text(MathTextFormatter.plainText(from: source)) }
@@ -37,9 +40,10 @@ struct RichMessageView: View {
 struct RichStyle {
     var fontSize: CGFloat
     var color: UIColor
+    var allowLinks = true
 
     var swiftUIColor: Color { Color(uiColor: color) }
-    func scaled(_ factor: CGFloat) -> RichStyle { RichStyle(fontSize: fontSize * factor, color: color) }
+    func scaled(_ factor: CGFloat) -> RichStyle { RichStyle(fontSize: fontSize * factor, color: color, allowLinks: allowLinks) }
 }
 
 private struct RichBlocksView: View {
@@ -134,11 +138,19 @@ struct RichInlineText: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// The address a span may open. Nil when links are switched off for this view, or when
+    /// the address is not on the allowed-site list (`AILinkPolicy`): a reply can carry a
+    /// link planted by a note or a document, so only a few known sites are ever opened.
+    static func openableURL(_ link: String?, allowLinks: Bool) -> URL? {
+        guard allowLinks else { return nil }
+        return AILinkPolicy.openableURL(link)
+    }
+
     private func text(for span: RichSpan) -> Text {
         var result: Text
         switch span.content {
         case .text(let string):
-            if let link = span.link, let url = URL(string: link) {
+            if let url = Self.openableURL(span.link, allowLinks: style.allowLinks) {
                 var attributed = AttributedString(string)
                 attributed.link = url
                 attributed.underlineStyle = .single
