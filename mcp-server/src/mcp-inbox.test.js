@@ -29,7 +29,7 @@ register(
   import.meta.url
 );
 
-const { MCPInbox } = await import("./mcp-inbox.js");
+const { MCPInbox } = await import("./mcp-inbox.ts");
 
 // Wraps a real in-memory SQLite database in the shape mcp-inbox.js expects
 // from `ctx.storage.sql`: a single `.exec(query, ...params)` that runs the

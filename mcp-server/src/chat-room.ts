@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import type { Env } from "./env.ts";
 
 // Raw byte cap on an uploaded attachment (before base64 encoding, which adds
 // ~33%) — bounds both the row size in this room's SQLite storage and how
@@ -13,8 +14,17 @@ const ATTACHMENT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 // sized for a study group/class, not a social contact list.
 const MAX_GROUP_MEMBERS = 50;
 
-export class ChatRoom extends DurableObject {
-  constructor(ctx, env) {
+/** What `initialize` can be told about the room it is created as. */
+interface RoomOptions {
+  kind?: "direct" | "group";
+  creatorCode?: string | null;
+  creatorName?: string | null;
+  name?: string | null;
+  [field: string]: unknown;
+}
+
+export class ChatRoom extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       this.ctx.storage.sql.exec(`
@@ -112,9 +122,9 @@ export class ChatRoom extends DurableObject {
    * for why a group's roster carries this denormalized copy instead of
    * groups.js resolving it via a live KV lookup on every listing.
    */
-  async initialize(roomID, participants, options = {}) {
+  async initialize(roomID, participants, options: RoomOptions = {}) {
     const kind = options.kind ?? "direct";
-    const existing = this.ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM participants").one().count;
+    const existing = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (existing > 0) {
       // Re-friending restores access to the retained conversation.
       this.ctx.storage.sql.exec("DELETE FROM room_state WHERE id = 1");
@@ -148,7 +158,7 @@ export class ChatRoom extends DurableObject {
    * comment. */
   async addParticipant(newKey, code, name) {
     if (!this.isGroupRoom()) throw new Error("NotAGroup");
-    const count = this.ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM participants").one().count;
+    const count = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (count >= MAX_GROUP_MEMBERS) throw new Error("GroupFull");
     this.ctx.storage.sql.exec(
       "INSERT OR IGNORE INTO participants (user_key, code, name) VALUES (?, ?, ?)", newKey, code ?? null, name ?? null,
@@ -157,7 +167,7 @@ export class ChatRoom extends DurableObject {
     // per-member join marker), but their unread count should only start
     // counting from here — without this, joining an old, active group would
     // instantly show years of history as unread.
-    const latestID = this.ctx.storage.sql.exec("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
+    const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
     this.ctx.storage.sql.exec(
       "INSERT INTO read_positions (user_key, message_id) VALUES (?, ?) " +
       "ON CONFLICT(user_key) DO UPDATE SET message_id = MAX(message_id, excluded.message_id)",
@@ -211,8 +221,8 @@ export class ChatRoom extends DurableObject {
    */
   async groupInfo(callerKey) {
     this.requireGroup(callerKey);
-    const row = this.ctx.storage.sql.exec("SELECT name FROM room_state WHERE id = 1").toArray()[0];
-    const members = this.ctx.storage.sql.exec("SELECT user_key, code, name FROM participants").toArray()
+    const row = this.ctx.storage.sql.exec<{ name: string | null }>("SELECT name FROM room_state WHERE id = 1").toArray()[0];
+    const members = this.ctx.storage.sql.exec<{ user_key: string; code: string | null; name: string | null }>("SELECT user_key, code, name FROM participants").toArray()
       .map(item => ({ key: item.user_key, code: item.code, name: item.name }));
     return { name: row?.name ?? null, members };
   }
@@ -231,7 +241,7 @@ export class ChatRoom extends DurableObject {
 
   async close(userKey) {
     this.requireParticipant(userKey);
-    const latestID = this.ctx.storage.sql.exec("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
+    const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
     for (const participant of this.ctx.storage.sql.exec("SELECT user_key FROM participants").toArray()) {
       this.ctx.storage.sql.exec(
         "INSERT INTO read_positions (user_key, message_id) VALUES (?, ?) " +
@@ -252,7 +262,7 @@ export class ChatRoom extends DurableObject {
 
   async inboxState(userKey) {
     this.requireParticipant(userKey);
-    const latestID = this.ctx.storage.sql.exec("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
+    const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
     if (this.ctx.storage.sql.exec("SELECT closed FROM room_state WHERE id = 1").toArray()[0]?.closed) {
       return { latestID, unreadCount: 0, closed: true };
     }
@@ -276,7 +286,7 @@ export class ChatRoom extends DurableObject {
 
   async markRead(userKey, throughID) {
     this.requireParticipant(userKey);
-    const latestID = this.ctx.storage.sql.exec("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
+    const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
     const safeID = Math.min(latestID, Math.max(0, Number.isSafeInteger(throughID) ? throughID : 0));
     this.ctx.storage.sql.exec(
       "INSERT INTO read_positions (user_key, message_id) VALUES (?, ?) " +
@@ -356,7 +366,7 @@ export class ChatRoom extends DurableObject {
         // On an existing room's first send after this feature is introduced,
         // begin counting at the previous last message. Otherwise a recipient
         // who has not opened the app yet would miss this first new message.
-        const previousID = this.ctx.storage.sql.exec("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
+        const previousID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
         this.ctx.storage.sql.exec(
           "INSERT INTO read_positions (user_key, message_id) VALUES (?, ?)", other, previousID,
         );
@@ -523,7 +533,7 @@ export class ChatRoom extends DurableObject {
 
   async getAttachment(userKey, id) {
     this.requireParticipant(userKey);
-    const row = this.ctx.storage.sql.exec(
+    const row = this.ctx.storage.sql.exec<{ content_type: string; data: string }>(
       "SELECT content_type, data FROM attachments WHERE id = ?", id,
     ).toArray()[0];
     if (!row) return null;

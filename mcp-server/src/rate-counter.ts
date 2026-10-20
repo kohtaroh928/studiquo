@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
-import { takeFrom, giveTo } from "./counter-state.js";
+import type { Env } from "./env.ts";
+import { takeFrom, giveTo, type CounterState } from "./counter-state.ts";
 import { reserveAttempt, refundAttempt, trustPair, trustExpiryMs } from "./login-throttle.ts";
 import { touchSeenContext } from "./login-monitor.ts";
 
@@ -14,7 +15,15 @@ import { touchSeenContext } from "./login-monitor.ts";
 // independent KV get/put calls racing each other, one object handles its
 // requests one at a time, so a bump can't be lost to a concurrent one
 // reading the same stale count.
-export class RateCounter extends DurableObject {
+/** The App Attest key registered under an `attest-key:` name: its public key and the last assertion counter seen. */
+export interface AttestRecord {
+  publicKey: Uint8Array;
+  counter: number;
+  createdAt?: number;
+  lastSeenAt?: number;
+}
+
+export class RateCounter extends DurableObject<Env> {
   /**
    * True and increments this counter if it's still under `limit` for the
    * current window; false, unchanged, once it isn't.
@@ -36,7 +45,7 @@ export class RateCounter extends DurableObject {
    * cost more than one unit (AI credits, ai-credits.js).
    */
   async take(limit, windowSeconds, amount = 1) {
-    const result = takeFrom(await this.ctx.storage.get("state"), Date.now(), limit, windowSeconds, amount);
+    const result = takeFrom(await this.ctx.storage.get<CounterState>("state"), Date.now(), limit, windowSeconds, amount);
     if (!result.ok) return { ok: false };
     await this.ctx.storage.put("state", result.state);
     // Lets this object's storage be reclaimed once its window is long
@@ -52,7 +61,7 @@ export class RateCounter extends DurableObject {
    * counter-state.js).
    */
   async give(amount, windowEndsAt) {
-    const next = giveTo(await this.ctx.storage.get("state"), Date.now(), amount, windowEndsAt);
+    const next = giveTo(await this.ctx.storage.get<CounterState>("state"), Date.now(), amount, windowEndsAt);
     if (next) await this.ctx.storage.put("state", next);
   }
 
@@ -60,7 +69,7 @@ export class RateCounter extends DurableObject {
   // per-device counter enforced by bump(), rather than a client-side estimate.
   async usage(limit, windowSeconds) {
     const now = Date.now();
-    const stored = await this.ctx.storage.get("state");
+    const stored = await this.ctx.storage.get<CounterState>("state");
     const state = stored && now < stored.windowEndsAt ? stored : null;
     const used = state?.count ?? 0;
     return { limit, remaining: Math.max(0, limit - used), resetsAt: state?.windowEndsAt ?? null };
@@ -110,7 +119,7 @@ export class RateCounter extends DurableObject {
   // alarm: forgetting the count would let a stale record's old generation
   // match again.
   async nextAccountGeneration() {
-    const next = ((await this.ctx.storage.get("gen")) ?? 0) + 1;
+    const next = ((await this.ctx.storage.get<number>("gen")) ?? 0) + 1;
     await this.ctx.storage.put("gen", next);
     // A password being set again (re-registration after a deletion) takes the
     // count back out of retirement: see retireAccountGeneration.
@@ -125,7 +134,7 @@ export class RateCounter extends DurableObject {
   // serve a stale read (about a minute) plus a wide margin; then the alarm
   // clears it. Setting a password again before then cancels the alarm.
   async retireAccountGeneration(ttlSeconds) {
-    const next = ((await this.ctx.storage.get("gen")) ?? 0) + 1;
+    const next = ((await this.ctx.storage.get<number>("gen")) ?? 0) + 1;
     await this.ctx.storage.put("gen", next);
     await this.ctx.storage.setAlarm(Date.now() + ttlSeconds * 1000);
     return next;
@@ -146,7 +155,7 @@ export class RateCounter extends DurableObject {
   // run while this put is still in flight and then be overtaken by it.
   async upgradeAccountIfCurrent(key, json, expectedGen) {
     return this.ctx.blockConcurrencyWhile(async () => {
-      if (((await this.ctx.storage.get("gen")) ?? 0) !== expectedGen) return false;
+      if (((await this.ctx.storage.get<number>("gen")) ?? 0) !== expectedGen) return false;
       await this.env.STUDIQUO_DATA.put(key, json);
       return true;
     });
@@ -156,20 +165,20 @@ export class RateCounter extends DurableObject {
   // public key and the last assertion counter. Deliberately has no alarm: a key
   // stays valid for as long as the app install does, and forgetting the counter
   // would let an old assertion be sent again.
-  async attestRegister(record) {
+  async attestRegister(record: AttestRecord) {
     if (await this.ctx.storage.get("attest")) return false;
     await this.ctx.storage.put("attest", record);
     return true;
   }
 
-  async attestKey() {
-    return (await this.ctx.storage.get("attest")) ?? null;
+  async attestKey(): Promise<AttestRecord | null> {
+    return (await this.ctx.storage.get<AttestRecord>("attest")) ?? null;
   }
 
   // Moves the counter forward only if `counter` is higher than what is stored,
   // as one step, so two requests with the same counter cannot both pass.
   async attestAdvance(counter) {
-    const record = await this.ctx.storage.get("attest");
+    const record = await this.ctx.storage.get<AttestRecord>("attest");
     if (!record || counter <= record.counter) return false;
     await this.ctx.storage.put("attest", { ...record, counter, lastSeenAt: Date.now() });
     return true;

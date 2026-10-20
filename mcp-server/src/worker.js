@@ -10,8 +10,8 @@ export default {
     ctx.waitUntil(runScheduledPrivacyWork(env, controller.scheduledTime));
   },
 };
-export { ChatRoom } from "./chat-room.js";
-export { UserRegistry } from "./user-registry.js";
-export { DocumentRoom } from "./document-room.js";
-export { RateCounter } from "./rate-counter.js";
-export { MCPInbox } from "./mcp-inbox.js";
+export { ChatRoom } from "./chat-room.ts";
+export { UserRegistry } from "./user-registry.ts";
+export { DocumentRoom } from "./document-room.ts";
+export { RateCounter } from "./rate-counter.ts";
+export { MCPInbox } from "./mcp-inbox.ts";

@@ -1,6 +1,6 @@
 import { sha256Hex } from "./auth.ts";
 import { queueRevenueCatDeletion } from "./privacy-retention.ts";
-import { roomMembershipKey } from "./document-room-store.js";
+import { roomMembershipKey } from "./document-room-store.ts";
 import { generationOf } from "./session.ts";
 import { libraryIdObjectName } from "./library-id.ts";
 import { tokenIndexCoversEverything } from "./mcp-oauth.ts";
