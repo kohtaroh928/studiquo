@@ -54,6 +54,7 @@ jobs:
       # No install scripts: the tests need none, and a dependency's script would
       # otherwise run on the runner.
       - run: npm ci --ignore-scripts
+      - run: npm run typecheck
       - run: npm test
 
   # Its own job so a new advisory, which has nothing to do with a pull request,
