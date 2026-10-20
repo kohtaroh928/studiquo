@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
-import { compareVersions, resolveTranslation, SUPPORTED_LANGUAGES } from "./announcements.js";
+import { compareVersions, resolveTranslation, SUPPORTED_LANGUAGES } from "./announcements.ts";
 
 class FakeD1Statement {
   constructor(db, sql, params = []) { this.db = db; this.sql = sql; this.params = params; }

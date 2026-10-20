@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { THROTTLE_POLICIES, recordFailure, refundAttempt, remainingSeconds, reserveAttempt, trustPair } from "./login-throttle.js";
+import { THROTTLE_POLICIES, recordFailure, refundAttempt, remainingSeconds, reserveAttempt, trustPair } from "./login-throttle.ts";
 
 const policy = { freeFailures: 3, baseSeconds: 10, maxSeconds: 60, windowSeconds: 600 };
 const T0 = 1_000_000;

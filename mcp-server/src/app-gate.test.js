@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { appGateRejection } from "./app-gate.js";
+import { appGateRejection } from "./app-gate.ts";
 
 function callGate(pathname, { env = {}, userAgent } = {}) {
   const headers = new Headers();

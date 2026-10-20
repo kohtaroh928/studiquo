@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getPlan, PRODUCT_PLAN_MAP } from "./entitlements.js";
+import { getPlan, PRODUCT_PLAN_MAP } from "./entitlements.ts";
 
 // A hand-rolled stand-in for the ADMIN_DB D1 binding: real SQL text is
 // ignored (admin.test.js already exercises the real schema against a real
@@ -201,7 +201,7 @@ test("a legacy grant under the pre-link identity still counts", async () => {
 });
 
 test("productForPlanChange: the higher plan wins, unknown products never beat a known one", async () => {
-  const { productForPlanChange } = await import("./entitlements.js");
+  const { productForPlanChange } = await import("./entitlements.ts");
   const standard = "com.yabuko.studiquo.standard.yearly";
   const plus = "com.yabuko.studiquo.plus.yearly";
   assert.equal(productForPlanChange(standard, plus), plus);

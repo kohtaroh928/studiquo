@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Hex } from "./auth.ts";
 import { accountGenerationMethods } from "./test-account-generations.ts";
-import { Argon2BusyError, argon2QueueState, engine, hashers, upsertLocalAccount, verifyLocalAccount } from "./local-auth.js";
+import { Argon2BusyError, argon2QueueState, engine, hashers, upsertLocalAccount, verifyLocalAccount } from "./local-auth.ts";
 
 function environment({ argon2Write = true } = {}) {
   const values = new Map();

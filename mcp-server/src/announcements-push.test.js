@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { generateKeyPair, exportPKCS8, exportJWK, createLocalJWKSet, SignJWT } from "jose";
-import { handleAnnouncements } from "./announcements.js";
+import { handleAnnouncements } from "./announcements.ts";
 
 class FakeD1Statement {
   constructor(db, sql, params = []) { this.db = db; this.sql = sql; this.params = params; }

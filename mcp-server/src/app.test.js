@@ -5,12 +5,12 @@ import { DatabaseSync } from "node:sqlite";
 import test, { mock } from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import worker from "./app.js";
-import { realSession, mintSession } from "./session.js";
-import { indexAccountPasskey, markRecentPasskey } from "./passkey-policy.js";
-import { externalSession } from "./mcp-oauth.js";
-import { reserveAttempt, refundAttempt, trustPair } from "./login-throttle.js";
-import { touchSeenContext } from "./login-monitor.js";
-import { argon2QueueState, engine } from "./local-auth.js";
+import { realSession, mintSession } from "./session.ts";
+import { indexAccountPasskey, markRecentPasskey } from "./passkey-policy.ts";
+import { externalSession } from "./mcp-oauth.ts";
+import { reserveAttempt, refundAttempt, trustPair } from "./login-throttle.ts";
+import { touchSeenContext } from "./login-monitor.ts";
+import { argon2QueueState, engine } from "./local-auth.ts";
 import { accountGenerationMethods } from "./test-account-generations.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
 
@@ -443,7 +443,7 @@ test("POST /api/auth/apple and /google: an account with a passkey is told to use
   await env.STUDIQUO_DATA.put("passkeys:credential:cred-a", JSON.stringify({ id: "cred-a", email: "pk-apple@example.com", createdAt: Date.now() }));
   await env.STUDIQUO_DATA.put("passkeys:credential:cred-g", JSON.stringify({ id: "cred-g", email: "pk-google@example.com", createdAt: Date.now() }));
   await env.STUDIQUO_DATA.put("passkey-index-backfilled", "1");
-  const { indexAccountPasskey } = await import("./passkey-policy.js");
+  const { indexAccountPasskey } = await import("./passkey-policy.ts");
   await indexAccountPasskey(env, "pk-apple-sub", "pk-apple@example.com", "cred-a");
   await indexAccountPasskey(env, "google:pk-google-sub", "pk-google@example.com", "cred-g");
 

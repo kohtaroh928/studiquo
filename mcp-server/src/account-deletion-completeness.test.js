@@ -3,7 +3,7 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import worker from "./app.js";
 import { sha256Hex } from "./auth.ts";
-import { deleteAccount } from "./account-deletion.js";
+import { deleteAccount } from "./account-deletion.ts";
 import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, purgeRoomData, removeAccountData, removeParticipantData, roomMembershipKey } from "./document-room-store.js";
 import { VALIDITY_SECONDS, remainingValiditySeconds } from "./token.ts";
 
