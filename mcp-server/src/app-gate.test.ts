@@ -1,9 +1,9 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { appGateRejection } from "./app-gate.ts";
+import { partialEnv } from "./test-env.ts";
 
-function callGate(pathname, { env = {}, userAgent } = {}) {
+function callGate(pathname, { env = {}, userAgent }: { env?: any; userAgent?: string } = {}) {
   const headers = new Headers();
   if (userAgent !== undefined) headers.set("user-agent", userAgent);
   const url = new URL(`https://api.studiquo.app${pathname}`);
@@ -18,7 +18,7 @@ test("returns null for all routes when both switches are unset", () => {
 });
 
 test("MAINTENANCE_MODE blocks app, MCP, and OAuth routes with 503 and Retry-After but keeps admin, announcements, and public pages up", async () => {
-  const env = { MAINTENANCE_MODE: "true" };
+  const env = partialEnv({ MAINTENANCE_MODE: "true" });
 
   for (const guarded of ["/api/ai/chat", "/api/passkeys/login/options", "/mcp", "/oauth/token"]) {
     const response = callGate(guarded, { env });
@@ -35,7 +35,7 @@ test("MAINTENANCE_MODE blocks app, MCP, and OAuth routes with 503 and Retry-Afte
 });
 
 test("MIN_APP_BUILD rejects older iOS app builds with 426 and allows current or newer builds and non-app clients", async () => {
-  const env = { MIN_APP_BUILD: "42" };
+  const env = partialEnv({ MIN_APP_BUILD: "42" });
 
   const oldBuild = callGate("/api/ai/chat", { env, userAgent: "studiquo/41 CFNetwork/1498.700.2 Darwin/23.6.0" });
   assert.ok(oldBuild);

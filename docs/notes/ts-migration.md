@@ -33,12 +33,14 @@
 ## テストの型検査
 
 - フェーズ5で `*.test.js` 57本をすべて `.test.ts` にした。`npm test` は `src/*.test.ts` を Node の型除去で動かす。型を消して移行前の .js と比べると、全て同じ(増えたのは先頭のコメントだけ)。
-- 型検査は2本立て: `tsconfig.json` は `src` をテストを除いて検査し、`tsconfig.test.json` はテストも含めて検査する(`npm run typecheck` が両方を実行)。テスト側は `test-types/loose.d.ts` で `Response.json()` を `any` にしている。
-- 型エラーがあった48本の先頭には `// @ts-nocheck` を付けた。理由は、JS のときは暗黙に許されていた書き方が .ts では型エラーになるため。
-  - 偽の `Env`・偽の KV や Durable Object を、`Env` や各クラスの型として渡している(約600か所)。
-  - テスト内の補助関数が、既定値から引数の型を推論されたり、呼び出しより多くの引数を必須にしたりしている(約300か所)。
-  - 応答の JSON を型なしで読んでいる(`loose.d.ts` で大半は解消済み)。
-- 外す手順の案: 偽の `Env` を作る補助関数(`fakeEnv()` のようなもの)を1つ用意して偽物を `Env` に寄せ、エラーの少ないファイルから `@ts-nocheck` を外す。`@ts-nocheck` の残りは `grep -l "@ts-nocheck" mcp-server/src/*.test.ts` で数えられる。
+- 型検査は2本立て: `tsconfig.json` は `src` をテストを除いて検査し、`tsconfig.test.json` はテストも含めて検査する(`npm run typecheck` が両方を実行)。テスト側は `strict: false` と、`test-types/loose.d.ts`(`Response.json()` を `any` にする)で検査している。
+- 型エラーがあった49本の先頭に `// @ts-nocheck` を付けていた。原因は、JS のときは暗黙に許されていた書き方が .ts では型エラーになること: 偽の `Env`・偽の KV や Durable Object を `Env` や各クラスの型として渡している(エラーの約半分)、補助関数の引数が既定値から推論された型で狭い、呼び出しより多くの引数を必須にしている。
+- 2026-10-20 に、49本のうち31本の `@ts-nocheck` を外した(残り18本)。やったこと:
+  - `src/test-env.ts` に `partialEnv(...)` `partialCtx(...)` `partialState(...)` を足した。「テストは使う binding だけを持つ偽物を渡す」ことを、呼び出しごとのキャストではなく型で一度だけ表す(実行時は引数をそのまま返すだけ)。
+  - 補助関数の `{ method = "GET", token, body } = {}` のような引数に、明示の型を付けた。
+  - 型を消して(`partialEnv` などの包みも除いて)移行前と比べると、外した31本のうち30本は同一。違う1本は `legal.test.ts`(下)。
+- `legal.test.ts` の見つけた問題: 「Worker が通信する外部ホストは、全てプライバシーポリシーに載っているか」の検査が、`.js` のファイルだけを探していた。ソースが `.ts` になってからは、何も調べずに通っていた。`.ts` を探すように直し、探したファイル数とホスト数が少なすぎたら失敗する確認を足した(今は 70 ファイル、11 ホストを調べ、全て通る)。
+- 残る18本(`app` `ai` `account-deletion` `app-attest` `announcements` `moderation` `token-signature` `account-deletion-completeness` `passkey-revocation` `admin` `admin-inbox` `devices` `announcements-push` `counter-state` `mcp-inbox` `low-priority-hardening` `api-hardening` `chat`)は、偽の Env を後から組み立てて渡す、偽の D1 に独自の項目を足す、など、機械的に直せない形が残っている(合計約430件)。`grep -l "@ts-nocheck" mcp-server/src/*.test.ts` で数えられる。
 
 ## フェーズ6(strict 化)の結果
 

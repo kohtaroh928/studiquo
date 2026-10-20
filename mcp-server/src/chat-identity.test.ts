@@ -1,20 +1,20 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sha256Hex } from "./auth.ts";
 import { resolveChatUserKey } from "./chat-identity.ts";
 import { takeParsedBody, rememberParsedBody } from "./ai-body.ts";
 import { callAnthropicChat, extractDeltaText } from "./anthropic.ts";
+import { partialEnv } from "./test-env.ts";
 
 test("resolveChatUserKey falls back to tokenKey when USER_REGISTRY or sub is absent", async () => {
-  assert.equal(await resolveChatUserKey({}, "apple:user-1", "token-key-1"), "token-key-1");
-  assert.equal(await resolveChatUserKey({ USER_REGISTRY: {} }, "", "token-key-1"), "token-key-1");
-  assert.equal(await resolveChatUserKey({ USER_REGISTRY: {} }, null, "token-key-1"), "token-key-1");
+  assert.equal(await resolveChatUserKey(partialEnv({}), "apple:user-1", "token-key-1"), "token-key-1");
+  assert.equal(await resolveChatUserKey(partialEnv({ USER_REGISTRY: {} }), "", "token-key-1"), "token-key-1");
+  assert.equal(await resolveChatUserKey(partialEnv({ USER_REGISTRY: {} }), null, "token-key-1"), "token-key-1");
 });
 
 test("resolveChatUserKey delegates to the hashed chat-account registry object when present", async () => {
   const calls = [];
-  const env = {
+  const env = partialEnv({
     USER_REGISTRY: {
       getByName(name) {
         return {
@@ -25,7 +25,7 @@ test("resolveChatUserKey delegates to the hashed chat-account registry object wh
         };
       },
     },
-  };
+  });
 
   const result = await resolveChatUserKey(env, "apple:00123", "session-token-hash");
   const expectedHash = await sha256Hex("chat-account:apple:00123");
@@ -45,7 +45,7 @@ test("rememberParsedBody and takeParsedBody hand off a parsed request body exact
 
 test("callAnthropicChat validates API key, attaches images only to a trailing user turn, and extractDeltaText filters SSE events", async () => {
   await assert.rejects(
-    () => callAnthropicChat({}, { model: "claude-sonnet-4-20250514", systemInstruction: "sys", turns: [] }),
+    () => callAnthropicChat(partialEnv({}), { model: "claude-sonnet-4-20250514", systemInstruction: "sys", turns: [] }),
     /ANTHROPIC_API_KEY is not configured/
   );
 
@@ -58,7 +58,7 @@ test("callAnthropicChat validates API key, attaches images only to a trailing us
 
   try {
     await callAnthropicChat(
-      { ANTHROPIC_API_KEY: "test-key-never-real" },
+      partialEnv({ ANTHROPIC_API_KEY: "test-key-never-real" }),
       {
         model: "claude-sonnet-4-20250514",
         systemInstruction: "Be concise.",

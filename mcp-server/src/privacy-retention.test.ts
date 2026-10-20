@@ -1,4 +1,3 @@
-// @ts-nocheck 型の付け方は docs/notes/ts-migration.md の「テストの型検査」を参照。
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
@@ -8,10 +7,11 @@ import { runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ER
 import { deleteAccount, startAccountDeletion } from "./account-deletion.ts";
 import { handleAdminWebhook } from "./admin.ts";
 import { mintSession } from "./session.ts";
+import { partialEnv } from "./test-env.ts";
 
 function environment() {
   const db = new DatabaseSync(":memory:");
-  for (const name of readdirSync(new URL("../migrations/", import.meta.url)).sort()) db.exec(readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
+  for (const name of readdirSync(new URL("../migrations/", import.meta.url) as any).sort()) db.exec(readFileSync(new URL(`../migrations/${name}`, import.meta.url) as any, "utf8"));
   const values = new Map();
   const statement = (sql, params = []) => ({
     bind(...args) { return statement(sql, args); },
@@ -19,7 +19,7 @@ function environment() {
     async all() { return { results: db.prepare(sql).all(...params) }; },
     async first() { return db.prepare(sql).get(...params) ?? null; },
   });
-  return {
+  return partialEnv({
     PRIVACY_RETENTION_ENABLED: "true",
     RATE_LIMIT_ADMIN_WEBHOOK: { async limit() { return { success: true }; } },
     ADMIN_DB: { prepare: statement },
@@ -30,11 +30,11 @@ function environment() {
       async list({ prefix, limit = 1000 }) { const keys = [...values.keys()].filter(key => key.startsWith(prefix)).slice(0, limit); return { keys: keys.map(name => ({ name })), list_complete: true }; },
     },
     _db: db, _values: values,
-  };
+  });
 }
 
 test("retention is fail-closed until explicitly enabled", async () => {
-  assert.deepEqual(await runPrivacyRetention({}), { enabled: false });
+  assert.deepEqual(await runPrivacyRetention(partialEnv({})), { enabled: false });
 });
 
 test("90-day report and personal data expiry preserves recent data and removes image bytes", async () => {
@@ -87,11 +87,11 @@ test("accepted erasure resumes without any live session after temporary failure"
   env._values.set("session:retry-token", JSON.stringify({ sub }));
   env._values.set("snapshot:retry-token", "{}");
   const original = env.ADMIN_DB.prepare;
-  env.ADMIN_DB.prepare = () => ({ bind() { return { async run() { throw new Error("temporary storage outage"); } }; } });
+  (env.ADMIN_DB as any).prepare = () => ({ bind() { return { async run() { throw new Error("temporary storage outage"); } }; } });
   assert.deepEqual(await startAccountDeletion(env, sub), { deleted: false, cleanupPending: true });
   assert.equal(env._values.has("session:retry-token"), false);
   assert.equal(env._values.has(`privacy-account-delete:${await sha256Hex(sub)}`), true);
-  env.ADMIN_DB.prepare = original;
+  (env.ADMIN_DB as any).prepare = original;
   await runPrivacyRetention(env);
   assert.equal(env._values.has("snapshot:retry-token"), false);
   assert.equal(env._values.has(`privacy-account-delete:${await sha256Hex(sub)}`), false);
@@ -123,7 +123,7 @@ test("a deletion arriving after the webhook precheck still blocks both SQL write
   const env = environment(); env.REVENUECAT_WEBHOOK_SECRET = "test-secret";
   const hash = await sha256Hex("race-owner");
   const original = env.ADMIN_DB.prepare;
-  env.ADMIN_DB.prepare = sql => {
+  (env.ADMIN_DB as any).prepare = sql => {
     const statement = original(sql);
     if (!sql.startsWith("SELECT customer_hash")) return statement;
     return { bind(...args) {
