@@ -3,11 +3,11 @@
 // aggregate numbers the dashboard page reads. None of these routes use the
 // app's bearer token: the /admin page is gated by Cloudflare Access at the
 // edge (Google-login restricted to the site owner), and /api/admin/* is
-// verified against that same Access login in app.js (see access.js) — the
+// verified against that same Access login in app.js (see access.ts) — the
 // edge alone does not cover /api/admin/*. The RevenueCat webhook is the one
 // exception: it is authenticated by its own shared secret instead, the same
 // "authenticated a different way than the rest of the API" shape as
-// issue-reports.js's unauthenticated screenshot GET.
+// issue-reports.ts's unauthenticated screenshot GET.
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
 import { json, readJSONLimited, htmlHeaders } from "./http.ts";
 import { bearerToken, secretsEqual, sha256Hex } from "./auth.ts";
@@ -53,7 +53,7 @@ async function countKVPrefix(env: Env, prefix) {
 
 // Counts real people, not sign-in identities: an Apple account and a Google
 // account that share the same verified email are the same person and must
-// only be counted once (see oauth-links.js). Reads every account:* record
+// only be counted once (see oauth-links.ts). Reads every account:* record
 // to find its email, if any, and groups by that. O(number of accounts) KV
 // reads — fine at today's scale; move user records into D1 if this ever
 // gets slow enough to matter.
@@ -175,7 +175,7 @@ export async function handleUsageEvent(url, request: Request, env: Env) {
   // rotates on every re-login and expires after 90 days (see
   // MCPCloudCredentials.validityPeriod), but DAU/MAU and retention need the
   // same person to keep being the same row across that. Same shape as
-  // chat.js's own "chat-account:" / mcp-oauth.js's "mcp-account:" keys,
+  // chat.ts's own "chat-account:" / mcp-oauth.ts's "mcp-account:" keys,
   // just its own namespace so the three never collide.
   const userKey = await sha256Hex(`usage-account:${session.sub}`);
   const now = Date.now();

@@ -230,7 +230,7 @@ export async function cancelPasskeyRecovery(env: Env, accountKey, email) {
 
 export async function sendPasskeyNotice(env: Env, email, subject, lines) {
   if (!env.RESEND_API_KEY || !email) return;
-  // The "email" kill switch (features.js).
+  // The "email" kill switch (features.ts).
   if (featureDisabled(env, "email")) return;
   try {
     const response = await fetch(RESEND_API_URL, {

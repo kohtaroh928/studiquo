@@ -261,7 +261,7 @@ function pushResponse(row) {
 // resume after a closed tab: the batch counter's compare-and-set means a
 // batch is only ever claimed by one request.
 async function pushBatch(env: Env, id, options, now) {
-  // The "push" kill switch (features.js). Refused before anything is recorded:
+  // The "push" kill switch (features.ts). Refused before anything is recorded:
   // sendPush sends nothing while it is on, and a batch counted as sent could not
   // be pushed again once the switch is off.
   if (featureDisabled(env, "push")) {

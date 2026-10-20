@@ -133,7 +133,7 @@ test("the policy and terms describe reports, blocks and what the operator can do
 // below with the reason, so that leaving it out is a decision and not an accident.
 //
 // What this scan can and cannot see: it finds hosts written as a literal
-// `https://host` in the source. The APNs host (built in push.js) and the Slack
+// `https://host` in the source. The APNs host (built in push.ts) and the Slack
 // webhook (a secret URL) are not literals, so they are named by hand in the
 // MUST_NAME list below instead.
 import { readdirSync, readFileSync } from "node:fs";
@@ -148,7 +148,7 @@ const HOST_TO_POLICY_TERM = {
   "www.googleapis.com": "Google Sign-In",
 };
 const HOSTS_DELIBERATELY_NOT_IN_THE_POLICY = {
-  // Wired in handleChat but listed for no plan (ai.js PLAN_MODELS), so no student data goes there.
+  // Wired in handleChat but listed for no plan (ai.ts PLAN_MODELS), so no student data goes there.
   // Add it to the policy together with the plan entry (docs/releases/ai-credit-plans.md).
   "api.anthropic.com": "no plan uses it",
   // Links shown in pages and docs, and the MCP clients' own origins; the Worker sends them nothing.
@@ -156,7 +156,7 @@ const HOSTS_DELIBERATELY_NOT_IN_THE_POLICY = {
   "chatgpt.com": "an allowed OAuth redirect origin, not a destination",
   "apps.apple.com": "a link",
   "community.cloudflare.com": "a link in a comment",
-  // Where the embedded App Attest root certificate comes from (app-attest.js comment); the Worker never fetches it.
+  // Where the embedded App Attest root certificate comes from (app-attest.ts comment); the Worker never fetches it.
   "www.apple.com": "a link in a comment",
 };
 
@@ -181,7 +181,7 @@ test("every outside host the Worker contacts is named in the privacy policy, or 
 
 test("the privacy policy states what is kept about a request, a device and an email", async () => {
   const body = await (await worker.fetch(new Request("https://example.test/privacy"), {}, noopCtx)).text();
-  // Provider-side facts of the code in login-throttle.js, login-monitor.js, devices.js, push.js.
+  // Provider-side facts of the code in login-throttle.ts, login-monitor.ts, devices.ts, push.ts.
   assert.match(body, /IPアドレス/);
   assert.match(body, /ハッシュ値/);
   assert.match(body, /国・地域・ネットワーク/);

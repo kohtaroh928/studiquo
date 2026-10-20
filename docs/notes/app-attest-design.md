@@ -6,7 +6,7 @@ tags: [security, design, app-attest]
 
 # App Attest 設計
 
-AIプロキシとサインイン・登録系を、「正規のStudiquoアプリからの要求か」で守る。実装は`mcp-server/src/app-attest.js`、テストは`app-attest.test.js`。
+AIプロキシとサインイン・登録系を、「正規のStudiquoアプリからの要求か」で守る。実装は`mcp-server/src/app-attest.ts`、テストは`app-attest.test.js`。
 
 ## 範囲
 

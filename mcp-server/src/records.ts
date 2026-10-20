@@ -62,11 +62,14 @@ export interface FriendEntry {
   [field: string]: unknown;
 }
 
-/** An entry of a person's group list or group-invite list. */
+/** An entry of a person's group list (just the room) or group-invite list (with who invited them). */
 export interface GroupEntry {
-  code: string;
-  name: string;
-  roomID?: string;
+  roomID: string;
+  code?: string;
+  name?: string;
+  inviterCode?: string;
+  inviterName?: string;
+  invitedAt?: number;
   updatedAt?: number | string;
   avatarUpdatedAt?: number | string | null;
   [field: string]: unknown;
@@ -86,6 +89,7 @@ export interface ChatUser {
   outgoingRequests?: FriendEntry[];
   groups?: GroupEntry[];
   incomingGroupInvites?: GroupEntry[];
+  blockedContacts?: { code: string; [field: string]: unknown }[];
   [field: string]: unknown;
 }
 

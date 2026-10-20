@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { register } from "node:module";
 
-// user-registry.js extends the real DurableObject from "cloudflare:workers",
+// user-registry.ts extends the real DurableObject from "cloudflare:workers",
 // which only exists inside the Workers runtime; stand in for that one import
 // (the same approach mcp-inbox.test.js takes) so the real class runs here.
 register(
@@ -26,7 +26,7 @@ register(
   import.meta.url
 );
 
-const { UserRegistry } = await import("./user-registry.js");
+const { UserRegistry } = await import("./user-registry.ts");
 const { default: worker } = await import("./app.js");
 const { normalizeIP, clientKey } = await import("./rate-limit.ts");
 const { appGateRejection } = await import("./app-gate.ts");

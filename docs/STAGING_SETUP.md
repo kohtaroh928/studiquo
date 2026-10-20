@@ -194,7 +194,7 @@ npx wrangler deploy --env staging                           # 段階3(設定フ�
 
   連携の処理が、ログインのたびに、連携済みの全identityのマッピングを、内容が変わらなくても書き直していたので、変更があったものだけを書くようにした。連携済みのアカウントのログインは、約5.5〜7秒から、約3.2〜3.9秒になった(最悪で5.9秒)。初めてのログイン(identityごとに1回)は、書き込みが要るので、約6秒のまま。
 
-  **残る遅さの原因は、KVの遅さである。** KVは、最近読まれていないキーを、遠い保存先から取りに行くので、1回の操作に、0.3〜2.4秒(ときどき3.8秒や9秒)かかる。`mintSession`は、KVの操作を、3回、順番に行う(`account-deletion`の読み取り、`privacy-rc-delete`の読み取り、セッションの書き込み)。最初の2つの読み取りは、並列にできる(約0.3〜0.9秒の短縮)。`session.js`は、別の作業の変更があるときは、触らない。根本的には、Durable Objectやキャッシュへの移行を検討する。
+  **残る遅さの原因は、KVの遅さである。** KVは、最近読まれていないキーを、遠い保存先から取りに行くので、1回の操作に、0.3〜2.4秒(ときどき3.8秒や9秒)かかる。`mintSession`は、KVの操作を、3回、順番に行う(`account-deletion`の読み取り、`privacy-rc-delete`の読み取り、セッションの書き込み)。最初の2つの読み取りは、並列にできる(約0.3〜0.9秒の短縮)。`session.ts`は、別の作業の変更があるときは、触らない。根本的には、Durable Objectやキャッシュへの移行を検討する。
 
 ### 6.5 退会
 
@@ -251,7 +251,7 @@ npx wrangler kv key put "account:local:legacy1@example.com" --path legacy1.json 
   --namespace-id <STAGING_KV_ID> --remote
 ```
 
-レコードの形式は、`mcp-server/src/local-auth.js`の旧形式(`salt`、`passwordHash`、`iterations`)。パスワードのハッシュは、`node:crypto`の`pbkdf2Sync(…, 100000, 32, 'sha256')`で作る。
+レコードの形式は、`mcp-server/src/local-auth.ts`の旧形式(`salt`、`passwordHash`、`iterations`)。パスワードのハッシュは、`node:crypto`の`pbkdf2Sync(…, 100000, 32, 'sha256')`で作る。
 
 ## 8. 後片付け
 

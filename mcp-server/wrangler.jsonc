@@ -55,7 +55,7 @@
     { "name": "RATE_LIMIT_PASSKEY_LOGIN_OPTIONS", "namespace_id": "1002", "simple": { "limit": 5, "period": 60 } },
     { "name": "RATE_LIMIT_PASSKEY_LOGIN_VERIFY", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } },
     // Keyed by userKey (the caller already holds a valid token), not IP —
-    // see src/passkeys.js's RATE_LIMIT_PER_MINUTE for the shared budget.
+    // see src/passkeys.ts's RATE_LIMIT_PER_MINUTE for the shared budget.
     { "name": "RATE_LIMIT_PASSKEY_REGISTER_OPTIONS", "namespace_id": "1004", "simple": { "limit": 5, "period": 60 } },
     { "name": "RATE_LIMIT_PASSKEY_REGISTER_VERIFY", "namespace_id": "1005", "simple": { "limit": 5, "period": 60 } },
     // Keyed by userKey too — adding a friend by code already requires a
@@ -65,7 +65,7 @@
     // this covers ordinary fast-paced chat, not just an occasional action.
     { "name": "RATE_LIMIT_CHAT_MESSAGE", "namespace_id": "1010", "simple": { "limit": 30, "period": 60 } },
     // Keyed by userKey. Each upload can be up to 6MB (MAX_ATTACHMENT_UPLOAD_BODY
-    // in src/chat.js) and was previously unthrottled — a compromised or
+    // in src/chat.ts) and was previously unthrottled — a compromised or
     // misbehaving client could otherwise spam a room's Durable Object storage
     // with unlimited uploads. 10/minute is generous for sharing several
     // photos in a row while still bounding sustained abuse.
@@ -79,7 +79,7 @@
     // occasional-action budget like RATE_LIMIT_CHAT_REPORT's above.
     { "name": "RATE_LIMIT_ISSUE_REPORT", "namespace_id": "1014", "simple": { "limit": 5, "period": 60 } },
     // Keyed by userKey. Shared by every group-membership action (create,
-    // invite, accept, reject, remove, rename) — see src/groups.js. A bit
+    // invite, accept, reject, remove, rename) — see src/groups.ts. A bit
     // more generous than RATE_LIMIT_CHAT_FRIEND_ADD's 5/minute since one of
     // these, inviting several friends to a new group one at a time, is a
     // normal burst rather than abuse.
@@ -107,7 +107,7 @@
     // unauthenticated (readable before sign-in). One fetch per app open is
     // the expected shape, so this is generous headroom.
     { "name": "RATE_LIMIT_ANNOUNCEMENTS", "namespace_id": "1023", "simple": { "limit": 30, "period": 60 } },
-    // Keyed by clientKey(request) — App Attest (src/app-attest.js). Both routes
+    // Keyed by clientKey(request) — App Attest (src/app-attest.ts). Both routes
     // are open to anyone; a registration is a few signature checks, and an app
     // makes one per install, so a low budget is enough.
     { "name": "RATE_LIMIT_ATTEST_CHALLENGE", "namespace_id": "1025", "simple": { "limit": 10, "period": 60 } },
@@ -117,7 +117,7 @@
     { "name": "RATE_LIMIT_ATTEST_ASSERT", "namespace_id": "1027", "simple": { "limit": 300, "period": 60 } }
   ],
   "vars": {
-    // OpenAI model ids behind the logical names in ai.js's PLAN_MODELS, from
+    // OpenAI model ids behind the logical names in ai.ts's PLAN_MODELS, from
     // OpenAI's price page on 2026-10-12. Confirm the account can call them
     // before AI_PROVIDER_APPROVED is switched on (also needs the OPENAI_API_KEY secret).
     "OPENAI_LUNA_MODEL": "gpt-6-luna",
@@ -132,23 +132,23 @@
     "ALLOW_SANDBOX_PURCHASES": "false",
     "APNS_TOPIC": "com.yabuko.studiquo",
     // Two-step rollout of the PBKDF2 -> Argon2id password-hash move (see
-    // src/local-auth.js). Argon2id records are always readable; this only
+    // src/local-auth.ts). Argon2id records are always readable; this only
     // controls whether new/reset passwords and sign-in upgrades WRITE them.
     // Keep "false" for the first deploy, then set "true" in a second deploy
     // once the first is stable. Never roll back to code from before Argon2id
     // support once it has been "true": those accounts would be locked out.
     "ARGON2_WRITE": "true",
-    // Tokens must carry the Worker's signature (src/token-signature.js). A token
+    // Tokens must carry the Worker's signature (src/token-signature.ts). A token
     // without one is refused before KV is read, so invented tokens cost nothing.
     // Turned on once every device had signed in again with TOKEN_SIGNING_KEY set;
     // removing this line accepts the older unsigned tokens again.
     "REQUIRE_SIGNED_TOKENS": "true",
     // A Sign in with Apple / Google exchange must carry the nonce the app made for
-    // it (src/id-token-nonce.js). Turned on after the app's build that sends one was
+    // it (src/id-token-nonce.ts). Turned on after the app's build that sends one was
     // installed and both sign-ins were seen to verify. Removing this line accepts
     // the sign-ins of older builds, which send none, again.
     "REQUIRE_ID_TOKEN_NONCE": "true",
-    // App Attest (src/app-attest.js): "off" (default), "log" (check and log only)
+    // App Attest (src/app-attest.ts): "off" (default), "log" (check and log only)
     // or "enforce". Needs the app that sends assertions to be out first; watch the
     // "app attest" log lines for "absent" before enforcing.
     "APP_ATTEST_MODE": "off",
@@ -244,7 +244,7 @@
         { "name": "RATE_LIMIT_ATTEST_ASSERT", "namespace_id": "2027", "simple": { "limit": 300, "period": 60 } }
       ],
       "vars": {
-        // OpenAI model ids behind the logical names in ai.js's PLAN_MODELS, from
+        // OpenAI model ids behind the logical names in ai.ts's PLAN_MODELS, from
         // OpenAI's price page on 2026-10-12. Confirm the account can call them
         // before AI_PROVIDER_APPROVED is switched on (also needs the OPENAI_API_KEY secret).
         "OPENAI_LUNA_MODEL": "gpt-6-luna",

@@ -81,7 +81,7 @@ const noopCtx = { waitUntil() {} };
 const freshToken = suffix => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 
 function request(path, { method = "GET", token, body, contentType } = {}) {
-  // /api/admin/* is verified against the Cloudflare Access login (src/access.js).
+  // /api/admin/* is verified against the Cloudflare Access login (src/access.ts).
   const headers = path.startsWith("/api/admin/") ? { ...ACCESS_HEADERS } : {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined || contentType) headers["content-type"] = contentType ?? "application/json";

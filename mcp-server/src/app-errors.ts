@@ -1,7 +1,7 @@
 // Receives the app's own error reports — crashes, hangs and a few known
 // non-fatal failures — and folds them into one dashboard row per distinct
 // problem. Authenticated like any other app call (a real studiquo bearer
-// token); the dashboard side lives in admin-reports.js.
+// token); the dashboard side lives in admin-reports.ts.
 //
 // What a report may contain is deliberately narrow: an error kind, a short
 // title, a stable signature (what makes two reports "the same problem") and

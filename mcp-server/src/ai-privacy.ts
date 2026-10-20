@@ -30,7 +30,7 @@ export async function aiPrivacyRejection(request: Request, env: Env) {
   // This read contains no study content; it still needs the same consent but
   // has no JSON body to validate.
   if (request.method === "GET") return null;
-  // The body is read once, here, and handed to the handler through ai-body.js.
+  // The body is read once, here, and handed to the handler through ai-body.ts.
   const body = await readJSONLimited(request, 20_000_000);
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return json({ error: "Invalid AI request." }, 400);
