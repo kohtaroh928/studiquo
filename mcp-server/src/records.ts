@@ -58,25 +58,24 @@ export interface FriendEntry {
   code: string;
   name: string;
   /** The direct-message room shared with this friend. */
-  roomID?: string;
-  [field: string]: unknown;
+  roomID?: string | null;
 }
 
 /** An entry of a person's group list (just the room) or group-invite list (with who invited them). */
 export interface GroupEntry {
   roomID: string;
   code?: string;
-  name?: string;
+  name?: string | null;
   inviterCode?: string;
   inviterName?: string;
   invitedAt?: number;
   updatedAt?: number | string;
   avatarUpdatedAt?: number | string | null;
-  [field: string]: unknown;
 }
 
 /** chat:user:<key>: a person's chat profile with their friends and groups. */
 export interface ChatUser {
+  key?: string;
   code: string;
   name: string;
   linkToken?: string;
@@ -89,8 +88,7 @@ export interface ChatUser {
   outgoingRequests?: FriendEntry[];
   groups?: GroupEntry[];
   incomingGroupInvites?: GroupEntry[];
-  blockedContacts?: { code: string; [field: string]: unknown }[];
-  [field: string]: unknown;
+  blockedContacts?: { code: string; name?: string; roomID?: string | null; deleted?: boolean }[];
 }
 
 /** An image kept as base64 text: chat:avatar:<code>, group avatars, report screenshots. */

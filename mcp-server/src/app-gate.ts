@@ -19,13 +19,13 @@ import { json } from "./http.ts";
 import { featureGateRejection } from "./features.ts";
 import type { Env } from "./env.ts";
 
-function isGuardedRoute(pathname) {
+function isGuardedRoute(pathname: string) {
   if (pathname === "/mcp" || pathname.startsWith("/oauth/")) return true;
   if (!pathname.startsWith("/api/")) return false;
   return !pathname.startsWith("/api/admin/") && pathname !== "/api/announcements";
 }
 
-export function appGateRejection(request: Request, env: Env, url) {
+export function appGateRejection(request: Request, env: Env, url: URL) {
   if (!isGuardedRoute(url.pathname)) return null;
   if (env.MAINTENANCE_MODE === "true") {
     const response = json({ error: "ただいまメンテナンス中です。しばらくしてからもう一度お試しください。", code: "maintenance" }, 503);

@@ -39,3 +39,11 @@
   - テスト内の補助関数が、既定値から引数の型を推論されたり、呼び出しより多くの引数を必須にしたりしている(約300か所)。
   - 応答の JSON を型なしで読んでいる(`loose.d.ts` で大半は解消済み)。
 - 外す手順の案: 偽の `Env` を作る補助関数(`fakeEnv()` のようなもの)を1つ用意して偽物を `Env` に寄せ、エラーの少ないファイルから `@ts-nocheck` を外す。`@ts-nocheck` の残りは `grep -l "@ts-nocheck" mcp-server/src/*.test.ts` で数えられる。
+
+## フェーズ6(strict 化)の結果
+
+- `mcp-server/tsconfig.json` は `allowJs: false`・`strict: true`(`src` のテスト以外)。`Env` の添字シグネチャ(`[name: string]: unknown`)も外した。使っている変数・バインディングは全て `env.ts` に載っている。
+- 型を後付けしたとき、実行時の挙動を変えないことを優先した。`!`(非 null 表明)と `as` は型を消すと何も残らない。値を変える書き換えは次の2つだけ(結果は同じ): `.filter(Boolean)` を `.filter(plan => Boolean(plan))` に、`const { iterations } = record` を `const iterations = record.iterations` に。
+- 具体的な型を付けにくかった所は、暗黙の any を `: any` として明示した(`grep -n ": any" mcp-server/src/*.ts`、約230か所)。新しいコードで暗黙の any は出せないが、この `any` は具体的な型へ直していく(Notion の別カード)。
+- テスト(`*.test.ts`)は `tsconfig.test.json` で `strict: false` のまま。`@ts-nocheck` の件と合わせて別カード。
+- 型を付けたとき、`AttestRecord.publicKey` を `Uint8Array` と誤って書いていたのを `string`(base64url)に直した。フェーズ3のレビューでも見つからなかった例なので、`any` を具体的な型にするときは実際に保存・送信される値を確かめる。

@@ -15,7 +15,7 @@ import type { DeletionState, SessionRecord } from "./records.ts";
 // earlier life's leftovers from the current one without trusting clocks that
 // differ between the isolates serving a request and the one running a retry.
 export function generationOf(state: { generation?: number } | null | undefined): number {
-  return Number.isFinite(state?.generation) ? state.generation : 0;
+  return Number.isFinite(state?.generation) ? state!.generation! : 0;
 }
 
 const SESSION_PREFIX = "session:";
@@ -30,7 +30,7 @@ const IDENTITY_CANONICAL_PREFIX = "identity-canonical:";
  * identities are cleared, since the provider lists them as aliases of the one
  * customer. Returns false when that could not be done.
  */
-async function clearDeletedCustomerRecords(env: Env, hashes) {
+async function clearDeletedCustomerRecords(env: Env, hashes: any) {
   if (!env.ADMIN_DB || hashes.length === 0) return true;
   try {
     await env.ADMIN_DB.prepare("DELETE FROM privacy_deleted_customers WHERE customer_hash IN (SELECT value FROM json_each(?))")
@@ -61,7 +61,7 @@ function newSecretHalf() {
  * `randomValue` and is ignored: the secret half of the token always comes from the
  * Worker (256 random bits, so two logins never share one in practice).
  */
-export async function mintSession(env: Env, identityKey, _suppliedByTheApp?: unknown, { originIssuedAtMs }: { originIssuedAtMs?: number } = {}) {
+export async function mintSession(env: Env, identityKey: any, _suppliedByTheApp?: unknown, { originIssuedAtMs }: { originIssuedAtMs?: number } = {}) {
   const issuedAt = Math.floor(Date.now() / 1000);
   // Signed when a signing key is configured (token-signature.ts), so that an
   // invented token can be refused later without a KV read.
@@ -133,7 +133,7 @@ export async function mintSession(env: Env, identityKey, _suppliedByTheApp?: unk
  * timestamp) returns false even though isExpired(token) alone would accept
  * it.
  */
-export async function hasRealSession(env: Env, token, options?: { allowSuspended?: boolean }) {
+export async function hasRealSession(env: Env, token: string, options?: { allowSuspended?: boolean }) {
   return (await realSession(env, token, options)) !== null;
 }
 
@@ -141,7 +141,7 @@ export async function hasRealSession(env: Env, token, options?: { allowSuspended
 // it is named by the same hash the chat identity uses, so a reported chat user
 // can be traced to it (see chat.ts, which records chat key -> this hash).
 export const SUSPENSION_PREFIX = "account-suspended:";
-export async function suspensionKey(canonicalSub) {
+export async function suspensionKey(canonicalSub: string) {
   return `${SUSPENSION_PREFIX}${await sha256Hex(`chat-account:${canonicalSub}`)}`;
 }
 
@@ -155,7 +155,7 @@ async function isSuspended(env: Env, session: SessionRecord) {
 // An operator's mark of the given kind on this person (account-suspended: or
 // chat-suspended:), under the canonical account and the identity the session
 // was issued to.
-export async function hasModerationMark(env: Env, session, prefix) {
+export async function hasModerationMark(env: Env, session: any, prefix: string) {
   const subs = session.originalSub && session.originalSub !== session.sub ? [session.sub, session.originalSub] : [session.sub];
   const marks = await Promise.all(subs.map(async item =>
     env.STUDIQUO_DATA.get(`${prefix}${await sha256Hex(`chat-account:${item}`)}`)));
@@ -169,7 +169,7 @@ export const CHAT_SUSPENSION_PREFIX = "chat-suspended:";
  * to do — leaving (deleting the account, and the passkey check that deletion
  * asks for). Everything else treats a suspended account like a signed-out one.
  */
-export async function realSession(env: Env, token, { allowSuspended = false } = {}) {
+export async function realSession(env: Env, token: string, { allowSuspended = false } = {}) {
   // First, before anything is read: a token whose signature is wrong (or missing
   // while signatures are required) cannot be a real session.
   if (!(await sessionTokenAcceptable(env, token))) return null;
@@ -208,7 +208,7 @@ export async function realSession(env: Env, token, { allowSuspended = false } = 
  * `accountIsUnavailable`, an already-deleted account is not counted: a person
  * who has left may register again.
  */
-export async function accountIsBeingDeleted(env: Env, sub) {
+export async function accountIsBeingDeleted(env: Env, sub: string) {
   const canonical = await env.STUDIQUO_DATA.get(`${IDENTITY_CANONICAL_PREFIX}${sub}`);
   const subs = canonical && canonical !== sub ? [sub, canonical] : [sub];
   const states = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(item)}`, "json")));
@@ -220,7 +220,7 @@ export async function accountIsBeingDeleted(env: Env, sub) {
  * credentials that are not sessions (connected-app tokens). `sub` may be a
  * linked identity rather than the canonical account, so both are looked at.
  */
-export async function accountIsUnavailable(env: Env, sub) {
+export async function accountIsUnavailable(env: Env, sub: string) {
   const canonical = await env.STUDIQUO_DATA.get(`${IDENTITY_CANONICAL_PREFIX}${sub}`);
   const subs = canonical && canonical !== sub ? [sub, canonical] : [sub];
   const states = await Promise.all(subs.map(async item => env.STUDIQUO_DATA.get<DeletionState>(`account-deletion:${await sha256Hex(item)}`, "json")));
@@ -232,7 +232,7 @@ export async function accountIsUnavailable(env: Env, sub) {
 
 const CUTOFF_PREFIX = "session-valid-from:";
 
-async function sessionCutoff(env: Env, identityKey) {
+async function sessionCutoff(env: Env, identityKey: any) {
   const value = Number(await env.STUDIQUO_DATA.get(`${CUTOFF_PREFIX}${await sha256Hex(identityKey)}`));
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
@@ -244,7 +244,7 @@ async function sessionCutoff(env: Env, identityKey) {
  * second. An older record that only has whole seconds is judged as a whole
  * second, and one with no issue time at all can't be shown to be newer.
  */
-export function sessionIsBeforeCutoff(session, cutoff) {
+export function sessionIsBeforeCutoff(session: any, cutoff: any) {
   if (!cutoff) return false;
   if (Number.isFinite(session.issuedAtMs)) return session.issuedAtMs < cutoff;
   if (Number.isFinite(session.issuedAt)) return (session.issuedAt + 1) * 1000 <= cutoff;

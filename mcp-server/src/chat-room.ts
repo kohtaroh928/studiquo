@@ -69,32 +69,32 @@ export class ChatRoom extends DurableObject<Env> {
       try {
         this.ctx.storage.sql.exec("ALTER TABLE messages ADD COLUMN client_message_id TEXT");
       } catch (error) {
-        if (!String(error?.message ?? error).includes("duplicate column")) throw error;
+        if (!String((error as { message?: unknown } | null)?.message ?? error).includes("duplicate column")) throw error;
       }
       try {
         this.ctx.storage.sql.exec("ALTER TABLE messages ADD COLUMN is_canceled INTEGER NOT NULL DEFAULT 0");
       } catch (error) {
-        if (!String(error?.message ?? error).includes("duplicate column")) throw error;
+        if (!String((error as { message?: unknown } | null)?.message ?? error).includes("duplicate column")) throw error;
       }
       try {
         this.ctx.storage.sql.exec("ALTER TABLE room_state ADD COLUMN kind TEXT NOT NULL DEFAULT 'direct'");
       } catch (error) {
-        if (!String(error?.message ?? error).includes("duplicate column")) throw error;
+        if (!String((error as { message?: unknown } | null)?.message ?? error).includes("duplicate column")) throw error;
       }
       try {
         this.ctx.storage.sql.exec("ALTER TABLE room_state ADD COLUMN name TEXT");
       } catch (error) {
-        if (!String(error?.message ?? error).includes("duplicate column")) throw error;
+        if (!String((error as { message?: unknown } | null)?.message ?? error).includes("duplicate column")) throw error;
       }
       try {
         this.ctx.storage.sql.exec("ALTER TABLE participants ADD COLUMN code TEXT");
       } catch (error) {
-        if (!String(error?.message ?? error).includes("duplicate column")) throw error;
+        if (!String((error as { message?: unknown } | null)?.message ?? error).includes("duplicate column")) throw error;
       }
       try {
         this.ctx.storage.sql.exec("ALTER TABLE participants ADD COLUMN name TEXT");
       } catch (error) {
-        if (!String(error?.message ?? error).includes("duplicate column")) throw error;
+        if (!String((error as { message?: unknown } | null)?.message ?? error).includes("duplicate column")) throw error;
       }
     });
   }
@@ -104,7 +104,7 @@ export class ChatRoom extends DurableObject<Env> {
     return row?.kind === "group";
   }
 
-  requireGroup(userKey) {
+  requireGroup(userKey: string) {
     this.requireParticipant(userKey);
     if (!this.isGroupRoom()) throw new Error("NotAGroup");
   }
@@ -122,7 +122,7 @@ export class ChatRoom extends DurableObject<Env> {
    * for why a group's roster carries this denormalized copy instead of
    * groups.ts resolving it via a live KV lookup on every listing.
    */
-  async initialize(roomID, participants, options: RoomOptions = {}) {
+  async initialize(roomID: string, participants: any, options: RoomOptions = {}) {
     const kind = options.kind ?? "direct";
     const existing = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (existing > 0) {
@@ -156,7 +156,7 @@ export class ChatRoom extends DurableObject<Env> {
    * confirms `newKey` held a genuine, still-pending invite for this room.
    * `code`/`name` are stored alongside the key — see `groupInfo`'s doc
    * comment. */
-  async addParticipant(newKey, code, name) {
+  async addParticipant(newKey: any, code: string | null, name: string | null) {
     if (!this.isGroupRoom()) throw new Error("NotAGroup");
     const count = this.ctx.storage.sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM participants").one().count;
     if (count >= MAX_GROUP_MEMBERS) throw new Error("GroupFull");
@@ -179,7 +179,7 @@ export class ChatRoom extends DurableObject<Env> {
   /** Leaving (targetKey === callerKey) and removing another member are the
    * same operation — any current member may do either; groups have no
    * admin/owner concept, matching an ordinary (non-official) LINE group. */
-  async removeParticipant(callerKey, targetKey) {
+  async removeParticipant(callerKey: string, targetKey: any) {
     this.requireGroup(callerKey);
     this.requireParticipant(targetKey);
     this.ctx.storage.sql.exec("DELETE FROM participants WHERE user_key = ?", targetKey);
@@ -187,7 +187,7 @@ export class ChatRoom extends DurableObject<Env> {
     return { status: "removed" };
   }
 
-  async removeDeletedAccount(userKey) {
+  async removeDeletedAccount(userKey: string) {
     const marker = `deleted:${await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userKey)).then(buffer =>
       Array.from(new Uint8Array(buffer), byte => byte.toString(16).padStart(2, "0")).join(""))}`;
     this.ctx.storage.sql.exec("UPDATE messages SET sender_key = ? WHERE sender_key = ?", marker, userKey);
@@ -198,7 +198,7 @@ export class ChatRoom extends DurableObject<Env> {
     return { status: "removed" };
   }
 
-  async renameRoom(callerKey, name) {
+  async renameRoom(callerKey: string, name: string) {
     this.requireGroup(callerKey);
     const trimmed = String(name ?? "").trim().slice(0, 80);
     if (!trimmed) throw new Error("InvalidName");
@@ -219,7 +219,7 @@ export class ChatRoom extends DurableObject<Env> {
    * an acceptable cost for something that changes far less often than it
    * would otherwise be read.
    */
-  async groupInfo(callerKey) {
+  async groupInfo(callerKey: string) {
     this.requireGroup(callerKey);
     const row = this.ctx.storage.sql.exec<{ name: string | null }>("SELECT name FROM room_state WHERE id = 1").toArray()[0];
     const members = this.ctx.storage.sql.exec<{ user_key: string; code: string | null; name: string | null }>("SELECT user_key, code, name FROM participants").toArray()
@@ -227,19 +227,19 @@ export class ChatRoom extends DurableObject<Env> {
     return { name: row?.name ?? null, members };
   }
 
-  requireParticipant(userKey) {
+  requireParticipant(userKey: string) {
     const row = this.ctx.storage.sql.exec("SELECT user_key FROM participants WHERE user_key = ?", userKey).toArray();
     if (row.length !== 1) throw new Error("Forbidden");
   }
 
-  requireOpen(userKey) {
+  requireOpen(userKey: string) {
     this.requireParticipant(userKey);
     if (this.ctx.storage.sql.exec("SELECT closed FROM room_state WHERE id = 1").toArray()[0]?.closed) {
       throw new Error("Closed");
     }
   }
 
-  async close(userKey) {
+  async close(userKey: string) {
     this.requireParticipant(userKey);
     const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
     for (const participant of this.ctx.storage.sql.exec("SELECT user_key FROM participants").toArray()) {
@@ -260,7 +260,7 @@ export class ChatRoom extends DurableObject<Env> {
     return { status: "closed" };
   }
 
-  async inboxState(userKey) {
+  async inboxState(userKey: string) {
     this.requireParticipant(userKey);
     const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
     if (this.ctx.storage.sql.exec("SELECT closed FROM room_state WHERE id = 1").toArray()[0]?.closed) {
@@ -284,7 +284,7 @@ export class ChatRoom extends DurableObject<Env> {
     return { latestID, unreadCount, closed: false };
   }
 
-  async markRead(userKey, throughID) {
+  async markRead(userKey: string, throughID: any) {
     this.requireParticipant(userKey);
     const latestID = this.ctx.storage.sql.exec<{ id: number }>("SELECT COALESCE(MAX(id), 0) AS id FROM messages").one().id;
     const safeID = Math.min(latestID, Math.max(0, Number.isSafeInteger(throughID) ? throughID : 0));
@@ -299,21 +299,21 @@ export class ChatRoom extends DurableObject<Env> {
   // The other person in this 1:1 room — a room only ever has two
   // participants, so "who blocked whom" never needs a target parameter,
   // just "the other one."
-  otherParticipant(userKey) {
+  otherParticipant(userKey: string) {
     const row = this.ctx.storage.sql
       .exec("SELECT user_key FROM participants WHERE user_key != ?", userKey)
       .toArray()[0];
     return row?.user_key ?? null;
   }
 
-  isBlockedBy(blockerKey) {
+  isBlockedBy(blockerKey: any) {
     const row = this.ctx.storage.sql.exec("SELECT 1 FROM blocks WHERE blocker_key = ?", blockerKey).toArray();
     return row.length > 0;
   }
 
   // Blocking a whole group doesn't map to anything meaningful — leaving (see
   // removeParticipant) is the group equivalent of ending a 1:1 conversation.
-  async blockOtherParticipant(userKey) {
+  async blockOtherParticipant(userKey: string) {
     this.requireParticipant(userKey);
     if (this.isGroupRoom()) throw new Error("NotSupported");
     this.ctx.storage.sql.exec(
@@ -322,7 +322,7 @@ export class ChatRoom extends DurableObject<Env> {
     return { status: "blocked" };
   }
 
-  async unblockOtherParticipant(userKey) {
+  async unblockOtherParticipant(userKey: string) {
     this.requireParticipant(userKey);
     if (this.isGroupRoom()) throw new Error("NotSupported");
     this.ctx.storage.sql.exec("DELETE FROM blocks WHERE blocker_key = ?", userKey);
@@ -333,7 +333,7 @@ export class ChatRoom extends DurableObject<Env> {
   // "ブロック解除する" for the caller's own action, and separately decide
   // whether to even try sending (see sendMessage's own check below) rather
   // than surfacing that only as a failed send.
-  async blockStatus(userKey) {
+  async blockStatus(userKey: string) {
     this.requireParticipant(userKey);
     if (this.isGroupRoom()) throw new Error("NotSupported");
     const other = this.otherParticipant(userKey);
@@ -349,7 +349,7 @@ export class ChatRoom extends DurableObject<Env> {
   // its optimistic local copy with its now-confirmed server echo by exact
   // identity, instead of guessing by text content (which breaks down when
   // two messages with identical text are in flight at once).
-  async sendMessage(userKey, text, clientMessageID = null) {
+  async sendMessage(userKey: string, text: string, clientMessageID: any = null) {
     this.requireOpen(userKey);
     // Groups have no blocking (see blockOtherParticipant) and every member's
     // read position is already initialized when they're added (see
@@ -385,7 +385,7 @@ export class ChatRoom extends DurableObject<Env> {
     return { id: row.id, text, sentAt, isMine: true, clientMessageID, senderKey: userKey };
   }
 
-  async listMessages(userKey, after = 0) {
+  async listMessages(userKey: string, after = 0) {
     this.requireParticipant(userKey);
     const rows = after > 0
       ? this.ctx.storage.sql.exec(
@@ -408,7 +408,7 @@ export class ChatRoom extends DurableObject<Env> {
   // Operator removal (moderation-actions.ts): the same end state as the sender
   // retracting, without being the sender. Reachable only through the Worker's
   // binding from the Access-gated admin API, never from a user's request.
-  async moderatorRemoveMessage(messageID) {
+  async moderatorRemoveMessage(messageID: number) {
     const row = this.ctx.storage.sql.exec("SELECT id, is_canceled FROM messages WHERE id = ?", messageID).toArray()[0];
     if (!row) return { status: "not_found" };
     this.ctx.storage.sql.exec("UPDATE messages SET is_canceled = 1, text = '' WHERE id = ?", messageID);
@@ -419,7 +419,7 @@ export class ChatRoom extends DurableObject<Env> {
   // moderator to read later. Taken at report time because cancelMessage
   // clears the text — otherwise the sender could erase the evidence by
   // retracting after being reported. `reported` is the sender's key.
-  async reportSnapshot(userKey, messageID) {
+  async reportSnapshot(userKey: string, messageID: number) {
     this.requireParticipant(userKey);
     const target = this.ctx.storage.sql.exec(
       "SELECT id, sender_key, text, sent_at, is_canceled FROM messages WHERE id = ?", messageID,
@@ -432,7 +432,7 @@ export class ChatRoom extends DurableObject<Env> {
        ORDER BY id ASC`,
       messageID, messageID, messageID,
     ).toArray();
-    const clip = text => String(text ?? "").slice(0, 2_000);
+    const clip = (text: unknown) => String(text ?? "").slice(0, 2_000);
     return {
       reportedKey: target.sender_key,
       messages: rows.map(row => ({
@@ -451,7 +451,7 @@ export class ChatRoom extends DurableObject<Env> {
   // install) can never see the original content again once this succeeds —
   // this is what makes "送信取消" mean what its label claims, instead of
   // only ever hiding the bubble on the sender's own device.
-  async cancelMessage(userKey, messageID) {
+  async cancelMessage(userKey: string, messageID: number) {
     this.requireParticipant(userKey);
     const row = this.ctx.storage.sql.exec("SELECT sender_key FROM messages WHERE id = ?", messageID).toArray()[0];
     if (!row) return { status: "not_found" };
@@ -467,7 +467,7 @@ export class ChatRoom extends DurableObject<Env> {
   // shareable scheme. Only the original sender may edit, the same
   // ownership check `cancelMessage` uses; a canceled message stays
   // canceled — an edit must never resurrect a retracted message.
-  async editMessage(userKey, messageID, text) {
+  async editMessage(userKey: string, messageID: number, text: string) {
     this.requireParticipant(userKey);
     const row = this.ctx.storage.sql.exec(
       "SELECT sender_key, is_canceled FROM messages WHERE id = ?", messageID,
@@ -486,7 +486,7 @@ export class ChatRoom extends DurableObject<Env> {
   // surface an `editMessage` repair to a message old enough to have
   // scrolled out of that window — this is the fallback that checks
   // specific known-stale ids directly instead.
-  async getMessagesByIDs(userKey, ids) {
+  async getMessagesByIDs(userKey: string, ids: any) {
     this.requireParticipant(userKey);
     if (!Array.isArray(ids) || ids.length === 0) return [];
     const placeholders = ids.map(() => "?").join(",");
@@ -510,7 +510,7 @@ export class ChatRoom extends DurableObject<Env> {
   // uploader's local filesystem or app database — can actually retrieve it.
   // Previously an attachment only ever carried a local file path / local
   // database id, which meant nothing outside the sender's own device.
-  async storeAttachment(userKey, contentType, base64Data) {
+  async storeAttachment(userKey: string, contentType: any, base64Data: any) {
     this.requireOpen(userKey);
     const type = String(contentType ?? "").slice(0, 100);
     if (!CONTENT_TYPE_PATTERN.test(type)) throw new Error("InvalidContentType");
@@ -531,7 +531,7 @@ export class ChatRoom extends DurableObject<Env> {
     return { id };
   }
 
-  async getAttachment(userKey, id) {
+  async getAttachment(userKey: string, id: string) {
     this.requireParticipant(userKey);
     const row = this.ctx.storage.sql.exec<{ content_type: string; data: string }>(
       "SELECT content_type, data FROM attachments WHERE id = ?", id,

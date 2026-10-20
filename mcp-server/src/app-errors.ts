@@ -24,18 +24,18 @@ const MAX_SLACK_POSTS_PER_REQUEST = 5;
 const MAX_COUNT = 1_000;
 const MAX_NEW_PROBLEMS_PER_DAY = 20;
 const KINDS = new Set(["crash", "hang", "cpu", "disk", "error"]);
-const KIND_LABELS = { crash: "クラッシュ", hang: "フリーズ", cpu: "CPU過負荷", disk: "ディスク書き込み過多", error: "エラー" };
+const KIND_LABELS: Record<string, string> = { crash: "クラッシュ", hang: "フリーズ", cpu: "CPU過負荷", disk: "ディスク書き込み過多", error: "エラー" };
 
-function truncate(value, max) {
+function truncate(value: any, max: number) {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 
 // "1.4.0 (23)" -> [1, 4, 0, 23]. Missing parts compare as 0.
-export function versionParts(version) {
+export function versionParts(version: any) {
   return (String(version ?? "").match(/\d+/g) ?? []).map(Number);
 }
 
-export function compareVersions(a, b) {
+export function compareVersions(a: any, b: any) {
   const left = versionParts(a);
   const right = versionParts(b);
   const length = Math.max(left.length, right.length);
@@ -46,7 +46,7 @@ export function compareVersions(a, b) {
   return 0;
 }
 
-function describeContext(error) {
+function describeContext(error: any) {
   return [
     error.appVersion && `v${error.appVersion}`,
     error.osVersion && `iOS ${error.osVersion}`,
@@ -54,7 +54,7 @@ function describeContext(error) {
   ].filter(Boolean).join(" ・ ");
 }
 
-async function notify(env: Env, origin, outcome, row, error) {
+async function notify(env: Env, origin: any, outcome: string, row: any, error: any) {
   const label = KIND_LABELS[row.kind] ?? "エラー";
   const headline = outcome === "new" ? `🆕 新しい${label}` : `🔁 ${label}が再発`;
   await postSlackBlocks(env, [
@@ -70,7 +70,7 @@ async function notify(env: Env, origin, outcome, row, error) {
 // whether it is worth a Slack message: only a first sighting and a
 // regression are — a problem that is already known and open, or that only
 // old builds still hit, stays quiet.
-async function recordOccurrence(env: Env, fingerprint, error, userKey: string, now) {
+async function recordOccurrence(env: Env, fingerprint: any, error: any, userKey: string, now: number) {
   const existing = await env.ADMIN_DB.prepare(
     `SELECT status, resolved_after_version, last_seen_at, last_app_version FROM app_errors WHERE fingerprint = ?`
   ).bind(fingerprint).first();
@@ -98,7 +98,7 @@ async function recordOccurrence(env: Env, fingerprint, error, userKey: string, n
   );
   // A delayed report (a crash from before an update, delivered after it)
   // must not make the row's "latest build" go backwards.
-  const isNewest = error.occurredAt >= existing.last_seen_at;
+  const isNewest = error.occurredAt >= (existing.last_seen_at as number);
   await env.ADMIN_DB.prepare(
     `UPDATE app_errors SET
        occurrences = occurrences + ?,
@@ -120,13 +120,13 @@ async function recordOccurrence(env: Env, fingerprint, error, userKey: string, n
   return reopens ? "reopened" : null;
 }
 
-async function recordAffectedUser(env: Env, fingerprint, userKey: string) {
+async function recordAffectedUser(env: Env, fingerprint: any, userKey: string) {
   await env.ADMIN_DB.prepare(`INSERT INTO app_error_users (fingerprint, user_key, last_seen_at) VALUES (?, ?, ?)
     ON CONFLICT(fingerprint, user_key) DO UPDATE SET last_seen_at = excluded.last_seen_at`)
     .bind(fingerprint, userKey, Date.now()).run();
 }
 
-function normalize(raw, defaults, now) {
+function normalize(raw: any, defaults: any, now: number) {
   if (!raw || typeof raw !== "object") return null;
   const signature = truncate(raw.signature, 500).trim();
   const title = truncate(raw.title, 200).trim();
@@ -148,7 +148,7 @@ function normalize(raw, defaults, now) {
   };
 }
 
-export async function handleAppErrors(url, request: Request, env: Env) {
+export async function handleAppErrors(url: URL, request: Request, env: Env) {
   if (url.pathname !== "/api/app-errors" || request.method !== "POST") return null;
 
   const token = bearerToken(request);
@@ -172,7 +172,7 @@ export async function handleAppErrors(url, request: Request, env: Env) {
     osVersion: truncate(body.osVersion, 40),
     deviceModel: truncate(body.deviceModel, 60),
   };
-  const errors = body.errors.slice(0, MAX_ERRORS_PER_REQUEST).map(raw => normalize(raw, defaults, now)).filter(Boolean);
+  const errors = body.errors.slice(0, MAX_ERRORS_PER_REQUEST).map((raw: any) => normalize(raw, defaults, now)).filter(Boolean);
   // Same account hash as usage_events, so deleting the account removes it too.
   const userKey = await sha256Hex(`usage-account:${session.sub}`);
 

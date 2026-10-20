@@ -18,7 +18,7 @@ const ANTHROPIC_VERSION = "2023-06-01";
 const MAX_OUTPUT_TOKENS = 4096;
 
 /** One turn's content blocks: its text, plus any images attached to it. */
-function contentBlocks(turn, images) {
+function contentBlocks(turn: any, images: any) {
   const blocks: Record<string, unknown>[] = [{ type: "text", text: String(turn.text ?? "") }];
   for (const image of images) {
     blocks.push({ type: "image", source: { type: "base64", media_type: "image/png", data: image } });
@@ -34,12 +34,12 @@ function contentBlocks(turn, images) {
  * turn only, matching how the app's own screenshot-attach flow works —
  * there is always at most one turn with an attachment, the one just sent.
  */
-export async function callAnthropicChat(env: Env, { model, systemInstruction, turns, images = [] }) {
+export async function callAnthropicChat(env: Env, { model, systemInstruction, turns, images = [] }: any) {
   const key = env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("ANTHROPIC_API_KEY is not configured on this Worker.");
 
   const lastIndex = turns.length - 1;
-  const messages = turns.map((turn, index) => ({
+  const messages = turns.map((turn: any, index: any) => ({
     role: turn.role === "assistant" ? "assistant" : "user",
     content: contentBlocks(turn, index === lastIndex && turn.role !== "assistant" ? images : []),
   }));
@@ -71,7 +71,7 @@ export async function callAnthropicChat(env: Env, { model, systemInstruction, tu
  * no new text and resolve to "" — only a `content_block_delta` whose delta
  * is a `text_delta` does.
  */
-export function extractDeltaText(event) {
+export function extractDeltaText(event: any) {
   if (event?.type !== "content_block_delta") return "";
   const delta = event?.delta;
   return delta?.type === "text_delta" ? String(delta.text ?? "") : "";
