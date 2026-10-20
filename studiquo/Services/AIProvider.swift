@@ -49,6 +49,13 @@ protocol AIProvider {
     /// Judges whether an AIトーク question is worth reviewing tomorrow and,
     /// if so, researches it into an explanation and a short quiz.
     func researchReview(question: String, context: String) async throws -> AIReviewResult
+
+    /// The remaining per-device daily chat allowance, if this provider has one.
+    func usage() async -> AIUsage?
+}
+
+extension AIProvider {
+    func usage() async -> AIUsage? { nil }
 }
 
 extension AIProvider {
@@ -81,6 +88,13 @@ struct AIReviewResult: Decodable {
     let isStudyRelevant: Bool
     let explanationMarkdown: String
     let quiz: [AIQuizQuestion]
+}
+
+/// Remaining daily chat credits as enforced by the server for this device.
+struct AIUsage: Decodable, Equatable {
+    let limit: Int
+    let remaining: Int
+    let resetsAt: Date?
 }
 
 /// One thing to mark.
@@ -126,23 +140,33 @@ final class WorkerAIProvider: AIProvider {
     /// back nil — which is why the chat reported "未設定" even though the
     /// endpoint was right there in settings. The default is repeated here so
     /// both paths agree.
-    static let defaultEndpoint = "https://studiquo-mcp.studiquo-mcp-server.workers.dev"
+    static let defaultEndpoint = "https://api.studiquo.app"
 
     /// Read fresh each call so changing the endpoint in settings takes effect
     /// without restarting.
     var baseURL: URL? {
-        var raw = (UserDefaults.standard.string(forKey: "mcpCloudEndpoint") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if raw.isEmpty { raw = Self.defaultEndpoint }
-        raw = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: raw), url.scheme?.lowercased() == "https",
-              url.host?.isEmpty == false, url.user == nil, url.password == nil else { return nil }
-        return url
+        WorkerEndpointPolicy.resolve(UserDefaults.standard.string(forKey: "mcpCloudEndpoint"))
     }
 
     var isConfigured: Bool { baseURL != nil }
 
     var displayName: String { L("Studiquo AI") }
+
+    func usage() async -> AIUsage? {
+        guard AIDataDisclosure.hasBeenAcknowledged, let baseURL else { return nil }
+        var request = URLRequest(url: baseURL.appending(path: "api/ai/usage"))
+        request.httpMethod = "GET"
+        request.setValue(AIDataDisclosure.currentVersion, forHTTPHeaderField: "X-Studiquo-AI-Consent")
+        request.setValue(AIDataDisclosure.ageBand?.rawValue, forHTTPHeaderField: "X-Studiquo-Age")
+        request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, response) = try await URLSession.shared.dataNoticing(for: request)
+            guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { return nil }
+            return try? JSONDecoder().decode(AIUsage.self, from: data)
+        } catch {
+            return nil
+        }
+    }
 
     enum ProviderError: LocalizedError {
         case notConfigured
@@ -249,7 +273,7 @@ final class WorkerAIProvider: AIProvider {
             "noteContext": noteContext,
             "images": encodedImages,
             "requiresImage": expectsImages,
-            "model": AIModelSelection.current.rawValue,
+            "model": AIModelCatalog.defaultModel.rawValue,
         ]
         if let ragScope, RAGConsent.isGranted {
             payload["rag"] = ["scope": ragScope.payload]
@@ -261,7 +285,7 @@ final class WorkerAIProvider: AIProvider {
         }
 
         do {
-            let (stream, response) = try await URLSession.shared.bytes(for: request)
+            let (stream, response) = try await URLSession.shared.bytesNoticing(for: request)
             defer { stream.task.cancel() } // Also stops an oversized, invalid or abandoned response.
             guard let http = response as? HTTPURLResponse else {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
@@ -310,7 +334,7 @@ final class WorkerAIProvider: AIProvider {
         var body: [String: Any] = [
             "question": submission.questionText,
             "modelAnswer": submission.modelAnswer,
-            "model": AIModelSelection.current.rawValue,
+            "model": AIModelCatalog.defaultModel.rawValue,
         ]
         if let png = Self.encoded(submission.questionImage) {
             body["questionImageBase64"] = png
@@ -325,7 +349,7 @@ final class WorkerAIProvider: AIProvider {
             "criteria": rubric.criteria.map {
                 ["name": $0.name, "maxPoints": $0.maxPoints, "requirement": $0.requirement]
             },
-            "model": AIModelSelection.current.rawValue,
+            "model": AIModelCatalog.defaultModel.rawValue,
         ]
         if let png = Self.encoded(submission.answerImage) { body["imageBase64"] = png }
         if let png = Self.encoded(submission.questionImage) { body["questionImageBase64"] = png }
@@ -338,7 +362,7 @@ final class WorkerAIProvider: AIProvider {
         try await streamedResult(path: "api/ai/review", body: [
             "question": question,
             "context": context,
-            "model": AIModelSelection.current.rawValue,
+            "model": AIModelCatalog.defaultModel.rawValue,
         ])
     }
 
@@ -358,7 +382,7 @@ final class WorkerAIProvider: AIProvider {
         let request = try request(path: path, body: body)
 
         do {
-            let (stream, response) = try await URLSession.shared.bytes(for: request)
+            let (stream, response) = try await URLSession.shared.bytesNoticing(for: request)
             defer { stream.task.cancel() } // Also stops an oversized, invalid or abandoned response.
             guard let http = response as? HTTPURLResponse else {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
@@ -424,7 +448,7 @@ final class WorkerAIProvider: AIProvider {
     private func post(path: String, body: [String: Any]) async throws -> Data {
         let request = try request(path: path, body: body)
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.dataNoticing(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw ProviderError.transport(L("応答を読み取れませんでした。"))
             }

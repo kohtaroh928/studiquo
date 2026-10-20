@@ -17,6 +17,17 @@ final class SharedImportCoordinator: ObservableObject {
         var completed: Int
         var total: Int
         var currentName: String
+        /// Pages of the current file rendered so far, and its page count; both
+        /// 0 until the file reports them (non-PDFs never do).
+        var pageDone = 0
+        var pageTotal = 0
+
+        /// 0...1 over the whole batch, counting the current file's pages.
+        var fraction: Double {
+            guard total > 0 else { return 0 }
+            let filePart = pageTotal > 0 ? Double(pageDone) / Double(pageTotal) : 0
+            return min(1, (Double(completed) + filePart) / Double(total))
+        }
     }
 
     /// What the picker is currently importing.
@@ -99,6 +110,16 @@ final class SharedImportCoordinator: ObservableObject {
         guard var current = progress else { return }
         current.completed = completed
         current.currentName = currentName
+        current.pageDone = 0
+        current.pageTotal = 0
+        progress = current
+    }
+
+    /// Page-level progress inside the current file.
+    func advancePage(done: Int, of total: Int) {
+        guard var current = progress else { return }
+        current.pageDone = done
+        current.pageTotal = total
         progress = current
     }
 

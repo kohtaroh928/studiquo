@@ -22,6 +22,8 @@ enum AccountFlowLogic {
 struct AccountGateView: View {
     @StateObject private var authentication = AuthenticationStore()
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AccountDeletionWorkflow.pendingLocalDeletionKey) private var cleanupPending = false
     @State private var cleanupError = ""
 
@@ -33,7 +35,7 @@ struct AccountGateView: View {
                     Text("サーバーが削除依頼を受け付けました。外部サービスの削除は順次処理されます。")
                         .font(.footnote).foregroundStyle(.secondary)
                     if !cleanupError.isEmpty {
-                        Text(cleanupError).foregroundStyle(.red)
+                        Text(cleanupError).foregroundStyle(Theme.Palette.danger)
                         Button("もう一度削除する") { Task { await finishLocalCleanup() } }
                     } else {
                         ProgressView()
@@ -48,15 +50,56 @@ struct AccountGateView: View {
             case .onboarding:
                 OnboardingView()
             case .authenticated:
-                ContentView()
+                ContentView().modifier(PaywallGate())
             }
             }
         }
+        .overlay {
+            // Covers everything until the account has a passkey.
+            if authentication.needsPasskeyEnrollment && !cleanupPending
+                && (authentication.state == .authenticated || authentication.state == .onboarding) {
+                PasskeyEnrollmentView()
+                    .transition(.opacity)
+            }
+        }
         .environmentObject(authentication)
+        // Why the server is paused, or that this build must be updated (ServerNotice.swift).
+        .safeAreaInset(edge: .top, spacing: 0) { ServerNoticeBanner() }
+        // The sign-in, verification and onboarding screens show an email address
+        // and take a password or a code: not for the app switcher.
+        .hidesInAppSwitcher(when: authentication.state != .authenticated)
         .animation(.easeInOut(duration: 0.2), value: authentication.state)
         .task(id: authentication.state) {
             guard !cleanupPending, authentication.state == .authenticated else { return }
             await PushNotificationRegistration.refreshIfAuthorized()
+        }
+        .task(id: authentication.state) {
+            guard !cleanupPending else { return }
+            await authentication.checkPasskeyRequirement()
+        }
+        // Remembers which account this device is signed in as (LibraryLedger).
+        // Nothing depends on it yet; it only starts the record.
+        .task(id: authentication.state) {
+            guard !cleanupPending, authentication.state == .authenticated else { return }
+            await LibraryIdentityService.refresh()
+        }
+        // The Worker can only answer "which plan?" once there is a session.
+        .task(id: authentication.state) {
+            guard !cleanupPending else { return }
+            guard authentication.state == .authenticated else {
+                subscriptionStore.resetForSignOut()
+                return
+            }
+            // The store waits for RevenueCat to know who this is before asking
+            // what they own, on every path (launch, sign-in, foreground).
+            subscriptionStore.waitForIdentity = { await authentication.waitForRevenueCatIdentity() }
+            await subscriptionStore.refresh()
+        }
+        // A trial that lapsed, or a purchase made on another device, shows up
+        // when the app comes back to the front.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, !cleanupPending, authentication.state == .authenticated else { return }
+            Task { await subscriptionStore.refreshIfStale() }
         }
         .task(id: cleanupPending) {
             if cleanupPending { await finishLocalCleanup() }
@@ -98,42 +141,45 @@ struct LoginView: View {
                 }
                 VStack(spacing: 14) {
                     TextField("メールアドレス", text: $email)
-                        .textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never)
+                        // Lets iOS offer saved credentials in the keyboard's
+                        // AutoFill area while this field is being edited.
+                        .textContentType(.username).keyboardType(.emailAddress).textInputAutocapitalization(.never)
                         .accountFieldStyle()
                     SecureField("パスワード", text: $password)
                         .textContentType(.password)
                         .accountFieldStyle()
+                    if !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Button {
+                            Task { _ = await authentication.loginWithPasskey() }
+                        } label: {
+                            Label("パスキーを使用", systemImage: "key.fill")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .disabled(authentication.isSignInBusy)
+                    }
                     if !authentication.errorMessage.isEmpty {
-                        Text(authentication.errorMessage).font(.footnote).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(authentication.errorMessage).font(.footnote).foregroundStyle(Theme.Palette.danger).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     Button("ログイン") { Task { _ = await authentication.login(email: email, password: password) } }
-                        .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+                        .buttonStyle(.themePrimary).controlSize(.large).frame(maxWidth: .infinity)
                         .disabled(!AccountFlowLogic.canSubmitCredentials(
-                            email: email, password: password, isBusy: authentication.isLoginBusy
+                            email: email, password: password, isBusy: authentication.isSignInBusy
                         ))
-                    Button {
-                        Task { await authentication.loginWithPasskey() }
-                    } label: {
-                        Label("パスキーでログイン", systemImage: "person.badge.key.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .disabled(authentication.isPasskeyBusy)
                     SignInWithAppleButton(.signIn) { request in
-                        request.requestedScopes = [.email]
+                        // The scopes, and a nonce whose hash Apple puts in the ID token.
+                        AppleSignInService.prepare(request)
                     } onCompletion: { result in
                         Task { await authentication.loginWithApple(result: result) }
                     }
                     .signInWithAppleButtonStyle(.black)
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .disabled(authentication.isAppleSignInBusy)
+                    .frame(maxWidth: .infinity, minHeight: 50, maxHeight: 50)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
+                    .disabled(authentication.isSignInBusy)
                     GoogleSignInButton {
                         Task { await authentication.loginWithGoogle() }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .disabled(authentication.isGoogleSignInBusy)
+                    .frame(maxWidth: .infinity, minHeight: 50, maxHeight: 50)
+                    .disabled(authentication.isSignInBusy)
                     Button("パスワードを忘れた場合") { showsReset = true }.font(.subheadline)
                     Button("アカウントをお持ちでない方はこちら") { showsCreateAccount = true }.font(.subheadline)
                 }
@@ -149,7 +195,6 @@ struct LoginView: View {
 
 private struct CreateAccountView: View {
     @EnvironmentObject private var authentication: AuthenticationStore
-    @Environment(\.dismiss) private var dismiss
     var isPasswordReset = false
     @State private var email = ""
     @State private var password = ""
@@ -172,12 +217,12 @@ private struct CreateAccountView: View {
                     .textContentType(.newPassword)
                     .accountFieldStyle()
                 if !authentication.errorMessage.isEmpty {
-                    Text(authentication.errorMessage).font(.footnote).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(authentication.errorMessage).font(.footnote).foregroundStyle(Theme.Palette.danger).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Button("確認コードを送信") {
                     Task { _ = await authentication.beginAccountCreation(email: email, password: password) }
                 }
-                .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+                .buttonStyle(.themePrimary).controlSize(.large).frame(maxWidth: .infinity)
                 .disabled(!AccountFlowLogic.canSubmitCredentials(
                     email: email, password: password, isBusy: authentication.isEmailVerifyBusy
                 ))
@@ -186,7 +231,6 @@ private struct CreateAccountView: View {
             Spacer()
         }
         .padding(32)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } } }
     }
 }
 
@@ -220,7 +264,7 @@ private struct EmailVerificationView: View {
                         code = AccountFlowLogic.verificationCode(from: newValue)
                     }
                 if !authentication.errorMessage.isEmpty {
-                    Text(authentication.errorMessage).font(.footnote).foregroundStyle(.red)
+                    Text(authentication.errorMessage).font(.footnote).foregroundStyle(Theme.Palette.danger)
                 } else if didResend {
                     Text("コードを再送信しました。").font(.footnote).foregroundStyle(.secondary)
                 }
@@ -240,7 +284,7 @@ private struct EmailVerificationView: View {
                             }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .controlSize(.large)
                     .disabled(code.count != 6 || newPassword.count < 8 || authentication.isEmailVerifyBusy)
                 } else {
@@ -250,7 +294,7 @@ private struct EmailVerificationView: View {
                             if await authentication.confirmEmailVerification(code: code) { code = "" }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .controlSize(.large)
                     .disabled(code.count != 6 || authentication.isEmailVerifyBusy)
                 }
@@ -273,7 +317,7 @@ private struct EmailVerificationView: View {
 
 private extension View {
     func accountFieldStyle() -> some View {
-        padding(14).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+        padding(14).background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.s, style: .continuous))
     }
 }
 
@@ -304,6 +348,7 @@ private struct OnboardingView: View {
                     calendarURLSection(title: "Googleカレンダーを連携", detail: "Googleカレンダーの非公開iCal URLを入力してください。", text: $googleURL)
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("はじめの設定")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -333,6 +378,88 @@ private struct OnboardingView: View {
             step = next
         } else {
             authentication.finishOnboarding()
+        }
+    }
+}
+
+
+/// Asked of every signed-in account that has no passkey yet. A password or an
+/// e-mailed code can be handed over to a look-alike site that relays it; a
+/// passkey is checked by the device against the real site's domain and cannot.
+/// Face ID / Touch ID is what confirms it is the owner.
+struct PasskeyEnrollmentView: View {
+    @EnvironmentObject private var authentication: AuthenticationStore
+    @State private var emailCode = ""
+
+    var body: some View {
+        ZStack {
+            Theme.Palette.canvas.ignoresSafeArea()
+            VStack(spacing: 20) {
+                Image(systemName: "person.badge.key.fill")
+                    .font(.system(size: 56))
+                    .foregroundStyle(.tint)
+                Text("パスキーを設定してください")
+                    .font(.title2.bold())
+                Text("偽のログイン画面にパスワードやコードを入力させて、アカウントを乗っ取る手口があります。パスキーなら、Face IDまたはTouch IDだけでログインでき、偽のサイトでは使えません。")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: 480)
+                Text("設定すると、次回からはパスキーでのみログインできます(パスワード、メールのコード、Apple、Googleでは入れなくなります)。最初の設定では、メールに届くコードで本人確認をします。iCloudキーチェーンがオンになっている必要があります。")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: 480)
+                if !authentication.errorMessage.isEmpty {
+                    Text(authentication.errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Palette.danger)
+                        .multilineTextAlignment(.center)
+                }
+                if authentication.passkeyNeedsEmailCode {
+                    Text("本人確認のため、\(authentication.email)にコードを送りました。コードを入力してください。")
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 480)
+                    TextField("6桁のコード", text: $emailCode)
+                        .keyboardType(.numberPad)
+                        .textContentType(.oneTimeCode)
+                        .multilineTextAlignment(.center)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 240)
+                        .accessibilityIdentifier("passkey-email-code")
+                    Button {
+                        Task { _ = await authentication.confirmPasskeyEmailCode(emailCode) }
+                    } label: {
+                        Label("確認してパスキーを設定する", systemImage: "faceid")
+                            .frame(maxWidth: 320)
+                    }
+                    .buttonStyle(.themePrimary)
+                    .controlSize(.large)
+                    .disabled(authentication.isPasskeyBusy || emailCode.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("passkey-confirm-code")
+                    Button("コードを再送する") { Task { await authentication.sendPasskeyEmailCode() } }
+                        .disabled(authentication.isPasskeyBusy)
+                        .accessibilityIdentifier("passkey-resend-code")
+                } else {
+                    Button {
+                        Task { _ = await authentication.addPasskey() }
+                    } label: {
+                        Label("パスキーを設定する", systemImage: "faceid")
+                            .frame(maxWidth: 320)
+                    }
+                    .buttonStyle(.themePrimary)
+                    .controlSize(.large)
+                    .disabled(authentication.isPasskeyBusy)
+                    .accessibilityIdentifier("passkey-enroll")
+                }
+                if authentication.passkeyEnrollmentFailed {
+                    Button("今回はスキップ") { authentication.skipPasskeyEnrollmentForNow() }
+                        .accessibilityIdentifier("passkey-skip")
+                }
+                Button("ログアウト", role: .destructive) { authentication.logout() }
+            }
+            .padding(32)
+            .onAppear { authentication.errorMessage = "" }
         }
     }
 }

@@ -66,7 +66,7 @@ enum AIModelCatalog {
     }
 
     /// Every model `plan` is entitled to call. `StudiquoPlan`'s raw-value
-    /// ordering (standard < plus < pro) means a higher plan always
+    /// ordering (free < standard < plus < pro) means a higher plan always
     /// includes every model a lower plan has.
     static func availableModels(for plan: StudiquoPlan) -> [AIModelInfo] {
         all.filter { $0.requiredPlan <= plan }

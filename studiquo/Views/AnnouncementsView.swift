@@ -39,6 +39,7 @@ struct AnnouncementsView: View {
                 }
             }
         }
+            .themeScreenBackground()
         .navigationTitle(Text("announcements.title"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -60,7 +61,7 @@ private struct AnnouncementRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Circle()
-                .fill(isUnread ? Color.red : Color.clear)
+                .fill(isUnread ? Theme.Palette.danger : Color.clear)
                 .frame(width: 8, height: 8)
                 .padding(.top, 7)
             VStack(alignment: .leading, spacing: 4) {
@@ -68,7 +69,7 @@ private struct AnnouncementRow: View {
                     Label(LocalizedStringKey(announcement.kindValue.titleKey), systemImage: announcement.kindValue.systemImage)
                         .labelStyle(.titleAndIcon)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(announcement.kindValue == .important ? Color.red : Color.secondary)
+                        .foregroundStyle(announcement.kindValue == .important ? Theme.Palette.danger : Color.secondary)
                     Text(announcement.publishedAt, style: .date)
                         .font(.caption)
                         .foregroundStyle(.tertiary)
@@ -95,7 +96,7 @@ private struct AnnouncementDetailView: View {
                 HStack(spacing: 8) {
                     Label(LocalizedStringKey(announcement.kindValue.titleKey), systemImage: announcement.kindValue.systemImage)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(announcement.kindValue == .important ? Color.red : Color.secondary)
+                        .foregroundStyle(announcement.kindValue == .important ? Theme.Palette.danger : Color.secondary)
                     Text(announcement.publishedAt, style: .date)
                         .font(.caption)
                         .foregroundStyle(.tertiary)

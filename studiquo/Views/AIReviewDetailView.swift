@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -5,13 +6,12 @@ import UniformTypeIdentifiers
 /// explanation the AI researched the day the question was asked, with a way
 /// to save/share it as a PDF and, only if the student chooses, a short quiz.
 ///
-/// The explanation itself already lives as a `TextDocument` in the student's
-/// own 文書 library (`AIReviewService` files it under "AI復習") — this screen
-/// is a convenient way to read it right after the notification, not the only
-/// place it can be opened from.
+/// Whether to keep the explanation as a 文書 (filed under "AI復習") is the
+/// student's choice, made here or with the notification's action buttons.
 struct AIReviewDetailView: View {
     let item: AIReviewItem
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @State private var showsQuiz = false
     @State private var pdfDocument: PDFExportDocument?
     @State private var showsPDFExporter = false
@@ -30,13 +30,13 @@ struct AIReviewDetailView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Label(L("昨日の質問"), systemImage: "bubble.left.and.bubble.right.fill")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.purple)
+                            .foregroundStyle(Theme.Palette.accent)
                         Text(item.questionText)
                             .font(.title3.bold())
                     }
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.purple.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+                    .background(Theme.Palette.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
 
                     if item.explanationMarkdown.isEmpty {
                         Text(explanationText)
@@ -56,8 +56,8 @@ struct AIReviewDetailView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 10)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.purple)
+                        .buttonStyle(.themePrimary)
+                        .tint(Theme.Palette.accent)
                     }
 
                     Button {
@@ -67,8 +67,9 @@ struct AIReviewDetailView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(item.explanationDocument == nil)
+                    .buttonStyle(.themeSecondary)
+
+                    documentChoice
                 }
                 .padding(20)
             }
@@ -83,16 +84,55 @@ struct AIReviewDetailView: View {
         .modifier(PDFSaveModifier(
             isPresented: $showsPDFExporter,
             document: $pdfDocument,
-            filename: item.explanationDocument?.title ?? L("復習")
+            filename: item.explanationDocument?.title ?? AIReviewService.reviewDocumentTitle(for: item.questionText)
         ))
         .fullScreenCover(isPresented: $showsQuiz) {
             AIReviewQuizView(questions: item.quiz)
         }
     }
 
+    @ViewBuilder
+    private var documentChoice: some View {
+        if item.explanationDocument != nil {
+            Label(L("文書「\(AIReviewService.reviewFolderName)」に保存済み"), systemImage: "checkmark.circle.fill")
+                .font(.subheadline)
+                .foregroundStyle(Theme.Palette.success)
+        } else if item.needsDocumentDecision {
+            VStack(spacing: 8) {
+                Text(L("この解説を文書として残しますか？"))
+                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 12) {
+                    Button {
+                        AIReviewService.keepAsDocument(item, modelContext: modelContext)
+                    } label: {
+                        Label(L("文書として残す"), systemImage: "doc.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.themePrimary)
+                    .accessibilityIdentifier("ai-review-keep-document")
+                    Button {
+                        AIReviewService.declineDocument(item, modelContext: modelContext)
+                    } label: {
+                        Text(L("残さない")).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.themeSecondary)
+                    .accessibilityIdentifier("ai-review-decline-document")
+                }
+            }
+        } else {
+            Button {
+                AIReviewService.keepAsDocument(item, modelContext: modelContext)
+            } label: {
+                Label(L("文書として残す"), systemImage: "doc.badge.plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.themeSecondary)
+        }
+    }
+
     private func exportPDF() {
-        guard let document = item.explanationDocument,
-              let data = ExportService.pdfData(from: document) else { return }
+        let document = item.explanationDocument ?? AIReviewService.makeDocument(for: item)
+        guard let data = ExportService.pdfData(from: document) else { return }
         pdfDocument = PDFExportDocument(data: data)
         showsPDFExporter = true
     }
@@ -151,7 +191,7 @@ struct AIReviewQuizView: View {
                     Text("\(index + 1) / \(questions.count)")
                         .font(.subheadline.monospacedDigit().weight(.semibold))
                     ProgressView(value: Double(index), total: Double(max(questions.count, 1)))
-                        .tint(.purple)
+                        .tint(Theme.Palette.accent)
                 }
 
                 VStack(spacing: 20) {
@@ -163,20 +203,20 @@ struct AIReviewQuizView: View {
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.background, in: RoundedRectangle(cornerRadius: 24))
-                .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.purple.opacity(0.22), lineWidth: 2))
-                .contentShape(RoundedRectangle(cornerRadius: 24))
+                .background(.background, in: RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous).stroke(Theme.Palette.accent.opacity(0.22), lineWidth: 2))
+                .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous))
                 .onTapGesture { showsAnswer.toggle() }
 
                 if showsAnswer {
                     HStack(spacing: 12) {
-                        gradeButton(L("不正解"), icon: "xmark", color: .red) { grade(correct: false) }
-                        gradeButton(L("正解"), icon: "checkmark", color: .green) { grade(correct: true) }
+                        gradeButton(L("不正解"), icon: "xmark", color: Theme.Palette.danger) { grade(correct: false) }
+                        gradeButton(L("正解"), icon: "checkmark", color: Theme.Palette.success) { grade(correct: true) }
                     }
                 } else {
                     Button(L("答えを見る")) { showsAnswer = true }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.purple)
+                        .buttonStyle(.themePrimary)
+                        .tint(Theme.Palette.accent)
                 }
             }
             .padding(18)
@@ -210,13 +250,13 @@ struct AIReviewQuizView: View {
                 Circle()
                     .trim(from: 0, to: CGFloat(percentage) / 100)
                     .stroke(
-                        percentage == 100 ? Color.green : Color.purple,
+                        percentage == 100 ? Theme.Palette.success : Theme.Palette.accent,
                         style: StrokeStyle(lineWidth: 18, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
                 Text("\(percentage)%")
                     .font(.system(size: 36, weight: .bold, design: .rounded))
-                    .foregroundStyle(percentage == 100 ? .green : .purple)
+                    .foregroundStyle(percentage == 100 ? Theme.Palette.success : Theme.Palette.accent)
             }
             .frame(width: 190, height: 190)
 
@@ -224,8 +264,8 @@ struct AIReviewQuizView: View {
                 .font(.title3.bold())
 
             Button(L("閉じる")) { dismiss() }
-                .buttonStyle(.borderedProminent)
-                .tint(.purple)
+                .buttonStyle(.themePrimary)
+                .tint(Theme.Palette.accent)
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

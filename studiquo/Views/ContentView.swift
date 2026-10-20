@@ -13,14 +13,11 @@ private struct MCPSnapshot: Codable {
     let studyActivities: [MCPStudyActivity]
     let calendarEvents: [MCPCalendarEvent]
     let textDocuments: [MCPTextDocument]
-    let slideDecks: [MCPSlideDeck]
     let folders: [MCPFolder]
 }
 private struct MCPFolder: Codable { let path: String }
 
 private struct MCPTextDocument: Codable { let id: String; let title: String; let text: String }
-private struct MCPSlideDeck: Codable { let id: String; let title: String; let slides: [MCPSlideSummary] }
-private struct MCPSlideSummary: Codable { let title: String; let bullets: [String]; let notes: String }
 
 private struct MCPNotebook: Codable { let id: String; let title: String; let pages: [MCPPage] }
 private struct MCPPage: Codable { let id: String; let title: String; let recognizedText: String }
@@ -58,9 +55,6 @@ private struct MCPPendingAction: Codable {
     /// `create_document`: the body, as lines. A line beginning with `# `,
     /// `## ` or `### ` becomes a heading; `- ` becomes a bullet.
     let body: String?
-    /// `create_slides`
-    let slides: [MCPSlide]?
-    let theme: String?
     let folderPath: String?
     let pages: [MCPIncomingPage]?
 }
@@ -74,15 +68,17 @@ private struct MCPInboxItem: Decodable, Identifiable {
 private struct MCPConnection: Decodable, Identifiable {
     let id: String
     let clientName: String
-}
-private struct MCPPairingInfo: Decodable { let clientName: String?; let scope: String?; let error: String? }
-private struct MCPApprovalResult: Decodable { let approved: Bool }
+    let kind: MCPConnectionKind?
 
-private struct MCPSlide: Codable {
-    let layout: String?
-    let title: String?
-    let bullets: [String]?
-    let notes: String?
+    private enum CodingKeys: String, CodingKey { case id, clientName, kind }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        clientName = try container.decode(String.self, forKey: .clientName)
+        // A connection made before kinds existed, or one of a kind this build
+        // does not know, simply has none.
+        kind = (try? container.decodeIfPresent(String.self, forKey: .kind)).flatMap(MCPConnectionKind.init(rawValue:))
+    }
 }
 
 /// Not `private`: `aiReviewStudyNotifications(from:now:)` below builds these
@@ -293,7 +289,7 @@ private struct StudyNotificationDetail: View {
                         Label("カレンダーで開く", systemImage: "calendar")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .padding(.top, 4)
                 }
             }
@@ -332,6 +328,8 @@ private struct StudyNotificationList: View {
     let onSelect: (StudyNotification) -> Void
     let onMarkAllRead: () -> Void
     let onMarkRead: (StudyNotification) -> Void
+    let onDelete: (StudyNotification) -> Void
+    let onDeleteMany: ([StudyNotification]) -> Void
     let onOpenSettings: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -339,6 +337,8 @@ private struct StudyNotificationList: View {
     private static let previewCount = 8
 
     @State private var showsAll = false
+    @State private var isSelectionMode = false
+    @State private var selectedIDs: Set<String> = []
 
     private var visibleNotifications: [StudyNotification] {
         showsAll ? notifications : Array(notifications.prefix(Self.previewCount))
@@ -346,6 +346,10 @@ private struct StudyNotificationList: View {
 
     private var hasUnread: Bool {
         notifications.contains { !readIDs.contains($0.id) }
+    }
+
+    private var selectedNotifications: [StudyNotification] {
+        notifications.filter { selectedIDs.contains($0.id) }
     }
 
     var body: some View {
@@ -362,14 +366,25 @@ private struct StudyNotificationList: View {
                     )
                     .frame(maxHeight: .infinity)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(visibleNotifications) { notification in
-                                row(for: notification)
-                                Divider()
-                            }
+                    List {
+                        ForEach(visibleNotifications) { notification in
+                            notificationRow(for: notification)
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.visible)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    if !isSelectionMode {
+                                        Button(role: .destructive) {
+                                            onDelete(notification)
+                                        } label: {
+                                            Label(L("削除"), systemImage: "trash")
+                                        }
+                                        .tint(.red)
+                                    }
+                                }
                         }
                     }
+                        .themeScreenBackground()
+                    .listStyle(.plain)
 
                     if notifications.count > Self.previewCount {
                         Divider()
@@ -398,6 +413,30 @@ private struct StudyNotificationList: View {
                 .font(.subheadline.weight(.semibold))
             Spacer()
             HStack(spacing: 16) {
+                Button {
+                    isSelectionMode.toggle()
+                    if isSelectionMode {
+                        showsAll = true
+                    } else {
+                        selectedIDs.removeAll()
+                    }
+                } label: {
+                    Image(systemName: isSelectionMode ? "checkmark.circle.fill" : "checkmark.circle")
+                }
+                .accessibilityLabel(isSelectionMode ? "選択を完了" : "通知を選択")
+
+                if isSelectionMode {
+                    Button(role: .destructive) {
+                        onDeleteMany(selectedNotifications)
+                        selectedIDs.removeAll()
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .accessibilityLabel("選択した通知を削除")
+                    .accessibilityValue("\(selectedIDs.count)件")
+                    .disabled(selectedIDs.isEmpty)
+                }
+
                 Button(action: onMarkAllRead) {
                     Image(systemName: "checkmark")
                 }
@@ -421,6 +460,32 @@ private struct StudyNotificationList: View {
         .padding(.horizontal, 16)
         .frame(height: 44)
         .background(.bar)
+    }
+
+    @ViewBuilder
+    private func notificationRow(for notification: StudyNotification) -> some View {
+        if isSelectionMode {
+            HStack(spacing: 0) {
+                Button {
+                    if selectedIDs.contains(notification.id) {
+                        selectedIDs.remove(notification.id)
+                    } else {
+                        selectedIDs.insert(notification.id)
+                    }
+                } label: {
+                    Image(systemName: selectedIDs.contains(notification.id) ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(selectedIDs.contains(notification.id) ? Color.accentColor : .secondary)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("notification-select-\(notification.id)")
+                .accessibilityLabel(notification.title)
+                .accessibilityValue(selectedIDs.contains(notification.id) ? "選択中" : "未選択")
+                row(for: notification)
+            }
+        } else {
+            row(for: notification)
+        }
     }
 
     /// Subject on top, then the age on the left and the link into the body on
@@ -470,7 +535,7 @@ private struct StudyNotificationList: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
             .contentShape(Rectangle())
             .background(readIDs.contains(notification.id) ? Color.clear : Color.accentColor.opacity(0.06))
         }
@@ -605,13 +670,13 @@ private struct PDFPasswordRemovalOfferSheet: View {
                     onDecision(false, doNotAskAgain)
                     dismiss()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.themeSecondary)
                 .frame(maxWidth: .infinity)
                 Button("はい") {
                     onDecision(true, doNotAskAgain)
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.themePrimary)
                 .frame(maxWidth: .infinity)
             }
         }
@@ -620,175 +685,11 @@ private struct PDFPasswordRemovalOfferSheet: View {
     }
 }
 
-/// Which of `TabPickerView`'s own "+" buttons was tapped — read back by
+/// Which "新規作成" entry of the tab picker was chosen — read back by
 /// `ContentView` once the picker sheet has actually finished dismissing,
 /// so it knows which "new item" alert/sheet to present next.
 private enum TabPickerCreationKind {
-    case notebook, deck, document, slideDeck
-}
-
-private struct TabPickerView: View {
-    let notebooks: [Notebook]
-    let decks: [FlashcardDeck]
-    let documents: [TextDocument]
-    let slideDecks: [SlideDeck]
-    let onSelectNotebook: (Notebook) -> Void
-    let onSelectDeck: (FlashcardDeck) -> Void
-    let onSelectDocument: (TextDocument) -> Void
-    let onSelectSlideDeck: (SlideDeck) -> Void
-    let onCreateNotebook: () -> Void
-    let onCreateDeck: () -> Void
-    let onCreateDocument: () -> Void
-    let onCreateSlideDeck: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-
-    private var filteredNotebooks: [Notebook] {
-        guard !searchText.isEmpty else { return notebooks }
-        return notebooks.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    private var filteredDecks: [FlashcardDeck] {
-        guard !searchText.isEmpty else { return decks }
-        return decks.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    private var filteredDocuments: [TextDocument] {
-        guard !searchText.isEmpty else { return documents }
-        return documents.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    private var filteredSlideDecks: [SlideDeck] {
-        guard !searchText.isEmpty else { return slideDecks }
-        return slideDecks.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
-
-    /// A section header with a trailing "+" for creating a brand-new item of
-    /// that section's kind, right from this picker, instead of only being
-    /// able to pick from what already exists below it.
-    private func sectionHeader(_ title: String, identifier: String, onCreate: @escaping () -> Void) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Button(action: onCreate) {
-                Image(systemName: "plus.circle.fill")
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier(identifier)
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    if filteredNotebooks.isEmpty {
-                        Text("ノートはありません").foregroundStyle(.secondary)
-                    }
-                    ForEach(filteredNotebooks) { notebook in
-                        Button {
-                            onSelectNotebook(notebook)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
-                                    .foregroundStyle(notebook.containsPDF ? .red : .blue)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(notebook.title).lineLimit(1)
-                                    Text("\(notebook.sortedPages.count)ページ")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    sectionHeader("ノート・PDF", identifier: "tab-picker-create-notebook", onCreate: onCreateNotebook)
-                }
-
-                Section {
-                    if filteredDecks.isEmpty {
-                        Text("暗記帳はありません").foregroundStyle(.secondary)
-                    }
-                    ForEach(filteredDecks) { deck in
-                        Button {
-                            onSelectDeck(deck)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "rectangle.on.rectangle.angled")
-                                    .foregroundStyle(.indigo)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(deck.title).lineLimit(1)
-                                    Text("\(deck.sortedCards.count)枚")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    sectionHeader("暗記帳", identifier: "tab-picker-create-deck", onCreate: onCreateDeck)
-                }
-
-                Section {
-                    if filteredDocuments.isEmpty {
-                        Text("文書はありません").foregroundStyle(.secondary)
-                    }
-                    ForEach(filteredDocuments) { document in
-                        Button { onSelectDocument(document) } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "doc.text").foregroundStyle(.teal)
-                                Text(document.title).lineLimit(1)
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    sectionHeader("文書", identifier: "tab-picker-create-document", onCreate: onCreateDocument)
-                }
-
-                Section {
-                    if filteredSlideDecks.isEmpty {
-                        Text("スライドはありません").foregroundStyle(.secondary)
-                    }
-                    ForEach(filteredSlideDecks) { deck in
-                        Button { onSelectSlideDeck(deck) } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "rectangle.on.rectangle").foregroundStyle(.orange)
-                                Text(deck.title).lineLimit(1)
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                } header: {
-                    sectionHeader("スライド", identifier: "tab-picker-create-slideDeck", onCreate: onCreateSlideDeck)
-                }
-            }
-            .searchable(text: $searchText, prompt: "名前で検索")
-            .navigationTitle("タブを追加")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("キャンセル") { dismiss() }
-                }
-            }
-        }
-        // A fixed portrait sheet. It used to offer both a large and a medium
-        // detent, so the list could be dragged into a half-height panel that
-        // showed two or three notes at a time.
-        .modifier(FixedSheetSize(shape: .portrait))
-        .presentationDragIndicator(.hidden)
-    }
+    case notebook, deck, document
 }
 
 private enum AppLanguage: String, CaseIterable, Identifiable {
@@ -825,36 +726,133 @@ private struct AppSettingsView: View {
     }
 }
 
-/// The settings form itself, shared by the gear's sheet (`AppSettingsView`)
-/// and the その他 tab (`MoreHomeView`) so the two can never drift apart.
-/// `leading`/`trailing` let the tab add its own sections around the shared
-/// ones; account deletion always stays last.
-private struct AppSettingsForm<Leading: View, Trailing: View>: View {
-    private let leading: Leading
-    private let trailing: Trailing
+/// What the その他 tab adds to the shared settings, grouped by the category
+/// it belongs to. Each category's own settings come first, then these rows.
+struct SettingsExtras {
+    var account = AnyView(EmptyView())
+    var notifications = AnyView(EmptyView())
+    var data = AnyView(EmptyView())
+    var privacy = AnyView(EmptyView())
+    var app = AnyView(EmptyView())
+}
+
+/// The coarse groups the settings list shows first; each opens its own form.
+private enum SettingsCategory: String, CaseIterable, Identifiable {
+    case account, study, notifications, data, privacy, app
+
+    var id: String { rawValue }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .account: "アカウント"
+        case .study: "学習・ノート"
+        case .notifications: "通知・お知らせ"
+        case .data: "データ・連携"
+        case .privacy: "フレンド・プライバシー"
+        case .app: "言語・サポート"
+        }
+    }
+
+    var summary: LocalizedStringKey {
+        switch self {
+        case .account: "プロフィール・プラン・ログアウト・アカウント削除"
+        case .study: "勉強時間・左利きモード・ペンの補正・PDF・AIトーク"
+        case .notifications: "お知らせ・通知の設定"
+        case .data: "iCloud同期・バックアップ・ゴミ箱・外部サービス連携"
+        case .privacy: "フレンド設定・データ送信・規約・診断"
+        case .app: "言語・問題の報告・バージョン"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .account: "person.crop.circle"
+        case .study: "pencil.and.outline"
+        case .notifications: "bell"
+        case .data: "externaldrive"
+        case .privacy: "lock.shield"
+        case .app: "globe"
+        }
+    }
+}
+
+/// The settings list shared by the gear's sheet (`AppSettingsView`) and the
+/// その他 tab (`MoreHomeView`) so the two can never drift apart. It shows
+/// the categories only; each opens a form with that category's settings.
+/// `extras` lets the tab add its own rows inside the matching categories;
+/// account deletion always stays last in アカウント.
+private struct AppSettingsForm: View {
+    private let extras: SettingsExtras
     @AppStorage("appLanguage") private var appLanguage = AppLanguage.system.rawValue
     @AppStorage("studyTimeTrackingEnabled") private var studyTimeTrackingEnabled = true
     @AppStorage("leftHandedMode") private var isLeftHandedMode = false
+    @AppStorage("lineCorrectionEnabled") private var isLineCorrectionEnabled = true
+    @AppStorage("ellipseCorrectionEnabled") private var isEllipseCorrectionEnabled = true
+    @AppStorage("rectangleCorrectionEnabled") private var isRectangleCorrectionEnabled = true
+    @AppStorage("triangleCorrectionEnabled") private var isTriangleCorrectionEnabled = true
+    @AppStorage("parabolaCorrectionEnabled") private var isParabolaCorrectionEnabled = true
+    @AppStorage("curveCorrectionEnabled") private var isCurveCorrectionEnabled = true
+    @AppStorage("polylineCorrectionEnabled") private var isPolylineCorrectionEnabled = true
     @AppStorage(AIReviewService.isEnabledDefaultsKey) private var aiTalkDayAfterReviewEnabled = false
     @AppStorage(ErrorReportSettings.enabledKey) private var autoErrorReportingEnabled = false
+    @AppStorage("pdfPasswordRemovalOfferDisabled") private var pdfPasswordRemovalOfferDisabled = false
     @State private var showsAIDataDisclosure = false
     @State private var showsPrivacyPolicy = false
     @State private var showsTermsOfUse = false
     @State private var showsSubscriptionPlans = false
     @State private var showsAccountDeletion = false
     @State private var showsRAGManagement = false
-    @Environment(\.modelContext) private var settingsModelContext
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
 
-    init(@ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
-        self.leading = leading()
-        self.trailing = trailing()
+    init(extras: SettingsExtras = SettingsExtras()) {
+        self.extras = extras
     }
 
     var body: some View {
-        Form {
-            leading
+        List {
+            Section {
+                ForEach(SettingsCategory.allCases) { category in
+                    NavigationLink {
+                        categoryForm(category)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(category.title)
+                                Text(category.summary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: category.icon)
+                        }
+                    }
+                    .accessibilityIdentifier("settings-category-\(category.rawValue)")
+                }
+            }
+        }
+            .themeScreenBackground()
+    }
 
+    private func categoryForm(_ category: SettingsCategory) -> some View {
+        Form {
+            switch category {
+            case .account: accountSections
+            case .study: studySections
+            case .notifications: notificationSections
+            case .data: dataSections
+            case .privacy: privacySections
+            case .app: appSections
+            }
+        }
+            .themeScreenBackground()
+        .navigationTitle(category.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .modifier(settingsSheets)
+    }
+
+    @ViewBuilder
+    private var accountSections: some View {
+        extras.account
             Section {
                 Button {
                     showsSubscriptionPlans = true
@@ -872,38 +870,27 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
                 Text("Plus・Proへの変更や購入履歴の復元ができます。")
             }
 
+            #if DEBUG
+            PaywallDebugSection()
+            #endif
+
             Section {
-                Picker("言語", selection: $appLanguage) {
-                    ForEach(AppLanguage.allCases) { language in
-                        Text(language.title).tag(language.rawValue)
-                    }
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-                // Push broadcasts are written in the language registered here.
-                .onChange(of: appLanguage) { _, _ in AppNotificationPreferences.synchronizeRemoteDevice() }
+                Button(AccountDeletionUI.accountButtonTitle, role: .destructive) { showsAccountDeletion = true }
             } header: {
-                Text("言語")
+                Text("アカウント")
             } footer: {
-                Text("選んだ言語はすぐに反映されます。")
+                Text("すべての資料、フレンド、グループ、チャット履歴、ログイン情報が完全に削除されます。")
             }
+    }
 
-            ICloudSyncSettingsSection()
-
+    @ViewBuilder
+    private var studySections: some View {
             Section {
                 Toggle("勉強時間を記録する", isOn: $studyTimeTrackingEnabled)
             } header: {
                 Text("学習記録")
             } footer: {
-                Text("ノート・暗記帳・文書・スライドを開いている間の時間だけを記録します。オフにすると勉強時間と連続学習日数の記録を止めます。")
-            }
-
-            Section {
-                NotificationSettingsLink()
-            } header: {
-                Text("通知")
-            } footer: {
-                Text("予定、チャット、招待、復習、AI処理などの通知を個別に設定できます。")
+                Text("ノート・暗記帳・文書を開いている間の時間だけを記録します。オフにすると勉強時間と連続学習日数の記録を止めます。")
             }
 
             Section {
@@ -915,13 +902,60 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
             }
 
             Section {
+                Toggle("直線補正", isOn: $isLineCorrectionEnabled)
+                Toggle("円・楕円補正", isOn: $isEllipseCorrectionEnabled)
+                Toggle("正方形・長方形補正", isOn: $isRectangleCorrectionEnabled)
+                Toggle("三角形補正", isOn: $isTriangleCorrectionEnabled)
+                Toggle("二次関数補正", isOn: $isParabolaCorrectionEnabled)
+                Toggle("曲線補正", isOn: $isCurveCorrectionEnabled)
+                Toggle("折線補正", isOn: $isPolylineCorrectionEnabled)
+            } header: {
+                Text("ペンの補正")
+            } footer: {
+                Text("ペンで描いたあと、少し止めると線や図形を整えます。種類ごとにオン・オフできます。")
+            }
+
+            Section {
+                Toggle("パスワード削除の確認を表示する", isOn: Binding(
+                    get: { !pdfPasswordRemovalOfferDisabled },
+                    set: { pdfPasswordRemovalOfferDisabled = !$0 }
+                ))
+            } header: {
+                Text("PDF")
+            } footer: {
+                Text("パスワード付きPDFを開いたあとに「パスワードを削除しますか？」と確認します。確認カードで「次回から確認しない」を選んだ場合は、ここでオンに戻せます。")
+            }
+
+            Section {
                 Toggle("翌日復習を作成する", isOn: $aiTalkDayAfterReviewEnabled)
             } header: {
                 Text("AIトーク")
             } footer: {
                 Text("オンにすると、AIトークで質問するたびに復習する価値があるか判定し、翌日に読める解説と確認クイズを自動で作成して通知します。オフにするとこの自動判定・作成は行われません。")
             }
+    }
 
+    @ViewBuilder
+    private var notificationSections: some View {
+        extras.notifications
+            Section {
+                NotificationSettingsLink()
+            } header: {
+                Text("通知")
+            } footer: {
+                Text("予定、チャット、招待、復習、AI処理などの通知を個別に設定できます。")
+            }
+    }
+
+    @ViewBuilder
+    private var dataSections: some View {
+        ICloudSyncSettingsSection()
+        extras.data
+    }
+
+    @ViewBuilder
+    private var privacySections: some View {
+        extras.privacy
             Section {
                 Button("AI機能とデータ送信について") { showsAIDataDisclosure = true }
                 Button("資料検索の保存データと許可") { showsRAGManagement = true }
@@ -941,59 +975,89 @@ private struct AppSettingsForm<Leading: View, Trailing: View>: View {
             } footer: {
                 Text("アプリが止まったときや不具合が起きたときに、エラーの種類・発生した箇所・アプリや端末のバージョンを開発者へ自動で送信します。ノートやチャットの内容は含まれません。")
             }
+    }
 
-            trailing
-
+    @ViewBuilder
+    private var appSections: some View {
             Section {
-                Button(AccountDeletionUI.accountButtonTitle, role: .destructive) { showsAccountDeletion = true }
-            } header: {
-                Text("アカウント")
-            } footer: {
-                Text("すべての資料、フレンド、グループ、チャット履歴、ログイン情報が完全に削除されます。")
-            }
-        }
-        .sheet(isPresented: $showsAIDataDisclosure) {
-            AIDataDisclosureView(onAcknowledge: { band in
-                AIDataDisclosure.acknowledge(ageBand: band)
-                showsAIDataDisclosure = false
-            }, onDecline: {
-                AIDataDisclosure.revoke()
-                showsAIDataDisclosure = false
-            }, onDismiss: { showsAIDataDisclosure = false })
-        }
-        .sheet(isPresented: $showsPrivacyPolicy) {
-            PrivacyPolicyView()
-        }
-        .sheet(isPresented: $showsTermsOfUse) {
-            TermsOfUseView()
-        }
-        .sheet(isPresented: $showsSubscriptionPlans) {
-            SubscriptionPlansView()
-        }
-        .sheet(isPresented: $showsAccountDeletion) {
-            DeleteAccountView()
-        }
-        .sheet(isPresented: $showsRAGManagement) {
-            NavigationStack {
-                RAGControlsView(store: AIChatStore.shared(for: settingsModelContext))
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("閉じる") { showsRAGManagement = false }
-                        }
+                Picker("言語", selection: $appLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.title).tag(language.rawValue)
                     }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+                // Push broadcasts are written in the language registered here.
+                .onChange(of: appLanguage) { _, _ in AppNotificationPreferences.synchronizeRemoteDevice() }
+            } header: {
+                Text("言語")
+            } footer: {
+                Text("選んだ言語はすぐに反映されます。")
             }
-        }
+        extras.app
+    }
+
+    private var settingsSheets: some ViewModifier {
+        SettingsSheets(
+            showsAIDataDisclosure: $showsAIDataDisclosure,
+            showsPrivacyPolicy: $showsPrivacyPolicy,
+            showsTermsOfUse: $showsTermsOfUse,
+            showsSubscriptionPlans: $showsSubscriptionPlans,
+            showsAccountDeletion: $showsAccountDeletion,
+            showsRAGManagement: $showsRAGManagement
+        )
     }
 }
 
-extension AppSettingsForm where Leading == EmptyView, Trailing == EmptyView {
-    init() {
-        self.init(leading: { EmptyView() }, trailing: { EmptyView() })
+/// The sheets the settings rows open, kept out of the form so they are
+/// attached to whichever category form is on screen.
+private struct SettingsSheets: ViewModifier {
+    @Binding var showsAIDataDisclosure: Bool
+    @Binding var showsPrivacyPolicy: Bool
+    @Binding var showsTermsOfUse: Bool
+    @Binding var showsSubscriptionPlans: Bool
+    @Binding var showsAccountDeletion: Bool
+    @Binding var showsRAGManagement: Bool
+    @Environment(\.modelContext) private var settingsModelContext
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $showsAIDataDisclosure) {
+                AIDataDisclosureView(onAcknowledge: { ageBand in
+                    AIDataDisclosure.acknowledge(ageBand: ageBand)
+                    showsAIDataDisclosure = false
+                }, onDecline: {
+                    AIDataDisclosure.revoke()
+                    showsAIDataDisclosure = false
+                })
+            }
+            .sheet(isPresented: $showsPrivacyPolicy) {
+                PrivacyPolicyView()
+            }
+            .sheet(isPresented: $showsTermsOfUse) {
+                TermsOfUseView()
+            }
+            .sheet(isPresented: $showsSubscriptionPlans) {
+                SubscriptionPlansView()
+            }
+            .sheet(isPresented: $showsAccountDeletion) {
+                DeleteAccountView()
+            }
+            .sheet(isPresented: $showsRAGManagement) {
+                NavigationStack {
+                    RAGControlsView(store: AIChatStore.shared(for: settingsModelContext))
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("閉じる") { showsRAGManagement = false }
+                            }
+                        }
+                }
+            }
     }
 }
 
-/// The その他 tab. Everything the app lets the student configure, in one
-/// scrolling list: the shared settings (`AppSettingsForm`) plus the things
+/// The その他 tab. Everything the app lets the student configure, grouped by
+/// category: the shared settings (`AppSettingsForm`) plus the things
 /// that used to be scattered — profile/logout, calendar and MCP
 /// connections, backups and trash (previously the "+" menu's lower half),
 /// friend privacy, and support. It sits inside `ContentView`'s own
@@ -1025,18 +1089,16 @@ private struct MoreHomeView: View {
     }
 
     var body: some View {
-        AppSettingsForm(
-            leading: {
-                announcementSection
-                accountSection
-            },
-            trailing: {
+        AppSettingsForm(extras: SettingsExtras(
+            account: AnyView(accountSection),
+            notifications: AnyView(announcementSection),
+            data: AnyView(Group {
                 integrationSection
                 dataSection
-                friendSection
-                supportSection
-            }
-        )
+            }),
+            privacy: AnyView(friendSection),
+            app: AnyView(supportSection)
+        ))
         .navigationTitle(Text("home.more.title"))
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showsAnnouncements) {
@@ -1250,6 +1312,7 @@ private struct NotificationSettingsView: View {
                 NotificationPreferenceToggle(kind: .newDeviceLogin, masterEnabled: masterEnabled, onChange: preferenceChanged, onBannerChange: bannerChanged)
             }
         }
+            .themeScreenBackground()
         .navigationTitle("通知")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -1400,7 +1463,7 @@ struct DeleteAccountView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("この操作は元に戻せません。ノート、暗記帳、文書、スライド、学習履歴、フレンド、グループ、チャット、プロフィール、すべてのログイン方法を削除します。")
+                    Text("この操作は元に戻せません。ノート、暗記帳、文書、学習履歴、フレンド、グループ、チャット、プロフィール、すべてのログイン方法を削除します。")
                         .foregroundStyle(.red)
                 }
                 Section("確認") {
@@ -1427,6 +1490,7 @@ struct DeleteAccountView: View {
                     .disabled(!AccountDeletionUI.canSubmit(confirmation: confirmation, isBusy: authentication.isAccountDeletionBusy))
                 }
             }
+                .themeScreenBackground()
             .navigationTitle("アカウントを削除")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(!AccountDeletionUI.canDismiss(isBusy: authentication.isAccountDeletionBusy))
@@ -1481,9 +1545,115 @@ enum MCPCloudCredentials {
     /// actual sign-in prompt, and the server's own `isExpired` check never
     /// even got a chance to fire (see .studiquoAuthFailed in
     /// AuthenticationStore.swift for what now happens on that real 401).
+    ///
+    /// "None stored" means the Keychain said so (`errSecItemNotFound`). A read
+    /// that failed for any other reason — the device is locked and the item is
+    /// not available yet — says nothing about whether a token exists, so no
+    /// replacement is minted and saved over the real one; an empty token is
+    /// returned, which the server refuses without signing anyone out (see
+    /// `isStorageUnavailable`).
     static func loadOrCreateToken() -> String {
-        if let value = currentToken(), value.count >= 32 { return value }
-        return generateAndSaveNewToken()
+        let read = readToken()
+        switch tokenDecision(token: read.token, status: read.status) {
+        case .use(let value): return value
+        case .createNew: return generateAndSaveNewToken()
+        case .unavailable:
+            lastWithoutTokenLock.lock(); lastWithoutToken = Date(); lastWithoutTokenLock.unlock()
+            return ""
+        }
+    }
+
+    private static let lastWithoutTokenLock = NSLock()
+    nonisolated(unsafe) private static var lastWithoutToken: Date?
+
+    /// True shortly after a request went out without a token because the
+    /// Keychain was locked. Its 401 can arrive after the person unlocked the
+    /// device, when the Keychain reads fine again, so the lock itself is no
+    /// longer visible; it must still not count as a rejected login.
+    static func sentWithoutTokenRecently(now: Date = Date(), within seconds: TimeInterval = 120) -> Bool {
+        lastWithoutTokenLock.lock(); defer { lastWithoutTokenLock.unlock() }
+        guard let last = lastWithoutToken else { return false }
+        return now.timeIntervalSince(last) < seconds
+    }
+
+    enum TokenDecision: Equatable {
+        case use(String)
+        case createNew
+        case unavailable
+    }
+
+    /// What `loadOrCreateToken` does with a Keychain read. Only the Keychain
+    /// saying outright that nothing is stored allows a new token; a locked
+    /// device (`errSecInteractionNotAllowed`) says nothing about whether one
+    /// exists.
+    static func tokenDecision(token: String?, status: OSStatus) -> TokenDecision {
+        if status == errSecInteractionNotAllowed { return .unavailable }
+        if let token, token.count >= 32 { return .use(token) }
+        return .createNew
+    }
+
+    /// True when the Keychain cannot be read because the device is locked, as
+    /// opposed to simply holding no token. A 401 seen in that state is not
+    /// evidence the login is bad.
+    static var isStorageUnavailable: Bool { isLocked(status: readToken().status) }
+
+    static func isLocked(status: OSStatus) -> Bool { status == errSecInteractionNotAllowed }
+
+    /// Tokens older than this are exchanged for a new one (see
+    /// `refreshIfNeeded`), well before the 90 days run out. The server only
+    /// exchanges tokens older than 7 days.
+    static let refreshAfter: TimeInterval = 30 * 24 * 60 * 60
+
+    /// Keeps a person who uses the app from being signed out when the token's
+    /// 90 days end: a token older than `refreshAfter` is exchanged with the
+    /// server for a new one carrying the same login. Best-effort — any failure
+    /// leaves the stored token untouched, and the old token keeps working until
+    /// its own expiry. A server without the endpoint answers 404 and nothing
+    /// changes.
+    static func refreshIfNeeded(session: URLSession = .shared, now: Date = Date()) async {
+        // Both activation hooks can fire together; one exchange is enough.
+        guard refreshGate.begin() else { return }
+        defer { refreshGate.end() }
+        guard let token = currentToken(),
+              let issued = issuedAt(of: token),
+              now.timeIntervalSince(issued) > refreshAfter,
+              now.timeIntervalSince(issued) <= validityPeriod,
+              let endpoint = configuredEndpoint() else { return }
+        var request = URLRequest(url: endpoint.appending(path: "api/session/refresh"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["randomValue": makeRandomValue()])
+        guard let (data, response) = try? await session.dataNoticing(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let body = try? JSONDecoder().decode(RefreshResponse.self, from: data),
+              body.refreshed, let replacement = body.token,
+              replacement.count >= 32, !isExpired(replacement) else { return }
+        // Signing out while the request was in flight cleared the token; it
+        // must not come back, nor may a newer sign-in's token be overwritten.
+        guard currentToken() == token else { return }
+        save(replacement)
+    }
+
+    private final class RefreshGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var running = false
+        func begin() -> Bool { lock.lock(); defer { lock.unlock() }; if running { return false }; running = true; return true }
+        func end() { lock.lock(); running = false; lock.unlock() }
+    }
+    private static let refreshGate = RefreshGate()
+
+    private struct RefreshResponse: Decodable {
+        let refreshed: Bool
+        let token: String?
+    }
+
+    /// Items saved by earlier versions can only be read while the device is
+    /// unlocked; this lets them be read after the first unlock, like the ones
+    /// saved now. Call it once a read has just succeeded.
+    static func relaxAccessibility() {
+        relaxKeychainAccessibility(service: service, account: account)
     }
 
     /// True once the token's embedded issue date is older than `validityPeriod`,
@@ -1526,7 +1696,9 @@ enum MCPCloudCredentials {
     }
 
     /// Reads the token without generating a new one; nil if none exists yet.
-    static func currentToken() -> String? {
+    static func currentToken() -> String? { readToken().token }
+
+    private static func readToken() -> (token: String?, status: OSStatus) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -1535,22 +1707,26 @@ enum MCPCloudCredentials {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return (nil, status) }
+        return (String(data: data, encoding: .utf8), status)
     }
 
+    /// Updates in place when a token is already stored, so a failure never
+    /// leaves the Keychain with the old token deleted and no new one added.
     static func save(_ value: String) {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        SecItemDelete(base as CFDictionary)
-        var item = base
-        item[kSecValueData as String] = Data(value.utf8)
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        SecItemAdd(item as CFDictionary, nil)
+        let attributes: [String: Any] = [
+            kSecValueData as String: Data(value.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        if SecItemUpdate(base as CFDictionary, attributes as CFDictionary) == errSecItemNotFound {
+            SecItemAdd(base.merging(attributes) { $1 } as CFDictionary, nil)
+        }
     }
 
     /// Deletes the local token without telling the server. Prefer `revoke()`,
@@ -1572,21 +1748,23 @@ enum MCPCloudCredentials {
         request.httpMethod = "POST"
         request.timeoutInterval = 10
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        _ = try? await URLSession.shared.data(for: request)
+        _ = try? await URLSession.shared.dataNoticing(for: request)
     }
 
     /// The Worker endpoint every cloud request (sync, AI, sign-in, revoke)
     /// should target: the user's custom endpoint from settings if they've set
     /// one and it's a valid https URL, otherwise the built-in default.
     static func configuredEndpoint() -> URL? {
-        var raw = (UserDefaults.standard.string(forKey: "mcpCloudEndpoint") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if raw.isEmpty { raw = WorkerAIProvider.defaultEndpoint }
-        raw = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: raw), url.scheme?.lowercased() == "https",
-              url.host?.isEmpty == false, url.user == nil, url.password == nil else { return nil }
-        return url
+        // A released build only talks to the production Worker (WorkerEndpointPolicy).
+        WorkerEndpointPolicy.resolve(UserDefaults.standard.string(forKey: "mcpCloudEndpoint"))
     }
+}
+
+/// Moves one existing generic-password item to "readable after the first
+/// unlock". A failure (item missing, device locked) changes nothing.
+func relaxKeychainAccessibility(service: String, account: String) {
+    let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+    SecItemUpdate(query as CFDictionary, [kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly] as CFDictionary)
 }
 
 /// Wraps the AI復習 bell-feed wiring (`onChange`/`sheet`) in its own
@@ -1597,10 +1775,14 @@ private struct AIReviewIntegration: ViewModifier {
     let count: Int
     @Binding var presentedItem: AIReviewItem?
     let onCountChange: () -> Void
+    @Environment(\.modelContext) private var modelContext
 
     func body(content: Content) -> some View {
         content
             .onChange(of: count) { _, _ in onCountChange() }
+            .onReceive(NotificationCenter.default.publisher(for: AIReviewDecisionQueue.didChange)) { _ in
+                AIReviewService.reconcile(modelContext: modelContext)
+            }
             .sheet(item: $presentedItem) { item in
                 AIReviewDetailView(item: item)
             }
@@ -1626,6 +1808,11 @@ private struct AppNotificationRoutingModifier: ViewModifier {
 /// app that note text, answer photos, or chat questions leave the device
 /// for OpenAI (and, for the separate opt-in bring-your-own-key
 /// features, Anthropic).
+///
+/// It also records the student's age band. OpenAI's terms exclude children
+/// under 13 and expect a guardian's consent for minors, so AI is offered only
+/// to "adult" (18+) and "teen" (13–17, with a guardian's consent); the Worker
+/// refuses a request that doesn't carry one of the two.
 enum AIAgeBand: String {
     case adult
     case teen
@@ -1703,8 +1890,8 @@ private struct AIDataDisclosureGate: ViewModifier {
             get: { !hasMadeDecision },
             set: { _ in }
         )) {
-            AIDataDisclosureView(onAcknowledge: { band in
-                AIDataDisclosure.acknowledge(ageBand: band)
+            AIDataDisclosureView(onAcknowledge: { ageBand in
+                AIDataDisclosure.acknowledge(ageBand: ageBand)
                 hasMadeDecision = true
             }, onDecline: {
                 AIDataDisclosure.revoke()
@@ -1720,6 +1907,17 @@ private struct AIDataDisclosureView: View {
     let onAcknowledge: (AIAgeBand) -> Void
     let onDecline: () -> Void
     var onDismiss: (() -> Void)? = nil
+
+    private enum AgeChoice { case adult, teen, child }
+    @State private var ageChoice: AgeChoice?
+
+    private var chosenBand: AIAgeBand? {
+        switch ageChoice {
+        case .adult: return .adult
+        case .teen: return .teen
+        default: return nil
+        }
+    }
 
     private enum AgeChoice { case adult, teen, child }
     @State private var ageChoice: AgeChoice?
@@ -1755,6 +1953,24 @@ private struct AIDataDisclosureView: View {
                         Text("現在の送信先はOpenAIのみです。許可しなくてもノートなどの基本機能は使えます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .background(Theme.Palette.surfaceSunken, in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("年齢の確認", systemImage: "person.badge.shield.checkmark")
+                            .font(.headline)
+                        Text("AI機能は13歳以上の方が利用できます。13〜17歳の方は、保護者の同意を得てからご利用ください。")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        ageOption(.adult, "18歳以上です")
+                        ageOption(.teen, "13〜17歳で、保護者の同意を得ています")
+                        ageOption(.child, "13歳未満です")
+                        if ageChoice == .child {
+                            Text("13歳未満の方はAI機能を利用できません。ノートなどの基本機能はそのままお使いいただけます。")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
                     }
                     .padding(14)
                     .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
@@ -1795,10 +2011,10 @@ private struct AIDataDisclosureView: View {
                     Button("OpenAIへのAI送信を許可する") {
                         if let band = chosenBand { onAcknowledge(band) }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .disabled(chosenBand == nil)
                     Button("許可しない・許可を取り消す", action: onDecline)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.themeSecondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
@@ -1867,12 +2083,12 @@ struct TermsOfUseView: View {
                     }
 
                     policySection(title: "3. 利用者が作成するコンテンツ") {
-                        Text("ノート、暗記帳、文書、スライドなど、利用者が本アプリ内で作成するコンテンツの権利は利用者に帰属します。運営は、保存・同期・共有・AI機能への送信など、利用者自身が指示した処理を提供するために必要な範囲でのみ、これらのコンテンツを取り扱います。")
+                        Text("ノート、暗記帳、文書など、利用者が本アプリ内で作成するコンテンツの権利は利用者に帰属します。運営は、保存・同期・共有・AI機能への送信など、利用者自身が指示した処理を提供するために必要な範囲でのみ、これらのコンテンツを取り扱います。")
                             .font(.subheadline)
                     }
 
                     policySection(title: "4. AI機能について") {
-                        Text("AIトーク・添削・翌日復習などの機能は、外部のAIサービスを利用して応答を生成します。AIの回答は誤りを含む可能性があり、学習の参考情報として提供されるものであって、正確性・完全性を保証するものではありません。成績や試験結果等に関する判断は、利用者自身の責任で行ってください。")
+                        Text("AIトーク・添削・翌日復習などの機能は、外部のAIサービスを利用して応答を生成します。AIの回答は誤りを含む可能性があり、学習の参考情報として提供されるものであって、正確性・完全性を保証するものではありません。AI機能は13歳以上の方のみご利用いただけます。13歳以上18歳未満の方は、保護者の同意を得たうえでご利用ください。成績や試験結果等に関する判断は、利用者自身の責任で行ってください。")
                             .font(.subheadline)
                     }
 
@@ -1960,7 +2176,7 @@ struct PrivacyPolicyView: View {
                     policySection(title: "収集する情報とその利用目的") {
                         bullet("アカウント情報", "サインイン方法に応じて、メールアドレス、Apple IDまたはGoogleアカウントの識別子、氏名の一部を取得します。本アプリの利用を可能にするために使用します。")
                         bullet("プロフィール情報", "設定した表示名。友達機能・共同編集機能で他の利用者に表示するために使用します。")
-                        bullet("学習コンテンツ", "ノート、暗記帳、文書、スライドなど、利用者が作成したコンテンツ。本アプリの基本機能を提供するために保存します。")
+                        bullet("学習コンテンツ", "ノート、暗記帳、文書など、利用者が作成したコンテンツ。本アプリの基本機能を提供するために保存します。")
                         bullet("友達・チャット機能に関する情報", "友達コード、友達関係、チャットメッセージ、送信した添付ファイル。友達同士のコミュニケーション機能を提供するために保存します。")
                         bullet("利用状況", "学習時間の記録、各機能の利用回数。学習記録機能・利用制限の管理のために使用します。")
                         bullet("Googleカレンダー情報", "Googleカレンダー連携を選択した場合、カレンダー名、予定のタイトル、開始・終了日時、説明を読み取り、学習予定と一緒に表示するために端末内へ保存します。Googleカレンダーへの書き込みは行いません。")
@@ -1972,12 +2188,12 @@ struct PrivacyPolicyView: View {
                     policySection(title: "第三者サービスとの連携") {
                         bullet("Sign in with Apple / Google Sign-In", "アカウント作成・ログインのために使用します。")
                         bullet("Google Calendar API", "許可を得たうえで、選択されているカレンダーの予定を読み取り専用で同期します。取得した情報を広告、行動追跡、第三者への販売には使用しません。")
-                        bullet("OpenAI", "AIトーク・添削・翌日復習機能で、生成AIとして使用します。これらの機能を使うたびに、上記の内容がOpenAIに送信されます。OpenAIの回答を後から取得するための保存は無効(store:false)にして送り、その他の保存・取扱いは提供元の利用条件に従います。送信前の文章は不適切な内容の確認のためOpenAIのモデレーション機能にも渡します。利用者の特定にはアカウントを元にしたハッシュ識別子のみを添えます。")
+                        bullet("OpenAI", "AIトーク・添削・翌日復習機能で、生成AIとして使用します。これらの機能を使うたびに、上記の内容がOpenAIに送信されます。送信する内容は、OpenAI側での学習・保存を行わない設定(store無効)で送り、送信前の文章は不適切な内容の確認のためOpenAIのモデレーション機能にも渡します。利用者の特定にはアカウントを元にしたハッシュ識別子のみを添えます。")
                         bullet("年齢の確認", "AI機能は13歳以上の方のみご利用いただけます。13歳以上18歳未満の方は、保護者の同意を得たうえでご利用ください。初回送信前に年齢区分の確認を行い、13歳未満の方にはAI機能を提供しません。")
-                        bullet("AI送信の許可", "初回送信前に内容と送信先を確認し、許可した場合のみ利用できます。通常のAIチャットの送信先はOpenAIです。任意の資料検索は別途Cloudflareへの保存・AI処理許可を必要とします。資料は送信対象として選択したもの、または別途許可した自動資料検索の範囲だけが送信されます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。許可は設定から取り消せます。")
+                        bullet("AI送信の許可", "初回送信前に内容と送信先を確認し、許可した場合のみ利用できます。現在の送信先はOpenAIのみです。資料は送信対象として選択したものだけが送信されます。提供条件の確認が完了するまでAI機能は利用できません。外部AIでの保存・取扱いは提供元の利用条件に従います。許可は設定から取り消せます。")
                         bullet("任意の資料検索（RAG）", "別途許可し、選択した保護されていないノート・PDF、または自動資料検索で許可した範囲のPDFの本文、OCR結果、タイトル、ページ番号をCloudflare Workers AIへ送信し、Embeddingと順位付けに使用します。本文・検索用データはD1・FTS・Vectorizeへ資料の検索データ削除またはアカウント削除まで保存します。検索時には質問もCloudflareへ送り、曖昧な質問では直前の質問も検索に使います。検索された抜粋はOpenAIにも送信します。削除後も古い処理による再保存を防ぐため、利用者識別子から作ったハッシュや資料の識別子と削除済み状態の記録を保持します。許可の取消だけでは保存済みデータは削除されません。資料検索画面から削除できます。")
                         bullet("Cloudflare", "本アプリのサーバーインフラとして使用しており、アカウント情報・学習コンテンツ・チャット内容の保管場所です。")
-                        bullet("Apple iCloud", "「iCloudで同期する」をオンにした端末では、ノート・暗記帳・文書・スライド・フォルダ・カレンダーの予定(連携して取得した予定を含む)・AIトークの履歴・学習記録など、アプリ内に保存されるデータが、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。この設定は端末ごとの任意の設定で、新しくインストールした場合は初期状態でオフです(以前のバージョンから引き続き利用している場合は、これまでどおりオンです)。同期されたデータは利用者ご自身のiCloudに保存され、iCloudの保存容量を使用します。")
+                        bullet("Apple iCloud", "「iCloudで同期する」をオンにした端末では、ノート・暗記帳・文書・フォルダ・カレンダーの予定(連携して取得した予定を含む)・AIトークの履歴・学習記録など、アプリ内に保存されるデータが、CloudKitを通じて利用者ご自身のiCloudアカウント内で端末間同期されます。この設定は端末ごとの任意の設定で、新しくインストールした場合は初期状態でオフです(以前のバージョンから引き続き利用している場合は、これまでどおりオンです)。同期されたデータは利用者ご自身のiCloudに保存され、iCloudの保存容量を使用します。")
                         bullet("Slack", "問題報告・診断の通知に使用します。問題報告の本文・画像は送らず、報告ID・端末情報と管理画面へのリンクだけを送ります。本文・画像の閲覧には管理者ログインが必要です。")
                         bullet("RevenueCat", "App Storeの購読状態を確認するために使用します。アカウント削除時に顧客情報の削除を要求します。購読自体はApp Storeで別途解約してください。")
                     }
@@ -2045,12 +2261,14 @@ struct PrivacyPolicyView: View {
 }
 
 struct ContentView: View {
+    /// ホームの「単語帳を読み込む（Quizlet・CSV）」メニュー項目を出すか。今は非表示。取り込み処理（importFlashcards）は残してあり、将来のアップデートで再び出す。
+    private static let showsVocabularyImportMenu = false
+
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Query(sort: \Notebook.updatedAt, order: .reverse) private var allNotebooks: [Notebook]
     @Query(sort: \FlashcardDeck.updatedAt, order: .reverse) private var flashcardDecks: [FlashcardDeck]
     @Query(sort: \TextDocument.updatedAt, order: .reverse) private var textDocuments: [TextDocument]
-    @Query(sort: \SlideDeck.updatedAt, order: .reverse) private var slideDecks: [SlideDeck]
     @Query private var allFolders: [Folder]
     @Query(sort: \MCPImportReceipt.importedAt, order: .reverse) private var mcpImportReceipts: [MCPImportReceipt]
     @Query(sort: \CalendarEvent.startDate) private var calendarEvents: [CalendarEvent]
@@ -2063,16 +2281,20 @@ struct ContentView: View {
 
     @State private var selectedNotebook: Notebook?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var preferredCompactColumn: NavigationSplitViewColumn = .detail
     @State private var libraryMode: LibraryMode = .documents
     @State private var selectedFolder: String?
-    @State private var sortOption: NotebookSortOption = .updatedNewest
+    @AppStorage("librarySortOption") private var sortOption: NotebookSortOption = .updatedNewest
+    @AppStorage("librarySortByMaterialType") private var sortByMaterialType = false
     @AppStorage("homeViewMode") private var viewMode: HomeViewMode = .list
     @State private var searchText = ""
     @State private var isImportingFiles = false
     @State private var docxImportFailed = false
+    /// Why a file was refused for its size (see `ImportLimits`); nil shows the
+    /// generic "broken or unsupported" text.
+    @State private var importRejectionMessage: String?
+    @State private var notebookProtectionFailed = false
     @State private var docxImportReport: String?
-    @State private var pptxImportFailed = false
-    @State private var pptxImportReport: String?
     @State private var isImportingBackup = false
     /// A locked PDF waiting for its password before it can be imported.
     @State private var pdfPendingImport: URL?
@@ -2087,6 +2309,9 @@ struct ContentView: View {
     /// Files that arrived from the Files app's share sheet or "Open in…",
     /// waiting for the student to choose a destination folder.
     @StateObject private var sharedImport = SharedImportCoordinator()
+    /// PDF imports that were started by the password prompt and are still
+    /// rendering. A running batch waits for these before it moves on.
+    @State private var pdfImportsInFlight = 0
     /// Legacy folder path that `assignToCurrentFolder` uses instead of the
     /// open library folder while a shared batch is being imported.
     @State private var importDestinationPath: String?
@@ -2123,12 +2348,11 @@ struct ContentView: View {
     @State private var newNotebookTemplate: PageTemplate = .ruled
     @State private var notebookToRename: Notebook?
     @State private var renameText = ""
-    /// Rename target for flashcard decks/documents/slide decks — kept
+    /// Rename target for flashcard decks/documents — kept
     /// separate from `notebookToRename` rather than generalizing that one,
     /// since `renameNotebook()`'s wiring is otherwise untouched; the two
     /// are never open at the same time, so sharing `renameText` is safe.
     @State private var entryToRename: HomeEntry?
-    @State private var showsEmptyTrashConfirmation = false
     @State private var isShowingNewFolderAlert = false
     @State private var newFolderName = ""
     @State private var notebookToEditTags: Notebook?
@@ -2152,17 +2376,14 @@ struct ContentView: View {
     @State private var folderRenameText = ""
     @State private var studyNotebook: Notebook?
     @State private var selectedFlashcardDeck: FlashcardDeck?
+    @State private var deckHostNotebook = Notebook(title: "")
     /// Deck (and a token that forces a fresh view) to open straight into a
     /// missed-card review, set by a notification tap or the library banner.
     @State private var mistakeReviewRequest: (deckKey: String, token: UUID)?
     @State private var selectedTextDocument: TextDocument?
-    @State private var selectedSlideDeck: SlideDeck?
     @State private var openTextDocuments: [TextDocument] = []
-    @State private var openSlideDecks: [SlideDeck] = []
     @State private var isShowingNewDocumentAlert = false
     @State private var newDocumentName = ""
-    @State private var isShowingNewSlideDeckAlert = false
-    @State private var newSlideDeckName = ""
     @State private var isShowingNewFlashcardDeckAlert = false
     @State private var newFlashcardDeckName = ""
     @State private var homeSection: HomeSection = .notes
@@ -2172,9 +2393,9 @@ struct ContentView: View {
     @State private var mcpCloudStatus = ""
     @State private var isMCPCloudSyncing = false
     @State private var isMCPCloudTokenVisible = false
-    @State private var mcpPairCode = ""
-    @State private var mcpPairClientName = ""
-    @State private var mcpPairScope = ""
+    @State private var mcpPairKind: MCPConnectionKind = .claude
+    @State private var mcpIssuedCode: MCPPairingCode?
+    @State private var mcpCodeExpiresAt: Date?
     @State private var mcpConnections: [MCPConnection] = []
     @State private var mcpInboxCount = 0
     @State private var mcpInboxError = ""
@@ -2199,6 +2420,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("readStudyNotificationIDs") private var readStudyNotificationIDsStorage = ""
+    @AppStorage("deletedStudyNotificationIDs") private var deletedStudyNotificationIDsStorage = ""
 
     private enum HomeSection: String, CaseIterable, Identifiable {
         case notes = "ノート"
@@ -2302,7 +2524,6 @@ struct ContentView: View {
                 case .pdfs: belongsToMode = !notebook.isTrashed && notebook.containsPDF
                 case .studyCards: belongsToMode = false
                 case .textDocuments: belongsToMode = false
-                case .slides: belongsToMode = false
                 case .trash: belongsToMode = notebook.isTrashed
                 }
             }
@@ -2407,10 +2628,10 @@ struct ContentView: View {
     /// removes its reveal toggle (see `CalendarHomeView`), so the “すべて・
     /// お気に入り” list is gone there rather than one tap away.
     private var librarySplitView: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $preferredCompactColumn) {
             List {
                 if selectedNotebook != nil || selectedFlashcardDeck != nil
-                    || selectedTextDocument != nil || selectedSlideDeck != nil {
+                    || selectedTextDocument != nil {
                     Section {
                         Button {
                             returnToHome()
@@ -2425,26 +2646,21 @@ struct ContentView: View {
                             sidebarFolderRow(folder)
                         }
                         let sidebarDocuments = textDocumentsInFolder("")
-                        let sidebarSlides = slideDecksInFolder("")
                         ForEach(homeNotebooks) { notebook in
                             sidebarNotebookButton(notebook)
                         }
-                        ForEach(flashcardDecks.filter { $0.folderName.isEmpty }) { deck in
+                        ForEach(flashcardDecks.filter { $0.folderName.isEmpty }.sorted(by: sortOption.areInOrder)) { deck in
                             sidebarFlashcardDeckButton(deck)
                         }
                         ForEach(sidebarDocuments) { document in
                             sidebarTextDocumentButton(document)
-                        }
-                        ForEach(sidebarSlides) { deck in
-                            sidebarSlideDeckButton(deck)
                         }
                     }
                 } else {
                     Section("ライブラリ") {
                         ForEach(LibraryMode.allCases) { mode in
                             Button {
-                                libraryMode = mode
-                                selectedFolder = nil
+                                selectLibraryLocation(mode: mode)
                             } label: {
                                 HStack {
                                     Label(mode.title, systemImage: mode.icon)
@@ -2456,13 +2672,13 @@ struct ContentView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("library-category-\(mode.rawValue)")
                         }
                     }
                     Section {
-                        ForEach(visibleFolderPaths, id: \.self) { folder in
+                        ForEach(sortedFolderNames.filter { parentFolder(of: $0) == nil }, id: \.self) { folder in
                             Button {
-                                selectedFolder = folder
-                                libraryMode = .documents
+                                selectLibraryLocation(mode: .documents, folder: folder)
                             } label: {
                                 HStack {
                                     Label(folderDisplayName(folder), systemImage: "folder")
@@ -2474,6 +2690,7 @@ struct ContentView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("library-sidebar-folder-\(folder)")
                             .dropDestination(for: String.self) { items, _ in
                                 handleFolderDrop(items, into: folder)
                             }
@@ -2488,9 +2705,9 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("ノート")
+            .navigationTitle("ライブラリ")
             .scrollContentBackground(.hidden)
-            .background(Color(red: 0.86, green: 0.93, blue: 1.0))
+            .background(Theme.Palette.surfaceSunken)
         } detail: {
             if let selectedNotebook, !selectedNotebook.isTrashed {
                 VStack(spacing: 0) {
@@ -2499,7 +2716,7 @@ struct ContentView: View {
                     ProtectedNotebookView(
                         notebook: selectedNotebook,
                         columnVisibility: $columnVisibility,
-                        onHome: returnToHome
+                        onHome: returnToLibrary
                     )
                         .id(selectedNotebook.persistentModelID)
                         .environmentObject(editorSplitState)
@@ -2515,31 +2732,34 @@ struct ContentView: View {
                     notebookTabBar
                     Divider()
                     let reviewRequest = mistakeReviewRequest.flatMap { $0.deckKey == deckID(selectedFlashcardDeck) ? $0 : nil }
-                    FlashcardDeckView(
-                        deck: selectedFlashcardDeck,
-                        onHome: returnToHome,
-                        startsWithMistakeReview: reviewRequest != nil
+                    // The deck opens inside the note editor so it gets the same
+                    // toolbar; `deckHostNotebook` is only a stand-in the editor
+                    // needs and is never saved or shown.
+                    ProtectedNotebookView(
+                        notebook: deckHostNotebook,
+                        columnVisibility: $columnVisibility,
+                        onHome: returnToLibrary,
+                        initialFlashcardDeck: selectedFlashcardDeck,
+                        initialFlashcardStartsWithMistakeReview: reviewRequest != nil
                     )
+                        .environmentObject(editorSplitState)
+                        .environmentObject(friendStore)
                         .id("\(String(describing: selectedFlashcardDeck.persistentModelID))-\(reviewRequest?.token.uuidString ?? "")")
                 }
             } else if let selectedTextDocument {
                 VStack(spacing: 0) {
                     notebookTabBar
                     Divider()
-                    TextDocumentView(document: selectedTextDocument, onHome: returnToHome)
+                    TextDocumentView(document: selectedTextDocument, onHome: returnToLibrary)
                         .id(selectedTextDocument.persistentModelID)
                         .environmentObject(friendStore)
-                }
-            } else if let selectedSlideDeck {
-                VStack(spacing: 0) {
-                    notebookTabBar
-                    Divider()
-                    SlideDeckView(deck: selectedSlideDeck, onHome: returnToHome)
-                        .id(selectedSlideDeck.persistentModelID)
                 }
             } else {
                 homeDashboard
             }
+        }
+        .onChange(of: horizontalSizeClass) { _, sizeClass in
+            if sizeClass == .compact { preferredCompactColumn = .detail }
         }
     }
 
@@ -2551,7 +2771,11 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if isAuxiliaryHomeFullScreen {
+            if homeSection == .friends {
+                // FriendsHomeView owns its NavigationSplitView. An outer
+                // NavigationStack prevents its columns from presenting correctly.
+                LibraryViewSection { AnyView(homeDashboard) }
+            } else if isAuxiliaryHomeFullScreen {
                 // A plain navigation stack keeps auxiliary home screens out
                 // of the notebook split view while still providing a toolbar.
                 NavigationStack {
@@ -2588,13 +2812,6 @@ struct ContentView: View {
             Button("作成") { createTextDocument() }
         } message: {
             Text("見出しや箇条書きを使って、レポートや下書きを書けます。")
-        }
-        .alert("新規スライド", isPresented: $isShowingNewSlideDeckAlert) {
-            TextField("スライド名", text: $newSlideDeckName)
-            Button("キャンセル", role: .cancel) { newSlideDeckName = "" }
-            Button("作成") { createSlideDeck() }
-        } message: {
-            Text("レイアウトを選んでスライドを作り、そのまま発表できます。")
         }
         .alert("新規暗記帳", isPresented: $isShowingNewFlashcardDeckAlert) {
             TextField("暗記帳の名前", text: $newFlashcardDeckName)
@@ -2638,15 +2855,20 @@ struct ContentView: View {
                 // PDF slipped through with no prompt and came in blank.
                 isImportingFiles = false
                 let picked = urls
-                DispatchQueue.main.async { picked.forEach(importFile) }
+                Task { @MainActor in await importPickedFiles(picked) }
             } onCancel: {
                 isImportingFiles = false
             }
         }
+        .alert("保護できませんでした", isPresented: $notebookProtectionFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("暗号鍵を使えなかったため、このノートは保護されていません。端末のロックを解除して、もう一度お試しください。")
+        }
         .alert("読み込めませんでした", isPresented: $docxImportFailed) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text("このファイルは開けませんでした。壊れているか、対応していない形式の可能性があります。")
+            Text(importRejectionMessage ?? L("このファイルは開けませんでした。壊れているか、対応していない形式の可能性があります。"))
         }
         .alert("一部の要素は変換できませんでした", isPresented: Binding(
             get: { docxImportReport != nil },
@@ -2656,7 +2878,6 @@ struct ContentView: View {
         } message: {
             Text((docxImportReport ?? "") + "\nこれらは今のところ非対応のため、文書には含まれていません。")
         }
-        .modifier(PptxImportAlerts(importFailed: $pptxImportFailed, importReport: $pptxImportReport))
         .modifier(SharedImportHost(
             coordinator: sharedImport,
             summary: $sharedImportSummary,
@@ -2666,6 +2887,11 @@ struct ContentView: View {
         .fileImporter(isPresented: $isImportingBackup, allowedContentTypes: [.json], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
                 for url in urls {
+                    if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxBackupFileBytes) {
+                        importRejectionMessage = L(rejection.message)
+                        docxImportFailed = true
+                        continue
+                    }
                     if let notebook = NotebookBackupService.restore(from: url) {
                         modelContext.insert(notebook)
                         openNotebookTab(notebook)
@@ -2685,7 +2911,7 @@ struct ContentView: View {
             if isDownloadingFriendAttachment {
                 ProgressView("読み込み中…")
                     .padding(20)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
             }
         }
         .fullScreenCover(item: $previewURL) { wrapped in
@@ -2745,13 +2971,17 @@ struct ContentView: View {
                     Section("Cloudflare MCP") {
                         LabeledContent("サーバーURL") {
                             HStack {
-                                TextField("https://studiquo-mcp.example.workers.dev", text: $mcpCloudEndpoint)
+                                TextField("https://api.studiquo.app", text: $mcpCloudEndpoint)
                                     .multilineTextAlignment(.trailing)
                                     .textInputAutocapitalization(.never)
                                     .autocorrectionDisabled()
+                                    // A released build always uses the production Worker.
+                                    .disabled(!WorkerEndpointPolicy.allowsCustomHosts)
+                                    .onAppear {
+                                        if !WorkerEndpointPolicy.allowsCustomHosts { mcpCloudEndpoint = WorkerAIProvider.defaultEndpoint }
+                                    }
                                 Button {
-                                    let endpoint = mcpCloudEndpoint
-                                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let endpoint = (WorkerEndpointPolicy.resolve(mcpCloudEndpoint)?.absoluteString ?? WorkerAIProvider.defaultEndpoint)
                                         .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                                     UIPasteboard.general.string = endpoint.hasSuffix("/mcp")
                                         ? endpoint
@@ -2788,8 +3018,9 @@ struct ContentView: View {
                                 .accessibilityLabel(isMCPCloudTokenVisible ? L("トークンを隠す") : L("トークンを表示"))
 
                                 Button {
-                                    UIPasteboard.general.string = mcpCloudToken
-                                    mcpCloudStatus = L("接続トークンをコピーしました。")
+                                    // This device only, and gone after a minute.
+                                    SecretPasteboard.copy(mcpCloudToken)
+                                    mcpCloudStatus = L("接続トークンをコピーしました。60秒でクリップボードから消えます。")
                                 } label: {
                                     Image(systemName: "doc.on.doc")
                                 }
@@ -2798,6 +3029,8 @@ struct ContentView: View {
                                 .disabled(mcpCloudToken.count < 32)
                             }
                         }
+                        // A revealed token must not show in the app switcher.
+                        .hidesInAppSwitcher(when: isMCPCloudTokenVisible)
                         Button("新しいトークンを生成", systemImage: "arrow.clockwise") {
                             mcpCloudToken = MCPCloudCredentials.generateAndSaveNewToken()
                         }
@@ -2813,28 +3046,46 @@ struct ContentView: View {
                         if isMCPCloudSyncing { ProgressView() }
                         if !mcpCloudStatus.isEmpty { Text(mcpCloudStatus).foregroundStyle(.secondary) }
                     } footer: {
-                        Text("資料の参照には先に同期が必要です。Claude・ChatGPTにはMCP URLを登録し、表示された接続コードを下で承認してください。接続トークンは他人へ共有しないでください。")
+                        Text("資料の参照には先に同期が必要です。Claude・ChatGPTなどにはMCP URLを登録し、下の「AIアプリを接続する」で発行したコードをAIアプリの画面に入力してください。接続トークンは他人へ共有しないでください。")
                     }
-                    Section("Claude・ChatGPTから接続") {
-                        TextField("接続コード", text: $mcpPairCode)
-                            .textInputAutocapitalization(.characters)
-                            .autocorrectionDisabled()
-                        Button("接続先を確認") { Task { await inspectMCPPairing() } }
-                            .disabled(mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        if !mcpPairClientName.isEmpty {
-                            Text("接続先：\(mcpPairClientName)")
-                            Text(mcpPairScope.contains("studiquo.write")
-                                 ? "このアプリに資料の参照と作成を許可します。"
-                                 : "このアプリに資料の参照を許可します。")
-                                .font(.footnote).foregroundStyle(.secondary)
-                            Button("この接続を許可") { Task { await approveMCPPairing() } }
+                    Section {
+                        Picker("接続するAIアプリ", selection: $mcpPairKind) {
+                            ForEach(MCPConnectionKind.allCases) { kind in Text(kind.displayName).tag(kind) }
                         }
+                        Button("コードを発行") { Task { await issueMCPPairingCode() } }
+                        if let issued = mcpIssuedCode, let expiresAt = mcpCodeExpiresAt {
+                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                                if context.date < expiresAt {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(issued.groupedCode)
+                                            .font(.system(.title, design: .monospaced).weight(.semibold))
+                                            .textSelection(.enabled)
+                                        Text("\(issued.kind.displayName)用・あと\(Int(expiresAt.timeIntervalSince(context.date)) / 60)分\(Int(expiresAt.timeIntervalSince(context.date)) % 60)秒")
+                                            .font(.footnote).foregroundStyle(.secondary)
+                                        Button("コードをコピー", systemImage: "doc.on.doc") {
+                                            UIPasteboard.general.string = issued.code
+                                        }
+                                    }
+                                } else {
+                                    Text("コードの期限が切れました。必要なら発行し直してください。").foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("AIアプリを接続する")
+                    } footer: {
+                        Text("発行したコードは、接続したいAIアプリの画面にご自身で入力してください。他の人から頼まれても、コードを教えたり入力したりしないでください。コードは5分間、1回だけ使えます。")
                     }
                     Section("接続済みのアプリ") {
                         if mcpConnections.isEmpty { Text("接続はありません").foregroundStyle(.secondary) }
                         ForEach(mcpConnections) { connection in
                             HStack {
-                                Text(connection.clientName)
+                                VStack(alignment: .leading) {
+                                    Text(connection.clientName)
+                                    if let kind = connection.kind {
+                                        Text(kind.displayName).font(.footnote).foregroundStyle(.secondary)
+                                    }
+                                }
                                 Spacer()
                                 Button("解除", role: .destructive) {
                                     Task { await disconnectMCP(connection) }
@@ -2856,12 +3107,19 @@ struct ContentView: View {
                         }
                     }
                 }
+                    .themeScreenBackground()
                 .navigationTitle("MCPクラウド連携")
-                .task { await loadMCPConnections() }
+                .task {
+                    // The token may have been exchanged for a newer one (or the
+                    // screen built while the Keychain was unreadable) since this
+                    // state was created; show what is actually stored.
+                    if let stored = MCPCloudCredentials.currentToken(), stored.count >= 32 { mcpCloudToken = stored }
+                    await loadMCPConnections()
+                }
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("完了") {
-                            MCPCloudCredentials.save(mcpCloudToken)
+                            if mcpCloudToken.count >= 32 { MCPCloudCredentials.save(mcpCloudToken) }
                             showsMCPCloudSettings = false
                         }
                     }
@@ -2881,11 +3139,11 @@ struct ContentView: View {
             ReportIssueSheet(capturedScreenshot: pending.screenshot)
         }
         .sheet(isPresented: $showsTabPicker, onDismiss: presentPendingTabPickerCreation) {
-            TabPickerView(
+            SplitSourcePicker(
                 notebooks: allNotebooks.filter { !$0.isTrashed },
-                decks: flashcardDecks.filter { !$0.isTrashed },
-                documents: textDocuments.filter { !$0.isTrashed },
-                slideDecks: slideDecks.filter { !$0.isTrashed },
+                flashcardDecks: flashcardDecks.filter { !$0.isTrashed },
+                textDocuments: textDocuments.filter { !$0.isTrashed },
+                title: "タブを追加",
                 onSelectNotebook: { notebook in
                     showsTabPicker = false
                     selectNotebookTab(notebook)
@@ -2898,14 +3156,27 @@ struct ContentView: View {
                     showsTabPicker = false
                     openTextDocument(document)
                 },
-                onSelectSlideDeck: { deck in
+                onCreate: { kind in
+                    switch kind {
+                    case .note, .pdf: pendingTabPickerCreation = .notebook
+                    case .deck: pendingTabPickerCreation = .deck
+                    case .document: pendingTabPickerCreation = .document
+                    }
                     showsTabPicker = false
-                    openSlideDeck(deck)
                 },
-                onCreateNotebook: { pendingTabPickerCreation = .notebook; showsTabPicker = false },
-                onCreateDeck: { pendingTabPickerCreation = .deck; showsTabPicker = false },
-                onCreateDocument: { pendingTabPickerCreation = .document; showsTabPicker = false },
-                onCreateSlideDeck: { pendingTabPickerCreation = .slideDeck; showsTabPicker = false }
+                onSelectAIChat: { id in
+                    showsTabPicker = false
+                    openAIChatFromTabPicker(id)
+                },
+                friendStore: friendStore,
+                onSelectFriend: { friend in
+                    showsTabPicker = false
+                    openChatFromTabPicker(.friend(friend.id))
+                },
+                onSelectGroup: { group in
+                    showsTabPicker = false
+                    openChatFromTabPicker(.group(group.roomID))
+                }
             )
         }
         .onChange(of: libraryMode) { _, _ in
@@ -2951,6 +3222,7 @@ struct ContentView: View {
             }
             selectedAIChatTabID = tab.id
         }
+        .modifier(AIChatTabRenameModifier(tabs: $openAIChatTabs))
         .onReceive(NotificationCenter.default.publisher(for: .studiquoCloseAIChatTab)) { notification in
             guard let id = notification.object as? PersistentIdentifier else { return }
             closeAIChatTab(id)
@@ -2967,13 +3239,22 @@ struct ContentView: View {
             guard let request = notification.object as? FriendAttachmentOpenRequest else { return }
             openFriendAttachment(request.attachment)
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoReplaceSingleMaterial"))) { notification in
+            switch notification.object as? PaneSwitchTarget {
+            case .notebook(let notebook): selectNotebookTab(notebook)
+            case .flashcardDeck(let deck): selectFlashcardTab(deck)
+            case .document(let document): selectTextDocumentTab(document)
+            default: break
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoAddTextDocumentTab"))) { notification in
+            guard let document = notification.object as? TextDocument,
+                  !openTextDocuments.contains(where: { $0.persistentModelID == document.persistentModelID }) else { return }
+            openTextDocuments.append(document)
+        }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenTextDocumentTab"))) { notification in
             guard let document = notification.object as? TextDocument else { return }
             openTextDocument(document)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StudiquoOpenSlideDeckTab"))) { notification in
-            guard let deck = notification.object as? SlideDeck else { return }
-            openSlideDeck(deck)
         }
         .onAppear {
             if selectedNotebook == nil { columnVisibility = .detailOnly }
@@ -3008,6 +3289,7 @@ struct ContentView: View {
             friendStore.handle(scenePhase: scenePhase)
             if scenePhase == .active {
                 sharedImport.refresh()
+                Task { await MCPCloudCredentials.refreshIfNeeded() }
                 Task { await UsageEventService.ping() }
                 Task { await ErrorReportService.flush() }
                 Task { await announcementStore.refresh() }
@@ -3018,10 +3300,13 @@ struct ContentView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
+            // A revealed token is hidden again as soon as the app leaves the front.
+            if phase != .active { isMCPCloudTokenVisible = false }
             StudyTimeTracker.shared.handle(scenePhase: phase)
             friendStore.handle(scenePhase: phase)
             if phase == .active {
                 sharedImport.refresh()
+                Task { await MCPCloudCredentials.refreshIfNeeded() }
                 Task { await pullMCPInbox() }
                 Task { await UsageEventService.ping() }
                 Task { await ErrorReportService.flush() }
@@ -3055,7 +3340,9 @@ struct ContentView: View {
                 sharedImport.refresh()
                 return
             }
-            friendStore.add(url: url)
+            // Only an invite link of ours takes the student to the friends screen; any
+            // other address someone else's app opens us with changes nothing.
+            guard friendStore.add(url: url) else { return }
             returnToHome()
             homeSection = .friends
         }
@@ -3072,8 +3359,7 @@ struct ContentView: View {
                 AIAppAttachmentCatalog.options(
                     notebooks: allNotebooks,
                     flashcardDecks: flashcardDecks,
-                    textDocuments: textDocuments,
-                    slideDecks: slideDecks
+                    textDocuments: textDocuments
                 )
             },
             onOpenAttachment: openAIAttachmentFromHome
@@ -3083,7 +3369,7 @@ struct ContentView: View {
     }
 
     /// Opens what an attachment chip points at, from the home AI screen:
-    /// back to the library with that notebook, deck, document or slide deck
+    /// back to the library with that notebook, deck, or document
     /// opened.
     private func openAIAttachmentFromHome(_ attachment: AIChatAttachment) {
         guard let sourceID = attachment.sourceID else { return }
@@ -3104,10 +3390,6 @@ struct ContentView: View {
             guard let document = textDocuments.first(where: { !$0.isTrashed && textDocumentID($0) == id }) else { return }
             homeSection = .notes
             openTextDocument(document)
-        case "slide":
-            guard let deck = slideDecks.first(where: { !$0.isTrashed && String(describing: $0.persistentModelID) == id }) else { return }
-            homeSection = .notes
-            openSlideDeck(deck)
         default:
             return
         }
@@ -3158,14 +3440,18 @@ struct ContentView: View {
             } else if homeSection == .more {
                 homeMore
             } else {
-                FriendsHomeView(
-                    store: friendStore,
-                    myStudySeconds: studyActivities
-                        .filter { Calendar.current.isDateInToday($0.startedAt) }
-                        .reduce(0) { $0 + $1.duration },
-                    appAttachments: friendMessageAttachmentOptions(),
-                    resolveAppAttachment: resolvedAppMessageAttachment
-                )
+                GeometryReader { geometry in
+                    FriendsHomeView(
+                        store: friendStore,
+                        myStudySeconds: studyActivities
+                            .filter { Calendar.current.isDateInToday($0.startedAt) }
+                            .reduce(0) { $0 + $1.duration },
+                        appAttachments: friendMessageAttachmentOptions(),
+                        resolveAppAttachment: resolvedAppMessageAttachment
+                    )
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+                }
             }
             Divider()
             HStack(spacing: 12) {
@@ -3181,10 +3467,10 @@ struct ContentView: View {
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
-                            .foregroundStyle(homeSection == section ? Color.white : Color.secondary)
+                            .foregroundStyle(homeSection == section ? Theme.Palette.onAccent : Theme.Palette.textSecondary)
                             .background(
-                                homeSection == section ? Color.accentColor : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 12)
+                                homeSection == section ? Theme.Palette.accent : Color.clear,
+                                in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
                             )
                             // The whole pill responds, not just the label glyphs —
                             // an unselected tab's background is clear and would
@@ -3231,7 +3517,7 @@ struct ContentView: View {
 
     private var notebookTabBar: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 ForEach(openNotebooks.filter { !$0.isTrashed }) { notebook in
                     HStack(spacing: 5) {
                         Button {
@@ -3251,8 +3537,8 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(selectedNotebook === notebook ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-                    .draggable("notebook:\(notebookID(notebook))")
+                    .tabBlock(tint: .accentColor, selected: selectedNotebook === notebook)
+                    .tabDraggable("notebook:\(notebookID(notebook))")
                 }
                 ForEach(openStudyNotebooks.filter { !$0.isTrashed }) { notebook in
                     HStack(spacing: 5) {
@@ -3272,8 +3558,8 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-                    .draggable("flashcards:\(notebookID(notebook))")
+                    .tabBlock(tint: .indigo, selected: false)
+                    .tabDraggable("flashcards:\(notebookID(notebook))")
                 }
                 ForEach(openFlashcardDecks) { deck in
                     HStack(spacing: 5) {
@@ -3288,8 +3574,8 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(selectedFlashcardDeck === deck ? Color.indigo.opacity(0.22) : Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-                    .draggable("deck:\(deckID(deck))")
+                    .tabBlock(tint: .indigo, selected: selectedFlashcardDeck === deck)
+                    .tabDraggable("deck:\(deckID(deck))")
                 }
                 ForEach(openWebTabs) { tab in
                     HStack(spacing: 5) {
@@ -3304,8 +3590,8 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(Color.teal.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
-                    .draggable("web:\(tab.title)|\(tab.homeURL)")
+                    .tabBlock(tint: .teal, selected: false)
+                    .tabDraggable("web:\(tab.title)|\(tab.homeURL)")
                 }
 
                 ForEach(openTextDocuments.filter { !$0.isTrashed }) { document in
@@ -3326,37 +3612,9 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(
-                        selectedTextDocument === document ? Color.teal.opacity(0.22) : Color.teal.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
+                    .tabBlock(tint: .teal, selected: selectedTextDocument === document)
                     .accessibilityIdentifier("tab-document-\(document.title)")
-                    .draggable("document:\(textDocumentID(document))")
-                }
-                ForEach(openSlideDecks.filter { !$0.isTrashed }) { deck in
-                    HStack(spacing: 5) {
-                        Button { selectSlideDeckTab(deck) } label: {
-                            Label(deck.title, systemImage: "rectangle.on.rectangle").lineLimit(1)
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            openSlideDecks.removeAll { $0 === deck }
-                            if selectedSlideDeck === deck {
-                                selectedSlideDeck = openSlideDecks.last
-                            }
-                        } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 11)
-                    .frame(height: 34)
-                    .background(
-                        selectedSlideDeck === deck ? Color.orange.opacity(0.24) : Color.orange.opacity(0.12),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
-                    .accessibilityIdentifier("tab-slide-\(deck.title)")
-                    .draggable("slide:\(slideDeckID(deck))")
+                    .tabDraggable("document:\(textDocumentID(document))")
                 }
 
                 ForEach(openAIChatTabs) { tab in
@@ -3374,11 +3632,8 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 11)
                     .frame(height: 34)
-                    .background(
-                        selectedAIChatTabID == tab.id ? Color.purple.opacity(0.22) : Color.purple.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
-                    .draggable("ai:\(String(describing: tab.id))")
+                    .tabBlock(tint: .purple, selected: selectedAIChatTabID == tab.id)
+                    .tabDraggable("ai:\(String(describing: tab.id))")
                 }
 
                 // Replaces the old sidebar toggle in the editor's tool strip:
@@ -3390,14 +3645,14 @@ struct ContentView: View {
                     Image(systemName: "plus")
                         .font(.subheadline.weight(.semibold))
                         .frame(width: 30, height: 30)
-                        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                        .tabBlock(tint: .secondary, selected: false)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("新しいタブを追加")
                 .accessibilityIdentifier("tab-picker-add-tab")
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 6)
         }
         .scrollIndicators(.hidden)
         .background(.bar)
@@ -3478,26 +3733,31 @@ struct ContentView: View {
         )
     }
 
-    private func selectSlideDeckTab(_ deck: SlideDeck) {
-        if !openSlideDecks.contains(where: { $0.persistentModelID == deck.persistentModelID }) {
-            openSlideDecks.append(deck)
-        }
-        guard editorSplitState.isSplit, selectedNotebook != nil else {
-            openSlideDeck(deck)
-            return
-        }
-        NotificationCenter.default.post(
-            name: Notification.Name("StudiquoSwitchPaneTarget"),
-            object: PaneSwitchTarget.slideDeck(deck)
-        )
-    }
-
     private func selectWebTab(_ tab: WebTabInfo) {
         guard selectedNotebook != nil else { return }
         NotificationCenter.default.post(
             name: Notification.Name("StudiquoSwitchPaneTarget"),
             object: PaneSwitchTarget.web(title: tab.title, homeURL: tab.homeURL)
         )
+    }
+
+    /// Gives the conversation a tab, then shows it the way a tap on that tab would.
+    private func openAIChatFromTabPicker(_ id: PersistentIdentifier) {
+        guard let thread = modelContext.model(for: id) as? AIChatThread else { return }
+        let tab = AIChatTabInfo(id: id, title: thread.title)
+        if !openAIChatTabs.contains(where: { $0.id == id }) { openAIChatTabs.append(tab) }
+        selectAIChatTab(tab)
+    }
+
+    /// Friend and group chats have no tab: they open in the editor's pane. With
+    /// no editor on screen the friends home is the closest place to land.
+    private func openChatFromTabPicker(_ target: PaneSwitchTarget) {
+        guard selectedNotebook != nil else {
+            returnToHome()
+            homeSection = .friends
+            return
+        }
+        NotificationCenter.default.post(name: Notification.Name("StudiquoSwitchPaneTarget"), object: target)
     }
 
     private func selectAIChatTab(_ tab: AIChatTabInfo) {
@@ -3553,22 +3813,39 @@ struct ContentView: View {
         columnVisibility = .detailOnly
     }
 
-    private func openSlideDeck(_ deck: SlideDeck) {
+    /// After a document is created or imported, show the folder it landed in
+    /// instead of opening it. Folders are only browsable in the "すべて"
+    /// mode, so that mode is always used.
+    private func revealInLibrary(folderPath: String) {
         clearOpenSelection()
-        selectedSlideDeck = deck
-        if !openSlideDecks.contains(where: { $0.persistentModelID == deck.persistentModelID }) {
-            openSlideDecks.append(deck)
-        }
+        homeSection = .notes
+        selectedFolder = folderPath.isEmpty ? nil : folderPath
+        libraryMode = .documents
+        searchText = ""
         columnVisibility = .detailOnly
     }
 
-    /// The detail pane shows exactly one thing, so opening any of the four
-    /// kinds has to clear the other three.
+    private var isEditorOpen: Bool {
+        selectedNotebook != nil || selectedFlashcardDeck != nil || selectedTextDocument != nil
+    }
+
+    /// A newly created item is shown in its folder from the home screen. When
+    /// it was created from inside an open editor (the "タブを追加" picker), the
+    /// student is working in tabs, so it opens as a tab instead.
+    private func finishCreation(folderPath: String? = nil, open: () -> Void) {
+        if isEditorOpen {
+            open()
+        } else if !sharedImport.isImporting {
+            revealInLibrary(folderPath: folderPath ?? importDestinationPath ?? selectedFolder ?? "")
+        }
+    }
+
+    /// The detail pane shows exactly one thing, so opening any of the three
+    /// kinds has to clear the other two.
     private func clearOpenSelection() {
         selectedNotebook = nil
         selectedFlashcardDeck = nil
         selectedTextDocument = nil
-        selectedSlideDeck = nil
     }
 
     private func closeFlashcardTab(_ deck: FlashcardDeck) {
@@ -3585,11 +3862,28 @@ struct ContentView: View {
         selectedNotebook = nil
         selectedFlashcardDeck = nil
         selectedTextDocument = nil
-        selectedSlideDeck = nil
         selectedFolder = nil
         libraryMode = .documents
         searchText = ""
         columnVisibility = .detailOnly
+        preferredCompactColumn = .detail
+    }
+
+    /// A sidebar button changes both the filter and the visible compact column,
+    /// even when the user taps the already-selected category or folder again.
+    private func selectLibraryLocation(mode: LibraryMode, folder: String? = nil) {
+        clearOpenSelection()
+        selectedFolder = folder
+        libraryMode = mode
+        searchText = ""
+        homeSelection.end()
+        preferredCompactColumn = .detail
+    }
+
+    private func returnToLibrary() {
+        mistakeReviewRequest = nil
+        clearOpenSelection()
+        preferredCompactColumn = .detail
     }
 
     private func routeNotification(_ userInfo: [AnyHashable: Any]?) {
@@ -3647,10 +3941,6 @@ struct ContentView: View {
         String(describing: document.persistentModelID)
     }
 
-    private func slideDeckID(_ deck: SlideDeck) -> String {
-        String(describing: deck.persistentModelID)
-    }
-
     private func folderID(_ folder: Folder) -> String {
         String(describing: folder.persistentModelID)
     }
@@ -3682,8 +3972,6 @@ struct ContentView: View {
             openFlashcardDeck(deck)
         case .textDocument(let document):
             openTextDocument(document)
-        case .slideDeck(let deck):
-            openSlideDeck(deck)
         }
     }
 
@@ -3695,7 +3983,6 @@ struct ContentView: View {
         case .notebook(let notebook): "notebook:\(notebookID(notebook))"
         case .flashcardDeck(let deck): "deck:\(deckID(deck))"
         case .textDocument(let document): "document:\(textDocumentID(document))"
-        case .slideDeck(let deck): "slide:\(slideDeckID(deck))"
         }
     }
 
@@ -3709,9 +3996,6 @@ struct ContentView: View {
         case .textDocument(let document):
             document.isFavorite.toggle()
             document.updatedAt = .now
-        case .slideDeck(let deck):
-            deck.isFavorite.toggle()
-            deck.updatedAt = .now
         }
     }
 
@@ -3720,7 +4004,6 @@ struct ContentView: View {
         case .notebook(let notebook): moveToTrash(notebook)
         case .flashcardDeck(let deck): trashDeck(deck)
         case .textDocument(let document): trashDocument(document)
-        case .slideDeck(let deck): trashSlideDeck(deck)
         }
     }
 
@@ -3729,7 +4012,6 @@ struct ContentView: View {
         case .notebook(let notebook): restore(notebook)
         case .flashcardDeck(let deck): restoreDeck(deck)
         case .textDocument(let document): restoreDocument(document)
-        case .slideDeck(let deck): restoreSlideDeck(deck)
         }
     }
 
@@ -3738,7 +4020,6 @@ struct ContentView: View {
         case .notebook(let notebook): permanentlyDelete(notebook)
         case .flashcardDeck(let deck): permanentlyDeleteDeck(deck)
         case .textDocument(let document): permanentlyDeleteDocument(document)
-        case .slideDeck(let deck): permanentlyDeleteSlideDeck(deck)
         }
     }
 
@@ -3757,14 +4038,14 @@ struct ContentView: View {
         self.entryToRename = nil
     }
 
-    /// The long-press menu for flashcard decks, text documents and slide
-    /// decks — these three had no `.contextMenu` anywhere (list, icon, or
+    /// The long-press menu for flashcard decks, text documents —
+    /// these two had no `.contextMenu` anywhere (list, icon, or
     /// column view) before this. Scoped to what `HomeItem` already supports
     /// generically (favorite, rename, folder move, trash/restore/delete);
     /// deliberately leaves out "複製" and the notebook-only items
     /// (tags/protection/PDF password/backup export) — a correct whole-
     /// document/deck duplicator for these types' nested structures (table
-    /// rows, slide elements, …) doesn't exist yet anywhere in the app, and
+    /// rows, …) doesn't exist yet anywhere in the app, and
     /// inventing one here risked a subtly-incomplete clone.
     @ViewBuilder
     private func entryActions(_ entry: HomeEntry) -> some View {
@@ -3810,9 +4091,6 @@ struct ContentView: View {
         case "document":
             guard let document = textDocuments.first(where: { textDocumentID($0) == sourceID && !$0.isTrashed }) else { return }
             openTextDocument(document)
-        case "slide":
-            guard let deck = slideDecks.first(where: { slideDeckID($0) == sourceID && !$0.isTrashed }) else { return }
-            openSlideDeck(deck)
         case "photo", "pdf", "file":
             // No local copy on this device (e.g. this is the recipient, who
             // never had the file locally) — fetch it from the room.
@@ -3899,16 +4177,6 @@ struct ContentView: View {
                 sourceID: String(describing: $0.persistentModelID)
             )
         })
-        options.append(contentsOf: slideDecks.filter { !$0.isTrashed }.map {
-            FriendMessageAttachment(
-                id: "slide-\(String(describing: $0.persistentModelID))",
-                title: $0.title,
-                kind: "スライド",
-                icon: "rectangle.on.rectangle",
-                sourceKind: "slide",
-                sourceID: String(describing: $0.persistentModelID)
-            )
-        })
         return options
     }
 
@@ -3930,8 +4198,7 @@ struct ContentView: View {
                 sourceID: sourceID,
                 notebooks: allNotebooks,
                 flashcardDecks: flashcardDecks,
-                textDocuments: textDocuments,
-                slideDecks: slideDecks
+                textDocuments: textDocuments
               ) else { return attachment }
 
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -4076,7 +4343,6 @@ struct ContentView: View {
         allNotebooks.map { $0 as any HomeItem }
             + flashcardDecks.map { $0 as any HomeItem }
             + textDocuments.map { $0 as any HomeItem }
-            + slideDecks.map { $0 as any HomeItem }
     }
 
     private func canMoveFolder(_ source: Folder, into destination: Folder?) -> Bool {
@@ -4160,19 +4426,13 @@ struct ContentView: View {
     private func decksInFolder(_ folder: String) -> [FlashcardDeck] {
         flashcardDecks
             .filter { $0.folderName == folder }
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted(by: sortOption.areInOrder)
     }
 
     private func textDocumentsInFolder(_ folder: String) -> [TextDocument] {
         textDocuments
             .filter { !$0.isTrashed && $0.folderName == folder }
-            .sorted { $0.updatedAt > $1.updatedAt }
-    }
-
-    private func slideDecksInFolder(_ folder: String) -> [SlideDeck] {
-        slideDecks
-            .filter { !$0.isTrashed && $0.folderName == folder }
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted(by: sortOption.areInOrder)
     }
 
     private func sidebarFolderBinding(_ folder: String) -> Binding<Bool> {
@@ -4198,9 +4458,6 @@ struct ContentView: View {
                 ForEach(textDocumentsInFolder(folder)) { document in
                     sidebarTextDocumentButton(document)
                 }
-                ForEach(slideDecksInFolder(folder)) { deck in
-                    sidebarSlideDeckButton(deck)
-                }
             },
             label: {
                 HStack {
@@ -4225,8 +4482,7 @@ struct ContentView: View {
         _ folder: String,
         notebookCount: Int,
         deckCount: Int,
-        documentCount: Int,
-        slideCount: Int
+        documentCount: Int
     ) -> some View {
         HStack(spacing: 10) {
             LibraryFolderDropSurface(
@@ -4245,7 +4501,7 @@ struct ContentView: View {
                         .frame(width: 34)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(folderDisplayName(folder)).font(.headline)
-                        Text("\(notebookCount)冊のノート・\(deckCount)個の暗記帳・\(documentCount)個の文書・\(slideCount)個のスライド")
+                        Text("\(notebookCount)冊のノート・\(deckCount)個の暗記帳・\(documentCount)個の文書")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -4271,6 +4527,10 @@ struct ContentView: View {
                     folderToRename = target
                 } label: {
                     Label("名前を変更", systemImage: "pencil")
+                }
+                Divider()
+                Button(role: .destructive) { trashFolder(target) } label: {
+                    Label("ゴミ箱に移動", systemImage: "trash")
                 }
             }
         }
@@ -4330,8 +4590,6 @@ struct ContentView: View {
             return flashcardDecks.first { deckID($0) == parts[1] }.map(HomeEntry.flashcardDeck)
         case "document":
             return textDocuments.first { textDocumentID($0) == parts[1] && !$0.isTrashed }.map(HomeEntry.textDocument)
-        case "slide":
-            return slideDecks.first { slideDeckID($0) == parts[1] && !$0.isTrashed }.map(HomeEntry.slideDeck)
         default:
             return nil
         }
@@ -4454,9 +4712,6 @@ struct ContentView: View {
         for document in textDocuments {
             if let mapped = remap(document.folderName) { document.folderName = mapped }
         }
-        for deck in slideDecks {
-            if let mapped = remap(deck.folderName) { deck.folderName = mapped }
-        }
 
         if let selectedFolder, let mapped = remap(selectedFolder) {
             self.selectedFolder = mapped
@@ -4471,7 +4726,7 @@ struct ContentView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
-                    .foregroundStyle(notebook.containsPDF ? .red : .blue)
+                    .foregroundStyle(notebook.containsPDF ? Theme.Palette.danger : Theme.Palette.accent)
                 Text(notebook.title)
                     .lineLimit(1)
                 Spacer()
@@ -4510,18 +4765,6 @@ struct ContentView: View {
         .draggable("document:\(textDocumentID(document))")
     }
 
-    private func sidebarSlideDeckButton(_ deck: SlideDeck) -> some View {
-        Button {
-            openSlideDeck(deck)
-            columnVisibility = .detailOnly
-        } label: {
-            Label(deck.title, systemImage: "rectangle.on.rectangle")
-                .lineLimit(1)
-        }
-        .buttonStyle(.plain)
-        .draggable("slide:\(slideDeckID(deck))")
-    }
-
     private var fullScreenHome: some View {
         Group {
             if libraryMode == .documents && viewMode == .icon {
@@ -4538,16 +4781,19 @@ struct ContentView: View {
                 : (selectedFolder.map(folderDisplayName) ?? (isHomeScreen ? L("ホーム") : libraryMode.title))
         )
         .searchable(text: $searchText, prompt: "ノートを検索")
+        .navigationBarBackButtonHidden(horizontalSizeClass == .compact)
         .scrollContentBackground(.hidden)
-        .background(
-            LinearGradient(
-                colors: [Color(red: 0.94, green: 0.97, blue: 1.0), Color(red: 0.98, green: 0.95, blue: 0.91)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background(Theme.Palette.canvas)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarLeading) {
+                if horizontalSizeClass == .compact {
+                    Button {
+                        preferredCompactColumn = .sidebar
+                    } label: {
+                        Label("ライブラリ", systemImage: "sidebar.left")
+                    }
+                    .accessibilityIdentifier("library-location-picker")
+                }
                 if selectedFolder != nil {
                     Button {
                         goBackOneFolder()
@@ -4584,9 +4830,18 @@ struct ContentView: View {
                         }
                     }
                     Menu {
-                        Picker("並べ替え", selection: $sortOption) {
-                            ForEach(NotebookSortOption.allCases) { option in
-                                Text(option.title).tag(option)
+                        Toggle("資料の種類ごとに並べる", isOn: $sortByMaterialType)
+                            .accessibilityIdentifier("library-sort-by-material-type")
+                        Divider()
+                        ForEach(NotebookSortKey.allCases) { key in
+                            Button {
+                                sortOption = sortOption.selecting(key)
+                            } label: {
+                                if sortOption.key == key {
+                                    Label(key.title, systemImage: sortOption.isAscending ? "chevron.up" : "chevron.down")
+                                } else {
+                                    Text(key.title)
+                                }
                             }
                         }
                     } label: {
@@ -4628,12 +4883,6 @@ struct ContentView: View {
             if selectedFolder == nil { homeSelection.end() }
         }
         .onChange(of: selectionDataFingerprint) { _, _ in pruneSelection() }
-        .confirmationDialog("ゴミ箱を空にしますか？", isPresented: $showsEmptyTrashConfirmation, titleVisibility: .visible) {
-            Button("完全に削除", role: .destructive) { emptyTrash() }
-            Button("キャンセル", role: .cancel) {}
-        } message: {
-            Text("この操作は取り消せません。")
-        }
         .alert(
             "フォルダ名",
             isPresented: Binding(get: { folderToRename != nil }, set: { if !$0 { folderToRename = nil } })
@@ -4653,22 +4902,14 @@ struct ContentView: View {
                         && searchText.isEmpty
                         && visibleNotebooks.isEmpty
                         && displayedFlashcardDecks.isEmpty
-                        && displayedTextDocuments.isEmpty
-                        && displayedSlideDecks.isEmpty {
+                        && displayedTextDocuments.isEmpty {
                 // The home screen used to show nothing at all when empty.
                 ContentUnavailableView {
                     Label("まだ何もありません", systemImage: "square.and.pencil")
                 } description: {
-                    Text("右上の＋から、ノート・暗記帳・文書・スライドを作成できます。")
+                    Text("右上の＋から、ノート・暗記帳・文書を作成できます。")
                 }
-            } else if selectedFolder == nil
-                        && !isHomeScreen
-                        && visibleNotebooks.isEmpty
-                        && displayedFlashcardDecks.isEmpty
-                        && displayedTextDocuments.isEmpty
-                        && displayedSlideDecks.isEmpty
-                        && !(libraryMode == .favorites && hasFavoriteNonNotebookItems)
-                        && !(libraryMode == .trash && !isTrashEmpty) {
+            } else if !isHomeScreen && isCurrentLibraryLocationEmpty {
                 ContentUnavailableView(
                     searchText.isEmpty ? (selectedFolder == nil ? libraryMode.emptyTitle : "このフォルダは空です") : "見つかりません",
                     systemImage: searchText.isEmpty ? (selectedFolder == nil ? libraryMode.icon : "folder") : "magnifyingglass",
@@ -4748,7 +4989,7 @@ struct ContentView: View {
         }
             .disabled(
                 allNotebooks.isEmpty && flashcardDecks.isEmpty
-                    && textDocuments.isEmpty && slideDecks.isEmpty && folderNames.isEmpty
+                    && textDocuments.isEmpty && folderNames.isEmpty
             )
             .accessibilityIdentifier("library-selection-begin")
     }
@@ -4762,8 +5003,12 @@ struct ContentView: View {
                 Label("新規暗記カードを作成", systemImage: "plus")
             }
         } else if libraryMode == .trash && selectedFolder == nil {
-            Button("空にする", role: .destructive) {
-                showsEmptyTrashConfirmation = true
+            // A `Menu`, not a `.confirmationDialog`/`.popover`: those need the
+            // button on screen as their anchor, and when the toolbar is too
+            // narrow this button folds into the "…" overflow menu, so the
+            // dialog appeared beside the sidebar. A menu works in both places.
+            Menu("空にする") {
+                Button("ゴミ箱を空にする(取り消せません)", role: .destructive) { emptyTrash() }
             }
             .disabled(isTrashEmpty)
         } else {
@@ -4820,7 +5065,6 @@ struct ContentView: View {
         ).mapValues(\.count)
         let deckCounts = Dictionary(grouping: flashcardDecks, by: \.folderName).mapValues(\.count)
         let documentCounts = Dictionary(grouping: textDocuments.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
-        let slideCounts = Dictionary(grouping: slideDecks.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
 
         return Group {
             if libraryMode == .documents {
@@ -4830,25 +5074,22 @@ struct ContentView: View {
                 // each folder owns its actual drop area.
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(visibleFolderPaths, id: \.self) { folder in
-                            folderRow(
-                                folder,
-                                notebookCount: notebookCounts[folder, default: 0],
-                                deckCount: deckCounts[folder, default: 0],
-                                documentCount: documentCounts[folder, default: 0],
-                                slideCount: slideCounts[folder, default: 0]
-                            )
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            Divider()
+                        mistakeReviewBanner
+                        ForEach(sortedHomeItems) { item in
+                            switch item {
+                            case .folder(let folder):
+                                listFolderRow(
+                                    folder,
+                                    notebookCount: notebookCounts[folder, default: 0],
+                                    deckCount: deckCounts[folder, default: 0],
+                                    documentCount: documentCounts[folder, default: 0]
+                                )
+                            case .entry(let entry):
+                                entryListRow(entry)
+                            }
                         }
-                        let displayedNotebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
-                        notebookRows(displayedNotebooks)
-                        studyCardRows
-                        documentRows
-                        slideRows
                     }
-                    .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 24))
+                    .background(Theme.Palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous))
                     .padding()
                 }
             } else {
@@ -4857,8 +5098,6 @@ struct ContentView: View {
                         studyCardRows
                     } else if libraryMode == .textDocuments && selectedFolder == nil {
                         documentRows
-                    } else if libraryMode == .slides && selectedFolder == nil {
-                        slideRows
                     } else if libraryMode == .favorites && selectedFolder == nil {
                         favoriteRows
                     } else {
@@ -4868,7 +5107,22 @@ struct ContentView: View {
                         }
                     }
                 }
+                    .themeScreenBackground()
             }
+        }
+    }
+
+    /// Empty-state decisions must count the items in this category, not other
+    /// kinds of materials that happen to exist elsewhere in the library.
+    private var isCurrentLibraryLocationEmpty: Bool {
+        if selectedFolder != nil { return sortedHomeItems.isEmpty }
+        switch libraryMode {
+        case .documents: return sortedHomeItems.isEmpty
+        case .favorites: return visibleNotebooks.isEmpty && !hasFavoriteNonNotebookItems
+        case .pdfs: return visibleNotebooks.isEmpty
+        case .studyCards: return displayedFlashcardDecks.isEmpty
+        case .textDocuments: return displayedTextDocuments.isEmpty
+        case .trash: return isTrashEmpty
         }
     }
 
@@ -4884,92 +5138,20 @@ struct ContentView: View {
         ).mapValues(\.count)
         let deckCounts = Dictionary(grouping: flashcardDecks, by: \.folderName).mapValues(\.count)
         let documentCounts = Dictionary(grouping: textDocuments.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
-        let slideCounts = Dictionary(grouping: slideDecks.filter { !$0.isTrashed }, by: \.folderName).mapValues(\.count)
-        let displayedNotebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
-        let entries: [HomeEntry] =
-            displayedNotebooks.map(HomeEntry.notebook)
-            + displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
-            + displayedTextDocuments.map(HomeEntry.textDocument)
-            + displayedSlideDecks.map(HomeEntry.slideDeck)
-
         return ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 96, maximum: 140), spacing: 18)], spacing: 24) {
-                ForEach(visibleFolderPaths, id: \.self) { folder in
-                    // A plain SwiftUI `.onDrag`/`.dropDestination` pair on a
-                    // `LazyVGrid` cell doesn't reliably deliver drops on
-                    // iPad — the same iPad-only gap `folderRow`'s list-mode
-                    // row hit here first, fixed there by routing the drop
-                    // through a real `UIDropInteraction` instead (see
-                    // `LibraryFolderDropSurface`). The tile stays the visual
-                    // layer (non-interactive); the drop surface underneath
-                    // it is what actually receives taps and drops.
-                    ZStack {
-                        HomeFolderTile(
-                            name: folderDisplayName(folder),
-                            isFavorite: favoriteFolderPaths.contains(folder),
+                ForEach(sortedHomeItems) { item in
+                    switch item {
+                    case .folder(let folder):
+                        iconFolderTile(
+                            folder,
                             itemCount: notebookCounts[folder, default: 0]
                                 + deckCounts[folder, default: 0]
                                 + documentCounts[folder, default: 0]
-                                + slideCounts[folder, default: 0]
-                        ) {}
-                        .allowsHitTesting(false)
-                        LibraryFolderDropSurface(
-                            identifier: "library-folder-\(folder)",
-                            onTap: { selectedFolder = folder },
-                            onDrop: { values in handleFolderDrop(values, into: folder) },
-                            onTargeted: { isTargeted in
-                                setFolderDropTarget(folder, isTargeted: isTargeted)
-                            }
                         )
+                    case .entry(let entry):
+                        iconEntryTile(entry)
                     }
-                    .onDrag { folderDragProvider(for: folder) }
-                    .overlay(alignment: .bottomTrailing) { folderDropBadge(folder) }
-                    .contextMenu {
-                        Button {
-                            toggleFolderFavorite(folder)
-                        } label: {
-                            Label(
-                                favoriteFolderPaths.contains(folder) ? "お気に入り解除" : "お気に入り",
-                                systemImage: favoriteFolderPaths.contains(folder) ? "star.slash" : "star"
-                            )
-                        }
-                        if let target = folderObject(forLegacyPath: folder) {
-                            Button {
-                                folderRenameText = target.name
-                                folderToRename = target
-                            } label: {
-                                Label("名前を変更", systemImage: "pencil")
-                            }
-                        }
-                    }
-                    .modifier(selectable(folderPath: folder, layout: .tile))
-                }
-                ForEach(entries) { entry in
-                    HomeEntryTile(entry: entry) {
-                        open(entry)
-                    }
-                    .accessibilityIdentifier("library-entry-\(entry.title)")
-                    .draggable(dragPayload(for: entry))
-                    .overlay(alignment: .topTrailing) { entryDropBadge(entry.id) }
-                    .dropDestination(
-                        for: String.self,
-                        action: { items, _ in handleEntryDrop(items, onto: entry) },
-                        isTargeted: { isTargeted in setEntryDropTarget(isTargeted, entry.id) }
-                    )
-                    .contextMenu {
-                        // Notebooks get the exact same long-press menu here
-                        // as in list view (`notebookRows`'s own
-                        // `.contextMenu { notebookActions(notebook) }`) —
-                        // rename, tags, protection, folder move, duplicate,
-                        // etc. — instead of the pared-down favorite/trash
-                        // pair this used to show only in icon view.
-                        if case .notebook(let notebook) = entry {
-                            notebookActions(notebook)
-                        } else {
-                            entryActions(entry)
-                        }
-                    }
-                    .modifier(selectable(entry: entry, layout: .tile))
                 }
             }
             .padding()
@@ -4994,6 +5176,7 @@ struct ContentView: View {
             let columnWidth: CGFloat = horizontalSizeClass == .compact
                 ? max(geometry.size.width - 56, 220)
                 : 280
+            let contentFitsWidth = CGFloat(chain.count + 1) * (columnWidth + 1) <= geometry.size.width
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
@@ -5010,6 +5193,13 @@ struct ContentView: View {
                         }
                     }
                 }
+                // A horizontal ScrollView claims every sideways drag, so rows
+                // could never be swiped left to reveal the trash button. While
+                // the columns all fit on screen there is nothing to scroll to,
+                // so it steps aside; once the chain outgrows the screen
+                // (a deep chain, or iPhone) scrolling to the hidden columns
+                // wins and the row swipe is unavailable.
+                .scrollDisabled(contentFitsWidth)
                 .onChange(of: chain.count) { _, newCount in
                     withAnimation { proxy.scrollTo(newCount, anchor: .trailing) }
                 }
@@ -5025,71 +5215,22 @@ struct ContentView: View {
     private func columnPane(parentPath: String?, highlightedPath: String?) -> some View {
         ScrollView(.vertical) {
             LazyVStack(spacing: 0) {
-            ForEach(subfolderPaths(of: parentPath), id: \.self) { path in
-                Button { selectedFolder = path } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "folder.fill").foregroundStyle(.tint)
-                        Text(folderDisplayName(path)).lineLimit(1)
-                        if favoriteFolderPaths.contains(path) {
-                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 45)
-                    .contentShape(Rectangle())
+            ForEach(columnItems(parentPath: parentPath)) { item in
+                switch item {
+                case .folder(let path):
+                    columnFolderRow(path, highlightedPath: highlightedPath)
+                        .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: path) != nil, identifier: "library-folder-trash-\(path)") {
+                            if let target = folderObject(forLegacyPath: path) {
+                                trashFolder(target)
+                            }
+                        })
+                case .entry(let entry):
+                    columnEntryRow(entry)
+                        .modifier(SwipeToTrashRow(enabled: !entry.isTrashed, identifier: "library-entry-trash-\(entry.title)") {
+                            trash(entry)
+                            try? modelContext.save()
+                        })
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .background(path == highlightedPath ? Color.accentColor.opacity(0.15) : Color.clear)
-                .accessibilityIdentifier("library-folder-\(path)")
-                .onDrag { folderDragProvider(for: path) }
-                .overlay(alignment: .trailing) { folderDropBadge(path).padding(.trailing, 28) }
-                .dropDestination(for: String.self) { items, _ in
-                    handleFolderDrop(items, into: path)
-                } isTargeted: { isTargeted in
-                    setFolderDropTarget(path, isTargeted: isTargeted)
-                }
-                .contextMenu {
-                    if let folder = folderObject(forLegacyPath: path) {
-                        Button {
-                            folderRenameText = folder.name
-                            folderToRename = folder
-                        } label: {
-                            Label("名前を変更", systemImage: "pencil")
-                        }
-                    }
-                }
-                .modifier(selectable(folderPath: path, layout: .row, open: { selectedFolder = path }))
-            }
-            ForEach(entries(inLegacyPath: parentPath)) { entry in
-                Button { open(entry) } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: entry.iconName).foregroundStyle(entry.tintColor)
-                        Text(entry.title).lineLimit(1)
-                        if entry.isFavorite {
-                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
-                        }
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 45)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .accessibilityIdentifier("library-entry-\(entry.title)")
-                .draggable(dragPayload(for: entry))
-                // Column view had no long-press menu for entries at all
-                // (only the folder rows above do) — notebooks now get the
-                // same menu list/icon view already show.
-                .contextMenu {
-                    if case .notebook(let notebook) = entry {
-                        notebookActions(notebook)
-                    } else {
-                        entryActions(entry)
-                    }
-                }
-                .modifier(selectable(entry: entry, layout: .row))
             }
             Rectangle()
                 .fill(Color.clear)
@@ -5120,6 +5261,8 @@ struct ContentView: View {
             onSelect: openNotification,
             onMarkAllRead: markAllNotificationsRead,
             onMarkRead: markNotificationRead,
+            onDelete: deleteNotification,
+            onDeleteMany: deleteNotifications,
             onOpenSettings: {
                 showsNotifications = false
                 showsAppSettings = true
@@ -5178,8 +5321,23 @@ struct ContentView: View {
         }
     }
 
+    /// Swiped-away notifications are generated from app data, so removing one
+    /// means remembering its id and filtering it out on every refresh.
+    private func deleteNotification(_ notification: StudyNotification) {
+        deleteNotifications([notification])
+    }
+
+    private func deleteNotifications(_ notifications: [StudyNotification]) {
+        guard !notifications.isEmpty else { return }
+        var ids = Set(deletedStudyNotificationIDsStorage.split(separator: "\n").map(String.init))
+        ids.formUnion(notifications.map(\.id))
+        deletedStudyNotificationIDsStorage = ids.joined(separator: "\n")
+        cachedStudyNotifications.removeAll { ids.contains($0.id) }
+    }
+
     private func refreshStudyNotifications() {
-        cachedStudyNotifications = makeStudyNotifications()
+        let deleted = Set(deletedStudyNotificationIDsStorage.split(separator: "\n").map(String.init))
+        cachedStudyNotifications = makeStudyNotifications().filter { !deleted.contains($0.id) }
     }
 
     private var studyCardCount: Int {
@@ -5189,13 +5347,21 @@ struct ContentView: View {
     private var displayedFlashcardDecks: [FlashcardDeck] {
         let visible = flashcardDecks.filter { !$0.isTrashed }
         if libraryMode == .documents {
-            return visible.filter { $0.folderName == (selectedFolder ?? "") }
+            return visible.filter { $0.folderName == (selectedFolder ?? "") }.sorted(by: sortOption.areInOrder)
         }
-        return visible
+        return visible.sorted(by: sortOption.areInOrder)
     }
 
     @ViewBuilder
     private var studyCardRows: some View {
+        mistakeReviewBanner
+        ForEach(displayedFlashcardDecks) { deck in
+            deckRow(deck)
+        }
+    }
+
+    @ViewBuilder
+    private var mistakeReviewBanner: some View {
         let dueDecks = dueMistakeDecks
         if let top = dueDecks.first {
             Button { startMistakeReview(in: top.deck) } label: {
@@ -5207,7 +5373,9 @@ struct ContentView: View {
             }
             .accessibilityIdentifier("library-mistake-review-banner")
         }
-        ForEach(displayedFlashcardDecks) { deck in
+    }
+
+    private func deckRow(_ deck: FlashcardDeck) -> some View {
             HStack(spacing: 10) {
                 Button { openFlashcardDeck(deck) } label: {
                     HStack(spacing: 12) {
@@ -5248,28 +5416,297 @@ struct ContentView: View {
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.flashcardDeck(deck).id) }
             )
             .modifier(selectable(entry: .flashcardDeck(deck), layout: .row))
+    }
+
+    /// Folders and files shown together so the sort choice orders them as
+    /// one list (a new note sorts above older folders, not below them).
+    private enum LibraryRowItem: Identifiable {
+        case folder(String)
+        case entry(HomeEntry)
+
+        var id: AnyHashable {
+            switch self {
+            case .folder(let path): AnyHashable("folder:" + path)
+            case .entry(let entry): AnyHashable(entry.id)
+            }
         }
+    }
+
+    private func sortedItems(folders: [String], entries: [HomeEntry]) -> [LibraryRowItem] {
+        func fields(_ item: LibraryRowItem) -> (title: String, created: Date, updated: Date) {
+            switch item {
+            case .entry(let entry):
+                return (entry.title, entry.createdAt, entry.updatedAt)
+            case .folder(let path):
+                let object = folderObject(forLegacyPath: path)
+                let stored = folderCreatedAt[path].map { Date(timeIntervalSince1970: $0) }
+                let created = object?.createdAt ?? stored ?? .distantPast
+                return (folderDisplayName(path), created, object?.updatedAt ?? created)
+            }
+        }
+        let items = folders.map(LibraryRowItem.folder) + entries.map(LibraryRowItem.entry)
+        return items.sorted { first, second in
+            if sortByMaterialType {
+                let firstKind = materialSortRank(for: first)
+                let secondKind = materialSortRank(for: second)
+                if firstKind != secondKind { return firstKind < secondKind }
+            }
+            return sortOption.areInOrder(fields(first), fields(second))
+        }
+    }
+
+    /// The optional type grouping keeps folders together first, followed by
+    /// notes, study-card decks and text documents. Within every group the
+    /// sort chosen in the same menu still decides the order.
+    private func materialSortRank(for item: LibraryRowItem) -> Int {
+        switch item {
+        case .folder: return 0
+        case .entry(let entry):
+            switch entry.itemKind {
+            case .notebook: return 1
+            case .flashcardDeck: return 2
+            case .textDocument: return 3
+            }
+        }
+    }
+
+    private var sortedHomeItems: [LibraryRowItem] {
+        sortedItems(folders: visibleFolderPaths, entries: sortedHomeEntries)
+    }
+
+    private func columnItems(parentPath: String?) -> [LibraryRowItem] {
+        sortedItems(folders: subfolderPaths(of: parentPath), entries: entries(inLegacyPath: parentPath))
+    }
+
+    /// Everything shown on the all-files screen in the current folder, sorted.
+    private var sortedHomeEntries: [HomeEntry] {
+        let notebooks = selectedFolder == nil ? homeNotebooks : visibleNotebooks
+        var result = notebooks.map(HomeEntry.notebook)
+        result += displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
+        result += displayedTextDocuments.map(HomeEntry.textDocument)
+        return result.sorted(by: sortOption.areInOrder)
+    }
+
+    @ViewBuilder
+    private func entryListRow(_ entry: HomeEntry) -> some View {
+        switch entry {
+        case .notebook(let notebook):
+            notebookRow(notebook)
+                // The all-files view is a ScrollView so its folder rows can
+                // accept drops. Native swipeActions only shifts the inner
+                // row there; use the same wrapper as folders so the entire
+                // material card slides as one surface.
+                .modifier(entryTrashSwipe(entry))
+        case .flashcardDeck(let deck):
+            deckRow(deck)
+                .modifier(entryTrashSwipe(entry))
+        case .textDocument(let document):
+            documentRow(document)
+                .modifier(entryTrashSwipe(entry))
+        }
+    }
+
+    private func entryTrashSwipe(_ entry: HomeEntry) -> SwipeToTrashRow {
+        SwipeToTrashRow(
+            enabled: !entry.isTrashed,
+            identifier: "library-entry-trash-\(entry.title)"
+        ) {
+            trash(entry)
+            try? modelContext.save()
+        }
+    }
+
+    private func listFolderRow(_ folder: String, notebookCount: Int, deckCount: Int, documentCount: Int) -> some View {
+                            VStack(spacing: 0) {
+                            folderRow(
+                                folder,
+                                notebookCount: notebookCount,
+                                deckCount: deckCount,
+                                documentCount: documentCount
+                            )
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            Divider()
+                            }
+                            .modifier(SwipeToTrashRow(enabled: folderObject(forLegacyPath: folder) != nil, identifier: "library-folder-trash-\(folder)") {
+                                if let target = folderObject(forLegacyPath: folder) {
+                                    trashFolder(target)
+                                }
+                            })
+    }
+
+    private func iconFolderTile(_ folder: String, itemCount: Int) -> some View {
+                    // A plain SwiftUI `.onDrag`/`.dropDestination` pair on a
+                    // `LazyVGrid` cell doesn't reliably deliver drops on
+                    // iPad — the same iPad-only gap `folderRow`'s list-mode
+                    // row hit here first, fixed there by routing the drop
+                    // through a real `UIDropInteraction` instead (see
+                    // `LibraryFolderDropSurface`). The tile stays the visual
+                    // layer (non-interactive); the drop surface underneath
+                    // it is what actually receives taps and drops.
+                    ZStack {
+                        HomeFolderTile(
+                            name: folderDisplayName(folder),
+                            isFavorite: favoriteFolderPaths.contains(folder),
+                            itemCount: itemCount
+                        ) {}
+                        .allowsHitTesting(false)
+                        LibraryFolderDropSurface(
+                            identifier: "library-folder-\(folder)",
+                            onTap: { selectedFolder = folder },
+                            onDrop: { values in handleFolderDrop(values, into: folder) },
+                            onTargeted: { isTargeted in
+                                setFolderDropTarget(folder, isTargeted: isTargeted)
+                            }
+                        )
+                    }
+                    .onDrag { folderDragProvider(for: folder) }
+                    .overlay(alignment: .bottomTrailing) { folderDropBadge(folder) }
+                    .contextMenu {
+                        Button {
+                            toggleFolderFavorite(folder)
+                        } label: {
+                            Label(
+                                favoriteFolderPaths.contains(folder) ? "お気に入り解除" : "お気に入り",
+                                systemImage: favoriteFolderPaths.contains(folder) ? "star.slash" : "star"
+                            )
+                        }
+                        if let target = folderObject(forLegacyPath: folder) {
+                            Button {
+                                folderRenameText = target.name
+                                folderToRename = target
+                            } label: {
+                                Label("名前を変更", systemImage: "pencil")
+                            }
+                            Divider()
+                            Button(role: .destructive) { trashFolder(target) } label: {
+                                Label("ゴミ箱に移動", systemImage: "trash")
+                            }
+                        }
+                    }
+                    .modifier(selectable(folderPath: folder, layout: .tile))
+    }
+
+    private func iconEntryTile(_ entry: HomeEntry) -> some View {
+                    HomeEntryTile(entry: entry) {
+                        open(entry)
+                    }
+                    .accessibilityIdentifier("library-entry-\(entry.title)")
+                    .draggable(dragPayload(for: entry))
+                    .overlay(alignment: .topTrailing) { entryDropBadge(entry.id) }
+                    .dropDestination(
+                        for: String.self,
+                        action: { items, _ in handleEntryDrop(items, onto: entry) },
+                        isTargeted: { isTargeted in setEntryDropTarget(isTargeted, entry.id) }
+                    )
+                    .contextMenu {
+                        // Notebooks get the exact same long-press menu here
+                        // as in list view (`notebookRows`'s own
+                        // `.contextMenu { notebookActions(notebook) }`) —
+                        // rename, tags, protection, folder move, duplicate,
+                        // etc. — instead of the pared-down favorite/trash
+                        // pair this used to show only in icon view.
+                        if case .notebook(let notebook) = entry {
+                            notebookActions(notebook)
+                        } else {
+                            entryActions(entry)
+                        }
+                    }
+                    .modifier(selectable(entry: entry, layout: .tile))
+    }
+
+    private func columnFolderRow(_ path: String, highlightedPath: String?) -> some View {
+                Button { if !SwipeToTrashRow.justSwiped { selectedFolder = path } } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "folder.fill").foregroundStyle(.tint)
+                        Text(folderDisplayName(path)).lineLimit(1)
+                        if favoriteFolderPaths.contains(path) {
+                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 45)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .background(path == highlightedPath ? Color.accentColor.opacity(0.15) : Color.clear)
+                .accessibilityIdentifier("library-folder-\(path)")
+                .onDrag { folderDragProvider(for: path) }
+                .overlay(alignment: .trailing) { folderDropBadge(path).padding(.trailing, 28) }
+                .dropDestination(for: String.self) { items, _ in
+                    handleFolderDrop(items, into: path)
+                } isTargeted: { isTargeted in
+                    setFolderDropTarget(path, isTargeted: isTargeted)
+                }
+                .contextMenu {
+                    if let folder = folderObject(forLegacyPath: path) {
+                        Button {
+                            folderRenameText = folder.name
+                            folderToRename = folder
+                        } label: {
+                            Label("名前を変更", systemImage: "pencil")
+                        }
+                        Divider()
+                        Button(role: .destructive) { trashFolder(folder) } label: {
+                            Label("ゴミ箱に移動", systemImage: "trash")
+                        }
+                    }
+                }
+                .modifier(selectable(folderPath: path, layout: .row, open: { selectedFolder = path }))
+    }
+
+    private func columnEntryRow(_ entry: HomeEntry) -> some View {
+                Button { if !SwipeToTrashRow.justSwiped { open(entry) } } label: {
+                    HStack(spacing: 10) {
+                        if case .notebook(let notebook) = entry, notebook.containsPDF {
+                            NotebookCoverView(notebook: notebook, size: CGSize(width: 28, height: 36))
+                        } else {
+                            Image(systemName: entry.iconName).foregroundStyle(entry.tintColor)
+                        }
+                        Text(entry.title).lineLimit(1)
+                        if entry.isFavorite {
+                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow)
+                        }
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 45)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .accessibilityIdentifier("library-entry-\(entry.title)")
+                .draggable(dragPayload(for: entry))
+                // Column view had no long-press menu for entries at all
+                // (only the folder rows above do) — notebooks now get the
+                // same menu list/icon view already show.
+                .contextMenu {
+                    if case .notebook(let notebook) = entry {
+                        notebookActions(notebook)
+                    } else {
+                        entryActions(entry)
+                    }
+                }
+                .modifier(selectable(entry: entry, layout: .row))
     }
 
     private var displayedTextDocuments: [TextDocument] {
         let visible = textDocuments.filter { !$0.isTrashed }
         if libraryMode == .documents {
-            return visible.filter { $0.folderName == (selectedFolder ?? "") }
+            return visible.filter { $0.folderName == (selectedFolder ?? "") }.sorted(by: sortOption.areInOrder)
         }
-        return visible
-    }
-
-    private var displayedSlideDecks: [SlideDeck] {
-        let visible = slideDecks.filter { !$0.isTrashed }
-        if libraryMode == .documents {
-            return visible.filter { $0.folderName == (selectedFolder ?? "") }
-        }
-        return visible
+        return visible.sorted(by: sortOption.areInOrder)
     }
 
     @ViewBuilder
     private var documentRows: some View {
         ForEach(displayedTextDocuments) { document in
+            documentRow(document)
+        }
+    }
+
+    private func documentRow(_ document: TextDocument) -> some View {
             HStack(spacing: 10) {
                 Button { openTextDocument(document) } label: {
                     HStack(spacing: 12) {
@@ -5310,62 +5747,14 @@ struct ContentView: View {
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.textDocument(document).id) }
             )
             .modifier(selectable(entry: .textDocument(document), layout: .row))
-        }
     }
 
-    @ViewBuilder
-    private var slideRows: some View {
-        ForEach(displayedSlideDecks) { deck in
-            HStack(spacing: 10) {
-                Button { openSlideDeck(deck) } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "rectangle.on.rectangle")
-                            .font(.title2)
-                            .foregroundStyle(.orange)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(deck.title).font(.headline).lineLimit(1)
-                            Text("\(deck.sortedSlides.count)枚 ・ \(deck.theme.title)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("library-entry-\(deck.title)")
-                Button { deck.isFavorite.toggle(); deck.updatedAt = .now } label: {
-                    Image(systemName: deck.isFavorite ? "star.fill" : "star")
-                        .foregroundStyle(deck.isFavorite ? .yellow : .secondary)
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("library-favorite-\(deck.title)")
-                .accessibilityValue(deck.isFavorite ? "on" : "off")
-            }
-            .swipeActions {
-                Button("ゴミ箱", role: .destructive) { trashSlideDeck(deck) }
-            }
-            .contextMenu { entryActions(.slideDeck(deck)) }
-            .modifier(DocumentLibraryRowStyle(enabled: libraryMode == .documents))
-            .draggable("slide:\(slideDeckID(deck))")
-            .overlay(alignment: .trailing) { entryDropBadge(HomeEntry.slideDeck(deck).id).padding(.trailing, 40) }
-            .dropDestination(
-                for: String.self,
-                action: { items, _ in handleEntryDrop(items, onto: .slideDeck(deck)) },
-                isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.slideDeck(deck).id) }
-            )
-            .modifier(selectable(entry: .slideDeck(deck), layout: .row))
-        }
-    }
-
-    /// Trashed decks, documents and slides — shown in the trash alongside
+    /// Trashed decks and documents — shown in the trash alongside
     /// trashed notes, each restorable or removable for good.
     @ViewBuilder
     private var trashedItemRows: some View {
         let decks = flashcardDecks.filter { $0.isTrashed }
         let documents = textDocuments.filter { $0.isTrashed }
-        let slides = slideDecks.filter { $0.isTrashed }
         ForEach(decks) { deck in
             trashedRow(title: deck.title, subtitle: "\(deck.sortedCards.count)枚の暗記カード",
                        icon: "rectangle.on.rectangle.angled", tint: .indigo, entry: .flashcardDeck(deck),
@@ -5375,11 +5764,6 @@ struct ContentView: View {
             trashedRow(title: document.title, subtitle: "\(document.wordCount)語の文書",
                        icon: "doc.text", tint: .teal, entry: .textDocument(document),
                        restore: { restoreDocument(document) }, delete: { permanentlyDeleteDocument(document) })
-        }
-        ForEach(slides) { deck in
-            trashedRow(title: deck.title, subtitle: "\(deck.sortedSlides.count)枚のスライド",
-                       icon: "rectangle.on.rectangle", tint: .orange, entry: .slideDeck(deck),
-                       restore: { restoreSlideDeck(deck) }, delete: { permanentlyDeleteSlideDeck(deck) })
         }
     }
 
@@ -5406,7 +5790,6 @@ struct ContentView: View {
 
     private func restoreDeck(_ deck: FlashcardDeck) { deck.isTrashed = false; deck.trashedAt = nil }
     private func restoreDocument(_ document: TextDocument) { document.isTrashed = false; document.trashedAt = nil }
-    private func restoreSlideDeck(_ deck: SlideDeck) { deck.isTrashed = false; deck.trashedAt = nil }
 
     private func permanentlyDeleteDeck(_ deck: FlashcardDeck) {
         performLibraryRemoval {
@@ -5422,18 +5805,10 @@ struct ContentView: View {
         }
     }
 
-    private func permanentlyDeleteSlideDeck(_ deck: SlideDeck) {
-        performLibraryRemoval {
-            closeSlideDeckTabs(deck)
-            modelContext.delete(deck)
-        }
-    }
-
     private var hasFavoriteNonNotebookItems: Bool {
         !favoriteFolderPaths.isEmpty
             || flashcardDecks.contains { !$0.isTrashed && $0.isFavorite }
             || textDocuments.contains { !$0.isTrashed && $0.isFavorite }
-            || slideDecks.contains { !$0.isTrashed && $0.isFavorite }
     }
 
     @ViewBuilder
@@ -5517,10 +5892,16 @@ struct ContentView: View {
     /// relationship must not make an item appear in a different column.
     private func entries(inLegacyPath path: String?) -> [HomeEntry] {
         let path = path ?? ""
-        return allNotebooks.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.notebook)
-            + flashcardDecks.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.flashcardDeck)
-            + textDocuments.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.textDocument)
-            + slideDecks.filter { !$0.isTrashed && $0.folderName == path }.map(HomeEntry.slideDeck)
+        var result: [HomeEntry] = allNotebooks
+            .filter { !$0.isTrashed && $0.folderName == path }
+            .map(HomeEntry.notebook)
+        result += flashcardDecks
+            .filter { !$0.isTrashed && $0.folderName == path }
+            .map(HomeEntry.flashcardDeck)
+        result += textDocuments
+            .filter { !$0.isTrashed && $0.folderName == path }
+            .map(HomeEntry.textDocument)
+        return result.sorted(by: sortOption.areInOrder)
     }
 
     private func subfolderPaths(of parentPath: String?) -> [String] {
@@ -5545,7 +5926,6 @@ struct ContentView: View {
         case .notebook: isShowingNewNotebookAlert = true
         case .deck: isShowingNewFlashcardDeckAlert = true
         case .document: isShowingNewDocumentAlert = true
-        case .slideDeck: isShowingNewSlideDeckAlert = true
         }
     }
 
@@ -5556,17 +5936,7 @@ struct ContentView: View {
         modelContext.insert(document)
         try? modelContext.save()
         newDocumentName = ""
-        openTextDocument(document)
-    }
-
-    private func createSlideDeck() {
-        let title = newSlideDeckName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let deck = SlideDeck(title: title.isEmpty ? L("無題のスライド") : title)
-        assignToCurrentFolder(deck)
-        modelContext.insert(deck)
-        try? modelContext.save()
-        newSlideDeckName = ""
-        openSlideDeck(deck)
+        finishCreation { openTextDocument(document) }
     }
 
     private func createFlashcardDeck() {
@@ -5575,7 +5945,7 @@ struct ContentView: View {
         assignToCurrentFolder(deck)
         modelContext.insert(deck)
         newFlashcardDeckName = ""
-        openFlashcardDeck(deck)
+        finishCreation { openFlashcardDeck(deck) }
     }
 
     private var createMenu: some View {
@@ -5601,19 +5971,16 @@ struct ContentView: View {
                 Label("新規文書", systemImage: "doc.text")
             }
             Button {
-                isShowingNewSlideDeckAlert = true
-            } label: {
-                Label("新規スライド", systemImage: "rectangle.on.rectangle")
-            }
-            Button {
                 presentFileImporter()
             } label: {
                 Label("ファイルから読み込む", systemImage: "folder.badge.plus")
             }
-            Button {
-                presentFileImporter()
-            } label: {
-                Label("単語帳を読み込む（Quizlet・CSV）", systemImage: "rectangle.stack.badge.plus")
+            if Self.showsVocabularyImportMenu {
+                Button {
+                    presentFileImporter()
+                } label: {
+                    Label("単語帳を読み込む（Quizlet・CSV）", systemImage: "rectangle.stack.badge.plus")
+                }
             }
             Divider()
             Button {
@@ -5644,6 +6011,7 @@ struct ContentView: View {
         } label: {
             Image(systemName: "plus")
         }
+        .accessibilityIdentifier("home-create-menu")
     }
 
     /// "PDFのパスワードを削除": shown only when `notebook` retains the
@@ -5710,15 +6078,28 @@ struct ContentView: View {
         assignToCurrentFolder(notebook)
         modelContext.insert(notebook)
         newNotebookName = ""
-        openNotebookTab(notebook)
-        selectedNotebook = notebook
-        libraryMode = .documents
+        finishCreation {
+            openNotebookTab(notebook)
+            selectedNotebook = notebook
+            libraryMode = .documents
+        }
     }
 
     @discardableResult
-    private func importPDF(from url: URL, password: String? = nil) -> Notebook? {
+    private func importPDF(from url: URL, password: String? = nil) async -> Notebook? {
+        // Rendering takes a while now that it no longer blocks the screen, and
+        // the student may open another folder meanwhile. Decide the destination
+        // before waiting, not after.
+        let destinationPath = importDestinationPath ?? selectedFolder ?? ""
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
+
+        // Before anything reads the file: an oversized PDF must not be copied
+        // for the password prompt or read whole into memory.
+        if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxPDFFileBytes) {
+            pdfPrepareError = L(rejection.message)
+            return nil
+        }
 
         // A password-protected PDF opens to blank pages unless it is unlocked
         // first. Hold it aside and ask for the password, exactly as PDF
@@ -5743,13 +6124,28 @@ struct ContentView: View {
         // 解除" to ever act on later.
         let lockedPDFData = password != nil ? try? Data(contentsOf: url) : nil
 
-        let extractedPages = PDFImportService.extractPages(from: url, password: password)
+        let coordinator = sharedImport
+        let extraction = await PDFImportService.extractPagesCheckedAsync(from: url, password: password) { done, total in
+            Task { @MainActor in coordinator.advancePage(done: done, of: total) }
+        }
+        if let rejection = extraction.rejection {
+            pdfPrepareError = L(rejection.message)
+            return nil
+        }
+        let extractedPages = extraction.pages
+        guard !extractedPages.isEmpty else {
+            // Broken or unsupported PDF. Saying so matters most in a batch,
+            // where silence used to count it as imported.
+            pdfPrepareError = L("このPDFを読み込めませんでした。壊れているか、対応していない形式の可能性があります。")
+            return nil
+        }
         let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
         notebook.lockedPDFData = lockedPDFData
-        assignToCurrentFolder(notebook)
+        assign(notebook, toLegacyPath: destinationPath)
         for (index, pageData) in extractedPages.enumerated() {
             let page = NotePage(order: index, backgroundImageData: pageData.imageData, pageWidth: pageData.width, pageHeight: pageData.height)
             page.recognizedText = pageData.text
+            page.backgroundPDFData = pageData.pagePDF
             page.textRecognitionDate = .now
             page.notebook = notebook
             notebook.addPage(page)
@@ -5757,9 +6153,14 @@ struct ContentView: View {
         guard !notebook.sortedPages.isEmpty else { return nil }
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
-        openNotebookTab(notebook)
-        selectedNotebook = notebook
-        libraryMode = .documents
+        // The password was just verified for this import; don't ask again
+        // when the gate sees the notebook open for the first time.
+        if password != nil { ImportedPDFPasswordSession.markVerified(notebook.persistentModelID) }
+        finishCreation(folderPath: destinationPath) {
+            openNotebookTab(notebook)
+            selectedNotebook = notebook
+            libraryMode = .documents
+        }
         return notebook
     }
 
@@ -5787,17 +6188,26 @@ struct ContentView: View {
             }
             pdfPendingImport = nil
             pdfPasswordEntry = ""
-            let notebook = importPDF(from: url, password: password)
-            // The file is unlocked and its password is now known — offer to
-            // keep a password-free copy right away, the way PDF Expert does
-            // once you've opened a protected file. The password is held only
-            // long enough to write that copy if the student says yes; the
-            // notebook itself keeps the encrypted bytes regardless, so
-            // "PDFのパスワードを削除" also stays available later from its
-            // long-press menu if the student says no here — or if this
-            // offer is skipped entirely because they already turned it off.
-            if !pdfPasswordRemovalOfferDisabled, let notebook {
-                pdfRemovalOffer = PendingRemoval(url: url, password: password, notebook: notebook)
+            // Counted now, before the task starts, so a batch waiting on this
+            // prompt cannot see "no prompt, nothing running" and move on.
+            pdfImportsInFlight += 1
+            Task { @MainActor in
+                let notebook = await importPDF(from: url, password: password)
+                pdfImportsInFlight -= 1
+                // The file is unlocked and its password is now known — offer to
+                // keep a password-free copy right away, the way PDF Expert does
+                // once you've opened a protected file. The password is held only
+                // long enough to write that copy if the student says yes; the
+                // notebook itself keeps the encrypted bytes regardless, so
+                // "PDFのパスワードを削除" also stays available later from its
+                // long-press menu if the student says no here — or if this
+                // offer is skipped entirely because they already turned it off.
+                if !pdfPasswordRemovalOfferDisabled, let notebook {
+                    // Wait for the password alert / picker sheet to finish
+                    // dismissing; SwiftUI drops a sheet requested mid-dismissal.
+                    try? await Task.sleep(for: .milliseconds(500))
+                    pdfRemovalOffer = PendingRemoval(url: url, password: password, notebook: notebook)
+                }
             }
             return
         }
@@ -5806,12 +6216,11 @@ struct ContentView: View {
                 pdfPendingNotebookUnlock = nil
                 return
             }
-            let tempFolder = FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let tempFolder = StudiquoWorkFiles.makeFolder()
             do {
                 try FileManager.default.createDirectory(at: tempFolder, withIntermediateDirectories: true)
                 let sourceURL = tempFolder.appendingPathComponent("\(notebook.title).pdf")
-                try data.write(to: sourceURL)
+                try data.write(to: sourceURL, options: .completeFileProtection)
                 let output = try PDFPasswordService.removePassword(
                     from: sourceURL,
                     password: password,
@@ -5869,78 +6278,116 @@ struct ContentView: View {
         importDestinationPath = destination
         sharedImportSummary = nil
         homeSection = .notes
+        // Synchronously, so a second tap on the button finds an import running.
         sharedImport.begin(total: items.count)
 
         Task { @MainActor in
-            var unsupported: [String] = []
-            var held: [SharedInbox.Item] = []
-            for (index, item) in items.enumerated() {
-                sharedImport.advance(completed: index, currentName: item.displayName)
+            let summary = await SharedImportRunner.run(items: items, coordinator: sharedImport) { item in
                 pdfPrepareError = nil
-                guard SharedInbox.isImportable(item.url) else {
-                    unsupported.append(item.displayName)
-                    sharedImport.finish(item)
-                    continue
-                }
-                importFile(from: item.url)
-                while pdfPendingImport != nil {
-                    try? await Task.sleep(for: .milliseconds(200))
-                }
-                if pdfPrepareError != nil {
-                    // Clear it at once: the end-of-import notice reports every
-                    // skipped file together instead of one alert per file.
-                    pdfPrepareError = nil
-                    held.append(item)
-                } else {
-                    sharedImport.finish(item)
-                }
-                await Task.yield()
+                await importFile(from: item.url)
+                await waitForPDFPromptsToSettle()
+                guard pdfPrepareError != nil else { return .imported }
+                // Clear it at once: the end-of-import notice reports every
+                // skipped file together instead of one alert per file.
+                pdfPrepareError = nil
+                return .failed
             }
             try? modelContext.save()
             importDestinationPath = nil
-            sharedImport.end(attempted: held)
-            sharedImportSummary = SharedImportSummary(
-                imported: items.count - unsupported.count - held.count,
-                unsupported: unsupported,
-                held: held.map(\.displayName)
-            )
+            sharedImportSummary = summary
             if isBatch {
                 // 28 files should not leave 28 notebooks open as tabs.
                 openNotebooks = tabsBefore
                 selectedNotebook = selectedBefore
-                selectedFolder = destination.isEmpty ? nil : destination
-                libraryMode = .documents
+            }
+            if !isEditorOpen {
+                revealInLibrary(folderPath: destination)
             }
         }
     }
 
-    private func importFile(from url: URL) {
+    /// Waits until no password prompt is showing and no prompted PDF is still
+    /// being imported — each prompt belongs to one file, and the next file
+    /// must not start (or overwrite `pdfPendingImport`) before it is answered.
+    private func waitForPDFPromptsToSettle() async {
+        while pdfPendingImport != nil || pdfImportsInFlight > 0 {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+    }
+
+    /// Imports files chosen with the file picker, one at a time, showing the
+    /// same progress card as a shared batch.
+    private func importPickedFiles(_ urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        let destination = selectedFolder ?? ""
+        importDestinationPath = destination
+        let isBatch = urls.count > 1
+        let tabsBefore = openNotebooks
+        let selectedBefore = selectedNotebook
+        let showsProgress = !sharedImport.isImporting
+        if showsProgress { sharedImport.begin(total: urls.count) }
+        for (index, url) in urls.enumerated() {
+            if showsProgress { sharedImport.advance(completed: index, currentName: url.lastPathComponent) }
+            await importFile(from: url)
+            await waitForPDFPromptsToSettle()
+        }
+        if showsProgress { sharedImport.end(attempted: []) }
+        try? modelContext.save()
+        importDestinationPath = nil
+        if isBatch {
+            openNotebooks = tabsBefore
+            selectedNotebook = selectedBefore
+        }
+        if !isEditorOpen {
+            revealInLibrary(folderPath: destination)
+        }
+    }
+
+    private func importFile(from url: URL) async {
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer { if didStartAccessing { url.stopAccessingSecurityScopedResource() } }
         let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
         let fileExtension = url.pathExtension.lowercased()
+        if ["json", "txt", "tsv", "csv"].contains(fileExtension),
+           let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxTextFileBytes) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
         if fileExtension == "json", importMCPActions(from: url) {
             return
         }
         if type?.conforms(to: .pdf) == true || fileExtension == "pdf" {
-            importPDF(from: url)
+            await importPDF(from: url)
             return
         }
         if fileExtension == "docx" {
             importDocx(from: url)
             return
         }
-        if fileExtension == "pptx" {
-            importPptx(from: url)
-            return
-        }
         if ["txt", "tsv", "csv"].contains(fileExtension), importFlashcards(from: url) {
             return
         }
         let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "tif", "tiff", "gif", "webp"]
-        guard type?.conforms(to: .image) == true || imageExtensions.contains(fileExtension),
-              let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-              let image = UIImage(data: data) else { return }
+        guard type?.conforms(to: .image) == true || imageExtensions.contains(fileExtension) else { return }
+        // The size on disk and the pixel size in the header are both checked
+        // before `UIImage(data:)` decodes anything: a small PNG can declare
+        // billions of pixels.
+        importRejectionMessage = nil
+        if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxImageFileBytes) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
+        // Read once and use these same bytes for the check and the decode, so
+        // the file cannot change in between.
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return }
+        if let rejection = ImportLimits.checkImage(data: data) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
+        guard let image = UIImage(data: data) else { return }
         let notebook = Notebook(title: url.deletingPathExtension().lastPathComponent)
         assignToCurrentFolder(notebook)
         let page = NotePage(
@@ -5953,9 +6400,11 @@ struct ContentView: View {
         notebook.addPage(page)
         notebook.refreshLibraryMetadata()
         modelContext.insert(notebook)
-        openNotebookTab(notebook)
-        selectedNotebook = notebook
-        libraryMode = .documents
+        finishCreation {
+            openNotebookTab(notebook)
+            selectedNotebook = notebook
+            libraryMode = .documents
+        }
     }
 
     /// Imports a `.docx` file as a `TextDocument` — per the design's own
@@ -5964,8 +6413,24 @@ struct ContentView: View {
     /// (`DocxReader`), so this works offline the same as the existing PDF
     /// import above.
     private func importDocx(from url: URL) {
-        guard let data = try? Data(contentsOf: url),
-              let result = try? DocxReader.read(from: data) else {
+        importRejectionMessage = nil
+        if let rejection = ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxDocxFileBytes) {
+            importRejectionMessage = L(rejection.message)
+            docxImportFailed = true
+            return
+        }
+        guard let data = try? Data(contentsOf: url) else {
+            docxImportFailed = true
+            return
+        }
+        let result: DocxReader.Result
+        do {
+            result = try DocxReader.read(from: data)
+        } catch DocxReader.ReadError.archiveTooLarge {
+            importRejectionMessage = L(ImportLimits.Rejection.archiveTooLarge.message)
+            docxImportFailed = true
+            return
+        } catch {
             docxImportFailed = true
             return
         }
@@ -5990,47 +6455,14 @@ struct ContentView: View {
             let counts = Dictionary(grouping: result.droppedElementKinds, by: { $0 }).mapValues(\.count)
             docxImportReport = counts.sorted(by: { $0.key < $1.key }).map { "\($0.key) \($0.value)件" }.joined(separator: "、")
         }
-        openTextDocument(document)
-    }
-
-    /// Imports a `.pptx` file as a `SlideDeck` — the same design decision
-    /// `importDocx` makes for Word files, just for the slide-deck feature.
-    /// `PptxReader` returns slides whose elements already have fully
-    /// resolved absolute geometry (design step 8's own scope: it doesn't
-    /// try to reconstruct the source file's master/layout hierarchy into
-    /// this app's placeholder-inheritance system), so — like `importDocx` —
-    /// this skips `SlideBlockMigration` entirely rather than needing it.
-    private func importPptx(from url: URL) {
-        guard let data = try? Data(contentsOf: url),
-              let result = try? PptxReader.read(from: data) else {
-            pptxImportFailed = true
-            return
-        }
-        let deck = SlideDeck(title: url.deletingPathExtension().lastPathComponent)
-        assignToCurrentFolder(deck)
-        deck.aspectRawValue = result.aspect.rawValue
-        deck.master = SlideMaster.makeDefault()
-        deck.isMigratedToElements = true
-        for slide in result.slides {
-            slide.deck = deck
-            deck.addSlide(slide)
-        }
-        deck.renumberSlides()
-        modelContext.insert(deck)
-        try? modelContext.save()
-
-        if !result.droppedElementKinds.isEmpty {
-            let counts = Dictionary(grouping: result.droppedElementKinds, by: { $0 }).mapValues(\.count)
-            pptxImportReport = counts.sorted(by: { $0.key < $1.key }).map { "\($0.key) \($0.value)件" }.joined(separator: "、")
-        }
-        openSlideDeck(deck)
+        finishCreation { openTextDocument(document) }
     }
 
     private func exportMCPSnapshot() -> URL? {
         guard let data = makeMCPSnapshotData() else { return nil }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("studiquo-mcp-snapshot.json")
+        let url = StudiquoWorkFiles.file(named: "studiquo-mcp-snapshot.json")
         do {
-            try data.write(to: url, options: .atomic)
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
             return url
         } catch {
             return nil
@@ -6086,15 +6518,6 @@ struct ContentView: View {
                     text: $0.plainText
                 )
             },
-            slideDecks: slideDecks.filter { !$0.isTrashed }.map { deck in
-                MCPSlideDeck(
-                    id: String(describing: deck.persistentModelID),
-                    title: deck.title,
-                    slides: deck.sortedSlides.map {
-                        MCPSlideSummary(title: $0.titleText, bullets: $0.bullets, notes: $0.notes)
-                    }
-                )
-            },
             folders: allFolders.map { MCPFolder(path: $0.legacyPath) }
         )
         let encoder = JSONEncoder()
@@ -6105,7 +6528,8 @@ struct ContentView: View {
 
     @discardableResult
     private func importMCPActions(from url: URL) -> Bool {
-        guard let data = try? Data(contentsOf: url) else { return false }
+        guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxTextFileBytes) == nil,
+              let data = try? Data(contentsOf: url) else { return false }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let actions = try? decoder.decode([MCPPendingAction].self, from: data), !actions.isEmpty else {
@@ -6141,29 +6565,6 @@ struct ContentView: View {
                 document.plainText = body.string
                 modelContext.insert(document)
                 if openAfterImport { openTextDocument(document) }
-
-            case "create_slides":
-                guard let title = action.title, let requested = action.slides, !requested.isEmpty else { continue }
-                let deck = SlideDeck(title: title)
-                assignMCPDestination(deck, path: action.folderPath)
-                if let theme = action.theme, let parsed = SlideTheme(rawValue: theme) {
-                    deck.theme = parsed
-                }
-                for (index, source) in requested.enumerated() {
-                    let layout = source.layout.flatMap(SlideLayout.init(rawValue:))
-                        // A first slide with no bullets reads as a title
-                        // slide; everything else defaults to title + content.
-                        ?? ((index == 0 && (source.bullets ?? []).isEmpty) ? .titleSlide : .titleAndBody)
-                    let slide = Slide(order: index, layout: layout)
-                    slide.titleText = source.title ?? ""
-                    slide.bodyText = (source.bullets ?? []).joined(separator: "\n")
-                    slide.notes = source.notes ?? ""
-                    slide.deck = deck
-                    deck.addSlide(slide)
-                    modelContext.insert(slide)
-                }
-                modelContext.insert(deck)
-                if openAfterImport { openSlideDeck(deck) }
 
             case "create_notebook":
                 guard let title = action.title, let pages = action.pages, !pages.isEmpty else { continue }
@@ -6250,45 +6651,34 @@ struct ContentView: View {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard 200..<300 ~= http.statusCode else {
+            if PasskeyReauth.isRequired(status: http.statusCode, body: data) { throw PasskeyError.reauthRequired }
             throw Self.mcpCloudServerError(status: http.statusCode, body: data)
         }
         return data
     }
 
     @MainActor
-    private func inspectMCPPairing() async {
-        let code = mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !code.isEmpty else { return }
+    private func issueMCPPairingCode() async {
+        mcpIssuedCode = nil
+        mcpCodeExpiresAt = nil
         do {
-            let data = try await mcpRequest(path: "api/mcp/pair?code=\(code)")
-            let info = try JSONDecoder().decode(MCPPairingInfo.self, from: data)
-            mcpPairClientName = info.clientName ?? ""
-            mcpPairScope = info.scope ?? ""
-            mcpCloudStatus = info.clientName == nil ? L("接続コードを確認してください。") : ""
-        } catch {
-            mcpPairClientName = ""
-            mcpPairScope = ""
-            mcpCloudStatus = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func approveMCPPairing() async {
-        guard !mcpPairClientName.isEmpty else { return }
-        let code = mcpPairCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        do {
-            let data = try await mcpRequest(path: "api/mcp/pair", method: "POST",
-                                            body: try JSONEncoder().encode(["code": code]))
-            let result = try JSONDecoder().decode(MCPApprovalResult.self, from: data)
-            guard result.approved else { mcpCloudStatus = L("接続コードの期限が切れました。"); return }
-            mcpCloudStatus = L("接続を許可しました。")
-            mcpPairCode = ""
-            mcpPairClientName = ""
-            mcpPairScope = ""
-            await loadMCPConnections()
+            let request = try JSONEncoder().encode(["kind": mcpPairKind.rawValue])
+            let data: Data
+            do {
+                data = try await mcpRequest(path: "api/mcp/pairing-code", method: "POST", body: request)
+            } catch PasskeyError.reauthRequired {
+                // Letting an app into the account is a step a stolen session
+                // must not be able to take alone.
+                try await PasskeyService.shared.reauthenticate(token: MCPCloudCredentials.loadOrCreateToken(), action: "approve-app")
+                data = try await mcpRequest(path: "api/mcp/pairing-code", method: "POST", body: request)
+            }
+            let issued = try JSONDecoder().decode(MCPPairingCode.self, from: data)
+            mcpIssuedCode = issued
+            mcpCodeExpiresAt = Date().addingTimeInterval(TimeInterval(issued.expiresInSeconds))
+            mcpCloudStatus = ""
         } catch { mcpCloudStatus = error.localizedDescription }
     }
 
@@ -6342,8 +6732,6 @@ struct ContentView: View {
         switch item.kind {
         case "create_document":
             if let document = textDocuments.first(where: { $0.title == item.title && !$0.isTrashed }) { openTextDocument(document) }
-        case "create_slides":
-            if let deck = slideDecks.first(where: { $0.title == item.title && !$0.isTrashed }) { openSlideDeck(deck) }
         case "create_notebook":
             if let notebook = allNotebooks.first(where: { $0.title == item.title && !$0.isTrashed }) { openNotebookTab(notebook) }
         case "create_flashcards":
@@ -6357,12 +6745,7 @@ struct ContentView: View {
 
     @MainActor
     private func syncMCPCloud() async {
-        let rawEndpoint = mcpCloudEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let baseURL = URL(string: rawEndpoint),
-              baseURL.scheme?.lowercased() == "https",
-              baseURL.host?.isEmpty == false,
-              baseURL.user == nil, baseURL.password == nil,
+        guard let baseURL = WorkerEndpointPolicy.resolve(mcpCloudEndpoint),
               let snapshotData = makeMCPSnapshotData(),
               mcpCloudToken.count >= 32 else {
             mcpCloudStatus = L("URLまたはトークンを確認してください。")
@@ -6377,7 +6760,7 @@ struct ContentView: View {
             upload.httpBody = snapshotData
             upload.setValue("application/json", forHTTPHeaderField: "Content-Type")
             upload.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
-            let (uploadData, uploadResponse) = try await URLSession.shared.data(for: upload)
+            let (uploadData, uploadResponse) = try await URLSession.shared.dataNoticing(for: upload)
             guard let uploadHTTP = uploadResponse as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
             }
@@ -6387,7 +6770,7 @@ struct ContentView: View {
 
             var download = URLRequest(url: baseURL.appending(path: "api/actions"))
             download.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
-            let (actionData, actionResponse) = try await URLSession.shared.data(for: download)
+            let (actionData, actionResponse) = try await URLSession.shared.dataNoticing(for: download)
             guard let actionHTTP = actionResponse as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
             }
@@ -6405,7 +6788,7 @@ struct ContentView: View {
                 var clear = URLRequest(url: baseURL.appending(path: "api/actions"))
                 clear.httpMethod = "DELETE"
                 clear.setValue("Bearer \(mcpCloudToken)", forHTTPHeaderField: "Authorization")
-                _ = try await URLSession.shared.data(for: clear)
+                _ = try await URLSession.shared.dataNoticing(for: clear)
             }
             mcpCloudStatus = actions.isEmpty
                 ? L("同期しました。新しいAI変更はありません。")
@@ -6417,7 +6800,8 @@ struct ContentView: View {
 
     @discardableResult
     private func importFlashcards(from url: URL) -> Bool {
-        guard let data = try? Data(contentsOf: url),
+        guard ImportLimits.checkFileSize(of: url, maxBytes: ImportLimits.maxTextFileBytes) == nil,
+              let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else {
             return false
         }
@@ -6443,8 +6827,10 @@ struct ContentView: View {
         }
         modelContext.insert(deck)
         try? modelContext.save()
-        libraryMode = .studyCards
-        openFlashcardDeck(deck)
+        finishCreation {
+            libraryMode = .studyCards
+            openFlashcardDeck(deck)
+        }
         return true
     }
 
@@ -6592,12 +6978,7 @@ struct ContentView: View {
         if selectedTextDocument === document { selectedTextDocument = openTextDocuments.last }
     }
 
-    private func closeSlideDeckTabs(_ deck: SlideDeck) {
-        openSlideDecks.removeAll { $0 === deck }
-        if selectedSlideDeck === deck { selectedSlideDeck = openSlideDecks.last }
-    }
-
-    /// Soft-deletes a deck/document/slide, matching notes: it goes to the
+    /// Soft-deletes a deck/document, matching notes: it goes to the
     /// trash (recoverable) and its tab is closed, rather than being erased.
     private func trashDeck(_ deck: FlashcardDeck) {
         performLibraryRemoval {
@@ -6615,18 +6996,10 @@ struct ContentView: View {
         }
     }
 
-    private func trashSlideDeck(_ deck: SlideDeck) {
-        performLibraryRemoval {
-            closeSlideDeckTabs(deck)
-            deck.isTrashed = true
-            deck.trashedAt = .now
-        }
-    }
-
-    /// True while a note, deck, document or slide is open for study.
+    /// True while a note, deck or document is open for study.
     private var isStudySurfaceOpen: Bool {
         selectedNotebook != nil || selectedFlashcardDeck != nil
-            || selectedTextDocument != nil || selectedSlideDeck != nil
+            || selectedTextDocument != nil
             || studyNotebook != nil
     }
 
@@ -6636,7 +7009,6 @@ struct ContentView: View {
         [selectedNotebook?.persistentModelID.hashValue,
          selectedFlashcardDeck?.persistentModelID.hashValue,
          selectedTextDocument?.persistentModelID.hashValue,
-         selectedSlideDeck?.persistentModelID.hashValue,
          studyNotebook?.persistentModelID.hashValue]
             .map { $0.map(String.init) ?? "-" }
             .joined(separator: ":")
@@ -6695,7 +7067,13 @@ struct ContentView: View {
             }
         } else {
             RAGDeletionQueue.enqueueNotebook(notebook, state: "locked")
-            NotebookEncryptionService.lock(notebook)
+            // Marked protected only once the content really is sealed. If the key
+            // could not be read or made (the device is locked, the Keychain is
+            // unavailable), the notebook stays as it was and the student is told.
+            guard NotebookEncryptionService.lock(notebook) else {
+                notebookProtectionFailed = true
+                return
+            }
             notebook.isLocked = true
             notebook.updatedAt = .now
             NotebookBackupService.deleteAutomaticBackups(for: notebook)
@@ -6710,7 +7088,6 @@ struct ContentView: View {
         }
         for deck in flashcardDecks where deck.isTrashed { permanentlyDeleteDeck(deck) }
         for document in textDocuments where document.isTrashed { permanentlyDeleteDocument(document) }
-        for deck in slideDecks where deck.isTrashed { permanentlyDeleteSlideDeck(deck) }
     }
 
     /// Whether the trash holds anything at all — notes or any other item.
@@ -6718,7 +7095,6 @@ struct ContentView: View {
         visibleNotebooks.isEmpty
             && !flashcardDecks.contains(where: \.isTrashed)
             && !textDocuments.contains(where: \.isTrashed)
-            && !slideDecks.contains(where: \.isTrashed)
     }
 
     @MainActor
@@ -6766,9 +7142,9 @@ struct ContentView: View {
             favoriteFolderPathsStorage: favoriteFolderPathsStorage,
             notebooks: allNotebooks,
             flashcardDecks: flashcardDecks,
-            textDocuments: textDocuments,
-            slideDecks: slideDecks
+            textDocuments: textDocuments
         )
+        AIReviewService.reconcile(modelContext: modelContext)
     }
 
     private func cloneElement(_ source: PageElement) -> PageElement {
@@ -6791,6 +7167,12 @@ struct ContentView: View {
     @ViewBuilder
     private func notebookRows(_ notebooks: [Notebook]) -> some View {
         ForEach(notebooks) { notebook in
+            notebookRow(notebook)
+        }
+    }
+
+    @ViewBuilder
+    private func notebookRow(_ notebook: Notebook) -> some View {
             Group {
                 // The all-files screen uses ScrollView, not List(selection:), so a
                 // NavigationLink(value:) row has no selection binding or
@@ -6813,16 +7195,6 @@ struct ContentView: View {
             .accessibilityIdentifier("library-entry-\(notebook.title)")
             .contextMenu {
                 notebookActions(notebook)
-            }
-            .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                if !notebook.isTrashed {
-                    Button {
-                        notebook.isFavorite.toggle()
-                    } label: {
-                        Label(notebook.isFavorite ? L("解除") : L("お気に入り"), systemImage: notebook.isFavorite ? "star.slash" : "star")
-                    }
-                    .tint(.yellow)
-                }
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if notebook.isTrashed {
@@ -6848,12 +7220,87 @@ struct ContentView: View {
                 isTargeted: { isTargeted in setEntryDropTarget(isTargeted, HomeEntry.notebook(notebook).id) }
             )
             .modifier(selectable(entry: .notebook(notebook), layout: .row))
-        }
     }
 }
 
 /// The all-files screen uses ScrollView so folder rows can receive drops.
 /// List used to supply these insets and separators automatically.
+/// `swipeActions` only works on `List` rows, but the folder-organized home
+/// screen lays its rows out in a `ScrollView` (so each folder owns its drop
+/// area). This gives those rows the same swipe-left-to-trash gesture.
+struct SwipeToTrashRow: ViewModifier {
+    static let revealWidth: CGFloat = 88
+
+    /// When a row last saw sideways movement. A Button inside a swiped row
+    /// still gets its tap when the finger lifts, so rows built on a Button
+    /// check `justSwiped` before acting (a swipe used to open the note).
+    @MainActor static var lastSwipeActivity = Date.distantPast
+    @MainActor static var justSwiped: Bool { Date().timeIntervalSince(lastSwipeActivity) < 0.4 }
+
+    /// Row offset while dragging: continues from where the drag began, so a
+    /// row left open does not jump back to the closed position.
+    static func offset(start: CGFloat, translation: CGFloat) -> CGFloat {
+        min(0, max(-revealWidth, start + translation))
+    }
+
+    /// Where the row comes to rest when the finger is lifted.
+    static func settledOffset(_ offset: CGFloat) -> CGFloat {
+        offset < -revealWidth / 2 ? -revealWidth : 0
+    }
+
+    let enabled: Bool
+    let identifier: String
+    let action: () -> Void
+
+    @State private var offset: CGFloat = 0
+    @State private var dragStartOffset: CGFloat?
+    private var revealWidth: CGFloat { Self.revealWidth }
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled {
+            content
+                .background(Theme.Palette.canvas)
+                .offset(x: offset)
+                .background(alignment: .trailing) {
+                    if offset < 0 {
+                        Button(role: .destructive) {
+                            withAnimation { offset = 0 }
+                            action()
+                        } label: {
+                            Text("ゴミ箱")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: revealWidth)
+                                .frame(maxHeight: .infinity)
+                                .background(Color.red)
+                        }
+                        .accessibilityIdentifier(identifier)
+                    }
+                }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 20)
+                        .onChanged { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            let start = dragStartOffset ?? offset
+                            dragStartOffset = start
+                            Self.lastSwipeActivity = Date()
+                            offset = Self.offset(start: start, translation: value.translation.width)
+                        }
+                        .onEnded { _ in
+                            dragStartOffset = nil
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                offset = Self.settledOffset(offset)
+                            }
+                            Self.lastSwipeActivity = Date()
+                        }
+                )
+                .clipped()
+        } else {
+            content
+        }
+    }
+}
+
 private struct DocumentLibraryRowStyle: ViewModifier {
     let enabled: Bool
 
@@ -6941,38 +7388,10 @@ private struct LibraryFolderDropSurface: UIViewRepresentable {
     }
 }
 
-/// Bundles both pptx-import alerts into one `.modifier(...)` call rather
-/// than two separate `.alert(...)`s on `ContentView`'s already very long
-/// top-level modifier chain — that chain hit Swift's type-checker
-/// complexity limit ("unable to type-check this expression in reasonable
-/// time") the moment these two were added directly, the same way the
-/// existing docx-import alerts already sit right below the chain's limit.
-private struct PptxImportAlerts: ViewModifier {
-    @Binding var importFailed: Bool
-    @Binding var importReport: String?
-
-    func body(content: Content) -> some View {
-        content
-            .alert("読み込めませんでした", isPresented: $importFailed) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("このファイルは開けませんでした。壊れているか、対応していない形式の可能性があります。")
-            }
-            .alert("一部の要素は変換できませんでした", isPresented: Binding(
-                get: { importReport != nil },
-                set: { if !$0 { importReport = nil } }
-            )) {
-                Button("OK", role: .cancel) { importReport = nil }
-            } message: {
-                Text((importReport ?? "") + "\nこれらは今のところ非対応のため、スライドには含まれていません。")
-            }
-    }
-}
-
 /// Bundles the post-import/post-unlock "パスワードを削除しますか？" sheet
 /// and the notification that can also trigger it from `NotebookLockGate`
-/// into one `.modifier(...)` call — same reason as `PptxImportAlerts`
-/// above: added directly to `ContentView`'s top-level chain, this pushed it
+/// into one `.modifier(...)` call — same reason as the docx-import
+/// alerts: added directly to `ContentView`'s top-level chain, this pushed it
 /// over Swift's type-checker complexity limit.
 private struct PDFPasswordRemovalOfferModifier: ViewModifier {
     @Binding var pdfRemovalOffer: PendingRemoval?
@@ -7012,7 +7431,11 @@ private struct PDFPasswordRemovalOfferModifier: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .studiquoPDFPasswordVerified)) { notification in
                 guard !pdfPasswordRemovalOfferDisabled,
                       let event = notification.object as? PDFPasswordVerifiedEvent else { return }
-                pdfRemovalOffer = PendingRemoval(url: event.sourceURL, password: event.password, notebook: event.notebook)
+                // The gate's alert is still dismissing when this fires.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    pdfRemovalOffer = PendingRemoval(url: event.sourceURL, password: event.password, notebook: event.notebook)
+                }
             }
     }
 }
@@ -7057,6 +7480,8 @@ private struct FileImportPicker: UIViewControllerRepresentable {
 /// One folder tile in `ContentView.homeIconGrid`. Visually mirrors
 /// `folderRow`'s list row (same folder glyph, same favorite star, same drop
 /// badge) but laid out as an icon-and-label tile instead of a horizontal row.
+/// The name always reserves two lines, so a one-line and a two-line name give
+/// tiles of the same height and the icons stay level across a grid row.
 private struct HomeFolderTile: View {
     let name: String
     let isFavorite: Bool
@@ -7078,7 +7503,7 @@ private struct HomeFolderTile: View {
                 }
                 Text(name)
                     .font(.caption)
-                    .lineLimit(2)
+                    .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
                 Text("\(itemCount)項目")
@@ -7091,7 +7516,7 @@ private struct HomeFolderTile: View {
     }
 }
 
-/// One notebook/deck/document/slide tile in `ContentView.homeIconGrid`. Takes
+/// One notebook/deck/document tile in `ContentView.homeIconGrid`. Takes
 /// a `HomeEntry` rather than one of the four concrete model types so the grid
 /// can render all of them with a single `ForEach`.
 private struct HomeEntryTile: View {
@@ -7102,9 +7527,13 @@ private struct HomeEntryTile: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: entry.iconName)
-                        .font(.system(size: 40))
-                        .foregroundStyle(entry.tintColor)
+                    if case .notebook(let notebook) = entry, notebook.containsPDF {
+                        NotebookCoverView(notebook: notebook, size: CGSize(width: 84, height: 84))
+                    } else {
+                        Image(systemName: entry.iconName)
+                            .font(.system(size: 40))
+                            .foregroundStyle(entry.tintColor)
+                    }
                     if entry.isFavorite {
                         Image(systemName: "star.fill")
                             .font(.caption2)
@@ -7113,7 +7542,7 @@ private struct HomeEntryTile: View {
                 }
                 Text(entry.title)
                     .font(.caption)
-                    .lineLimit(2)
+                    .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.primary)
             }
@@ -7128,15 +7557,20 @@ private struct NotebookRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
-                .font(.title2)
-                .foregroundStyle(notebook.containsPDF ? .red : .blue)
-                .frame(width: 34)
+            // A PDF's icon is its first page, as in the icon and column views.
+            if notebook.containsPDF {
+                NotebookCoverView(notebook: notebook, size: CGSize(width: 34, height: 44))
+            } else {
+                Image(systemName: notebook.containsPDF ? "doc.richtext" : "note.text")
+                    .font(.title2)
+                    .foregroundStyle(notebook.containsPDF ? Theme.Palette.danger : Theme.Palette.accent)
+                    .frame(width: 34)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(notebook.title).font(.headline).lineLimit(1)
                     if notebook.isFavorite {
-                        Image(systemName: "star.fill").foregroundStyle(.yellow).font(.caption)
+                        Image(systemName: "star.fill").foregroundStyle(Theme.Palette.warning).font(.caption)
                     }
                 }
                 Text("\(notebook.pageCountForLibrary)ページ ・ \(notebook.updatedAt.formatted(date: .abbreviated, time: .shortened))")
@@ -7155,7 +7589,7 @@ private struct NotebookRow: View {
                 notebook.updatedAt = .now
             } label: {
                 Image(systemName: notebook.isFavorite ? "star.fill" : "star")
-                    .foregroundStyle(notebook.isFavorite ? .yellow : .secondary)
+                    .foregroundStyle(notebook.isFavorite ? Theme.Palette.warning : Theme.Palette.textSecondary)
                     .frame(width: 34, height: 34)
             }
             .buttonStyle(.plain)
@@ -7166,9 +7600,56 @@ private struct NotebookRow: View {
     }
 }
 
+private enum NotebookSortKey: CaseIterable, Identifiable {
+    case name, updated, created
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .name: L("名前")
+        case .updated: L("更新日")
+        case .created: L("作成日")
+        }
+    }
+}
+
 private enum NotebookSortOption: String, CaseIterable, Identifiable {
-    case updatedNewest, updatedOldest, createdNewest, createdOldest, nameAscending, nameDescending, pageCount
+    case updatedNewest, updatedOldest, createdNewest, createdOldest, nameAscending, nameDescending
     var id: String { rawValue }
+
+    var key: NotebookSortKey {
+        switch self {
+        case .updatedNewest, .updatedOldest: .updated
+        case .createdNewest, .createdOldest: .created
+        case .nameAscending, .nameDescending: .name
+        }
+    }
+
+    var isAscending: Bool {
+        switch self {
+        case .updatedOldest, .createdOldest, .nameAscending: true
+        default: false
+        }
+    }
+
+    /// Tapping the active key flips its direction; tapping another key
+    /// selects it with its natural default (newest first, A–Z).
+    func selecting(_ newKey: NotebookSortKey) -> NotebookSortOption {
+        if newKey == key {
+            switch self {
+            case .updatedNewest: return .updatedOldest
+            case .updatedOldest: return .updatedNewest
+            case .createdNewest: return .createdOldest
+            case .createdOldest: return .createdNewest
+            case .nameAscending: return .nameDescending
+            case .nameDescending: return .nameAscending
+            }
+        }
+        switch newKey {
+        case .updated: return .updatedNewest
+        case .created: return .createdNewest
+        case .name: return .nameAscending
+        }
+    }
 
     var title: String {
         switch self {
@@ -7178,7 +7659,6 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
         case .createdOldest: L("作成日が古い順")
         case .nameAscending: L("名前 A–Z")
         case .nameDescending: L("名前 Z–A")
-        case .pageCount: L("ページ数が多い順")
         }
     }
 
@@ -7190,13 +7670,33 @@ private enum NotebookSortOption: String, CaseIterable, Identifiable {
         case .createdOldest: { $0.createdAt < $1.createdAt }
         case .nameAscending: { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         case .nameDescending: { $0.title.localizedStandardCompare($1.title) == .orderedDescending }
-        case .pageCount: { $0.pageCountForLibrary > $1.pageCountForLibrary }
+        }
+    }
+
+    /// Same ordering for any home item kind (notes, decks, documents), so a
+    /// sort choice applies to everything on screen, not only notes.
+    func areInOrder(_ a: some HomeItem, _ b: some HomeItem) -> Bool {
+        areInOrder((a.title, a.createdAt, a.updatedAt), (b.title, b.createdAt, b.updatedAt))
+    }
+
+    func areInOrder(_ a: HomeEntry, _ b: HomeEntry) -> Bool {
+        areInOrder((a.title, a.createdAt, a.updatedAt), (b.title, b.createdAt, b.updatedAt))
+    }
+
+    func areInOrder(_ a: (title: String, created: Date, updated: Date), _ b: (title: String, created: Date, updated: Date)) -> Bool {
+        switch self {
+        case .updatedNewest: a.updated > b.updated
+        case .updatedOldest: a.updated < b.updated
+        case .createdNewest: a.created > b.created
+        case .createdOldest: a.created < b.created
+        case .nameAscending: a.title.localizedStandardCompare(b.title) == .orderedAscending
+        case .nameDescending: a.title.localizedStandardCompare(b.title) == .orderedDescending
         }
     }
 }
 
 private enum LibraryMode: String, CaseIterable, Identifiable {
-    case documents, favorites, pdfs, studyCards, textDocuments, slides, trash
+    case documents, favorites, pdfs, studyCards, textDocuments, trash
     var id: String { rawValue }
 
     var title: String {
@@ -7206,7 +7706,6 @@ private enum LibraryMode: String, CaseIterable, Identifiable {
         case .pdfs: "PDF"
         case .studyCards: L("暗記カード")
         case .textDocuments: L("文書")
-        case .slides: L("スライド")
         case .trash: L("ゴミ箱")
         }
     }
@@ -7218,7 +7717,6 @@ private enum LibraryMode: String, CaseIterable, Identifiable {
         case .pdfs: "doc.richtext"
         case .studyCards: "rectangle.on.rectangle.angled"
         case .textDocuments: "doc.text"
-        case .slides: "rectangle.on.rectangle"
         case .trash: "trash"
         }
     }
@@ -7230,7 +7728,6 @@ private enum LibraryMode: String, CaseIterable, Identifiable {
         case .pdfs: L("PDFはありません")
         case .studyCards: L("暗記カードはありません")
         case .textDocuments: L("文書はありません")
-        case .slides: L("スライドはありません")
         case .trash: L("ゴミ箱は空です")
         }
     }
@@ -7238,11 +7735,10 @@ private enum LibraryMode: String, CaseIterable, Identifiable {
     var emptyMessage: String {
         switch self {
         case .documents: L("＋からノートを作るかPDFを読み込んでください")
-        case .favorites: L("ノートを左へスワイプして登録できます")
+        case .favorites: L("ノートのメニューから登録できます")
         case .pdfs: L("＋からPDFを読み込んでください")
         case .studyCards: L("＋からノートを選んで暗記カードを作成してください")
         case .textDocuments: L("＋から文書を作成してください")
-        case .slides: L("＋からスライドを作成してください")
         case .trash: L("削除したノートがここに表示されます")
         }
     }
@@ -7357,14 +7853,11 @@ extension ContentView {
                 notebooks.map(HomeEntry.notebook)
                     + displayedFlashcardDecks.map(HomeEntry.flashcardDeck)
                     + displayedTextDocuments.map(HomeEntry.textDocument)
-                    + displayedSlideDecks.map(HomeEntry.slideDeck)
             )
         } else if libraryMode == .studyCards && selectedFolder == nil {
             addEntries(displayedFlashcardDecks.map(HomeEntry.flashcardDeck))
         } else if libraryMode == .textDocuments && selectedFolder == nil {
             addEntries(displayedTextDocuments.map(HomeEntry.textDocument))
-        } else if libraryMode == .slides && selectedFolder == nil {
-            addEntries(displayedSlideDecks.map(HomeEntry.slideDeck))
         } else if libraryMode == .favorites && selectedFolder == nil {
             addFolders(sortedFolderNames.filter { favoriteFolderPaths.contains($0) })
             addEntries(
@@ -7376,7 +7869,6 @@ extension ContentView {
             if libraryMode == .trash && selectedFolder == nil {
                 entries += flashcardDecks.filter(\.isTrashed).map(HomeEntry.flashcardDeck)
                 entries += textDocuments.filter(\.isTrashed).map(HomeEntry.textDocument)
-                entries += slideDecks.filter(\.isTrashed).map(HomeEntry.slideDeck)
             }
             addEntries(entries)
         }
@@ -7387,7 +7879,7 @@ extension ContentView {
     /// that disappears (deleted on another device) leaves the selection.
     fileprivate var selectionDataFingerprint: [Int] {
         guard homeSelection.isActive else { return [] }
-        return [allNotebooks.count, flashcardDecks.count, textDocuments.count, slideDecks.count, allFolders.count]
+        return [allNotebooks.count, flashcardDecks.count, textDocuments.count, allFolders.count]
     }
 
     fileprivate func pruneSelection() {
@@ -7396,7 +7888,6 @@ extension ContentView {
         for notebook in allNotebooks { valid.insert(dragPayload(for: .notebook(notebook))) }
         for deck in flashcardDecks { valid.insert(dragPayload(for: .flashcardDeck(deck))) }
         for document in textDocuments { valid.insert(dragPayload(for: .textDocument(document))) }
-        for deck in slideDecks { valid.insert(dragPayload(for: .slideDeck(deck))) }
         for folder in allFolders { valid.insert("folder:\(folderID(folder))") }
         homeSelection.prune(keeping: valid)
     }
@@ -7413,9 +7904,6 @@ extension ContentView {
         }
         for document in textDocuments where tokens.contains(dragPayload(for: .textDocument(document))) {
             targets.entries.append(.textDocument(document))
-        }
-        for deck in slideDecks where tokens.contains(dragPayload(for: .slideDeck(deck))) {
-            targets.entries.append(.slideDeck(deck))
         }
         for folder in allFolders where tokens.contains("folder:\(folderID(folder))") {
             targets.folders.append(folder)
@@ -7489,6 +7977,15 @@ extension ContentView {
         try? modelContext.save()
     }
 
+    /// Long-press menu and swipe action for a single folder: same result as
+    /// deleting it from the selection bar.
+    private func trashFolder(_ folder: Folder) {
+        performLibraryRemoval {
+            removeFolderMovingContentsToTrash(folder)
+            try? modelContext.save()
+        }
+    }
+
     /// Folders have no trash of their own: deleting one sends everything
     /// inside it (at any depth) to the trash and removes the folder. Items
     /// are detached first, so restoring one later puts it on the top level.
@@ -7527,7 +8024,6 @@ extension ContentView {
         case let notebook as Notebook: .notebook(notebook)
         case let deck as FlashcardDeck: .flashcardDeck(deck)
         case let document as TextDocument: .textDocument(document)
-        case let deck as SlideDeck: .slideDeck(deck)
         default: nil
         }
     }
@@ -7550,7 +8046,6 @@ extension ContentView {
             notebook.trashedAt = nil
         case .flashcardDeck(let deck): restoreDeck(deck)
         case .textDocument(let document): restoreDocument(document)
-        case .slideDeck(let deck): restoreSlideDeck(deck)
         }
         let item = entry.underlying
         let path = item.folderName
@@ -7651,5 +8146,31 @@ enum FolderPathMetadata {
             return lhsMoved == rhsMoved ? lhs.key < rhs.key : !lhsMoved
         }
         return Dictionary(ordered.map { (renamed($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
+    }
+}
+
+/// Retitles an open AI chat tab when its conversation is renamed. Kept out of
+/// `ContentView.body`, which is already at the type-checker's limit.
+private struct AIChatTabRenameModifier: ViewModifier {
+    @Binding var tabs: [AIChatTabInfo]
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .studiquoRenameAIChatTab)) { notification in
+            guard let tab = notification.object as? AIChatTabInfo,
+                  let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+            tabs[index] = tab
+        }
+    }
+}
+
+private extension View {
+    /// Draws a tab as a self-contained block: a filled rounded rectangle with
+    /// an outline, so neighbouring tabs read as separate items. The selected
+    /// tab gets a tinted fill and a heavier tinted outline.
+    func tabBlock(tint: Color, selected: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous)
+        return self
+            .background(selected ? tint.opacity(0.20) : Color.primary.opacity(0.06), in: shape)
+            .overlay(shape.strokeBorder(selected ? tint : Color.primary.opacity(0.22), lineWidth: selected ? 1.5 : 1))
     }
 }

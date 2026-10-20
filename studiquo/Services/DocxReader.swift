@@ -20,6 +20,8 @@ enum DocxReader {
     enum ReadError: Error, Equatable {
         case notADocx
         case missingDocumentPart
+        /// Too many entries or too much once inflated (`ImportLimits`).
+        case archiveTooLarge
     }
 
     struct Result {
@@ -35,6 +37,8 @@ enum DocxReader {
         let entries: [DocxZip.Entry]
         do {
             entries = try DocxZip.read(data)
+        } catch DocxZip.ZipError.limitExceeded {
+            throw ReadError.archiveTooLarge
         } catch {
             throw ReadError.notADocx
         }

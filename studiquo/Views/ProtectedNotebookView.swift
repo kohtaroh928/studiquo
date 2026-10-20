@@ -23,7 +23,7 @@ struct NotebookLockState {
         if !success {
             faceIDMessage = "認証できませんでした。もう一度お試しください"
         } else if !decrypted {
-            faceIDMessage = "ノートの内容を復号できませんでした"
+            faceIDMessage = "ノートの内容を復号できませんでした。別の端末で保護したノートの鍵は、届くまでしばらくかかることがあります。時間をおいてもう一度お試しください。"
         } else {
             faceIDMessage = "認証してノートを開いてください"
         }
@@ -60,6 +60,18 @@ struct PDFPasswordVerifiedEvent {
     let password: String
 }
 
+/// Notebooks whose PDF password was just typed during import. Consumed by
+/// the first `NotebookLockGate` that shows the notebook, so the student isn't
+/// asked for the same password twice in a row.
+@MainActor
+enum ImportedPDFPasswordSession {
+    private static var verified: Set<PersistentIdentifier> = []
+
+    static func markVerified(_ id: PersistentIdentifier) { verified.insert(id) }
+
+    static func consume(_ id: PersistentIdentifier) -> Bool { verified.remove(id) != nil }
+}
+
 /// No gate of its own: `NoteEditorView`'s primary pane wraps its own content
 /// in `NotebookLockGate` (see NoteEditorView.swift), so the toolbar, tab
 /// bar, and every other piece of chrome around the pane always renders
@@ -71,13 +83,17 @@ struct ProtectedNotebookView: View {
     @Bindable var notebook: Notebook
     @Binding var columnVisibility: NavigationSplitViewVisibility
     var onHome: () -> Void
+    var initialFlashcardDeck: FlashcardDeck?
+    var initialFlashcardStartsWithMistakeReview = false
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         NoteEditorView(
             notebook: notebook,
             columnVisibility: $columnVisibility,
-            onHome: onHome
+            onHome: onHome,
+            initialFlashcardDeck: initialFlashcardDeck,
+            initialFlashcardStartsWithMistakeReview: initialFlashcardStartsWithMistakeReview
         )
         .environmentObject(AIChatStore.shared(for: modelContext))
     }
@@ -125,12 +141,17 @@ struct NotebookLockGate<Content: View>: View {
             if isGated {
                 lockPlaceholder
             } else {
-                content()
+                // A protected notebook that is open must not show in the app switcher.
+                content().hidesInAppSwitcher(when: notebook.isLocked || notebook.hasLockedPDFToUnlock)
             }
         }
-        .onAppear { requestUnlockIfNeeded() }
+        .onAppear {
+            consumeImportVerification()
+            requestUnlockIfNeeded()
+        }
         .onChange(of: notebook.persistentModelID) { _, _ in
             lockState.notebookDidChange()
+            consumeImportVerification()
             requestUnlockIfNeeded()
         }
         .alert("PDFのパスワード", isPresented: $isShowingPDFPasswordPrompt) {
@@ -151,7 +172,13 @@ struct NotebookLockGate<Content: View>: View {
             Button(needsFaceID ? "ロックを解除" : "パスワードを入力") {
                 requestUnlockIfNeeded()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.themePrimary)
+        }
+    }
+
+    private func consumeImportVerification() {
+        if ImportedPDFPasswordSession.consume(notebook.persistentModelID) {
+            lockState.recordPDFPasswordVerified()
         }
     }
 
@@ -188,12 +215,11 @@ struct NotebookLockGate<Content: View>: View {
             lockState.recordPDFPasswordVerified()
             return
         }
-        let tempFolder = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tempFolder = StudiquoWorkFiles.makeFolder()
         do {
             try FileManager.default.createDirectory(at: tempFolder, withIntermediateDirectories: true)
             let sourceURL = tempFolder.appendingPathComponent("\(notebook.title).pdf")
-            try data.write(to: sourceURL)
+            try data.write(to: sourceURL, options: .completeFileProtection)
             _ = try PDFPasswordService.unlock(sourceURL, password: pdfPasswordEntry)
             lockState.recordPDFPasswordVerified()
             NotificationCenter.default.post(

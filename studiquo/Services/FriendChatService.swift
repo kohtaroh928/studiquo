@@ -72,7 +72,7 @@ enum PushDeviceService {
         request.setValue("Bearer \(authorizationToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard 200..<300 ~= http.statusCode else {
             let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data).error) ?? "Device registration failed."
@@ -197,6 +197,23 @@ enum PushNotificationRegistration {
 }
 
 enum FriendChatService {
+    /// A background refresh is safe to repeat once after a short-lived
+    /// transport or Worker failure. Mutating requests are deliberately
+    /// excluded: retrying a send/add action after an ambiguous response could
+    /// duplicate the user's action on the server.
+    static func shouldRetryReadRequest(method: String, statusCode: Int? = nil, error: Error? = nil) -> Bool {
+        guard method == "GET" else { return false }
+        if let statusCode { return (500...599).contains(statusCode) }
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .timedOut, .cannotFindHost, .cannotConnectToHost,
+             .networkConnectionLost, .dnsLookupFailed, .notConnectedToInternet:
+            return true
+        default:
+            return false
+        }
+    }
+
     private static var endpoint: URL {
         MCPCloudCredentials.configuredEndpoint() ?? URL(string: WorkerAIProvider.defaultEndpoint)!
     }
@@ -403,7 +420,7 @@ enum FriendChatService {
         request.httpMethod = "GET"
         request.timeoutInterval = 20
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard 200..<300 ~= http.statusCode else {
             if http.statusCode == 429 { throw RateLimitedError() }
@@ -580,7 +597,7 @@ enum FriendChatService {
         request.httpMethod = "GET"
         request.timeoutInterval = 20
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard 200..<300 ~= http.statusCode else {
             if http.statusCode == 429 { throw RateLimitedError() }
@@ -611,7 +628,7 @@ enum FriendChatService {
         request.httpMethod = "GET"
         request.timeoutInterval = 20
         request.setValue("Bearer \(MCPCloudCredentials.loadOrCreateToken())", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.dataNoticing(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard 200..<300 ~= http.statusCode else {
             if http.statusCode == 429 { throw RateLimitedError() }
@@ -643,19 +660,37 @@ enum FriendChatService {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONEncoder().encode(body)
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        guard 200..<300 ~= http.statusCode else {
-            if http.statusCode == 429 { throw RateLimitedError() }
-            guard let payload = try? JSONDecoder().decode(ErrorPayload.self, from: data) else {
-                throw URLError(.badServerResponse)
+
+        for attempt in 0...1 {
+            do {
+                let (data, response) = try await URLSession.shared.dataNoticing(for: request)
+                guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+                guard 200..<300 ~= http.statusCode else {
+                    if attempt == 0, shouldRetryReadRequest(method: method, statusCode: http.statusCode) {
+                        try await Task.sleep(for: .milliseconds(350))
+                        continue
+                    }
+                    if http.statusCode == 429 { throw RateLimitedError() }
+                    guard let payload = try? JSONDecoder().decode(ErrorPayload.self, from: data) else {
+                        throw URLError(.badServerResponse)
+                    }
+                    // A definitive rejection of this device's own token, not
+                    // something a retry could fix — see .studiquoAuthFailed.
+                    if http.statusCode == 401 { NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil) }
+                    throw ServerError(status: http.statusCode, message: payload.error)
+                }
+                return try JSONDecoder().decode(Response.self, from: data)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                if attempt == 0, shouldRetryReadRequest(method: method, error: error) {
+                    try await Task.sleep(for: .milliseconds(350))
+                    continue
+                }
+                throw error
             }
-            // A definitive rejection of this device's own token, not
-            // something a retry could fix — see .studiquoAuthFailed.
-            if http.statusCode == 401 { NotificationCenter.default.post(name: .studiquoAuthFailed, object: nil) }
-            throw ServerError(status: http.statusCode, message: payload.error)
         }
-        return try JSONDecoder().decode(Response.self, from: data)
+        throw URLError(.unknown)
     }
 }
 

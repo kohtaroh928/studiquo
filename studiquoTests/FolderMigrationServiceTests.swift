@@ -26,15 +26,12 @@ final class FolderMigrationServiceTests: XCTestCase {
         let notebook = Notebook(title: "ノート")
         let flashcards = FlashcardDeck(title: "暗記帳")
         let document = TextDocument(title: "文書")
-        let slides = SlideDeck(title: "スライド")
         notebook.folderName = "授業/数学"
         flashcards.folderName = "授業"
         document.folderName = "資料"
-        slides.folderName = "授業/数学"
         context.insert(notebook)
         context.insert(flashcards)
         context.insert(document)
-        context.insert(slides)
 
         let mathCreatedAt = Date(timeIntervalSince1970: 1_700_000_000)
         let createdAtStorage = try String(
@@ -49,8 +46,7 @@ final class FolderMigrationServiceTests: XCTestCase {
             favoriteFolderPathsStorage: "授業/数学\n資料",
             notebooks: [notebook],
             flashcardDecks: [flashcards],
-            textDocuments: [document],
-            slideDecks: [slides]
+            textDocuments: [document]
         )
 
         let folders = try context.fetch(FetchDescriptor<Folder>())
@@ -66,7 +62,6 @@ final class FolderMigrationServiceTests: XCTestCase {
         XCTAssertTrue(notebook.folder === byPath["授業/数学"])
         XCTAssertTrue(flashcards.folder === byPath["授業"])
         XCTAssertTrue(document.folder === byPath["資料"])
-        XCTAssertTrue(slides.folder === byPath["授業/数学"])
         XCTAssertEqual(notebook.folderName, "授業/数学", "The legacy fallback must be retained")
         XCTAssertTrue(UserDefaults.standard.bool(forKey: Self.migrationKey))
 
@@ -76,7 +71,6 @@ final class FolderMigrationServiceTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(readContext.fetch(FetchDescriptor<Notebook>()).first).folder?.legacyPath, "授業/数学")
         XCTAssertEqual(try XCTUnwrap(readContext.fetch(FetchDescriptor<FlashcardDeck>()).first).folder?.legacyPath, "授業")
         XCTAssertEqual(try XCTUnwrap(readContext.fetch(FetchDescriptor<TextDocument>()).first).folder?.legacyPath, "資料")
-        XCTAssertEqual(try XCTUnwrap(readContext.fetch(FetchDescriptor<SlideDeck>()).first).folder?.legacyPath, "授業/数学")
     }
 
     func testReferencedPathMissingFromFolderListCreatesEveryAncestor() async throws {
@@ -152,8 +146,7 @@ final class FolderMigrationServiceTests: XCTestCase {
         favoriteFolderPathsStorage: String = "",
         notebooks: [Notebook] = [],
         flashcardDecks: [FlashcardDeck] = [],
-        textDocuments: [TextDocument] = [],
-        slideDecks: [SlideDeck] = []
+        textDocuments: [TextDocument] = []
     ) async {
         await FolderMigrationService.migrateIfNeeded(
             context: context,
@@ -162,8 +155,7 @@ final class FolderMigrationServiceTests: XCTestCase {
             favoriteFolderPathsStorage: favoriteFolderPathsStorage,
             notebooks: notebooks,
             flashcardDecks: flashcardDecks,
-            textDocuments: textDocuments,
-            slideDecks: slideDecks
+            textDocuments: textDocuments
         )
     }
 

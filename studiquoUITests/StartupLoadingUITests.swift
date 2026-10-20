@@ -20,7 +20,10 @@ final class StartupLoadingUITests: XCTestCase {
 
         let notice = app.staticTexts["データの読み込みに時間がかかっています"]
         XCTAssertTrue(notice.waitForExistence(timeout: 3), "The slow-launch notice never appeared")
-        XCTAssertFalse(app.buttons["再試行"].exists, "A slow open is not a failure")
+        // Not `buttons["再試行"]`: the home screen has a retry button of its own
+        // (the banner for files a share left unimported), so that label is not
+        // proof the launch failure screen is showing.
+        XCTAssertFalse(app.staticTexts["保存データを開けませんでした"].exists, "A slow open is not a failure")
 
         XCTAssertTrue(app.staticTexts["ホーム"].waitForExistence(timeout: 20), "The app never advanced past the notice")
         XCTAssertFalse(notice.exists)
@@ -38,6 +41,6 @@ final class StartupLoadingUITests: XCTestCase {
         retry.tap()
 
         XCTAssertTrue(app.staticTexts["ホーム"].waitForExistence(timeout: 20), "Retry did not recover")
-        XCTAssertFalse(app.buttons["再試行"].exists)
+        XCTAssertFalse(app.staticTexts["保存データを開けませんでした"].exists, "The failure screen is still showing after the retry")
     }
 }

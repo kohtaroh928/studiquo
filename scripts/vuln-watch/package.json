@@ -1,0 +1,15 @@
+{
+  "name": "studiquo-vuln-watch",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "inventory": "node src/cli.ts inventory",
+    "scan": "node src/cli.ts scan",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2"
+  }
+}
