@@ -784,7 +784,7 @@ test("an invitation cannot be accepted after the owner has blocked the invitee",
   assert.equal(await env.DOCUMENT_ROOM.getByName(ROOM_ID).roleOf(await sha256Hex(friend)), null);
 });
 
-test("an invitation is void once the owner is no longer the invitee's friend", async () => {
+test("an invitation cannot be accepted once the owner is no longer the invitee's friend, and is kept in case that was a stale read", async () => {
   const env = environment();
   const owner = freshToken("1");
   const friend = freshToken("2");
@@ -796,7 +796,21 @@ test("an invitation is void once the owner is no longer the invitee's friend", a
   await env.STUDIQUO_DATA.put(`chat:user:${friendKey}`, JSON.stringify(record));
 
   const accept = await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/invite/accept`, { method: "POST", token: friend, body: {} }), env, noopCtx);
-  assert.equal(accept.status, 410);
+  assert.equal(accept.status, 403);
   assert.equal(await env.DOCUMENT_ROOM.getByName(ROOM_ID).roleOf(friendKey), null);
-  assert.equal(await env.STUDIQUO_DATA.get(`doc-invite:${friendKey}:${ROOM_ID}`), null, "the dead offer is cleared");
+  assert.ok(await env.STUDIQUO_DATA.get(`doc-invite:${friendKey}:${ROOM_ID}`), "the offer stays; it expires on its own");
+});
+
+test("an invitation whose inviter's account is gone is cleared", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  const friend = freshToken("2");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  assert.equal((await sendInvite(env, owner, friend, "editor")).status, 200);
+  await env.STUDIQUO_DATA.delete(`chat:user:${await sha256Hex(owner)}`);
+  const friendKey = await sha256Hex(friend);
+
+  const accept = await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/invite/accept`, { method: "POST", token: friend, body: {} }), env, noopCtx);
+  assert.equal(accept.status, 410);
+  assert.equal(await env.STUDIQUO_DATA.get(`doc-invite:${friendKey}:${ROOM_ID}`), null);
 });
