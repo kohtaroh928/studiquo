@@ -290,6 +290,37 @@ test("7. confirmationが未指定またはDELETE以外なら何も削除され�
   assert.notEqual(await env.STUDIQUO_DATA.get(`session:${sha256Hex(token)}`), null);
 });
 
+test("退会に直近のサインインを求める: 設定が有効なとき、古いログインの端末は403、新しいサインインなら通る", async () => {
+  const hourAgo = Date.now() - 60 * 60 * 1000;
+  const attempt = async (flag: string | undefined, session: Record<string, unknown>, label: string) => {
+    const env = environment({ strictSessions: true });
+    if (flag) env.REQUIRE_RECENT_LOGIN_FOR_DELETION = flag;
+    const token = freshToken(label);
+    await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify(session));
+    // A wrong confirmation: if the request gets past the sign-in check it stops at 400, and nothing is deleted.
+    return worker.fetch(request("/api/account", { method: "DELETE", token, body: { confirmation: "wrong" } }), env, noopCtx);
+  };
+
+  // Setting off: nothing changes for anyone (older apps keep working).
+  assert.equal((await attempt(undefined, { sub: "a", issuedAtMs: hourAgo, originIssuedAtMs: hourAgo }, "of")).status, 400);
+
+  // Setting on: a login from an hour ago is refused, with a code the app can act on.
+  const old = await attempt("true", { sub: "a", issuedAtMs: hourAgo, originIssuedAtMs: hourAgo }, "ol");
+  assert.equal(old.status, 403);
+  assert.equal((await old.json()).code, "recent_login_required");
+
+  // A token refreshed a minute ago still belongs to the old login.
+  const refreshed = await attempt("true", { sub: "a", issuedAtMs: Date.now() - 60_000, originIssuedAtMs: hourAgo }, "rf");
+  assert.equal(refreshed.status, 403);
+
+  // A session with no timestamps at all cannot show it is recent.
+  assert.equal((await attempt("true", { sub: "a" }, "nt")).status, 403);
+
+  // A sign-in from a minute ago passes the check.
+  const recent = Date.now() - 60_000;
+  assert.equal((await attempt("true", { sub: "a", issuedAtMs: recent, originIssuedAtMs: recent }, "rc")).status, 400);
+});
+
 test("8. 未認証・期限切れ・失効済みセッションではアカウントを削除できない", async () => {
   const env = environment({ strictSessions: true });
   const activeToken = freshToken("dx");

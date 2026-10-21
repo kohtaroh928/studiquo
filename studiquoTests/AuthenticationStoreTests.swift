@@ -149,7 +149,7 @@ final class AuthenticationStoreTests: XCTestCase {
         StubAuthNetworkProtocol.respondInOrder(forPathSuffix: "api/auth/email/confirm-code", [breachedResponse, breachedResponse])
         _ = await store.confirmEmailVerification(code: "123456")
 
-        let result = await store.changePendingPassword("password123", code: "123456")
+        let result = await store.changePendingPassword("password1234", code: "123456")
 
         XCTAssertFalse(result)
         XCTAssertTrue(store.needsNewPassword)

@@ -38,3 +38,21 @@ function safeFetch(request) {
 db.prepare('SELECT * FROM fixture WHERE id=' + value);
 // ok: studiquo.javascript.dynamic-sql
 db.prepare('SELECT * FROM fixture WHERE id=?').bind(value);
+// ruleid: studiquo.javascript.insecure-random-secret
+const sessionToken = Math.random().toString(36);
+// ruleid: studiquo.javascript.insecure-random-secret
+const record = { challenge: Math.random() };
+// ok: studiquo.javascript.insecure-random-secret
+const jitter = Math.random() * 100;
+// ok: studiquo.javascript.insecure-random-secret
+const retryDelay = 200 + Math.random() * 50;
+// ruleid: studiquo.javascript.secret-comparison
+if (authorization === expectedHeader) grant();
+// ruleid: studiquo.javascript.secret-comparison
+if (webhookSecret !== suppliedValue) reject();
+// ok: studiquo.javascript.secret-comparison
+if (authorization === "") reject();
+// ok: studiquo.javascript.secret-comparison
+if (signature.tag !== 0x03) reject();
+// ok: studiquo.javascript.secret-comparison
+if (statusCode === expectedStatus) grant();

@@ -20,6 +20,7 @@ import { sendPush } from "./push.ts";
 import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.ts";
 import { callOpenAIChat, callOpenAIStructured, moderationRejection, MODERATION_UNAVAILABLE, extractDeltaText as openaiDeltaText } from "./openai.ts";
 import type { Env } from "./env.ts";
+import { OPS_ALERTS, raiseAlert } from "./ops-alerts.ts";
 
 /**
  * Which chat models each plan may pick (see entitlements.ts's `getPlan` for
@@ -118,6 +119,12 @@ async function upstreamErrorKind(upstream: Response): Promise<{ errorType?: stri
   } catch {
     return {};
   }
+}
+
+/** Counts a provider failure toward the hourly alert without making the request wait for Slack. */
+function alertInBackground(env: Env, ctx: ExecutionContext | undefined) {
+  const work = raiseAlert(env, OPS_ALERTS.aiUpstream);
+  if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
 }
 
 async function upstreamFailureResponse(upstream: Response) {
@@ -310,6 +317,7 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
     if (!upstream.ok || !upstream.body) {
       await gate.refund();
       console.error(JSON.stringify({ message: "AI upstream refused", status: upstream.status, ...await upstreamErrorKind(upstream) }));
+      if (upstream.status >= 500) alertInBackground(env, ctx);
       return upstreamFailureResponse(upstream);
     }
   } catch (error) {
@@ -651,6 +659,7 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
       if (!upstream.ok) {
         await refund();
         console.error(JSON.stringify({ message: "AI structured upstream refused", status: upstream.status, ...await upstreamErrorKind(upstream) }));
+        if (upstream.status >= 500) alertInBackground(env, ctx);
         await emit({ error: isUpstreamOverloaded(upstream.status) ? AI_BUSY_MESSAGE : failureMessage });
       } else {
         let buffer = "";
@@ -902,6 +911,7 @@ export async function handleAI(url: URL, request: Request, env: Env, key: string
     // Without this, a missing OPENAI_API_KEY surfaced as a bare 500 with no
     // hint of the cause.
     console.error(JSON.stringify({ message: "AI request failed", error: error instanceof Error ? error.message : String(error) }));
+    alertInBackground(env, ctx);
     return json({ error: "AI request failed." }, 500);
   }
 }

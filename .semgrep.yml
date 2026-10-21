@@ -120,3 +120,49 @@ rules:
     metadata:
       category: security
       confidence: MEDIUM
+  - id: studiquo.javascript.insecure-random-secret
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: トークン・鍵・コード・ソルトなどの秘密に Math.random() は使えません。crypto.getRandomValues() か crypto.randomUUID() を使ってください。
+    patterns:
+      - pattern-either:
+          - pattern: $VAR = <... Math.random() ...>
+          - pattern: const $VAR = <... Math.random() ...>
+          - pattern: let $VAR = <... Math.random() ...>
+          - pattern: $OBJ.$VAR = <... Math.random() ...>
+          - pattern: "{ $VAR: <... Math.random() ...> }"
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (?i).*(token|secret|nonce|salt|password|passcode|apikey|api_key|credential|session|challenge|verif|signing|code).*
+    metadata:
+      category: security
+      confidence: MEDIUM
+  - id: studiquo.javascript.secret-comparison
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: 秘密・署名・MAC は === で比較せず、secretsEqual() で定数時間に比較してください。
+    patterns:
+      - pattern-either:
+          - pattern: $A === $B
+          - pattern: $A !== $B
+      - metavariable-regex:
+          metavariable: $A
+          regex: (?i).*(secret|signature|hmac|digest|apikey|api_key|authorization|webhook).*
+      - metavariable-regex:
+          metavariable: $B
+          regex: ^(?!\d|0x|["'`]).*
+      - pattern-not: $A === ""
+      - pattern-not: $A !== ""
+      - pattern-not: $A === undefined
+      - pattern-not: $A !== undefined
+      - pattern-not: $A === null
+      - pattern-not: $A !== null
+      - pattern-not: $A === "..."
+      - pattern-not: $A !== "..."
+      - pattern-not: $A === true
+      - pattern-not: $A === false
+      - pattern-not: typeof $A === "..."
+      - pattern-not: typeof $A !== "..."
+    metadata:
+      category: security
+      confidence: LOW

@@ -71,6 +71,25 @@ final class AccountDeletionAndCloudSyncResilienceTests: XCTestCase {
         )
     }
 
+    func testAccountDeletionStopsBeforeTheServerWhenTheDeviceOwnerDoesNotConfirm() async {
+        MCPCloudCredentials.clear()
+        // No saved credentials: the missing-credentials check comes first, so
+        // this only shows that a declined device check is its own error.
+        do {
+            try await AccountDeletionService.deleteAccount(confirmDevice: { _ in .declined })
+            XCTFail("Expected an error")
+        } catch let error as AccountDeletionError {
+            XCTAssertEqual(error, .notSignedIn)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(AccountDeletionError.deviceNotConfirmed.localizedDescription, "端末の認証ができなかったため、アカウントは削除していません。")
+        XCTAssertEqual(
+            AccountDeletionError.recentLoginRequired.localizedDescription,
+            "安全のため、いったんサインアウトして、もう一度サインインしてからアカウントを削除してください。"
+        )
+    }
+
     // MARK: - End-to-End Erasure of Locked Notebooks, PDF Pages, & Consent State
 
     func testAccountDeletionWorkflowErasesLockedNotebooksPDFPagesAndResetsAIConsent() async throws {
