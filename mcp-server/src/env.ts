@@ -85,6 +85,8 @@ export interface Env {
   PWNED_PASSWORDS_FETCH?: string;
   PAYWALL_ENABLED?: string;
   ARGON2_WRITE?: string;
+  /** "true": deleting the account needs a sign-in from the last 10 minutes (passkey accounts use the passkey check instead). Turn on after the app that handles `recent_login_required` is out. */
+  REQUIRE_RECENT_LOGIN_FOR_DELETION?: string;
   SESSION_MAX_DAYS?: string;
   PRIVACY_RETENTION_ENABLED?: string;
   GLOBAL_GRADING_DAILY_LIMIT?: string;

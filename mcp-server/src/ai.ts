@@ -20,6 +20,7 @@ import { sendPush } from "./push.ts";
 import { callAnthropicChat, extractDeltaText as anthropicDeltaText } from "./anthropic.ts";
 import { callOpenAIChat, callOpenAIStructured, moderationRejection, MODERATION_UNAVAILABLE, extractDeltaText as openaiDeltaText } from "./openai.ts";
 import type { Env } from "./env.ts";
+import { OPS_ALERTS, raiseAlert } from "./ops-alerts.ts";
 
 /**
  * Which chat models each plan may pick (see entitlements.ts's `getPlan` for
@@ -95,6 +96,34 @@ function isUpstreamOverloaded(status: number) {
 
 const AI_UPSTREAM_ERROR_MESSAGE = "AIとの通信でエラーが発生しました。しばらくしてから、もう一度お試しください。";
 const AI_BUSY_MESSAGE = "AIが混み合っています。少し待ってから、もう一度送信してください。";
+
+/**
+ * What goes in the log when the AI provider refuses a request: only the error's
+ * `type` and `code` (short identifiers such as "invalid_request_error"), never
+ * the body, which can quote the request. Anything that is not a short
+ * identifier is dropped.
+ */
+async function upstreamErrorKind(upstream: Response): Promise<{ errorType?: string; errorCode?: string }> {
+  try {
+    const body = await upstream.clone().json() as { error?: unknown };
+    return errorKindOf(body?.error);
+  } catch {
+    return {};
+  }
+}
+
+/** The short identifiers of a provider's error object (never its `message`, which can quote the request). */
+function errorKindOf(error: unknown): { errorType?: string; errorCode?: string } {
+  const pick = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(value) ? value : undefined;
+  const { type, code } = (error ?? {}) as { type?: unknown; code?: unknown };
+  return { errorType: pick(type), errorCode: pick(code) };
+}
+
+/** Counts a provider failure toward the hourly alert without making the request wait for Slack. */
+function alertInBackground(env: Env, ctx: ExecutionContext | undefined) {
+  const work = raiseAlert(env, OPS_ALERTS.aiUpstream);
+  if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
+}
 
 /**
  * The response for a failed upstream call. Congestion becomes one friendly
@@ -292,7 +321,8 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
 
     if (!upstream.ok || !upstream.body) {
       await gate.refund();
-      console.error(JSON.stringify({ message: "AI upstream refused", status: upstream.status, error: await upstream.clone().text().then(text => text.slice(0, 300)).catch(() => "") }));
+      console.error(JSON.stringify({ message: "AI upstream refused", status: upstream.status, ...await upstreamErrorKind(upstream) }));
+      if (upstream.status >= 500) alertInBackground(env, ctx);
       return upstreamFailureResponse(upstream);
     }
   } catch (error) {
@@ -364,7 +394,7 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
             if (event?.type === "response.failed" || event?.type === "response.incomplete" || event?.type === "error") {
               failed = true;
               // Type and error code/message only — never the content.
-              console.error(JSON.stringify({ message: "AI stream failed", type: event.type, error: event?.response?.error ?? event?.error ?? null, incomplete: event?.response?.incomplete_details ?? null }));
+              console.error(JSON.stringify({ message: "AI stream failed", type: event.type, ...errorKindOf(event?.response?.error ?? event?.error), incomplete: typeof event?.response?.incomplete_details?.reason === "string" ? event.response.incomplete_details.reason.slice(0, 64) : null }));
             }
             text = extractText(event);
           } catch {
@@ -633,7 +663,8 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
 
       if (!upstream.ok) {
         await refund();
-        console.error(JSON.stringify({ message: "AI structured upstream refused", status: upstream.status, error: await upstream.clone().text().then(text => text.slice(0, 300)).catch(() => "") }));
+        console.error(JSON.stringify({ message: "AI structured upstream refused", status: upstream.status, ...await upstreamErrorKind(upstream) }));
+        if (upstream.status >= 500) alertInBackground(env, ctx);
         await emit({ error: isUpstreamOverloaded(upstream.status) ? AI_BUSY_MESSAGE : failureMessage });
       } else {
         let buffer = "";
@@ -651,7 +682,7 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
               const event = JSON.parse(raw);
               if (event?.type === "response.failed" || event?.type === "error") {
                 upstreamError = failureMessage;
-                console.error(JSON.stringify({ message: "AI structured call failed", type: event.type, error: event?.response?.error ?? event?.error ?? null }));
+                console.error(JSON.stringify({ message: "AI structured call failed", type: event.type, ...errorKindOf(event?.response?.error ?? event?.error) }));
               }
               assembled += openaiDeltaText(event);
             } catch {
@@ -885,6 +916,7 @@ export async function handleAI(url: URL, request: Request, env: Env, key: string
     // Without this, a missing OPENAI_API_KEY surfaced as a bare 500 with no
     // hint of the cause.
     console.error(JSON.stringify({ message: "AI request failed", error: error instanceof Error ? error.message : String(error) }));
+    alertInBackground(env, ctx);
     return json({ error: "AI request failed." }, 500);
   }
 }
