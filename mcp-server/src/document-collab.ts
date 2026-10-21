@@ -290,6 +290,35 @@ export async function handleDocumentCollab(url: URL, request: Request, env: Env,
     }
   }
 
+  // The owner takes a member out of the room, or a member leaves it. Either
+  // way the member's index entry and any invitation still waiting for the room
+  // go too, so they cannot walk back in on an old offer.
+  const removeMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/participants\/([a-f0-9]{64})$/.exec(url.pathname);
+  const leaveMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/leave$/.exec(url.pathname);
+  if ((removeMatch && request.method === "DELETE") || (leaveMatch && request.method === "POST")) {
+    if (!(await withinLimit(env, "document-respond", key, RESPOND_LIMIT_PER_MINUTE))) {
+      return json({ error: "Too many attempts. Please slow down." }, 429);
+    }
+    const roomID = (removeMatch ?? leaveMatch)![1];
+    const memberKey = removeMatch ? removeMatch[2] : key;
+    try {
+      const room = env.DOCUMENT_ROOM.getByName(roomID);
+      const inviteKey = pendingInviteKey(memberKey, roomID);
+      const hadInvite = !!(await env.STUDIQUO_DATA.get(inviteKey));
+      const result = removeMatch ? await room.removeMember(key, memberKey) : await room.leave(key);
+      // Someone who was only invited, not seated, is "removed" by withdrawing the offer.
+      if (result.status === "not_found" && !hadInvite) return json({ error: "That person is not in this room." }, 404);
+      await env.STUDIQUO_DATA.delete(roomMembershipKey(memberKey, roomID));
+      await env.STUDIQUO_DATA.delete(inviteKey);
+      return json(result.status === "not_found" ? { status: "withdrawn" } : result);
+    } catch (error) {
+      const forbidden = roomForbiddenResponse(error);
+      if (forbidden) return forbidden;
+      if (error instanceof Error && error.message === "OwnerCannotLeave") return json({ error: "The owner cannot leave the room." }, 400);
+      throw error;
+    }
+  }
+
   const stateMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/state$/.exec(url.pathname);
   if (stateMatch && request.method === "GET") {
     return roomResponse(env.DOCUMENT_ROOM.getByName(stateMatch[1]).getState(key));
