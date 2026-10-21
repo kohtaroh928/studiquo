@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { quantityEvidencePresent, distinctiveTerms, termsMissingFrom } from './rag/detail-presence.ts';
+import { quantityEvidencePresent, distinctiveTerms, distinctiveLatinTerms, termsMissingFrom, withoutTerms } from './rag/detail-presence.ts';
 import { retrieve } from './rag/retrieval.ts';
 import { indexSource, accountKey } from './rag/storage.ts';
 import { qualityEnvironment, qualitySource } from './rag-quality-fixture.ts';
@@ -160,4 +160,52 @@ test('a number on an unrelated page does not rescue a question whose own page la
   assert.equal(hit.context, '');
   const stated = await ask(numbered('Hurricane Karenの最大風速は80ノットだった。', '台風の最大風速は105kt以上で猛烈な台風とされる。'), query);
   assert.equal(stated.status, 'grounded');
+});
+
+test('Latin-letter words of three or more characters are distinctive; units and short words are not', () => {
+  assert.deepEqual(distinctiveLatinTerms('ChatGPTは台風の進路予測にどう使えますか。'), ['chatgpt']);
+  assert.deepEqual(distinctiveLatinTerms('GPS衛星とT2401号の関係は？'), ['gps']);
+  assert.deepEqual(distinctiveLatinTerms('ABC12.3についてもっと詳しく'), ['abc']);
+  assert.deepEqual(distinctiveLatinTerms('中層は何hPaで、風は何ktですか。'), []);
+  assert.deepEqual(distinctiveLatinTerms('AIで予報する方法'), []);
+  assert.deepEqual(distinctiveLatinTerms('Hurricane Karenの分類'), ['hurricane', 'karen']);
+  assert.deepEqual(distinctiveLatinTerms('ＧＰＳの仕組み'), ['gps']);
+  assert.deepEqual(distinctiveLatinTerms('https://example.com の説明'), ['example']);
+});
+
+test('a Latin-letter word counts as missing only when no text has it, whatever its case', () => {
+  assert.deepEqual(termsMissingFrom('TensorFlowとPythonで台風を予測する方法は？', ['台風は熱帯の低気圧。', 'Pythonは言語である。']), ['tensorflow']);
+  assert.deepEqual(termsMissingFrom('JTWCの役割は？', ['Joint Typhoon Warning Center: jtwc が発表する。']), []);
+  assert.deepEqual(termsMissingFrom('ラニーニャとPythonの関係は？', ['エルニーニョ。']), ['ラニーニャ', 'python']);
+  assert.equal(withoutTerms('TensorFlowで台風を予測する方法は？', ['tensorflow']).includes('tensorflow'), false);
+});
+
+test('a product name the library never mentions cannot be answered from nearby pages', async () => {
+  const query = 'TensorFlowで台風の進路を予測する方法を教えてください。';
+  const absent = await ask(numbered('気温の単位は摂氏である。', '台風は熱帯の海上で発生する低気圧である。台風の進路は偏西風と太平洋高気圧の影響を受ける。'), query);
+  assert.deepEqual(absent.citations, []);
+  assert.equal(absent.context, '');
+  const present = await ask(numbered('気温の単位は摂氏である。', 'TensorFlowは機械学習の道具で、台風の進路の予測にも使われる。'), query);
+  assert.equal(present.status, 'grounded');
+  assert.ok(present.citations.some((c: any) => c.pageNumber === 2));
+});
+
+test('a Latin-letter alias of a term the library writes in katakana is kept when both searches agree', async () => {
+  const answer = 'リッジは高気圧性の曲率をもつ、等高度線が極側に張り出した場所である。';
+  const query = 'ridgeとはどのような場所のことですか。';
+  const agree = await ask(numbered(answer, '気温の単位は摂氏である。'), query);
+  assert.equal(agree.status, 'grounded');
+  assert.ok(agree.citations.some((c: any) => c.pageNumber === 1));
+});
+
+test('a failed library check never removes evidence for a Latin-letter word either', async () => {
+  const pages = numbered('気温の単位は摂氏である。', 'TensorFlowは機械学習の道具で、台風の進路の予測にも使われる。');
+  const hit = await ask(pages, 'TensorFlowで台風の進路を予測する方法を教えてください。', 'synthetic-user', (env: any) => {
+    const original = env.ADMIN_DB.prepare;
+    env.ADMIN_DB.prepare = (sql: string) => {
+      if (sql.includes('instr(lower(c.text)')) throw new Error('library check unavailable');
+      return original(sql);
+    };
+  });
+  assert.equal(hit.status, 'grounded');
 });
