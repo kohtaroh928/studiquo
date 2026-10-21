@@ -8,6 +8,12 @@ import type { Env } from "./env.ts";
 
 export const ALERT_WINDOW_SECONDS = 3_600;
 
+/** counter name -> the clock hour in which this isolate already settled its alert. */
+const settledThisHour = new Map<string, number>();
+
+/** For tests: forget which alerts this isolate has settled. */
+export function forgetSettledAlerts() { settledThisHour.clear(); }
+
 /** KV key the hourly cron writes on every run; /health reports its age so an outside monitor can notice a stopped schedule. */
 export const CRON_HEARTBEAT_KEY = "ops:cron-last-run";
 
@@ -19,8 +25,13 @@ export const CRON_HEARTBEAT_KEY = "ops:cron-last-run";
  */
 export async function countAndAlert(env: Env, counterName: string, threshold: number, title: string, detail: string) {
   const hour = Math.floor(Date.now() / (ALERT_WINDOW_SECONDS * 1000));
+  // Once this isolate has seen the alert go out (or lose the race to post it)
+  // for this hour, further events cost nothing: a flood of errors must not
+  // become a flood of Durable Object calls.
+  if (settledThisHour.get(counterName) === hour) return;
   const withinThreshold = await env.RATE_COUNTER.getByName(`${counterName}:${hour}`).bump(threshold, ALERT_WINDOW_SECONDS);
   if (withinThreshold) return;
+  settledThisHour.set(counterName, hour);
   const first = await env.RATE_COUNTER.getByName(`${counterName}:${hour}:alerted`).bump(1, ALERT_WINDOW_SECONDS);
   if (!first) return;
   await postSlackBlocks(env, [

@@ -3118,6 +3118,7 @@ const ROUTES: Array<[RouteAuth, string, string]> = [
   ["bearer", "POST", "/api/session/refresh"],
   ["bearer", "PUT", "/api/snapshot"],
   ["bearer", "GET", "/api/actions"],
+  ["bearer", "DELETE", "/api/actions"],
   ["bearer", "GET", "/api/plan"],
   // apps connected through MCP
   ["bearer", "POST", "/api/mcp/pairing-code"],

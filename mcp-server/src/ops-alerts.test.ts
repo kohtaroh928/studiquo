@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { OPS_ALERTS, countAndAlert, raiseAlert } from "./ops-alerts.ts";
+import { OPS_ALERTS, countAndAlert, forgetSettledAlerts, raiseAlert } from "./ops-alerts.ts";
 import { partialEnv } from "./test-env.ts";
 
 function fakeEnv({ webhook = "https://hooks.example.test/slack", broken = false } = {}) {
+  forgetSettledAlerts();
   const counts = new Map<string, number>();
   return partialEnv({
     SLACK_ISSUE_REPORT_WEBHOOK_URL: webhook || undefined,
@@ -71,3 +72,15 @@ test("no alert text carries an address, token or other personal value", () => {
     assert.ok(alert.threshold >= 0 && alert.detail.length > 20);
   }
 });
+
+test("once an alert has gone out this hour, a flood of further events makes no more counter calls", () => captureSlack(async sent => {
+  let calls = 0;
+  const env = fakeEnv();
+  const inner = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
+  env.RATE_COUNTER = { getByName(name: string) { calls += 1; return inner(name); } } as typeof env.RATE_COUNTER;
+  await raiseAlert(env, OPS_ALERTS.retentionBacklog);
+  const after = calls;
+  for (let i = 0; i < 50; i++) await raiseAlert(env, OPS_ALERTS.retentionBacklog);
+  assert.equal(calls, after);
+  assert.equal(sent.length, 1);
+}));
