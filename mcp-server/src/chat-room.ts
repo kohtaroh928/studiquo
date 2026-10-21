@@ -519,6 +519,12 @@ export class ChatRoom extends DurableObject<Env> {
   // database id, which meant nothing outside the sender's own device.
   async storeAttachment(userKey: string, contentType: unknown, base64Data: unknown) {
     this.requireOpen(userKey);
+    // Same gate as sendMessage: someone the other side has blocked gets no
+    // storage in that side's room.
+    if (!this.isGroupRoom()) {
+      const other = this.otherParticipant(userKey);
+      if (other && this.isBlockedBy(other)) throw new Error("Blocked");
+    }
     const type = String(contentType ?? "").slice(0, 100);
     if (!CONTENT_TYPE_PATTERN.test(type)) throw new Error("InvalidContentType");
     const data = String(base64Data ?? "");
