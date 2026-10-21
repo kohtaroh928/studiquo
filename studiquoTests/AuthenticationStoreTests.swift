@@ -166,7 +166,7 @@ final class AuthenticationStoreTests: XCTestCase {
 
         let tooShort = await store.changePendingPassword("short", code: "123456")
         XCTAssertFalse(tooShort)
-        XCTAssertEqual(store.errorMessage, "パスワードは8文字以上にしてください。")
+        XCTAssertEqual(store.errorMessage, "パスワードは12文字以上にしてください。")
         let unchanged = await store.changePendingPassword("password-from-a-leak", code: "123456")
         XCTAssertFalse(unchanged)
         XCTAssertEqual(store.errorMessage, "同じパスワードです。別のパスワードを入力してください。")

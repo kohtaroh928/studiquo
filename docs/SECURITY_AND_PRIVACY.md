@@ -230,7 +230,7 @@ AI機能では、操作に応じて次の情報が端末外へ出る。
 - 画像は長辺を制限し、最大枚数とrequest sizeを制限する。
 - AIへのsystem instructionと利用者コンテンツを区切り、prompt delimiterを無害化する。
 - AI出力は信頼せず、JSON schema、型、文字数を検証してから保存・表示する。
-- AI要求本文、画像、API keyをアプリログ、Workerログ、エラーreportへ記録しない。(例外: OpenAIがエラーを返したとき、そのエラー応答の本文を最大300文字までWorkerログに出す箇所がある(`ai.ts`)。応答は要求本文の再掲を含まない想定だが、含まないことは確認していない。)
+- AI要求本文、画像、API keyをアプリログ、Workerログ、エラーreportへ記録しない。(OpenAIがエラーを返したときは、エラーの`type`と`code`(短い識別子だけ)をWorkerログに出し、応答の本文は出さない。`ai.ts`の`upstreamErrorKind`)。
 - provider、model、送信項目を増やす変更では、アプリ内開示、プライバシーポリシー、App Store申告を同時に更新する。
 
 同意は`openai-v1`として端末に保存し、APIヘッダーにも付与する。旧booleanの確認済み状態は同意とみなさない。取消し時に翌日復習も停止する。`AI_PROVIDER_APPROVED`は既定falseで、対象年齢・訓練利用・保持条件の承認がない限り送信を拒否する。
