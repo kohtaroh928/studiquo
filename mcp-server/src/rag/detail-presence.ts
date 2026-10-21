@@ -10,6 +10,8 @@ const amount = (unit: string) => new RegExp(`${NUMBER}[\\d.,]*\\s*${unit}`, 'u')
 // Longer units come first in the list only for readability; every entry is tested.
 const ASKED_UNITS: { ask: RegExp; have: RegExp }[] = [
   { ask: /何\s*(?:%|パーセント|割)/u, have: amount('(?:%|パーセント|割)') },
+  // Money: any scale answers a question about money (5826億円 answers 何万円), so the scale is optional on both sides.
+  { ask: /何\s*(?:[億万千兆])?\s*(?:円|ドル)(?![かも])/u, have: amount('(?:[億万千兆])?\\s*(?:円|ドル)') },
   { ask: /何\s*件(?![かも])/u, have: amount('件') },
   { ask: /何\s*(?:人|名)(?![かも])/u, have: amount('(?:人|名)') },
   { ask: /何\s*回(?![かも])/u, have: amount('回') },
@@ -38,14 +40,35 @@ const ANY_NUMBER = new RegExp(NUMBER, 'u');
 
 const fold = (text: unknown) => String(text).normalize('NFKC').toLowerCase();
 
+export type Excerpt = { text: string; primary?: boolean };
+
+// Words that are unit names, not what the question is about.
+const UNIT_WORDS = new Set(['hpa', 'kt', 'knot', 'km', 'kg', 'cm', 'mm']);
+
+// Latin and katakana words that name what the question is about (a storm, a person, a device).
+function subjectTokens(query: unknown) {
+  const latin = (fold(query).match(/[a-z]{3,}/gu) ?? []).filter(t => !UNIT_WORDS.has(t));
+  return [...new Set([...latin, ...distinctiveTerms(query).map(t => fold(stem(t)))])];
+}
+
 // Does the evidence contain the kind of number the question asks for?
 // Several asked units are alternatives: one matching unit is enough.
-export function quantityEvidencePresent(query: unknown, evidence: unknown) {
+// `tied` also requires that number to sit in the top-ranked excerpt or in an excerpt that
+// names the question's subject, so a unit on an unrelated page cannot stand in for the answer.
+// Pass a plain string, or excerpts in rank order with the first marked `primary`.
+export function quantityEvidencePresent(query: unknown, evidence: string | Excerpt[], options: { tied?: boolean } = {}) {
   const ask = fold(query);
-  const text = fold(evidence);
+  const excerpts: Excerpt[] = typeof evidence === 'string' ? [{ text: evidence, primary: true }] : evidence;
+  const folded = excerpts.map(e => ({ text: fold(e.text), primary: !!e.primary }));
   const asked = ASKED_UNITS.filter(u => u.ask.test(ask));
-  if (asked.length) return asked.some(u => u.have.test(text));
-  if (ASKED_QUANTITY.test(ask)) return ANY_NUMBER.test(text);
+  if (asked.length) {
+    const carrying = folded.filter(e => asked.some(u => u.have.test(e.text)));
+    if (!carrying.length) return false;
+    if (!options.tied) return true;
+    const subjects = subjectTokens(query);
+    return carrying.some(e => e.primary || subjects.some(t => e.text.includes(t)));
+  }
+  if (ASKED_QUANTITY.test(ask)) return folded.some(e => ANY_NUMBER.test(e.text));
   return true;
 }
 
