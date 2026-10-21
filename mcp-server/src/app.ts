@@ -335,6 +335,8 @@ async function handleMCP(request: Request, env: Env) {
   return transport.handleRequest(request);
 }
 
+const heartbeatMemo = new WeakMap<object, { readAt: number; last: number }>();
+
 const handler = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     try {
@@ -344,9 +346,16 @@ const handler = {
         const stopped = [...disabledFeatures(env)];
         // Seconds since the hourly cron last ran (absent if it never has, or KV is unreachable).
         // An outside monitor should alert when this passes ~2 hours (docs/MONITORING.md).
+        // The KV read is remembered for 30 s per isolate, so a monitor (or anyone) polling
+        // this unauthenticated route does not turn into KV reads.
         let cronAgeSeconds: number | undefined;
         try {
-          const last = Number(await env.STUDIQUO_DATA?.get(CRON_HEARTBEAT_KEY));
+          let memo = heartbeatMemo.get(env);
+          if (!memo || Date.now() - memo.readAt > 30_000) {
+            memo = { readAt: Date.now(), last: Number(await env.STUDIQUO_DATA?.get(CRON_HEARTBEAT_KEY)) };
+            heartbeatMemo.set(env, memo);
+          }
+          const last = memo.last;
           if (Number.isFinite(last) && last > 0) cronAgeSeconds = Math.max(0, Math.round((Date.now() - last) / 1000));
         } catch { /* health must answer even when KV does not */ }
         return json({ ok: true, service: "studiquo-mcp", ...(stopped.length ? { disabledFeatures: stopped } : {}), ...(cronAgeSeconds !== undefined ? { cronAgeSeconds } : {}) });

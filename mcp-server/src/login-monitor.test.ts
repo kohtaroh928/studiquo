@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { forgetSettledAlerts } from "./ops-alerts.ts";
 import { MONITOR, noteSignInContext, recordLoginOutcome, requestContext, touchSeenContext } from "./login-monitor.ts";
 import { partialEnv } from "./test-env.ts";
 
@@ -46,6 +47,7 @@ test("requestContext needs both country and ASN, and never exposes the IP", () =
 // MARK: - fakes
 
 function fakeEnv() {
+  forgetSettledAlerts();
   const counts = new Map();
   const seen = new Map();
   const env = partialEnv({

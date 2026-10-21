@@ -3,6 +3,7 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { sha256Hex } from "./auth.ts";
+import { forgetSettledAlerts } from "./ops-alerts.ts";
 import { runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.ts";
 import { deleteAccount, startAccountDeletion } from "./account-deletion.ts";
 import { handleAdminWebhook } from "./admin.ts";
@@ -64,6 +65,7 @@ test("180-day aggregates expire with linked accounts and sweeps have bounded bat
 });
 
 test("a retention backlog that one run cannot clear alerts Slack once", async () => {
+  forgetSettledAlerts();
   const env = environment(); const now = Date.now();
   const counts = new Map<string, number>();
   env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.example.test/slack";

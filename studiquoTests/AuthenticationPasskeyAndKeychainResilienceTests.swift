@@ -98,6 +98,10 @@ final class AuthenticationPasskeyAndKeychainResilienceTests: XCTestCase {
         XCTAssertFalse(overLimitEmail)
         XCTAssertEqual(store.errorMessage, "正しいメールアドレスを入力してください。")
 
+        let elevenCharacters = await store.beginAccountCreation(email: "user@example.com", password: "12345678901")
+        XCTAssertFalse(elevenCharacters, "11文字はまだ短い(最小は12文字)")
+        XCTAssertEqual(store.errorMessage, "パスワードは12文字以上にしてください。")
+
         let shortPassword = await store.beginAccountCreation(email: "user@example.com", password: "1234567")
         XCTAssertFalse(shortPassword)
         XCTAssertEqual(store.errorMessage, "パスワードは12文字以上にしてください。")

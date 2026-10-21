@@ -98,14 +98,6 @@ const AI_UPSTREAM_ERROR_MESSAGE = "AIとの通信でエラーが発生しまし�
 const AI_BUSY_MESSAGE = "AIが混み合っています。少し待ってから、もう一度送信してください。";
 
 /**
- * The response for a failed upstream call. Congestion becomes one friendly
- * Japanese message with a 503 — it used to pass the provider's English
- * "high demand" text straight through, and a provider 429
- * (their quota) was indistinguishable from this Worker's own daily-limit 429
- * (ours, "今日のAI利用回数の上限…"). Anything else keeps the upstream text.
- */
-
-/**
  * What goes in the log when the AI provider refuses a request: only the error's
  * `type` and `code` (short identifiers such as "invalid_request_error"), never
  * the body, which can quote the request. Anything that is not a short
@@ -113,12 +105,18 @@ const AI_BUSY_MESSAGE = "AIが混み合っています。少し待ってから�
  */
 async function upstreamErrorKind(upstream: Response): Promise<{ errorType?: string; errorCode?: string }> {
   try {
-    const body = await upstream.clone().json() as { error?: { type?: unknown; code?: unknown } };
-    const pick = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(value) ? value : undefined;
-    return { errorType: pick(body?.error?.type), errorCode: pick(body?.error?.code) };
+    const body = await upstream.clone().json() as { error?: unknown };
+    return errorKindOf(body?.error);
   } catch {
     return {};
   }
+}
+
+/** The short identifiers of a provider's error object (never its `message`, which can quote the request). */
+function errorKindOf(error: unknown): { errorType?: string; errorCode?: string } {
+  const pick = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(value) ? value : undefined;
+  const { type, code } = (error ?? {}) as { type?: unknown; code?: unknown };
+  return { errorType: pick(type), errorCode: pick(code) };
 }
 
 /** Counts a provider failure toward the hourly alert without making the request wait for Slack. */
@@ -127,6 +125,13 @@ function alertInBackground(env: Env, ctx: ExecutionContext | undefined) {
   if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
 }
 
+/**
+ * The response for a failed upstream call. Congestion becomes one friendly
+ * Japanese message with a 503 — it used to pass the provider's English
+ * "high demand" text straight through, and a provider 429
+ * (their quota) was indistinguishable from this Worker's own daily-limit 429
+ * (ours, "今日のAI利用回数の上限…"). Anything else keeps the upstream text.
+ */
 async function upstreamFailureResponse(upstream: Response) {
   await upstream.body?.cancel().catch(() => {});
   if (isUpstreamOverloaded(upstream.status)) return json({ error: AI_BUSY_MESSAGE }, 503);
@@ -389,7 +394,7 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
             if (event?.type === "response.failed" || event?.type === "response.incomplete" || event?.type === "error") {
               failed = true;
               // Type and error code/message only — never the content.
-              console.error(JSON.stringify({ message: "AI stream failed", type: event.type, error: event?.response?.error ?? event?.error ?? null, incomplete: event?.response?.incomplete_details ?? null }));
+              console.error(JSON.stringify({ message: "AI stream failed", type: event.type, ...errorKindOf(event?.response?.error ?? event?.error), incomplete: typeof event?.response?.incomplete_details?.reason === "string" ? event.response.incomplete_details.reason.slice(0, 64) : null }));
             }
             text = extractText(event);
           } catch {
@@ -677,7 +682,7 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
               const event = JSON.parse(raw);
               if (event?.type === "response.failed" || event?.type === "error") {
                 upstreamError = failureMessage;
-                console.error(JSON.stringify({ message: "AI structured call failed", type: event.type, error: event?.response?.error ?? event?.error ?? null }));
+                console.error(JSON.stringify({ message: "AI structured call failed", type: event.type, ...errorKindOf(event?.response?.error ?? event?.error) }));
               }
               assembled += openaiDeltaText(event);
             } catch {

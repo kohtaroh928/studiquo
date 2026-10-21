@@ -21,16 +21,17 @@
 | スナップショットの保存失敗 | 5件 | `app.ts` | RB-07。KVの上限・障害 |
 | プライバシー保持ジョブの滞留 | 1件(その時間に最初の1回) | `privacy-retention.ts` | RB-08 |
 | 削除ジョブの再試行の失敗 | 3件 | 同上 | RB-08 |
-| 外部サービス(RevenueCat)の削除予約があるが`REVENUECAT_SECRET_API_KEY`が未設定 | 1件 | 同上 | キーを設定する(付録A-1) |
+| 外部サービス(RevenueCat)の削除予約があるが`REVENUECAT_SECRET_API_KEY`が未設定 | 1件 | 同上 | キーを設定する(付録A-1)。**ステージングでキーを置かずに予約が残ると、毎時鳴る**(置くか、予約を消す) |
 | MCPのリフレッシュトークンの再利用 | 2件 | `mcp-oauth.ts` | RB-10。トークン盗難の可能性 |
 | 問題報告・アプリの自動エラー | 受信ごと | `issue-reports.ts`、`app-errors.ts` | 管理画面で確認 |
 
 ## 稼働の監視(Workerの外から見る)
 
-- `GET https://api.studiquo.app/health` が `200` であること。応答に `cronAgeSeconds`(毎時のcronが最後に動いてからの秒数)が出る。
+- `GET https://api.studiquo.app/health` が `200` であること。**監視の間隔は数分おき(5分程度)にする**(`cronAgeSeconds`のためのKV読み取りは、Workerごとに30秒だけ覚えるが、認証の前の経路なので、短い間隔で叩かない)。応答に `cronAgeSeconds`(毎時のcronが最後に動いてからの秒数)が出る。
 - **外部の死活監視(UptimeRobot、Better Stack、Cloudflare Health Checksなど)で次を設定する(未設定)**:
   - `/health` が200でない、または応答が遅い → 通知。
-  - `cronAgeSeconds` が **7200(2時間)** を超える → cronが止まっている。削除ジョブと保持期間処理が止まっているので、RB-08。
+  - `cronAgeSeconds` が **7200(2時間)** を超える、**または `cronAgeSeconds` の項目が応答に無い**(最後の実行から30日たつと記録が消える。配備直後の最初の1時間も無い) → cronが止まっている。削除ジョブと保持期間処理が止まっているので、RB-08。
+  - 本番だけを対象にする。ステージングはcronを動かさない(`wrangler.jsonc`の`env.staging`の`crons`が空)ので、項目が常に無く、誤報になる。
   - 通知先は連絡先表([RUNBOOK RB-19](RUNBOOK.md#rb-19-通知義務の確認項目責任者が専門家に確認する))の技術担当。
 - cronが止まったことは、cron自身ではアラートできない(止まっているため)。外部監視が必須。
 

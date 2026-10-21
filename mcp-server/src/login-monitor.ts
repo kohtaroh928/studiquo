@@ -19,7 +19,6 @@ import { featureDisabled } from "./features.ts";
 import type { Env } from "./env.ts";
 
 export const MONITOR = {
-  windowSeconds: 3_600,
   // Wrong-password and wait-refused local logins per window before alerting.
   // Counted separately so hammering one account (all "throttled") can't be
   // used to set off, and thereby mask, the failure alert.
