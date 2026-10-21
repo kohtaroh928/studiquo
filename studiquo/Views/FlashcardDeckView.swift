@@ -46,6 +46,53 @@ enum FlashcardStudyLogic {
     }
 }
 
+/// Card creation and ordering for the editor, kept out of the view so it can
+/// be tested against an in-memory deck.
+enum FlashcardEditing {
+    /// A card needs both sides to have something besides whitespace.
+    static func isValid(question: String, answer: String) -> Bool {
+        !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Appends recognized text on its own line. Returns whether anything was added.
+    static func appendRecognizedText(_ text: String?, to field: inout String) -> Bool {
+        guard let text else { return false }
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return false }
+        if !field.isEmpty, !field.hasSuffix("\n") { field += "\n" }
+        field += value
+        return true
+    }
+
+    /// Adds a trimmed card at the end of the deck, or `nil` if either side is blank.
+    @discardableResult
+    static func makeCard(question: String, answer: String, in deck: FlashcardDeck, at date: Date = .now) -> Flashcard? {
+        guard isValid(question: question, answer: answer) else { return nil }
+        let card = Flashcard(
+            question: question.trimmingCharacters(in: .whitespacesAndNewlines),
+            answer: answer.trimmingCharacters(in: .whitespacesAndNewlines),
+            order: deck.sortedCards.count
+        )
+        card.deck = deck
+        deck.addCard(card)
+        deck.updatedAt = date
+        return card
+    }
+
+    static func move(from offsets: IndexSet, to destination: Int, in deck: FlashcardDeck, at date: Date = .now) {
+        var cards = deck.sortedCards
+        cards.move(fromOffsets: offsets, toOffset: destination)
+        for (index, card) in cards.enumerated() { card.order = index }
+        deck.updatedAt = date
+    }
+
+    static func renumber(_ deck: FlashcardDeck, at date: Date = .now) {
+        for (index, card) in deck.sortedCards.enumerated() { card.order = index }
+        deck.updatedAt = date
+    }
+}
+
 /// The full-screen counterpart to `ProtectedNotebookView`: shown in
 /// `ContentView`'s detail pane, below the same tab bar notebooks use, when a
 /// deck is selected from Home. Unlike a notebook's editor it has no ink
@@ -488,8 +535,7 @@ struct FlashcardEditorContent: View {
     @State private var answerDropFrame: CGRect = .zero
 
     private var canCreateCard: Bool {
-        !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        FlashcardEditing.isValid(question: question, answer: answer)
     }
 
     var body: some View {
@@ -584,26 +630,14 @@ struct FlashcardEditorContent: View {
 
     private func createCard() {
         guard canCreateCard else { return }
-        let card = Flashcard(
-            question: question.trimmingCharacters(in: .whitespacesAndNewlines),
-            answer: answer.trimmingCharacters(in: .whitespacesAndNewlines),
-            order: deck.sortedCards.count
-        )
-        card.deck = deck
-        deck.addCard(card)
-        deck.updatedAt = .now
+        guard let card = FlashcardEditing.makeCard(question: question, answer: answer, in: deck) else { return }
         modelContext.insert(card)
         question = ""
         answer = ""
     }
 
     private func appendRecognizedText(_ text: String?, to field: inout String) -> Bool {
-        guard let text else { return false }
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return false }
-        if !field.isEmpty, !field.hasSuffix("\n") { field += "\n" }
-        field += value
-        return true
+        FlashcardEditing.appendRecognizedText(text, to: &field)
     }
 
     private func delete(_ card: Flashcard) {
@@ -613,15 +647,11 @@ struct FlashcardEditorContent: View {
     }
 
     private func moveCards(from offsets: IndexSet, to destination: Int) {
-        var cards = deck.sortedCards
-        cards.move(fromOffsets: offsets, toOffset: destination)
-        for (index, card) in cards.enumerated() { card.order = index }
-        deck.updatedAt = .now
+        FlashcardEditing.move(from: offsets, to: destination, in: deck)
     }
 
     private func reorderCards() {
-        for (index, card) in deck.sortedCards.enumerated() { card.order = index }
-        deck.updatedAt = .now
+        FlashcardEditing.renumber(deck)
     }
 
 }
@@ -634,8 +664,7 @@ private struct FlashcardEditView: View {
     @State private var answer = ""
 
     private var canSave: Bool {
-        !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        FlashcardEditing.isValid(question: question, answer: answer)
     }
 
     var body: some View {
