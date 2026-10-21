@@ -35,6 +35,17 @@ schemes:
       config: Debug
     archive:
       config: Release
+  # UIテスト専用。studiquo スキームのテストは単体テストだけにして日常の実行を軽くし、
+  # UIテストは `xcodebuild test -scheme studiquoUITests -only-testing:studiquoUITests/<クラス>` で動かす。
+  studiquoUITests:
+    build:
+      targets:
+        studiquo: all
+        studiquoUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - studiquoUITests
 targets:
   studiquo:
     type: application
