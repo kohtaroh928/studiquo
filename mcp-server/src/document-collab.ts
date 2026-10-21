@@ -307,9 +307,11 @@ export async function handleDocumentCollab(url: URL, request: Request, env: Env,
       const hadInvite = !!(await env.STUDIQUO_DATA.get(inviteKey));
       const result = removeMatch ? await room.removeMember(key, memberKey) : await room.leave(key);
       // Someone who was only invited, not seated, is "removed" by withdrawing the offer.
-      if (result.status === "not_found" && !hadInvite) return json({ error: "That person is not in this room." }, 404);
+      // Cleaned up even when the room had no seat for them, so a retry after a
+      // failed cleanup finishes the job instead of answering 404 forever.
       await env.STUDIQUO_DATA.delete(roomMembershipKey(memberKey, roomID));
       await env.STUDIQUO_DATA.delete(inviteKey);
+      if (result.status === "not_found" && !hadInvite) return json({ error: "That person is not in this room." }, 404);
       return json(result.status === "not_found" ? { status: "withdrawn" } : result);
     } catch (error) {
       const forbidden = roomForbiddenResponse(error);
