@@ -1441,6 +1441,75 @@ test("uploading a photo through a group-avatar URL that actually names a direct 
   assert.equal(response.status, 400);
 });
 
+test("group-only actions aimed at a direct chat are refused as not a group, and change nothing", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "gx1");
+  const directRoomID = (await friends(env, alice.token)).find((friend: Untyped) => friend.code === bob.code).roomID;
+  const notAGroup = { error: "This is not a group." };
+
+  const invite = await inviteToGroup(env, alice.token, directRoomID, carol.code);
+  assert.equal(invite.status, 400);
+  assert.deepEqual(await invite.json(), notAGroup);
+  const rename = await renameGroup(env, alice.token, directRoomID, "改名");
+  assert.equal(rename.status, 400);
+  assert.deepEqual(await rename.json(), notAGroup);
+  const remove = await removeGroupMember(env, alice.token, directRoomID, bob.code);
+  assert.equal(remove.status, 400);
+  assert.deepEqual(await remove.json(), notAGroup);
+  const avatar = await downloadGroupAvatar(env, alice.token, directRoomID);
+  assert.equal(avatar.status, 400);
+
+  assert.equal((await friends(env, alice.token)).some((friend: Untyped) => friend.code === bob.code), true, "the friendship is untouched");
+  assert.deepEqual(await groupInvites(env, carol.token), [], "nobody was invited to anything");
+});
+
+test("renaming a group to a blank name is refused and the name stays", async () => {
+  const env = environment();
+  const { alice } = await threeMutualFriends(env, "gx2");
+  const created = await (await createGroup(env, alice.token, "元の名前", [])).json();
+  for (const name of ["", "   "]) {
+    const response = await renameGroup(env, alice.token, created.roomID, name);
+    assert.equal(response.status, 400, JSON.stringify(name));
+    assert.deepEqual(await response.json(), { error: "Group name is required." });
+  }
+  assert.equal((await groups(env, alice.token))[0].name, "元の名前");
+});
+
+test("someone outside a group can neither invite to it, rename it, remove from it nor read its photo", async () => {
+  const env = environment();
+  const { alice, bob, carol } = await threeMutualFriends(env, "gx3");
+  const created = await (await createGroup(env, alice.token, "内輪", [])).json();
+  const denied = { error: "You are not a member of this group." };
+  for (const response of [
+    await inviteToGroup(env, bob.token, created.roomID, carol.code),
+    await renameGroup(env, bob.token, created.roomID, "乗っ取り"),
+    await removeGroupMember(env, bob.token, created.roomID, alice.code),
+    await downloadGroupAvatar(env, bob.token, created.roomID),
+  ]) {
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), denied);
+  }
+  assert.equal((await groups(env, alice.token))[0].name, "内輪");
+  assert.equal((await groups(env, alice.token))[0].members.length, 1);
+  assert.deepEqual(await groupInvites(env, carol.token), []);
+});
+
+test("a group the room no longer lists the person in is left out of their group list instead of failing it", async () => {
+  const env = environment();
+  const { alice, bob } = await threeMutualFriends(env, "gx4");
+  const kept = await (await createGroup(env, alice.token, "残る", [bob.code])).json();
+  const gone = await (await createGroup(env, alice.token, "消える", [bob.code])).json();
+  await acceptGroupInvite(env, bob.token, kept.roomID);
+  await acceptGroupInvite(env, bob.token, gone.roomID);
+  const aliceKey = await env.STUDIQUO_DATA.get(`chat:code:${alice.code}`);
+  const bobKey = await env.STUDIQUO_DATA.get(`chat:code:${bob.code}`);
+  // The room forgets Bob while his own list still names it (the two are updated by separate calls).
+  await env.CHAT_ROOM.getByName(gone.roomID).removeParticipant(aliceKey, bobKey);
+  const response = await worker.fetch(request("/api/chat/groups", { token: bob.token }), env, noopCtx);
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).map((group: Untyped) => group.roomID), [kept.roomID]);
+});
+
 test("group photo uploads are rate-limited the same way other attachment uploads are", async () => {
   const env = environment();
   const { alice, bob, carol } = await threeMutualFriends(env, "ga8");
