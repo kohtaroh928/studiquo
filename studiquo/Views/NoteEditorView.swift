@@ -388,6 +388,20 @@ struct NoteEditorView: View {
     /// dialogs do not force Swift to type-check the whole screen as one
     /// expression.
     private var editorCanvas: some View {
+        editorWithOverlays(
+            editorWithLifecycle(
+                editorWithReceivers(
+                    editorWithDialogs(
+                        editorWithSheets(
+                            editorWithNavigation(editorBase)
+                        )
+                    )
+                )
+            )
+        )
+    }
+
+    private var editorBase: some View {
         GeometryReader { geometry in
             let editorFrame = geometry.frame(in: .global)
             ZStack {
@@ -465,6 +479,10 @@ struct NoteEditorView: View {
                 updateOrientation(for: newSize)
             }
         }
+    }
+
+    private func editorWithNavigation(_ content: some View) -> some View {
+        content
         .navigationTitle(primaryFlashcardDeck?.title ?? displayedPrimaryNotebook.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
@@ -487,6 +505,10 @@ struct NoteEditorView: View {
             document: $pdfExportDocument,
             filename: pdfExportFilename
         ))
+    }
+
+    private func editorWithSheets(_ content: some View) -> some View {
+        content
         .sheet(isPresented: $showsStudySession) {
             StudySessionView(notebook: notebook)
         }
@@ -533,6 +555,10 @@ struct NoteEditorView: View {
         .sheet(isPresented: $showsDeletePagePicker) {
             PageDeletionPicker(notebook: activeNotebook, currentPageIndex: activePageIndexBinding)
         }
+    }
+
+    private func editorWithDialogs(_ content: some View) -> some View {
+        content
         .confirmationDialog(
             "「\(notebookPendingTrash?.title ?? "ノート")」をゴミ箱に移動しますか？",
             isPresented: Binding(
@@ -602,6 +628,10 @@ struct NoteEditorView: View {
                 Task { await applyBackgroundImage(from: data) }
             }
         }
+    }
+
+    private func editorWithReceivers(_ content: some View) -> some View {
+        content
         .onChange(of: notebook.sortedPages.count) { _, count in
             primaryPageIndex = clamped(primaryPageIndex, pageCount: count)
             notebook.refreshLibraryMetadata()
@@ -625,6 +655,10 @@ struct NoteEditorView: View {
             secondaryPageIndex = clamped(secondaryPageIndex, pageCount: count ?? 0)
             secondaryNotebook?.refreshLibraryMetadata()
         }
+    }
+
+    private func editorWithLifecycle(_ content: some View) -> some View {
+        content
         .onAppear {
             splitState.isSplit = splitMode != .single
             aiChat.loadThreads()
@@ -661,6 +695,10 @@ struct NoteEditorView: View {
             if notebook.isLocked { NotebookEncryptionService.lock(notebook) }
             NotebookBackupService.saveAutomaticBackup(for: notebook)
         }
+    }
+
+    private func editorWithOverlays(_ content: some View) -> some View {
+        content
         .overlay(alignment: .top) {
             if isRecognizingHandwriting {
                 HStack(spacing: 10) {
@@ -705,6 +743,7 @@ struct NoteEditorView: View {
             onSelect: openAIChatThread
         ))
     }
+
 
     var body: some View { editorCanvas }
 
