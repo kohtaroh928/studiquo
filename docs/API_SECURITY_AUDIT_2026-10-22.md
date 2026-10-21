@@ -1,0 +1,66 @@
+# Worker API セキュリティ監査(2026-10-22)
+
+対象: `main` の `ff8c64f` 時点の `mcp-server/src`(Cloudflare Worker)。方法は、領域別に分けた3つの読み取り専用レビュー(認可・IDOR / 認証・管理・課金 / AI・資源消費・依存)。既存の[THREAT_MODEL.md](THREAT_MODEL.md)と[SECURITY_VERIFICATION.md](SECURITY_VERIFICATION.md)に載っている既知事項は重ねていない。
+
+## この監査の限界
+
+- コードの読み取りが根拠。**攻撃の再現は未実施**(ステージングでの2アカウント検査も未実施)。確証度は各行の「確認」欄に書く。
+- 「コードで確認」は、指摘の前提となる分岐を読んで確かめたこと。外部サービスの仕様に依る点は「推測」とする。
+- Critical は無し。**High 1件、Medium 6件、Low 多数**。
+
+## 指摘一覧
+
+| ID | 深刻度 | 内容 | 場所 | 確認 |
+|---|---|---|---|---|
+| AI-1 | High | 出力が上限で途中打ち切り(`response.incomplete`)になると、本文を送信済みでも全窓のクレジットを返金する。長文を出させ続ければ1分60回まで無課金 | `ai.ts` 394, 414-418, 700-707 | コードで確認(返金経路)。`incomplete`の発生条件はOpenAI仕様に依る |
+| AUTHZ-1 | Medium | ブロック/フレンド削除(room close)後も、相手が自分の過去メッセージ本文を書き換えられる | `chat-room.ts` `editMessage` | コードで確認 |
+| AUTHZ-2 | Medium | 共有文書にメンバー除名・自主退出の手段が無く、ブロック/フレンド削除でも権限が残る | `document-collab.ts`, `document-room.ts` | コードで確認 |
+| BILL-1 | Medium | RevenueCat の `app_user_id` を `session.sub` と同一視。メール/パスワード口座の `sub` は `email:<正規化メール>` で推測でき、他人のプランを上書き・降格できる可能性 | `admin.ts` `upsertSubscriber`, `entitlements.ts` | サーバー側は確認。RevenueCatが任意IDへの紐づけを許す点は推測 |
+| TOKEN-1 | Medium | 全権のセッショントークンを、外部AIへ手動で渡す「接続トークン」として`/mcp`が受理。漏れると退会まで到達 | `app.ts` 309-311, `ContentView.swift` 2338 | コードで確認 |
+| AI-2 | Medium | 入力量がクレジットに反映されない(40万文字でも同額)。Pro月4000クレジットでAstra約40回=原価が収益超過 | `ai.ts` 285-291, 751-753, `ai-credits.ts` | コードで確認(原価は概算) |
+| AI-3 | Medium | Pro 1アカウントで全体のAI日次上限(1500回)を使い切り、全員が429になる | `ai.ts` 158, `ai-credits.ts` 43-49 | コードで確認 |
+| AUTHZ-3 | Low | 文書招待の承諾時にブロック・フレンド関係を再確認しない | `document-collab.ts` 238〜 | コードで確認 |
+| AUTHZ-4 | Low | グループ招待の承諾時のブロック確認が、招待者が現フレンドのときしか効かない | `groups.ts` 283 | コードで確認 |
+| AUTHZ-5 | Low | 通報された人が凍結前に退会→再登録すると凍結を回避できる | `moderation-actions.ts` 35-45 | コードで確認 |
+| AUTHZ-6 | Low | 認証済みユーザーが任意の64hex roomIDでDOを無制限に生成できる(GET系にレート制限なし) | `chat.ts`, `document-collab.ts` | コードで確認(コスト未実測) |
+| AUTHZ-7 | Low | ブロックされた側も添付をアップロードできる | `chat-room.ts` 513 | コードで確認 |
+| AUTHZ-8 | Low | 文書の参加者一覧に内部のチャット鍵(`userKey`/`authorKey`)が出る。旧口座では`sha256(セッショントークン)` | `document-room.ts` 71, 81 | コードで確認(現状悪用経路なし) |
+| AI-4 | Low | moderationの抜け(8000文字超、assistantターン、採点基準`criteria`) | `openai.ts`, `ai.ts` 268-271, 751 | コードで確認 |
+| AI-5 | Low | `criteria:[null]`で500を起こし、偽の「AIプロバイダー障害」アラートを出せる | `ai.ts` 751-752, 915-920 | コードで確認 |
+| RES-1 | Low | チャット添付に部屋/ユーザー単位の総量上限が無い。添付・スクリーンショットのbase64を検証しない(相手のDLや管理画面で500) | `chat-room.ts` 513-531, `issue-reports.ts` 145 | コードで確認 |
+| AUTH-1 | Low | 退会の再ログイン要求(`REQUIRE_RECENT_LOGIN_FOR_DELETION`)が本番で無効(wranglerに無い。ダッシュボード側は未確認) | `app.ts` 492 | コードで確認 |
+| AUTH-2 | Low | ログアウトが更新前の旧トークンを失効させない(最大14日) | `app.ts` 449-451, 673-676 | コードで確認 |
+| AUTH-3 | Low | 「単回使用」がKVのget→delete(passkeyのチャレンジ、セッション更新、再認証マーク、メールコード試行数)で原子的でない | `app.ts` 665-673, `passkeys.ts`, `passkey-policy.ts`, `email-verification.ts` | コードで確認 |
+| AUTH-4 | Low | Access のJWKSを毎リクエスト取得し直す。管理ガードにレート制限なし | `access.ts` 32 | コードで確認 |
+| AUTH-5 | Low | Apple/GoogleのJWKSを24時間固定でキャッシュし、kid不一致で再取得しない(鍵回転で最大24時間ログイン不能)。fetchにtimeoutなし | `jwks-verify.ts` | コードで確認(可用性) |
+| CONF-1 | Low | 署名鍵未設定だと`REQUIRE_SIGNED_TOKENS`/App Attestが黙って緩む(fail-open)。`PAYWALL_ENABLED`未設定で全員standard | `token-signature.ts` 104, `app-attest.ts` 397-407, `entitlements.ts` 108-111 | コードで確認(本番の実設定は未確認) |
+| OAUTH-1 | Low | `/oauth/register`が未認証で365日レコードを残す | `mcp-oauth.ts` 304-313 | コードで確認 |
+| AUTH-6 | Low | 6桁メールコードの推測が、アドレス単位で10回/時のまま長期に積み上がる | `app.ts` | コードで確認 |
+| LOG-1 | Low | メール送信失敗時、Resend応答本文(宛先メールを含みうる)を`console.error`に出す | `email-verification.ts` 68, `app.ts` 884 | コードで確認 |
+
+## 設計上の共通点
+
+1. **失効の一貫性が無い**: ブロック/フレンド削除の判定が「メッセージ送信」にしか掛かっていない。編集・添付・文書・招待が別々に判定している(AUTHZ-1〜4,7)。書き込みの全入口に通す共通の判定にする。
+2. **返金とグローバル上限が悪用の入口**: 「失敗したら返金」の「失敗」が広すぎる(AI-1)。全体の回数上限は1人で枯渇させられる(AI-3)。
+3. **識別子と用途の信頼境界**: 外部(RevenueCat)の識別子を内部の`sub`と同じ名前空間で扱う(BILL-1)。同じ長寿命トークンが、アプリ・手動MCP・AI・退会まで共通(TOKEN-1, AUTH-1, AUTH-2)。
+4. **設定欠落時に黙って緩む**(CONF-1)。起動時チェックか`/health`での可視化が要る。
+5. **入力検証が手書き**: base64・型・上限をルートごとに書いているため抜けが再発する(AI-5, RES-1)。
+
+## 問題なしと確認した範囲
+
+- 認証トークン(Apple/Google): 署名・iss・aud・exp・nonceの検証、nonceの原子的な使い切り。
+- パスワード・メールコード: 定数時間比較、一律応答、段階的待機、ハッシュ保存。
+- パスキー: RPID・origin・UV必須・チャレンジの紐づけ。
+- MCP OAuth: redirect_uriの完全一致、PKCE(S256のみ)、認可コードの使い切り、リフレッシュの回転と再利用検知。
+- 管理API: Cloudflare Access JWTの検証(未設定なら全拒否)。RevenueCat Webhook: 定数時間比較、冪等。
+- AIクレジットの二重消費・上限突破(RateCounter DOで原子的)。プロンプトインジェクションによる他人のデータ漏えい(AI経路は他人のデータを取得しない)。上流エラー本文の漏えい。プラン取り違え。本文サイズ上限(未適用ルートは見つからず)。
+- チャット/グループ/文書/MCP/端末のメンバー確認(上記の指摘を除く)。アバター・添付の配信ヘッダ(nosniff、sandbox、attachment)。
+- 依存: `fast-uri`はロックファイルで修正版3.1.8、かつ到達不能。`proxy-addr`・`express`・`ip-address`はWorker bundleに含まれない。**`SECURITY_SCAN_RESULTS.md`の依存バージョン表は古い**(更新が必要)。`npm audit`はこの環境で未実行。
+
+## 訂正
+
+- 監査の途中で「文書のWebSocketルートがある」と読んだのは誤り。`features.test.ts`のテストデータの文字列だった。WebSocketは無く、`THREAT_MODEL.md`の記述(§5「該当しないもの」)は現状と一致する。
+
+## 次の工程
+
+修正は深刻度順に、失敗するテストを先に書いてから直す。認可・課金・認証に触れるものはHighリスクとして独立レビューを通す。進捗はNotionの「Studiquo タスク」(名前に「API監査」を含むカード)で管理する。
