@@ -4,14 +4,14 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet } from "jose";
 import { compareVersions, resolveTranslation, SUPPORTED_LANGUAGES } from "./announcements.ts";
-import { partialCtx, partialEnv, readMigration, type LooseEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, readMigration, type LooseEnv, type Untyped } from "./test-env.ts";
 
 class FakeD1Statement {
   db: DatabaseSync;
   sql: string;
   params: SQLInputValue[];
   constructor(db: DatabaseSync, sql: string, params: SQLInputValue[] = []) { this.db = db; this.sql = sql; this.params = params; }
-  bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
+  bind(...params: Untyped[]) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() { this.db.prepare(this.sql).run(...this.params); return { success: true }; }
   async all() { return { results: this.db.prepare(this.sql).all(...this.params) }; }
   async first() { return this.db.prepare(this.sql).get(...this.params) ?? null; }
@@ -32,7 +32,7 @@ function environment(extra = {}) {
     db.exec(readMigration(file));
   }
   return partialEnv({
-    ADMIN_DB: { prepare: sql => new FakeD1Statement(db, sql) },
+    ADMIN_DB: { prepare: (sql: Untyped) => new FakeD1Statement(db, sql) },
     RATE_LIMIT_ANNOUNCEMENTS: { async limit() { return { success: true }; } },
     ACCESS_AUD: ACCESS.aud, ACCESS_TEAM_DOMAIN: ACCESS.team, ACCESS_JWKS: accessJWKS,
     ...extra,
@@ -64,12 +64,12 @@ test("compareVersions compares numerically per component", () => {
 
 test("resolveTranslation: exact, then base language, then en, then ja, then anything", () => {
   const t = { ja: { title: "ja" }, en: { title: "en" }, zh: { title: "zh" }, "pt-BR": { title: "ptBR" } };
-  assert.equal(resolveTranslation(t, "pt-BR").lang, "pt-BR");
-  assert.equal(resolveTranslation(t, "zh-Hans").lang, "zh");
-  assert.equal(resolveTranslation(t, "fr").lang, "en");
-  assert.equal(resolveTranslation({ ja: { title: "ja" } }, "fr").lang, "ja");
-  assert.equal(resolveTranslation({ de: { title: "de" } }, "fr").lang, "de");
-  assert.equal(resolveTranslation(t, "not a code!!").lang, "en");
+  assert.equal(resolveTranslation(t, "pt-BR")!.lang, "pt-BR");
+  assert.equal(resolveTranslation(t, "zh-Hans")!.lang, "zh");
+  assert.equal(resolveTranslation(t, "fr")!.lang, "en");
+  assert.equal(resolveTranslation({ ja: { title: "ja" } }, "fr")!.lang, "ja");
+  assert.equal(resolveTranslation({ de: { title: "de" } }, "fr")!.lang, "de");
+  assert.equal(resolveTranslation(t, "not a code!!")!.lang, "en");
   assert.equal(resolveTranslation({}, "en"), null);
 });
 
@@ -84,7 +84,7 @@ test("admin page and language list expose SUPPORTED_LANGUAGES", async () => {
 
 test("create validates input", async () => {
   const env = environment();
-  const post = body => call(env, "/api/admin/announcements", { method: "POST", body });
+  const post = (body: Untyped) => call(env, "/api/admin/announcements", { method: "POST", body });
   assert.equal((await post(base({ kind: "spam" }))).status, 400);
   assert.equal((await post(base({ status: "nope" }))).status, 400);
   assert.equal((await post(base({ link: "http://insecure.example" }))).status, 400);
@@ -103,7 +103,7 @@ test("create validates input", async () => {
 
 test("public list: only live published items, in the best language, filtered by version", async () => {
   const env = environment();
-  const post = body => call(env, "/api/admin/announcements", { method: "POST", body });
+  const post = (body: Untyped) => call(env, "/api/admin/announcements", { method: "POST", body });
   const now = Date.now();
   await post(base());
   await post(base({ status: "draft", translations: { ja: { title: "下書き", body: "x" } } }));
@@ -113,17 +113,17 @@ test("public list: only live published items, in the best language, filtered by 
   await post(base({ translations: { ja: { title: "日本語のみ", body: "x" } }, publishAt: now - 1000 }));
 
   const en = await (await call(env, "/api/announcements?lang=en&appVersion=1.5")).json();
-  assert.deepEqual(en.announcements.map(a => a.title).sort(), ["Update", "日本語のみ"].sort());
-  assert.equal(en.announcements.find(a => a.title === "Update").lang, "en");
+  assert.deepEqual(en.announcements.map((a: Untyped) => a.title).sort(), ["Update", "日本語のみ"].sort());
+  assert.equal(en.announcements.find((a: Untyped) => a.title === "Update").lang, "en");
 
   const ja = await (await call(env, "/api/announcements?lang=ja")).json();
-  assert.ok(ja.announcements.some(a => a.title === "新版のみ")); // no appVersion → no version filter
-  assert.ok(ja.announcements.every(a => a.title !== "下書き" && a.title !== "予約" && a.title !== "期限切れ"));
+  assert.ok(ja.announcements.some((a: Untyped) => a.title === "新版のみ")); // no appVersion → no version filter
+  assert.ok(ja.announcements.every((a: Untyped) => a.title !== "下書き" && a.title !== "予約" && a.title !== "期限切れ"));
 
   // Unsupported language falls back (en first, else ja).
   const fr = await (await call(env, "/api/announcements?lang=fr&appVersion=2.1")).json();
-  assert.ok(fr.announcements.some(a => a.title === "Update"));
-  assert.ok(fr.announcements.some(a => a.title === "日本語のみ"));
+  assert.ok(fr.announcements.some((a: Untyped) => a.title === "Update"));
+  assert.ok(fr.announcements.some((a: Untyped) => a.title === "日本語のみ"));
 });
 
 test("a newly added language is served without code changes beyond the language list", async () => {

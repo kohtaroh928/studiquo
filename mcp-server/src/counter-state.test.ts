@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { takeFrom, giveTo } from "./counter-state.ts";
+import type { Untyped } from "./test-env.ts";
 
 const T0 = 1_000_000;
 
@@ -38,12 +39,12 @@ test("a take after the window ended starts a fresh one", () => {
 test("give returns credits to the same window", () => {
   const taken = takeOk(undefined, T0, 10, 60, 6);
   const next = giveTo(taken.state, T0 + 1000, 6, taken.windowEndsAt);
-  assert.equal(next.count, 0);
+  assert.equal(next!.count, 0);
 });
 
 test("give never takes the count below zero", () => {
   const taken = takeOk(undefined, T0, 10, 60, 2);
-  assert.equal(giveTo(taken.state, T0 + 1, 50, taken.windowEndsAt).count, 0);
+  assert.equal(giveTo(taken.state, T0 + 1, 50, taken.windowEndsAt)!.count, 0);
 });
 
 test("give does nothing once its window ended, or when a newer window is current", () => {

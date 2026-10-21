@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { linkVerifiedEmail, linkedIdentities } from "./oauth-links.ts";
-import { partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
@@ -101,13 +101,13 @@ function refIdentityKey(identity: { provider: any; sub: any; }) {
   if (identity.provider === "email") return `email:${identity.sub}`;
   return identity.sub;
 }
-async function referenceLinkVerifiedEmail(env: LooseEnv, { provider, sub, email, emailVerified }) {
+async function referenceLinkVerifiedEmail(env: LooseEnv, { provider, sub, email, emailVerified }: { provider?: Untyped; sub?: Untyped; email?: Untyped; emailVerified?: Untyped }) {
   const trimmed = typeof email === "string" ? email.trim().toLowerCase() : "";
   const normalized = trimmed.length > 0 && trimmed.length <= 254 && trimmed.includes("@") ? trimmed : null;
   if (!normalized || !emailVerified) return { normalizedEmail: null, linkedIdentities: [] };
   const linkKey = `${REF_EMAIL_LINK_PREFIX}${normalized}`;
   const existing = (await env.STUDIQUO_DATA.get(linkKey, "json")) ?? [];
-  const alreadyLinked = existing.some(identity => identity.provider === provider && identity.sub === sub);
+  const alreadyLinked = existing.some((identity: Untyped) => identity.provider === provider && identity.sub === sub);
   const updated = alreadyLinked ? existing : [...existing, { provider, sub }].slice(-REF_MAX_LINKED_IDENTITIES);
   if (!alreadyLinked) await env.STUDIQUO_DATA.put(linkKey, JSON.stringify(updated));
   const ownerKey = `${REF_EMAIL_OWNER_PREFIX}${normalized}`;
@@ -116,7 +116,7 @@ async function referenceLinkVerifiedEmail(env: LooseEnv, { provider, sub, email,
     canonicalIdentityKey = refIdentityKey(updated[0]);
     await env.STUDIQUO_DATA.put(ownerKey, canonicalIdentityKey);
   }
-  await Promise.all(updated.map(identity =>
+  await Promise.all(updated.map((identity: Untyped) =>
     env.STUDIQUO_DATA.put(`${REF_IDENTITY_CANONICAL_PREFIX}${refIdentityKey(identity)}`, canonicalIdentityKey)
   ));
   return { normalizedEmail: normalized, linkedIdentities: updated, canonicalIdentityKey };
@@ -126,7 +126,7 @@ async function referenceLinkVerifiedEmail(env: LooseEnv, { provider, sub, email,
 // in flight at once, over a KV that takes a moment to answer.
 function countingEnvironment(seed = {}) {
   const values = new Map(Object.entries(seed));
-  const stats = { gets: 0, puts: 0, putKeys: [], maxConcurrentGets: 0, inFlightGets: 0, readRounds: 0 };
+  const stats = { gets: 0, puts: 0, putKeys: [] as string[], maxConcurrentGets: 0, inFlightGets: 0, readRounds: 0 };
   // Yields to the event loop without a timer's minimum delay, so operations still interleave.
   const pause = () => new Promise(resolve => setImmediate(resolve));
   return partialEnv({
@@ -238,11 +238,11 @@ test("differential: for random histories (with random drift in the stored data) 
   const emails = ["a@example.com", "B@Example.com ", "c@example.com", "not-an-email", ""];
   for (let seed = 1; seed <= 300; seed++) {
     const random = makeRandom(seed);
-    const pick = list => list[Math.floor(random() * list.length)];
+    const pick = (list: Untyped) => list[Math.floor(random() * list.length)];
     const subs = ["s1", "s2", "s3", "s4"];
 
     // The same random starting data for both: possibly stale, partial or wrong.
-    const startValues = {};
+    const startValues: Record<string, string> = {};
     for (const email of ["a@example.com", "b@example.com", "c@example.com"]) {
       if (random() < 0.5) {
         const list = Array.from({ length: Math.floor(random() * 4) }, () => ({ provider: pick(providers), sub: pick(subs) }));
@@ -342,7 +342,7 @@ test("more than ten linked identities keep only the latest ten, exactly as befor
 test("differential, long histories on one address (reaches the ten-identity limit and its drift)", async () => {
   for (let seed = 1000; seed < 1060; seed++) {
     const random = makeRandom(seed);
-    const pick = list => list[Math.floor(random() * list.length)];
+    const pick = (list: Untyped) => list[Math.floor(random() * list.length)];
     const providers = ["apple", "google", "email"];
     const subs = Array.from({ length: 16 }, (_, i) => `s${i}`);
     const oldEnv = countingEnvironment();

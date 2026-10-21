@@ -61,3 +61,11 @@ export function migrationFiles(): string[] {
 export function readMigration(file: string): string {
   return readFileSync(join(migrations, file), "utf8");
 }
+
+/**
+ * Data a test reads without declaring its shape: JSON from a response, rows from the in-memory SQLite,
+ * the argument of a fake binding's method. Strict checking is on for the tests; this is where the tests
+ * say "not typed", in one searchable place, instead of leaving a parameter implicitly `any`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Untyped = any;

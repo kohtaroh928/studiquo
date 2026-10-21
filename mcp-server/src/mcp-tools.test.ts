@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import worker from "./app.ts";
-import { partialCtx, partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // Covers app.ts's own usage of the MCP_INBOX contract — how the /mcp tool
 // handlers and the /api/mcp/inbox routes route between a paired external
@@ -12,7 +12,7 @@ import { partialCtx, partialEnv, type LooseEnv } from "./test-env.ts";
 // mechanics (PKCE, token exchange, grants), which mcp-oauth.test.js already
 // covers end to end.
 
-const hash = value => createHash("sha256").update(value).digest("hex");
+const hash = (value: Untyped) => createHash("sha256").update(value).digest("hex");
 
 function fakeMCPInboxBinding() {
   const accounts = new Map();
@@ -63,7 +63,7 @@ function environment() {
       },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
+      async list({ prefix }: { prefix?: Untyped }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
     },
     MCP_INBOX: fakeMCPInboxBinding(),
     RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
@@ -127,7 +127,7 @@ async function pairMCPClient(env: LooseEnv, deviceToken: string, { scope }: { sc
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "authorization_code", client_id: clientId, redirect_uri: redirectUri, code, code_verifier: verifier,
+      grant_type: "authorization_code", client_id: clientId, redirect_uri: redirectUri, code: code!, code_verifier: verifier,
     }),
   });
   const { access_token } = await token.json();

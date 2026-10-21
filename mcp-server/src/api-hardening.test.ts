@@ -5,11 +5,11 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import worker from "./app.ts";
-import { partialCtx, partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
-const hash = value => createHash("sha256").update(value).digest("hex");
+const hash = (value: Untyped) => createHash("sha256").update(value).digest("hex");
 const noopCtx = partialCtx({ waitUntil() {} });
-const freshToken = suffix => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
+const freshToken = (suffix: Untyped) => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 
 // A RateCounter double that counts like the real one (true while under the
 // limit), per name.
@@ -151,22 +151,22 @@ test("the list of connected apps shows only what the app displays", async () => 
 
 function assertFrameless(response: Response) {
   const policy = response.headers.get("content-security-policy");
-  assert.match(policy, /frame-ancestors 'none'/);
-  assert.match(policy, /base-uri 'none'/);
-  assert.match(policy, /form-action 'none'/);
-  assert.match(policy, /default-src 'none'/);
+  assert.match(policy!, /frame-ancestors 'none'/);
+  assert.match(policy!, /base-uri 'none'/);
+  assert.match(policy!, /form-action 'none'/);
+  assert.match(policy!, /default-src 'none'/);
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(response.headers.get("referrer-policy"), "no-referrer");
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.match(response.headers.get("content-type"), /^text\/html/);
+  assert.match(response.headers.get("content-type")!, /^text\/html/);
 }
 
 test("the invite page cannot be framed and calls no other origin", async () => {
   const response = await call(environment(), "/invite?token=ABCDEF12");
   assert.equal(response.status, 200);
   assertFrameless(response);
-  assert.doesNotMatch(response.headers.get("content-security-policy"), /connect-src/);
+  assert.doesNotMatch(response.headers.get("content-security-policy")!, /connect-src/);
 });
 
 test("the admin pages cannot be framed and may call only their own origin", async () => {
@@ -174,6 +174,6 @@ test("the admin pages cannot be framed and may call only their own origin", asyn
     const response = await call(environment(), path);
     assert.equal(response.status, 200, path);
     assertFrameless(response);
-    assert.match(response.headers.get("content-security-policy"), /connect-src 'self'/);
+    assert.match(response.headers.get("content-security-policy")!, /connect-src 'self'/);
   }
 });

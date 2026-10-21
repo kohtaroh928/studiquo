@@ -6,7 +6,7 @@ import { sha256Hex } from "./auth.ts";
 import { deleteAccount } from "./account-deletion.ts";
 import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, purgeRoomData, removeAccountData, removeParticipantData, roomMembershipKey } from "./document-room-store.ts";
 import { VALIDITY_SECONDS, remainingValiditySeconds } from "./token.ts";
-import { partialCtx, partialEnv, partialSql, type LooseEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, partialSql, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // What account deletion must leave nothing of: the synced snapshot kept under a
 // session's token, and collaborative document rooms. The room tests run the
@@ -21,7 +21,7 @@ function roomSql() {
   const db = new DatabaseSync(":memory:");
   db.exec(DOCUMENT_ROOM_SCHEMA);
   const sql = {
-    exec(query: string, ...params) {
+    exec(query: string, ...params: Untyped[]) {
       const statement = db.prepare(query);
       const returnsRows = /^\s*SELECT/i.test(query) || /RETURNING/i.test(query);
       const rows = returnsRows ? statement.all(...params) : (statement.run(...params), []);
@@ -42,7 +42,7 @@ function seedRoom(sql: { exec: any; }, members: string[][], { changes = [] }: { 
   }
 }
 
-const count = (db, table: string) => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
+const count = (db: Untyped, table: string) => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
 
 test("purging a room erases its text, proposals and members, and reports who was in it", () => {
   const { db, sql } = roomSql();
@@ -75,7 +75,7 @@ test("a room is only erased for its owner, whatever an index says", () => {
 
   assert.equal(membersIfOwner(partialSql(sql), "bob"), null, "an editor is not the owner");
   assert.equal(membersIfOwner(partialSql(sql), "stranger"), null);
-  assert.deepEqual(membersIfOwner(partialSql(sql), "alice").sort(), ["alice", "bob"]);
+  assert.deepEqual(membersIfOwner(partialSql(sql), "alice")!.sort(), ["alice", "bob"]);
 
   // "bob" asking to be removed as if he owned it only removes him.
   assert.equal(removeAccountData(partialSql(sql), "bob"), "removed");
@@ -120,7 +120,7 @@ function sqlBackedRooms() {
     _rooms: rooms,
     getByName(id: string) {
       const { db, sql } = room(id);
-      const requireParticipant = userKey => {
+      const requireParticipant = (userKey: Untyped) => {
         const rows = sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray();
         if (rows.length !== 1) throw new Error("Forbidden");
         return rows[0].role;
@@ -152,7 +152,7 @@ function sqlBackedRooms() {
           );
         },
         _changes() { return db.prepare("SELECT author_key, new_text FROM changes ORDER BY id").all(); },
-        _participants() { return db.prepare("SELECT user_key FROM participants").all().map(row => row.user_key).sort(); },
+        _participants() { return db.prepare("SELECT user_key FROM participants").all().map((row: Untyped) => row.user_key).sort(); },
       };
     },
   };
@@ -191,7 +191,7 @@ function environment() {
       },
       async put(key: string, value: string, options: string) { puts.push({ key, options }); values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix }) {
+      async list({ prefix }: { prefix?: Untyped }) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
       },
     },
@@ -218,7 +218,7 @@ async function signIn(env: LooseEnv, sub: string, { ageSeconds = 0 }: { ageSecon
 }
 
 function call(env: LooseEnv, path: string, { method = "GET", token, body }: { method?: string; token?: string; body?: unknown } = {}) {
-  const headers = { authorization: `Bearer ${token}` };
+  const headers: Record<string, string> = { authorization: `Bearer ${token}` };
   if (body !== undefined) headers["content-type"] = "application/json";
   return worker.fetch(
     new Request(`https://example.test${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }),
@@ -305,7 +305,7 @@ test("deleting an invited friend removes them and their open proposals, not the 
   await deleteAccount(env, "apple:bob");
 
   assert.deepEqual(room._participants(), [aliceKey]);
-  assert.deepEqual(room._changes().map(row => row.new_text), ["alice's idea"]);
+  assert.deepEqual(room._changes().map((row: Untyped) => row.new_text), ["alice's idea"]);
   assert.equal((await roomState(env, alice.token)).status, 200, "the owner still has the document");
   assert.equal((await roomState(env, bob.token)).status, 401, "the deleted account's own session is gone");
   assert.equal(env._values.has(roomMembershipKey(bobKey, ROOM)), false);
@@ -354,7 +354,7 @@ test("deleting an account that is in no room touches no room", async () => {
 
 const initRoomById = (env: LooseEnv, token: string, roomID: string) =>
   call(env, `/api/document/rooms/${roomID}/init`, { method: "POST", token, body: { blocks: [] } });
-const roomIdNumber = n => n.toString(16).padStart(64, "0");
+const roomIdNumber = (n: Untyped) => n.toString(16).padStart(64, "0");
 
 async function stableKey(env: LooseEnv, sub: string, tokenHash: string) {
   const identityHash = await sha256Hex(`chat-account:${sub}`);
@@ -490,7 +490,7 @@ const snapshotBody = { version: 1, exportedAt: "2026-10-09T00:00:00Z", notebooks
 
 test("a token's remaining validity is what is left of its 90 days, never less than a minute", () => {
   const now = 1_800_000_000_000;
-  const mint = secondsAgo => `${Math.floor(now / 1000) - secondsAgo}.secret`;
+  const mint = (secondsAgo: Untyped) => `${Math.floor(now / 1000) - secondsAgo}.secret`;
   assert.equal(remainingValiditySeconds(mint(0), now), VALIDITY_SECONDS);
   assert.equal(remainingValiditySeconds(mint(89 * DAY), now), DAY);
   assert.equal(remainingValiditySeconds(mint(VALIDITY_SECONDS + 5 * DAY), now), 60, "expired: the smallest expiry KV accepts");
@@ -507,8 +507,8 @@ test("the snapshot kept under a session expires with that session; the account c
   assert.equal(response.status, 200);
 
   const tokenCopy = env._puts.find(put => put.key === `snapshot:${session.tokenHash}`);
-  assert.ok(tokenCopy.options?.expirationTtl, "an expiry is set");
-  assert.ok(Math.abs(tokenCopy.options.expirationTtl - 10 * DAY) < 120, `about 10 days left, got ${tokenCopy.options.expirationTtl}`);
+  assert.ok(tokenCopy!.options?.expirationTtl, "an expiry is set");
+  assert.ok(Math.abs(tokenCopy!.options.expirationTtl - 10 * DAY) < 120, `about 10 days left, got ${tokenCopy!.options.expirationTtl}`);
 
   const accountKey = await sha256Hex("mcp-account:apple:alice");
   const accountCopy = env._puts.find(put => put.key === `snapshot:${accountKey}`);

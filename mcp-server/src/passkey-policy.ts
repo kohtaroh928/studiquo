@@ -176,7 +176,7 @@ export async function accountHasEstablishedPasskey(env: Env, accountKey: string,
   return (await listEstablishedPasskeys(env, accountKey, email, now)).length > 0;
 }
 
-export async function indexAccountPasskey(env: Env, accountKey: string, email: string, credentialID: string) {
+export async function indexAccountPasskey(env: Env, accountKey: string, email: string | null, credentialID: string) {
   for (const key of await passkeyAccountKeys(env, accountKey, email)) {
     const k = await indexKey(key);
     const ids = (await env.STUDIQUO_DATA.get<string[]>(k, "json")) ?? [];

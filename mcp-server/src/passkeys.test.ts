@@ -27,7 +27,7 @@ async function proveMailbox(env: LooseEnv, token: string, email = "student@examp
 function fakeCloudflareLimiter(limit = 5) {
   const counts = new Map();
   return {
-    async limit({ key }) {
+    async limit({ key }: { key?: Untyped }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -108,7 +108,7 @@ test("passkey login resolves to the same canonical account as another verified l
   // @ts-expect-error mintPasskeySession takes two arguments; the third one is ignored
   const token = await mintPasskeySession(env, "person@example.com", "p".repeat(40));
 
-  assert.equal((await realSession(env, token)).sub, "google:google-sub-1");
+  assert.equal((await realSession(env, token!))!.sub, "google:google-sub-1");
   assert.equal(await env.STUDIQUO_DATA.get("identity-canonical:email:person@example.com"), "google:google-sub-1");
 });
 
@@ -128,8 +128,8 @@ test("17. 削除済みのパスキーCredentialではログインできない", 
   });
 
   const response = await handlePasskeys(new URL(request.url), request, env);
-  assert.equal(response.status, 400);
-  assert.match((await response.json()).error, /expired/i);
+  assert.equal(response!.status, 400);
+  assert.match((await response!.json()).error, /expired/i);
 });
 
 test("creates bounded, user-verified passkey registration options", async () => {
@@ -143,8 +143,8 @@ test("creates bounded, user-verified passkey registration options", async () => 
   await env.STUDIQUO_DATA.put("email-account-owner:student@example.com", "test"); // the default test session's account
   await proveMailbox(env, boundedToken);
   const response = await handlePasskeys(new URL(request.url), request, env);
-  assert.equal(response.status, 200);
-  const payload = await response.json();
+  assert.equal(response!.status, 200);
+  const payload = await response!.json();
   assert.equal(payload.options.rp.id, "api.studiquo.app");
   assert.equal(payload.options.authenticatorSelection.userVerification, "required");
   assert.ok(payload.transaction);
@@ -161,7 +161,7 @@ test("rejects registration options for a revoked token", async () => {
     body: JSON.stringify({ email: "student@example.com" }),
   });
   const response = await handlePasskeys(new URL(request.url), request, env);
-  assert.equal(response.status, 401);
+  assert.equal(response!.status, 401);
 });
 
 test("rejects registration options for a token older than 90 days", async () => {
@@ -173,8 +173,8 @@ test("rejects registration options for a token older than 90 days", async () => 
     body: JSON.stringify({ email: "student@example.com" }),
   });
   const response = await handlePasskeys(new URL(request.url), request, environment());
-  assert.equal(response.status, 401);
-  assert.match((await response.json()).error, /expired/i);
+  assert.equal(response!.status, 401);
+  assert.match((await response!.json()).error, /expired/i);
 });
 
 // MARK: - Rate limiting: /api/passkeys/login/options and /login/verify are
@@ -185,23 +185,23 @@ test("POST /api/passkeys/login/options: allows up to the limit, then 429s", asyn
   const env = environment();
   for (let i = 0; i < 5; i++) {
     const response = await handlePasskeys(new URL(loginOptionsRequest().url), loginOptionsRequest(), env);
-    assert.equal(response.status, 200);
+    assert.equal(response!.status, 200);
   }
   const sixth = await handlePasskeys(new URL(loginOptionsRequest().url), loginOptionsRequest(), env);
-  assert.equal(sixth.status, 429);
+  assert.equal(sixth!.status, 429);
 });
 
 test("POST /api/passkeys/login/options: a different client IP is not affected by another IP's limit", async () => {
   const env = environment();
   for (let i = 0; i < 5; i++) {
     const request = loginOptionsRequest("203.0.113.1");
-    assert.equal((await handlePasskeys(new URL(request.url), request, env)).status, 200);
+    assert.equal((await handlePasskeys(new URL(request.url), request, env))!.status, 200);
   }
   const blocked = loginOptionsRequest("203.0.113.1");
-  assert.equal((await handlePasskeys(new URL(blocked.url), blocked, env)).status, 429);
+  assert.equal((await handlePasskeys(new URL(blocked.url), blocked, env))!.status, 429);
 
   const otherIP = loginOptionsRequest("198.51.100.1");
-  assert.equal((await handlePasskeys(new URL(otherIP.url), otherIP, env)).status, 200);
+  assert.equal((await handlePasskeys(new URL(otherIP.url), otherIP, env))!.status, 200);
 });
 
 test("POST /api/passkeys/login/verify: allows up to the limit, then 429s", async () => {
@@ -211,11 +211,11 @@ test("POST /api/passkeys/login/verify: allows up to the limit, then 429s", async
     const response = await handlePasskeys(new URL(request.url), request, env);
     // No matching challenge/credential exists, so this is a 400 either way —
     // the point is that it's not yet rate-limited.
-    assert.equal(response.status, 400);
+    assert.equal(response!.status, 400);
   }
   const sixth = loginVerifyRequest();
   const response = await handlePasskeys(new URL(sixth.url), sixth, env);
-  assert.equal(response.status, 429);
+  assert.equal(response!.status, 429);
 });
 
 // MARK: - Rate limiting: /api/passkeys/register/options and /register/verify
@@ -229,10 +229,10 @@ test("POST /api/passkeys/register/options: allows up to the limit, then 429s", a
   await proveMailbox(env, token);
   for (let i = 0; i < 5; i++) {
     const request = registerOptionsRequest(token);
-    assert.equal((await handlePasskeys(new URL(request.url), request, env)).status, 200);
+    assert.equal((await handlePasskeys(new URL(request.url), request, env))!.status, 200);
   }
   const sixth = registerOptionsRequest(token);
-  assert.equal((await handlePasskeys(new URL(sixth.url), sixth, env)).status, 429);
+  assert.equal((await handlePasskeys(new URL(sixth.url), sixth, env))!.status, 429);
 });
 
 test("POST /api/passkeys/register/options: a different token (userKey) is not affected by another token's limit", async () => {
@@ -242,15 +242,15 @@ test("POST /api/passkeys/register/options: a different token (userKey) is not af
   await proveMailbox(env, token);
   for (let i = 0; i < 5; i++) {
     const request = registerOptionsRequest(token);
-    assert.equal((await handlePasskeys(new URL(request.url), request, env)).status, 200);
+    assert.equal((await handlePasskeys(new URL(request.url), request, env))!.status, 200);
   }
   const blocked = registerOptionsRequest(token);
-  assert.equal((await handlePasskeys(new URL(blocked.url), blocked, env)).status, 429);
+  assert.equal((await handlePasskeys(new URL(blocked.url), blocked, env))!.status, 429);
 
   const otherRaw = freshToken("f");
   await proveMailbox(env, otherRaw);
   const otherToken = registerOptionsRequest(otherRaw);
-  assert.equal((await handlePasskeys(new URL(otherToken.url), otherToken, env)).status, 200);
+  assert.equal((await handlePasskeys(new URL(otherToken.url), otherToken, env))!.status, 200);
 });
 
 test("POST /api/passkeys/register/verify: allows up to the limit, then 429s", async () => {
@@ -261,11 +261,11 @@ test("POST /api/passkeys/register/verify: allows up to the limit, then 429s", as
     const response = await handlePasskeys(new URL(request.url), request, env);
     // No matching challenge exists, so this is a 400 either way — the point
     // is that it's not yet rate-limited.
-    assert.equal(response.status, 400);
+    assert.equal(response!.status, 400);
   }
   const sixth = registerVerifyRequest(token);
   const response = await handlePasskeys(new URL(sixth.url), sixth, env);
-  assert.equal(response.status, 429);
+  assert.equal(response!.status, 429);
 });
 
 // --- A passkey can only be registered for an e-mail the signed-in account already owns ---
@@ -283,14 +283,14 @@ test("a session for one account cannot register a passkey for another account's 
   await env.STUDIQUO_DATA.put("email-account-owner:victim@example.com", "google:victim-sub");
   const request = registerFor(freshToken("v"), "victim@example.com");
   const response = await handlePasskeys(new URL(request.url), request, env);
-  assert.equal(response.status, 403);
+  assert.equal(response!.status, 403);
 });
 
 test("an e-mail that no account owns yet cannot be claimed ahead of its owner", async () => {
   const env = environment();
   const request = registerFor(freshToken("u"), "not-signed-up-yet@example.com");
   const response = await handlePasskeys(new URL(request.url), request, env);
-  assert.equal(response.status, 403);
+  assert.equal(response!.status, 403);
 });
 
 test("the owner of an e-mail can register a passkey for it, including through a linked identity", async () => {
@@ -303,7 +303,7 @@ test("the owner of an e-mail can register a passkey for it, including through a 
   await proveMailbox(env, token, "me@example.com");
   const request = registerFor(token, "ME@Example.com ");
   const response = await handlePasskeys(new URL(request.url), request, env);
-  assert.equal(response.status, 200, "case and surrounding spaces do not matter");
+  assert.equal(response!.status, 200, "case and surrounding spaces do not matter");
 });
 
 test("the e-mail check happens before anything is stored for the attempt", async () => {
@@ -320,10 +320,10 @@ test("the e-mail check happens before anything is stored for the attempt", async
 // --- reauthentication with a passkey -------------------------------------
 import { generateKeyPairSync, createSign } from "node:crypto";
 import { indexAccountPasskey, requireRecentPasskey } from "./passkey-policy.ts";
-import { partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 const RP_ID = "api.studiquo.app";
-const b64url = buffer => Buffer.from(buffer).toString("base64url");
+const b64url = (buffer: Untyped) => Buffer.from(buffer).toString("base64url");
 
 function newPasskey() {
   const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
@@ -338,7 +338,7 @@ function newPasskey() {
   return { privateKey, cose };
 }
 
-function assertionFor({ privateKey }, challenge: string, id: string) {
+function assertionFor({ privateKey }: { privateKey?: Untyped }, challenge: string, id: string) {
   const clientDataJSON = Buffer.from(JSON.stringify({
     type: "webauthn.get", challenge, origin: `https://${RP_ID}`, crossOrigin: false,
   }));
@@ -373,7 +373,7 @@ async function reauthVerify(env: LooseEnv, token: string, transaction: string, c
   return handlePasskeys(new URL(request.url), request, env);
 }
 
-async function seedPasskey(env: LooseEnv, passkey, id: string, account = "test") {
+async function seedPasskey(env: LooseEnv, passkey: Untyped, id: string, account = "test") {
   await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify({
     id, publicKey: Array.from(passkey.cose), counter: 0, transports: ["internal"], email: "student@example.com",
   }));
@@ -385,12 +385,12 @@ test("reauth: using the account's own passkey marks this session as freshly veri
   const token = freshToken("a");
   const passkey = newPasskey();
   await seedPasskey(env, passkey, "cred-own");
-  assert.equal((await requireRecentPasskey(env, token, { sub: "test" }, "delete-account")).status, 403);
+  assert.equal((await requireRecentPasskey(env, token, { sub: "test" }, "delete-account"))!.status, 403);
 
-  const options = await (await reauthOptions(env, token)).json();
-  assert.deepEqual(options.options.allowCredentials.map(item => item.id), ["cred-own"]);
+  const options = await (await reauthOptions(env, token))!.json();
+  assert.deepEqual(options.options.allowCredentials.map((item: Untyped) => item.id), ["cred-own"]);
   const response = await reauthVerify(env, token, options.transaction, assertionFor(passkey, options.options.challenge, "cred-own"));
-  assert.equal(response.status, 200);
+  assert.equal(response!.status, 200);
   assert.equal(await requireRecentPasskey(env, token, { sub: "test" }, "delete-account"), null);
 });
 
@@ -404,37 +404,37 @@ test("reauth: another account's passkey, a wrong signature and another session's
   await seedPasskey(env, theirs, "cred-theirs", "another-account");
 
   // A valid assertion from a passkey that belongs to someone else.
-  let options = await (await reauthOptions(env, token)).json();
+  let options = await (await reauthOptions(env, token))!.json();
   let response = await reauthVerify(env, token, options.transaction, assertionFor(theirs, options.options.challenge, "cred-theirs"));
-  assert.equal(response.status, 401);
+  assert.equal(response!.status, 401);
 
   // Signed by the wrong key.
-  options = await (await reauthOptions(env, token)).json();
+  options = await (await reauthOptions(env, token))!.json();
   response = await reauthVerify(env, token, options.transaction, assertionFor(theirs, options.options.challenge, "cred-mine"));
-  assert.equal(response.status, 401);
+  assert.equal(response!.status, 401);
 
   // A challenge issued to one session cannot be answered by another.
-  options = await (await reauthOptions(env, token)).json();
+  options = await (await reauthOptions(env, token))!.json();
   response = await reauthVerify(env, other, options.transaction, assertionFor(mine, options.options.challenge, "cred-mine"));
-  assert.equal(response.status, 400);
+  assert.equal(response!.status, 400);
 
-  assert.equal((await requireRecentPasskey(env, token, { sub: "test" }, "delete-account")).status, 403);
+  assert.equal((await requireRecentPasskey(env, token, { sub: "test" }, "delete-account"))!.status, 403);
 });
 
 test("reauth: an account with no passkey gets 404 for options, and a missing token 401", async () => {
   const env = environment();
-  assert.equal((await reauthOptions(env, freshToken("d"))).status, 404);
+  assert.equal((await reauthOptions(env, freshToken("d")))!.status, 404);
   const request = new Request("https://example.test/api/passkeys/reauth/options", { method: "POST", body: "{}" });
-  assert.equal((await handlePasskeys(new URL(request.url), request, env)).status, 401);
+  assert.equal((await handlePasskeys(new URL(request.url), request, env))!.status, 401);
 });
 
 test("status: reports whether the signed-in account has a passkey", async () => {
   const env = environment();
   const token = freshToken("e");
   const ask = () => handlePasskeys(new URL("https://example.test/api/passkeys/status"), new Request("https://example.test/api/passkeys/status", { headers: { authorization: `Bearer ${token}` } }), env);
-  assert.deepEqual(await (await ask()).json(), { registered: false, count: 0 });
+  assert.deepEqual(await (await ask())!.json(), { registered: false, count: 0 });
   await seedPasskey(env, newPasskey(), "cred-status");
-  assert.deepEqual(await (await ask()).json(), { registered: true, count: 1 });
+  assert.deepEqual(await (await ask())!.json(), { registered: true, count: 1 });
 });
 
 test("adding another passkey needs a recent passkey check once the account has one", async () => {
@@ -442,18 +442,18 @@ test("adding another passkey needs a recent passkey check once the account has o
   const token = freshToken("f");
   await env.STUDIQUO_DATA.put("email-account-owner:student@example.com", "test");
   // The first passkey needs the mailbox confirmed (and nothing else).
-  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env)).status, 403);
+  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env))!.status, 403);
   await proveMailbox(env, token);
-  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env)).status, 200);
+  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env))!.status, 200);
 
   await seedPasskey(env, newPasskey(), "cred-first");
   const refused = await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env);
-  assert.equal(refused.status, 403);
-  assert.equal((await refused.json()).code, "reauth_required");
+  assert.equal(refused!.status, 403);
+  assert.equal((await refused!.json()).code, "reauth_required");
 
   const { markRecentPasskey } = await import("./passkey-policy.ts");
   await markRecentPasskey(env, sha256Hex(token));
-  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env)).status, 200);
+  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env))!.status, 200);
 });
 
 test("remove-all: needs the passkey's check, even for one registered a moment ago", async () => {
@@ -468,8 +468,8 @@ test("remove-all: needs the passkey's check, even for one registered a moment ag
   const record = await env.STUDIQUO_DATA.get("passkeys:credential:cred-new", "json");
   await env.STUDIQUO_DATA.put("passkeys:credential:cred-new", JSON.stringify({ ...(record as object), createdAt: Date.now() }));
   const refused = await removeAll();
-  assert.equal(refused.status, 403);
-  assert.equal((await refused.json()).action, "remove-passkeys");
+  assert.equal(refused!.status, 403);
+  assert.equal((await refused!.json()).action, "remove-passkeys");
   assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:cred-new"), null);
 });
 
@@ -479,7 +479,7 @@ test("reauth: a passkey registered a moment ago can vouch for the session", asyn
   await seedPasskey(env, newPasskey(), "cred-fresh");
   const record = await env.STUDIQUO_DATA.get("passkeys:credential:cred-fresh", "json");
   await env.STUDIQUO_DATA.put("passkeys:credential:cred-fresh", JSON.stringify({ ...(record as object), createdAt: Date.now() }));
-  assert.equal((await reauthOptions(env, token)).status, 200);
+  assert.equal((await reauthOptions(env, token))!.status, 200);
 });
 
 test("reauth: an unknown action is refused", async () => {
@@ -489,7 +489,7 @@ test("reauth: an unknown action is refused", async () => {
   const request = new Request("https://example.test/api/passkeys/reauth/options", {
     method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ action: "anything" }),
   });
-  assert.equal((await handlePasskeys(new URL(request.url), request, env)).status, 400);
+  assert.equal((await handlePasskeys(new URL(request.url), request, env))!.status, 400);
 });
 
 function emailCodeRequest(path: string, token: string, payload: { email: string; code?: string; }) {
@@ -503,7 +503,7 @@ function emailCodeRequest(path: string, token: string, payload: { email: string;
 async function withMail(run: { (sent: any): Promise<void>; (sent: any): Promise<void>; (arg0: any[]): any; }) {
   const realFetch = globalThis.fetch;
   const sent: any[] = [];
-  globalThis.fetch = async (_url, init) => { sent.push(JSON.parse(init.body)); return new Response("{}", { status: 200 }); };
+  globalThis.fetch = async (_url, init) => { sent.push(JSON.parse(init!.body! as string)); return new Response("{}", { status: 200 }); };
   try { return await run(sent); } finally { globalThis.fetch = realFetch; }
 }
 
@@ -513,23 +513,23 @@ test("the first passkey: registration is refused until the code from the mailbox
   await env.STUDIQUO_DATA.put("email-account-owner:student@example.com", "test");
   const token = freshToken("k");
   const refused = await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env);
-  assert.equal(refused.status, 403);
-  assert.equal((await refused.json()).code, "email_code_required");
+  assert.equal(refused!.status, 403);
+  assert.equal((await refused!.json()).code, "email_code_required");
 
   await withMail(async sent => {
     const send = emailCodeRequest("send", token, { email: "student@example.com" });
-    assert.equal((await handlePasskeys(new URL(send.url), send, env)).status, 200);
+    assert.equal((await handlePasskeys(new URL(send.url), send, env))!.status, 200);
     assert.equal(sent.length, 1);
     assert.equal(sent[0].to, "student@example.com");
-    const code = /確認コード: (\d{6})/.exec(sent[0].text)[1];
+    const code = /確認コード: (\d{6})/.exec(sent[0].text)![1];
 
     const wrong = emailCodeRequest("confirm", token, { email: "student@example.com", code: code === "123456" ? "654321" : "123456" });
-    assert.equal((await handlePasskeys(new URL(wrong.url), wrong, env)).status, 401);
-    assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env)).status, 403);
+    assert.equal((await handlePasskeys(new URL(wrong.url), wrong, env))!.status, 401);
+    assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env))!.status, 403);
 
     const right = emailCodeRequest("confirm", token, { email: "student@example.com", code });
-    assert.equal((await handlePasskeys(new URL(right.url), right, env)).status, 200);
-    assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env)).status, 200);
+    assert.equal((await handlePasskeys(new URL(right.url), right, env))!.status, 200);
+    assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env))!.status, 200);
   });
 });
 
@@ -539,10 +539,10 @@ test("the mailbox proof belongs to one session and one address", async () => {
   await env.STUDIQUO_DATA.put("email-account-owner:student@example.com", "test");
   await proveMailbox(env, freshToken("p"), "student@example.com");
   const other = freshToken("q");
-  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(other).url), registerOptionsRequest(other), env)).status, 403, "another session");
+  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(other).url), registerOptionsRequest(other), env))!.status, 403, "another session");
   const wrongAddress = freshToken("r");
   await proveMailbox(env, wrongAddress, "someone-else@example.com");
-  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(wrongAddress).url), registerOptionsRequest(wrongAddress), env)).status, 403, "another address");
+  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(wrongAddress).url), registerOptionsRequest(wrongAddress), env))!.status, 403, "another address");
 });
 
 test("the code is only sent to an address the signed-in account owns, and not to an account that has a passkey", async () => {
@@ -551,11 +551,11 @@ test("the code is only sent to an address the signed-in account owns, and not to
   await env.STUDIQUO_DATA.put("email-account-owner:victim@example.com", "google:victim-sub");
   await withMail(async sent => {
     const foreign = emailCodeRequest("send", freshToken("s"), { email: "victim@example.com" });
-    assert.equal((await handlePasskeys(new URL(foreign.url), foreign, env)).status, 403);
+    assert.equal((await handlePasskeys(new URL(foreign.url), foreign, env))!.status, 403);
     await env.STUDIQUO_DATA.put("email-account-owner:student@example.com", "test");
     await seedPasskey(env, newPasskey(), "cred-has");
     const has = emailCodeRequest("send", freshToken("t"), { email: "student@example.com" });
-    assert.equal((await handlePasskeys(new URL(has.url), has, env)).status, 409);
+    assert.equal((await handlePasskeys(new URL(has.url), has, env))!.status, 409);
     assert.equal(sent.length, 0);
   });
 });
@@ -566,13 +566,13 @@ test("a mailbox proof is used up by the registration it was given for", async ()
   const token = freshToken("w");
   await proveMailbox(env, token);
   const options = await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env);
-  assert.equal(options.status, 200);
-  const { transaction } = await options.json();
+  assert.equal(options!.status, 200);
+  const { transaction } = await options!.json();
   // Even a registration that fails spends the proof.
   const attempt = new Request("https://example.test/api/passkeys/register/verify", {
     method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ transaction, credential: { id: "x" } }),
   });
   await handlePasskeys(new URL(attempt.url), attempt, env);
-  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env)).status, 403);
+  assert.equal((await handlePasskeys(new URL(registerOptionsRequest(token).url), registerOptionsRequest(token), env))!.status, 403);
 });

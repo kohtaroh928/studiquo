@@ -6,9 +6,9 @@ import test from "node:test";
 import worker from "./app.ts";
 import { mintSession } from "./session.ts";
 import { sessionTokenAcceptable, accessTokenAcceptable, signSessionToken, signAccessToken } from "./token-signature.ts";
-import { partialCtx, partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
-const hash = value => createHash("sha256").update(value).digest("hex");
+const hash = (value: Untyped) => createHash("sha256").update(value).digest("hex");
 const noopCtx = partialCtx({ waitUntil() {} });
 const newKey = () => randomBytes(32).toString("base64");
 const DAY = 24 * 60 * 60 * 1000;
@@ -33,7 +33,7 @@ function environment(extra = {}) {
   return env;
 }
 
-const call = (env: LooseEnv, path: string, { method = "GET", token, body, headers = {} }: { method?: string; token?: string; body?: BodyInit; headers?: Record<string, string> } = {}) => worker.fetch(new Request(`https://example.test${path}`, {
+const call = (env: LooseEnv, path: string, { method = "GET", token, body, headers = {} }: { method?: string; token?: string | null; body?: BodyInit; headers?: Record<string, string> } = {}) => worker.fetch(new Request(`https://example.test${path}`, {
   method, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers }, body,
 }), env, noopCtx);
 
@@ -131,8 +131,8 @@ test("without a key an invented token still reads KV, exactly as before (the che
 test("a real signed login works end to end", async () => {
   const env = environment({ TOKEN_SIGNING_KEY: newKey() });
   const token = await mintSession(env, "person", "r".repeat(40));
-  assert.match(token, SIGNED_SESSION);
-  assert.ok(token.length <= 256);
+  assert.match(token!, SIGNED_SESSION);
+  assert.ok(token!.length <= 256);
   const stored = JSON.parse(env.values.get(`session:${hash(token)}`));
   assert.equal(stored.sub, "person");
   const response = await call(env, "/api/actions", { token });
@@ -143,8 +143,8 @@ test("a signed token with one character changed is refused with no KV read", asy
   const env = environment({ TOKEN_SIGNING_KEY: newKey() });
   const token = await mintSession(env, "person", "r".repeat(40));
   env.reads = 0;
-  const mac = token.slice(token.lastIndexOf(".") + 1);
-  const tampered = token.slice(0, -1) + (mac.endsWith("A") ? "B" : "A");
+  const mac = token!.slice(token!.lastIndexOf(".") + 1);
+  const tampered = token!.slice(0, -1) + (mac.endsWith("A") ? "B" : "A");
   assert.equal((await call(env, "/api/actions", { token: tampered })).status, 401);
   assert.equal(env.reads, 0);
 });
@@ -201,7 +201,7 @@ test("an MCP access token is signed when a key is set, works, and a made-up one 
   assert.equal(exchanged.status, 200);
   const { access_token: access } = await exchanged.json();
   assert.match(access, /^mcp_[0-9a-f]{64}\.[A-Za-z0-9_-]{43}$/);
-  const mcp = token => call(env, "/mcp", { method: "POST", token, headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+  const mcp = (token: Untyped) => call(env, "/mcp", { method: "POST", token, headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
   assert.notEqual((await mcp(access)).status, 401, "the real token works");
 
   env.reads = 0;
@@ -215,7 +215,7 @@ test("an MCP access token is signed when a key is set, works, and a made-up one 
   assert.ok(env.reads > 0);
 
   const strict = oauthEnvironment({ TOKEN_SIGNING_KEY: newKey(), REQUIRE_SIGNED_TOKENS: "true" });
-  const strictCall = token => call(strict, "/mcp", { method: "POST", token, headers: { "content-type": "application/json" }, body: "{}" });
+  const strictCall = (token: Untyped) => call(strict, "/mcp", { method: "POST", token, headers: { "content-type": "application/json" }, body: "{}" });
   assert.equal((await strictCall(unsigned)).status, 401);
   assert.equal(strict.reads, 0, "with signatures required, an unsigned access token is refused before KV");
 });

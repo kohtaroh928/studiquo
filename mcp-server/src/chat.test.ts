@@ -5,7 +5,7 @@ import worker from "./app.ts";
 import { mintSession } from "./session.ts";
 import { DatabaseSync } from "node:sqlite";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, exportPKCS8 } from "jose";
-import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv } from "./test-env.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // Regression coverage for "friend requests are approved, not instant": adding
 // a friend by code must create a one-directional pending request instead of
@@ -33,8 +33,8 @@ function fakeChatRoomBinding() {
     _rooms: rooms,
     getByName(name: string) {
       const state = room(name);
-      const other = userKey => [...state.participants].find(candidate => candidate !== userKey) ?? null;
-      const requireGroup = userKey => {
+      const other = (userKey: Untyped) => [...state.participants].find(candidate => candidate !== userKey) ?? null;
+      const requireGroup = (userKey: Untyped) => {
         if (!state.participants.has(userKey)) throw new Error("Forbidden");
         if (state.kind !== "group") throw new Error("NotAGroup");
       };
@@ -105,7 +105,7 @@ function fakeChatRoomBinding() {
           if (!state.readPositions.has(userKey)) state.readPositions.set(userKey, latestID);
           return {
             latestID,
-            unreadCount: state.messages.filter(item => item.id > state.readPositions.get(userKey) && item.senderKey !== userKey && !item.isCanceled).length,
+            unreadCount: state.messages.filter((item: Untyped) => item.id > state.readPositions.get(userKey) && item.senderKey !== userKey && !item.isCanceled).length,
             closed: false,
           };
         },
@@ -159,15 +159,15 @@ function fakeChatRoomBinding() {
         async listMessages(userKey: string, after = 0) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           return state.messages
-            .filter(item => item.id > after)
-            .map(item => ({ ...item, isMine: item.senderKey === userKey }));
+            .filter((item: Untyped) => item.id > after)
+            .map((item: Untyped) => ({ ...item, isMine: item.senderKey === userKey }));
         },
         // Mirrors chat-room.ts's real cancelMessage: only the original
         // sender may retract it, and the stored text is actually cleared
         // (not just hidden), so every future read of this room sees it gone.
         async cancelMessage(userKey: string, messageID: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
-          const message = state.messages.find(item => item.id === messageID);
+          const message = state.messages.find((item: Untyped) => item.id === messageID);
           if (!message) return { status: "not_found" };
           if (message.senderKey !== userKey) throw new Error("Forbidden");
           message.text = "";
@@ -175,7 +175,7 @@ function fakeChatRoomBinding() {
           return { status: "canceled" };
         },
         async moderatorRemoveMessage(messageID: string) {
-          const message = state.messages.find(item => item.id === messageID);
+          const message = state.messages.find((item: Untyped) => item.id === messageID);
           if (!message) return { status: "not_found" };
           const was = message.isCanceled;
           message.text = ""; message.isCanceled = true;
@@ -184,12 +184,12 @@ function fakeChatRoomBinding() {
         // Mirrors chat-room.ts's real reportSnapshot.
         async reportSnapshot(userKey: string, messageID: number) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
-          const target = state.messages.find(item => item.id === messageID);
+          const target = state.messages.find((item: Untyped) => item.id === messageID);
           if (!target) return null;
-          const near = state.messages.filter(item => item.id >= messageID - 3 && item.id <= messageID + 2);
+          const near = state.messages.filter((item: Untyped) => item.id >= messageID - 3 && item.id <= messageID + 2);
           return {
             reportedKey: target.senderKey,
-            messages: near.map(item => ({
+            messages: near.map((item: Untyped) => ({
               id: item.id, fromReported: item.senderKey === target.senderKey, text: item.text,
               sentAt: item.sentAt, isCanceled: item.isCanceled, reported: item.id === messageID,
             })),
@@ -199,7 +199,7 @@ function fakeChatRoomBinding() {
         // may edit, and a canceled message can never be resurrected by one.
         async editMessage(userKey: string, messageID: string, text: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
-          const message = state.messages.find(item => item.id === messageID);
+          const message = state.messages.find((item: Untyped) => item.id === messageID);
           if (!message) return { status: "not_found" };
           if (message.senderKey !== userKey) throw new Error("Forbidden");
           if (message.isCanceled) return { status: "canceled" };
@@ -213,8 +213,8 @@ function fakeChatRoomBinding() {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           const idSet = new Set(ids);
           return state.messages
-            .filter(item => idSet.has(item.id))
-            .map(item => ({ ...item, isMine: item.senderKey === userKey }));
+            .filter((item: Untyped) => idSet.has(item.id))
+            .map((item: Untyped) => ({ ...item, isMine: item.senderKey === userKey }));
         },
         // Mirrors chat-room.ts's real storeAttachment/getAttachment: same
         // validation, same Forbidden gate, same in-room storage — so the
@@ -271,7 +271,7 @@ function fakeChatRoomBinding() {
 function fakeCloudflareLimiter(limit = 5) {
   const counts = new Map();
   return {
-    async limit({ key }) {
+    async limit({ key }: { key?: Untyped }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -292,11 +292,11 @@ function generateRegistryTestCode() {
 // Durable Object handling one request at a time per instance — calls for the
 // same key are chained so a second call for a key that's still being
 // registered waits for the first to finish, instead of racing it.
-function fakeUserRegistryBinding(studiquoData) {
+function fakeUserRegistryBinding(studiquoData: Untyped) {
   const queues = new Map();
   const chatIdentityKeys = new Map();
 
-  async function ensureUserAtomic(key: string, name: null, studyStats = null, bio = undefined) {
+  async function ensureUserAtomic(key: string, name: null, studyStats: { seconds: number; date: string } | null = null, bio: string | undefined = undefined) {
     const storageKey = `chat:user:${key}`;
     let user = await studiquoData.get(storageKey, "json");
     if (user) {
@@ -345,7 +345,7 @@ function fakeUserRegistryBinding(studiquoData) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
-    if ((user.friends ?? []).some(item => item.code === otherCode)) {
+    if ((user.friends ?? []).some((item: Untyped) => item.code === otherCode)) {
       return { status: "already_friends", friend: { code: user.code, name: user.name } };
     }
     if ((user.friends ?? []).length >= 500) {
@@ -360,8 +360,8 @@ function fakeUserRegistryBinding(studiquoData) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
-    user.friends = (user.friends ?? []).filter(item => item.code !== otherCode);
-    if (blockedContact && !(user.blockedContacts ?? []).some(item => item.code === otherCode)) {
+    user.friends = (user.friends ?? []).filter((item: Untyped) => item.code !== otherCode);
+    if (blockedContact && !(user.blockedContacts ?? []).some((item: Untyped) => item.code === otherCode)) {
       user.blockedContacts = [...(user.blockedContacts ?? []), blockedContact];
     }
     await studiquoData.put(storageKey, JSON.stringify(user));
@@ -372,9 +372,9 @@ function fakeUserRegistryBinding(studiquoData) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
-    user.friends = [...(user.friends ?? []).filter(item => item.code !== friend.code), friend];
+    user.friends = [...(user.friends ?? []).filter((item: Untyped) => item.code !== friend.code), friend];
     if (clearOutgoing) {
-      user.outgoingRequests = (user.outgoingRequests ?? []).filter(item => item.code !== friend.code);
+      user.outgoingRequests = (user.outgoingRequests ?? []).filter((item: Untyped) => item.code !== friend.code);
     }
     await studiquoData.put(storageKey, JSON.stringify(user));
     return { status: "confirmed" };
@@ -393,17 +393,17 @@ function fakeUserRegistryBinding(studiquoData) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
-    const deletedFriend = (user.friends ?? []).find(item => item.code === deletedCode);
-    const blockedContact = (user.blockedContacts ?? []).find(item => item.code === deletedCode);
-    user.friends = (user.friends ?? []).filter(item => item.code !== deletedCode);
-    user.blockedContacts = (user.blockedContacts ?? []).filter(item => item.code !== deletedCode);
+    const deletedFriend = (user.friends ?? []).find((item: Untyped) => item.code === deletedCode);
+    const blockedContact = (user.blockedContacts ?? []).find((item: Untyped) => item.code === deletedCode);
+    user.friends = (user.friends ?? []).filter((item: Untyped) => item.code !== deletedCode);
+    user.blockedContacts = (user.blockedContacts ?? []).filter((item: Untyped) => item.code !== deletedCode);
     const historicalContact = deletedFriend ?? blockedContact;
     if (historicalContact) {
       user.blockedContacts.push({ ...historicalContact, name: "削除済みユーザー", deleted: true });
     }
-    user.incomingRequests = (user.incomingRequests ?? []).filter(item => item.code !== deletedCode);
-    user.outgoingRequests = (user.outgoingRequests ?? []).filter(item => item.code !== deletedCode);
-    user.incomingGroupInvites = (user.incomingGroupInvites ?? []).filter(item => item.inviterCode !== deletedCode);
+    user.incomingRequests = (user.incomingRequests ?? []).filter((item: Untyped) => item.code !== deletedCode);
+    user.outgoingRequests = (user.outgoingRequests ?? []).filter((item: Untyped) => item.code !== deletedCode);
+    user.incomingGroupInvites = (user.incomingGroupInvites ?? []).filter((item: Untyped) => item.inviterCode !== deletedCode);
     await studiquoData.put(storageKey, JSON.stringify(user));
     return { status: "removed" };
   }
@@ -412,10 +412,10 @@ function fakeUserRegistryBinding(studiquoData) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
-    if ((user.friends ?? []).some(item => item.code === requesterCode)) {
+    if ((user.friends ?? []).some((item: Untyped) => item.code === requesterCode)) {
       return { status: "already_friends" };
     }
-    if (!(user.incomingRequests ?? []).some(item => item.code === requesterCode)) {
+    if (!(user.incomingRequests ?? []).some((item: Untyped) => item.code === requesterCode)) {
       user.incomingRequests = [
         ...(user.incomingRequests ?? []),
         { code: requesterCode, name: requesterName, requestedAt: Date.now() },
@@ -429,7 +429,7 @@ function fakeUserRegistryBinding(studiquoData) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return;
-    if (!(user.outgoingRequests ?? []).some(item => item.code === recipientCode)) {
+    if (!(user.outgoingRequests ?? []).some((item: Untyped) => item.code === recipientCode)) {
       user.outgoingRequests = [
         ...(user.outgoingRequests ?? []),
         { code: recipientCode, name: recipientName, requestedAt: Date.now() },
@@ -442,7 +442,7 @@ function fakeUserRegistryBinding(studiquoData) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return;
-    const filtered = (user.outgoingRequests ?? []).filter(item => item.code !== recipientCode);
+    const filtered = (user.outgoingRequests ?? []).filter((item: Untyped) => item.code !== recipientCode);
     if (filtered.length !== (user.outgoingRequests ?? []).length) {
       user.outgoingRequests = filtered;
       await studiquoData.put(storageKey, JSON.stringify(user));
@@ -452,10 +452,10 @@ function fakeUserRegistryBinding(studiquoData) {
   async function resolveIncomingRequestAtomic(key: string, action: string, otherCode: string, otherName: string, roomID: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
-    if (!user || !(user.incomingRequests ?? []).some(item => item.code === otherCode)) {
+    if (!user || !(user.incomingRequests ?? []).some((item: Untyped) => item.code === otherCode)) {
       return { status: "not_found" };
     }
-    user.incomingRequests = (user.incomingRequests ?? []).filter(item => item.code !== otherCode);
+    user.incomingRequests = (user.incomingRequests ?? []).filter((item: Untyped) => item.code !== otherCode);
     if (action === "reject") {
       await studiquoData.put(storageKey, JSON.stringify(user));
       return { status: "rejected", recipient: { code: user.code, name: user.name } };
@@ -463,7 +463,7 @@ function fakeUserRegistryBinding(studiquoData) {
     if ((user.friends ?? []).length >= 500) {
       return { status: "friends_full" };
     }
-    user.friends = [...(user.friends ?? []).filter(item => item.code !== otherCode), { code: otherCode, name: otherName, roomID }];
+    user.friends = [...(user.friends ?? []).filter((item: Untyped) => item.code !== otherCode), { code: otherCode, name: otherName, roomID }];
     await studiquoData.put(storageKey, JSON.stringify(user));
     return { status: "accepted", friend: { code: user.code, name: user.name } };
   }
@@ -472,7 +472,7 @@ function fakeUserRegistryBinding(studiquoData) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
-    user.groups = [...(user.groups ?? []).filter(item => item.roomID !== roomID), { roomID }];
+    user.groups = [...(user.groups ?? []).filter((item: Untyped) => item.roomID !== roomID), { roomID }];
     await studiquoData.put(storageKey, JSON.stringify(user));
     return { status: "added" };
   }
@@ -481,8 +481,8 @@ function fakeUserRegistryBinding(studiquoData) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
-    if ((user.groups ?? []).some(item => item.roomID === roomID)) return { status: "already_member" };
-    if ((user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) return { status: "already_pending" };
+    if ((user.groups ?? []).some((item: Untyped) => item.roomID === roomID)) return { status: "already_member" };
+    if ((user.incomingGroupInvites ?? []).some((item: Untyped) => item.roomID === roomID)) return { status: "already_pending" };
     user.incomingGroupInvites = [
       ...(user.incomingGroupInvites ?? []),
       { roomID, name, inviterCode, inviterName, invitedAt: Date.now() },
@@ -494,13 +494,13 @@ function fakeUserRegistryBinding(studiquoData) {
   async function resolveIncomingGroupInviteAtomic(key: string, action: string, roomID: string) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
-    const invite = (user?.incomingGroupInvites ?? []).find(item => item.roomID === roomID);
+    const invite = (user?.incomingGroupInvites ?? []).find((item: Untyped) => item.roomID === roomID);
     if (!user || !invite) {
       return { status: "not_found" };
     }
-    user.incomingGroupInvites = (user.incomingGroupInvites ?? []).filter(item => item.roomID !== roomID);
+    user.incomingGroupInvites = (user.incomingGroupInvites ?? []).filter((item: Untyped) => item.roomID !== roomID);
     if (action === "accept") {
-      user.groups = [...(user.groups ?? []).filter(item => item.roomID !== roomID), { roomID }];
+      user.groups = [...(user.groups ?? []).filter((item: Untyped) => item.roomID !== roomID), { roomID }];
     }
     await studiquoData.put(storageKey, JSON.stringify(user));
     return { status: action === "accept" ? "accepted" : "rejected", invite };
@@ -510,8 +510,8 @@ function fakeUserRegistryBinding(studiquoData) {
     const storageKey = `chat:user:${key}`;
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
-    user.groups = (user.groups ?? []).filter(item => item.roomID !== roomID);
-    if (!(user.incomingGroupInvites ?? []).some(item => item.roomID === roomID)) {
+    user.groups = (user.groups ?? []).filter((item: Untyped) => item.roomID !== roomID);
+    if (!(user.incomingGroupInvites ?? []).some((item: Untyped) => item.roomID === roomID)) {
       user.incomingGroupInvites = [
         ...(user.incomingGroupInvites ?? []),
         { roomID, name, inviterCode, inviterName, invitedAt: Date.now() },
@@ -526,7 +526,7 @@ function fakeUserRegistryBinding(studiquoData) {
     const user = await studiquoData.get(storageKey, "json");
     if (!user) return { status: "not_found" };
     const before = user.groups ?? [];
-    user.groups = before.filter(item => item.roomID !== roomID);
+    user.groups = before.filter((item: Untyped) => item.roomID !== roomID);
     if (user.groups.length !== before.length) await studiquoData.put(storageKey, JSON.stringify(user));
     return { status: "removed" };
   }
@@ -657,7 +657,7 @@ function freshToken(suffix: string) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 }
 
-function request(path: string, { method = "GET", token, body }: { method?: string; token?: string; body?: unknown } = {}) {
+function request(path: string, { method = "GET", token, body }: { method?: string; token?: string | null; body?: unknown } = {}) {
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers["content-type"] = "application/json";
@@ -929,7 +929,7 @@ test("a group can be created with no invited friends at all — just its creator
   assert.match(created.code, /^[A-HJ-NP-Z2-9]{10}$/);
   assert.deepEqual(created.members, [{ code: alice.code, name: "Alice" }]);
   const listed = await groups(env, alice.token);
-  assert.deepEqual(listed.map(g => g.roomID), [created.roomID]);
+  assert.deepEqual(listed.map((g: Untyped) => g.roomID), [created.roomID]);
   assert.equal(listed[0].code, created.code, "the public group code remains stable across refreshes");
   assert.equal(listed[0].avatarUpdatedAt, null);
 });
@@ -962,7 +962,7 @@ test("creating a group adds only the creator immediately, and sends a pending in
   assert.equal(created.name, "Study Group");
   assert.deepEqual(created.members, [{ code: alice.code, name: "Alice" }]);
 
-  assert.deepEqual((await groups(env, alice.token)).map(g => g.roomID), [created.roomID]);
+  assert.deepEqual((await groups(env, alice.token)).map((g: Untyped) => g.roomID), [created.roomID]);
   assert.deepEqual(await groups(env, bob.token), []);
 
   const bobInvites = await groupInvites(env, bob.token);
@@ -981,7 +981,7 @@ test("accepting a group invite adds the room to the invitee's own group list and
   assert.equal(accepted.members.length, 2);
 
   assert.deepEqual((await groupInvites(env, bob.token)), []);
-  assert.deepEqual((await groups(env, bob.token)).map(g => g.roomID), [created.roomID]);
+  assert.deepEqual((await groups(env, bob.token)).map((g: Untyped) => g.roomID), [created.roomID]);
 
   const sent = await sendMessage(env, bob.token, created.roomID, "よろしく");
   assert.equal(sent.status, 200);
@@ -1122,8 +1122,8 @@ test("accepting a re-invite sent after an earlier rejection joins the group norm
   const acceptResponse = await acceptGroupInvite(env, daveToken, created.roomID);
   assert.equal(acceptResponse.status, 200);
   const accepted = await acceptResponse.json();
-  assert.ok(accepted.members.some(member => member.code === dave.code));
-  assert.deepEqual((await groups(env, daveToken)).map(g => g.roomID), [created.roomID]);
+  assert.ok(accepted.members.some((member: Untyped) => member.code === dave.code));
+  assert.deepEqual((await groups(env, daveToken)).map((g: Untyped) => g.roomID), [created.roomID]);
 
   const sent = await sendMessage(env, daveToken, created.roomID, "入りました");
   assert.equal(sent.status, 200);
@@ -1299,9 +1299,9 @@ test("group messages carry the sender's code and name, resolved once per distinc
   assert.equal(sentByBob.senderKey, undefined);
 
   const list = await (await readMessages(env, alice.token, created.roomID)).json();
-  assert.deepEqual(list.map(m => m.senderCode), [alice.code, bob.code]);
-  assert.deepEqual(list.map(m => m.senderName), ["Alice", "Bob"]);
-  assert.ok(list.every(m => m.senderKey === undefined));
+  assert.deepEqual(list.map((m: Untyped) => m.senderCode), [alice.code, bob.code]);
+  assert.deepEqual(list.map((m: Untyped) => m.senderName), ["Alice", "Bob"]);
+  assert.ok(list.every((m: Untyped) => m.senderKey === undefined));
 });
 
 test("inbox includes group conversations with their unread message count", async () => {
@@ -1312,7 +1312,7 @@ test("inbox includes group conversations with their unread message count", async
   const response = await worker.fetch(request("/api/chat/inbox", { token: fixture.bobToken }), fixture.env, noopCtx);
   assert.equal(response.status, 200);
   const entries = await response.json();
-  const group = entries.find(entry => entry.roomID === fixture.groupRoomID);
+  const group = entries.find((entry: Untyped) => entry.roomID === fixture.groupRoomID);
 
   assert.ok(group, "the joined group must be present beside direct chats");
   assert.equal(group.kind, "group");
@@ -1670,13 +1670,13 @@ test("accepting a pending invite into a group that filled up in the meantime is 
   // Dave must not have actually joined the room...
   const roomMembers = await env.CHAT_ROOM.getByName(roomID).groupInfo(fillerKeys[0]);
   assert.equal(roomMembers.members.length, 50);
-  assert.ok(!roomMembers.members.some(member => member.key === daveKey));
+  assert.ok(!roomMembers.members.some((member: Untyped) => member.key === daveKey));
   // ...nor be left with a phantom entry in his own group list...
   const daveRecord = await env.STUDIQUO_DATA.get(`chat:user:${daveKey}`, "json");
-  assert.ok(!(daveRecord.groups ?? []).some(item => item.roomID === roomID), "must not be left with a group entry for a room never actually joined");
+  assert.ok(!(daveRecord.groups ?? []).some((item: Untyped) => item.roomID === roomID), "must not be left with a group entry for a room never actually joined");
   // ...and his invite should still be there to retry once a seat opens up,
   // not silently discarded.
-  assert.deepEqual((await groupInvites(env, daveToken)).map(item => item.roomID), [roomID]);
+  assert.deepEqual((await groupInvites(env, daveToken)).map((item: Untyped) => item.roomID), [roomID]);
 });
 
 // End-to-end companion to the previous test: same "invite outlives the
@@ -1707,7 +1707,7 @@ test("a rejected accept leaves no phantom group in the invitee's own list, and a
   assert.deepEqual(await groups(env, daveToken), []);
   // ...and his "pending invites" list must still show it, not have quietly
   // lost it.
-  assert.deepEqual((await groupInvites(env, daveToken)).map(item => item.roomID), [roomID]);
+  assert.deepEqual((await groupInvites(env, daveToken)).map((item: Untyped) => item.roomID), [roomID]);
 
   // A seat frees up — one existing member leaves.
   await env.CHAT_ROOM.getByName(roomID).removeParticipant(fillerKeys[0], fillerKeys[1]);
@@ -1717,7 +1717,7 @@ test("a rejected accept leaves no phantom group in the invitee's own list, and a
   // left dangling but genuinely still usable.
   const secondAttempt = await acceptGroupInvite(env, daveToken, roomID);
   assert.equal(secondAttempt.status, 200);
-  assert.deepEqual((await groups(env, daveToken)).map(item => item.roomID), [roomID]);
+  assert.deepEqual((await groups(env, daveToken)).map((item: Untyped) => item.roomID), [roomID]);
   assert.deepEqual(await groupInvites(env, daveToken), []);
 });
 
@@ -1761,10 +1761,10 @@ test("when only one seat remains, simultaneous accepts from different people rac
   // real concurrent load.
   for (let i = 0; i < tokens.length; i += 1) {
     if (statuses[i] === 200) {
-      assert.deepEqual((await groups(env, tokens[i])).map(item => item.roomID), [roomID], `${names[i]} won the race and must actually be a member`);
+      assert.deepEqual((await groups(env, tokens[i])).map((item: Untyped) => item.roomID), [roomID], `${names[i]} won the race and must actually be a member`);
     } else {
       assert.deepEqual(await groups(env, tokens[i]), [], `${names[i]} lost the race and must not show a phantom membership`);
-      assert.deepEqual((await groupInvites(env, tokens[i])).map(item => item.roomID), [roomID], `${names[i]}'s invite must survive the loss so they can retry`);
+      assert.deepEqual((await groupInvites(env, tokens[i])).map((item: Untyped) => item.roomID), [roomID], `${names[i]}'s invite must survive the loss so they can retry`);
     }
   }
 });
@@ -1898,7 +1898,7 @@ test("two different people requesting the same recipient at the same time both g
 
   const bobsRequests = await incomingRequests(env, bobToken);
   assert.deepEqual(
-    bobsRequests.map(item => item.code).sort(),
+    bobsRequests.map((item: Untyped) => item.code).sort(),
     [alice.code, carol.code].sort(),
     "both requests must be present — neither should be silently dropped"
   );
@@ -2229,7 +2229,7 @@ test("bio is visible to friends, preserved by old clients, and can be cleared", 
   const env = environment();
   const aliceToken = freshToken("b0");
   const bobToken = freshToken("b1");
-  const update = bio => worker.fetch(request("/api/chat/me", { method: "POST", token: aliceToken, body: { name: "Alice", bio } }), env, noopCtx);
+  const update = (bio: Untyped) => worker.fetch(request("/api/chat/me", { method: "POST", token: aliceToken, body: { name: "Alice", bio } }), env, noopCtx);
   const first = await update("Hello\nWelcome");
   assert.equal(first.status, 200);
   const alice = await first.json();
@@ -2279,7 +2279,7 @@ test("a friend can download an uploaded avatar, and sees it reflected in friends
   assert.equal(downloadResponse.headers.get("content-type"), "image/jpeg");
   // Stored bytes must not be sniffed into another type or run as a page.
   assert.equal(downloadResponse.headers.get("x-content-type-options"), "nosniff");
-  assert.match(downloadResponse.headers.get("content-security-policy"), /sandbox/);
+  assert.match(downloadResponse.headers.get("content-security-policy")!, /sandbox/);
   assert.equal(Buffer.from(await downloadResponse.arrayBuffer()).toString(), "fake jpeg bytes");
 });
 
@@ -2404,8 +2404,8 @@ test("accept and reject racing the same pending request never both succeed and n
 
   const bobsFriends = await friends(env, bobToken);
   const alicesFriends = await friends(env, aliceToken);
-  const bobHasAlice = bobsFriends.some(item => item.code === alice.code);
-  const aliceHasBob = alicesFriends.some(item => item.code === bob.code);
+  const bobHasAlice = bobsFriends.some((item: Untyped) => item.code === alice.code);
+  const aliceHasBob = alicesFriends.some((item: Untyped) => item.code === bob.code);
   assert.equal(bobHasAlice, aliceHasBob, "both sides must agree on whether the friendship exists");
   assert.equal(bobHasAlice, acceptResponse.status === 200, "the friendship must exist exactly when accept was the winner");
   assert.deepEqual(await incomingRequests(env, bobToken), [], "the pending request must be gone either way");
@@ -2437,8 +2437,8 @@ test("accepting a request when already at the 500-friend cap is rejected instead
 
   const bobsFriends = await friends(env, bobToken);
   assert.equal(bobsFriends.length, 500);
-  assert.ok(bobsFriends.some(item => item.code === "OLDEST1"), "the existing oldest friend must not have been evicted");
-  assert.ok(!bobsFriends.some(item => item.code === alice.code), "the new friend must not have been added past the cap");
+  assert.ok(bobsFriends.some((item: Untyped) => item.code === "OLDEST1"), "the existing oldest friend must not have been evicted");
+  assert.ok(!bobsFriends.some((item: Untyped) => item.code === alice.code), "the new friend must not have been added past the cap");
 });
 
 test("accepting a request that was never sent returns 404 and creates no friendship", async () => {
@@ -2521,7 +2521,7 @@ test("a new session for the same account keeps its friend code and access to bot
   const bobToken = freshToken("rb");
   const aliceNewToken = freshToken("rn");
   const account = "email:alice@example.test";
-  const tokenHash = token => createHash("sha256").update(token).digest("hex");
+  const tokenHash = (token: Untyped) => createHash("sha256").update(token).digest("hex");
   await env.STUDIQUO_DATA.put(`session:${tokenHash(aliceToken)}`, JSON.stringify({ sub: account }));
   await env.STUDIQUO_DATA.put(`session:${tokenHash(aliceNewToken)}`, JSON.stringify({ sub: account }));
 
@@ -2536,7 +2536,7 @@ test("a new session for the same account keeps its friend code and access to bot
   assert.equal((await readMessages(env, aliceNewToken, roomID)).status, 200);
   assert.equal((await sendMessage(env, aliceNewToken, roomID, "after sign-in")).status, 200);
   const received = await (await readMessages(env, bobToken, roomID)).json();
-  assert.deepEqual(received.map(message => message.text), ["before sign-in", "after sign-in"]);
+  assert.deepEqual(received.map((message: Untyped) => message.text), ["before sign-in", "after sign-in"]);
 });
 
 test("switching login methods preserves the friend code, groups, and chat history", async () => {
@@ -2545,7 +2545,7 @@ test("switching login methods preserves the friend code, groups, and chat histor
   const localToken = freshToken("w");
   const bobToken = freshToken("e");
   const canonical = "google:shared-google-sub";
-  const tokenHash = token => createHash("sha256").update(token).digest("hex");
+  const tokenHash = (token: Untyped) => createHash("sha256").update(token).digest("hex");
 
   await env.STUDIQUO_DATA.put(`session:${tokenHash(googleToken)}`, JSON.stringify({ sub: "google:shared-google-sub" }));
   await env.STUDIQUO_DATA.put(`session:${tokenHash(localToken)}`, JSON.stringify({ sub: "email:alice@example.test" }));
@@ -2565,12 +2565,12 @@ test("switching login methods preserves the friend code, groups, and chat histor
   const switched = await registerUser(env, localToken, "Alice");
   assert.equal(switched.code, alice.code);
   assert.equal((await friends(env, localToken))[0].roomID, directRoomID);
-  assert.deepEqual((await groups(env, localToken)).map(item => item.roomID), [group.roomID]);
+  assert.deepEqual((await groups(env, localToken)).map((item: Untyped) => item.roomID), [group.roomID]);
 
   const directHistory = await (await readMessages(env, localToken, directRoomID)).json();
   const groupHistory = await (await readMessages(env, localToken, group.roomID)).json();
-  assert.deepEqual(directHistory.map(message => message.text), ["direct history"]);
-  assert.deepEqual(groupHistory.map(message => message.text), ["group history"]);
+  assert.deepEqual(directHistory.map((message: Untyped) => message.text), ["direct history"]);
+  assert.deepEqual(groupHistory.map((message: Untyped) => message.text), ["group history"]);
 });
 
 test("an existing token-derived friendship and room survive a later sign-in", async () => {
@@ -2601,7 +2601,7 @@ test("an existing token-derived friendship and room survive a later sign-in", as
   assert.equal((await readMessages(env, newToken, roomID)).status, 200);
   assert.equal((await sendMessage(env, newToken, roomID, "after sign-in")).status, 200);
   const received = await (await readMessages(env, bobToken, roomID)).json();
-  assert.deepEqual(received.map(message => message.text), ["before sign-in", "after sign-in"]);
+  assert.deepEqual(received.map((message: Untyped) => message.text), ["before sign-in", "after sign-in"]);
 });
 
 // Regression coverage for "canceling a message only hides it on the
@@ -2873,7 +2873,7 @@ test("two messages with identical text keep their own distinct clientMessageID, 
   await sendMessage(env, aliceToken, roomID, "hi", "second");
 
   const view = await (await readMessages(env, aliceToken, roomID)).json();
-  assert.deepEqual(view.map(item => item.clientMessageID), ["first", "second"]);
+  assert.deepEqual(view.map((item: Untyped) => item.clientMessageID), ["first", "second"]);
 });
 
 test("a message sent with no clientMessageID reads back with a null one, not an error", async () => {
@@ -2917,7 +2917,7 @@ test("an attachment uploaded by one friend can be downloaded by the other, with 
   assert.equal(downloadResponse.status, 200);
   assert.equal(downloadResponse.headers.get("content-type"), "image/jpeg");
   assert.equal(downloadResponse.headers.get("x-content-type-options"), "nosniff");
-  assert.match(downloadResponse.headers.get("content-security-policy"), /sandbox/);
+  assert.match(downloadResponse.headers.get("content-security-policy")!, /sandbox/);
   assert.equal(downloadResponse.headers.get("content-disposition"), "attachment");
   const downloaded = Buffer.from(await downloadResponse.arrayBuffer());
   assert.ok(downloaded.equals(original), "the recipient must get back the exact bytes the sender uploaded");
@@ -2941,7 +2941,7 @@ test("an attachment that claims to be a web page is served as a sandboxed downlo
 
   const response = await downloadAttachment(env, bobToken, roomID, id);
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
-  assert.match(response.headers.get("content-security-policy"), /default-src 'none'; sandbox/);
+  assert.match(response.headers.get("content-security-policy")!, /default-src 'none'; sandbox/);
   assert.equal(response.headers.get("content-disposition"), "attachment");
 });
 
@@ -3303,7 +3303,7 @@ test("inbox counts only new incoming messages and shares read progress across de
   const bob = await registerUser(env, bobToken, "Bob");
   await addFriend(env, aliceToken, bob.code);
   const { roomID } = await (await acceptRequest(env, bobToken, alice.code)).json();
-  const inbox = async token => (await (await worker.fetch(request("/api/chat/inbox", { token }), env, noopCtx)).json())[0];
+  const inbox = async (token: Untyped) => (await (await worker.fetch(request("/api/chat/inbox", { token }), env, noopCtx)).json())[0];
 
   const first = await (await sendMessage(env, aliceToken, roomID, "one")).json();
   const second = await (await sendMessage(env, aliceToken, roomID, "two")).json();
@@ -3337,7 +3337,7 @@ test("deleting a blocked friend removes both friendships but retains history and
   await sendMessage(env, aliceToken, roomID, "retained history");
   await blockOtherParticipant(env, aliceToken, roomID);
   const blockedBeforeRemoval = await worker.fetch(request("/api/chat/friends/blocked", { token: aliceToken }), env, noopCtx);
-  assert.deepEqual((await blockedBeforeRemoval.json()).map(item => item.code), [bob.code]);
+  assert.deepEqual((await blockedBeforeRemoval.json()).map((item: Untyped) => item.code), [bob.code]);
 
   const removed = await worker.fetch(request(`/api/chat/friends/${bob.code}`, {
     method: "DELETE", token: aliceToken,
@@ -3354,7 +3354,7 @@ test("deleting a blocked friend removes both friendships but retains history and
   assert.equal((await history.json())[0].text, "retained history");
 
   const blocked = await worker.fetch(request("/api/chat/friends/blocked", { token: aliceToken }), env, noopCtx);
-  assert.deepEqual((await blocked.json()).map(item => item.code), [bob.code]);
+  assert.deepEqual((await blocked.json()).map((item: Untyped) => item.code), [bob.code]);
   assert.equal((await addFriend(env, bobToken, alice.code)).status, 403);
   const unblocked = await worker.fetch(request(`/api/chat/rooms/${roomID}/unblock`, {
     method: "POST", token: aliceToken,
@@ -3582,7 +3582,7 @@ test("30: registering again after deletion starts with a new friend code and emp
   const newToken = await mintSession(fixture.env, fixture.aliceSub, "dn".repeat(40));
   const recreated = await registerUser(fixture.env, newToken, "Alice Again");
   assert.notEqual(recreated.code, fixture.alice.code);
-  assert.deepEqual(await friends(fixture.env, newToken), []);
+  assert.deepEqual(await friends(fixture.env, newToken!), []);
   assert.deepEqual(await incomingRequests(fixture.env, newToken), []);
   assert.deepEqual(await outgoingRequests(fixture.env, newToken), []);
 });
@@ -3604,8 +3604,8 @@ test("32: a deleted account is removed from every group it belonged to", async (
   await deleteAccount(fixture.env, fixture.aliceToken);
 
   for (const roomID of [fixture.groupRoomID, second.roomID]) {
-    const members = (await groups(fixture.env, fixture.bobToken)).find(group => group.roomID === roomID)?.members ?? [];
-    assert.deepEqual(members.map(member => member.code), [fixture.bob.code]);
+    const members = (await groups(fixture.env, fixture.bobToken)).find((group: Untyped) => group.roomID === roomID)?.members ?? [];
+    assert.deepEqual(members.map((member: Untyped) => member.code), [fixture.bob.code]);
   }
 });
 
@@ -3661,7 +3661,7 @@ test("37: deleting the final member leaves an empty group without failing", asyn
 
 test("38: pending group invitations from a deleted account are removed", async () => {
   const fixture = await deletionGroupFixture({ acceptInvite: false });
-  assert.deepEqual((await groupInvites(fixture.env, fixture.bobToken)).map(invite => invite.roomID), [fixture.groupRoomID]);
+  assert.deepEqual((await groupInvites(fixture.env, fixture.bobToken)).map((invite: Untyped) => invite.roomID), [fixture.groupRoomID]);
   await deleteAccount(fixture.env, fixture.aliceToken);
   assert.deepEqual(await groupInvites(fixture.env, fixture.bobToken), []);
 });
@@ -3686,7 +3686,7 @@ test("40: once concurrent deletion removes group membership, the deleting accoun
   assert.equal(send.status, 403);
   assert.equal((await deletion).status, 202);
   const messages = await (await readMessages(fixture.env, fixture.bobToken, fixture.groupRoomID)).json();
-  assert.equal(messages.some(message => message.text === "削除中の書き込み"), false);
+  assert.equal(messages.some((message: Untyped) => message.text === "削除中の書き込み"), false);
 });
 
 // Runs `after` once, right after the next `chat:user:*` read has returned its
@@ -3771,7 +3771,7 @@ test("accepting a request cannot overwrite a removal made on the requester's own
   });
   const accepted = await acceptRequest(env, bobToken, carol.code);
   assert.equal(accepted.status, 200);
-  assert.deepEqual((await friends(env, carolToken)).map(item => item.code), [bob.code]);
+  assert.deepEqual((await friends(env, carolToken)).map((item: Untyped) => item.code), [bob.code]);
 });
 
 test("a profile photo that is not valid base64 is refused, so a friend's download can never fail on it", async () => {
@@ -3819,9 +3819,9 @@ function withAdminDB(env: LooseEnv) {
     db.exec(readMigration(file));
   }
   env.ADMIN_DB = {
-    prepare: sql => {
-      const make = (params = []) => ({
-        bind: (...next) => make(next),
+    prepare: (sql: Untyped) => {
+      const make = (params: Untyped[] = []) => ({
+        bind: (...next: Untyped[]) => make(next),
         async run() { const r = db.prepare(sql).run(...params); return { success: true, meta: { changes: Number(r.changes) } }; },
         async all() { return { results: db.prepare(sql).all(...params) }; },
         async first() { return db.prepare(sql).get(...params) ?? null; },
@@ -3858,8 +3858,8 @@ test("a report is kept in D1 with the message as it was, even if the sender retr
   assert.equal(rows[0].reason, "いやがらせ");
   assert.notEqual(rows[0].reported_key, rows[0].reporter_key);
   const snapshot = JSON.parse(rows[0].snapshot);
-  assert.equal(snapshot.find(item => item.reported).text, "不適切な発言");
-  assert.equal(snapshot.find(item => !item.reported).fromReported, false);
+  assert.equal(snapshot.find((item: Untyped) => item.reported).text, "不適切な発言");
+  assert.equal(snapshot.find((item: Untyped) => !item.reported).fromReported, false);
   assert.equal([...env._kv.keys()].filter(k => k.startsWith("report:chat:")).length, 0);
 });
 
@@ -3892,7 +3892,7 @@ test("a filed report pings Slack with the id and a link, never the message text 
   env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.example.test/x";
   const { aliceToken, bobToken, roomID } = await befriended(env, "m8", "m9");
   const sent = await (await sendMessage(env, bobToken, roomID, "SECRET-BODY")).json();
-  const calls = [];
+  const calls: Untyped[] = [];
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => { calls.push({ url, body: String(init?.body ?? "") }); return new Response("ok"); };
   try {
@@ -3973,14 +3973,14 @@ test("an operator can remove a reported message: it is blanked for everyone, the
   const { env, aliceToken, roomID, sent, reportID } = await reportedSetup("s1", "s2");
   const response = await admin(env, `/api/admin/chat-reports/${reportID}/remove-message`);
   assert.deepEqual(await response.json(), { status: "removed" });
-  const seen = (await (await readMessages(env, aliceToken, roomID)).json()).find(item => item.id === sent.id);
+  const seen = (await (await readMessages(env, aliceToken, roomID)).json()).find((item: Untyped) => item.id === sent.id);
   assert.equal(seen.text, "");
   assert.equal(seen.isCanceled, true);
   const row = env._d1.prepare("SELECT status, admin_note, snapshot FROM chat_reports WHERE id = ?").get(reportID);
   assert.equal(row.status, "resolved");
   assert.match(row.admin_note, /メッセージを削除/);
   assert.ok(row.snapshot.includes("不適切な発言"));
-  assert.deepEqual(env._d1.prepare("SELECT action, target FROM admin_audit_log").all().map(r => ({ ...r })), [{ action: "chat_report.remove_message", target: reportID }]);
+  assert.deepEqual(env._d1.prepare("SELECT action, target FROM admin_audit_log").all().map((r: Untyped) => ({ ...r })), [{ action: "chat_report.remove_message", target: reportID }]);
   // Doing it again is harmless; an unknown report is a 404.
   assert.deepEqual(await (await admin(env, `/api/admin/chat-reports/${reportID}/remove-message`)).json(), { status: "already_removed" });
   assert.equal((await admin(env, `/api/admin/chat-reports/${crypto.randomUUID()}/remove-message`)).status, 404);
@@ -3998,11 +3998,11 @@ test("suspending the reported account signs them out of everything; the reporter
   assert.equal((await worker.fetch(request("/api/chat/friends", { token: aliceToken }), env, noopCtx)).status, 200);
   assert.equal(env._d1.prepare("SELECT status FROM chat_reports WHERE id = ?").get(reportID).status, "resolved");
   const listed = await (await admin(env, "/api/admin/accounts/suspended", { method: "GET" })).json();
-  assert.deepEqual(listed.suspended.map(item => item.suspensionID), [suspensionID]);
+  assert.deepEqual(listed.suspended.map((item: Untyped) => item.suspensionID), [suspensionID]);
 
   assert.equal((await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID, scope: "account" } })).status, 200);
   assert.equal((await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx)).status, 200);
-  assert.deepEqual(env._d1.prepare("SELECT action FROM admin_audit_log ORDER BY id").all().map(r => r.action),
+  assert.deepEqual(env._d1.prepare("SELECT action FROM admin_audit_log ORDER BY id").all().map((r: Untyped) => r.action),
     ["account.suspend_account", "account.list_suspended", "account.unsuspend"]);
 });
 
@@ -4052,7 +4052,7 @@ test("chat-only suspension blocks chat but not the rest of the account; lifting 
   assert.equal((await document.json()).code, "chat_suspended");
   assert.equal((await worker.fetch(request("/api/chat/friends", { token: aliceToken }), env, noopCtx)).status, 200);
   const listed = (await (await admin(env, "/api/admin/accounts/suspended", { method: "GET" })).json()).suspended;
-  assert.deepEqual(listed.map(item => item.scope), ["chat"]);
+  assert.deepEqual(listed.map((item: Untyped) => item.scope), ["chat"]);
   assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "bogus" } })).status, 400);
   assert.equal((await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID } })).status, 400);
   assert.equal((await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "toString" } })).status, 400);
@@ -4066,7 +4066,7 @@ test("a warning is pushed to the reported person's devices with fixed wording, i
   Object.assign(env, { APNS_AUTH_KEY: await exportPKCS8(pair.privateKey), APNS_KEY_ID: "KEY1234567", APNS_TEAM_ID: "TEAM123456", APNS_TOPIC: "com.yabuko.studiquo" });
   const reported = env._d1.prepare("SELECT reported_key FROM chat_reports").get().reported_key;
   env._kv.set(`chat:devices:${reported}`, JSON.stringify([{ token: "c".repeat(64), environment: "production", preferences: { friendMessage: false } }]));
-  const sent = [];
+  const sent: Untyped[] = [];
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => { sent.push({ url: String(url), body: String(init?.body ?? "") }); return new Response("", { status: 200 }); };
   let response;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { register } from "node:module";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type Untyped } from "./test-env.ts";
 
 // app.ts reaches Durable Object classes that extend "cloudflare:workers"
 // (see features.test.js for the same stand-in).

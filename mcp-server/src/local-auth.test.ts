@@ -3,7 +3,7 @@ import test from "node:test";
 import { sha256Hex } from "./auth.ts";
 import { accountGenerationMethods } from "./test-account-generations.ts";
 import { Argon2BusyError, argon2QueueState, engine, hashers, upsertLocalAccount, verifyLocalAccount } from "./local-auth.ts";
-import { partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 function environment({ argon2Write = true }: { argon2Write?: boolean } = {}) {
   const values = new Map();
@@ -11,7 +11,7 @@ function environment({ argon2Write = true }: { argon2Write?: boolean } = {}) {
   const env = partialEnv({
     ...(argon2Write ? { ARGON2_WRITE: "true" } : {}),
     RATE_COUNTER: {
-      getByName: name => accountGenerationMethods(name, generations, () => env.STUDIQUO_DATA),
+      getByName: (name: Untyped) => accountGenerationMethods(name, generations, () => env.STUDIQUO_DATA),
     },
     STUDIQUO_DATA: {
       async get(key: string, type: string) {
@@ -108,7 +108,7 @@ async function seedLegacyAccount(env: LooseEnv, email: string, password: string 
 }
 
 // Runs `run` while counting every call into each primitive.
-async function countingWork(run) {
+async function countingWork(run: Untyped) {
   const original = { ...hashers };
   const calls = { pbkdf2: 0, argon2id: 0 };
   hashers.pbkdf2 = (...args) => { calls.pbkdf2 += 1; return original.pbkdf2(...args); };
@@ -387,7 +387,7 @@ test("flag off -> on -> off: every record written along the way keeps signing in
 // Holds every Argon2id run until `release()`, so a test can fill the queue.
 function holdArgon2() {
   const original = engine.argon2idAsync;
-  let open;
+  let open: Untyped;
   const gate = new Promise(resolve => { open = resolve; });
   let started = 0;
   engine.argon2idAsync = async (...args) => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import { getGooglePublicKeys, verifyGoogleIdentityToken } from "./google-auth.ts";
-import { partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 const REAL_ISSUER = "https://accounts.google.com";
 const REAL_AUDIENCE = "812858933445-q6j9uih0o702884hemnk2okiet26gv1j.apps.googleusercontent.com";
@@ -36,7 +36,7 @@ async function seedJWKS(env: LooseEnv, jwk: unknown) {
   await env.STUDIQUO_DATA.put("google:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signToken(privateKey, kid: string | undefined, { issuer = REAL_ISSUER, audience = REAL_AUDIENCE, email, emailVerified, expiresInSeconds = 600, issuedAtSecondsAgo = 0 }: { issuer?: any; audience?: any; email?: string; emailVerified?: boolean; expiresInSeconds?: number; issuedAtSecondsAgo?: number } = {}) {
+function signToken(privateKey: Untyped, kid: string | undefined, { issuer = REAL_ISSUER, audience = REAL_AUDIENCE, email, emailVerified, expiresInSeconds = 600, issuedAtSecondsAgo = 0 }: { issuer?: any; audience?: any; email?: string; emailVerified?: boolean; expiresInSeconds?: number; issuedAtSecondsAgo?: number } = {}) {
   const now = Math.floor(Date.now() / 1000) - issuedAtSecondsAgo;
   const claims: Record<string, unknown> = { sub: "108234567890123456789" };
   if (email !== undefined) claims.email = email;
