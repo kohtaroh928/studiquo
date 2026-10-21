@@ -1,8 +1,18 @@
 # Studiquo RAG：Codex / Claude 共通の引き継ぎ
 
-最終更新: 2026-10-20。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
+最終更新: 2026-10-21。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
 
-## mainの取り込みとTypeScript移行（2026-10-20、最新）
+## 検索の再評価（2026-10-21、最新）
+
+- `claude/rag-ts`（960f83d）の検索を、合成100ページ・60問とvalidation 20問で測り直した。コード・fixture・期待値は変更なし。詳細と比較表は`docs/RAG_REEVALUATION_20261021.md`、生の結果は`docs/RAG_REEVALUATION_20261021_RESULTS.json`。
+- 結果: 正解あり55問で必要ページがそろったのは55/55（修正前52/55）。validationの難しい否定10問で不要な出典は5件→0件。validationの正解あり10問は10/10のまま。Workerテストは2358件中2357件成功・失敗0・スキップ1。実Workers AI REST、D1/Vectorizeはローカル代替。約91 Neurons。
+- 読み方: この問題群は調整に使ったもの。汎化の証拠ではない。自然な曖昧質問、実Vectorize/実D1/実iPad、実資料は未測定。
+- 実資料（気象庁の教科書30問）の入力は`/private/tmp`から消えていて再現できない。やるならPDFの再取得と質問の作り直しが必要。
+- `claude/rag-followup`（出力フィルタ・teen審査の修正、JS版）は`claude/rag-ts`にまだ入っていない。回答側の評価をする前に統合が要る。
+- 次の一手: 未調整の新しい質問での測定、自然な曖昧質問のセット作成、聞き返しの実チャット接続、比較の差分を書かせる指示。分割（Docling接続・セマンティック分割）は、取りこぼしの原因が分割だと確認できてから判断する。
+- 環境: `rag-ts`の`node_modules`が削除済みworktreeへの切れたリンクだったので`npm ci`で入れ直した（git管理外）。
+
+## mainの取り込みとTypeScript移行（2026-10-20）
 
 - 作業ブランチ`claude/rag-ts`（`claude/rag-contract`から分岐、Codexは停止中だった）。mainのTS移行（`allowJs`なし・`strict`）より前に分岐していたため、RAGの`.js`が残っていた。mainを取り込み、RAGのJavaScript全て（`src`・`src/rag`・`scripts/rag-quality`・`tools`・`collaboration/rag-prompt`・`services/docling-worker`、計235本）を`.ts`にした。
 - 取り込みで手で統合した所: `ai.ts`（mainの与信→審査の順とエラー文言は維持し、RAG検索・`beforeDispatch`・応答のリンク除去・構造化出力の検証・チャット指示文はRAG側を採用）、`openai.ts`（`beforeDispatch`と審査の`timeoutMs`を追加）、`ai-privacy.ts`（`aiPrivacyHeadersRejection`と`ragPrivacyRejection`を追加。RAGの許可検査は本文を複製して読み、`aiPrivacyRejection`の有料化・同意・年齢の検査を通す）、`legal.ts`（RAGの開示項目を追加）、`account-deletion.ts`・`worker.ts`、`wrangler.jsonc`、Swift側（設定のRAG導線、`AIChatView`の資料検索、暗号化ノートのRAG項目消去）。
