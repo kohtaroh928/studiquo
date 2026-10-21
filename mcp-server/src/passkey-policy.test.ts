@@ -150,7 +150,7 @@ test("passkeys registered before the per-account list existed are found once and
   env.STUDIQUO_DATA = {
     ...base,
     async put(key: string, value: string) { keys.set(key, value); return base.put(key, value); },
-    async list({ prefix }: { prefix?: Untyped }) {
+    async list({ prefix }: { prefix?: unknown }) {
       return { keys: [...keys.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
     },
   };

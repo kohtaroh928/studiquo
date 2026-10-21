@@ -211,7 +211,7 @@ function sessionEnvironment(extra = {}) {
 }
 
 // A login whose current token is `tokenAgeDays` old, descended from one that began `originAgeDays` ago.
-async function sessionAged(env: LooseEnv, { tokenAgeDays, originAgeDays, withOrigin = true }: { tokenAgeDays?: Untyped; originAgeDays?: Untyped; withOrigin?: Untyped }) {
+async function sessionAged(env: LooseEnv, { tokenAgeDays, originAgeDays, withOrigin = true }: { tokenAgeDays?: Untyped; originAgeDays?: Untyped; withOrigin?: unknown }) {
   const issuedAtMs = Date.now() - tokenAgeDays * DAY;
   const token = `${Math.floor(issuedAtMs / 1000)}.${"t".repeat(40)}`;
   const record: Record<string, unknown> = { sub: "person", issuedAt: Math.floor(issuedAtMs / 1000), issuedAtMs };

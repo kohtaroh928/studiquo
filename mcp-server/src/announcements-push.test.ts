@@ -38,7 +38,7 @@ async function fixture(extra = {}) {
       async get(key: string, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix, cursor, limit = 1000 }: { prefix?: Untyped; cursor?: Untyped; limit?: Untyped }) {
+      async list({ prefix, cursor, limit = 1000 }: { prefix?: unknown; cursor?: unknown; limit?: Untyped }) {
         const all = [...values.keys()].filter(k => k.startsWith(prefix)).sort();
         const start = cursor ? Number(cursor) : 0;
         const page = all.slice(start, start + limit);
@@ -53,7 +53,7 @@ async function fixture(extra = {}) {
   return { env, values };
 }
 
-const token = (n: Untyped) => String(n).repeat(64).slice(0, 64);
+const token = (n: unknown) => String(n).repeat(64).slice(0, 64);
 function seedUser(values: Map<any,any>, name: string, devices: unknown[]) {
   values.set(`chat:devices:${name}`, JSON.stringify(devices));
 }
@@ -165,7 +165,7 @@ test("an overlapping batch request cannot claim the same batch", async () => {
   (env.ADMIN_DB as any).prepare = (sql: Untyped) => {
     const statement = realPrepare(sql);
     if (!sql.startsWith("SELECT * FROM announcements WHERE id")) return statement;
-    return { bind: (...params: Untyped[]) => ({ first: async () => {
+    return { bind: (...params: unknown[]) => ({ first: async () => {
       const row = await statement.bind(...params).first();
       if (++arrived <= 2) { if (arrived === 2) release(); await barrier; }
       return row;

@@ -416,6 +416,25 @@ test("a chat the upstream refuses is given back", async () => {
   }
 });
 
+test("a refused chat logs the error's type and code, never its body", async () => {
+  const secret = "SECRET-USER-TEXT-QUOTED-BY-THE-PROVIDER";
+  const fetchState = installFetch(() => new Response(JSON.stringify({ error: { type: "invalid_request_error", code: "context_length_exceeded", message: secret } }), { status: 400 }));
+  const logged: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => { logged.push(args.map(String).join(" ")); };
+  try {
+    await run("chat", chatBody(), { env: environment() });
+  } finally {
+    console.error = original;
+    fetchState.restore();
+  }
+  const line = logged.find(entry => entry.includes("AI upstream refused"));
+  assert.ok(line, "the refusal is logged");
+  assert.ok(!logged.some(entry => entry.includes(secret)), "the error body is not logged");
+  assert.equal(JSON.parse(line).errorType, "invalid_request_error");
+  assert.equal(JSON.parse(line).errorCode, "context_length_exceeded");
+});
+
 test("a heavy model spends more credits: plus fits 20 Sol calls in 5 hours, not 21", async () => {
   const fetchState = installFetch(() => responsesOK("ok"));
   try {
@@ -577,7 +596,7 @@ test("a free-plan account is refused every AI route with 402 before any upstream
 
 // MARK: Review follow-ups
 
-function sse(...events: Untyped[]) {
+function sse(...events: unknown[]) {
   return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""), { status: 200 });
 }
 

@@ -33,8 +33,8 @@ function fakeChatRoomBinding() {
     _rooms: rooms,
     getByName(name: string) {
       const state = room(name);
-      const other = (userKey: Untyped) => [...state.participants].find(candidate => candidate !== userKey) ?? null;
-      const requireGroup = (userKey: Untyped) => {
+      const other = (userKey: unknown) => [...state.participants].find(candidate => candidate !== userKey) ?? null;
+      const requireGroup = (userKey: unknown) => {
         if (!state.participants.has(userKey)) throw new Error("Forbidden");
         if (state.kind !== "group") throw new Error("NotAGroup");
       };
@@ -271,7 +271,7 @@ function fakeChatRoomBinding() {
 function fakeCloudflareLimiter(limit = 5) {
   const counts = new Map();
   return {
-    async limit({ key }: { key?: Untyped }) {
+    async limit({ key }: { key?: unknown }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -2229,7 +2229,7 @@ test("bio is visible to friends, preserved by old clients, and can be cleared", 
   const env = environment();
   const aliceToken = freshToken("b0");
   const bobToken = freshToken("b1");
-  const update = (bio: Untyped) => worker.fetch(request("/api/chat/me", { method: "POST", token: aliceToken, body: { name: "Alice", bio } }), env, noopCtx);
+  const update = (bio: unknown) => worker.fetch(request("/api/chat/me", { method: "POST", token: aliceToken, body: { name: "Alice", bio } }), env, noopCtx);
   const first = await update("Hello\nWelcome");
   assert.equal(first.status, 200);
   const alice = await first.json();
@@ -3821,7 +3821,7 @@ function withAdminDB(env: LooseEnv) {
   env.ADMIN_DB = {
     prepare: (sql: Untyped) => {
       const make = (params: Untyped[] = []) => ({
-        bind: (...next: Untyped[]) => make(next),
+        bind: (...next: unknown[]) => make(next),
         async run() { const r = db.prepare(sql).run(...params); return { success: true, meta: { changes: Number(r.changes) } }; },
         async all() { return { results: db.prepare(sql).all(...params) }; },
         async first() { return db.prepare(sql).get(...params) ?? null; },
