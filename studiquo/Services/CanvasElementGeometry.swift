@@ -74,7 +74,7 @@ enum CanvasElementGeometry {
     ) -> Frame {
         let canvasWidth = max(canvasSize.width, 1)
         let canvasHeight = max(canvasSize.height, 1)
-        let radians = rotationDegrees * .pi / 180
+        let radians: CGFloat = CGFloat(rotationDegrees) * .pi / 180
 
         let localDX = translation.width * cos(radians) + translation.height * sin(radians)
         let localDY = -translation.width * sin(radians) + translation.height * cos(radians)
