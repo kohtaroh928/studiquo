@@ -1,0 +1,348 @@
+{
+ "date": "2026-10-22",
+ "before": "a2aef7c",
+ "after": "本コミット",
+ "environment": "real Workers AI REST (bge-m3, bge-reranker-base); D1=local SQLite FTS5, Vectorize=local exact cosine",
+ "workerTests": {
+  "tests": 2390,
+  "pass": 2389,
+  "fail": 0,
+  "skipped": 1,
+  "newTests": 7
+ },
+ "newQuestions17": {
+  "manifestSha256": "3eccc0b49270ac5b72550c74713a78c49c75a9d2d2ed37e54f3576e8bd77bcaa",
+  "labels": {
+   "t": "時刻・時間・複数の単位",
+   "j": "2つの主題(AとBは)",
+   "k": "1つの主題で2つの側面(対照)",
+   "x": "答えなし"
+  },
+  "byCategory": {
+   "時刻・時間・複数の単位": {
+    "n": 6,
+    "before": 3,
+    "after": 5
+   },
+   "2つの主題(AとBは)": {
+    "n": 6,
+    "before": 3,
+    "after": 6
+   },
+   "1つの主題で2つの側面(対照)": {
+    "n": 2,
+    "before": 2,
+    "after": 2
+   },
+   "答えなし": {
+    "n": 3,
+    "before": 3,
+    "after": 3
+   }
+  },
+  "cases": {
+   "v6-t1": {
+    "before": {
+     "status": "fallback",
+     "ok": false
+    },
+    "after": {
+     "status": "fallback",
+     "ok": false
+    }
+   },
+   "v6-t2": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-t3": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-t4": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-t5": {
+    "before": {
+     "status": "insufficient",
+     "ok": false
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-t6": {
+    "before": {
+     "status": "insufficient",
+     "ok": false
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-j1": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-j2": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-j3": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-j4": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-j5": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-j6": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-k1": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-k2": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v6-x1": {
+    "before": {
+     "status": "insufficient",
+     "ok": true
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   },
+   "v6-x2": {
+    "before": {
+     "status": "fallback",
+     "ok": true
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    }
+   },
+   "v6-x3": {
+    "before": {
+     "status": "insufficient",
+     "ok": true
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   }
+  },
+  "apiCallsAfter": 392,
+  "executionFailures": 0
+ },
+ "regression": {
+  "main60": {
+   "before": {
+    "pos": {
+     "n": 55,
+     "full": 55,
+     "recall": 100.0,
+     "mrr": 0.94
+    },
+    "neg": {
+     "n": 5,
+     "withRefs": 0
+    }
+   },
+   "after": {
+    "pos": {
+     "n": 55,
+     "full": 55,
+     "recall": 100.0,
+     "mrr": 0.931
+    },
+    "neg": {
+     "n": 5,
+     "withRefs": 0
+    }
+   },
+   "changed": []
+  },
+  "validation20": {
+   "before": {
+    "pos": {
+     "n": 10,
+     "full": 10,
+     "recall": 100.0,
+     "mrr": 0.9
+    },
+    "neg": {
+     "n": 10,
+     "withRefs": 0
+    }
+   },
+   "after": {
+    "pos": {
+     "n": 10,
+     "full": 10,
+     "recall": 100.0,
+     "mrr": 0.9
+    },
+    "neg": {
+     "n": 10,
+     "withRefs": 0
+    }
+   },
+   "changed": []
+  },
+  "real30(第2回)": {
+   "negBefore": 6,
+   "negAfter": 6,
+   "neg": 6,
+   "posBefore": 22,
+   "posAfter": 24,
+   "pos": 24,
+   "changed": [
+    [
+     "v2-n3",
+     "insufficient",
+     false,
+     "grounded",
+     true
+    ],
+    [
+     "v2-c4",
+     "grounded",
+     false,
+     "grounded",
+     true
+    ]
+   ],
+   "apiCalls": 410,
+   "executionFailures": 0
+  },
+  "unseen39(第3回)": {
+   "negBefore": 19,
+   "negAfter": 19,
+   "neg": 27,
+   "posBefore": 12,
+   "posAfter": 12,
+   "pos": 12,
+   "changed": [],
+   "apiCalls": 417,
+   "executionFailures": 0
+  },
+  "latin26(第4回)": {
+   "negBefore": 14,
+   "negAfter": 14,
+   "neg": 14,
+   "posBefore": 10,
+   "posAfter": 11,
+   "pos": 12,
+   "changed": [
+    [
+     "v4-e6",
+     "insufficient",
+     false,
+     "grounded",
+     true
+    ]
+   ],
+   "apiCalls": 395,
+   "executionFailures": 0
+  },
+  "alias17(第5回)": {
+   "negBefore": 9,
+   "negAfter": 9,
+   "neg": 10,
+   "posBefore": 4,
+   "posAfter": 4,
+   "pos": 7,
+   "changed": [],
+   "apiCalls": 377,
+   "executionFailures": 0
+  }
+ },
+ "intermediateFinding": "最初の修正版は『AというB』の『と』を2つの主題と誤認し、5問が grounded から partial に変わった(v2-p6, v2-p8, v3-p4, v4-e5, v6-t4)。2つ目の名前がひらがなで始まる場合を除外して直した。",
+ "notFixed": [
+  "単位のない詳細・普通の語を含む無関係な質問(意味の判定が要る設計判断)",
+  "金額が質問の対象とは別のもの(文の単位の結びつけが要り、別名に弱くなる)",
+  "質問のカタカナ語が資料ではローマ字(英字の別名と同じ種類。現行維持)"
+ ],
+ "note": "質問・正解・本文は含まない。case idは質問IDのみ。第6回17問は以後調整済みとして扱う。"
+}
