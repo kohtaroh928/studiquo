@@ -154,8 +154,17 @@ test("past a blank line or a lone CR, 'https:' takes whatever word follows, as t
   assert.equal(redactLinks("The scheme is https:\n\nThe next paragraph."), "The scheme is （リンクは表示されません） next paragraph.");
   assert.equal(redactLinks("例:\nhttp:\n\n1. step"), "例:\n（リンクは表示されません） step");
   assert.equal(redactLinks("https:\n\n## 見出し"), "（リンクは表示されません） 見出し");
+  // A sentence mark with a host character right behind it is the start of an address (new URL reads
+  // "https:)a.evil.com" as host ")a.evil.com"); the same mark before a space or the end is not.
+  for (const text of ["https:)e.com", "https:）e.com", "https:！e.com", "https:、e.com", "https:」e.com", "https:。e.com", "https:\n\n)e.com", "https:\n\n、e.com", "http:)e.com"]) {
+    const out = redactLinks(`前 ${text}/?d=SECRETDATA 後`);
+    assert.ok(!out.includes("SECRETDATA") && !/https?:|e\.com/iu.test(out), `${JSON.stringify(text)} -> ${JSON.stringify(out)}`);
+  }
+  for (const text of ["(https: )です", "https:)", "https:。 次", "https:\n\n。"]) assert.equal(redactLinks(text), text, JSON.stringify(text));
+  // A closing code fence on the line after is not an address.
+  for (const text of ["```\nhttps:\n```\n次の行", "`https:`\n```\nx\n```", "```\nhttps:\r\n```"]) assert.equal(redactLinks(text), text, JSON.stringify(text));
   // A space, a sentence mark, or the end of the text after the breaks stops it.
-  for (const text of ["https:\n\n 次", "https:\n\n。次", "https:\n\n", "使うのは https: だけ"]) assert.equal(redactLinks(text), text, JSON.stringify(text));
+  for (const text of ["https:\n\n 次", "https:\n\n", "使うのは https: だけ"]) assert.equal(redactLinks(text), text, JSON.stringify(text));
 });
 
 test("a line that ends in 'https:' takes the first word of the next line, a bare 'https:' before a space does not", () => {
@@ -176,26 +185,27 @@ test("a scheme written in backticks as a word in a sentence is a description and
 
 test("a scheme in backticks takes the word after it, however the break or separator is written", () => {
   for (const tail of ["\n//evil.com", "\t//evil.com", "\n$e.com", ".evil.com", ";//evil.com", ",//evil.com", ":evil.com", "!evil.com", "\r\n例え.com", "\n\t/evil.com",
-    "\n\n//evil.com", "\r\r//evil.com", "\n\n\n//evil.com", "\n\n/evil.com", "\n\nevil.com", "\n\n/\n/evil.com", "\n\n$evil.com", "\r\r!evil.com", "\n\n例え.com", "\n\n@evil.com"]) {
+    "\n\n//evil.com", "\r\r//evil.com", "\n\n\n//evil.com", "\n\n/evil.com", "\n\nevil.com", "\n\n/\n/evil.com", "\n\n$evil.com", "\r\r!evil.com", "\n\n例え.com", "\n\n@evil.com",
+    ",\nevil.com", "!\nevil.com", ";\n\nevil.com", ",\r\nevil.com", "、evil.com", "）evil.com", "。$evil.com", "、/evil.com"]) {
     const out = redactLinks(`前 \`https:\`${tail}/?d=SECRETDATA 後`);
     assert.ok(!out.includes("SECRETDATA") && !/https?:|evil|e\.com|例え/iu.test(out), `${JSON.stringify(tail)} -> ${JSON.stringify(out)}`);
     assert.ok(out.startsWith("前 ") && out.endsWith(" 後"), JSON.stringify(out));
   }
-  for (const text of ["`https:`\n", "`https:`\n\n", "`https:`", "`https:` と `http:`", "`https:`\n。", "`https:`\n\n 次"]) assert.equal(redactLinks(text), text, JSON.stringify(text));
+  for (const text of ["`https:`\n", "`https:`\n\n", "`https:`", "`https:` と `http:`", "`https:`\n。", "`https:`\n\n 次", "`https:`、次の", "`https:`。\n次の段落", "`https:`、 次", "(`https:`)です"]) assert.equal(redactLinks(text), text, JSON.stringify(text));
 });
 
 test("property: whatever follows 'https:' after any run of tabs and line breaks is removed, in both forms", () => {
   let seed = 20261021;
   const rand = (n) => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed % n; };
   const pick = (list) => list[rand(list.length)];
-  const heads = [..."!\"#$%&'(*+,-./:;<=>?@[\\]^_`{|}~0aZ9"].concat(["例え", "é", "Ｅ", "%78", "\u{1F600}", "１", "ー", "「"]);
+  const heads = [..."!\"#$%&'(*+,-./:;<=>?@[\\]^_`{|}~0aZ9"].concat(["例え", "é", "Ｅ", "%78", "\u{1F600}", "１", "ー", "「", "、", "。", "！", "）", "」", "-", "#", "1.", "```"]);
   const schemes = ["https:", "HTTP:", "Https:", "h\nttps:", "ht\ttps:", "http\r:", "https:"];
   const run = () => Array.from({ length: rand(5) }, () => pick(["\n", "\r", "\t", "\r\n"])).join("");
   for (let i = 0; i < 4000; i++) {
     const head = pick(heads), breaks = run(), code = rand(2) === 1, scheme = code ? pick(["https:", "http:", "HTTPS:"]) : pick(schemes);
     const text = `前 ${code ? `\`${scheme}\`` : scheme}${breaks}${head}x.evil.com/?d=SECRETDATA 後`;
-    // After a sentence mark, a space or a bracket the word is not part of an address.
-    if (code && breaks === "" && /[)）」』】]/u.test(head)) continue;
+    // Prose after a closing backtick, and a fence line, are not addresses.
+    if (head === "```" || (code && head === "「")) continue;
     const out = redactLinks(text);
     assert.ok(!out.includes("SECRETDATA") && !/https?:/iu.test(out), `${JSON.stringify(text)} -> ${JSON.stringify(out)}`);
     assert.ok(out.startsWith("前 ") && out.endsWith(" 後"), JSON.stringify(out));

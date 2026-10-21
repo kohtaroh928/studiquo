@@ -38,7 +38,7 @@ const URL_BODY = `(?:\`[^\`\\n]*\`|\\$(?!\\s)[^$\\n]*(?<!\\s)\\$|[${URL_CHARS}]|
 // the next one (a heading mark, a list number, an English word, a Japanese sentence up to its mark).
 // A bare "https:" in the middle of a line, followed by a space, takes nothing.
 const GAP = "[\\t\\n\\r]*";
-const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:${GAP}(?=[^\\s、。！？)）」』】]))?`;
+const HTTP = `h${GAP}t${GAP}t${GAP}p${GAP}s?${GAP}:(?:(?:[\\t\\r\\n]+(?!\`\`\`))?(?=[^\\s、。！？)）」』】])|[\\t\\r\\n]*[、。！？)）」』】](?=\\S))?`;
 const URL_RE = new RegExp(`(?:${HTTP}\\/\\/|${HTTP}(?=[A-Za-z0-9])|www\\.(?=[A-Za-z0-9]))${URL_BODY}`, "giu");
 // What is left of a malformed scheme: "https:/e.com", "https:\\e.com", "https:例え.com",
 // "https:`a.evil.com". The browser reads many of these as a normal address, so everything
@@ -130,14 +130,23 @@ function stripMarkdownLinks(text, depth = 0) {
 // line breaks, means it is not a description and is removed like any other.
 const SCHEME_IN_CODE = /`[ \t]*https?:[ \t]*`/giu;
 // A scheme in backticks that is not a description takes the address after it (past any run of tabs and line breaks).
-const CODE_SCHEME_ADDRESS = /`[ \t]*https?:[ \t]*`(?:[\t\r\n]*(?=[^\s、。！？)）」』】]))?(?:[^\s、。！？)）」』]|[\t\r\n]+(?=[/\\]))*/giu;
+const CODE_SCHEME_ADDRESS = /`[ \t]*https?:[ \t]*`(?:(?:[\t\r\n]+(?!```))?(?=[^\s、。！？)）」』】])|[\t\r\n]*[、。！？)）」』】](?=[!-_a-~])|[,.;:!?][\t\r\n]+(?=\S))?(?:[^\s、。！？)）」』]|[\t\r\n]+(?=[/\\]))*/giu;
 const AFTER_CODE = /[\t\r\n]*([^]?)([^]?)/uy;
 
 function endsTheThought(text, end) {
   AFTER_CODE.lastIndex = end;
-  const [, first, second] = AFTER_CODE.exec(text);
-  if (first === "" || /[ 、。！？)）」』】]/u.test(first)) return true;
-  return /[,.;:!?]/u.test(first) && (second === "" || /[ \r\n]/u.test(second));
+  const [match, first, second] = AFTER_CODE.exec(text);
+  if (first === "") return true;
+  if (first === " ") return true;
+  // A closing fence on the next line is not part of an address.
+  const run = match.length - first.length - second.length;
+  if (first === "`" && run > 0 && text.startsWith("```", end + run)) return true;
+  // A sentence mark ends the thought unless an ASCII host character follows it right away
+  // ("`https:`、a.evil.com"); Japanese text behind it ("`http:`、`https:`の違い") is prose. The
+  // ASCII marks do not even take a line break ("`https:`,\na.evil.com"): browsers drop the break.
+  if (/[、。！？)）」』】]/u.test(first)) return !/[!-_a-~]/u.test(second);
+  if (/[,.;:!?]/u.test(first)) return second === "" || second === " ";
+  return false;
 }
 
 function protectSchemeInCode(text) {
