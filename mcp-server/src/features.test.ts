@@ -179,3 +179,17 @@ test("the AI switch is separate from the provider approval and either one stops 
   assert.equal((await appGateRejection(request, partialEnv({ DISABLED_FEATURES: "ai", AI_PROVIDER_APPROVED: "true" }), url).json()).feature, "ai");
   assert.equal(appGateRejection(request, partialEnv({ AI_PROVIDER_APPROVED: "false" }), url), null, "the approval flag answers later, in the AI handler");
 });
+
+test("/health reports how long ago the hourly cron ran, and still answers when KV is down", async () => {
+  const stored = new Map<string, string>([["ops:cron-last-run", String(Date.now() - 90_000)]]);
+  const health = await worker.fetch(new Request("https://example.test/health"), partialEnv({ STUDIQUO_DATA: { async get(key: string) { return stored.get(key) ?? null; } } }), noopCtx);
+  const body = await health.json();
+  assert.equal(body.ok, true);
+  assert.ok(body.cronAgeSeconds >= 89 && body.cronAgeSeconds <= 95, String(body.cronAgeSeconds));
+
+  const never = await worker.fetch(new Request("https://example.test/health"), partialEnv({ STUDIQUO_DATA: { async get() { return null; } } }), noopCtx);
+  assert.equal("cronAgeSeconds" in await never.json(), false);
+
+  const down = await worker.fetch(new Request("https://example.test/health"), partialEnv({ STUDIQUO_DATA: { async get() { throw new Error("KV down"); } } }), noopCtx);
+  assert.equal(down.status, 200);
+});

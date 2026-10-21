@@ -721,10 +721,18 @@ private struct OAuthIdentity: Codable {
 }
 
 enum AccountDeletionService {
-    static func deleteAccount() async throws {
+    static func deleteAccount(
+        confirmDevice: (String) async -> DeviceAuthentication.Outcome = { await DeviceAuthentication.confirmIfPossible(reason: $0) }
+    ) async throws {
         guard let token = MCPCloudCredentials.currentToken(),
               let endpoint = MCPCloudCredentials.configuredEndpoint() else {
             throw AccountDeletionError.notSignedIn
+        }
+        // Someone holding an unlocked iPad should not be able to delete the
+        // account with a tap and a typed word. A device with no passcode at all
+        // cannot ask, and is let through: deleting must stay possible.
+        if await confirmDevice("アカウントを削除します") == .declined {
+            throw AccountDeletionError.deviceNotConfirmed
         }
         var request = URLRequest(url: endpoint.appending(path: "api/account"))
         request.httpMethod = "DELETE"
@@ -739,18 +747,25 @@ enum AccountDeletionService {
             (data, response) = try await URLSession.shared.dataNoticing(for: request)
         }
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+            if (response as? HTTPURLResponse)?.statusCode == 403,
+               let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               body["code"] as? String == "recent_login_required" {
+                throw AccountDeletionError.recentLoginRequired
+            }
             throw AccountDeletionError.rejected
         }
     }
 }
 
 enum AccountDeletionError: LocalizedError {
-    case notSignedIn, rejected
+    case notSignedIn, rejected, deviceNotConfirmed, recentLoginRequired
 
     var errorDescription: String? {
         switch self {
         case .notSignedIn: "ログイン情報を確認できませんでした。もう一度ログインしてください。"
         case .rejected: "アカウントを削除できませんでした。通信状態を確認して、もう一度お試しください。"
+        case .deviceNotConfirmed: "端末の認証ができなかったため、アカウントは削除していません。"
+        case .recentLoginRequired: "安全のため、いったんサインアウトして、もう一度サインインしてからアカウントを削除してください。"
         }
     }
 }
