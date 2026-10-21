@@ -743,3 +743,104 @@ test("a moderated request gets its credits back, so rejected text cannot use up 
     fetchState.restore();
   }
 });
+
+// ---- Input checks and a damaged upstream stream ----
+
+const gradeBody = (extra = {}) => ({ question: "q", answerText: "a", criteria: [{ name: "n", maxPoints: 100, requirement: "r" }], ...extra });
+
+// An upstream that sends `before` and then dies, as a dropped connection does.
+function streamThatBreaks(before: string) {
+  // Pull-based, so the first chunk is really read before the stream fails
+  // (error() on a stream discards chunks that have not been read yet).
+  let pulls = 0;
+  return new Response(new ReadableStream({
+    pull(controller) {
+      pulls += 1;
+      if (pulls === 1 && before) controller.enqueue(new TextEncoder().encode(before));
+      else controller.error(new Error("connection reset"));
+    },
+  }), { status: 200, headers: { "content-type": "text/event-stream" } });
+}
+
+const quietly = async <T>(work: () => Promise<T>) => {
+  const real = console.error;
+  console.error = () => {};
+  try { return await work(); } finally { console.error = real; }
+};
+
+test("a crop that isn't a PNG is refused before any model or moderation call, and costs nothing", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const env = environment();
+    for (const images of [["not-a-png"], [PNG, "/9j/4AAQSkZJRg" + "A".repeat(80)], ["iVBORw0KGgo"]]) {
+      const { response, text } = await run("chat", chatBody({ images }), { env });
+      assert.equal(response!.status, 400, JSON.stringify(images).slice(0, 40));
+      assert.match(text, /切り抜き画像の形式が正しくありません/);
+    }
+    assert.deepEqual([fetchState.calls.length, fetchState.moderationCalls.length], [0, 0]);
+    // Standard allows 5 a minute: all five still fit, so the refused ones were never counted.
+    for (let i = 0; i < 5; i += 1) assert.equal((await run("chat", chatBody(), { env })).response!.status, 200, `a normal chat #${i + 1} still fits the allowance`);
+  } finally { fetchState.restore(); }
+});
+
+test("grading needs an answer, refuses a malformed photo of it or of the question, and calls nothing", async () => {
+  const fetchState = installFetch(() => responsesOK("{}"));
+  try {
+    const noAnswer = await run("grade", gradeBody({ answerText: "" }));
+    assert.equal(noAnswer.response!.status, 400);
+    assert.match(noAnswer.text, /imageBase64 or answerText is required/);
+    for (const extra of [{ imageBase64: "not-a-png" }, { questionImageBase64: "not-a-png" }, { answerText: "", imageBase64: "AAAA" }]) {
+      const { response, text } = await run("grade", gradeBody(extra));
+      assert.equal(response!.status, 400, JSON.stringify(extra));
+      assert.match(text, /Invalid image data/);
+    }
+    assert.equal(fetchState.calls.length, 0);
+  } finally { fetchState.restore(); }
+});
+
+test("a chat stream with damaged events in it still delivers the readable text", async () => {
+  const raw = [
+    "data: {not json at all",
+    `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "前半" })}`,
+    "data: null",
+    `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "後半" })}`,
+    `data: ${JSON.stringify({ type: "response.completed" })}`,
+  ].join("\n\n") + "\n\n";
+  const fetchState = installFetch(() => new Response(raw, { status: 200 }));
+  try {
+    const { response, text } = await run("chat", chatBody());
+    assert.equal(response!.status, 200);
+    assert.ok(text.includes("前半") && text.includes("後半"), text);
+    assert.doesNotMatch(text, /完了できませんでした|中断/);
+  } finally { fetchState.restore(); }
+});
+
+test("a chat whose connection drops mid-answer keeps what arrived and tells the student it was cut off", async () => {
+  const delta = `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "途中まで" })}\n\n`;
+  const fetchState = installFetch(() => streamThatBreaks(delta));
+  try {
+    const { response, text } = await quietly(() => run("chat", chatBody()));
+    assert.equal(response!.status, 200);
+    assert.ok(text.includes("途中まで"));
+    assert.match(text, /通信が中断しました/);
+  } finally { fetchState.restore(); }
+});
+
+test("a review whose connection drops, or whose events are damaged, reports an error and gives the credits back", async () => {
+  const cases = [
+    () => streamThatBreaks(""),
+    () => streamThatBreaks("data: {broken\n\n"),
+    () => new Response("data: {broken\n\ndata: null\n\n", { status: 200 }),
+  ];
+  for (const make of cases) {
+    const fetchState = installFetch(make);
+    try {
+      const env = environment();
+      for (let i = 0; i < 6; i += 1) {
+        const { response, text } = await quietly(() => run("review", { question: "q" }, { env }));
+        assert.equal(response!.status, 200, `review #${i + 1} (would be 429 without a refund)`);
+        assert.match(text, /"error"/);
+      }
+    } finally { fetchState.restore(); }
+  }
+});

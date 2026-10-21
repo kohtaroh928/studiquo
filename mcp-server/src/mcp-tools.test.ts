@@ -233,3 +233,143 @@ test("a paired account's 101st queued item is reported back as a tool error, not
   assert.equal(overflow.result.isError, true);
   assert.match(overflow.result.content[0].text, /100 pending imports/);
 });
+
+// ---- The read tools, the calendar tool, and the device action queue ----
+
+const SNAPSHOT = {
+  version: 1,
+  exportedAt: "2026-01-01T00:00:00Z",
+  notebooks: [
+    { id: "n1", title: "数学ノート", tags: ["理系"], pages: [{ id: "p1", title: "微分", recognizedText: "合成関数の微分" }, { id: "p2", title: "積分", recognizedText: "置換積分" }] },
+    { id: "n2", title: "English Notes", pages: [{ id: "p3", title: "Grammar", recognizedText: "Present PERFECT tense" }] },
+  ],
+  flashcardDecks: [{ id: "d1", title: "英単語", cards: [{ question: "apple", answer: "りんご" }, { question: "pear", answer: "なし" }] }],
+  calendarEvents: [{ title: "期末試験", startDate: "2026-02-01T00:00:00Z" }, { title: "補講", startDate: "2026-02-02T00:00:00Z" }, { title: "提出", startDate: "2026-02-03T00:00:00Z" }],
+  folders: [{ path: "数学" }, { path: "数学/微積" }],
+};
+
+async function pairedWithSnapshot(suffix: string, scope?: string, snapshot: Untyped = SNAPSHOT) {
+  const env = environment();
+  const deviceToken = freshDeviceToken(suffix);
+  await signIn(env, deviceToken, `student-${suffix}`);
+  const synced = await fetchApp(env, "/api/snapshot", {
+    method: "PUT", headers: { authorization: `Bearer ${deviceToken}`, "content-type": "application/json" }, body: JSON.stringify(snapshot),
+  });
+  assert.equal(synced.status, 200);
+  const accessToken = await pairMCPClient(env, deviceToken, { scope });
+  return { env, deviceToken, accessToken };
+}
+
+const toolValue = (reply: Untyped) => reply.result.structuredContent.result;
+
+test("search_notes finds a match in a notebook title, a page title or the page's text, ignoring case, and honours the limit", async () => {
+  const { env, accessToken } = await pairedWithSnapshot("e");
+  const search = async (query: string, limit?: number) => toolValue(await callTool(env, accessToken, "search_notes", { query, ...(limit ? { limit } : {}) }));
+  assert.deepEqual((await search("数学")).map((hit: Untyped) => hit.pageId), ["p1", "p2"], "a notebook title matches all its pages");
+  assert.deepEqual((await search("積分")).map((hit: Untyped) => hit.pageId), ["p2"], "the page title and its text both say 積分, only that page");
+  assert.deepEqual((await search("合成関数")).map((hit: Untyped) => hit.pageId), ["p1"], "text alone is enough");
+  assert.deepEqual((await search("present perfect")).map((hit: Untyped) => hit.pageId), ["p3"], "a lower-case query finds upper-case text");
+  assert.deepEqual((await search("PRESENT Perfect")).map((hit: Untyped) => hit.pageId), ["p3"], "and an upper-case query finds it too");
+  assert.deepEqual((await search("grammar")).map((hit: Untyped) => hit.pageId), ["p3"]);
+  assert.deepEqual(await search("存在しない言葉"), []);
+  assert.equal((await search("数学", 1)).length, 1);
+  const hit = (await search("置換"))[0];
+  assert.deepEqual(hit, { notebookId: "n1", notebookTitle: "数学ノート", pageId: "p2", pageTitle: "積分", recognizedText: "置換積分" });
+});
+
+test("list_flashcard_decks gives counts by default and the cards only when asked", async () => {
+  const { env, accessToken } = await pairedWithSnapshot("f");
+  assert.deepEqual(toolValue(await callTool(env, accessToken, "list_flashcard_decks", {})), [{ id: "d1", title: "英単語", cardCount: 2 }]);
+  const full = toolValue(await callTool(env, accessToken, "list_flashcard_decks", { includeCards: true }));
+  assert.equal(full[0].cards.length, 2);
+  assert.equal(full[0].cards[0].answer, "りんご");
+});
+
+test("list_calendar_events and list_folders return what was synced, and an empty list when nothing was", async () => {
+  const { env, accessToken } = await pairedWithSnapshot("g");
+  assert.deepEqual(toolValue(await callTool(env, accessToken, "list_calendar_events", { limit: 2 })).map((event: Untyped) => event.title), ["期末試験", "補講"]);
+  assert.equal(toolValue(await callTool(env, accessToken, "list_calendar_events", {})).length, 3);
+  assert.deepEqual(toolValue(await callTool(env, accessToken, "list_folders", {})).map((folder: Untyped) => folder.path), ["数学", "数学/微積"]);
+
+  const bare = await pairedWithSnapshot("h", undefined, { version: 1, exportedAt: "2026-01-01T00:00:00Z", notebooks: [] });
+  assert.deepEqual(toolValue(await callTool(bare.env, bare.accessToken, "list_calendar_events", {})), []);
+  assert.deepEqual(toolValue(await callTool(bare.env, bare.accessToken, "list_folders", {})), []);
+});
+
+test("every read tool refuses a connection that was only given write access", async () => {
+  const { env, accessToken } = await pairedWithSnapshot("i", "studiquo.write");
+  for (const [name, args] of [["search_notes", { query: "数学" }], ["list_flashcard_decks", {}], ["list_calendar_events", {}], ["list_folders", {}], ["list_notebooks", {}]] as const) {
+    const reply = await callTool(env, accessToken, name, args);
+    assert.equal(reply.result.isError, true, name);
+    assert.match(reply.result.content[0].text, /cannot read materials/, name);
+    assert.equal(reply.result.content[0].text.includes("数学"), false, `${name} leaked nothing`);
+  }
+});
+
+test("add_calendar_event queues the event for the paired account, and refuses a read-only connection or a bad date", async () => {
+  const { env, deviceToken, accessToken } = await pairedWithSnapshot("j");
+  const event = { title: "中間試験", startDate: "2026-05-01T09:00:00Z", endDate: "2026-05-01T10:00:00Z", kind: "test", notes: "範囲: 1〜3章" };
+  const queued = toolValue(await callTool(env, accessToken, "add_calendar_event", event));
+  assert.equal(queued.status, "pending");
+  const inbox = await (await fetchApp(env, "/api/mcp/inbox", { headers: { authorization: `Bearer ${deviceToken}` } })).json();
+  assert.equal(inbox.length, 1);
+  assert.deepEqual([inbox[0].kind, inbox[0].payload.title, inbox[0].payload.kind, inbox[0].payload.notes], ["add_calendar_event", "中間試験", "test", "範囲: 1〜3章"]);
+
+  const bad = await callTool(env, accessToken, "add_calendar_event", { ...event, startDate: "next friday" });
+  assert.ok(bad.result?.isError || bad.error, "an invalid date is an error, not a queued event");
+  assert.equal((await (await fetchApp(env, "/api/mcp/inbox", { headers: { authorization: `Bearer ${deviceToken}` } })).json()).length, 1);
+
+  const readOnly = await pairedWithSnapshot("k", "studiquo.read");
+  const refused = await callTool(readOnly.env, readOnly.accessToken, "add_calendar_event", event);
+  assert.equal(refused.result.isError, true);
+  assert.match(refused.result.content[0].text, /read-only/);
+});
+
+// A device-only connection works from the snapshot its own device synced.
+async function deviceWithSnapshot(env: LooseEnv, suffix: string) {
+  const deviceToken = freshDeviceToken(suffix);
+  await signIn(env, deviceToken, `student-${suffix}`);
+  await fetchApp(env, "/api/snapshot", {
+    method: "PUT", headers: { authorization: `Bearer ${deviceToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ version: 1, notebooks: [], exportedAt: "2026-01-01T00:00:00Z" }),
+  });
+  return deviceToken;
+}
+
+test("a device-only connection queues a calendar event locally, without the paired inbox", async () => {
+  const env = environment();
+  const deviceToken = await deviceWithSnapshot(env, "l");
+  const result = await callTool(env, deviceToken, "add_calendar_event", {
+    title: "レポート提出", startDate: "2026-06-01T00:00:00Z", endDate: "2026-06-01T01:00:00Z",
+  });
+  assert.deepEqual(toolValue(result), { queued: true, title: "レポート提出" });
+  const queued = await env.STUDIQUO_DATA.get(`actions:${hash(deviceToken)}`, "json");
+  assert.deepEqual([queued.length, queued[0].type, queued[0].kind], [1, "add_calendar_event", "other"], "the kind defaults to other");
+});
+
+test("create_flashcards for a folder that doesn't exist is a tool error and queues nothing", async () => {
+  const { env, deviceToken, accessToken } = await pairedWithSnapshot("m");
+  const cards = [{ question: "q", answer: "a" }];
+  const missing = await callTool(env, accessToken, "create_flashcards", { deckTitle: "x", folderPath: "存在しない", cards });
+  assert.equal(missing.result.isError, true);
+  assert.match(missing.result.content[0].text, /folder does not exist/);
+  const ok = await callTool(env, accessToken, "create_flashcards", { deckTitle: "x", folderPath: "数学/微積", cards });
+  assert.equal(toolValue(ok).status, "pending");
+  assert.equal((await (await fetchApp(env, "/api/mcp/inbox", { headers: { authorization: `Bearer ${deviceToken}` } })).json()).length, 1, "only the valid one was queued");
+});
+
+test("DELETE /api/actions clears the device's queued actions, and only that device's", async () => {
+  const env = environment();
+  const mine = await deviceWithSnapshot(env, "n");
+  const other = await deviceWithSnapshot(env, "o");
+  for (const token of [mine, other]) {
+    await callTool(env, token, "create_flashcards", { deckTitle: "d", cards: [{ question: "q", answer: "a" }] });
+  }
+  assert.equal((await env.STUDIQUO_DATA.get(`actions:${hash(mine)}`, "json")).length, 1);
+  const cleared = await fetchApp(env, "/api/actions", { method: "DELETE", headers: { authorization: `Bearer ${mine}` } });
+  assert.deepEqual(await cleared.json(), { cleared: true });
+  assert.equal(await env.STUDIQUO_DATA.get(`actions:${hash(mine)}`), null);
+  assert.equal((await env.STUDIQUO_DATA.get(`actions:${hash(other)}`, "json")).length, 1, "another device's queue is untouched");
+  const without = await fetchApp(env, "/api/actions", { method: "DELETE" });
+  assert.ok([401, 403].includes(without.status), `answered ${without.status} without a token`);
+});
