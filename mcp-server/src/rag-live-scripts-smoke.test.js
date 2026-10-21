@@ -12,7 +12,7 @@ const SSE = [
   { type: 'response.completed', response: { status: 'completed', model: 'gpt-6-luna', usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } } },
 ].map((e) => `data: ${JSON.stringify(e)}\n\n`).join('');
 
-async function runMain(file, { out, failWith } = {}) {
+async function runMain(file, { out, failWith, key } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'live-smoke-'));
   const target = out ?? path.join(dir, 'out.json');
   const saved = { fetch: globalThis.fetch, argv: process.argv, key: process.env.OPENAI_API_KEY, samples: process.env.SAMPLES, log: console.log, error: console.error };
@@ -24,7 +24,7 @@ async function runMain(file, { out, failWith } = {}) {
     return new Response(SSE, { headers: { 'content-type': 'text/event-stream' } });
   };
   process.argv = [process.argv[0], file, target];
-  process.env.OPENAI_API_KEY = 'sk-test-' + 'a'.repeat(24);
+  process.env.OPENAI_API_KEY = key ?? 'sk-test-' + 'a'.repeat(24);
   process.env.SAMPLES = '1';
   console.log = () => {}; console.error = () => {};
   try {
@@ -47,6 +47,18 @@ for (const file of ['injection-live.mjs', 'grounding-live.mjs', 'latency-live.mj
     assert.ok(r.written && Array.isArray(r.written.rows) && r.written.rows.length > 0);
     assert.ok(r.urls.length > 0 && r.urls.every((u) => u === 'https://api.openai.com/v1/responses'));
     assert.ok(!JSON.stringify(r.written).includes('sk-test-'));
+  });
+}
+
+for (const file of ['injection-live.mjs', 'grounding-live.mjs', 'latency-live.mjs']) {
+  test(`${file}: a blank key with no key file named stops before any request`, async () => {
+    const keyFile = process.env.STUDIQUO_RAG_OPENAI_KEY_FILE;
+    delete process.env.STUDIQUO_RAG_OPENAI_KEY_FILE;
+    try {
+      const r = await runMain(file, { key: '  ' });
+      assert.equal(r.error?.message, 'key_source_required');
+      assert.equal(r.urls.length, 0);
+    } finally { if (keyFile !== undefined) process.env.STUDIQUO_RAG_OPENAI_KEY_FILE = keyFile; }
   });
 }
 

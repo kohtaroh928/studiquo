@@ -94,7 +94,7 @@ const round = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, ty
 export async function main() {
   // loadOpenAIKey falls back to mcp-server/.dev.vars when nothing is given. A run that spends
   // money names where its key comes from.
-  if (!process.env.OPENAI_API_KEY && !process.env.STUDIQUO_RAG_OPENAI_KEY_FILE) throw Error('key_source_required');
+  if (!process.env.OPENAI_API_KEY?.trim() && !process.env.STUDIQUO_RAG_OPENAI_KEY_FILE) throw Error('key_source_required');
   const apiKey = loadOpenAIKey(process.env, process.env.STUDIQUO_RAG_OPENAI_KEY_FILE);
   const out = process.argv[2]; if (!out) throw Error('output_required');
   const samples = Number(process.env.SAMPLES ?? 2); if (!Number.isInteger(samples) || samples < 1) throw Error('samples_must_be_a_whole_number');
