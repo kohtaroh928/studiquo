@@ -17,7 +17,7 @@ function environment(extra = {}) {
   for (const name of readdirSync(new URL("../migrations/", import.meta.url) as any).sort()) db.exec(readFileSync(new URL(`../migrations/${name}`, import.meta.url) as any, "utf8"));
   const values = new Map();
   const statement = (sql: string, params: Untyped[] = []) => ({
-    bind(...args: Untyped[]) { return statement(sql, args); },
+    bind(...args: unknown[]) { return statement(sql, args); },
     async run() { return { success: true, meta: db.prepare(sql).run(...params) }; },
     async all() { return { results: db.prepare(sql).all(...params) }; },
     async first() { return db.prepare(sql).get(...params) ?? null; },
@@ -30,7 +30,7 @@ function environment(extra = {}) {
       async get(key: string, type: string) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix, limit = 1000 }: { prefix?: Untyped; limit?: Untyped }) { const keys = [...values.keys()].filter(key => key.startsWith(prefix)).slice(0, limit); return { keys: keys.map(name => ({ name })), list_complete: true }; },
+      async list({ prefix, limit = 1000 }: { prefix?: unknown; limit?: Untyped }) { const keys = [...values.keys()].filter(key => key.startsWith(prefix)).slice(0, limit); return { keys: keys.map(name => ({ name })), list_complete: true }; },
     },
     _db: db,
     _values: values,
@@ -148,7 +148,7 @@ test("N1: a leftover cleanup job cannot erase an account created after the delet
   // the person is told the cleanup is pending and the job stays queued.
   const realDelete = env.STUDIQUO_DATA.delete;
   const jobKeyName = `privacy-account-delete:${await sha256Hex(identity)}`;
-  env.STUDIQUO_DATA.delete = async (key: Untyped) => { if (key === jobKeyName) throw new Error("temporary storage outage"); return realDelete(key); };
+  env.STUDIQUO_DATA.delete = async (key: unknown) => { if (key === jobKeyName) throw new Error("temporary storage outage"); return realDelete(key); };
   assert.deepEqual(await startAccountDeletion(env, identity), { deleted: false, cleanupPending: true });
   env.STUDIQUO_DATA.delete = realDelete;
   assert.equal(env._values.has(jobKeyName), true, "the leftover job is still queued");
@@ -186,7 +186,7 @@ test("an ordinary sign-in performs no KV writes besides the session", async () =
   const writes: any[][] = [];
   const { put, delete: del } = env.STUDIQUO_DATA;
   env.STUDIQUO_DATA.put = async (key: string, value: string, options: string) => { writes.push(["put", key]); return put(key, value, options); };
-  env.STUDIQUO_DATA.delete = async (key: Untyped) => { writes.push(["delete", key]); return del(key); };
+  env.STUDIQUO_DATA.delete = async (key: unknown) => { writes.push(["delete", key]); return del(key); };
   assert.ok(await mintSession(env, "apple:ordinary", RANDOM));
   assert.deepEqual(writes.map(([kind]) => kind), ["put"]);
   assert.match(writes[0][1], /^session:/);
@@ -262,7 +262,7 @@ test("M1: a retry that read the old job just before the person came back leaves 
   const jobName = `privacy-account-delete:${await sha256Hex(identity)}`;
   // The deletion finishes, but removing its job fails: the job stays queued.
   const realDelete = env.STUDIQUO_DATA.delete;
-  env.STUDIQUO_DATA.delete = async (key: Untyped) => { if (key === jobName) throw new Error("temporary storage outage"); return realDelete(key); };
+  env.STUDIQUO_DATA.delete = async (key: unknown) => { if (key === jobName) throw new Error("temporary storage outage"); return realDelete(key); };
   await startAccountDeletion(env, identity);
   env.STUDIQUO_DATA.delete = realDelete;
   const jobRead = JSON.parse(env._values.get(jobName)); // what a cron run has just read

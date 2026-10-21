@@ -101,7 +101,7 @@ function refIdentityKey(identity: { provider: any; sub: any; }) {
   if (identity.provider === "email") return `email:${identity.sub}`;
   return identity.sub;
 }
-async function referenceLinkVerifiedEmail(env: LooseEnv, { provider, sub, email, emailVerified }: { provider?: Untyped; sub?: Untyped; email?: Untyped; emailVerified?: Untyped }) {
+async function referenceLinkVerifiedEmail(env: LooseEnv, { provider, sub, email, emailVerified }: { provider?: unknown; sub?: unknown; email?: unknown; emailVerified?: unknown }) {
   const trimmed = typeof email === "string" ? email.trim().toLowerCase() : "";
   const normalized = trimmed.length > 0 && trimmed.length <= 254 && trimmed.includes("@") ? trimmed : null;
   if (!normalized || !emailVerified) return { normalizedEmail: null, linkedIdentities: [] };
