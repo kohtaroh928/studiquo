@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getPlan, PRODUCT_PLAN_MAP } from "./entitlements.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
 // A hand-rolled stand-in for the ADMIN_DB D1 binding: real SQL text is
 // ignored (admin.test.js already exercises the real schema against a real
@@ -130,9 +130,9 @@ function fakePaywallDB({ subscribers = [], legacy = [], paywall = true }: { subs
             return {
               async all() {
                 if (sql.includes("legacy_standard_accounts")) {
-                  return { results: legacy.filter(id => id === appUserId).map(id => ({ app_user_id: id })) };
+                  return { results: legacy.filter((id: Untyped) => id === appUserId).map((id: Untyped) => ({ app_user_id: id })) };
                 }
-                return { results: subscribers.filter(row => row.app_user_id === appUserId) };
+                return { results: subscribers.filter((row: Untyped) => row.app_user_id === appUserId) };
               },
             };
           },

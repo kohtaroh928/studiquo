@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { eraseLibraryID, getOrCreateLibraryID, libraryIdObjectName, newLibraryID } from "./library-id.ts";
-import { partialState } from "./test-env.ts";
+import { partialState, type Untyped } from "./test-env.ts";
 
 function fakeContext() {
   const values = new Map();

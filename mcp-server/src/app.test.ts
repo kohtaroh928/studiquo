@@ -12,7 +12,7 @@ import { touchSeenContext } from "./login-monitor.ts";
 import { argon2QueueState, engine } from "./local-auth.ts";
 import { accountGenerationMethods } from "./test-account-generations.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
-import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv } from "./test-env.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // Regression coverage for "logging out doesn't revoke the cloud sync token":
 // once a token is revoked, it must be rejected everywhere it used to work,
@@ -23,7 +23,7 @@ import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv } 
 function fakeCloudflareLimiter(limit = 5) {
   const counts = new Map();
   return {
-    async limit({ key }) {
+    async limit({ key }: { key?: Untyped }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -32,7 +32,7 @@ function fakeCloudflareLimiter(limit = 5) {
 }
 
 // Mirrors RateCounter.bump's contract: true while under `limit`, false once spent.
-function fakeRateCounterBinding(getData) {
+function fakeRateCounterBinding(getData: Untyped) {
   const counts = new Map();
   const generations = new Map();
   const logins = new Map();
@@ -49,14 +49,14 @@ function fakeRateCounterBinding(getData) {
         // Same pure transitions the real RateCounter applies; these methods
         // contain no await between read and write, so like the real object
         // each call is atomic with respect to the others.
-        async loginReserve(policy, options: { enforce?: boolean | undefined; } | undefined) {
+        async loginReserve(policy: Untyped, options: { enforce?: boolean | undefined; } | undefined) {
           const result = reserveAttempt(logins.get(name), Date.now(), policy, options);
           if (result.waitSeconds === 0) logins.set(name, result.state);
           return { waitSeconds: result.waitSeconds, trusted: result.trusted };
         },
-        async loginRefund(policy) { if (logins.has(name)) logins.set(name, refundAttempt(logins.get(name), policy)); },
+        async loginRefund(policy: Untyped) { if (logins.has(name)) logins.set(name, refundAttempt(logins.get(name), policy)); },
         ...accountGenerationMethods(name, generations, getData),
-        async seenContext(key: string, { maxEntries, ttlSeconds }) {
+        async seenContext(key: string, { maxEntries, ttlSeconds }: { maxEntries?: Untyped; ttlSeconds?: Untyped }) {
           const result = touchSeenContext(seen.get(name), key, Date.now(), maxEntries, ttlSeconds);
           seen.set(name, result.state);
           return { isNew: result.isNew, wasEmpty: result.wasEmpty };
@@ -87,7 +87,7 @@ function environment({ strictSessions = false }: { strictSessions?: boolean } = 
       },
       async put(key: string, value: string, options: { expirationTtl: any; }) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix }) {
+      async list({ prefix }: { prefix?: Untyped }) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
       },
     },
@@ -145,7 +145,7 @@ async function seedAppleJWKS(env: LooseEnv, jwk: unknown) {
   await env.STUDIQUO_DATA.put("apple:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signAppleIdentityToken(privateKey, kid: string | undefined, { sub, email, isPrivateEmail, emailVerified, nonce }: { sub?: string; email?: string; isPrivateEmail?: boolean; emailVerified?: boolean; nonce?: string } = {}) {
+function signAppleIdentityToken(privateKey: Untyped, kid: string | undefined, { sub, email, isPrivateEmail, emailVerified, nonce }: { sub?: string; email?: string; isPrivateEmail?: boolean; emailVerified?: boolean; nonce?: string } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const claims: Record<string, unknown> = { sub };
   if (nonce !== undefined) claims.nonce = nonce;
@@ -175,7 +175,7 @@ async function seedGoogleJWKS(env: LooseEnv, jwk: unknown) {
   await env.STUDIQUO_DATA.put("google:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signGoogleIdentityToken(privateKey, kid: string | undefined, { sub, email, emailVerified, nonce }: { sub?: string; email?: string; emailVerified?: boolean; nonce?: string } = {}) {
+function signGoogleIdentityToken(privateKey: Untyped, kid: string | undefined, { sub, email, emailVerified, nonce }: { sub?: string; email?: string; emailVerified?: boolean; nonce?: string } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const claims: Record<string, unknown> = { sub };
   if (nonce !== undefined) claims.nonce = nonce;
@@ -270,7 +270,7 @@ test("DELETE /api/account removes every linked login identity and invalidates al
   }), env, noopCtx);
   assert.equal(recreated.status, 200);
   const recreatedToken = (await recreated.json()).token;
-  assert.equal((await realSession(env, recreatedToken)).sub, "google:delete-sub");
+  assert.equal((await realSession(env, recreatedToken))!.sub, "google:delete-sub");
   assert.deepEqual(await env.STUDIQUO_DATA.get("email-accounts:delete@example.com", "json"), [
     { provider: "google", sub: "delete-sub" },
   ]);
@@ -532,7 +532,7 @@ test("POST /api/auth/apple: a different client IP is not affected by another IP'
   const env = environment();
   const { jwk } = await makeAppleSigningKey();
   await seedAppleJWKS(env, jwk);
-  const attempt = ip => worker.fetch(
+  const attempt = (ip: Untyped) => worker.fetch(
     request("/api/auth/apple", { method: "POST", ip, body: { identityToken: "garbage", randomValue: "e".repeat(40) } }),
     env,
     noopCtx
@@ -653,9 +653,9 @@ test("Apple and Google sign-ins with the same verified email authenticate as one
     { provider: "apple", sub: "000123.apple-sub.4567" },
     { provider: "google", sub: "108234567890123456789" },
   ]);
-  assert.equal((await realSession(env, appleSessionToken)).sub, "000123.apple-sub.4567");
+  assert.equal((await realSession(env, appleSessionToken))!.sub, "000123.apple-sub.4567");
   assert.equal(
-    (await realSession(env, googleSessionToken)).sub,
+    (await realSession(env, googleSessionToken))!.sub,
     "000123.apple-sub.4567",
     "same verified email must authenticate both providers as one account"
   );
@@ -690,14 +690,14 @@ test("an Apple sign-in whose token omits email_verified does not create a link",
 // MARK: - Local email/password verification
 
 function stubResendCapturingCode() {
-  let capturedCode: string = null;
+  let capturedCode: string | null = null;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (_url, init) => {
-    const match = /確認コード: (\d{6})/.exec(JSON.parse(init.body).text);
-    capturedCode = match[1];
+    const match = /確認コード: (\d{6})/.exec(JSON.parse(init!.body! as string).text);
+    capturedCode = match![1];
     return new Response("{}", { status: 200 });
   };
-  return { restore: () => { globalThis.fetch = originalFetch; }, code: () => capturedCode };
+  return { restore: () => { globalThis.fetch = originalFetch; }, code: () => capturedCode as string };
 }
 
 test("POST /api/auth/email/send-code then /confirm-code links the email under provider \"email\"", async () => {
@@ -985,8 +985,8 @@ test("local and Google sign-ins with the same verified email authenticate as one
     { provider: "email", sub: "person@example.com" },
     { provider: "google", sub: "108234567890123456789" },
   ]);
-  assert.equal((await realSession(env, localSessionToken)).sub, "email:person@example.com");
-  assert.equal((await realSession(env, googleSessionToken)).sub, "email:person@example.com");
+  assert.equal((await realSession(env, localSessionToken))!.sub, "email:person@example.com");
+  assert.equal((await realSession(env, googleSessionToken))!.sub, "email:person@example.com");
 });
 
 // MARK: - Local email/password login
@@ -1050,7 +1050,7 @@ test("Google remains the canonical account when Apple and local sign-ins are add
   const localLogin = await localLoginForTest(env, "person@example.com", "correct-horse-battery");
 
   for (const login of [googleLogin, appleLogin, localLogin]) {
-    assert.equal((await realSession(env, login.token)).sub, "google:google-first");
+    assert.equal((await realSession(env, login.token))!.sub, "google:google-first");
   }
 });
 
@@ -1070,7 +1070,7 @@ test("Apple, Google, and local sign-ins with one verified email share one accoun
   const localLogin = await createLocalAccount(env, "all@example.com", "correct-horse-battery");
 
   const subjects = await Promise.all([appleLogin, googleLogin, localLogin].map(async login =>
-    (await realSession(env, login.token)).sub
+    (await realSession(env, login.token))!.sub
   ));
   assert.deepEqual(subjects, ["apple-owner", "apple-owner", "apple-owner"]);
 });
@@ -1089,8 +1089,8 @@ test("different verified emails are not merged", async () => {
     sub: "google-distinct", email: "google@example.com", emailVerified: true,
   });
 
-  assert.equal((await realSession(env, appleLogin.token)).sub, "apple-distinct");
-  assert.equal((await realSession(env, googleLogin.token)).sub, "google:google-distinct");
+  assert.equal((await realSession(env, appleLogin.token))!.sub, "apple-distinct");
+  assert.equal((await realSession(env, googleLogin.token))!.sub, "google:google-distinct");
 });
 
 test("Apple private relay email is not merged with Google or local accounts", async () => {
@@ -1108,9 +1108,9 @@ test("Apple private relay email is not merged with Google or local accounts", as
   });
   const localLogin = await createLocalAccount(env, "person@example.com", "correct-horse-battery");
 
-  assert.equal((await realSession(env, appleLogin.token)).sub, "apple-relay");
-  assert.equal((await realSession(env, googleLogin.token)).sub, "google:google-real");
-  assert.equal((await realSession(env, localLogin.token)).sub, "google:google-real");
+  assert.equal((await realSession(env, appleLogin.token))!.sub, "apple-relay");
+  assert.equal((await realSession(env, googleLogin.token))!.sub, "google:google-real");
+  assert.equal((await realSession(env, localLogin.token))!.sub, "google:google-real");
   assert.equal(await env.STUDIQUO_DATA.get("email-accounts:relay@privaterelay.appleid.com"), null);
 });
 
@@ -1131,7 +1131,7 @@ test("a later Apple login without email restores the shared account from the sav
     sub: "apple-repeat",
   }, "z".repeat(40));
 
-  assert.equal((await realSession(env, repeated.token)).sub, "google:google-owner");
+  assert.equal((await realSession(env, repeated.token))!.sub, "google:google-owner");
 });
 
 test("POST /api/auth/local/login: the correct password mints a working token", async () => {
@@ -1404,7 +1404,7 @@ function collectingCtx() {
   return { waitUntil(promise: string) { pending.push(promise); }, flush: () => Promise.all(pending) };
 }
 
-function geoRequest(path: string, { cf, ip, body }) {
+function geoRequest(path: string, { cf, ip, body }: { cf?: Untyped; ip?: Untyped; body?: Untyped }) {
   const req = request(path, { method: "POST", ip, body });
   return Object.defineProperty(req, "cf", { value: cf });
 }
@@ -1419,11 +1419,11 @@ test("local login: a sign-in from a new country+network emails the owner; the ba
   const mails: any[] = [];
   const logs: string[] = [];
   globalThis.fetch = async (url, init) => {
-    const body = JSON.parse(init.body);
+    const body = JSON.parse(init!.body! as string);
     if (body.text?.includes("確認コード")) mails.push({ kind: "code", body });
     else if (body.subject?.includes("新しい環境")) mails.push({ kind: "notice", body });
     const match = /確認コード: (\d{6})/.exec(body.text ?? "");
-    globalThis.__code = match ? match[1] : globalThis.__code;
+    (globalThis as { __code?: string }).__code = match ? match[1] : (globalThis as { __code?: string }).__code;
     return new Response("{}", { status: 200 });
   };
   console.log = line => logs.push(String(line));
@@ -1433,7 +1433,7 @@ test("local login: a sign-in from a new country+network emails the owner; the ba
     await worker.fetch(geoRequest("/api/auth/email/send-code", { cf: home, ip: "203.0.113.70", body: { email: "person@example.com" } }), env, partialCtx(ctx));
     await worker.fetch(geoRequest("/api/auth/email/confirm-code", {
       cf: home, ip: "203.0.113.70",
-      body: { email: "person@example.com", code: globalThis.__code, password: "correct-horse-battery", randomValue: "r".repeat(40) },
+      body: { email: "person@example.com", code: (globalThis as { __code?: string }).__code, password: "correct-horse-battery", randomValue: "r".repeat(40) },
     }), env, partialCtx(ctx));
     await ctx.flush();
 
@@ -1464,7 +1464,7 @@ test("local login: a sign-in from a new country+network emails the owner; the ba
   } finally {
     globalThis.fetch = originalFetch;
     console.log = originalLog;
-    delete globalThis.__code;
+    delete (globalThis as { __code?: string }).__code;
   }
 });
 
@@ -1534,10 +1534,10 @@ test("local login: with the hashing queue full the attempt gets a 503 and Retry-
       assert.match((await refused.json()).error, /busy/i);
     }
 
-    open();
+    open!();
     for (const response of await Promise.all(fillers)) assert.equal(response.status, 401, "everyone already queued is still served");
   } finally {
-    open();
+    open!();
     engine.argon2idAsync = original;
     console.log = originalLog;
   }
@@ -1569,16 +1569,16 @@ test("local login: if handing the refused attempt back fails, the answer is stil
     // The attempt is reserved first and then refused for the full queue; make
     // the call that hands the reservation back fail.
     const realGetByName = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-    env.RATE_COUNTER.getByName = name => {
+    env.RATE_COUNTER.getByName = (name: Untyped) => {
       const stub = realGetByName(name);
       return { ...stub, loginRefund: async () => { throw new Error("DO down"); } };
     };
     const refused = await loginAttempt(env, { ip: "203.0.113.80", password: "correct-horse-battery" });
     assert.equal(refused.status, 503);
-    open();
+    open!();
     await Promise.all(fillers);
   } finally {
-    open();
+    open!();
     engine.argon2idAsync = original;
     console.log = originalLog;
     console.error = originalError;
@@ -1617,11 +1617,11 @@ test("local login: with the hashing queue full, a known client still gets in whi
     assert.equal(argon2QueueState().waiting, 33, "queued in the reserved part, behind the others");
     assert.equal(settled, false);
 
-    open();
+    open!();
     assert.equal((await known).status, 200);
     for (const response of await Promise.all(fillers)) assert.equal(response.status, 401);
   } finally {
-    open();
+    open!();
     engine.argon2idAsync = original;
     console.log = originalLog;
   }
@@ -1629,7 +1629,7 @@ test("local login: with the hashing queue full, a known client still gets in whi
 
 // Fills the hashing queue (2 running, 32 waiting) with sign-ins for made-up
 // addresses, runs `during` with it full, then lets everything finish.
-async function withFullHashingQueue(env: LooseEnv, ipPrefix: string, during) {
+async function withFullHashingQueue(env: LooseEnv, ipPrefix: string, during: Untyped) {
   const original = engine.argon2idAsync;
   let open;
   const gate = new Promise(resolve => { open = resolve; });
@@ -1645,10 +1645,10 @@ async function withFullHashingQueue(env: LooseEnv, ipPrefix: string, during) {
     }
     assert.deepEqual(argon2QueueState(), { active: 2, waiting: 32 });
     await during(open);
-    open();
+    open!();
     await Promise.all(fillers);
   } finally {
-    open();
+    open!();
     engine.argon2idAsync = original;
     console.log = originalLog;
   }
@@ -1734,10 +1734,10 @@ test("local login: a 503 for a busy queue is not offered as a way to learn wheth
     assert.equal(known.status, 503);
     assert.equal(unknown.status, 503);
     assert.deepEqual(await known.json(), await unknown.json());
-    open();
+    open!();
     await Promise.all(fillers);
   } finally {
-    open();
+    open!();
     engine.argon2idAsync = original;
     console.log = originalLog;
   }
@@ -1779,7 +1779,7 @@ test("a token that /api/auth/local/login actually minted works even with strictS
   assert.equal(actions.status, 200);
 });
 
-function stubFetch(handler) {
+function stubFetch(handler: Untyped) {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => handler(url, init);
   return () => { globalThis.fetch = originalFetch; };
@@ -1810,8 +1810,8 @@ test("POST /api/issue-reports stores the report and posts it to Slack when a web
     assert.equal(parsed.reported, true);
     assert.match(parsed.id, /^[0-9a-f-]{36}$/);
 
-    assert.equal(slackCall.url, "https://hooks.slack.test/services/xyz");
-    const text = JSON.stringify(slackCall.body);
+    assert.equal(slackCall!.url, "https://hooks.slack.test/services/xyz");
+    const text = JSON.stringify(slackCall!.body);
     assert.doesNotMatch(text, /カレンダーが真っ白になる/);
     assert.match(text, new RegExp(parsed.id));
     assert.match(text, /1\.4\.0/);
@@ -1827,13 +1827,13 @@ function withAuditDB(env: LooseEnv) {
   for (const file of migrationFiles()) {
     db.exec(readMigration(file));
   }
-  const statement = (sql: string, params = []) => ({
-    bind: (...next) => statement(sql, next),
+  const statement = (sql: string, params: Untyped[] = []) => ({
+    bind: (...next: Untyped[]) => statement(sql, next),
     async run() { db.prepare(sql).run(...params); return { success: true, meta: { changes: 1 } }; },
     async all() { return { results: db.prepare(sql).all(...params) }; },
     async first() { return db.prepare(sql).get(...params) ?? null; },
   });
-  env.ADMIN_DB = { prepare: sql => statement(sql) };
+  env.ADMIN_DB = { prepare: (sql: Untyped) => statement(sql) };
   env._auditDB = db;
   return env;
 }
@@ -1849,7 +1849,7 @@ test("report screenshots require verified Access and are not sent to Slack", asy
   let sentImageURL = null;
   const restore = stubFetch(async (_url: string, init: { body: string; }) => {
     const body = JSON.parse(init.body);
-    sentImageURL = body.blocks.find(block => block.type === "image")?.image_url ?? null;
+    sentImageURL = body.blocks.find((block: Untyped) => block.type === "image")?.image_url ?? null;
     return new Response("ok", { status: 200 });
   });
   let response;
@@ -1880,7 +1880,7 @@ test("report screenshots require verified Access and are not sent to Slack", asy
   assert.equal(screenshotResponse.headers.get("content-type"), "image/png");
   const returnedBytes = Buffer.from(await screenshotResponse.arrayBuffer());
   assert.deepEqual(returnedBytes, pngBytes);
-  assert.deepEqual(env._auditDB.prepare("SELECT action, target FROM admin_audit_log").all().map(row => ({ ...row })),
+  assert.deepEqual(env._auditDB.prepare("SELECT action, target FROM admin_audit_log").all().map((row: Untyped) => ({ ...row })),
     [{ action: "issue_report.screenshot_view", target: id }]);
 });
 
@@ -1935,7 +1935,7 @@ test("a downloaded issue-report screenshot is cached only privately and only bri
   let sentImageURL = null;
   const restore = stubFetch(async (_url: string, init: { body: string; }) => {
     const body = JSON.parse(init.body);
-    sentImageURL = body.blocks.find(block => block.type === "image")?.image_url ?? null;
+    sentImageURL = body.blocks.find((block: Untyped) => block.type === "image")?.image_url ?? null;
     return new Response("ok", { status: 200 });
   });
   try {
@@ -2025,7 +2025,7 @@ test("POST /api/issue-reports allows up to the limit, then 429s", async () => {
       noopCtx
     );
   }
-  assert.equal(last.status, 429);
+  assert.equal(last!.status, 429);
 });
 
 test("POST /api/issue-reports with an expired token is rejected with 401", async () => {
@@ -2273,7 +2273,7 @@ test("POST /api/auth/email/confirm-code: adding a first password does not sign o
   const env = environment({ strictSessions: true });
   // An account that signs in another way already has a live session...
   const existing = await mintSession(env, "email:google-user@example.com", "g".repeat(40));
-  assert.ok(await realSession(env, existing));
+  assert.ok(await realSession(env, existing!));
   mock.timers.tick(5_000);
   // ...and then sets its first password through the e-mail code.
   const stub = stubResendCapturingCode();
@@ -2285,7 +2285,7 @@ test("POST /api/auth/email/confirm-code: adding a first password does not sign o
     noopCtx
   );
   assert.equal(response.status, 200);
-  assert.ok(await realSession(env, existing), "only a reset, not the first password, signs the other sessions out");
+  assert.ok(await realSession(env, existing!), "only a reset, not the first password, signs the other sessions out");
 });
 
 test("POST /api/auth/email/confirm-code: a reset also disconnects the account's connected apps", async t => {
@@ -2383,7 +2383,7 @@ test("POST /api/auth/email/confirm-code: a reset removes the account's passkeys,
   assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:attacker-passkey"), null);
   assert.equal(await env.STUDIQUO_DATA.get("passkeys:credential:second-passkey"), null);
   assert.equal(await env.STUDIQUO_DATA.get("passkeys:user:device-b"), null, "a list left empty is deleted");
-  assert.deepEqual((await env.STUDIQUO_DATA.get("passkeys:user:device-a", "json")).map(item => item.id), ["shared-list-other"],
+  assert.deepEqual((await env.STUDIQUO_DATA.get("passkeys:user:device-a", "json")).map((item: Untyped) => item.id), ["shared-list-other"],
     "a list is cleaned, not wiped, when it also holds another person's passkey");
   assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:credential:other-passkey"), null, "another address's passkey is untouched");
   assert.notEqual(await env.STUDIQUO_DATA.get("passkeys:user:device-c"), null);
@@ -2417,7 +2417,7 @@ test("POST /api/auth/email/confirm-code: passkeys are found across every page of
   for (let n = 1; n <= 7; n++) await seedPasskey(env, "pk-pages@example.com", `page-passkey-${n}`, `device-${n}`);
 
   const realList = env.STUDIQUO_DATA.list;
-  env.STUDIQUO_DATA.list = async ({ prefix, cursor }) => {
+  env.STUDIQUO_DATA.list = async ({ prefix, cursor }: { prefix?: Untyped; cursor?: Untyped }) => {
     const all = (await realList.call(env.STUDIQUO_DATA, { prefix })).keys;
     const start = cursor ? Number(cursor) : 0;
     return { keys: all.slice(start, start + 2), list_complete: start + 2 >= all.length, cursor: String(start + 2) };
@@ -2549,7 +2549,7 @@ test("POST /api/auth/email/confirm-code: a sign-in made with the old password wh
 
   // Storing the new password is slow. In that gap the old password still
   // works, so a holder of it signs in: a session issued after the first cut-off.
-  let attacker = null;
+  let attacker: Untyped = null;
   const realPut = env.STUDIQUO_DATA.put;
   env.STUDIQUO_DATA.put = async (key: string, value: string, options: string) => {
     if (key === "account:local:window@example.com" && !attacker) {
@@ -2654,7 +2654,7 @@ test("POST /api/session/refresh gives a token that is old enough a fresh one for
   assert.notEqual(body.token, token);
 
   const next = await realSession(env, body.token);
-  assert.equal(next.sub, "email:refresh@example.com");
+  assert.equal(next!.sub, "email:refresh@example.com");
   assert.equal((await worker.fetch(request("/api/actions", { token: body.token }), env, noopCtx)).status, 200);
   // The old token is left to expire by itself, so a lost response can't sign the person out.
   assert.equal((await worker.fetch(request("/api/actions", { token }), env, noopCtx)).status, 200);
@@ -2912,7 +2912,7 @@ test("without the registry nothing is handed out, and the library id needs a sig
 
 // ---- ID token nonce: the token must have been made for THIS sign-in ---------------
 
-const nonceHash = nonce => createHash("sha256").update(nonce).digest("hex");
+const nonceHash = (nonce: Untyped) => createHash("sha256").update(nonce).digest("hex");
 const RAW_NONCE = "n".repeat(10) + "0123456789abcdefghijklmnopqrstuv";
 
 async function providerFixture(provider: string) {
@@ -2985,7 +2985,7 @@ for (const provider of ["apple", "google"]) {
 
 // ---- The nonce outcome is logged (to watch the rollout), without any secret -------
 
-async function nonceLogs(run) {
+async function nonceLogs(run: Untyped) {
   const lines: string[] = [];
   const original = console.log;
   console.log = (...args) => { lines.push(args.join(" ")); };

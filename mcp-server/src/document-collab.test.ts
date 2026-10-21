@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "./app.ts";
 import { sha256Hex } from "./auth.ts";
-import { partialCtx, partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // Stands in for the real DocumentRoom Durable Object (document-room.ts): one
 // shared participants/blocks/changes record per room id, persisting across
@@ -26,7 +26,7 @@ function fakeDocumentRoomBinding() {
     getByName(id: string) {
       const state = room(id);
       return {
-        async initialize(ownerKey: string, blocks: string) {
+        async initialize(ownerKey: string, blocks: Untyped) {
           if (state.participants.size > 0) return { status: "already_initialized" };
           state.participants.set(ownerKey, "owner");
           for (const block of (Array.isArray(blocks) ? blocks : []).slice(0, 2000)) {
@@ -64,7 +64,7 @@ function fakeDocumentRoomBinding() {
           requireParticipant(state, userKey);
           return {
             blocks: Array.from(state.blocks.values()).sort((a, b) => (a as { order: number }).order - (b as { order: number }).order),
-            pendingChanges: state.changes.filter(change => change.status === "pending"),
+            pendingChanges: state.changes.filter((change: Untyped) => change.status === "pending"),
           };
         },
         async proposeChange(userKey: string, blockOrder: string, previousText: string, newText: string) {
@@ -85,7 +85,7 @@ function fakeDocumentRoomBinding() {
         async reviewChange(userKey: string, changeID: string, decision: string) {
           requireReviewer(state, userKey);
           if (decision !== "accept" && decision !== "reject") throw new Error("InvalidDecision");
-          const change = state.changes.find(item => item.id === changeID);
+          const change = state.changes.find((item: Untyped) => item.id === changeID);
           if (!change) return { status: "not_found" };
           if (change.status !== "pending") return { status: change.status };
           if (decision === "accept") {
@@ -135,7 +135,7 @@ function environment() {
     },
     async put(key: string, value: string) { values.set(key, value); },
     async delete(key: string) { values.delete(key); },
-    async list({ prefix }) {
+    async list({ prefix }: { prefix?: Untyped }) {
       return { keys: [...values.keys()].filter(name => name.startsWith(prefix)).map(name => ({ name })), list_complete: true };
     },
   };
@@ -467,8 +467,8 @@ test("owner can list participants with their roles and display names", async () 
   assert.equal(response.status, 200);
   const participants = await response.json();
   assert.equal(participants.length, 2);
-  assert.ok(participants.some(entry => entry.userKey && entry.role === "owner"));
-  assert.ok(participants.some(entry => entry.role === "editor" && entry.name === "田中"));
+  assert.ok(participants.some((entry: Untyped) => entry.userKey && entry.role === "owner"));
+  assert.ok(participants.some((entry: Untyped) => entry.role === "editor" && entry.name === "田中"));
 });
 
 test("inviting with a code no one is registered under is refused like any non-friend", async () => {
@@ -598,7 +598,7 @@ test("an invitation does not seat anyone until it is accepted", async () => {
   assert.equal(await env.STUDIQUO_DATA.get(`doc-room:${await sha256Hex(friend)}:${ROOM_ID}`), null);
 
   const waiting = await (await worker.fetch(request("/api/document/invites", { token: friend }), env, noopCtx)).json();
-  assert.deepEqual(waiting.map(item => [item.roomID, item.role]), [[ROOM_ID, "editor"]]);
+  assert.deepEqual(waiting.map((item: Untyped) => [item.roomID, item.role]), [[ROOM_ID, "editor"]]);
 
   const accepted = await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/invite/accept`, { method: "POST", token: friend, body: {} }), env, noopCtx);
   assert.equal((await accepted.json()).status, "joined");
@@ -660,7 +660,7 @@ test("an invitation lapses after two weeks", async () => {
   const owner = freshToken("1");
   const friend = freshToken("2");
   await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
-  const ttls = [];
+  const ttls: Untyped[] = [];
   const put = env.STUDIQUO_DATA.put;
   env.STUDIQUO_DATA.put = async (name: string, value: string, options: { expirationTtl: any; }) => { if (name.startsWith("doc-invite:")) ttls.push(options?.expirationTtl); return put.call(env.STUDIQUO_DATA, name, value, options); };
   await sendInvite(env, owner, friend, "editor");

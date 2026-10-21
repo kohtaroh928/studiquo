@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { register } from "node:module";
 import { DatabaseSync } from "node:sqlite";
-import { contextOf, partialEnv, partialSql, partialState, partialStorage } from "./test-env.ts";
+import { contextOf, partialEnv, partialSql, partialState, partialStorage, type Untyped } from "./test-env.ts";
 
 // mcp-inbox.ts's MCPInbox extends the real `DurableObject` from
 // "cloudflare:workers", a module that only exists inside the Workers
@@ -38,7 +38,7 @@ const { MCPInbox } = await import("./mcp-inbox.ts");
 // same as Cloudflare's own SqlStorageCursor.
 function makeSql(db: DatabaseSync) {
   return {
-    exec(query: string, ...params) {
+    exec(query: string, ...params: Untyped[]) {
       if (query.trim().toUpperCase().startsWith("SELECT")) return db.prepare(query).all(...params);
       if (params.length) db.prepare(query).run(...params);
       else db.exec(query);

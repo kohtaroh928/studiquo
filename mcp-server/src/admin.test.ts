@@ -4,7 +4,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { PRODUCT_BILLING_MONTHS } from "./admin.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
-import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv } from "./test-env.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // Wraps a real in-memory SQLite database (seeded from the actual migration
 // file, so tests run against the real schema) in the shape D1 exposes to a
@@ -18,7 +18,7 @@ class FakeD1Statement {
     this.sql = sql;
     this.params = params;
   }
-  bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
+  bind(...params: Untyped[]) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() {
     const info = this.db.prepare(this.sql).run(...this.params);
     return { success: true, meta: { changes: info.changes, rows_written: info.changes, last_row_id: info.lastInsertRowid } };
@@ -42,7 +42,7 @@ function fakeD1() {
 function fakeCloudflareLimiter(limit = 1000) {
   const counts = new Map();
   return {
-    async limit({ key }) {
+    async limit({ key }: { key?: Untyped }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -62,7 +62,7 @@ function environment() {
       },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix, cursor }) {
+      async list({ prefix, cursor }: { prefix?: Untyped; cursor?: Untyped }) {
         const all = [...values.keys()].filter(k => k.startsWith(prefix)).sort();
         const start = cursor ? Number(cursor) : 0;
         const page = all.slice(start, start + 1000);
@@ -398,20 +398,20 @@ test("the webhook endpoint is rate-limited", async () => {
   for (let i = 0; i < 4; i += 1) {
     last = await sendWebhook(env, purchaseEvent({ id: crypto.randomUUID() }));
   }
-  assert.equal(last.status, 429);
+  assert.equal(last!.status, 429);
 });
 
 test("GET /admin serves the dashboard page", async () => {
   const env = environment();
   const response = await worker.fetch(request("/admin"), env, noopCtx);
   assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type"), /text\/html/);
+  assert.match(response.headers.get("content-type")!, /text\/html/);
   assert.match(await response.text(), /studiquo 管理ダッシュボード/);
 });
 
 test("every /api/admin/* route except RevenueCat's webhook needs a verified Access login", async () => {
   const env = environment();
-  const bare = path => new Request(`https://example.test${path}`);
+  const bare = (path: Untyped) => new Request(`https://example.test${path}`);
   for (const path of ["/api/admin/stats", "/api/admin/announcements", "/api/admin/anything-else"]) {
     assert.equal((await worker.fetch(bare(path), env, noopCtx)).status, 403, path);
     const forged = new Request(`https://example.test${path}`, { headers: { "cf-access-jwt-assertion": "forged" } });

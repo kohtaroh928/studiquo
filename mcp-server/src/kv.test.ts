@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { nextCursor } from "./kv.ts";
+import type { Untyped } from "./test-env.ts";
 
 // A list page as Workers KV returns it. Only the fields nextCursor reads matter.
 const page = (fields: Record<string, unknown>) => ({ keys: [], ...fields }) as unknown as KVNamespaceListResult<unknown>;

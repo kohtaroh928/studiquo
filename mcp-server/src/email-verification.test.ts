@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.ts";
 import { linkedIdentities } from "./oauth-links.ts";
-import { partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
@@ -19,7 +19,7 @@ function environment() {
   });
 }
 
-function stubResend(handler) {
+function stubResend(handler: Untyped) {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => handler(url, init);
   return () => { globalThis.fetch = originalFetch; };
@@ -36,7 +36,7 @@ async function captureSentCode(env: LooseEnv, email: string) {
   });
   await sendVerificationCode(env, email);
   restore();
-  const match = /確認コード: (\d{6})/.exec(sentBody.text);
+  const match = /確認コード: (\d{6})/.exec(sentBody!.text);
   assert.ok(match, "expected the email body to contain a 6-digit code");
   return match[1];
 }
@@ -56,8 +56,8 @@ test("sendVerificationCode emails a 6-digit code to the given address", async ()
   restore();
   assert.deepEqual(result, { sent: true });
   assert.equal(requestedURL, "https://api.resend.com/emails");
-  assert.equal(sentBody.to, "person@example.com");
-  assert.match(sentBody.text, /確認コード: \d{6}/);
+  assert.equal(sentBody!.to, "person@example.com");
+  assert.match(sentBody!.text, /確認コード: \d{6}/);
 });
 
 test("sendVerificationCode rejects an invalid email without calling Resend", async () => {

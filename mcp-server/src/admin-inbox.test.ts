@@ -6,7 +6,7 @@ import worker from "./app.ts";
 import { compareVersions } from "./app-errors.ts";
 import { INBOX_SCRIPT } from "./admin-inbox-ui.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
-import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv } from "./test-env.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // Same shape as admin.test.js's fake: a real in-memory SQLite database built
 // from the real migrations, behind the slice of D1's API the Worker uses.
@@ -15,7 +15,7 @@ class FakeD1Statement {
   sql: string;
   params: SQLInputValue[];
   constructor(db: DatabaseSync, sql: string, params: SQLInputValue[] = []) { this.db = db; this.sql = sql; this.params = params; }
-  bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
+  bind(...params: Untyped[]) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() {
     const info = this.db.prepare(this.sql).run(...this.params);
     return { success: true, meta: { changes: info.changes, rows_written: info.changes } };
@@ -35,7 +35,7 @@ function fakeD1() {
 function fakeCloudflareLimiter(limit = 1000) {
   const counts = new Map();
   return {
-    async limit({ key }) {
+    async limit({ key }: { key?: Untyped }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -63,7 +63,7 @@ function environment({ appErrorLimit = 1000 }: { appErrorLimit?: number } = {}) 
       },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix, cursor }) {
+      async list({ prefix, cursor }: { prefix?: Untyped; cursor?: Untyped }) {
         const all = [...values.keys()].filter(k => k.startsWith(prefix)).sort();
         const start = cursor ? Number(cursor) : 0;
         const page = all.slice(start, start + 1000);
@@ -81,7 +81,7 @@ function environment({ appErrorLimit = 1000 }: { appErrorLimit?: number } = {}) 
 }
 
 const noopCtx = partialCtx({ waitUntil() {} });
-const freshToken = suffix => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
+const freshToken = (suffix: Untyped) => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 
 function request(path: string, { method = "GET", token, body, contentType }: { method?: string; token?: string; body?: unknown; contentType?: string } = {}) {
   // /api/admin/* is verified against the Cloudflare Access login (src/access.ts).
@@ -99,11 +99,11 @@ async function seedSession(env: { STUDIQUO_DATA: { put: (arg0: string,arg1: stri
 }
 
 // Captures every Slack post made while `run` executes.
-async function withSlack(run) {
+async function withSlack(run: Untyped) {
   const posts: { url: URL | RequestInfo<unknown,CfProperties<unknown>>; body: any; }[] = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
-    posts.push({ url, body: JSON.parse(init.body) });
+    posts.push({ url, body: JSON.parse(init!.body! as string) });
     return new Response("ok", { status: 200 });
   };
   try {
@@ -319,12 +319,12 @@ test("the error list filters by status and sorts by recency or by count", async 
   await sendErrors(env, token, [crash({ signature: "rare", title: "rare", occurredAt: Date.now() - 5_000 })]);
   await sendErrors(env, token, [crash({ signature: "common", title: "common", count: 50, occurredAt: Date.now() - 9_000 })]);
 
-  assert.deepEqual((await listErrors(env, "?status=open&sort=recent")).map(e => e.title), ["rare", "common"]);
-  assert.deepEqual((await listErrors(env, "?status=open&sort=count")).map(e => e.title), ["common", "rare"]);
+  assert.deepEqual((await listErrors(env, "?status=open&sort=recent")).map((e: Untyped) => e.title), ["rare", "common"]);
+  assert.deepEqual((await listErrors(env, "?status=open&sort=count")).map((e: Untyped) => e.title), ["common", "rare"]);
 
   const [rare] = await listErrors(env, "?status=open&sort=recent");
   await worker.fetch(request(`/api/admin/app-errors/${rare.fingerprint}`, { method: "POST", body: { status: "in_progress", note: "調査中" } }), env, noopCtx);
-  assert.deepEqual((await listErrors(env, "?status=open")).map(e => e.title), ["common"]);
+  assert.deepEqual((await listErrors(env, "?status=open")).map((e: Untyped) => e.title), ["common"]);
   const working = await listErrors(env, "?status=in_progress");
   assert.equal(working[0].note, "調査中");
   assert.equal((await listErrors(env, "?status=all")).length, 2);
@@ -431,7 +431,7 @@ test("a report that fails to mirror into D1 is still accepted", async () => {
 test("reports filed before the inbox existed can be imported once, without touching handled ones", async () => {
   const env = environment();
   const recent = Date.now() - 86_400_000;
-  const legacy = id => JSON.stringify({ id, reporterKey: "k", description: `legacy ${id}`, appVersion: "0.9", osVersion: "26", deviceModel: "iPad", language: "ja", hasScreenshot: id === "00000000-0000-0000-0000-000000000002", createdAt: recent });
+  const legacy = (id: Untyped) => JSON.stringify({ id, reporterKey: "k", description: `legacy ${id}`, appVersion: "0.9", osVersion: "26", deviceModel: "iPad", language: "ja", hasScreenshot: id === "00000000-0000-0000-0000-000000000002", createdAt: recent });
   await env.STUDIQUO_DATA.put("issue-report:00000000-0000-0000-0000-000000000001", legacy("00000000-0000-0000-0000-000000000001"));
   await env.STUDIQUO_DATA.put("issue-report:00000000-0000-0000-0000-000000000002", legacy("00000000-0000-0000-0000-000000000002"));
   await env.STUDIQUO_DATA.put("issue-report-screenshot:00000000-0000-0000-0000-000000000002", JSON.stringify({ contentType: "image/png", data: "" }));
@@ -442,13 +442,13 @@ test("reports filed before the inbox existed can be imported once, without touch
   const reports = await listReports(env);
   assert.equal(reports.length, 2);
   assert.equal(reports[0].createdAt, recent);
-  assert.equal(reports.find(r => r.id.endsWith("2")).hasScreenshot, true);
+  assert.equal(reports.find((r: Untyped) => r.id.endsWith("2")).hasScreenshot, true);
 
   const handled = reports[0];
   await worker.fetch(request(`/api/admin/issue-reports/${handled.id}`, { method: "POST", body: { status: "resolved", note: "done" } }), env, noopCtx);
   const second = await worker.fetch(request("/api/admin/issue-reports/import-legacy", { method: "POST", body: {} }), env, noopCtx);
   assert.deepEqual(await second.json(), { imported: 0, skipped: 3 });
-  const after = (await listReports(env)).find(r => r.id === handled.id);
+  const after = (await listReports(env)).find((r: Untyped) => r.id === handled.id);
   assert.equal(after.status, "resolved");
   assert.equal(after.note, "done");
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { generateKeyPair, exportPKCS8, jwtVerify } from "jose";
 import test from "node:test";
 import { sendPush } from "./push.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
 async function fixture() {
   const values = new Map();
@@ -41,9 +41,9 @@ const notification = {
 test("sandbox devices use the sandbox APNs endpoint", async () => {
   const { env, values } = await fixture();
   seedDevices(values, [{ token: sandboxToken, environment: "sandbox", updatedAt: 1 }]);
-  const urls = [];
+  const urls: Untyped[] = [];
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async url => { urls.push(url); return new Response(null, { status: 200 }); },
+    fetchImpl: async (url: Untyped) => { urls.push(url); return new Response(null, { status: 200 }); },
   });
   assert.match(urls[0], /^https:\/\/api\.sandbox\.push\.apple\.com\/3\/device\//);
 });
@@ -51,9 +51,9 @@ test("sandbox devices use the sandbox APNs endpoint", async () => {
 test("production devices use the production APNs endpoint", async () => {
   const { env, values } = await fixture();
   seedDevices(values, [{ token: productionToken, environment: "production", updatedAt: 1 }]);
-  const urls = [];
+  const urls: Untyped[] = [];
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async url => { urls.push(url); return new Response(null, { status: 200 }); },
+    fetchImpl: async (url: Untyped) => { urls.push(url); return new Response(null, { status: 200 }); },
   });
   assert.match(urls[0], /^https:\/\/api\.push\.apple\.com\/3\/device\//);
   assert.doesNotMatch(urls[0], /sandbox/);
@@ -67,8 +67,8 @@ test("one JWT is reused for every device in a multi-device send", async () => {
   ]);
   const authorizationHeaders: any[] = [];
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async (_url, init) => {
-      authorizationHeaders.push(init.headers.authorization);
+    fetchImpl: async (_url: Untyped, init?: Untyped) => {
+      authorizationHeaders.push((init!.headers as Record<string, string>).authorization);
       return new Response(null, { status: 200 });
     },
   });
@@ -92,8 +92,8 @@ test("sandbox and production devices use their environment-specific signing keys
   ]);
   const authorizations = new Map();
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async (url, init) => {
-      authorizations.set(url.includes("sandbox") ? "sandbox" : "production", init.headers.authorization.replace("bearer ", ""));
+    fetchImpl: async (url: Untyped, init?: Untyped) => {
+      authorizations.set(url.includes("sandbox") ? "sandbox" : "production", (init!.headers as Record<string, string>).authorization.replace("bearer ", ""));
       return new Response(null, { status: 200 });
     },
   });
@@ -110,12 +110,12 @@ test("the APNs JWT uses ES256 and contains the configured Team ID", async () => 
   let authorization;
   await sendPush(env, "user-a", notification, {
     now: 1_800_000_000_000,
-    fetchImpl: async (_url, init) => {
-      authorization = init.headers.authorization;
+    fetchImpl: async (_url: Untyped, init?: Untyped) => {
+      authorization = (init!.headers as Record<string, string>).authorization;
       return new Response(null, { status: 200 });
     },
   });
-  const verified = await jwtVerify(authorization.replace("bearer ", ""), publicKey, {
+  const verified = await jwtVerify(authorization!.replace("bearer ", ""), publicKey, {
     issuer: env.APNS_TEAM_ID,
   });
   assert.equal(verified.protectedHeader.alg, "ES256");
@@ -127,14 +127,14 @@ test("the APNs payload includes badge and deep-link data", async () => {
   seedDevices(values, [{ token: sandboxToken, environment: "sandbox", updatedAt: 1 }]);
   let payload;
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async (_url, init) => {
-      payload = JSON.parse(init.body);
+    fetchImpl: async (_url: Untyped, init?: Untyped) => {
+      payload = JSON.parse(init!.body! as string);
       return new Response(null, { status: 200 });
     },
   });
-  assert.equal(payload.aps.badge, 2);
-  assert.equal(payload.aps.category, "studiquo.friendMessage");
-  assert.equal(payload.roomID, "room-1");
+  assert.equal(payload!.aps.badge, 2);
+  assert.equal(payload!.aps.category, "studiquo.friendMessage");
+  assert.equal(payload!.roomID, "room-1");
 });
 
 test("a disabled category is filtered per device without affecting enabled devices", async () => {
@@ -143,9 +143,9 @@ test("a disabled category is filtered per device without affecting enabled devic
     { token: sandboxToken, environment: "sandbox", preferences: { friendMessage: false }, updatedAt: 1 },
     { token: productionToken, environment: "production", preferences: { friendMessage: true }, updatedAt: 2 },
   ]);
-  const deliveredTokens = [];
+  const deliveredTokens: Untyped[] = [];
   const result = await sendPush(env, "user-a", notification, {
-    fetchImpl: async url => {
+    fetchImpl: async (url: Untyped) => {
       deliveredTokens.push(url.split("/").at(-1));
       return new Response(null, { status: 200 });
     },
@@ -160,10 +160,10 @@ test("new-device alerts can exclude the installation that just registered", asyn
     { token: sandboxToken, environment: "sandbox", installationID: "old-installation", updatedAt: 1 },
     { token: productionToken, environment: "production", installationID: "new-installation", updatedAt: 2 },
   ]);
-  const deliveredTokens = [];
+  const deliveredTokens: Untyped[] = [];
   await sendPush(env, "user-a", { ...notification, category: "newDeviceLogin" }, {
     excludeInstallationID: "new-installation",
-    fetchImpl: async url => {
+    fetchImpl: async (url: Untyped) => {
       deliveredTokens.push(url.split("/").at(-1));
       return new Response(null, { status: 200 });
     },
@@ -178,12 +178,12 @@ test("an invalid device does not prevent delivery to another device", async () =
     { token: productionToken, environment: "production", updatedAt: 2 },
   ]);
   const result = await sendPush(env, "user-a", notification, {
-    fetchImpl: async url => url.includes(sandboxToken)
+    fetchImpl: async (url: Untyped) => url.includes(sandboxToken)
       ? Response.json({ reason: "Unregistered" }, { status: 410 })
       : new Response(null, { status: 200 }),
   });
-  assert.equal(result.find(item => item.token === sandboxToken).delivered, false);
-  assert.equal(result.find(item => item.token === productionToken).delivered, true);
+  assert.equal(result.find(item => item.token === sandboxToken)!.delivered, false);
+  assert.equal(result.find(item => item.token === productionToken)!.delivered, true);
 });
 
 test("APNs 410 Unregistered removes the device token from KV", async () => {
@@ -214,21 +214,21 @@ test("a device that turned the banner off gets a quiet (passive, soundless) noti
   ]);
   const sent: { token: any; headers: HeadersInit; aps: any; }[] = [];
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async (url, init) => {
-      sent.push({ token: url.split("/").pop(), headers: init.headers, aps: JSON.parse(init.body).aps });
+    fetchImpl: async (url: Untyped, init?: Untyped) => {
+      sent.push({ token: url.split("/").pop(), headers: init!.headers as Record<string, string>, aps: JSON.parse(init!.body! as string).aps });
       return new Response(null, { status: 200 });
     },
   });
   const quiet = sent.find(item => item.token === sandboxToken);
   const loud = sent.find(item => item.token === productionToken);
-  assert.equal(quiet.aps["interruption-level"], "passive");
-  assert.equal(quiet.aps.sound, undefined, "静かな通知に音を付けてはいけません。");
-  assert.equal(quiet.headers["apns-priority"], "5");
-  assert.equal(quiet.aps.alert.title, "New message", "本文は同じで、見せ方だけが静かになります。");
-  assert.equal(quiet.aps.category, "studiquo.friendMessage");
-  assert.equal(loud.aps.sound, "default");
-  assert.equal(loud.aps["interruption-level"], undefined);
-  assert.equal(loud.headers["apns-priority"], "10");
+  assert.equal(quiet!.aps["interruption-level"], "passive");
+  assert.equal(quiet!.aps.sound, undefined, "静かな通知に音を付けてはいけません。");
+  assert.equal((quiet!.headers as Record<string, string>)["apns-priority"], "5");
+  assert.equal(quiet!.aps.alert.title, "New message", "本文は同じで、見せ方だけが静かになります。");
+  assert.equal(quiet!.aps.category, "studiquo.friendMessage");
+  assert.equal(loud!.aps.sound, "default");
+  assert.equal(loud!.aps["interruption-level"], undefined);
+  assert.equal((loud!.headers as Record<string, string>)["apns-priority"], "10");
 });
 
 test("turning the banner off for one category does not quiet the others", async () => {
@@ -236,8 +236,8 @@ test("turning the banner off for one category does not quiet the others", async 
   seedDevices(values, [{ token: sandboxToken, environment: "sandbox", updatedAt: 1, banners: { groupInvite: false } }]);
   let aps;
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async (url, init) => { aps = JSON.parse(init.body).aps; return new Response(null, { status: 200 }); },
+    fetchImpl: async (url: Untyped, init?: Untyped) => { aps = JSON.parse(init!.body! as string).aps; return new Response(null, { status: 200 }); },
   });
-  assert.equal(aps.sound, "default");
-  assert.equal(aps["interruption-level"], undefined);
+  assert.equal(aps!.sound, "default");
+  assert.equal(aps!["interruption-level"], undefined);
 });

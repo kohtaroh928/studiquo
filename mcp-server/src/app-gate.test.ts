@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { appGateRejection } from "./app-gate.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
 function callGate(pathname: string, { env = {}, userAgent }: { env?: any; userAgent?: string } = {}) {
   const headers = new Headers();
