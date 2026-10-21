@@ -84,7 +84,10 @@ async function upsertSubscriber(env: Env, appUserId: unknown, status: unknown, p
   //  - cannot replace one that is still in force (a new purchase after the old
   //    one lapsed is accepted).
   // Rows with no recorded transaction (written before this) are not guarded
-  // until their next event stamps them.
+  // until their next event stamps them, and an event that names no
+  // transaction (the store always names one for a purchase) is applied as it
+  // always was rather than risk dropping a real renewal or expiry. A dropped
+  // event is still in revenuecat_events, so it can be reconciled by hand.
   await env.ADMIN_DB.prepare(
     `INSERT INTO subscribers (app_user_id, status, product_id, expires_at, updated_at, original_transaction_id)
      SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS
@@ -95,6 +98,7 @@ async function upsertSubscriber(env: Env, appUserId: unknown, status: unknown, p
        original_transaction_id = COALESCE(excluded.original_transaction_id, subscribers.original_transaction_id)
      WHERE excluded.updated_at >= subscribers.updated_at
        AND (subscribers.original_transaction_id IS NULL
+         OR excluded.original_transaction_id IS NULL
          OR subscribers.original_transaction_id = excluded.original_transaction_id
          OR (excluded.status = 'active'
              AND NOT (subscribers.status IN ('active', 'billing_issue')

@@ -502,3 +502,10 @@ test("rows and events without a transaction id (written before this check) behav
   await sendWebhook(env, purchaseEvent({ app_user_id: "old", type: "EXPIRATION", event_timestamp_ms: Date.now() + 1000 }));
   assert.equal((await subscriberRow(env, "old"))!.status, "expired");
 });
+
+test("an event that names no transaction is still applied to a row that has one (a real expiry is never dropped)", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u2", original_transaction_id: "T1" }));
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u2", type: "EXPIRATION", event_timestamp_ms: Date.now() + 1000 }));
+  assert.equal((await subscriberRow(env, "u2"))!.status, "expired");
+});
