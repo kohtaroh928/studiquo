@@ -2718,10 +2718,12 @@ struct ContentView: View {
 
     var body: some View {
         bodyWithLifecycle(
-            bodyWithOnReceive(
-                bodyWithSheets(
-                    bodyWithImportHosts(
-                        bodyWithAlerts(bodyRoot)
+            bodyWithNotificationRouting(
+                bodyWithOnReceive(
+                    bodyWithSheets(
+                        bodyWithImportHosts(
+                            bodyWithAlerts(bodyRoot)
+                        )
                     )
                 )
             )
@@ -3182,6 +3184,10 @@ struct ContentView: View {
                 openNotebookTab(notebook)
             }
         }
+    }
+
+    private func bodyWithNotificationRouting(_ content: some View) -> some View {
+        content
         .modifier(AppNotificationRoutingModifier(route: routeNotification))
         .onReceive(NotificationCenter.default.publisher(for: .studiquoOpenAIChatTab)) { notification in
             guard let tab = notification.object as? AIChatTabInfo else { return }
