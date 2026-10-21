@@ -468,7 +468,14 @@ export class ChatRoom extends DurableObject<Env> {
   // ownership check `cancelMessage` uses; a canceled message stays
   // canceled — an edit must never resurrect a retracted message.
   async editMessage(userKey: string, messageID: number, text: string) {
-    this.requireParticipant(userKey);
+    // Same gate as sending: once a room is closed, or the other side has
+    // blocked this user, they must not be able to rewrite what the other
+    // person's screen shows as their earlier words.
+    this.requireOpen(userKey);
+    if (!this.isGroupRoom()) {
+      const other = this.otherParticipant(userKey);
+      if (other && this.isBlockedBy(other)) throw new Error("Blocked");
+    }
     const row = this.ctx.storage.sql.exec(
       "SELECT sender_key, is_canceled FROM messages WHERE id = ?", messageID,
     ).toArray()[0];

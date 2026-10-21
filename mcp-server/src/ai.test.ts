@@ -621,6 +621,44 @@ test("a chat stream that fails or ends empty tells the student and gives the cre
   }
 });
 
+test("a chat answer cut off at the output limit keeps its credits spent (no free long outputs)", async () => {
+  const fetchState = installFetch(() => sse(
+    { type: "response.created" },
+    { type: "response.output_text.delta", delta: "途中まで" },
+    { type: "response.incomplete", response: { incomplete_details: { reason: "max_output_tokens" } } },
+  ));
+  try {
+    const env = environment();
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      const { response, text } = await run("chat", chatBody(), { env });
+      statuses.push(response!.status);
+      if (response!.status === 200) assert.doesNotMatch(text, /完了できませんでした/);
+    }
+    assert.ok(statuses.includes(429), `credits were refunded every time: ${statuses.join(",")}`);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("a structured answer cut off at the output limit keeps its credits spent", async () => {
+  const fetchState = installFetch(() => sse(
+    { type: "response.created" },
+    { type: "response.output_text.delta", delta: "{ \"broken\"" },
+    { type: "response.incomplete", response: { incomplete_details: { reason: "max_output_tokens" } } },
+  ));
+  try {
+    const env = environment();
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      statuses.push((await run("rubric", { modelAnswer: "m" }, { env })).response!.status);
+    }
+    assert.ok(statuses.includes(429), `credits were refunded every time: ${statuses.join(",")}`);
+  } finally {
+    fetchState.restore();
+  }
+});
+
 test("a chat that throws before streaming (e.g. no API key) gives the credits back", async () => {
   const fetchState = installFetch(() => responsesOK("ok"));
   try {

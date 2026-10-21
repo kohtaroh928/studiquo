@@ -361,6 +361,10 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
     let clientGone = false;
     let completed = false;
     let failed = false;
+    // Hit the output limit while answering: the model did the work and the
+    // student has the text, so the credits stay spent (refunding them would
+    // make long outputs free).
+    let truncated = false;
     let produced = 0;
 
     // Every write is guarded. Once the app has the answer it closes the
@@ -391,6 +395,9 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
           let text = "";
           try {
             const event = JSON.parse(raw);
+            if (event?.type === "response.incomplete" && event?.response?.incomplete_details?.reason === "max_output_tokens") {
+              truncated = true;
+            }
             if (event?.type === "response.failed" || event?.type === "response.incomplete" || event?.type === "error") {
               failed = true;
               // Type and error code/message only — never the content.
@@ -411,7 +418,9 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
       completed = true;
       // A stream that ends in failure, or without a single character, is not an
       // answer: tell the student, give the credits back, and send no "done" push.
-      if (failed || produced === 0) {
+      if (truncated && produced > 0) {
+        await send("\n\n（回答が長さの上限で途中までになりました。続きは「続けて」と送ってください）");
+      } else if (failed || produced === 0) {
         completed = false;
         if (!failed) console.error(JSON.stringify({ message: "AI stream ended with no text" }));
         await send("\n\n（AIが回答を完了できませんでした。もう一度お試しください）");
@@ -670,6 +679,7 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
         let buffer = "";
         let assembled = "";
         let upstreamError = null;
+        let truncated = false;
         for await (const chunk of upstream.body!) {
           buffer += decoder.decode(chunk, { stream: true });
           const lines = buffer.split("\n");
@@ -680,6 +690,9 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
             if (!raw || raw === "[DONE]") continue;
             try {
               const event = JSON.parse(raw);
+              if (event?.type === "response.incomplete" && event?.response?.incomplete_details?.reason === "max_output_tokens") {
+                truncated = true;
+              }
               if (event?.type === "response.failed" || event?.type === "error") {
                 upstreamError = failureMessage;
                 console.error(JSON.stringify({ message: "AI structured call failed", type: event.type, ...errorKindOf(event?.response?.error ?? event?.error) }));
@@ -701,8 +714,9 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
           try {
             parsed = JSON.parse(assembled);
           } catch {
-            console.error(JSON.stringify({ message: "AI structured output was not valid JSON", length: assembled.length }));
-            await refund();
+            console.error(JSON.stringify({ message: "AI structured output was not valid JSON", length: assembled.length, truncated }));
+            // Cut off at the output limit is work the model already did.
+            if (!truncated) await refund();
             await emit({ error: failureMessage });
           }
           if (parsed !== undefined) {
