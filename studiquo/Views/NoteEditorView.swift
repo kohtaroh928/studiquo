@@ -7993,7 +7993,9 @@ struct PageCanvasContainer: View {
         case .ellipse:
             local = (0..<64).map { step in
                 let theta: CGFloat = CGFloat(step) / 64 * 2 * .pi
-                return CGPoint(x: cos(theta) * halfWidth, y: sin(theta) * halfHeight)
+                let cosine: CGFloat = cos(theta)
+                let sine: CGFloat = sin(theta)
+                return CGPoint(x: cosine * halfWidth, y: sine * halfHeight)
             }
         default:
             let corners = [
