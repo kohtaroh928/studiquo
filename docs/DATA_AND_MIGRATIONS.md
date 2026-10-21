@@ -319,3 +319,61 @@ UserDefaultsのragManaged-<account hash + Worker endpoint hash>に同意epoch、
 ## 原PDF Step5-Bの処理済み台帳整理（2026-10-19）
 
 追加0015で初期無効の内部purgeを実装。精算から48h・過去UTC窓・永続失効/置換・既知時刻・復旧done/leaseなしだけ、粗い候補10件とcursorで有限整理。floor/child/parent/leaseは原子的rollback、writer fenceは停止後も維持。legacy/停止不明/registry参照は保持、将来採用migrationはpre-adoption契約を先に変更して旧purgeを閉じる。server1888件と実local D1同時pass/rollback検証成功。remote未適用、HTTP/cron/flag未有効化。詳細: [Step5-B報告](RAG_PDF_PURGE_IMPLEMENTATION_REPORT.md)。
+
+
+<!-- Historical dae6129 checkpoint; JS references are historical. -->
+
+
+## Step6-A停止証拠基盤（2026-10-19）
+
+追加0016はstop-proof-v1のclaimに結び付く最小停止証拠tableを追加する。既存jobはlegacyのまま。証拠の巻戻し/削除を拒否し、0015の既知table契約によるpurgeは意図的に閉じる。証拠child/親の原子的整理契約を追加するまで旧purgeを再開しない。remote未適用。
+
+詳細: [停止証拠の設計](RAG_PDF_STOP_EVIDENCE_DESIGN.md)。
+
+
+## Step6-B停止証拠の実処理接続（2026-10-19）
+
+追加0017で証拠tableを既存全列のまま再構築し、job親へのFK ON DELETE CASCADEを追加。既存jobは変更しない。purge契約をpre-adoption-stop-v2へ更新して以前のenabledを0へ戻し、writer fence/floorを維持する。親の条件確認→recovery削除→親と証拠cascade→context解除を同取引で実施、単独証拠削除は親不在条件で拒否。全1923件と実local D1成功。remote適用/backup/配備承認は未実施。
+
+詳細: [Step6-B報告](RAG_PDF_STOP_INTEGRATION_REPORT.md)。
+
+
+## Step5-Cアカウント削除とPDF後片付け（2026-10-20）
+
+Step5-Cは既存KVのaccount削除checkpointへversion付きPDF phaseと独立phase完了状態を追加。独立消去後はstatus/identityKeys/pdfCleanup/independentCleanupCompleteへ縮小し、PDF完了までprivacy jobを保持する。旧deleted記録もPDF-only確認し、RAG未利用旧accountには拒否行だけを確立する。新migrationなし、PDF job/証拠/floor等のmetadataは保持。
+
+詳細: [Step5-C報告](RAG_PDF_ACCOUNT_CLEANUP_REPORT.md)。
+
+
+## Step5-D1 private v2期限境界（2026-10-20）
+
+private DOのv2 stateへrpcVersion/notAfterを追加する未接続部品を実装。既存legacy stateへ期限を補完せず保持。DOにPDF/digestを保存せず、物理purgeなし。次D2aでMCPがdispatch前にimmutable envelopeを永続化する追加契約が必要。新DB migration/配備は今回なし。
+
+詳細: [D1結果](RAG_DO_V2_BOUNDARY_REPORT.md)。
+
+
+## Step5-D2a v2接続（2026-10-20）
+
+0018_rag_pdf_rpc_v2.sqlを追加（remote未適用）。既存jobはrpc_version=1・追加値NULLのまま。v2の単一dispatch CASでrpc_version=2/rpc_pdf_sha256/rpc_not_after=deadlineを保存し、triggerで不正な初期設定・改変・NULL化・期限延長・downgradeを拒否。追加tableなし、0015/17の親purge・FK cascade・floor契約は維持。digestは取消時に消えるintakeの値と別で、停止不明/未精算とpurge未接続中は残り、既存の精算済親jobの整理時に一緒に削除する。匿名情報ではない。新migrationを削除するrollbackはせず、新規受付OFF＋v2停止コード/schemaを維持する。
+
+詳細: [接続検証](RAG_PDF_RPC_V2_INTEGRATION_REPORT.md)。
+
+
+## D2b-A：停止観測と削除前提（2026-10-20）
+
+private DO v2 stateへdestroyConfirmedAt（最初のdestroy解決を保存した時刻）を追加。D1追加migrationなし。観測は過去の履歴であり、現在VM/全task停止や削除許可ではない。保存等の失敗はack拒否/poison保持。旧state/期限後空DOに補完しない。全消去後clock後退を空DOだけでは検知できないため外部fence等を別設計とし、物理purge/marker縮約/retention alarm未実装。
+
+
+## D2b-B：再実行防止の設計（2026-10-20）
+
+D2b-Bは設計のみ。既存jobへ独立start_protocolとnullableな消費metadataを追加する案を第一候補とした。旧rowを未実行とbackfillせず、新dispatch契約と一回限りstart CASを区別。RPC v2/stop-proof-v1の制約は流用しない。追加migration・親purge/floor契約の評価は次C1、今回DDL/DB変更なし。 [設計正本](RAG_DO_REPLAY_FENCE_DESIGN.md)。
+
+
+## D2b-C1：開始許可のDB部品（2026-10-20）
+
+0019_rag_pdf_start_gate.sql追加（remote未適用）。jobsへ独立start_protocol/start_claim_id/start_claimed_at、既存行legacy/NULL。新専用dispatch CASのみprotocol設定、初回grantだけ消費、reset/変更/REPLACEを拒否。新protocol親DELETE保留、eligible viewをlegacyに限定しmixedcursor前進を維持。既存0014〜18を編集せず、新tableなし。新start metadataは有限削除未対応で保持が続く。 [検証と制約](RAG_PDF_START_GATE_REPORT.md)。
+
+
+## PDF処理のTS移植（2026-10-21）
+
+`codex/rag-start-ts`で未統合の停止証拠/v2 RPC/開始許可をTSへ移植。最新アカウント削除のgeneration/alias保護とhashed完了markerを維持し、legacy deletedの自動再開は保留する。guard待機後・nested recoveryでも所有確認と外側期限を維持し、timer発火後の新しい開始CASをclosedで拒否する。詳しくは[RAG_TS_PDF_PORT_REPORT](RAG_TS_PDF_PORT_REPORT.md)。開始gateのprivate接続C2とremote migration/番号衝突照合は未完、実config未変更。

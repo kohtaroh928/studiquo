@@ -3,7 +3,10 @@
 import type { AuthenticatorTransportFuture } from "@simplewebauthn/server";
 
 /** account-deletion:<hash>: where an account is in its deletion. */
+export interface PDFCleanupPhase { version: 1; tracked: boolean; pending: boolean; }
 export interface DeletionState {
+  pdfCleanup?: PDFCleanupPhase;
+  independentCleanupComplete?: boolean;
   status: "active" | "deleting" | "deleted";
   generation?: number;
   reregisteredAt?: number;

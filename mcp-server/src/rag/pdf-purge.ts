@@ -1,11 +1,11 @@
 // Internal, pre-adoption maintenance. No HTTP/cron entry or runtime flag is
 // enabled by this module. Database policy must be reviewed before activation.
-const VERSION='pre-adoption-v1',PASS_MS=10000;
+const VERSIONS=['pre-adoption-v1','pre-adoption-stop-v2'],PASS_MS=10000;
 const stmt=(db: any,sql: any,...args: any[])=>db.prepare(sql).bind(...args);
 const fail=(code: any)=>{throw new Error(code);};
 const dbNow="CAST(strftime('%s','now') AS INTEGER)*1000";
-export async function purgeSettledRawPDFJobs(env: any,{clock=Date.now,limit=10,timeoutMs=PASS_MS}: any={}){
- let timer;
+export async function purgeSettledRawPDFJobs(env: any,{clock=Date.now,limit=10,timeoutMs=PASS_MS}: any={}): Promise<any> {
+ let timer: any;
  try{
   if(typeof clock!=='function'||!Number.isSafeInteger(limit)||limit<1||limit>10||
    !Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>PASS_MS)fail('invalid_pdf_purge_options');
@@ -13,7 +13,7 @@ export async function purgeSettledRawPDFJobs(env: any,{clock=Date.now,limit=10,t
   const start=performance.now(),n=clock();
   if(!Number.isSafeInteger(n)||n<0||n>Number.MAX_SAFE_INTEGER-PASS_MS)fail('invalid_pdf_purge_options');
   const db=env.ADMIN_DB;
-  const run=async()=>{
+  const run=async(): Promise<any> =>{
    const found=await stmt(db,`SELECT COUNT(*) AS n,${dbNow} AS database_at FROM sqlite_master WHERE
     (type='table' AND name IN ('rag_pdf_purge_control','rag_pdf_retention_control','rag_pdf_job_recovery')) OR
     (type='trigger' AND name IN ('rag_pdf_purge_no_replace','rag_pdf_purge_no_delete','rag_pdf_purge_monotonic',
@@ -23,7 +23,12 @@ export async function purgeSettledRawPDFJobs(env: any,{clock=Date.now,limit=10,t
    if(found?.n!==16)fail('pdf_purge_upgrade_required');
    const control=await stmt(db,'SELECT enabled,contract_version FROM rag_pdf_purge_control WHERE singleton=1').first();
    if(control?.enabled!==1)fail('pdf_purge_disabled');
-   if(control.contract_version!==VERSION)fail('pdf_purge_upgrade_required');
+   if(!VERSIONS.includes(control.contract_version))fail('pdf_purge_upgrade_required');
+   if(control.contract_version==='pre-adoption-stop-v2'){
+    const context=await stmt(db,"SELECT COUNT(*) AS n FROM sqlite_master WHERE type='trigger' AND name IN ('rag_pdf_purge_context_guard','rag_pdf_purge_context_clear')").first();
+    const foreignKeys=await stmt(db,'PRAGMA foreign_key_list(rag_pdf_execution_evidence)').all();
+    if(context?.n!==2||!foreignKeys.results.some((k: any)=>k.table==='rag_pdf_jobs'&&k.from==='job_id'&&k.to==='job_id'&&k.on_delete==='CASCADE'))fail('pdf_purge_upgrade_required');
+   }
    if(performance.now()-start>=timeoutMs)fail('pdf_purge_timeout');
    const token=crypto.randomUUID();
    // Anchor expiration to the initially observed database time too: an allowed
@@ -64,7 +69,7 @@ export async function purgeSettledRawPDFJobs(env: any,{clock=Date.now,limit=10,t
   };
   // A timed-out batch is observed but not cancelled; its stored lease/DB guards
   // deny late deletes. Never retry automatically on an unknown commit result.
-  return await Promise.race([run(),new Promise((_,reject)=>{
+  return await Promise.race([run(),new Promise((_: any,reject: any)=>{
    timer=setTimeout(()=>reject(new Error('pdf_purge_timeout')),timeoutMs);
   })]);
  }catch(e: any){

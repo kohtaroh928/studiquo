@@ -155,3 +155,18 @@ Step 6〜8は改善提案であり、候補を必ず本番採用する約束で�
 検証: サーバー全1,851件、processor61件、provision6件、HTTP/app/process42件成功。Python102依存のauditは既知脆弱性0・skip0（OS/モデルライセンスの保証ではない）。独立Code/Securityレビューの未解決所見なし。回答品質の有料評価・実資料・未使用20問は使っていない。
 
 詳細・制約・ロールバック: [実Linuxと公開接続の検証](RAG_LINUX_PUBLIC_CONNECTION_REPORT.md)。次はstagingの既存配備/DB状態と利用条件を確認し、remote配備の承認範囲を確定してから段階適用・疎通する。iPad正式採用、claimed停止不明の復旧、retentionは残る。
+
+
+<!-- Historical dae6129 checkpoint; JS references are historical. -->
+| 5（A/B/Cローカル完了、D残） | 保存期間に従う有限cleanupと監視を実装・試験 | [Step5-A実装結果](RAG_PDF_RETENTION_IMPLEMENTATION_REPORT.md)。nullable時刻/expiry詳細削減/集計、1865件と実local D1成功。[Bの処理済み台帳整理](RAG_PDF_PURGE_IMPLEMENTATION_REPORT.md)も実装・1888件と実local D1成功、初期無効。停止証拠保存済みjobの回復はStep6-Bで接続、account PDF phaseはStep5-Cで接続、DO/receiptは未完 |
+| 6（A/Bローカル完了） | claimed後の停止不明・executor token紛失時の復旧を設計/実装 | [B接続結果](RAG_PDF_STOP_INTEGRATION_REPORT.md)：保存済み停止証拠から精算、0017にFKcascade親/証拠retention。1923件と実localD1成功。証拠前executor消失は保持。remote未反映 |
+| 5-C（ローカル完了） | account PDF pending checkpoint/他phase継続/最終判定 | [結果](RAG_PDF_ACCOUNT_CLEANUP_REPORT.md)。owner専用処理、最小checkpoint、旧deleted再確認、証拠付きretry。実KV/remoteは未検証 |
+| 5-D1（ローカル部品完了） | private v2期限固定/旧RPC拒否の境界 | [D1結果](RAG_DO_V2_BOUNDARY_REPORT.md)。private41件/MCP1936件、実localRPC/SQLite成功。MCP未接続・purgeなし・flag未設定 |
+| 5-D2a（ローカル完了） | MCP immutable envelope保存と全caller移行 | 0018・固定CAS・全停止adapter・旧pending drain。実local RPC/DO確認、VM IOは合成。実VM停止はD2b前提の残件 |
+| 5-D2b-A（ローカル完了） | 停止観測の永続化と削除前提検証 | v2のdestroy後時刻固定、実Linux再試験。物理purge/alarm分離は未実装 |
+| 5-D2b-B（設計完了・未実装） | DO再実行防止の方式選定 | [設計](RAG_DO_REPLAY_FENCE_DESIGN.md)。marker保持既定、既存D1 one-shot start CASを第一候補。grace/clock/backup/alarmは削除前提として保持 |
+| 5-D2b-C1（ローカル完了） | start消費metadata＋内部CASを未接続で実装 | 既存行unknown保持、許可再発行なし、同時/unknowncommit/失効/parentpurge回帰。private/HTTP/flags/配備は未接続 |
+| 5-D2b-C2（次）〜C4 | gate接続→全task/clock/backup/alarm/grace→marker整理 | 各段階を独立レビュー。条件不足のまま有限purgeしない |
+
+
+2026-10-20 Step5-D2a: MCP側の不変v2 envelopeと全停止callerを接続。0018追加型、既存metadata/会計/停止証拠の保持条件は維持。新12回帰、実local D1(18migration)/service RPC/SQLite DO＋合成VM IOで解析→両停止証拠→精算を確認。実Cloudflare Container停止・D2b物理削除・flags有効化・配備なし。[結果](RAG_PDF_RPC_V2_INTEGRATION_REPORT.md)。

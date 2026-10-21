@@ -1,0 +1,46 @@
+# D2b-C1: 開始許可を一度だけ消費するDB部品
+
+2026-10-20、codex/rag-wip。既存dirtyを保持。High/full、独立Planner/Code/Securityレビュー。**未接続のローカル実装**で、private/HTTP/実configを更新していない。[設計正本](RAG_DO_REPLAY_FENCE_DESIGN.md)。
+
+## 変更と目的
+
+DO marker消去後にも再送を拒否できる外部fenceの最初の部品として、既存D1 jobへstart_protocol/start_claim_id/start_claimed_atを追加する0019を作成した。既存migrationは変更しない。既存行はlegacy/NULLのまま、NULLを未実行の保証にしない。
+
+内部専用markRawPDFJobDispatchedWithStartProtocolは、receiving→dispatchedとv2固定envelopeの保存と同じCASでone-shot-v1を設定する。stop-proof-v1のclaimを必須とし、旧claim/既dispatch行を後付けupgradeしない。従来のdispatchと戻り値は維持し、processから新exportを呼ばない。
+
+claimRawPDFStartは固定v2 envelopeとopaque startClaimIdをsnapshotし、schema確認後、同一UPDATEで次を再検査して権利を消費する。
+
+- 対象protocol、未消費、dispatched/ever_dispatched1、claim済み、固定digest/notAfter=deadline一致。
+- 保存ownerに対応する最新intake ID/document/generation/epochs/digest/pending、account有効、RAG/raw同意有効、同意版一致、未採用registry。
+- 元会計窓>=永続floor、trusted captureとSQL実行時刻の双方で期限内。DB時刻は次秒へ丸めて保守的に判定し、captureとDB clockの5秒超差は拒否する。絶対clockの正確さやbackup復元安全を保証しない。
+- 4承認flagと専用gateが厳密な文字列true。SQL直前と返却直前に再確認し、停止/不明ならgrantを捨てる。env更新とDB commitの分散原子性は保証しない。
+
+RETURNINGが一行の勝者だけ固定shapeの許可を返す。同nonceでも再grantしない。schema照合を含む全体上限2秒、timeout wrapperが終わっても元UPDATEはcommitし得る。応答喪失/停止/timeout後に消費だけ残ってもresetせず、停止要求/cleanupと両証拠に基づく既存精算へ引き渡す。今回helper自体は停止や精算を勝手に実行しない。許可消費は実VM起動・停止・全task終了の証拠ではない。
+
+## DB防御と保持
+
+0019 triggerは偽protocolのINSERT、dispatch外のprotocol設定、消費時の不正pair/type/UUID、reset/変更/downgrade、同jobIdのINSERT OR REPLACEによる置換を拒否する。start metadataは取消/account削除でも保持し、新しいPDF本文/digest/tokenを追加保存しない。opaque claim IDは再grant用tokenではない。
+
+C1では新protocol親のDELETEをDBで禁止する。既存eligible viewをlegacyに限定し、coarse候補cursorは保持行を通過する。新protocol行の拒否だけでbatch全体を繰り返しrollbackし、旧legacy整理まで停滞する問題を避ける。0017の既存条件/floor/FK cascadeは緩めず、新tableはない。新protocolの有限保持は未実装で、未精算/停止不明に加え精算済みもこの段階は保持される。
+
+## 検証と独立レビュー
+
+新18テスト成功。含まれる条件は、同時要求/同nonce、旧row保持・後付け不可、input snapshot/不正値、各flag OFF/欠落/不正、await中停止とcommit後許可破棄、失効/owner変更/floor/DB期限のwrite直前確認、unknown response・late commit、取消先行、schema不足/guard欠落時のhelper・専用dispatch拒否と停止継続、account cleanupでの消費保持、REPLACE拒否、混在purgeのcursor前進とlegacy整理、schema timeout後にCASしないこと。
+
+最終の全サーバー検証と実local D1結果は隣接RESULTS.json参照。テスト成功は回答精度の向上を示さない。prompt v1/検索/ランキング/開発30問/未使用20問/有料AIは変更・使用していない。
+
+実local workerd/D1で0001〜0019の19migrationを適用。populated旧行の保持、専用dispatch、同時二要求で一勝者、同nonce拒否、消費リセット拒否、commit成功→応答喪失→同nonce再許可なし、停止証拠経由の精算、消費済みmetadata保持、新protocol親DELETE拒否を確認。remote cancel ackは合成adapterで、private binding/VM/PDF解析は起動していない。一時storageは終了時に破棄。
+
+Plannerが親DELETE拒否だけだとmixed purgeのcursorもrollbackして停滞する問題を指摘し、eligible view限定と回帰を実装。Code review追加指摘なし。Security Medium1件（floorのno_replace guardのschema確認漏れ）を修正し、必須guard追加/欠落時helperと専用dispatch拒否/停止継続を確認、再レビュー解消。独立reviewerは読取りのみで独立テスト・DB/runtime実行なし。
+
+初回のfocused18件前の15件中1件は、合成raw同意を不正なcolumn組で直接無効化したfixtureのCHECK違反により失敗した。実際の取消と同じNULL化へfixtureを修正し成功。productionの認可を緩めて通していない。
+
+初回fullは1966成功。schema修正後の並列再確認では既存HTTP/processの短いtimer試験2件が失敗し、新テスト10msが制御phase前に切れるとentered待機が残るリスクがあったため、その実行は中断した。既存assertionやproduction期限は変更せず、新テストだけ設計上限2秒以内の1秒とphase待機上限1.5秒へ直し、対象53件を逐次実行して成功。全体最終は逐次1966成功、fail/cancel/skip0（258777ms）。RESULTSにも記録。負荷/並列性が原因というのは推定であり、既存の並列timer試験が一般に安定したとは主張しない。
+
+## 残件・配備・rollback
+
+次C2はnamed WorkerEntrypointとDO start直前の接続、元gate RPC/reader/parse/monitorの追跡、遅延grant破棄、局所再検査、gate停止中cleanup。C3はclock/backup復旧・全task/実VM停止・alarm/grace、C4は全前提成立後のmarker整理。C1だけでDO全消去後の安全や任意backup後の再実行防止が完成したとは扱わない。
+
+実configへflag/bindingを追加していない。remote migration/deploy/実PDF/有料AI/commit/push/mergeなし、automation PAUSED。rollbackは新専用受付/新grantを閉じ、0019の消費/不変guard/親保持・既存cancel/証拠/台帳を維持する。消費resetや旧parse fallbackで回復しない。
+
+Notion既存RAGカードと共通handoffを更新済み。今回開始processは全終了。Project再同期対象DATA_AND_MIGRATIONS/SECURITY_AND_PRIVACY/HYBRID_RAG。Desktop複製/uploadなし。
