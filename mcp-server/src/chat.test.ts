@@ -199,6 +199,11 @@ function fakeChatRoomBinding() {
         // may edit, and a canceled message can never be resurrected by one.
         async editMessage(userKey: string, messageID: string, text: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          if (state.closed) throw new Error("Closed");
+          if (state.kind !== "group") {
+            const theOther = other(userKey);
+            if (theOther && state.blocks.has(theOther)) throw new Error("Blocked");
+          }
           const message = state.messages.find((item: Untyped) => item.id === messageID);
           if (!message) return { status: "not_found" };
           if (message.senderKey !== userKey) throw new Error("Forbidden");
@@ -2725,6 +2730,26 @@ test("only the original sender can edit their own message", async () => {
 
   const alicesView = await (await readMessages(env, aliceToken, roomID)).json();
   assert.equal(alicesView[0].text, "Alice's message", "an unauthorized edit attempt must not have any effect");
+});
+
+test("a blocked user cannot rewrite their earlier messages in the room", async () => {
+  const env = environment();
+  const aliceToken = freshToken("ce7");
+  const bobToken = freshToken("ce8");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const roomID = accepted.roomID;
+
+  const sent = await (await sendMessage(env, bobToken, roomID, "Bob's message")).json();
+  await blockOtherParticipant(env, aliceToken, roomID);
+
+  const attempt = await editMessage(env, bobToken, roomID, sent.id, "harassment");
+  assert.notEqual(attempt.status, 200, "a blocked user's edit must be refused, like their sends");
+
+  const alicesView = await (await readMessages(env, aliceToken, roomID)).json();
+  assert.equal(alicesView[0].text, "Bob's message", "the blocker must still see the original words");
 });
 
 test("someone outside the room cannot edit a message in it", async () => {
