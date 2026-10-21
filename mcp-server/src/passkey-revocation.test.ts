@@ -14,14 +14,14 @@ function kv() {
     async get(key: string, type?: string | undefined) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
     async put(key: string, value: string) { values.set(key, value); },
     async delete(key: string) { values.delete(key); },
-    async list({ prefix, cursor }: { prefix?: Untyped; cursor?: Untyped }) {
+    async list({ prefix, cursor }: { prefix?: unknown; cursor?: unknown }) {
       lists.push(prefix);
       return { keys: [...values.keys()].filter(name => name.startsWith(prefix)).map(name => ({ name })), list_complete: true, cursor };
     },
   };
 }
 
-async function register(env: Untyped, { email, id, userKey, account, createdAt }: { email?: Untyped; id?: Untyped; userKey?: Untyped; account?: Untyped; createdAt?: Untyped }) {
+async function register(env: Untyped, { email, id, userKey, account, createdAt }: { email?: Untyped; id?: Untyped; userKey?: unknown; account?: Untyped; createdAt?: unknown }) {
   const record = { id, publicKey: [1], counter: 0, transports: ["internal"], email, userKey, createdAt };
   await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify(record));
   const existing = await env.STUDIQUO_DATA.get(`passkeys:user:${userKey}`, "json") ?? [];
@@ -112,7 +112,7 @@ test("when the account's list is full, the reset scans instead of trusting a lis
 
 test("the reset time is written again after the sweep", async () => {
   const env = { STUDIQUO_DATA: kv() };
-  const writes: Untyped[] = [];
+  const writes: unknown[] = [];
   const put = env.STUDIQUO_DATA.put;
   env.STUDIQUO_DATA.put = async (key, value) => { if (key.startsWith("passkey-valid-from:")) writes.push(key); return put.call(env.STUDIQUO_DATA, key, value); };
   await revokePasskeysForAccount(partialEnv(env), { accountKey: "email:a@example.com", emails: ["a@example.com"] });

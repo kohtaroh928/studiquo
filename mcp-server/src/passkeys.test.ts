@@ -27,7 +27,7 @@ async function proveMailbox(env: LooseEnv, token: string, email = "student@examp
 function fakeCloudflareLimiter(limit = 5) {
   const counts = new Map();
   return {
-    async limit({ key }: { key?: Untyped }) {
+    async limit({ key }: { key?: unknown }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -323,7 +323,7 @@ import { indexAccountPasskey, requireRecentPasskey } from "./passkey-policy.ts";
 import { partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 const RP_ID = "api.studiquo.app";
-const b64url = (buffer: Untyped) => Buffer.from(buffer).toString("base64url");
+const b64url = (buffer: unknown) => Buffer.from(buffer).toString("base64url");
 
 function newPasskey() {
   const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });

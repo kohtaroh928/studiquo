@@ -6,6 +6,7 @@ import { resolveChatUserKey } from "./chat-identity.ts";
 import { sendPush } from "./push.ts";
 import { accessTokenAcceptable, signAccessToken } from "./token-signature.ts";
 import type { Env } from "./env.ts";
+import { OPS_ALERTS, raiseAlert } from "./ops-alerts.ts";
 
 const AUTH_TTL = 600;
 const CODE_TTL = 300;
@@ -415,6 +416,7 @@ export async function handleMCPOAuth(url: URL, request: Request, env: Env, ctx?:
         if (spent?.sub && spent.clientId === clientId) {
           await env.STUDIQUO_DATA.delete(await grantKey(spent.sub, clientId));
           console.warn(JSON.stringify({ message: "mcp refresh token reused; connection revoked" }));
+          await raiseAlert(env, OPS_ALERTS.refreshTokenReuse);
         }
         return json({ error: "invalid_grant" }, 400);
       }

@@ -13,13 +13,13 @@ const NOW = Date.UTC(2026, 9, 18, 12, 0, 0);
 
 // --- a tiny DER / CBOR writer, to build the objects Apple would send ---------
 
-function der(tag: number, ...parts: Untyped[]) {
+function der(tag: number, ...parts: unknown[]) {
   const body = Buffer.concat(parts);
   const length = body.length < 128 ? Buffer.from([body.length])
     : body.length < 256 ? Buffer.from([0x81, body.length]) : Buffer.from([0x82, body.length >> 8, body.length & 255]);
   return Buffer.concat([Buffer.from([tag]), length, body]);
 }
-const seq = (...p: Untyped[]) => der(0x30, ...p);
+const seq = (...p: unknown[]) => der(0x30, ...p);
 const oid = (dotted: Untyped) => {
   const nums = dotted.split(".").map(Number);
   const bytes = [nums[0] * 40 + nums[1]];
@@ -30,10 +30,10 @@ const oid = (dotted: Untyped) => {
   }
   return der(0x06, Buffer.from(bytes));
 };
-const name = (cn: Untyped) => seq(der(0x31, seq(oid("2.5.4.3"), der(0x0c, Buffer.from(cn)))));
+const name = (cn: unknown) => seq(der(0x31, seq(oid("2.5.4.3"), der(0x0c, Buffer.from(cn)))));
 const utc = (ms: Untyped) => der(0x17, Buffer.from(new Date(ms).toISOString().replace(/[-:T]/g, "").slice(2, 14) + "Z"));
 
-function certificate({ subject, issuer, key, signer, hash, extensions = [], notBefore = NOW - 86_400_000, notAfter = NOW + 86_400_000 }: { subject?: Untyped; issuer?: Untyped; key?: Untyped; signer?: Untyped; hash?: Untyped; extensions?: Untyped; notBefore?: Untyped; notAfter?: Untyped }) {
+function certificate({ subject, issuer, key, signer, hash, extensions = [], notBefore = NOW - 86_400_000, notAfter = NOW + 86_400_000 }: { subject?: unknown; issuer?: unknown; key?: Untyped; signer?: Untyped; hash?: Untyped; extensions?: Untyped; notBefore?: unknown; notAfter?: unknown }) {
   const algorithm = seq(oid(hash === "sha384" ? "1.2.840.10045.4.3.3" : "1.2.840.10045.4.3.2"));
   const tbs = seq(
     der(0xa0, der(0x02, Buffer.from([2]))), der(0x02, Buffer.from([1])), algorithm,
@@ -48,10 +48,10 @@ const cbor = {
   bytes: (b: Untyped) => Buffer.concat([b.length < 24 ? Buffer.from([0x40 + b.length]) : b.length < 256 ? Buffer.from([0x58, b.length]) : Buffer.from([0x59, b.length >> 8, b.length & 255]), b]),
   text: (t: Untyped) => Buffer.concat([Buffer.from([0x60 + t.length]), Buffer.from(t)]),
   array: (items: Untyped) => Buffer.concat([Buffer.from([0x80 + items.length]), ...items]),
-  map: (entries: Untyped) => Buffer.concat([Buffer.from([0xa0 + entries.length]), ...entries.flatMap(([k, v]: Untyped[]) => [cbor.text(k), v])]),
+  map: (entries: Untyped) => Buffer.concat([Buffer.from([0xa0 + entries.length]), ...entries.flatMap(([k, v]: unknown[]) => [cbor.text(k), v])]),
 };
 
-const sha = (...parts: Untyped[]) => createHash("sha256").update(Buffer.concat(parts)).digest();
+const sha = (...parts: unknown[]) => createHash("sha256").update(Buffer.concat(parts)).digest();
 const p256 = () => generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const p384 = () => generateKeyPairSync("ec", { namedCurve: "secp384r1" });
 const pointOf = (publicKey: Untyped) => publicKey.export({ type: "spki", format: "der" }).subarray(-65);
@@ -63,7 +63,7 @@ function makeWorld({ appId = APP_ID, aaguid = "appattest\0\0\0\0\0\0\0", counter
   const rootCert = certificate({ subject: "Fake Root", issuer: "Fake Root", key: root.publicKey, signer: root.privateKey, hash: "sha384" });
   const intermediateCert = certificate({ subject: "Fake Intermediate", issuer: "Fake Root", key: intermediate.publicKey, signer: root.privateKey, hash: "sha384" });
   const keyHash = sha(pointOf(device.publicKey));
-  const attest = (challenge: Untyped) => {
+  const attest = (challenge: unknown) => {
     const authData = Buffer.concat([
       sha(Buffer.from(appId)), Buffer.from([0x40]), Buffer.from([0, 0, 0, counter]), Buffer.from(aaguid),
       Buffer.from([0, 32]), keyHash, Buffer.from([0xa1, 0x01, 0x02]),

@@ -13,7 +13,7 @@ function makeAdminEnv() {
     _appErrors: appErrors,
     _kv: kv,
     STUDIQUO_DATA: {
-      async list({ prefix }: { prefix?: Untyped }) {
+      async list({ prefix }: { prefix?: unknown }) {
         const keys = [...kv.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name }));
         return { keys, list_complete: true };
       },
@@ -25,7 +25,7 @@ function makeAdminEnv() {
     ADMIN_DB: {
       prepare(sql: string | string[]) {
         return {
-          bind(...args: Untyped[]) {
+          bind(...args: unknown[]) {
             return {
               async all() {
                 if (sql.includes("FROM issue_reports")) {

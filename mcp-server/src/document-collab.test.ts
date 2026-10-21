@@ -26,7 +26,7 @@ function fakeDocumentRoomBinding() {
     getByName(id: string) {
       const state = room(id);
       return {
-        async initialize(ownerKey: string, blocks: Untyped) {
+        async initialize(ownerKey: string, blocks: unknown) {
           if (state.participants.size > 0) return { status: "already_initialized" };
           state.participants.set(ownerKey, "owner");
           for (const block of (Array.isArray(blocks) ? blocks : []).slice(0, 2000)) {
@@ -135,7 +135,7 @@ function environment() {
     },
     async put(key: string, value: string) { values.set(key, value); },
     async delete(key: string) { values.delete(key); },
-    async list({ prefix }: { prefix?: Untyped }) {
+    async list({ prefix }: { prefix?: unknown }) {
       return { keys: [...values.keys()].filter(name => name.startsWith(prefix)).map(name => ({ name })), list_complete: true };
     },
   };
@@ -660,7 +660,7 @@ test("an invitation lapses after two weeks", async () => {
   const owner = freshToken("1");
   const friend = freshToken("2");
   await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
-  const ttls: Untyped[] = [];
+  const ttls: unknown[] = [];
   const put = env.STUDIQUO_DATA.put;
   env.STUDIQUO_DATA.put = async (name: string, value: string, options: { expirationTtl: any; }) => { if (name.startsWith("doc-invite:")) ttls.push(options?.expirationTtl); return put.call(env.STUDIQUO_DATA, name, value, options); };
   await sendInvite(env, owner, friend, "editor");
