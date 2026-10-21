@@ -8,23 +8,26 @@ const amount = (unit: string) => new RegExp(`${NUMBER}[\\d.,]*\\s*${unit}`, 'u')
 
 // "何%" and friends: what the question asks for, and the form that would answer it.
 // Longer units come first in the list only for readability; every entry is tested.
+// A "か" right after a unit means "some" (何件か, 何度か), unless it starts "かかる" (何時間かかる).
 const ASKED_UNITS: { ask: RegExp; have: RegExp }[] = [
   { ask: /何\s*(?:%|パーセント|割)/u, have: amount('(?:%|パーセント|割)') },
   // Money: any scale answers a question about money (5826億円 answers 何万円), so the scale is optional on both sides.
-  { ask: /何\s*(?:[億万千兆])?\s*(?:円|ドル)(?![かも])/u, have: amount('(?:[億万千兆])?\\s*(?:円|ドル)') },
-  { ask: /何\s*件(?![かも])/u, have: amount('件') },
-  { ask: /何\s*(?:人|名)(?![かも])/u, have: amount('(?:人|名)') },
-  { ask: /何\s*回(?![かも])/u, have: amount('回') },
-  { ask: /何\s*(?:個|台|枚|本)(?![かも])/u, have: amount('(?:個|台|枚|本)') },
-  { ask: /何\s*倍(?![かも])/u, have: amount('倍') },
-  { ask: /何\s*年(?![かも])/u, have: amount('年') },
-  { ask: /何\s*日(?![かも])/u, have: amount('日') },
-  { ask: /何\s*時間(?![かも])/u, have: amount('時間') },
-  { ask: /何\s*分(?![かも])/u, have: amount('分') },
-  { ask: /何\s*秒(?![かも])/u, have: amount('秒') },
-  { ask: /何\s*歳(?![かも])/u, have: amount('歳') },
+  { ask: /何\s*(?:[億万千兆])?\s*(?:円|ドル)(?!も|か(?!か))/u, have: amount('(?:[億万千兆])?\\s*(?:円|ドル)') },
+  { ask: /何\s*件(?!も|か(?!か))/u, have: amount('件') },
+  { ask: /何\s*(?:人|名)(?!も|か(?!か))/u, have: amount('(?:人|名)') },
+  { ask: /何\s*回(?!も|か(?!か))/u, have: amount('回') },
+  { ask: /何\s*(?:個|台|枚|本)(?!も|か(?!か))/u, have: amount('(?:個|台|枚|本)') },
+  { ask: /何\s*倍(?!も|か(?!か))/u, have: amount('倍') },
+  { ask: /何\s*年(?!も|か(?!か))/u, have: amount('年') },
+  { ask: /何\s*日(?!も|か(?!か))/u, have: amount('日') },
+  { ask: /何\s*時間(?!も|か(?!か))/u, have: amount('時間') },
+  // "何時" asks for an hour of the day: 9時, 09:00, 0900JST, 0000UTC (never a length of time: that is 何時間, above).
+  { ask: /何\s*時(?![間も]|か(?!か))/u, have: new RegExp(`${NUMBER}[\\d.,]*\\s*時|\\d{1,2}:\\d{2}|\\d{3,4}\\s*(?:jst|utc|z)(?![a-z])`, 'u') },
+  { ask: /何\s*分(?!も|か(?!か))/u, have: amount('分') },
+  { ask: /何\s*秒(?!も|か(?!か))/u, have: amount('秒') },
+  { ask: /何\s*歳(?!も|か(?!か))/u, have: amount('歳') },
   // Degrees: temperature signs are written several ways in extracted text.
-  { ask: /何\s*度(?![かも])/u, have: new RegExp(`${NUMBER}[\\d.,]*\\s*(?:度|°|˚|\\u030a)`, 'u') },
+  { ask: /何\s*度(?!も|か(?!か))/u, have: new RegExp(`${NUMBER}[\\d.,]*\\s*(?:度|°|˚|\\u030a)`, 'u') },
   { ask: /何\s*(?:hpa|ヘクトパスカル)/iu, have: amount('(?:hpa|ヘクトパスカル)') },
   { ask: /何\s*m\s*\/\s*s/iu, have: amount('m\\s*\\/\\s*s') },
   { ask: /何\s*km(?![a-z])/iu, have: amount('km(?![a-z])') },

@@ -17,7 +17,7 @@ const rules = [
  { id: 'aminoSequence', request: /アミノ酸配列/u, label: /アミノ酸配列/u, concrete: (s: any) => /\b[acdefghiklmnpqrstvwy]{6,}\b/iu.test(s) },
  { id: 'baseSequence', request: /塩基配列|dna配列|rna配列/u, label: /塩基配列|dna配列|rna配列/u, concrete: (s: any) => /\b[acgtu]{6,}\b/iu.test(s) },
  { id: 'structure', request: /分子構造|化学構造|構造式/u, label: /分子構造|化学構造|構造式/u, concrete: (s: any) => /結合|原子|炭素|窒素|酸素|水素|二重らせん/u.test(s) && /\d|共有結合|二重結合|単結合|環状|直鎖|二重らせん/u.test(s) },
- { id: 'time', request: /日時|時刻|何時|何月何日/u, label: /日時|時刻|満月|噴火|震源|発生|開催|日付/u, concrete: (s: any) => date.test(s) },
+ { id: 'time', request: /日時|時刻|何月何日/u, label: /日時|時刻|満月|噴火|震源|発生|開催|日付/u, concrete: (s: any) => date.test(s) },
  { id: 'quantity', request: /正確な値|具体的な値|数値|何度|何秒|何キロ|何メートル|何パーセント/u, label: /値|数値|潜熱|温度|速度|速さ|距離|時間|割合|長さ|重さ|質量|内角|角|和|合計/u, concrete: (s: any) => valueWithUnit.test(s) },
 ];
 
@@ -55,6 +55,14 @@ export function detailRequirements(query: any, comparisonSubjects: any[] = []) {
    facets.includes('quantity') && facets.every(id => ['quantity','formula'].includes(id))
    ? { subject: primary, symbol: output[2], quantity: output[1] } : null;
  if (symbolic) { targets = [primary!]; facets.push('symbolic'); }
+ // A question that asks for a unit ("何度", "何秒", ...) names its subject before the first の/を/は. When that cut
+ // is a clause ("熱帯低気圧が発生するための条件で、中層…"), no sentence of a page can carry it, so the subject-linked
+ // check can only refuse. The asked unit is checked on the excerpts by detail-presence.ts instead.
+ const clauseLike = (t: string) => /[、,，]|(?:ため|こと|もの|とき|場合|ので|から|まで|で|に|が|を|と)$/u.test(t) || /が.+(?:する|した|され|いる|ある)/u.test(t);
+ const unitAsk = /何度|何秒|何キロ|何メートル|何パーセント/u.test(text);
+ if (unitAsk && !comparisonSubjects.length && targets.length === 1 && clauseLike(targets[0])) {
+  const at = facets.indexOf('quantity'); if (at >= 0) facets.splice(at, 1);
+ }
  return { facets, conditions, targets, namedLaws, quantityLabel, symbolic, requestedDate,
    completeness: facets.length > 0 && /一覧|全(?:塩基|アミノ酸|配列|項目|件)|全て|すべて|全部|過去.{0,8}年/u.test(text) && !/角.{0,12}(?:全て|すべて|全部).{0,6}(?:足|合計)/u.test(text),
    freshness: facets.length > 0 && /最新|現在|直近|今日|今年/u.test(text) };

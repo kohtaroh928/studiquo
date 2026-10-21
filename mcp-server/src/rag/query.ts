@@ -30,14 +30,33 @@ export function queryPlan(query: any, previousQuestion = "") {
   const needsClarification = ambiguous && !subject;
   const request = originalQuery.replace(/^(?:これ|それ|あれ|この内容|その内容|この二つ|その二つ|さっきの(?:式|説明|内容)|先ほどの(?:式|説明|内容))(?:は|を|について|の)?/u, "");
   const canonicalQuery = subject ? `${subject}について${request || "説明して"}` : originalQuery;
-  const multi = /比較|比べ|違い|相違|共通|compare|versus|\bvs\b|それぞれ|および|かつ|\band\b/i.test(canonicalQuery);
-  const comparison = multi ? comparisonParts(canonicalQuery) : { subjects: [], aspect: '' };
+  const explicitMulti = /比較|比べ|違い|相違|共通|compare|versus|\bvs\b|それぞれ|および|かつ|\band\b/i.test(canonicalQuery);
+  // "AとBは、どこで発生しますか": two named subjects asked about together, without a word such as 比較.
+  const joint = explicitMulti ? [] : jointSubjects(canonicalQuery);
+  const multi = explicitMulti || joint.length === 2;
+  const comparison = explicitMulti ? comparisonParts(canonicalQuery) : { subjects: joint, aspect: '' };
   const coverageGroups = comparison.subjects;
   const aspect = comparison.aspect ? `の${comparison.aspect}` : /定義|意味/.test(canonicalQuery) ? "の定義" : /しくみ|仕組み/.test(canonicalQuery) ? "のしくみ" : /働き|役割/.test(canonicalQuery) ? "の働き" : "について";
   const subjectQueries = coverageGroups.map((group: any) => `${group}${group.endsWith(aspect) ? 'について' : aspect}`);
   return { originalQuery, canonicalQuery, ambiguous, needsClarification, multi, coverageGroups,
     queries: coverageGroups.length === 3 ? subjectQueries : [...new Set([canonicalQuery, ...subjectQueries])].slice(0, 3) };
 
+}
+// Words that name an aspect of one thing, not a second thing: "メリットとデメリットは" is one subject.
+const ASPECT_WORDS = new Set(['メリット', 'デメリット', '長所', '短所', '利点', '欠点', '原因', '結果', '理由', '目的', '方法',
+  '手順', '特徴', '意味', '定義', '用途', '価格', '料金', '値段', '発生', '上陸', '種類', '条件', '影響', '対策', '例']);
+// Only a question that STARTS with two plain names joined by と and followed by は. Each name must be free of
+// particles (の, を, に, で, が, へ): a name with の ("ポーラーロウの特徴と発生条件は") is one subject with two aspects.
+function jointSubjects(query: any): string[] {
+  const name = '[^とのはがをにでへ、,。？?！!\\n（）()「」『』"]{2,30}';
+  const m = new RegExp(`^(${name})と(${name})(?:は|では)[、,]?`, 'u').exec(String(query).trim());
+  if (!m) return [];
+  const [a, b] = [m[1].trim(), m[2].trim()];
+  if (a === b || ASPECT_WORDS.has(a) || ASPECT_WORDS.has(b)) return [];
+  // "AというB", "AとされるB", "AといったB": the と quotes or labels A, it does not join a second subject.
+  // A name starts with a kanji, katakana, Latin letter or digit, never with a hiragana.
+  if (!/^[\p{Script=Han}\p{Script=Katakana}A-Za-z0-9]/u.test(a) || !/^[\p{Script=Han}\p{Script=Katakana}A-Za-z0-9]/u.test(b)) return [];
+  return [a, b];
 }
 function comparisonParts(query: any): any {
   let prefix = query.split(/比較|比べ|違い|相違|共通点|compare/i)[0].trim();

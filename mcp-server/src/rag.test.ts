@@ -830,7 +830,10 @@ test("personal identifiers and secrets in an excerpt are masked before they reac
   await indexSource(env, await accountKey("alice"), source({ pages: [{ pageNumber: 1, text: "細胞の説明。友達の連絡先 taro@example.com と 090-1234-5678、カード 4111 1111 1111 1111。" }] }));
   const result = await retrieve(env, { sub: "alice" }, { messages: [{ role: "user", text: "細胞" }], rag: { scope: { type: "library" } } });
   assert.equal(result.citations.length, 1);
-  for (const leaked of ["taro@example.com", "090-1234-5678", "4111"]) assert.ok(!result.context.includes(leaked), leaked);
+  for (const leaked of ["taro@example.com", "090-1234-5678"]) assert.ok(!result.context.includes(leaked), leaked);
+  // The context also holds chunk ids (random 64-digit hex strings), which can contain "4111" by chance: a card number
+  // is only leaked when "4111" is not part of such a hex run.
+  assert.ok(!/(?<![0-9a-f])4111(?![0-9a-f])/u.test(result.context), "4111");
   assert.ok(result.context.includes("[メールアドレス]") && result.context.includes("[電話番号]") && result.context.includes("[カード番号]"));
   assert.equal(result.redacted, 3);
 });
