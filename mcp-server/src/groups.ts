@@ -281,7 +281,10 @@ export async function handleGroupRoutes(url: URL, request: Request, env: Env, ke
     const me = await currentUser(env, key);
     const pending = (me?.incomingGroupInvites ?? []).find(invite => invite.roomID === roomID);
     const inviter = (me?.friends ?? []).find(friend => friend.code === pending?.inviterCode);
-    if (inviter && await blockedBetween(env, key, inviter)) {
+    // An inviter who is no longer one of my friends has ended that
+    // relationship (and the block that went with it can no longer be looked
+    // up), so the offer is void rather than waved through.
+    if (pending?.inviterCode && (!inviter || await blockedBetween(env, key, inviter))) {
       return json({ error: "This invitation can't be accepted right now." }, 403);
     }
     const result = await env.USER_REGISTRY.getByName(key).resolveIncomingGroupInvite(key, "accept", roomID);

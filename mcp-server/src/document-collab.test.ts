@@ -229,6 +229,10 @@ async function befriend(env: LooseEnv, token: string, friend: { code: string; na
 // chat.ts resolves one when adding a friend), so this registers them first.
 async function sendInvite(env: LooseEnv, ownerToken: string, inviteeToken: string, role: string, { name = "友人" }: { name?: string } = {}) {
   const code = await registerFriend(env, inviteeToken, name, { befriendedBy: ownerToken });
+  // Friendship is mutual: the invitee has the owner in their own list too,
+  // sharing the direct room's id (which is what a block is looked up by).
+  const ownerRecord = await env.STUDIQUO_DATA.get(`chat:user:${await sha256Hex(ownerToken)}`, "json");
+  await befriend(env, inviteeToken, { code: ownerRecord.code, name: "owner", roomID: `room-${code}` });
   return worker.fetch(
     request(`/api/document/rooms/${ROOM_ID}/invite`, { method: "POST", token: ownerToken, body: { code, role } }),
     env,
@@ -761,4 +765,38 @@ test("a member can leave on their own and then loses access", async () => {
   assert.equal((await getState(env, editor)).status, 403);
   assert.equal(await env.STUDIQUO_DATA.get(`doc-room:${await sha256Hex(editor)}:${ROOM_ID}`), null);
   assert.equal((await leaveRoom(env, editor)).status, 403, "leaving twice is refused, not silently accepted");
+});
+
+// MARK: Accepting an invitation re-checks the relationship
+
+test("an invitation cannot be accepted after the owner has blocked the invitee", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  const friend = freshToken("2");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  assert.equal((await sendInvite(env, owner, friend, "editor")).status, 200);
+  const friendRecord = await env.STUDIQUO_DATA.get(`chat:user:${await sha256Hex(friend)}`, "json");
+  const code = friendRecord.code;
+  env.CHAT_ROOM = fakeChatRoomBinding(new Set([`room-${code}`]));
+
+  const accept = await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/invite/accept`, { method: "POST", token: friend, body: {} }), env, noopCtx);
+  assert.equal(accept.status, 403);
+  assert.equal(await env.DOCUMENT_ROOM.getByName(ROOM_ID).roleOf(await sha256Hex(friend)), null);
+});
+
+test("an invitation is void once the owner is no longer the invitee's friend", async () => {
+  const env = environment();
+  const owner = freshToken("1");
+  const friend = freshToken("2");
+  await initRoom(env, owner, [{ order: 0, kind: "paragraph", text: "x" }]);
+  assert.equal((await sendInvite(env, owner, friend, "editor")).status, 200);
+  const friendKey = await sha256Hex(friend);
+  const record = await env.STUDIQUO_DATA.get(`chat:user:${friendKey}`, "json");
+  record.friends = [];
+  await env.STUDIQUO_DATA.put(`chat:user:${friendKey}`, JSON.stringify(record));
+
+  const accept = await worker.fetch(request(`/api/document/rooms/${ROOM_ID}/invite/accept`, { method: "POST", token: friend, body: {} }), env, noopCtx);
+  assert.equal(accept.status, 410);
+  assert.equal(await env.DOCUMENT_ROOM.getByName(ROOM_ID).roleOf(friendKey), null);
+  assert.equal(await env.STUDIQUO_DATA.get(`doc-invite:${friendKey}:${ROOM_ID}`), null, "the dead offer is cleared");
 });

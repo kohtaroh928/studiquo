@@ -230,6 +230,10 @@ function fakeChatRoomBinding() {
         async storeAttachment(userKey: string, contentType: string, base64Data: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           if (state.closed) throw new Error("Closed");
+          if (state.kind !== "group") {
+            const theOther = other(userKey);
+            if (theOther && state.blocks.has(theOther)) throw new Error("Blocked");
+          }
           const type = String(contentType ?? "").slice(0, 100);
           if (!ATTACHMENT_CONTENT_TYPE_PATTERN.test(type)) throw new Error("InvalidContentType");
           const data = String(base64Data ?? "");
@@ -1666,6 +1670,7 @@ test("accepting a pending invite into a group that filled up in the meantime is 
   // Dave's invite was issued back when the group still had room — seeded
   // directly, since the real invite endpoint would itself now be blocked by
   // the "already full" check exercised in the previous test.
+  await env.USER_REGISTRY.getByName(daveKey).addFriendDirectly(daveKey, "SEEDCODE", "Seed", "e".repeat(64));
   await env.USER_REGISTRY.getByName(daveKey).addIncomingGroupInvite(daveKey, roomID, "Full Group", "SEEDCODE", "Seed");
 
   const response = await acceptGroupInvite(env, daveToken, roomID);
@@ -1702,6 +1707,7 @@ test("a rejected accept leaves no phantom group in the invitee's own list, and a
   await env.CHAT_ROOM.getByName(roomID).initialize(
     roomID, fillerKeys, { kind: "group", name: "Full Group", creatorCode: "SEEDCODE", creatorName: "Seed" },
   );
+  await env.USER_REGISTRY.getByName(daveKey).addFriendDirectly(daveKey, "SEEDCODE", "Seed", "e".repeat(64));
   await env.USER_REGISTRY.getByName(daveKey).addIncomingGroupInvite(daveKey, roomID, "Full Group", "SEEDCODE", "Seed");
 
   const firstAttempt = await acceptGroupInvite(env, daveToken, roomID);
@@ -1749,9 +1755,10 @@ test("when only one seat remains, simultaneous accepts from different people rac
   // All three invites are independently valid — each of Bob, Carol, and Dave
   // was genuinely invited while there was still room; the race is purely
   // about who gets to the single remaining seat first.
-  await Promise.all(keys.map(key =>
-    env.USER_REGISTRY.getByName(key).addIncomingGroupInvite(key, roomID, "One Seat Left", "SEEDCODE", "Seed")
-  ));
+  await Promise.all(keys.map(async key => {
+    await env.USER_REGISTRY.getByName(key).addFriendDirectly(key, "SEEDCODE", "Seed", "e".repeat(64));
+    await env.USER_REGISTRY.getByName(key).addIncomingGroupInvite(key, roomID, "One Seat Left", "SEEDCODE", "Seed");
+  }));
 
   const responses = await Promise.all(tokens.map(token => acceptGroupInvite(env, token, roomID)));
   const statuses = responses.map(response => response.status);
@@ -3964,6 +3971,27 @@ test("a group invitation can't be accepted after the invitee blocks the inviter"
   assert.equal(accept.status, 403);
   await unblockOtherParticipant(env, bobToken, roomID);
   assert.equal((await acceptGroupInvite(env, bobToken, group.roomID)).status, 200);
+});
+
+test("a group invitation can't be accepted once the inviter has removed the invitee as a friend, even if blocked then too", async () => {
+  const env = environment();
+  const { aliceToken, bobToken, alice, bob, roomID } = await befriended(env, "g7", "g8");
+  const group = await (await createGroup(env, aliceToken, "G", [bob.code])).json();
+  await blockOtherParticipant(env, aliceToken, roomID);
+  const removed = await worker.fetch(request(`/api/chat/friends/${bob.code}`, { method: "DELETE", token: aliceToken }), env, noopCtx);
+  assert.equal(removed.status, 200);
+  const accept = await acceptGroupInvite(env, bobToken, group.roomID);
+  assert.equal(accept.status, 403, `${alice.code} no longer a friend of Bob: the offer is void`);
+});
+
+test("someone blocked by the room's other side cannot upload an attachment into it", async () => {
+  const env = environment();
+  const { aliceToken, bobToken, roomID } = await befriended(env, "ab1", "ab2");
+  await blockOtherParticipant(env, aliceToken, roomID); // Alice blocks Bob
+  const blocked = await uploadAttachment(env, bobToken, roomID, "image/png", "aGVsbG8=");
+  assert.equal(blocked.status, 403, "the blocked side gets no storage in the blocker's room");
+  const blocker = await uploadAttachment(env, aliceToken, roomID, "image/png", "aGVsbG8=");
+  assert.equal(blocker.status, 201, "the blocker themself can still upload");
 });
 
 // ---- Operator actions on a report: remove the message, suspend the account ----

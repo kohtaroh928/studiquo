@@ -247,6 +247,19 @@ export async function handleDocumentCollab(url: URL, request: Request, env: Env,
       await env.STUDIQUO_DATA.delete(inviteKey);
       return json({ status: "declined" });
     }
+    // The offer was made to a friend. If that friendship has since ended the
+    // offer is void; if either side has blocked the other, it cannot be taken
+    // up (it stays, as with a group invitation, so lifting the block restores it).
+    const inviter = await chatUser(env, invite.inviterKey);
+    const mine = await chatUser(env, key);
+    const friend = inviter ? (mine?.friends ?? []).find(item => item.code === inviter.code) : undefined;
+    if (!friend) {
+      await env.STUDIQUO_DATA.delete(inviteKey);
+      return json({ error: "This invitation is no longer available." }, 410);
+    }
+    if (await blockedBetween(env, key, friend)) {
+      return json({ error: "This invitation can't be accepted right now." }, 403);
+    }
     try {
       // The seat is given on the inviter's authority at this moment: if they
       // are no longer the room's owner (or are gone), the offer is void.
