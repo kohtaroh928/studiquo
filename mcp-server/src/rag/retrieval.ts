@@ -11,7 +11,7 @@ import { missingEvidence, selectEvidence } from "./evidence-selection.ts";
 import {organizeComparisonEvidence,assessComparisonEvidence} from './comparison-evidence.ts';
 import { sourceQualification, sourceContextColumn, referencesAuthorized } from "./authorization.ts";
 import { LIMITS, MODELS, RELEVANCE } from "./limits.ts";
-import { quantityEvidencePresent, termsMissingFrom, searchStem } from "./detail-presence.ts";
+import { quantityEvidencePresent, termsMissingFrom, searchStem, withoutTerms } from "./detail-presence.ts";
 import { stripInvisible } from "./sanitize.ts";
 import { countInjectionHints } from "./injection-hints.ts";
 import { redactPII } from "./redact-pii.ts";
@@ -225,7 +225,7 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     if (!evidence.accepted) return emptyRetrieval("insufficient", { status: "insufficient" });
     const supported = evidence.references;
     // A matching topic is not an answer. If the question asks for a number of a kind the
-    // excerpts never contain, or names a word the searched library never uses, these
+    // excerpts never contain, or names a word (katakana or Latin letters) the searched library never uses, these
     // references cannot support it: no citations are returned (docs/RAG_REAL_MATERIAL_V2_REPORT.md).
     const excerpts = supported.map((r: any) => r.text).join("\n");
     // The number must belong to the question: comparisons have several subjects, so only single-subject questions are tied.
@@ -243,7 +243,7 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
       for (const term of termsMissingFrom(plan.canonicalQuery, [excerpts, ...retrievedText]).slice(0, 3)) {
         const known: any = await boundedSearch(() => all(
           env.ADMIN_DB,
-          `SELECT 1 AS found FROM rag_chunks c JOIN rag_sources s ON s.account_key=c.account_key AND s.source_id=c.source_id JOIN rag_accounts a ON a.account_key=c.account_key WHERE c.account_key=? AND c.ready=1 AND s.deleted=0 AND s.complete=1 AND a.deleted=0${qualification}${scope.sql} AND instr(c.text,?)>0 LIMIT 1`,
+          `SELECT 1 AS found FROM rag_chunks c JOIN rag_sources s ON s.account_key=c.account_key AND s.source_id=c.source_id JOIN rag_accounts a ON a.account_key=c.account_key WHERE c.account_key=? AND c.ready=1 AND s.deleted=0 AND s.complete=1 AND a.deleted=0${qualification}${scope.sql} AND instr(lower(c.text),?)>0 LIMIT 1`,
           key,
           ...scope.args,
           searchStem(term),
@@ -253,7 +253,7 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
       if (absent.length) {
         // Same subject area but not that word: say the excerpts do not contain it.
         // Nothing in common with the question: the library is simply not about it.
-        const rest = absent.reduce((q: string, t: string) => q.replaceAll(t, " "), plan.canonicalQuery);
+        const rest = withoutTerms(plan.canonicalQuery, absent);
         const related = relevanceEvidence({ text: excerpts }, rest).lexicalCoverage >= RELEVANCE.anchoredOverlap;
         return related ? emptyRetrieval("insufficient", { status: "insufficient" }) : emptyRetrieval("no_match");
       }

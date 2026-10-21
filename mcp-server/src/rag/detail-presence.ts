@@ -45,10 +45,20 @@ export type Excerpt = { text: string; primary?: boolean };
 // Words that are unit names, not what the question is about.
 const UNIT_WORDS = new Set(['hpa', 'kt', 'knot', 'km', 'kg', 'cm', 'mm']);
 
+// Words that are not about the subject of a question even when written in Latin letters.
+const GENERIC_LATIN = new Set(['the', 'and', 'for', 'how', 'what', 'why', 'url', 'http', 'https', 'www', 'com', 'pdf', 'html', 'faq']);
+
+// Latin-letter words of 3+ letters (product names, programs, places). Lowercased: case never matters.
+// Only the letters count: a model number such as "ABC12.3" is written with or without a space
+// ("ABC 12.3") and must not be missed for that.
+export function distinctiveLatinTerms(query: unknown) {
+  const found = fold(query).match(/[a-z]{3,}/gu) ?? [];
+  return [...new Set(found.filter(t => !UNIT_WORDS.has(t) && !GENERIC_LATIN.has(t)))];
+}
+
 // Latin and katakana words that name what the question is about (a storm, a person, a device).
 function subjectTokens(query: unknown) {
-  const latin = (fold(query).match(/[a-z]{3,}/gu) ?? []).filter(t => !UNIT_WORDS.has(t));
-  return [...new Set([...latin, ...distinctiveTerms(query).map(t => fold(stem(t)))])];
+  return [...new Set([...distinctiveLatinTerms(query), ...distinctiveTerms(query).map(t => fold(stem(t)))])];
 }
 
 // Does the evidence contain the kind of number the question asks for?
@@ -88,10 +98,17 @@ export function distinctiveTerms(query: unknown) {
   return [...new Set(found.filter(t => !GENERIC_KATAKANA.has(t) && stem(t).length >= 2))];
 }
 
-// Terms the question names that none of the given texts contains.
+// Katakana and Latin-letter terms the question names that none of the given texts contains.
 export function termsMissingFrom(query: unknown, texts: unknown[]) {
   const haystack = texts.map(fold).join('\n');
-  return distinctiveTerms(query).filter(t => !haystack.includes(fold(stem(t))));
+  const katakana = distinctiveTerms(query).filter(t => !haystack.includes(fold(stem(t))));
+  const latin = distinctiveLatinTerms(query).filter(t => !haystack.includes(t));
+  return [...katakana, ...latin];
+}
+
+// The question with the given words removed, for judging how much of the rest the excerpts cover.
+export function withoutTerms(query: unknown, terms: string[]) {
+  return terms.reduce((q, t) => q.split(fold(t)).join(' ').split(t).join(' '), fold(query));
 }
 
 export const searchStem = stem;

@@ -1,0 +1,390 @@
+{
+ "date": "2026-10-22",
+ "before": "0a77cd4",
+ "after": "本コミット(英字の固有語を、資料にあるかの確認に追加)",
+ "environment": "real Workers AI REST (bge-m3, bge-reranker-base); D1=local SQLite FTS5, Vectorize=local exact cosine",
+ "workerTests": {
+  "tests": 2379,
+  "pass": 2378,
+  "fail": 0,
+  "skipped": 1,
+  "newTests": 5
+ },
+ "newQuestions26": {
+  "manifestSha256": "c8e9e9afbd77c49eccfa829a31ea350a84c5dec928ace90a981f4a066ace6ed8",
+  "labels": {
+   "l": "答えなし:英字の固有語が資料にない",
+   "e": "答えあり:英字の語が資料にある",
+   "a": "答えあり:英字の別名(資料はカタカナ・漢字)"
+  },
+  "byCategory": {
+   "答えなし:英字の固有語が資料にない": {
+    "n": 14,
+    "before": 3,
+    "after": 14
+   },
+   "答えあり:英字の語が資料にある": {
+    "n": 8,
+    "before": 7,
+    "after": 7
+   },
+   "答えあり:英字の別名(資料はカタカナ・漢字)": {
+    "n": 4,
+    "before": 4,
+    "after": 3
+   }
+  },
+  "cases": {
+   "v4-l1": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   },
+   "v4-l2": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   },
+   "v4-l3": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   },
+   "v4-l4": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   },
+   "v4-l5": {
+    "before": {
+     "status": "fallback",
+     "ok": true
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    }
+   },
+   "v4-l6": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   },
+   "v4-l7": {
+    "before": {
+     "status": "fallback",
+     "ok": true
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    }
+   },
+   "v4-l8": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   },
+   "v4-l9": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    }
+   },
+   "v4-l10": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   },
+   "v4-l11": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   },
+   "v4-l12": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   },
+   "v4-l13": {
+    "before": {
+     "status": "fallback",
+     "ok": true
+    },
+    "after": {
+     "status": "fallback",
+     "ok": true
+    }
+   },
+   "v4-l14": {
+    "before": {
+     "status": "grounded",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": true
+    }
+   },
+   "v4-e1": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v4-e2": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v4-e3": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v4-e4": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v4-e5": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v4-e6": {
+    "before": {
+     "status": "insufficient",
+     "ok": false
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": false
+    }
+   },
+   "v4-e7": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v4-e8": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v4-a1": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v4-a2": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "insufficient",
+     "ok": false
+    }
+   },
+   "v4-a3": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   },
+   "v4-a4": {
+    "before": {
+     "status": "grounded",
+     "ok": true
+    },
+    "after": {
+     "status": "grounded",
+     "ok": true
+    }
+   }
+  },
+  "meta": {
+   "apiCallsEach": 395,
+   "neuronsAfter": 303.4,
+   "executionFailures": 0
+  }
+ },
+ "regression": {
+  "main60": {
+   "before": {
+    "pos": {
+     "n": 55,
+     "full": 55,
+     "recall": 100.0,
+     "mrr": 0.95
+    },
+    "neg": {
+     "n": 5,
+     "withRefs": 0
+    }
+   },
+   "after": {
+    "pos": {
+     "n": 55,
+     "full": 55,
+     "recall": 100.0,
+     "mrr": 0.94
+    },
+    "neg": {
+     "n": 5,
+     "withRefs": 0
+    }
+   },
+   "changed": []
+  },
+  "validation20": {
+   "before": {
+    "pos": {
+     "n": 10,
+     "full": 10,
+     "recall": 100.0,
+     "mrr": 0.9
+    },
+    "neg": {
+     "n": 10,
+     "withRefs": 0
+    }
+   },
+   "after": {
+    "pos": {
+     "n": 10,
+     "full": 10,
+     "recall": 100.0,
+     "mrr": 0.9
+    },
+    "neg": {
+     "n": 10,
+     "withRefs": 0
+    }
+   },
+   "changed": []
+  },
+  "real30": {
+   "negBefore": 6,
+   "negAfter": 6,
+   "neg": 6,
+   "posBefore": 22,
+   "posAfter": 22,
+   "pos": 24,
+   "changed": []
+  },
+  "unseen39": {
+   "negBefore": 18,
+   "negAfter": 19,
+   "neg": 27,
+   "posBefore": 12,
+   "posAfter": 12,
+   "pos": 12,
+   "changed": [
+    [
+     "v3-c4",
+     "grounded",
+     false,
+     "insufficient",
+     true
+    ]
+   ]
+  }
+ },
+ "knownFalseRejection": "v4-a2 (別名: 質問は英字、資料はカタカナ。意味検索と語句検索の1位が食い違うと落ちる)",
+ "preExistingFailure": "v4-e6 (UTC/JSTの時差の質問。修正前から落ちている。今回の変更とは無関係)",
+ "note": "質問・正解・本文は含まない。case idは質問IDのみ。第2回30問・未見39問・本26問は調整済みとして扱う。"
+}
