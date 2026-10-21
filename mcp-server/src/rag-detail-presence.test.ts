@@ -93,7 +93,7 @@ test('an unrelated question falls back to ordinary chat instead of citing the li
 });
 
 test('a loanword the excerpt lacks but another page uses is not treated as absent from the library', async () => {
-  const hit = await ask(numbered('アメリカ気象学会は用語集を公開している。', '米国西岸の年間降水量の30～50%が大気の川に関連して生じる。'), 'アメリカ西岸の年間降水量のうち、大気の川に関連するものは何%ですか。');
+  const hit = await ask(numbered('アメリカ気象学会は用語集を公開している。', '米国西岸の年間降水量の30～50%が大気の川に関連して生じる。'), 'アメリカ西岸の年間降水量のうち、大気の川に関連するものはどれくらいですか。');
   assert.equal(hit.status, 'grounded');
   assert.ok(hit.citations.some((c: any) => c.pageNumber === 2));
 });
@@ -120,4 +120,44 @@ test('a failed library check never removes evidence', async () => {
     };
   });
   assert.equal(hit.status, 'grounded');
+});
+
+test('money units are asked for and recognized at any scale', () => {
+  const ask = '損害保険金は、1件あたり何万円ですか。';
+  assert.equal(quantityEvidencePresent(ask, '損害保険金支払い金額（億円）\n10678\n2018年'), false);
+  assert.equal(quantityEvidencePresent(ask, '支払い金額は10678億円だった。'), true);
+  assert.equal(quantityEvidencePresent('参加費は何円ですか。', '参加費は5000円。'), true);
+  assert.equal(quantityEvidencePresent('参加費は何円ですか。', '参加費は無料。'), false);
+  assert.equal(quantityEvidencePresent('価格は何ドルですか。', '価格は12ドル。'), true);
+});
+
+test('with tying, the number must be in the top excerpt or in one that names the subject', () => {
+  const ask = 'Hurricane Karenの最大風速は何ノットでしたか。';
+  const karen = 'Hurricane Karenは2001年9月に発生した。';
+  const other = '猛烈な台風は最大風速105kt以上である。';
+  const tied = { tied: true };
+  assert.equal(quantityEvidencePresent(ask, [{ text: karen, primary: true }, { text: other }], tied), false);
+  assert.equal(quantityEvidencePresent(ask, [{ text: karen + '最大風速は80ktだった。', primary: true }, { text: other }], tied), true);
+  assert.equal(quantityEvidencePresent(ask, [{ text: karen }, { text: 'Karenの最大風速は80kt。' }], tied), true);
+  assert.equal(quantityEvidencePresent(ask, [{ text: other, primary: true }, { text: karen }], tied), true);
+  // Without tying (comparisons, plain strings) any excerpt may carry the number, as before.
+  assert.equal(quantityEvidencePresent(ask, [{ text: karen, primary: true }, { text: other }]), true);
+  assert.equal(quantityEvidencePresent(ask, karen + other, tied), true);
+});
+
+test('a subject made only of common words is tied to the top excerpt alone', () => {
+  const ask = '台風第21号の最大風速は何m/sでしたか。';
+  const top = '台風第21号は2018年9月に上陸した。';
+  const other = '台風の強さは最大風速33m/s以上で区別される。';
+  assert.equal(quantityEvidencePresent(ask, [{ text: top, primary: true }, { text: other }], { tied: true }), false);
+  assert.equal(quantityEvidencePresent(ask, [{ text: top + '最大風速は50m/sだった。', primary: true }, { text: other }], { tied: true }), true);
+});
+
+test('a number on an unrelated page does not rescue a question whose own page lacks it', async () => {
+  const query = 'Hurricane Karenの最大風速は何ノットでしたか。';
+  const hit = await ask(numbered('Hurricane Karenは2001年9月に発生した低気圧である。', '台風の最大風速は105kt以上で猛烈な台風とされる。'), query);
+  assert.deepEqual(hit.citations, []);
+  assert.equal(hit.context, '');
+  const stated = await ask(numbered('Hurricane Karenの最大風速は80ノットだった。', '台風の最大風速は105kt以上で猛烈な台風とされる。'), query);
+  assert.equal(stated.status, 'grounded');
 });

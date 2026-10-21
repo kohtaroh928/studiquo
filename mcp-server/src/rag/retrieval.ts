@@ -228,7 +228,9 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     // excerpts never contain, or names a word the searched library never uses, these
     // references cannot support it: no citations are returned (docs/RAG_REAL_MATERIAL_V2_REPORT.md).
     const excerpts = supported.map((r: any) => r.text).join("\n");
-    if (!quantityEvidencePresent(query, excerpts)) return emptyRetrieval("insufficient", { status: "insufficient" });
+    // The number must belong to the question: comparisons have several subjects, so only single-subject questions are tied.
+    const ranked = supported.map((r: any, index: number) => ({ text: r.text, primary: index === 0 }));
+    if (!quantityEvidencePresent(query, ranked, { tied: plan.coverageGroups.length === 0 })) return emptyRetrieval("insufficient", { status: "insufficient" });
     // A word missing from the library is only decisive when the two searches do not agree. If the
     // semantic and the keyword search both put the same excerpt first, the word is a paraphrase
     // ("プール" for "水") and the excerpt answers the question. Rerank scores cannot decide this:
