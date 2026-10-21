@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { retrieve } from "./rag/index.ts";
 import { LIMITS, RELEVANCE, MODELS } from "./rag/limits.ts";
-import { RAG_STATUSES, EMPTY_REASONS, emptyRetrieval, normalizeRetrieval } from "./rag/contract.ts";
+import { RAG_STATUSES, EMPTY_REASONS, EMPTY_DETAILS, emptyRetrieval, normalizeRetrieval } from "./rag/contract.ts";
 
 const session = { sub: "contract-test-user" };
 const bound = { RAG_ENABLED: "true", ADMIN_DB: {}, AI: {}, RAG_VECTORIZE: {},
@@ -85,4 +85,14 @@ test("retrieval budgets match the documented contract", () => {
 test("Workers AI model ids are named once and frozen", () => {
   assert.deepEqual({ ...MODELS }, { embedding: "@cf/baai/bge-m3", rerank: "@cf/baai/bge-reranker-base" });
   assert.ok(Object.isFrozen(MODELS));
+});
+
+test("emptyRetrieval can carry a log-only detail code that is not enumerable and not a free string", () => {
+  const r = emptyRetrieval("no_match", { status: "insufficient" }, "no_candidates");
+  assert.equal(r.detail, "no_candidates");
+  assert.ok(EMPTY_DETAILS.includes(r.detail));
+  assert.deepEqual(Object.keys(r), ["context", "citations", "status"]);
+  assert.deepEqual({ ...r }, { context: "", citations: [], status: "insufficient" });
+  assert.equal(emptyRetrieval("disabled").detail, undefined);
+  assert.ok(Object.isFrozen(EMPTY_DETAILS));
 });

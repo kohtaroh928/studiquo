@@ -295,11 +295,13 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
       citationCount: rag.citations.length,
       status: rag.status,
       reason: rag.reason ?? null,
+      detail: rag.detail ?? null,
       truncated: rag.truncated ?? null,
       sanitized: rag.sanitized ?? null,
       injectionHints: rag.injectionHints ?? null,
       redacted: rag.redacted ?? null,
       aiCalls: rag.aiCalls ?? null,
+      termAbsentKept: rag.termAbsentKept ?? null,
       elapsedMs: Date.now() - retrievalStartedAt,
     }));
   }

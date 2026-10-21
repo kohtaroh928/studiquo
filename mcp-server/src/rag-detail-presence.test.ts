@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { quantityEvidencePresent, distinctiveTerms, distinctiveLatinTerms, termsMissingFrom, withoutTerms } from './rag/detail-presence.ts';
 import { retrieve } from './rag/retrieval.ts';
+import { EMPTY_DETAILS } from './rag/contract.ts';
 import { indexSource, accountKey } from './rag/storage.ts';
 import { qualityEnvironment, qualitySource } from './rag-quality-fixture.ts';
 
@@ -208,4 +209,30 @@ test('a failed library check never removes evidence for a Latin-letter word eith
     };
   });
   assert.equal(hit.status, 'grounded');
+});
+
+test('an empty result names the check that emptied it, with a fixed code', async () => {
+  const filler = '気温の単位は摂氏である。';
+  const typhoon = '台風は熱帯の海上で発生する低気圧である。台風の発生数は夏から秋に多い。';
+  assert.equal((await ask(numbered('電流計は直列につなぐ。'), '電流計の価格を教えて')).detail, 'requirements');
+  assert.equal((await ask(numbered('気象予報士試験は気象に関する国家資格である。'), '気象予報士試験の合格率は何%ですか。')).detail, 'quantity');
+  assert.equal((await ask(numbered(filler, typhoon), 'ラニーニャ現象と台風の発生数にはどんな関係がありますか。')).detail, 'term_katakana');
+  assert.equal((await ask(numbered(filler, typhoon), 'TensorFlowと台風の発生数にはどんな関係がありますか。')).detail, 'term_latin');
+  assert.equal((await ask(numbered(filler, typhoon), 'ラニーニャとTensorFlowと台風の発生数にはどんな関係がありますか。')).detail, 'term_both');
+  // Nothing matches: no vector hit and no shared word.
+  const none = await ask(numbered(typhoon), 'ゴキブリの駆除方法は何ですか。', 'synthetic-user', (env: any) => { env.RAG_VECTORIZE.query = async () => ({ matches: [] }); });
+  assert.equal(none.reason, 'no_match');
+  assert.equal(none.detail, 'no_candidates');
+  for (const detail of ['requirements', 'quantity', 'term_katakana', 'term_latin', 'term_both', 'no_candidates']) assert.ok(EMPTY_DETAILS.includes(detail), detail);
+});
+
+test('a result that keeps an excerpt although a word of the question is in no retrieved text says so', async () => {
+  const answer = 'リッジは高気圧性の曲率をもつ、等高度線が極側に張り出した場所である。';
+  const kept = await ask(numbered(answer, '気温の単位は摂氏である。'), 'ridgeとはどのような場所のことですか。');
+  assert.equal(kept.status, 'grounded');
+  assert.equal(kept.termAbsentKept, true);
+  assert.equal(kept.detail, undefined);
+  const plain = await ask(numbered('台風は熱帯の海上で発生する低気圧である。', '気温の単位は摂氏である。'), '台風とはどんな低気圧ですか。');
+  assert.equal(plain.status, 'grounded');
+  assert.equal(plain.termAbsentKept, false);
 });

@@ -11,7 +11,7 @@ import { missingEvidence, selectEvidence } from "./evidence-selection.ts";
 import {organizeComparisonEvidence,assessComparisonEvidence} from './comparison-evidence.ts';
 import { sourceQualification, sourceContextColumn, referencesAuthorized } from "./authorization.ts";
 import { LIMITS, MODELS, RELEVANCE } from "./limits.ts";
-import { quantityEvidencePresent, termsMissingFrom, searchStem, withoutTerms } from "./detail-presence.ts";
+import { quantityEvidencePresent, termsMissingFrom, searchStem, withoutTerms, missingTermsDetail } from "./detail-presence.ts";
 import { stripInvisible } from "./sanitize.ts";
 import { countInjectionHints } from "./injection-hints.ts";
 import { redactPII } from "./redact-pii.ts";
@@ -123,7 +123,7 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     const eligible = (c: any) => explicitPageContext || relevanceEvidence(c, plan.canonicalQuery).accepted ||
       plan.coverageGroups.some((subject: any) => coversSubject(c, subject) && relevanceEvidence(c, subject).accepted);
     const candidates = selectDiverse(rrf(lists.flat(), LIMITS.fusedLimit), plan.coverageGroups, LIMITS.candidateLimit, eligible, true);
-    if (!candidates.length) return emptyRetrieval("no_match"); // No relevant hits: preserve ordinary chat fallback.
+    if (!candidates.length) return emptyRetrieval("no_match", {}, "no_candidates"); // No relevant hits: preserve ordinary chat fallback.
     const referenceEligible = referenceEligibility(plan.canonicalQuery, plan);
     let selected = selectDiverse(candidates, plan.coverageGroups, LIMITS.referenceLimit, referenceEligible);
     let ordered = candidates;
@@ -206,7 +206,7 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
       const reference = await expand(hit, budget);
       if (reference) { references.push(reference); budget -= reference.text.length; }
     }
-    if (!references.length) return emptyRetrieval("no_match"); // Hits disappeared or had no usable text.
+    if (!references.length) return emptyRetrieval("no_match", {}, "no_references"); // Hits disappeared or had no usable text.
     // Only recognized missing information triggers extra reads, never another
     // search or model call. At most five reserves, with the original auth/scope
     // query, a two-second per-read bound and time left for final assembly.
@@ -222,7 +222,7 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     }
     const compact = selectEvidence(pool, plan, requirements, LIMITS.referenceLimit, LIMITS.contextChars, references);
     const evidence = assessReferences(compact, requirements);
-    if (!evidence.accepted) return emptyRetrieval("insufficient", { status: "insufficient" });
+    if (!evidence.accepted) return emptyRetrieval("insufficient", { status: "insufficient" }, "requirements");
     const supported = evidence.references;
     // A matching topic is not an answer. If the question asks for a number of a kind the
     // excerpts never contain, or names a word (katakana or Latin letters) the searched library never uses, these
@@ -230,13 +230,14 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     const excerpts = supported.map((r: any) => r.text).join("\n");
     // The number must belong to the question: comparisons have several subjects, so only single-subject questions are tied.
     const ranked = supported.map((r: any, index: number) => ({ text: r.text, primary: index === 0 }));
-    if (!quantityEvidencePresent(query, ranked, { tied: plan.coverageGroups.length === 0 })) return emptyRetrieval("insufficient", { status: "insufficient" });
+    if (!quantityEvidencePresent(query, ranked, { tied: plan.coverageGroups.length === 0 })) return emptyRetrieval("insufficient", { status: "insufficient" }, "quantity");
     // A word missing from the library is only decisive when the two searches do not agree. If the
     // semantic and the keyword search both put the same excerpt first, the word is a paraphrase
     // ("プール" for "水") and the excerpt answers the question. Rerank scores cannot decide this:
     // the reranker rates most Japanese paraphrases near zero.
     const topVector = lists[0]?.[0]?.[0], topKeyword = lists[0]?.[1]?.[0];
     const searchesAgree = !!topVector && !!topKeyword && topVector.chunk_id === topKeyword.chunk_id;
+    let termAbsentKept = false; // a word of the question is in no retrieved text, yet the excerpt stays (searches agree)
     if (!explicitPageContext && !searchesAgree) {
       const retrievedText = lists.flat(2).map((c: any) => c?.text ?? "");
       const absent: string[] = [];
@@ -255,8 +256,11 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
         // Nothing in common with the question: the library is simply not about it.
         const rest = withoutTerms(plan.canonicalQuery, absent);
         const related = relevanceEvidence({ text: excerpts }, rest).lexicalCoverage >= RELEVANCE.anchoredOverlap;
-        return related ? emptyRetrieval("insufficient", { status: "insufficient" }) : emptyRetrieval("no_match");
+        const detail = missingTermsDetail(absent);
+        return related ? emptyRetrieval("insufficient", { status: "insufficient" }, detail) : emptyRetrieval("no_match", {}, detail);
       }
+    } else if (!explicitPageContext) {
+      termAbsentKept = termsMissingFrom(plan.canonicalQuery, [excerpts, ...lists.flat(2).map((c: any) => c?.text ?? "")]).length > 0;
     }
     const proofs = supported.map((r: any) => pool.find(original => original.citation.chunkId === r.citation.chunkId)?.proof);
     if (proofs.some((p: any) => !p) || !await referencesAuthorized(env, key, proofs)) return emptyRetrieval("auth_failed");
@@ -275,6 +279,7 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     Object.defineProperty(result, "injectionHints", { value: hints });
     Object.defineProperty(result, "redacted", { value: redacted });
     Object.defineProperty(result, "aiCalls", { value: aiCalls });
+    Object.defineProperty(result, "termAbsentKept", { value: termAbsentKept });
     return result;
   } catch {
     return emptyRetrieval("error");
