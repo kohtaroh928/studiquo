@@ -15,7 +15,7 @@ const SSE = [
 async function runMain(file, { out, failWith, key } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'live-smoke-'));
   const target = out ?? path.join(dir, 'out.json');
-  const saved = { fetch: globalThis.fetch, argv: process.argv, key: process.env.OPENAI_API_KEY, samples: process.env.SAMPLES, log: console.log, error: console.error };
+  const saved = { fetch: globalThis.fetch, argv: process.argv, key: process.env.OPENAI_API_KEY, samples: process.env.SAMPLES, keyFile: process.env.STUDIQUO_RAG_OPENAI_KEY_FILE, log: console.log, error: console.error };
   const urls = [];
   globalThis.fetch = async (url) => {
     urls.push(String(url));
@@ -26,6 +26,7 @@ async function runMain(file, { out, failWith, key } = {}) {
   process.argv = [process.argv[0], file, target];
   process.env.OPENAI_API_KEY = key ?? 'sk-test-' + 'a'.repeat(24);
   process.env.SAMPLES = '1';
+  delete process.env.STUDIQUO_RAG_OPENAI_KEY_FILE; // a developer's own key file must not replace the stub key
   console.log = () => {}; console.error = () => {};
   try {
     const { main } = await import(`../scripts/rag-quality/${file}?smoke=${Math.random()}`);
@@ -35,7 +36,7 @@ async function runMain(file, { out, failWith, key } = {}) {
   } finally {
     Object.assign(globalThis, { fetch: saved.fetch });
     process.argv = saved.argv; console.log = saved.log; console.error = saved.error;
-    for (const [k, v] of [['OPENAI_API_KEY', saved.key], ['SAMPLES', saved.samples]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    for (const [k, v] of [['OPENAI_API_KEY', saved.key], ['SAMPLES', saved.samples], ['STUDIQUO_RAG_OPENAI_KEY_FILE', saved.keyFile]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -52,13 +53,9 @@ for (const file of ['injection-live.mjs', 'grounding-live.mjs', 'latency-live.mj
 
 for (const file of ['injection-live.mjs', 'grounding-live.mjs', 'latency-live.mjs']) {
   test(`${file}: a blank key with no key file named stops before any request`, async () => {
-    const keyFile = process.env.STUDIQUO_RAG_OPENAI_KEY_FILE;
-    delete process.env.STUDIQUO_RAG_OPENAI_KEY_FILE;
-    try {
-      const r = await runMain(file, { key: '  ' });
-      assert.equal(r.error?.message, 'key_source_required');
-      assert.equal(r.urls.length, 0);
-    } finally { if (keyFile !== undefined) process.env.STUDIQUO_RAG_OPENAI_KEY_FILE = keyFile; }
+    const r = await runMain(file, { key: '  ' });
+    assert.equal(r.error?.message, 'key_source_required');
+    assert.equal(r.urls.length, 0);
   });
 }
 
