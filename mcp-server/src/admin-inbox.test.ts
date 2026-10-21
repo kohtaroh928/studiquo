@@ -531,7 +531,7 @@ test("the dashboard page can't be framed, can't load anything from elsewhere, an
 
 test("every inline script on the dashboard parses, and no element id is used twice", async () => {
   const html = await (await worker.fetch(request("/admin"), environment(), noopCtx)).text();
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1]);
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)].map(match => match[1]);
   assert.ok(scripts.length >= 3, "the stats, inbox and moderation scripts are all there");
   for (const source of scripts) assert.doesNotThrow(() => new Function(source));
   const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
