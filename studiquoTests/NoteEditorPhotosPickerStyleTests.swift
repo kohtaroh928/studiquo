@@ -81,22 +81,23 @@ final class NoteEditorPhotosPickerStyleTests: XCTestCase {
 
         /// Whether `.sheet(isPresented: $<bindingName>)` is
         /// immediately followed (within a short window — just past any
-        /// reasonable amount of whitespace/braces) by `PhotoPickerSheet`.
-        func isPresentedAsSheet(bindingName: String) -> Bool {
+        /// reasonable amount of whitespace/braces) by `viewName`.
+        func isPresentedAsSheet(bindingName: String, showing viewName: String) -> Bool {
             guard let bindingRange = source.range(of: ".sheet(isPresented: $\(bindingName))") else {
                 return false
             }
             let after = source[bindingRange.upperBound...].prefix(200)
-            return after.contains("PhotoPickerSheet")
+            return after.contains(viewName)
         }
 
+        // 画像の追加は貼り付けも選べる PhotoPasteSheet、背景画像は PhotoPickerSheet。
         XCTAssertTrue(
-            isPresentedAsSheet(bindingName: "showsImagePicker"),
+            isPresentedAsSheet(bindingName: "showsImagePicker", showing: "PhotoPasteSheet"),
             "showsImagePicker は .sheet(isPresented:) の中で" +
-                " PhotoPickerSheet を表示する必要があります。"
+                " PhotoPasteSheet を表示する必要があります。"
         )
         XCTAssertTrue(
-            isPresentedAsSheet(bindingName: "showsBackgroundImagePicker"),
+            isPresentedAsSheet(bindingName: "showsBackgroundImagePicker", showing: "PhotoPickerSheet"),
             "showsBackgroundImagePicker は .sheet(isPresented:) の中で" +
                 " PhotoPickerSheet を表示する必要があります。"
         )

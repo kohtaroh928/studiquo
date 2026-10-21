@@ -7,7 +7,6 @@ import { forgetSettledAlerts } from "./ops-alerts.ts";
 import { runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.ts";
 import { deleteAccount, startAccountDeletion } from "./account-deletion.ts";
 import { handleAdminWebhook } from "./admin.ts";
-import { mintSession } from "./session.ts";
 import { partialEnv, type Untyped } from "./test-env.ts";
 
 function environment() {
@@ -159,28 +158,4 @@ test("a deletion arriving after the webhook precheck still blocks both SQL write
   await handleAdminWebhook(url, new Request(url, { method: "POST", headers: { authorization: "test-secret", "content-type": "application/json" }, body: JSON.stringify({ event: { id: "race", app_user_id: "race-owner", type: "RENEWAL" } }) }), env);
   assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM subscribers").get()!.n, 0);
   assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM revenuecat_events").get()!.n, 0);
-});
-
-// SKIPPED ON PURPOSE (merge of codex/security-scanning into main, 2026-10-19).
-// This test expects a pending provider-side erasure to BLOCK signing in again. Main's
-// account deletion (account-deletion.ts / session.ts) does the opposite, and the owner
-// chose that rule: a person who signs in after the deletion finished starts a new
-// account, and the queued provider DELETEs are dropped so they cannot erase it.
-// Kept (not deleted) so the decision stays visible; see the Notion task.
-test("pending remote erasure prevents signing in under the same or linked identity", { skip: "main's rule: re-registration is allowed and queued provider deletions are cancelled" }, async () => {
-  const env = environment(); const sub = "reregister-owner"; const alias = "google:reregister-alias";
-  env._values.set(`identity-canonical:${alias}`, sub);
-  await deleteAccount(env, sub);
-  const random = "r".repeat(40);
-  assert.equal(await mintSession(env, sub, random), null);
-  assert.equal(await mintSession(env, alias, random), null);
-  assert.ok(await mintSession(env, "unrelated-owner", random));
-  // Even when this identity's job completed, an alias job still blocks it.
-  env._values.delete(`privacy-rc-delete:${await sha256Hex(sub)}`);
-  assert.equal(await mintSession(env, sub, random), null);
-  // The reverse completion order must also block the alias after its login
-  // mapping has been removed by erasure.
-  env._values.set(`privacy-rc-delete:${await sha256Hex(sub)}`, "{}");
-  env._values.delete(`privacy-rc-delete:${await sha256Hex(alias)}`);
-  assert.equal(await mintSession(env, alias, random), null);
 });
