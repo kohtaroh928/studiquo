@@ -40,6 +40,8 @@
 
 どれも回答は通常チャットへ落ちる（`clarification`と`insufficient`を除く）。区別できるのはログと評価の側だけ。
 
+`reason`に加えて、どの確認で空になったかを表す**固定の符号`detail`**（`requirements`／`quantity`／`term_katakana`／`term_latin`／`term_both`／`no_candidates`／`no_references`。`mcp-server/src/rag/contract.ts`の`EMPTY_DETAILS`）が、同じく列挙されないログ専用の付加情報として付く。成功した結果には、固有語が取得した本文のどこにもないのに抜粋を残した（意味検索と語句検索の1位が一致した）ことを表す`termAbsentKept`（真偽値）が付く。どちらも`rag_retrieval`のログに出るだけで、回答の挙動は変えない。質問・資料の文字は含まない。見方は`RUNBOOK.md`のRB-21。
+
 ## 4. 量の上限
 
 正本は`mcp-server/src/rag/limits.ts`（単位は文字数であり、トークン数ではない）。値の変更は文面に影響するため、このテーブルと`rag-contract.test.ts`を同時に更新する。

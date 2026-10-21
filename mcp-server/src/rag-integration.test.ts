@@ -636,3 +636,32 @@ test("a held reply cut off by a broken connection still shows what arrived, filt
     assert.ok(!/evil\.example/.test(result.text));
   } finally { globalThis.fetch = original; }
 });
+
+test('the retrieval log line carries the status, reason and check code, and none of the question or document text', async () => {
+  const original = globalThis.fetch;
+  const log = console.log;
+  const lines: string[] = [];
+  globalThis.fetch = async () => new Response('data: {"type":"response.output_text.delta","delta":"x"}\n\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n');
+  const numbered = (...texts: string[]) => texts.map((text, i) => ({ pageNumber: i + 1, text }));
+  const cases: [string, any[], any][] = [
+    ['電流計の価格を教えて', numbered('電流計は直列につなぐ。'), { status: 'insufficient', reason: 'insufficient', detail: 'requirements', termAbsentKept: null }],
+    ['気象予報士試験の合格率は何%ですか。', numbered('気象予報士試験は国家資格である。'), { status: 'insufficient', reason: 'insufficient', detail: 'quantity', termAbsentKept: null }],
+    ['TensorFlowで台風の進路を予測する方法を教えてください。', numbered('気温の単位は摂氏である。', '台風は熱帯の海上で発生する低気圧である。台風の進路は偏西風の影響を受ける。'), { detail: 'term_latin', termAbsentKept: null }],
+    ['ridgeとはどのような場所のことですか。', numbered('リッジは高気圧性の曲率をもつ、等高度線が極側に張り出した場所である。', '気温の単位は摂氏である。'), { status: 'grounded', reason: null, detail: null, termAbsentKept: true }],
+  ];
+  try {
+    for (const [query, pages, expected] of cases) {
+      const environment = env(qualityEnvironment());
+      await indexSource(environment, await accountKey('canonical-owner'), qualitySource({ totalPages: pages.length, pages }));
+      lines.length = 0;
+      console.log = (line: any) => { lines.push(String(line)); };
+      await chat(environment, { messages: [{ role: 'user', text: query }], rag: { scope: { kind: 'library' } } }, { 'X-Studiquo-RAG-Consent': 'rag-openai-v1' });
+      console.log = log;
+      const entry = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).find(e => e?.event === 'rag_retrieval');
+      assert.ok(entry, query);
+      for (const [key, value] of Object.entries(expected)) assert.equal(entry[key], value, `${key} for ${query}`);
+      const text = lines.join('\n');
+      for (const secret of ['電流計', '合格率', 'TensorFlow', 'ridge', 'リッジ', '摂氏', '台風']) assert.ok(!text.includes(secret), secret);
+    }
+  } finally { console.log = log; globalThis.fetch = original; }
+});

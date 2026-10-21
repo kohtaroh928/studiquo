@@ -112,3 +112,10 @@ export function withoutTerms(query: unknown, terms: string[]) {
 }
 
 export const searchStem = stem;
+
+// Which kind of word was missing, as a fixed log code: katakana words, Latin-letter words, or both.
+export function missingTermsDetail(terms: string[]) {
+  const katakana = terms.some(t => /[\u30A1-\u30F6\u30FC]/u.test(t));
+  const latin = terms.some(t => /^[a-z]+$/u.test(t));
+  return katakana && latin ? 'term_both' : latin ? 'term_latin' : 'term_katakana';
+}
