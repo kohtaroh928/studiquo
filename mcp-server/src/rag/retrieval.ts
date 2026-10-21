@@ -10,7 +10,8 @@ import { boundedSearch } from "./search-branches.ts";
 import { missingEvidence, selectEvidence } from "./evidence-selection.ts";
 import {organizeComparisonEvidence,assessComparisonEvidence} from './comparison-evidence.ts';
 import { sourceQualification, sourceContextColumn, referencesAuthorized } from "./authorization.ts";
-import { LIMITS, MODELS } from "./limits.ts";
+import { LIMITS, MODELS, RELEVANCE } from "./limits.ts";
+import { quantityEvidencePresent, termsMissingFrom, searchStem } from "./detail-presence.ts";
 import { stripInvisible } from "./sanitize.ts";
 import { countInjectionHints } from "./injection-hints.ts";
 import { redactPII } from "./redact-pii.ts";
@@ -223,6 +224,38 @@ async function retrieveInternal(env: any, session: any, payload: any, deadline: 
     const evidence = assessReferences(compact, requirements);
     if (!evidence.accepted) return emptyRetrieval("insufficient", { status: "insufficient" });
     const supported = evidence.references;
+    // A matching topic is not an answer. If the question asks for a number of a kind the
+    // excerpts never contain, or names a word the searched library never uses, these
+    // references cannot support it: no citations are returned (docs/RAG_REAL_MATERIAL_V2_REPORT.md).
+    const excerpts = supported.map((r: any) => r.text).join("\n");
+    if (!quantityEvidencePresent(query, excerpts)) return emptyRetrieval("insufficient", { status: "insufficient" });
+    // A word missing from the library is only decisive when the two searches do not agree. If the
+    // semantic and the keyword search both put the same excerpt first, the word is a paraphrase
+    // ("プール" for "水") and the excerpt answers the question. Rerank scores cannot decide this:
+    // the reranker rates most Japanese paraphrases near zero.
+    const topVector = lists[0]?.[0]?.[0], topKeyword = lists[0]?.[1]?.[0];
+    const searchesAgree = !!topVector && !!topKeyword && topVector.chunk_id === topKeyword.chunk_id;
+    if (!explicitPageContext && !searchesAgree) {
+      const retrievedText = lists.flat(2).map((c: any) => c?.text ?? "");
+      const absent: string[] = [];
+      for (const term of termsMissingFrom(plan.canonicalQuery, [excerpts, ...retrievedText]).slice(0, 3)) {
+        const known: any = await boundedSearch(() => all(
+          env.ADMIN_DB,
+          `SELECT 1 AS found FROM rag_chunks c JOIN rag_sources s ON s.account_key=c.account_key AND s.source_id=c.source_id JOIN rag_accounts a ON a.account_key=c.account_key WHERE c.account_key=? AND c.ready=1 AND s.deleted=0 AND s.complete=1 AND a.deleted=0${qualification}${scope.sql} AND instr(c.text,?)>0 LIMIT 1`,
+          key,
+          ...scope.args,
+          searchStem(term),
+        ), LIMITS.hydrateTimeoutMs).catch(() => [{ found: 1 }]); // An unreadable check must never remove evidence.
+        if (!known.length) absent.push(term);
+      }
+      if (absent.length) {
+        // Same subject area but not that word: say the excerpts do not contain it.
+        // Nothing in common with the question: the library is simply not about it.
+        const rest = absent.reduce((q: string, t: string) => q.replaceAll(t, " "), plan.canonicalQuery);
+        const related = relevanceEvidence({ text: excerpts }, rest).lexicalCoverage >= RELEVANCE.anchoredOverlap;
+        return related ? emptyRetrieval("insufficient", { status: "insufficient" }) : emptyRetrieval("no_match");
+      }
+    }
     const proofs = supported.map((r: any) => pool.find(original => original.citation.chunkId === r.citation.chunkId)?.proof);
     if (proofs.some((p: any) => !p) || !await referencesAuthorized(env, key, proofs)) return emptyRetrieval("auth_failed");
     const comparisonAssessment=assessComparisonEvidence(organizeComparisonEvidence(supported,plan.coverageGroups),plan.coverageGroups);
