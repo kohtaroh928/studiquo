@@ -1608,74 +1608,20 @@ private struct StudyTimeBarChart: View {
 
     private var calendar: Calendar { .current }
 
-    private struct Bar: Identifiable {
-        let id = UUID()
-        let label: String
-        let seconds: TimeInterval
-        /// The day (week/month) or the month's first day (year) this bar
-        /// represents — used to build the tapped-detail text.
-        let date: Date
-        /// The bar for the selected day / current month, drawn in full colour.
-        let isHighlighted: Bool
-    }
+    private typealias Bar = StudyBarMath.Bar
 
-    private func seconds(on day: Date) -> TimeInterval {
-        activities
-            .filter { calendar.isDate($0.startedAt, inSameDayAs: day) }
-            .reduce(0) { $0 + $1.duration }
-    }
-
-    private func seconds(inMonthOf day: Date) -> (total: TimeInterval, days: Int) {
-        guard let interval = calendar.dateInterval(of: .month, for: day),
-              let dayCount = calendar.range(of: .day, in: .month, for: day)?.count else {
-            return (0, 1)
-        }
-        let total = activities
-            .filter { $0.startedAt >= interval.start && $0.startedAt < interval.end }
-            .reduce(0) { $0 + $1.duration }
-        return (total, max(dayCount, 1))
+    private var samples: [StudyBarMath.Sample] {
+        activities.map { StudyBarMath.Sample(startedAt: $0.startedAt, seconds: $0.duration) }
     }
 
     private var bars: [Bar] {
+        let mathSpan: StudyBarMath.Span
         switch span {
-        case .week:
-            guard let start = calendar.dateInterval(of: .weekOfYear, for: referenceDate)?.start else { return [] }
-            let symbols = orderedWeekdaySymbols
-            return (0..<7).compactMap { offset in
-                guard let day = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
-                return Bar(
-                    label: symbols[offset],
-                    seconds: seconds(on: day),
-                    date: day,
-                    isHighlighted: calendar.isDate(day, inSameDayAs: referenceDate)
-                )
-            }
-        case .month:
-            guard let interval = calendar.dateInterval(of: .month, for: referenceDate),
-                  let dayCount = calendar.range(of: .day, in: .month, for: referenceDate)?.count else { return [] }
-            return (0..<dayCount).compactMap { offset in
-                guard let day = calendar.date(byAdding: .day, value: offset, to: interval.start) else { return nil }
-                return Bar(
-                    label: "\(calendar.component(.day, from: day))",
-                    seconds: seconds(on: day),
-                    date: day,
-                    isHighlighted: calendar.isDate(day, inSameDayAs: referenceDate)
-                )
-            }
-        case .year:
-            let year = calendar.component(.year, from: referenceDate)
-            let selectedMonth = calendar.component(.month, from: referenceDate)
-            return (1...12).compactMap { month in
-                guard let day = calendar.date(from: DateComponents(year: year, month: month, day: 1)) else { return nil }
-                let stats = seconds(inMonthOf: day)
-                return Bar(
-                    label: "\(month)",
-                    seconds: stats.total / Double(stats.days), // the month's daily average
-                    date: day,
-                    isHighlighted: month == selectedMonth
-                )
-            }
+        case .week: mathSpan = .week
+        case .month: mathSpan = .month
+        case .year: mathSpan = .year
         }
+        return StudyBarMath.bars(span: mathSpan, reference: referenceDate, samples: samples, calendar: calendar)
     }
 
     private var selectedBar: Bar? {
@@ -1696,25 +1642,9 @@ private struct StudyTimeBarChart: View {
         }
     }
 
-    /// Weekday short symbols rotated to the locale's first weekday, so the
-    /// labels line up with the bars.
-    private var orderedWeekdaySymbols: [String] {
-        let symbols = calendar.veryShortWeekdaySymbols
-        let shift = calendar.firstWeekday - 1
-        return Array(symbols[shift...] + symbols[..<shift])
-    }
+    private var averageSeconds: TimeInterval { StudyBarMath.averageSeconds(of: bars) }
 
-    /// Average over the periods that actually had study, not over every bar.
-    /// Dividing by all 31 days of a month made a real hour read as "0分".
-    private var averageSeconds: TimeInterval {
-        let active = bars.filter { $0.seconds > 0 }
-        guard !active.isEmpty else { return 0 }
-        return active.reduce(0) { $0 + $1.seconds } / Double(active.count)
-    }
-
-    private var totalSeconds: TimeInterval {
-        bars.reduce(0) { $0 + $1.seconds }
-    }
+    private var totalSeconds: TimeInterval { StudyBarMath.totalSeconds(of: bars) }
 
     private var averageLabel: String {
         switch span {
