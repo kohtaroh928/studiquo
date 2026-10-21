@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleAI } from "./ai.ts";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type Untyped } from "./test-env.ts";
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1ZkAAAAASUVORK5CYII=";
 
@@ -56,13 +56,13 @@ test("usage reports the tightest remaining allowance without spending any", asyn
     const env = environment();
     const ctx = executionContext();
     const usageRequest = () => new Request("https://example.test/api/ai/usage");
-    const usage = async () => (await handleAI(new URL(usageRequest().url), usageRequest(), env, "device", partialCtx(ctx), { sub: "user-1" }, "standard")).json();
+    const usage = async () => (await handleAI(new URL(usageRequest().url), usageRequest(), env, "device", partialCtx(ctx), { sub: "user-1" }, "standard"))!.json();
 
     // standard: 40 credits per 5 hours is the tightest window (day 60, month 120).
     assert.deepEqual(await usage(), { limit: 40, remaining: 40, resetsAt: null });
     assert.deepEqual(await usage(), { limit: 40, remaining: 40, resetsAt: null }, "reading costs nothing");
 
-    assert.equal((await run("chat", chatBody(), { env })).response.status, 200);
+    assert.equal((await run("chat", chatBody(), { env })).response!.status, 200);
     assert.equal((await usage()).remaining, 39);
   } finally {
     fetchState.restore();
@@ -91,15 +91,15 @@ function responsesOK(text: string) {
  * (default: nothing flagged) and everything else by `upstream`; `calls`
  * records the Responses requests only.
  */
-function installFetch(upstream, { moderation }: { moderation?: (options: unknown) => Response } = {}) {
+function installFetch(upstream: Untyped, { moderation }: { moderation?: (options: unknown) => Response } = {}) {
   const original = globalThis.fetch;
   const state = { calls: [] as any[], moderationCalls: [] as any[], restore: () => {} };
   globalThis.fetch = async (url, options) => {
     if (String(url).includes("/v1/moderations")) {
-      state.moderationCalls.push(JSON.parse(options.body));
+      state.moderationCalls.push(JSON.parse(options!.body! as string));
       return moderation ? moderation(options) : new Response(JSON.stringify({ results: [{ flagged: false, categories: {} }] }), { status: 200 });
     }
-    const body = JSON.parse(options.body);
+    const body = JSON.parse(options!.body! as string);
     state.calls.push({ url: String(url), options, body });
     return upstream(url, options, body);
   };
@@ -113,11 +113,11 @@ function post(path: string, body: { messages: { role: string; text: string; }[];
   });
 }
 
-async function run(path, body, { env = environment(), plan = "standard", sub = "user-1" } = {}) {
+async function run(path: Untyped, body: Untyped, { env = environment(), plan = "standard", sub = "user-1" } = {}) {
   const ctx = executionContext();
   const request = post(path, body);
   const response = await handleAI(new URL(request.url), request, env, "device", partialCtx(ctx), { sub }, plan);
-  const text = await response.text().catch(() => "");
+  const text = await response!.text().catch(() => "");
   await Promise.all(ctx.promises);
   return { response, text };
 }
@@ -128,11 +128,11 @@ test("chat sends a required PNG to OpenAI as an input_image and confirms receipt
   const fetchState = installFetch(() => responsesOK("画像を確認しました。"));
   try {
     const { response, text } = await run("chat", chatBody({ images: [PNG], requiresImage: true }));
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-studiquo-images-received"), "1");
+    assert.equal(response!.status, 200);
+    assert.equal(response!.headers.get("x-studiquo-images-received"), "1");
     assert.match(text, /画像を確認しました/);
     const content = fetchState.calls[0].body.input[0].content;
-    const image = content.find(part => part.type === "input_image");
+    const image = content.find((part: Untyped) => part.type === "input_image");
     assert.equal(image.image_url, `data:image/png;base64,${PNG}`);
   } finally {
     fetchState.restore();
@@ -143,7 +143,7 @@ test("chat sends the base model, store:false and a hashed safety identifier — 
   const fetchState = installFetch(() => responsesOK("やっ"));
   try {
     const { response, text } = await run("chat", chatBody(), { sub: "apple:secret-subject" });
-    assert.equal(response.status, 200);
+    assert.equal(response!.status, 200);
     assert.match(text, /data: \{"text":"やっ"\}/);
     const { url, options, body } = fetchState.calls[0];
     assert.equal(url, "https://api.openai.com/v1/responses");
@@ -161,7 +161,7 @@ test("chat sends the base model, store:false and a hashed safety identifier — 
 
 test("chat rejects a request that says an image is required but has none", async () => {
   const { response, text } = await run("chat", chatBody({ images: [], requiresImage: true }));
-  assert.equal(response.status, 400);
+  assert.equal(response!.status, 400);
   assert.match(text, /画像/);
 });
 
@@ -174,7 +174,7 @@ test("review streams back a structured result and asks OpenAI for a strict JSON 
   const fetchState = installFetch(() => responsesOK(result));
   try {
     const { response, text } = await run("review", { question: "加法定理の証明を教えて" });
-    assert.equal(response.status, 200);
+    assert.equal(response!.status, 200);
     assert.match(text, /isStudyRelevant.*true/s);
     assert.match(text, /加法定理/);
     const { body } = fetchState.calls[0];
@@ -197,7 +197,7 @@ test("rubric and grade attach images as input_image parts", async () => {
     await run("grade", { imageBase64: PNG, questionImageBase64: PNG, criteria: [{ name: "a", maxPoints: 100, requirement: "b" }] });
     for (const call of fetchState.calls) {
       const content = call.body.input[0].content;
-      assert.ok(content.some(part => part.type === "input_image" && part.image_url.endsWith(PNG)));
+      assert.ok(content.some((part: Untyped) => part.type === "input_image" && part.image_url.endsWith(PNG)));
     }
     assert.equal(fetchState.calls[0].body.text.format.name, "rubric");
     assert.equal(fetchState.calls[1].body.text.format.name, "grade");
@@ -222,7 +222,7 @@ test("a structured call that fails upstream is reported as an error event, not a
 
 test("review rejects a request with no question", async () => {
   const { response } = await run("review", { question: "" });
-  assert.equal(response.status, 400);
+  assert.equal(response!.status, 400);
 });
 
 test("review spends credits from the same allowance as chat", async () => {
@@ -232,12 +232,12 @@ test("review spends credits from the same allowance as chat", async () => {
     // standard: 40 credits per 5 hours and 5 calls a minute; a review costs 3 x 1 = 3.
     // Drop the minute window so only the 5-hour window is being exercised.
     const original = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-    env.RATE_COUNTER.getByName = name => name.startsWith("ai:cr:min:")
+    env.RATE_COUNTER.getByName = (name: Untyped) => name.startsWith("ai:cr:min:")
       ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
       : original(name);
-    for (let i = 0; i < 13; i += 1) assert.equal((await run("review", { question: "テスト" }, { env })).response.status, 200, `review ${i + 1}`);
+    for (let i = 0; i < 13; i += 1) assert.equal((await run("review", { question: "テスト" }, { env })).response!.status, 200, `review ${i + 1}`);
     const over = await run("review", { question: "テスト" }, { env });
-    assert.equal(over.response.status, 429);
+    assert.equal(over.response!.status, 429);
     assert.equal(JSON.parse(over.text).window, "fiveHours");
   } finally {
     fetchState.restore();
@@ -280,7 +280,7 @@ test("chat omitting model uses the base model on every plan", async () => {
   try {
     for (const plan of ["standard", "plus", "pro"]) {
       const { response, text } = await run("chat", chatBody(), { plan, sub: `u-${plan}` });
-      assert.equal(response.status, 200);
+      assert.equal(response!.status, 200);
       assert.match(text, /こんにちは/);
     }
     assert.ok(fetchState.calls.every(call => call.body.model === "gpt-test-luna"));
@@ -293,7 +293,7 @@ test("chat resolves a chosen logical model through its env var", async () => {
   const fetchState = installFetch(() => responsesOK("ok"));
   try {
     const { response } = await run("chat", chatBody({ model: "openai-astra" }), { plan: "pro" });
-    assert.equal(response.status, 200);
+    assert.equal(response!.status, 200);
     assert.equal(fetchState.calls[0].body.model, "gpt-test-astra");
   } finally {
     fetchState.restore();
@@ -304,7 +304,7 @@ test("chat 503s a logical model this Worker hasn't configured, and gives the cre
   const env = environment({ OPENAI_TERRA_MODEL: undefined });
   const fetchState = installFetch(() => responsesOK("ok"));
   try {
-    for (let i = 0; i < 8; i += 1) assert.equal((await run("chat", chatBody({ model: "openai-terra" }), { env, plan: "plus" })).response.status, 503);
+    for (let i = 0; i < 8; i += 1) assert.equal((await run("chat", chatBody({ model: "openai-terra" }), { env, plan: "plus" })).response!.status, 503);
     assert.equal(fetchState.calls.length, 0);
   } finally {
     fetchState.restore();
@@ -316,10 +316,10 @@ test("review/rubric/grade 503 without charging when the base model is not config
   const fetchState = installFetch(() => responsesOK("{}"));
   try {
     for (let i = 0; i < 8; i += 1) {
-      assert.equal((await run("review", { question: "q" }, { env })).response.status, 503);
-      assert.equal((await run("rubric", { modelAnswer: "m" }, { env })).response.status, 503);
+      assert.equal((await run("review", { question: "q" }, { env })).response!.status, 503);
+      assert.equal((await run("rubric", { modelAnswer: "m" }, { env })).response!.status, 503);
     }
-    assert.equal((await run("chat", chatBody(), { env: { ...env, OPENAI_LUNA_MODEL: "gpt-test-luna" } })).response.status, 200);
+    assert.equal((await run("chat", chatBody(), { env: { ...env, OPENAI_LUNA_MODEL: "gpt-test-luna" } })).response!.status, 200);
   } finally {
     fetchState.restore();
   }
@@ -335,8 +335,8 @@ test("each plan allows exactly the models in the plan table (Anthropic and Gemin
   try {
     const env = environment();
     for (const [plan, { ok, no }] of Object.entries(expectations)) {
-      for (const model of no) assert.equal((await run("chat", chatBody({ model }), { env, plan, sub: `${plan}-${model}` })).response.status, 403, `${plan} must refuse ${model}`);
-      for (const model of ok) assert.notEqual((await run("chat", chatBody({ model }), { env, plan, sub: `${plan}-${model}` })).response.status, 403, `${plan} must allow ${model}`);
+      for (const model of no) assert.equal((await run("chat", chatBody({ model }), { env, plan, sub: `${plan}-${model}` })).response!.status, 403, `${plan} must refuse ${model}`);
+      for (const model of ok) assert.notEqual((await run("chat", chatBody({ model }), { env, plan, sub: `${plan}-${model}` })).response!.status, 403, `${plan} must allow ${model}`);
     }
   } finally {
     fetchState.restore();
@@ -350,11 +350,11 @@ test("handleAI with no plan argument defaults to the standard plan", async () =>
     const ctx = executionContext();
     const request = post("chat", chatBody());
     const response = await handleAI(new URL(request.url), request, env, "device", partialCtx(ctx));
-    assert.equal(response.status, 200);
-    await response.text();
+    assert.equal(response!.status, 200);
+    await response!.text();
     await Promise.all(ctx.promises);
     const request2 = post("chat", chatBody({ model: "openai-sol" }));
-    assert.equal((await handleAI(new URL(request2.url), request2, env, "device", partialCtx(ctx))).status, 403);
+    assert.equal((await handleAI(new URL(request2.url), request2, env, "device", partialCtx(ctx)))!.status, 403);
   } finally {
     fetchState.restore();
   }
@@ -366,10 +366,10 @@ test("standard allows 5 calls a minute, then answers 429 for the minute window",
   const fetchState = installFetch(() => responsesOK("ok"));
   try {
     const env = environment();
-    for (let i = 0; i < 5; i += 1) assert.equal((await run("chat", chatBody(), { env })).response.status, 200, `call ${i + 1}`);
+    for (let i = 0; i < 5; i += 1) assert.equal((await run("chat", chatBody(), { env })).response!.status, 200, `call ${i + 1}`);
     const sixth = await run("chat", chatBody(), { env });
-    assert.equal(sixth.response.status, 429);
-    assert.equal(sixth.response.headers.get("retry-after"), "60");
+    assert.equal(sixth.response!.status, 429);
+    assert.equal(sixth.response!.headers.get("retry-after"), "60");
     const body = JSON.parse(sixth.text);
     assert.deepEqual({ code: body.code, window: body.window }, { code: "ai_limit", window: "minute" });
   } finally {
@@ -385,18 +385,18 @@ test("a malformed or moderated request costs no credits", async () => {
     const env = environment();
     const bad = { review: { question: "" }, rubric: { question: "" }, grade: { question: "x", criteria: [] } };
     for (const [name, body] of Object.entries(bad)) {
-      for (let i = 0; i < 20; i += 1) assert.equal((await run(name, body, { env })).response.status, 400, `${name} #${i + 1}`);
+      for (let i = 0; i < 20; i += 1) assert.equal((await run(name, body, { env })).response!.status, 400, `${name} #${i + 1}`);
     }
     for (let i = 0; i < 20; i += 1) {
       const moderated = await run("chat", chatBody(), { env });
-      assert.equal(moderated.response.status, 400);
+      assert.equal(moderated.response!.status, 400);
       assert.equal(JSON.parse(moderated.text).code, "content_rejected");
     }
     assert.equal(fetchState.calls.length, 0);
     fetchState.restore();
     const ok = installFetch(() => responsesOK("ok"));
     try {
-      assert.equal((await run("chat", chatBody(), { env })).response.status, 200);
+      assert.equal((await run("chat", chatBody(), { env })).response!.status, 200);
     } finally {
       ok.restore();
     }
@@ -410,7 +410,7 @@ test("a chat the upstream refuses is given back", async () => {
   try {
     const env = environment();
     // Without a refund the fifth failure would hit the per-minute limit (5).
-    for (let i = 0; i < 8; i += 1) assert.notEqual((await run("chat", chatBody(), { env })).response.status, 429, `call ${i + 1}`);
+    for (let i = 0; i < 8; i += 1) assert.notEqual((await run("chat", chatBody(), { env })).response!.status, 429, `call ${i + 1}`);
   } finally {
     fetchState.restore();
   }
@@ -421,12 +421,12 @@ test("a heavy model spends more credits: plus fits 20 Sol calls in 5 hours, not 
   try {
     const env = environment();
     const original = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-    env.RATE_COUNTER.getByName = name => name.startsWith("ai:cr:min:")
+    env.RATE_COUNTER.getByName = (name: Untyped) => name.startsWith("ai:cr:min:")
       ? { async bump() { return true; }, async take() { return { ok: true, windowEndsAt: 1 }; }, async give() {} }
       : original(name);
-    for (let i = 0; i < 20; i += 1) assert.equal((await run("chat", chatBody({ model: "openai-sol" }), { env, plan: "plus" })).response.status, 200, `call ${i + 1}`);
+    for (let i = 0; i < 20; i += 1) assert.equal((await run("chat", chatBody({ model: "openai-sol" }), { env, plan: "plus" })).response!.status, 200, `call ${i + 1}`);
     const over = await run("chat", chatBody({ model: "openai-sol" }), { env, plan: "plus" });
-    assert.equal(over.response.status, 429);
+    assert.equal(over.response!.status, 429);
     assert.equal(JSON.parse(over.text).window, "fiveHours");
   } finally {
     fetchState.restore();
@@ -438,8 +438,8 @@ test("credits are counted per account, not per device", async () => {
   try {
     const env = environment();
     for (let i = 0; i < 5; i += 1) await run("chat", chatBody(), { env, sub: "user-1" });
-    assert.equal((await run("chat", chatBody(), { env, sub: "user-1" })).response.status, 429);
-    assert.equal((await run("chat", chatBody(), { env, sub: "user-2" })).response.status, 200);
+    assert.equal((await run("chat", chatBody(), { env, sub: "user-1" })).response!.status, 429);
+    assert.equal((await run("chat", chatBody(), { env, sub: "user-2" })).response!.status, 200);
   } finally {
     fetchState.restore();
   }
@@ -453,7 +453,7 @@ test("user text is screened before sending; a flagged message never reaches the 
   });
   try {
     const { response, text } = await run("chat", chatBody());
-    assert.equal(response.status, 400);
+    assert.equal(response!.status, 400);
     assert.match(text, /学習アプリでは扱えません/);
     assert.equal(fetchState.moderationCalls.length, 1);
     assert.equal(fetchState.calls.length, 0);
@@ -470,10 +470,10 @@ test("self-harm is not refused by the app, and a moderation outage stops the req
       : new Response("down", { status: 500 }),
   });
   try {
-    assert.equal((await run("chat", chatBody(), { sub: "a" })).response.status, 200);
+    assert.equal((await run("chat", chatBody(), { sub: "a" })).response!.status, 200);
     mode = "outage";
     const stopped = await run("chat", chatBody(), { sub: "b" });
-    assert.equal(stopped.response.status, 503);
+    assert.equal(stopped.response!.status, 503);
     assert.equal(JSON.parse(stopped.text).code, "moderation_unavailable");
     assert.equal(fetchState.calls.length, 1, "nothing was sent to the model during the outage");
   } finally {
@@ -484,7 +484,7 @@ test("self-harm is not refused by the app, and a moderation outage stops the req
 // MARK: Math rules
 
 test("every prompt shown to a student tells the model to delimit math with $ and $$", async () => {
-  const seen = {};
+  const seen: Record<string, string> = {};
   let current: string;
   const fetchState = installFetch((_url: string, _options: string, body: { instructions: any; }) => { seen[current] = body.instructions; return responsesOK("{}"); });
   const bodies = {
@@ -518,7 +518,7 @@ test("chat retries a briefly overloaded model before giving up on it", async () 
   const fetchState = installFetch(() => (++calls < 3 ? new Response(BUSY, { status: 503 }) : responsesOK("回復しました")));
   try {
     const { response, text } = await run("chat", chatBody());
-    assert.equal(response.status, 200);
+    assert.equal(response!.status, 200);
     assert.match(text, /回復しました/);
     assert.equal(calls, 3);
   } finally {
@@ -530,7 +530,7 @@ test("chat answers a friendly Japanese 503 — not the provider's English text �
   const fetchState = installFetch(() => new Response(BUSY, { status: 503 }));
   try {
     const { response, text } = await run("chat", chatBody());
-    assert.equal(response.status, 503);
+    assert.equal(response!.status, 503);
     assert.match(JSON.parse(text).error, /混み合っています/);
     assert.doesNotMatch(text, /overloaded/);
     assert.equal(fetchState.calls.length, 3);
@@ -543,7 +543,7 @@ test("a bad request is surfaced immediately instead of being retried", async () 
   const fetchState = installFetch(() => new Response(JSON.stringify({ error: { message: "invalid argument" } }), { status: 400 }));
   try {
     const { response } = await run("chat", chatBody());
-    assert.equal(response.status, 400);
+    assert.equal(response!.status, 400);
     assert.equal(fetchState.calls.length, 1);
   } finally {
     fetchState.restore();
@@ -566,7 +566,7 @@ test("a free-plan account is refused every AI route with 402 before any upstream
   try {
     for (const path of ["chat", "rubric", "grade", "review"]) {
       const { response, text } = await run(path, {}, { plan: "free" });
-      assert.equal(response.status, 402, path);
+      assert.equal(response!.status, 402, path);
       assert.equal(JSON.parse(text).code, "subscription_required");
     }
     assert.equal(fetchState.calls.length + fetchState.moderationCalls.length, 0);
@@ -577,7 +577,7 @@ test("a free-plan account is refused every AI route with 402 before any upstream
 
 // MARK: Review follow-ups
 
-function sse(...events) {
+function sse(...events: Untyped[]) {
   return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""), { status: 200 });
 }
 
@@ -593,7 +593,7 @@ test("a chat stream that fails or ends empty tells the student and gives the cre
       const env = environment();
       for (let i = 0; i < 8; i += 1) {
         const { response, text } = await run("chat", chatBody(), { env });
-        assert.equal(response.status, 200, `call ${i + 1} (would be 429 without refunds)`);
+        assert.equal(response!.status, 200, `call ${i + 1} (would be 429 without refunds)`);
         assert.match(text, /完了できませんでした/);
       }
     } finally {
@@ -606,9 +606,9 @@ test("a chat that throws before streaming (e.g. no API key) gives the credits ba
   const fetchState = installFetch(() => responsesOK("ok"));
   try {
     const env = environment({ OPENAI_API_KEY: undefined });
-    for (let i = 0; i < 8; i += 1) assert.equal((await run("chat", chatBody(), { env })).response.status, 500);
+    for (let i = 0; i < 8; i += 1) assert.equal((await run("chat", chatBody(), { env })).response!.status, 500);
     env.OPENAI_API_KEY = "k";
-    assert.equal((await run("chat", chatBody(), { env })).response.status, 200);
+    assert.equal((await run("chat", chatBody(), { env })).response!.status, 200);
   } finally {
     fetchState.restore();
   }
@@ -632,7 +632,7 @@ test("rubric/grade/review give the credits back when the upstream fails or retur
       for (const [path, body] of requests) {
         for (let i = 0; i < 6; i += 1) {
           const { response, text } = await run(path, body, { env });
-          assert.equal(response.status, 200, `${path} #${i + 1}`);
+          assert.equal(response!.status, 200, `${path} #${i + 1}`);
           assert.match(text, /"error"/);
         }
       }
@@ -659,7 +659,7 @@ test("rubric accepts a typed question alone (the app has no model-answer field)"
   const fetchState = installFetch(() => responsesOK('{"criteria":[]}'));
   try {
     const { response } = await run("rubric", { question: "1+1=2 を示せ" });
-    assert.equal(response.status, 200);
+    assert.equal(response!.status, 200);
     assert.equal(fetchState.calls.length, 1);
     assert.match(fetchState.calls[0].body.input[0].content.at(-1).text, /模範解答>（なし/);
   } finally {
@@ -672,10 +672,10 @@ test("moderation is not called for a request the credit windows refuse", async (
   try {
     const env = environment();
     // standard allows 5 calls a minute; every admitted call is screened once.
-    for (let i = 0; i < 5; i += 1) assert.equal((await run("chat", chatBody(), { env })).response.status, 200);
+    for (let i = 0; i < 5; i += 1) assert.equal((await run("chat", chatBody(), { env })).response!.status, 200);
     assert.equal(fetchState.moderationCalls.length, 5);
     const refused = await run("chat", chatBody(), { env });
-    assert.equal(refused.response.status, 429);
+    assert.equal(refused.response!.status, 429);
     assert.equal(fetchState.moderationCalls.length, 5, "the refused call was not screened");
   } finally {
     fetchState.restore();
@@ -689,7 +689,7 @@ test("a provider's error text and a refusal of our own key never reach the app",
     const fetchState = installFetch(() => new Response(JSON.stringify({ error: { message: secret } }), { status: upstreamStatus }));
     try {
       const { response, text } = await run("chat", chatBody());
-      assert.equal(response.status, expected, `upstream ${upstreamStatus}`);
+      assert.equal(response!.status, expected, `upstream ${upstreamStatus}`);
       assert.doesNotMatch(text, /sk-proj|org-secret|Incorrect API key/);
       assert.match(text, /AIとの通信でエラーが発生しました/);
     } finally {
@@ -717,7 +717,7 @@ test("a moderated request gets its credits back, so rejected text cannot use up 
     const env = environment();
     for (let i = 0; i < 12; i += 1) {
       const { response, text } = await run("chat", chatBody(), { env });
-      assert.equal(response.status, 400, `call ${i + 1} (would be 429 without the refund)`);
+      assert.equal(response!.status, 400, `call ${i + 1} (would be 429 without the refund)`);
       assert.equal(JSON.parse(text).code, "content_rejected");
     }
   } finally {

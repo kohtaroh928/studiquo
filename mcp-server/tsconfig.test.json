@@ -3,17 +3,10 @@
 // Response.json(). The source itself is checked, strictly, by tsconfig.json.
 {
   "extends": "./tsconfig.json",
-  // The tests are written loosely (fake Envs, helpers without parameter types), so the two
-  // flags that need the most of that work, noImplicitAny (about 1,500 errors) and strictNullChecks
-  // (about 490), stay off. The other strict checks are on, as in tsconfig.json.
-  "compilerOptions": {
-    "strict": false,
-    "alwaysStrict": true,
-    "noImplicitThis": true,
-    "strictBindCallApply": true,
-    "strictFunctionTypes": true,
-    "useUnknownInCatchVariables": true
-  },
+  // Strict, as tsconfig.json is for src. Where a test reads data without declaring its shape (JSON from a
+  // response, rows from the in-memory SQLite, the arguments of a fake binding), it says so with `Untyped`
+  // (src/test-env.ts) instead of leaving a parameter implicitly `any`.
+  "compilerOptions": { "strict": true },
   "include": ["src/**/*", "test-types/*.d.ts"],
   "exclude": []
 }

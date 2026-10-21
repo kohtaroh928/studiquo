@@ -3,10 +3,10 @@ import { createHash, randomBytes } from "node:crypto";
 import test from "node:test";
 import worker from "./app.ts";
 import { sealSnapshot, openSnapshot } from "./snapshot-crypto.ts";
-import { partialCtx, partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 const newKey = () => randomBytes(32).toString("base64");
-const hash = value => createHash("sha256").update(value).digest("hex");
+const hash = (value: Untyped) => createHash("sha256").update(value).digest("hex");
 const SNAPSHOT = JSON.stringify({ version: 1, notebooks: [{ id: "n", title: "秘密のノート", pages: [{ id: "p", title: "p", recognizedText: "ひみつの内容" }] }] });
 
 test("a sealed snapshot does not contain its plaintext and opens back to the original", async () => {
@@ -96,7 +96,7 @@ function environment(extra = {}) {
       },
       async put(key: string, value: string, options: { expirationTtl: any; }) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
+      async list({ prefix }: { prefix?: Untyped }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
     },
     raw: values,
     RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },

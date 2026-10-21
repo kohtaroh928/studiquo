@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MONITOR, noteSignInContext, recordLoginOutcome, requestContext, touchSeenContext } from "./login-monitor.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
 const DAY = 86_400_000;
 
@@ -29,7 +29,7 @@ test("touchSeenContext: entries expire after the ttl and then count as new again
 test("touchSeenContext: keeps at most maxEntries, evicting the oldest", () => {
   let state;
   for (let i = 0; i < 5; i++) state = touchSeenContext(state, `C|${i}`, i * DAY, 3, 365 * 86_400).state;
-  assert.deepEqual(Object.keys(state.entries).sort(), ["C|2", "C|3", "C|4"]);
+  assert.deepEqual(Object.keys(state!.entries).sort(), ["C|2", "C|3", "C|4"]);
 });
 
 test("requestContext needs both country and ASN, and never exposes the IP", () => {
@@ -60,7 +60,7 @@ function fakeEnv() {
             counts.set(name, used);
             return true;
           },
-          async seenContext(key: string, { maxEntries, ttlSeconds }) {
+          async seenContext(key: string, { maxEntries, ttlSeconds }: { maxEntries?: Untyped; ttlSeconds?: Untyped }) {
             const result = touchSeenContext(seen.get(name), key, Date.now(), maxEntries, ttlSeconds);
             seen.set(name, result.state);
             return { isNew: result.isNew, wasEmpty: result.wasEmpty };
@@ -76,12 +76,12 @@ function withCf(cf: { country: string; asn: number; region?: string; asOrganizat
   return Object.defineProperty(new Request("https://example.test/", { headers: { "cf-connecting-ip": "198.51.100.7" } }), "cf", { value: cf });
 }
 
-function captureOutbound(run) {
+function captureOutbound(run: Untyped) {
   const original = globalThis.fetch;
   const originalLog = console.log;
   const sent: { url: string; body: any; }[] = [];
   const logs: string[] = [];
-  globalThis.fetch = async (url, init) => { sent.push({ url: String(url), body: JSON.parse(init.body) }); return new Response("{}", { status: 200 }); };
+  globalThis.fetch = async (url, init) => { sent.push({ url: String(url), body: JSON.parse(init!.body! as string) }); return new Response("{}", { status: 200 }); };
   console.log = line => logs.push(String(line));
   return run(sent, logs).finally(() => { globalThis.fetch = original; console.log = originalLog; });
 }
@@ -198,16 +198,16 @@ test("a failing mail provider is swallowed, doesn't throw, and the context still
   }
 });
 
-test("an account's first recorded sign-in is still mailed but isn't counted as a new-context spike", () => captureOutbound(async (sent) => {
+test("an account's first recorded sign-in is still mailed but isn't counted as a new-context spike", () => captureOutbound(async (sent: Untyped) => {
   const env = fakeEnv();
   for (let i = 0; i < MONITOR.newContextSuccessAlert + 5; i++) {
     const result = await noteSignInContext(env, withCf({ country: "JP", asn: 2516 }), `user${i}@example.com`, { notify: true });
     assert.deepEqual(result, { newContext: false, firstSeen: true });
     await recordLoginOutcome(env, withCf({ country: "JP", asn: 2516 }), "success", result);
   }
-  const notices = sent.filter(item => item.url.includes("resend"));
+  const notices = sent.filter((item: Untyped) => item.url.includes("resend"));
   assert.equal(notices.length, MONITOR.newContextSuccessAlert + 5);
-  assert.equal(sent.filter(item => item.url.includes("hooks.example")).length, 0, "no spike alert for first-seen sign-ins");
+  assert.equal(sent.filter((item: Untyped) => item.url.includes("hooks.example")).length, 0, "no spike alert for first-seen sign-ins");
 }));
 
 test("without a mail API key the notice is skipped and the daily allowance isn't spent", () => captureOutbound(async (sent: string | any[]) => {
@@ -230,10 +230,10 @@ test("the network name in the mail is a single short printable line", () => capt
   const hostile = `Evil Net\r\n\r\nあなたのパスワードを https://phish.example で確認してください${"x".repeat(200)}`;
   await noteSignInContext(env, withCf({ country: "US", asn: 2, asOrganization: hostile }), "person@example.com", { notify: true });
   assert.equal(sent.length, 1);
-  const line = sent[0].body.text.split("\n").find(row => row.startsWith("ネットワーク: "));
+  const line = sent[0].body.text.split("\n").find((row: Untyped) => row.startsWith("ネットワーク: "));
   assert.ok(line.length <= "ネットワーク: ".length + 64);
   assert.ok(!/[\r]/.test(line));
-  assert.equal(sent[0].body.text.split("\n").filter(row => row.startsWith("ネットワーク")).length, 1);
+  assert.equal(sent[0].body.text.split("\n").filter((row: Untyped) => row.startsWith("ネットワーク")).length, 1);
 }));
 
 test("hashing-saturation refusals alert Slack once per hour, separately from failures", () => captureOutbound(async (sent: string | any[]) => {

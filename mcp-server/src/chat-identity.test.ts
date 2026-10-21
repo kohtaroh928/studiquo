@@ -4,7 +4,7 @@ import { sha256Hex } from "./auth.ts";
 import { resolveChatUserKey } from "./chat-identity.ts";
 import { takeParsedBody, rememberParsedBody } from "./ai-body.ts";
 import { callAnthropicChat, extractDeltaText } from "./anthropic.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
 test("resolveChatUserKey falls back to tokenKey when USER_REGISTRY or sub is absent", async () => {
   assert.equal(await resolveChatUserKey(partialEnv({}), "apple:user-1", "token-key-1"), "token-key-1");
@@ -13,7 +13,7 @@ test("resolveChatUserKey falls back to tokenKey when USER_REGISTRY or sub is abs
 });
 
 test("resolveChatUserKey delegates to the hashed chat-account registry object when present", async () => {
-  const calls = [];
+  const calls: Untyped[] = [];
   const env = partialEnv({
     USER_REGISTRY: {
       getByName(name: string) {
@@ -71,10 +71,10 @@ test("callAnthropicChat validates API key, attaches images only to a trailing us
       }
     );
 
-    assert.equal(captured.url, "https://api.anthropic.com/v1/messages");
-    assert.equal(captured.init.headers["x-api-key"], "test-key-never-real");
-    assert.equal(captured.init.headers["anthropic-version"], "2023-06-01");
-    const parsed = JSON.parse(captured.init.body);
+    assert.equal(captured!.url, "https://api.anthropic.com/v1/messages");
+    assert.equal(captured!.init.headers["x-api-key"], "test-key-never-real");
+    assert.equal(captured!.init.headers["anthropic-version"], "2023-06-01");
+    const parsed = JSON.parse(captured!.init.body);
     assert.equal(parsed.stream, true);
     assert.equal(parsed.messages[0].content.length, 1);
     assert.equal(parsed.messages[1].content.length, 1);

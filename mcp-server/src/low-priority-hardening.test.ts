@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { register } from "node:module";
-import { partialCtx, partialEnv, partialState, partialStorage, type LooseEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, partialState, partialStorage, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // user-registry.ts extends the real DurableObject from "cloudflare:workers",
 // which only exists inside the Workers runtime; stand in for that one import
@@ -34,7 +34,7 @@ const { appGateRejection } = await import("./app-gate.ts");
 const { isCrossSiteWrite } = await import("./access.ts");
 const { ACCESS_ENV, ACCESS_HEADERS } = await import("./test-access.ts");
 
-const hash = value => createHash("sha256").update(value).digest("hex");
+const hash = (value: Untyped) => createHash("sha256").update(value).digest("hex");
 const noopCtx = partialCtx({ waitUntil() {} });
 
 // ---- IPv6 is counted per /64 ------------------------------------------------
@@ -73,7 +73,7 @@ test("something that is not an address is returned as it came, never guessed at"
 });
 
 test("clientKey applies the /64 rule, and still says unknown without a header", () => {
-  const request = ip => new Request("https://example.test/x", { headers: ip ? { "cf-connecting-ip": ip } : {} });
+  const request = (ip: Untyped) => new Request("https://example.test/x", { headers: ip ? { "cf-connecting-ip": ip } : {} });
   assert.equal(clientKey(request("2001:db8:9:9:1:1:1:1")), clientKey(request("2001:db8:9:9:2:2:2:2")));
   assert.equal(clientKey(request("203.0.113.5")), "203.0.113.5");
   assert.equal(clientKey(request(null)), "unknown");
@@ -94,10 +94,10 @@ function registryEnvironment() {
 
 test("a new account gets a 10-character friend code and invite token", async () => {
   const env = registryEnvironment();
-  const registry = new UserRegistry(partialState({ storage: partialStorage({}), blockConcurrencyWhile: fn => fn() }), env);
+  const registry = new UserRegistry(partialState({ storage: partialStorage({}), blockConcurrencyWhile: (fn: Untyped) => fn() }), env);
   const user = await registry.ensureUser("account-key", "Alice");
   assert.match(user.code, /^[A-HJ-NP-Z2-9]{10}$/);
-  assert.match(user.linkToken, /^[A-HJ-NP-Z2-9]{10}$/);
+  assert.match(user.linkToken!, /^[A-HJ-NP-Z2-9]{10}$/);
   assert.notEqual(user.code, user.linkToken);
   assert.equal(env.values.get(`chat:code:${user.code}`), "account-key");
 });
@@ -105,7 +105,7 @@ test("a new account gets a 10-character friend code and invite token", async () 
 test("an account that already has a 7-character code keeps it", async () => {
   const env = registryEnvironment();
   env.values.set("chat:user:old", JSON.stringify({ key: "old", name: "Old", code: "ABCDEFG", linkToken: "HJKLMNP", friends: [] }));
-  const registry = new UserRegistry(partialState({ storage: partialStorage({}), blockConcurrencyWhile: fn => fn() }), env);
+  const registry = new UserRegistry(partialState({ storage: partialStorage({}), blockConcurrencyWhile: (fn: Untyped) => fn() }), env);
   const user = await registry.ensureUser("old", "Old");
   assert.equal(user.code, "ABCDEFG");
 });
@@ -124,9 +124,9 @@ test("maintenance mode answers 503 with Retry-After on app, MCP and OAuth routes
   const env = partialEnv({ MAINTENANCE_MODE: "true" });
   for (const path of ["/api/plan", "/api/chat/inbox", "/api/auth/local/login", "/mcp", "/oauth/token", "/api/passkeys/status"]) {
     const response = gate(path, { env });
-    assert.equal(response.status, 503, path);
-    assert.equal(response.headers.get("retry-after"), "300");
-    assert.equal((await response.json()).code, "maintenance");
+    assert.equal(response!.status, 503, path);
+    assert.equal(response!.headers.get("retry-after"), "300");
+    assert.equal((await response!.json()).code, "maintenance");
   }
 });
 
@@ -140,8 +140,8 @@ test("maintenance mode leaves the health check, association file, public pages a
 test("an app build below MIN_APP_BUILD is told to update; a newer one and other clients are not", async () => {
   const env = partialEnv({ MIN_APP_BUILD: "5" });
   const old = gate("/api/plan", { env, userAgent: "studiquo/4 CFNetwork/3896.100.1.2.1 Darwin/27.0.0" });
-  assert.equal(old.status, 426);
-  assert.equal((await old.json()).code, "app_update_required");
+  assert.equal(old!.status, 426);
+  assert.equal((await old!.json()).code, "app_update_required");
   assert.equal(gate("/api/plan", { env, userAgent: "studiquo/5 CFNetwork/3896.100.1.2.1 Darwin/27.0.0" }), null);
   assert.equal(gate("/api/plan", { env, userAgent: "studiquo/12 CFNetwork/1 Darwin/27" }), null);
   assert.equal(gate("/api/plan", { env, userAgent: "Mozilla/5.0 (Macintosh)" }), null);
@@ -182,7 +182,7 @@ test("isCrossSiteWrite refuses another origin or a cross-site fetch, and lets re
 
 test("an admin write from another origin is refused even with a valid Access login", async () => {
   const env = partialEnv({ ...ACCESS_ENV });
-  const post = headers => worker.fetch(new Request("https://example.test/api/admin/issue-reports/import-legacy", {
+  const post = (headers: Untyped) => worker.fetch(new Request("https://example.test/api/admin/issue-reports/import-legacy", {
     method: "POST", headers: { ...ACCESS_HEADERS, ...headers },
   }), env, noopCtx);
   assert.equal((await post({ origin: "https://evil.example" })).status, 403);
@@ -211,7 +211,7 @@ function sessionEnvironment(extra = {}) {
 }
 
 // A login whose current token is `tokenAgeDays` old, descended from one that began `originAgeDays` ago.
-async function sessionAged(env: LooseEnv, { tokenAgeDays, originAgeDays, withOrigin = true }) {
+async function sessionAged(env: LooseEnv, { tokenAgeDays, originAgeDays, withOrigin = true }: { tokenAgeDays?: Untyped; originAgeDays?: Untyped; withOrigin?: Untyped }) {
   const issuedAtMs = Date.now() - tokenAgeDays * DAY;
   const token = `${Math.floor(issuedAtMs / 1000)}.${"t".repeat(40)}`;
   const record: Record<string, unknown> = { sub: "person", issuedAt: Math.floor(issuedAtMs / 1000), issuedAtMs };

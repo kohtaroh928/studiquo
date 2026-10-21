@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { secretsEqual } from "./auth.ts";
+import type { Untyped } from "./test-env.ts";
 
 test("secretsEqual accepts only an identical secret", async () => {
   assert.equal(await secretsEqual("whsec_abc123", "whsec_abc123"), true);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { callAnthropicChat, extractDeltaText } from "./anthropic.ts";
 import { rememberParsedBody, takeParsedBody } from "./ai-body.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
 test("callAnthropicChat throws when ANTHROPIC_API_KEY is missing from env", async () => {
   await assert.rejects(
@@ -41,11 +41,11 @@ test("callAnthropicChat sends x-api-key header (never in URL), attaches images o
 
     assert.equal(capturedUrl, "https://api.anthropic.com/v1/messages");
     assert.equal(capturedUrl.includes("test-placeholder-key-not-real"), false);
-    assert.equal(capturedInit.method, "POST");
-    assert.equal(capturedInit.headers["x-api-key"], "test-placeholder-key-not-real");
-    assert.equal(capturedInit.headers["anthropic-version"], "2023-06-01");
+    assert.equal(capturedInit!.method, "POST");
+    assert.equal(capturedInit!.headers["x-api-key"], "test-placeholder-key-not-real");
+    assert.equal(capturedInit!.headers["anthropic-version"], "2023-06-01");
 
-    const parsed = JSON.parse(capturedInit.body);
+    const parsed = JSON.parse(capturedInit!.body);
     assert.equal(parsed.model, "claude-sonnet-4-5");
     assert.equal(parsed.system, "Teach math step by step.");
     assert.equal(parsed.max_tokens, 4096);
@@ -76,7 +76,7 @@ test("callAnthropicChat does not attach images if the final turn is an assistant
   const originalFetch = globalThis.fetch;
   let capturedBody = null;
   globalThis.fetch = async (_url, init) => {
-    capturedBody = JSON.parse(init.body);
+    capturedBody = JSON.parse(init!.body! as string);
     return new Response("ok", { status: 200 });
   };
 
@@ -94,8 +94,8 @@ test("callAnthropicChat does not attach images if the final turn is an assistant
       }
     );
 
-    assert.equal(capturedBody.messages[0].content.length, 1);
-    assert.equal(capturedBody.messages[1].content.length, 1);
+    assert.equal(capturedBody!.messages[0].content.length, 1);
+    assert.equal(capturedBody!.messages[1].content.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
