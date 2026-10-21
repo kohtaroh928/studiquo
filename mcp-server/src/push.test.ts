@@ -43,7 +43,7 @@ test("sandbox devices use the sandbox APNs endpoint", async () => {
   seedDevices(values, [{ token: sandboxToken, environment: "sandbox", updatedAt: 1 }]);
   const urls: Untyped[] = [];
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async (url: Untyped) => { urls.push(url); return new Response(null, { status: 200 }); },
+    fetchImpl: async (url: unknown) => { urls.push(url); return new Response(null, { status: 200 }); },
   });
   assert.match(urls[0], /^https:\/\/api\.sandbox\.push\.apple\.com\/3\/device\//);
 });
@@ -53,7 +53,7 @@ test("production devices use the production APNs endpoint", async () => {
   seedDevices(values, [{ token: productionToken, environment: "production", updatedAt: 1 }]);
   const urls: Untyped[] = [];
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async (url: Untyped) => { urls.push(url); return new Response(null, { status: 200 }); },
+    fetchImpl: async (url: unknown) => { urls.push(url); return new Response(null, { status: 200 }); },
   });
   assert.match(urls[0], /^https:\/\/api\.push\.apple\.com\/3\/device\//);
   assert.doesNotMatch(urls[0], /sandbox/);
@@ -67,7 +67,7 @@ test("one JWT is reused for every device in a multi-device send", async () => {
   ]);
   const authorizationHeaders: any[] = [];
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async (_url: Untyped, init?: Untyped) => {
+    fetchImpl: async (_url: unknown, init?: Untyped) => {
       authorizationHeaders.push((init!.headers as Record<string, string>).authorization);
       return new Response(null, { status: 200 });
     },
@@ -110,7 +110,7 @@ test("the APNs JWT uses ES256 and contains the configured Team ID", async () => 
   let authorization;
   await sendPush(env, "user-a", notification, {
     now: 1_800_000_000_000,
-    fetchImpl: async (_url: Untyped, init?: Untyped) => {
+    fetchImpl: async (_url: unknown, init?: Untyped) => {
       authorization = (init!.headers as Record<string, string>).authorization;
       return new Response(null, { status: 200 });
     },
@@ -127,7 +127,7 @@ test("the APNs payload includes badge and deep-link data", async () => {
   seedDevices(values, [{ token: sandboxToken, environment: "sandbox", updatedAt: 1 }]);
   let payload;
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async (_url: Untyped, init?: Untyped) => {
+    fetchImpl: async (_url: unknown, init?: Untyped) => {
       payload = JSON.parse(init!.body! as string);
       return new Response(null, { status: 200 });
     },
@@ -143,7 +143,7 @@ test("a disabled category is filtered per device without affecting enabled devic
     { token: sandboxToken, environment: "sandbox", preferences: { friendMessage: false }, updatedAt: 1 },
     { token: productionToken, environment: "production", preferences: { friendMessage: true }, updatedAt: 2 },
   ]);
-  const deliveredTokens: Untyped[] = [];
+  const deliveredTokens: unknown[] = [];
   const result = await sendPush(env, "user-a", notification, {
     fetchImpl: async (url: Untyped) => {
       deliveredTokens.push(url.split("/").at(-1));
@@ -160,7 +160,7 @@ test("new-device alerts can exclude the installation that just registered", asyn
     { token: sandboxToken, environment: "sandbox", installationID: "old-installation", updatedAt: 1 },
     { token: productionToken, environment: "production", installationID: "new-installation", updatedAt: 2 },
   ]);
-  const deliveredTokens: Untyped[] = [];
+  const deliveredTokens: unknown[] = [];
   await sendPush(env, "user-a", { ...notification, category: "newDeviceLogin" }, {
     excludeInstallationID: "new-installation",
     fetchImpl: async (url: Untyped) => {
@@ -236,7 +236,7 @@ test("turning the banner off for one category does not quiet the others", async 
   seedDevices(values, [{ token: sandboxToken, environment: "sandbox", updatedAt: 1, banners: { groupInvite: false } }]);
   let aps;
   await sendPush(env, "user-a", notification, {
-    fetchImpl: async (url: Untyped, init?: Untyped) => { aps = JSON.parse(init!.body! as string).aps; return new Response(null, { status: 200 }); },
+    fetchImpl: async (url: unknown, init?: Untyped) => { aps = JSON.parse(init!.body! as string).aps; return new Response(null, { status: 200 }); },
   });
   assert.equal(aps!.sound, "default");
   assert.equal(aps!["interruption-level"], undefined);

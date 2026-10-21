@@ -596,7 +596,7 @@ test("a free-plan account is refused every AI route with 402 before any upstream
 
 // MARK: Review follow-ups
 
-function sse(...events: Untyped[]) {
+function sse(...events: unknown[]) {
   return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""), { status: 200 });
 }
 

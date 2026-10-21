@@ -120,7 +120,7 @@ function sqlBackedRooms() {
     _rooms: rooms,
     getByName(id: string) {
       const { db, sql } = room(id);
-      const requireParticipant = (userKey: Untyped) => {
+      const requireParticipant = (userKey: unknown) => {
         const rows = sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray();
         if (rows.length !== 1) throw new Error("Forbidden");
         return rows[0].role;
@@ -191,7 +191,7 @@ function environment() {
       },
       async put(key: string, value: string, options: string) { puts.push({ key, options }); values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix }: { prefix?: Untyped }) {
+      async list({ prefix }: { prefix?: unknown }) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
       },
     },

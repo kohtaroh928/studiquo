@@ -18,7 +18,7 @@ function environment() {
       },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix }: { prefix?: Untyped }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
+      async list({ prefix }: { prefix?: unknown }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
     },
     MCP_INBOX: { getByName(account: string) { return {
       async consumeOnce(id: string) { const key = `${account}:${id}`; if (consumed.has(key)) return false; consumed.add(key); return true; },
@@ -190,7 +190,7 @@ test("a refresh token that was already exchanged cuts the whole connection", asy
   const rotated = await refresh(first);
   assert.equal(rotated.status, 200);
   const { access_token: access, refresh_token: second } = await rotated.json();
-  const mcp = (token: Untyped) => fetch(env, "/mcp", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+  const mcp = (token: unknown) => fetch(env, "/mcp", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
   assert.notEqual((await mcp(access)).status, 401, "the new access token works");
 
   // The old token is shown again, by a client that retried or by whoever copied it.
