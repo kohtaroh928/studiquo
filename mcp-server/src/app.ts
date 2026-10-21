@@ -33,7 +33,7 @@ import { verifyAppleIdentityToken } from "./apple-auth.ts";
 import { verifyGoogleIdentityToken } from "./google-auth.ts";
 import { linkVerifiedEmail, identityKey } from "./oauth-links.ts";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.ts";
-import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError } from "./local-auth.ts";
+import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError, MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from "./local-auth.ts";
 import { startAccountDeletion } from "./account-deletion.ts";
 import { hasModerationMark, CHAT_SUSPENSION_PREFIX, mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted, accountIsUnavailable } from "./session.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
@@ -884,8 +884,19 @@ async function handleConfirmEmailVerification(request: Request, env: Env, ctx: E
   const { email, code, password } = parsed ?? {};
   if (typeof email !== "string" || !email) return json({ error: "email is required." }, 400);
   if (typeof code !== "string" || !code) return json({ error: "code is required." }, 400);
-  if (typeof password !== "string" || password.length < 8 || password.length > 1_024) {
+  if (typeof password !== "string" || password.length > MAX_PASSWORD_LENGTH) {
     return json({ error: "password is required." }, 400);
+  }
+  // 12 or more for a password being set (signup, reset). Sign-in is not
+  // limited: an existing 8-11 character password keeps working until it is
+  // next changed. The app shows `error` as is, so an older app that still
+  // accepts 8 characters tells the person what to fix.
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return json({
+      error: `パスワードは${MIN_PASSWORD_LENGTH}文字以上にしてください。`,
+      code: "password_too_short",
+      minLength: MIN_PASSWORD_LENGTH,
+    }, 400);
   }
 
   // Checked before the code is: a refused password costs the caller no code

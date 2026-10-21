@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import test, { mock } from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
@@ -889,6 +892,32 @@ test("email-code budgets: send and confirm are counted separately, per address, 
   } finally {
     stub.restore();
   }
+});
+
+test("POST /api/auth/email/confirm-code: a password under 12 characters is refused and the emailed code stays usable", async () => {
+  const env = environment();
+  const stub = stubResendCapturingCode();
+  await worker.fetch(request("/api/auth/email/send-code", { method: "POST", body: { email: "person@example.com" } }), env, noopCtx);
+  stub.restore();
+  const confirm = (password: string) => worker.fetch(
+    request("/api/auth/email/confirm-code", {
+      method: "POST",
+      body: { email: "person@example.com", code: stub.code(), password, randomValue: "r".repeat(40) },
+    }),
+    env,
+    noopCtx
+  );
+
+  const refused = await confirm("elevenchars");
+  assert.equal(refused.status, 400);
+  const refusedBody = await refused.json();
+  assert.equal(refusedBody.code, "password_too_short");
+  assert.equal(refusedBody.minLength, 12);
+  assert.equal(await env.STUDIQUO_DATA.get("account:local:person@example.com"), null);
+
+  // The code wasn't spent: exactly 12 characters with the same code works.
+  const accepted = await confirm("twelve-chars");
+  assert.equal(accepted.status, 200);
 });
 
 test("POST /api/auth/email/confirm-code: a breached password is refused and the emailed code stays usable", async () => {
@@ -2815,7 +2844,7 @@ test("deleting the account and approving an app need a recent passkey check when
 });
 
 test("an account without a passkey is not asked for one", async () => {
-  const env = environment({ strictSessions: true });
+  const env = probeEnvironment();
   const token = freshToken("n");
   await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:nopass@example.com" }));
   const response = await worker.fetch(request("/api/mcp/pairing-code", { method: "POST", token, body: { kind: "other" } }), env, noopCtx);
@@ -3032,4 +3061,225 @@ test("a nonce, an ID token or an account never appears in the logged line", asyn
   assert.ok(!text.includes(nonce));
   assert.ok(!text.includes(nonceHash(nonce)));
   assert.ok(!text.includes("nonce-sub"));
+});
+
+// ---------------------------------------------------------------------------
+// Route authorization table. Every route the source defines must be listed
+// here with who may call it. Adding a route without listing it fails the
+// "no unlisted route" test below, so the question "who can call this?" is
+// answered in review, not after release. For each route that needs a session,
+// a request with no token and one with a token that was never issued are both
+// refused, whatever the route's own checks do afterwards.
+//
+//   bearer: needs a signed-in session (Authorization: Bearer ...)
+//   admin:  needs the Cloudflare Access login (src/access.ts)
+//   public: callable without a session, by design (sign-in, pages, webhooks,
+//           and routes that authenticate by another credential)
+// ---------------------------------------------------------------------------
+type RouteAuth = "bearer" | "admin" | "public";
+const ROOM = "a".repeat(64);
+const UUID = "123e4567-e89b-12d3-a456-426614174000";
+const ROUTES: Array<[RouteAuth, string, string]> = [
+  // account, session, sync
+  ["bearer", "DELETE", "/api/account"],
+  ["bearer", "GET", "/api/account/library-id"],
+  ["bearer", "POST", "/api/session/revoke"],
+  ["bearer", "POST", "/api/session/refresh"],
+  ["bearer", "PUT", "/api/snapshot"],
+  ["bearer", "GET", "/api/actions"],
+  ["bearer", "GET", "/api/plan"],
+  // apps connected through MCP
+  ["bearer", "POST", "/api/mcp/pairing-code"],
+  ["bearer", "GET", "/api/mcp/connections"],
+  ["bearer", "DELETE", "/api/mcp/connections/abc"],
+  ["bearer", "GET", "/api/mcp/inbox"],
+  ["bearer", "POST", "/api/mcp/inbox/abc"],
+  // AI
+  ["bearer", "POST", "/api/ai/chat"],
+  ["bearer", "POST", "/api/ai/grade"],
+  ["bearer", "POST", "/api/ai/review"],
+  ["bearer", "POST", "/api/ai/rubric"],
+  ["bearer", "GET", "/api/ai/usage"],
+  // chat
+  ["bearer", "POST", "/api/chat/me"],
+  ["bearer", "POST", "/api/chat/me/avatar"],
+  ["bearer", "GET", "/api/chat/friends"],
+  ["bearer", "POST", "/api/chat/friends"],
+  ["bearer", "GET", "/api/chat/friends/blocked"],
+  ["bearer", "GET", "/api/chat/friends/outgoing"],
+  ["bearer", "GET", "/api/chat/friends/requests"],
+  ["bearer", "POST", "/api/chat/friends/link-add"],
+  ["bearer", "POST", "/api/chat/friends/requests/accept"],
+  ["bearer", "POST", "/api/chat/friends/requests/reject"],
+  ["bearer", "DELETE", "/api/chat/friends/ABCDEF"],
+  ["bearer", "GET", "/api/chat/avatar/ABCDEF"],
+  ["bearer", "GET", "/api/chat/inbox"],
+  ["bearer", "GET", "/api/chat/devices"],
+  ["bearer", "GET", `/api/chat/rooms/${ROOM}/messages`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/read`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/messages/1/cancel`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/messages/1/edit`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/messages/1/report`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/messages/lookup`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/attachments`],
+  ["bearer", "GET", `/api/chat/rooms/${ROOM}/attachments/${UUID}`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/block`],
+  ["bearer", "POST", `/api/chat/rooms/${ROOM}/unblock`],
+  ["bearer", "GET", `/api/chat/rooms/${ROOM}/block-status`],
+  ["bearer", "GET", "/api/chat/group-invites"],
+  ["bearer", "GET", "/api/chat/groups"],
+  ["bearer", "POST", "/api/chat/groups"],
+  ["bearer", "POST", `/api/chat/groups/${ROOM}/invites`],
+  ["bearer", "POST", `/api/chat/groups/${ROOM}/invites/accept`],
+  ["bearer", "POST", `/api/chat/groups/${ROOM}/invites/reject`],
+  ["bearer", "PATCH", `/api/chat/groups/${ROOM}`],
+  ["bearer", "DELETE", `/api/chat/groups/${ROOM}/members/ABCDEF`],
+  ["bearer", "POST", `/api/chat/groups/${ROOM}/avatar`],
+  // shared documents
+  ["bearer", "GET", "/api/document/invites"],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/init`],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/invite`],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/invite/accept`],
+  ["bearer", "GET", `/api/document/rooms/${ROOM}/participants`],
+  ["bearer", "GET", `/api/document/rooms/${ROOM}/state`],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/propose`],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/changes/1/review`],
+  // passkeys: sign-in and the email code are for people who have no session yet
+  ["public", "POST", "/api/passkeys/email-code/send"],
+  ["public", "POST", "/api/passkeys/email-code/confirm"],
+  ["public", "POST", "/api/passkeys/login/options"],
+  ["public", "POST", "/api/passkeys/login/verify"],
+  ["bearer", "POST", "/api/passkeys/register/options"],
+  ["bearer", "POST", "/api/passkeys/register/verify"],
+  ["bearer", "GET", "/api/passkeys/status"],
+  ["bearer", "POST", "/api/passkeys/remove-all"],
+  ["bearer", "POST", "/api/passkeys/reauth/options"],
+  ["bearer", "POST", "/api/passkeys/reauth/verify"],
+  // sign-in and app registration
+  ["public", "POST", "/api/auth/apple"],
+  ["public", "POST", "/api/auth/google"],
+  ["public", "POST", "/api/auth/email/send-code"],
+  ["public", "POST", "/api/auth/email/confirm-code"],
+  ["public", "POST", "/api/auth/local/login"],
+  ["public", "POST", "/api/attest/challenge"],
+  ["public", "POST", "/api/attest/register"],
+  // reports and telemetry (their own checks: a per-device limit, or a report's secret id)
+  ["public", "POST", "/api/issue-reports"],
+  ["public", "GET", `/api/issue-reports/${UUID}/screenshot`],
+  ["public", "POST", "/api/app-errors"],
+  ["public", "POST", "/api/usage-events"],
+  ["public", "GET", "/api/announcements"],
+  // OAuth for connected apps (the flow itself authenticates; see mcp-oauth.test.ts)
+  ["public", "GET", "/oauth/authorize"],
+  ["public", "POST", "/oauth/pair"],
+  ["public", "POST", "/oauth/register"],
+  ["public", "POST", "/oauth/token"],
+  // admin
+  ["admin", "GET", "/api/admin/stats"],
+  ["admin", "GET", "/api/admin/accounts/suspended"],
+  ["admin", "POST", "/api/admin/accounts/suspend"],
+  ["admin", "POST", "/api/admin/accounts/unsuspend"],
+  ["admin", "GET", "/api/admin/audit-log"],
+  ["admin", "GET", "/api/admin/announcements"],
+  ["admin", "GET", "/api/admin/app-errors"],
+  ["admin", "GET", `/api/admin/app-errors/${ROOM}`],
+  ["admin", "GET", "/api/admin/chat-reports"],
+  ["admin", "GET", `/api/admin/chat-reports/${UUID}`],
+  ["admin", "POST", `/api/admin/chat-reports/${UUID}/remove-message`],
+  ["admin", "POST", `/api/admin/chat-reports/${UUID}/warn`],
+  ["admin", "GET", "/api/admin/issue-reports"],
+  ["admin", "GET", `/api/admin/issue-reports/${UUID}`],
+  ["admin", "POST", "/api/admin/issue-reports/import-legacy"],
+  // RevenueCat calls this with its own secret; Access does not guard it (access.ts)
+  ["public", "POST", "/api/admin/revenuecat-webhook"],
+];
+
+// A body that passes the first shape checks, so a route that reads its body
+// before its token (the passkey ones) still reaches the token check.
+const PROBE_BODY = { email: "probe@example.com", code: "123456", name: "probe" };
+const probe = (method: string, path: string, token?: string) =>
+  request(path, { method, token, body: ["GET", "DELETE"].includes(method) ? undefined : PROBE_BODY });
+
+function probeEnvironment() {
+  const env = environment({ strictSessions: true });
+  for (const name of ["ADMIN_WEBHOOK", "ANNOUNCEMENTS", "APP_ERROR", "ATTEST_ASSERT", "ATTEST_CHALLENGE", "ATTEST_REGISTER", "CHAT_ATTACHMENT_UPLOAD", "CHAT_DEVICE_REGISTER", "CHAT_FRIEND_ADD", "CHAT_GROUP_ACTION", "CHAT_MESSAGE", "CHAT_REPORT", "MCP_AUTHORIZE", "MCP_PAIR", "MCP_REGISTER", "MCP_TOKEN", "PASSKEY_LOGIN_OPTIONS", "PASSKEY_LOGIN_VERIFY", "PASSKEY_REGISTER_OPTIONS", "PASSKEY_REGISTER_VERIFY", "USAGE_EVENT"]) {
+    env[`RATE_LIMIT_${name}`] ??= fakeCloudflareLimiter(1_000_000);
+  }
+  return env;
+}
+
+// Matched by prefix in the source (startsWith), so they have no literal of their own.
+const MATCHED_BY_PREFIX = new Set(["/api/mcp/connections/:id", "/api/mcp/inbox/:id"]);
+
+function shapeOf(path: string) {
+  return path
+    .replace(/\/[a-f0-9]{64}(?=\/|$)/g, "/:x")
+    .replace(/\/[0-9a-f]{8}-[0-9a-f-]{27}(?=\/|$)/g, "/:x")
+    .replace(/\/\d+(?=\/)/g, "/:x")
+    .replace(/\/[A-Z0-9]{6,32}$/, "/:x")
+    .replace(/(\/invite)\/(accept|decline)$/, "$1/:x")
+    .replace(/(\/api\/mcp\/(?:connections|inbox))\/abc$/, "$1/:id");
+}
+
+function routeShapesInSource() {
+  const shapes = new Set<string>();
+  const directory = dirname(fileURLToPath(import.meta.url));
+  for (const file of readdirSync(directory).filter(name => name.endsWith(".ts") && !name.endsWith(".test.ts"))) {
+    const text = readFileSync(join(directory, file), "utf8");
+    for (const match of text.matchAll(/["'`](\/api\/[A-Za-z0-9/_-]*[A-Za-z0-9_-])["'`]/g)) shapes.add(match[1]);
+    for (const line of text.split("\n")) {
+      for (const match of line.matchAll(/\/\^(\\\/api[^\n]*?)\$\/[a-z]*\.(?:exec|test)/g)) {
+        shapes.add(match[1].replace(/\\\//g, "/").replace(/\((?:[^()]|\([^()]*\))*\)/g, ":x"));
+      }
+    }
+  }
+  return shapes;
+}
+
+test("no unlisted route: every /api route in the source is in the authorization table", () => {
+  const listed = new Set(ROUTES.map(([, , path]) => shapeOf(path)));
+  // Prefixes and path fragments the source matches with startsWith, not routes.
+  const notRoutes = new Set(["/api/admin", "/api/ai", "/api/auth", "/api/chat", "/api/document", "/api/mcp", "/api/passkeys"]);
+  const unlisted = [...routeShapesInSource()].filter(shape => !notRoutes.has(shape) && !listed.has(shape)).sort();
+  assert.deepEqual(unlisted, [], "add these routes to ROUTES with who may call them");
+});
+
+test("no stale route: every table entry still exists in the source", () => {
+  const inSource = routeShapesInSource();
+  const stale = ROUTES.map(([, , path]) => shapeOf(path)).filter(shape => !inSource.has(shape) && !MATCHED_BY_PREFIX.has(shape) && !shape.startsWith("/oauth/"));
+  assert.deepEqual(stale, []);
+});
+
+test("routes that need a session refuse a request with no token", async () => {
+  const env = probeEnvironment();
+  for (const [auth, method, path] of ROUTES) {
+    if (auth !== "bearer") continue;
+    const response = await worker.fetch(probe(method, path), env, noopCtx);
+    // Most answer 401; the passkey routes answer 400 ("Invalid request") when no token came with the request. Never a success, never a crash.
+    assert.ok([400, 401, 403].includes(response.status), `${method} ${path} without a token answered ${response.status}`);
+  }
+});
+
+test("routes that need a session refuse a well-formed token that was never issued", async () => {
+  const env = probeEnvironment();
+  const token = freshToken("n");
+  for (const [auth, method, path] of ROUTES) {
+    if (auth !== "bearer") continue;
+    const response = await worker.fetch(probe(method, path, token), env, noopCtx);
+    // register/verify checks the shape of the browser's answer before the session; still a refusal.
+    const accepted = path === "/api/passkeys/register/verify" ? [400, 401, 403] : [401, 403];
+    assert.ok(accepted.includes(response.status), `${method} ${path} with a token no sign-in issued answered ${response.status}`);
+  }
+});
+
+test("admin routes refuse a caller that has no Access login", async () => {
+  const env = probeEnvironment();
+  for (const [auth, method, path] of ROUTES) {
+    if (auth !== "admin") continue;
+    const response = await worker.fetch(probe(method, path), env, noopCtx);
+    assert.equal(response.status, 403, `${method} ${path} without Access`);
+    // A session token is not an Access login.
+    const withSession = await worker.fetch(probe(method, path, freshToken("s")), env, noopCtx);
+    assert.equal(withSession.status, 403, `${method} ${path} with only a session token`);
+  }
 });

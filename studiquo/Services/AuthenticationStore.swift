@@ -151,8 +151,8 @@ final class AuthenticationStore: ObservableObject {
             errorMessage = "正しいメールアドレスを入力してください。"
             return false
         }
-        guard password.count >= 8, password.count <= 1_024 else {
-            errorMessage = "パスワードは8文字以上にしてください。"
+        guard password.count >= 12, password.count <= 1_024 else {
+            errorMessage = "パスワードは12文字以上にしてください。"
             return false
         }
         isEmailVerifyBusy = true
@@ -383,8 +383,8 @@ final class AuthenticationStore: ObservableObject {
     /// left unspent. Returns true once signed in.
     func changePendingPassword(_ newPassword: String, code: String) async -> Bool {
         guard needsNewPassword, let pending = pendingSignUp else { return false }
-        guard newPassword.count >= 8, newPassword.count <= 1_024 else {
-            errorMessage = "パスワードは8文字以上にしてください。"
+        guard newPassword.count >= 12, newPassword.count <= 1_024 else {
+            errorMessage = "パスワードは12文字以上にしてください。"
             return false
         }
         guard newPassword != pending.password else {

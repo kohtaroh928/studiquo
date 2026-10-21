@@ -103,6 +103,23 @@ const AI_BUSY_MESSAGE = "AIが混み合っています。少し待ってから�
  * (their quota) was indistinguishable from this Worker's own daily-limit 429
  * (ours, "今日のAI利用回数の上限…"). Anything else keeps the upstream text.
  */
+
+/**
+ * What goes in the log when the AI provider refuses a request: only the error's
+ * `type` and `code` (short identifiers such as "invalid_request_error"), never
+ * the body, which can quote the request. Anything that is not a short
+ * identifier is dropped.
+ */
+async function upstreamErrorKind(upstream: Response): Promise<{ errorType?: string; errorCode?: string }> {
+  try {
+    const body = await upstream.clone().json() as { error?: { type?: unknown; code?: unknown } };
+    const pick = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(value) ? value : undefined;
+    return { errorType: pick(body?.error?.type), errorCode: pick(body?.error?.code) };
+  } catch {
+    return {};
+  }
+}
+
 async function upstreamFailureResponse(upstream: Response) {
   await upstream.body?.cancel().catch(() => {});
   if (isUpstreamOverloaded(upstream.status)) return json({ error: AI_BUSY_MESSAGE }, 503);
@@ -292,7 +309,7 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
 
     if (!upstream.ok || !upstream.body) {
       await gate.refund();
-      console.error(JSON.stringify({ message: "AI upstream refused", status: upstream.status, error: await upstream.clone().text().then(text => text.slice(0, 300)).catch(() => "") }));
+      console.error(JSON.stringify({ message: "AI upstream refused", status: upstream.status, ...await upstreamErrorKind(upstream) }));
       return upstreamFailureResponse(upstream);
     }
   } catch (error) {
@@ -633,7 +650,7 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
 
       if (!upstream.ok) {
         await refund();
-        console.error(JSON.stringify({ message: "AI structured upstream refused", status: upstream.status, error: await upstream.clone().text().then(text => text.slice(0, 300)).catch(() => "") }));
+        console.error(JSON.stringify({ message: "AI structured upstream refused", status: upstream.status, ...await upstreamErrorKind(upstream) }));
         await emit({ error: isUpstreamOverloaded(upstream.status) ? AI_BUSY_MESSAGE : failureMessage });
       } else {
         let buffer = "";
