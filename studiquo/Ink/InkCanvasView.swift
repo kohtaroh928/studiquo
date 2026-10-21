@@ -1710,7 +1710,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         let cx = bounds.midX, cy = bounds.midY
         let rx = max(bounds.width / 2, 1), ry = max(bounds.height / 2, 1)
         return (0...steps).map { step in
-            let angle = CGFloat(step) / CGFloat(steps) * 2 * .pi
+            let angle: CGFloat = CGFloat(step) / CGFloat(steps) * 2 * .pi
             return InkPoint(
                 location: CGPoint(x: cx + cos(angle) * rx, y: cy + sin(angle) * ry),
                 force: 0.5,
@@ -2556,7 +2556,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
             sxx += (p.x - cx) * (p.x - cx); syy += (p.y - cy) * (p.y - cy); sxy += (p.x - cx) * (p.y - cy)
         }
         guard sxx + syy > 0.000_001 else { return nil }
-        let angle = 0.5 * atan2(2 * sxy, sxx - syy)
+        let angle: CGFloat = 0.5 * atan2(2 * sxy, sxx - syy)
         var direction = CGPoint(x: cos(angle), y: sin(angle))
         // Point along the way the run was drawn, so the ends line up.
         if let a = points.first, let b = points.last,
@@ -2697,7 +2697,7 @@ final class InkCanvasView: UIView, UIDragInteractionDelegate {
         // Waves. The frequency is searched over; amplitude and phase fall out
         // of the linear fit as the sine and cosine coefficients.
         for step in 0...30 {
-            let omega = 0.6 + CGFloat(step) * 0.25
+            let omega: CGFloat = 0.6 + CGFloat(step) * 0.25
             consider(Self.fit(points, basis: [
                 { sin(omega * $0) }, { cos(omega * $0) }, { _ in 1 },
             ]))
