@@ -92,19 +92,31 @@ async function runOne({ apiKey, testCase, calls }) {
 const round = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'number' && !Number.isInteger(v) ? Math.round(v) : v]));
 
 export async function main() {
+  // loadOpenAIKey falls back to mcp-server/.dev.vars when nothing is given. A run that spends
+  // money names where its key comes from.
+  if (!process.env.OPENAI_API_KEY?.trim() && !process.env.STUDIQUO_RAG_OPENAI_KEY_FILE) throw Error('key_source_required');
   const apiKey = loadOpenAIKey(process.env, process.env.STUDIQUO_RAG_OPENAI_KEY_FILE);
   const out = process.argv[2]; if (!out) throw Error('output_required');
-  const samples = Number(process.env.SAMPLES ?? 2);
+  const samples = Number(process.env.SAMPLES ?? 2); if (!Number.isInteger(samples) || samples < 1) throw Error('samples_must_be_a_whole_number');
   if (CASES.length * samples > MAX_CALLS) throw Error('too_many_calls');
   const calls = { n: 0, failed: null }, rows = [];
-  for (const testCase of CASES) for (let i = 0; i < samples; i++) {
-    if (calls.failed) break;
-    rows.push({ sample: i, ...(await runOne({ apiKey, testCase, calls })) });
-    console.log(JSON.stringify({ progress: rows.length }));
+  let failure = null;
+  try {
+    for (const testCase of CASES) for (let i = 0; i < samples; i++) {
+      if (calls.failed) break;
+      rows.push({ sample: i, ...(await runOne({ apiKey, testCase, calls })) });
+      console.log(JSON.stringify({ progress: rows.length }));
+    }
+  } catch (error) {
+    failure = error; // the calls already made were paid for: write them out below, then fail
   }
-  const text = JSON.stringify({ model: 'gpt-6-luna', samples, calls: calls.n, failedStatus: calls.failed, rows }, null, 2) + '\n';
+  const text = JSON.stringify({ model: 'gpt-6-luna', samples, calls: calls.n, failedStatus: calls.failed, interrupted: failure !== null, rows }, null, 2) + '\n';
   if (text.includes(apiKey)) throw Error('unsafe_artifact');
-  fs.writeFileSync(out, text, { flag: 'wx', mode: 0o600 });
+  try { fs.writeFileSync(out, text, { flag: 'wx', mode: 0o600 }); } catch (writeError) {
+    if (!failure) throw writeError; // a write error must not hide the failure that interrupted the run
+    console.error('latency_result_not_written', writeError.code);
+  }
+  if (failure) throw failure;
   console.log(JSON.stringify({ rows: rows.length, calls: calls.n }));
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch((e) => { console.error('latency_live_failed', e.message); process.exitCode = 1; });
