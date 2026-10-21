@@ -84,7 +84,7 @@ test("admin page and language list expose SUPPORTED_LANGUAGES", async () => {
 
 test("create validates input", async () => {
   const env = environment();
-  const post = (body: Untyped) => call(env, "/api/admin/announcements", { method: "POST", body });
+  const post = (body: unknown) => call(env, "/api/admin/announcements", { method: "POST", body });
   assert.equal((await post(base({ kind: "spam" }))).status, 400);
   assert.equal((await post(base({ status: "nope" }))).status, 400);
   assert.equal((await post(base({ link: "http://insecure.example" }))).status, 400);
@@ -103,7 +103,7 @@ test("create validates input", async () => {
 
 test("public list: only live published items, in the best language, filtered by version", async () => {
   const env = environment();
-  const post = (body: Untyped) => call(env, "/api/admin/announcements", { method: "POST", body });
+  const post = (body: unknown) => call(env, "/api/admin/announcements", { method: "POST", body });
   const now = Date.now();
   await post(base());
   await post(base({ status: "draft", translations: { ja: { title: "下書き", body: "x" } } }));

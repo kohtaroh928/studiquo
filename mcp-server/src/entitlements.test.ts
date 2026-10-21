@@ -130,7 +130,7 @@ function fakePaywallDB({ subscribers = [], legacy = [], paywall = true }: { subs
             return {
               async all() {
                 if (sql.includes("legacy_standard_accounts")) {
-                  return { results: legacy.filter((id: Untyped) => id === appUserId).map((id: Untyped) => ({ app_user_id: id })) };
+                  return { results: legacy.filter((id: unknown) => id === appUserId).map((id: unknown) => ({ app_user_id: id })) };
                 }
                 return { results: subscribers.filter((row: Untyped) => row.app_user_id === appUserId) };
               },

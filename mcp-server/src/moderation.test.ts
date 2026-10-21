@@ -167,10 +167,10 @@ test("leaving the app: reports about you go, reports you filed lose who filed th
       async get(key: string, type: string) { const v = values.get(key) ?? null; return type === "json" && v ? JSON.parse(v) : v; },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix }: { prefix?: Untyped }) { return { keys: [...values.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
+      async list({ prefix }: { prefix?: unknown }) { return { keys: [...values.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
     },
   });
-  const keyOf = async (name: Untyped) => sha256Hex(`chat-account:${name}`);
+  const keyOf = async (name: unknown) => sha256Hex(`chat-account:${name}`);
   const [a, b, c] = [await keyOf("apple-a"), await keyOf("apple-b"), await keyOf("apple-c")];
   const room = "b".repeat(64);
   const file = (reporter: SQLInputValue, reported: SQLInputValue, id: SQLInputValue) => env._db.prepare(

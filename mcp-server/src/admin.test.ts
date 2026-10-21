@@ -42,7 +42,7 @@ function fakeD1() {
 function fakeCloudflareLimiter(limit = 1000) {
   const counts = new Map();
   return {
-    async limit({ key }: { key?: Untyped }) {
+    async limit({ key }: { key?: unknown }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -62,7 +62,7 @@ function environment() {
       },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix, cursor }: { prefix?: Untyped; cursor?: Untyped }) {
+      async list({ prefix, cursor }: { prefix?: unknown; cursor?: unknown }) {
         const all = [...values.keys()].filter(k => k.startsWith(prefix)).sort();
         const start = cursor ? Number(cursor) : 0;
         const page = all.slice(start, start + 1000);
@@ -411,7 +411,7 @@ test("GET /admin serves the dashboard page", async () => {
 
 test("every /api/admin/* route except RevenueCat's webhook needs a verified Access login", async () => {
   const env = environment();
-  const bare = (path: Untyped) => new Request(`https://example.test${path}`);
+  const bare = (path: unknown) => new Request(`https://example.test${path}`);
   for (const path of ["/api/admin/stats", "/api/admin/announcements", "/api/admin/anything-else"]) {
     assert.equal((await worker.fetch(bare(path), env, noopCtx)).status, 403, path);
     const forged = new Request(`https://example.test${path}`, { headers: { "cf-access-jwt-assertion": "forged" } });
