@@ -3,7 +3,7 @@ import test, { mock } from "node:test";
 import { sha256Hex } from "./auth.ts";
 import { externalSession, revokeAllConnections } from "./mcp-oauth.ts";
 import { mintSession, realSession, revokeSessionsIssuedBefore } from "./session.ts";
-import { partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
@@ -12,15 +12,15 @@ function environment() {
       async get(key: string, type: string) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
+      async list({ prefix }: { prefix?: Untyped }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
     },
     _values: values,
   });
 }
 
 const RANDOM = "r".repeat(40);
-const stateKey = async identity => `account-deletion:${await sha256Hex(identity)}`;
-const cutoffKey = async identity => `session-valid-from:${await sha256Hex(identity)}`;
+const stateKey = async (identity: Untyped) => `account-deletion:${await sha256Hex(identity)}`;
+const cutoffKey = async (identity: Untyped) => `session-valid-from:${await sha256Hex(identity)}`;
 const T0 = Date.UTC(2026, 9, 8, 12, 0, 0);
 
 test("sessions issued before a password was set are signed out; the new one is not", async t => {
@@ -29,14 +29,14 @@ test("sessions issued before a password was set are signed out; the new one is n
   const env = environment();
   const identity = "email:person@example.com";
   const oldSession = await mintSession(env, identity, RANDOM + "old");
-  assert.ok(await realSession(env, oldSession));
+  assert.ok(await realSession(env, oldSession!));
 
   mock.timers.tick(10_000);
   await revokeSessionsIssuedBefore(env, identity);
   const newSession = await mintSession(env, identity, RANDOM + "new");
 
-  assert.equal(await realSession(env, oldSession), null, "whoever held the old password is signed out");
-  assert.ok(await realSession(env, newSession), "the person who set the new password stays signed in");
+  assert.equal(await realSession(env, oldSession!), null, "whoever held the old password is signed out");
+  assert.ok(await realSession(env, newSession!), "the person who set the new password stays signed in");
 });
 
 test("the same second: a session minted before the change is cut off, one minted after it is kept", async t => {
@@ -48,8 +48,8 @@ test("the same second: a session minted before the change is cut off, one minted
   mock.timers.tick(400); // still inside the same wall-clock second
   await revokeSessionsIssuedBefore(env, identity);
   const after = await mintSession(env, identity, RANDOM + "after");
-  assert.equal(await realSession(env, before), null, "even within the same second");
-  assert.ok(await realSession(env, after));
+  assert.equal(await realSession(env, before!), null, "even within the same second");
+  assert.ok(await realSession(env, after!));
 });
 
 test("another account's sessions are not affected", async t => {
@@ -59,7 +59,7 @@ test("another account's sessions are not affected", async t => {
   const other = await mintSession(env, "email:someone-else@example.com", RANDOM + "other");
   mock.timers.tick(10_000);
   await revokeSessionsIssuedBefore(env, "email:person@example.com");
-  assert.ok(await realSession(env, other));
+  assert.ok(await realSession(env, other!));
 });
 
 test("sessions follow the canonical account, whichever identity they were minted for", async t => {
@@ -72,8 +72,8 @@ test("sessions follow the canonical account, whichever identity they were minted
   const viaCanonical = await mintSession(env, canonical, RANDOM + "canonical");
   mock.timers.tick(10_000);
   await revokeSessionsIssuedBefore(env, canonical);
-  assert.equal(await realSession(env, viaAlias), null);
-  assert.equal(await realSession(env, viaCanonical), null);
+  assert.equal(await realSession(env, viaAlias!), null);
+  assert.equal(await realSession(env, viaCanonical!), null);
 });
 
 test("an account that is being deleted, or is deleted, gets no cut-off recorded", async () => {
@@ -106,8 +106,8 @@ test("M-1: signing in again with a clean-up still pending keeps the cut-off in f
   mock.timers.tick(10_000);
   await revokeSessionsIssuedBefore(env, identity);
   const fresh = await mintSession(env, identity, RANDOM + "fresh"); // rewrites the state record
-  assert.equal(await realSession(env, old), null, "the old session does not come back");
-  assert.ok(await realSession(env, fresh));
+  assert.equal(await realSession(env, old!), null, "the old session does not come back");
+  assert.ok(await realSession(env, fresh!));
 });
 
 test("sessions that cannot show when they were issued are cut off", async () => {
@@ -135,18 +135,18 @@ test("the cut-off expires once no session old enough to be affected can exist", 
   const realPut = env.STUDIQUO_DATA.put;
   env.STUDIQUO_DATA.put = async (key: string, value: string, options: { expirationTtl: any; }) => { if (key === await cutoffKey("email:ttl@example.com")) ttl = options?.expirationTtl; return realPut(key, value, options); };
   await revokeSessionsIssuedBefore(env, "email:ttl@example.com");
-  assert.ok(ttl >= 90 * 86_400, `ttl ${ttl}`);
+  assert.ok(ttl! >= 90 * 86_400, `ttl ${ttl}`);
 });
 
 // --- H-1: connected apps (MCP) ---
 
-const sha = value => sha256Hex(value);
+const sha = (value: Untyped) => sha256Hex(value);
 async function connectApp(env: LooseEnv, sub: string, clientId: string, accessToken: string) {
   await env._values.set(`mcp:grant:${await sha(sub)}:${await sha(clientId)}`, JSON.stringify({ clientName: "Test app", createdAt: Date.now() }));
   await env._values.set(`mcp:access:${await sha(accessToken)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read" }));
   await env._values.set(`mcp:refresh:${await sha("refresh-" + accessToken)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read" }));
 }
-const mcpRequest = token => new Request("https://example.test/mcp", { headers: { authorization: `Bearer ${token}` } });
+const mcpRequest = (token: Untyped) => new Request("https://example.test/mcp", { headers: { authorization: `Bearer ${token}` } });
 
 test("H-1: disconnecting all of an account's apps stops their access tokens, and only that account's", async () => {
   const env = environment();
@@ -183,7 +183,7 @@ test("H-1: disconnecting reads every page of grants, not just the first", async 
   const sub = "email:many-apps@example.com";
   for (let index = 0; index < 5; index += 1) await connectApp(env, sub, `client-${index}`, `mcp_many_${index}_` + "x".repeat(40));
   const realList = env.STUDIQUO_DATA.list;
-  env.STUDIQUO_DATA.list = async ({ prefix, cursor }) => {
+  env.STUDIQUO_DATA.list = async ({ prefix, cursor }: { prefix?: Untyped; cursor?: Untyped }) => {
     const all = (await realList({ prefix })).keys;
     const start = cursor ? Number(cursor) : 0;
     const keys = all.slice(start, start + 2);

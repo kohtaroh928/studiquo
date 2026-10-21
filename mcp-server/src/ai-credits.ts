@@ -47,7 +47,7 @@ export const PLAN_BUDGETS: Record<string, Record<string, number>> = {
 
 const UNKNOWN_MODEL_CREDITS = 100; // never cheaper than the dearest model
 
-export function creditCost(kind: string, modelId: string) {
+export function creditCost(kind: string, modelId: string | undefined) {
   const model = MODEL_CREDITS[modelId ?? DEFAULT_MODEL] ?? UNKNOWN_MODEL_CREDITS;
   return model * (KIND_MULTIPLIER[kind] ?? 1);
 }

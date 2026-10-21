@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 import { getApplePublicKeys, verifyAppleIdentityToken } from "./apple-auth.ts";
-import { partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 const REAL_ISSUER = "https://appleid.apple.com";
 const REAL_AUDIENCE = "com.yabuko.studiquo";
@@ -37,7 +37,7 @@ async function seedJWKS(env: LooseEnv, jwk: unknown) {
   await env.STUDIQUO_DATA.put("apple:jwks", JSON.stringify({ keys: [jwk] }));
 }
 
-function signToken(privateKey, kid: string | undefined, { issuer = REAL_ISSUER, audience = REAL_AUDIENCE, expiresInSeconds = 600, issuedAtSecondsAgo = 0 }: { issuer?: any; audience?: any; expiresInSeconds?: number; issuedAtSecondsAgo?: number } = {}) {
+function signToken(privateKey: Untyped, kid: string | undefined, { issuer = REAL_ISSUER, audience = REAL_AUDIENCE, expiresInSeconds = 600, issuedAtSecondsAgo = 0 }: { issuer?: any; audience?: any; expiresInSeconds?: number; issuedAtSecondsAgo?: number } = {}) {
   const now = Math.floor(Date.now() / 1000) - issuedAtSecondsAgo;
   return new SignJWT({ sub: "000123.abcdef.4567" })
     .setProtectedHeader({ alg: "RS256", kid })

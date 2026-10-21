@@ -6,21 +6,21 @@ import {
   appAttestGate, appAttestMode, assessAssertion, base64ToBytes, bytesToBase64Url, challengeIsValid, decodeCBOR,
   derSignatureToRaw, handleAppAttest, issueChallenge, verifyAssertion, verifyAttestation,
 } from "./app-attest.ts";
-import { partialEnv, type LooseEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 const APP_ID = "TEAMID1234.com.example.app";
 const NOW = Date.UTC(2026, 9, 18, 12, 0, 0);
 
 // --- a tiny DER / CBOR writer, to build the objects Apple would send ---------
 
-function der(tag: number, ...parts) {
+function der(tag: number, ...parts: Untyped[]) {
   const body = Buffer.concat(parts);
   const length = body.length < 128 ? Buffer.from([body.length])
     : body.length < 256 ? Buffer.from([0x81, body.length]) : Buffer.from([0x82, body.length >> 8, body.length & 255]);
   return Buffer.concat([Buffer.from([tag]), length, body]);
 }
-const seq = (...p) => der(0x30, ...p);
-const oid = dotted => {
+const seq = (...p: Untyped[]) => der(0x30, ...p);
+const oid = (dotted: Untyped) => {
   const nums = dotted.split(".").map(Number);
   const bytes = [nums[0] * 40 + nums[1]];
   for (const n of nums.slice(2)) {
@@ -30,10 +30,10 @@ const oid = dotted => {
   }
   return der(0x06, Buffer.from(bytes));
 };
-const name = cn => seq(der(0x31, seq(oid("2.5.4.3"), der(0x0c, Buffer.from(cn)))));
-const utc = ms => der(0x17, Buffer.from(new Date(ms).toISOString().replace(/[-:T]/g, "").slice(2, 14) + "Z"));
+const name = (cn: Untyped) => seq(der(0x31, seq(oid("2.5.4.3"), der(0x0c, Buffer.from(cn)))));
+const utc = (ms: Untyped) => der(0x17, Buffer.from(new Date(ms).toISOString().replace(/[-:T]/g, "").slice(2, 14) + "Z"));
 
-function certificate({ subject, issuer, key, signer, hash, extensions = [], notBefore = NOW - 86_400_000, notAfter = NOW + 86_400_000 }) {
+function certificate({ subject, issuer, key, signer, hash, extensions = [], notBefore = NOW - 86_400_000, notAfter = NOW + 86_400_000 }: { subject?: Untyped; issuer?: Untyped; key?: Untyped; signer?: Untyped; hash?: Untyped; extensions?: Untyped; notBefore?: Untyped; notAfter?: Untyped }) {
   const algorithm = seq(oid(hash === "sha384" ? "1.2.840.10045.4.3.3" : "1.2.840.10045.4.3.2"));
   const tbs = seq(
     der(0xa0, der(0x02, Buffer.from([2]))), der(0x02, Buffer.from([1])), algorithm,
@@ -44,17 +44,17 @@ function certificate({ subject, issuer, key, signer, hash, extensions = [], notB
 }
 
 const cbor = {
-  uint: n => (n < 24 ? Buffer.from([n]) : Buffer.from([0x18, n])),
-  bytes: b => Buffer.concat([b.length < 24 ? Buffer.from([0x40 + b.length]) : b.length < 256 ? Buffer.from([0x58, b.length]) : Buffer.from([0x59, b.length >> 8, b.length & 255]), b]),
-  text: t => Buffer.concat([Buffer.from([0x60 + t.length]), Buffer.from(t)]),
-  array: items => Buffer.concat([Buffer.from([0x80 + items.length]), ...items]),
-  map: entries => Buffer.concat([Buffer.from([0xa0 + entries.length]), ...entries.flatMap(([k, v]) => [cbor.text(k), v])]),
+  uint: (n: Untyped) => (n < 24 ? Buffer.from([n]) : Buffer.from([0x18, n])),
+  bytes: (b: Untyped) => Buffer.concat([b.length < 24 ? Buffer.from([0x40 + b.length]) : b.length < 256 ? Buffer.from([0x58, b.length]) : Buffer.from([0x59, b.length >> 8, b.length & 255]), b]),
+  text: (t: Untyped) => Buffer.concat([Buffer.from([0x60 + t.length]), Buffer.from(t)]),
+  array: (items: Untyped) => Buffer.concat([Buffer.from([0x80 + items.length]), ...items]),
+  map: (entries: Untyped) => Buffer.concat([Buffer.from([0xa0 + entries.length]), ...entries.flatMap(([k, v]: Untyped[]) => [cbor.text(k), v])]),
 };
 
-const sha = (...parts) => createHash("sha256").update(Buffer.concat(parts)).digest();
+const sha = (...parts: Untyped[]) => createHash("sha256").update(Buffer.concat(parts)).digest();
 const p256 = () => generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const p384 = () => generateKeyPairSync("ec", { namedCurve: "secp384r1" });
-const pointOf = publicKey => publicKey.export({ type: "spki", format: "der" }).subarray(-65);
+const pointOf = (publicKey: Untyped) => publicKey.export({ type: "spki", format: "der" }).subarray(-65);
 
 function makeWorld({ appId = APP_ID, aaguid = "appattest\0\0\0\0\0\0\0", counter = 0, notAfter }: { appId?: string; aaguid?: string; counter?: number; notAfter?: any } = {}) {
   const root = p384();
@@ -63,7 +63,7 @@ function makeWorld({ appId = APP_ID, aaguid = "appattest\0\0\0\0\0\0\0", counter
   const rootCert = certificate({ subject: "Fake Root", issuer: "Fake Root", key: root.publicKey, signer: root.privateKey, hash: "sha384" });
   const intermediateCert = certificate({ subject: "Fake Intermediate", issuer: "Fake Root", key: intermediate.publicKey, signer: root.privateKey, hash: "sha384" });
   const keyHash = sha(pointOf(device.publicKey));
-  const attest = challenge => {
+  const attest = (challenge: Untyped) => {
     const authData = Buffer.concat([
       sha(Buffer.from(appId)), Buffer.from([0x40]), Buffer.from([0, 0, 0, counter]), Buffer.from(aaguid),
       Buffer.from([0, 32]), keyHash, Buffer.from([0xa1, 0x01, 0x02]),
@@ -200,15 +200,15 @@ function post(path: string, body?: { keyId: any; attestation: any; challenge: an
   return new Request(`https://example.test${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 
-async function register(env: LooseEnv, world, overrides = {}) {
-  const challenge = (await (await handleAppAttest(new URL("https://example.test/api/attest/challenge"), post("/api/attest/challenge"), env, { now: NOW })).json()).challenge;
+async function register(env: LooseEnv, world: Untyped, overrides = {}) {
+  const challenge = (await (await handleAppAttest(new URL("https://example.test/api/attest/challenge"), post("/api/attest/challenge"), env, { now: NOW }))!.json()).challenge;
   const body = { keyId: world.keyIdStd, attestation: world.attest(challenge).toString("base64"), challenge, ...overrides };
   return handleAppAttest(new URL("https://example.test/api/attest/register"), post("/api/attest/register", body), env, { now: NOW, rootDer: world.rootDer });
 }
 
 test("the attest routes answer 404 when the mode is off and ignore other routes", async () => {
   const env = fakeEnv({ APP_ATTEST_MODE: "off" });
-  assert.equal((await handleAppAttest(new URL("https://example.test/api/attest/challenge"), post("/api/attest/challenge"), env)).status, 404);
+  assert.equal((await handleAppAttest(new URL("https://example.test/api/attest/challenge"), post("/api/attest/challenge"), env))!.status, 404);
   assert.equal(await handleAppAttest(new URL("https://example.test/api/other"), post("/api/other"), env), null);
   assert.equal(await handleAppAttest(new URL("https://example.test/api/attest/challenge"), new Request("https://example.test/api/attest/challenge"), env), null);
 });
@@ -216,30 +216,30 @@ test("the attest routes answer 404 when the mode is off and ignore other routes"
 test("registering a key works once, then the key is refused as already registered", async () => {
   const env = fakeEnv();
   const world = makeWorld();
-  assert.equal((await register(env, world)).status, 201);
+  assert.equal((await register(env, world))!.status, 201);
   const again = await register(env, world);
-  assert.equal(again.status, 409);
-  assert.equal((await again.json()).code, "attest_key_exists");
+  assert.equal(again!.status, 409);
+  assert.equal((await again!.json()).code, "attest_key_exists");
 });
 
 test("registration refuses a bad challenge, a malformed body, and an attestation that does not verify", async () => {
   const env = fakeEnv();
   const world = makeWorld();
-  const route = (body, rootDer) => handleAppAttest(new URL("https://example.test/api/attest/register"), post("/api/attest/register", body), env, { now: NOW, rootDer });
-  assert.equal((await route({ keyId: world.keyIdStd, attestation: "AAAA", challenge: "bad" }, world.rootDer)).status, 400);
-  assert.equal((await route({ keyId: "x" }, world.rootDer)).status, 400);
+  const route = (body: Untyped, rootDer: Untyped) => handleAppAttest(new URL("https://example.test/api/attest/register"), post("/api/attest/register", body), env, { now: NOW, rootDer });
+  assert.equal((await route({ keyId: world.keyIdStd, attestation: "AAAA", challenge: "bad" }, world.rootDer))!.status, 400);
+  assert.equal((await route({ keyId: "x" }, world.rootDer))!.status, 400);
   const challenge = await issueChallenge(env, NOW);
   const untrusted = await route({ keyId: world.keyIdStd, attestation: world.attest(challenge).toString("base64"), challenge }, makeWorld().rootDer);
-  assert.equal(untrusted.status, 400);
-  assert.equal((await untrusted.json()).code, "attest_rejected");
+  assert.equal(untrusted!.status, 400);
+  assert.equal((await untrusted!.json()).code, "attest_rejected");
 });
 
 test("the rate limit on the attest routes answers 429", async () => {
   const env = fakeEnv({ RATE_LIMIT_ATTEST_CHALLENGE: { limit: async () => ({ success: false }) } });
-  assert.equal((await handleAppAttest(new URL("https://example.test/api/attest/challenge"), post("/api/attest/challenge"), env)).status, 429);
+  assert.equal((await handleAppAttest(new URL("https://example.test/api/attest/challenge"), post("/api/attest/challenge"), env))!.status, 429);
 });
 
-async function signedRequest(world, env: LooseEnv, path: string, counter: number, { method = "POST", timestamp = NOW }: { method?: string; timestamp?: number } = {}) {
+async function signedRequest(world: Untyped, env: LooseEnv, path: string, counter: number, { method = "POST", timestamp = NOW }: { method?: string; timestamp?: number } = {}) {
   const header = `${world.keyId}.${timestamp}.${bytesToBase64Url(world.assertion(`${method}\n${path}\n${timestamp}`, counter))}`;
   return new Request(`https://example.test${path}`, { method, headers: { "x-studiquo-attest": header } });
 }
@@ -261,7 +261,7 @@ test("assertions are judged absent, malformed, stale, unknown or invalid", async
   const env = fakeEnv();
   const world = makeWorld();
   await register(env, world);
-  const judge = async request => assessAssertion(request, env, new URL(request.url), NOW);
+  const judge = async (request: Untyped) => assessAssertion(request, env, new URL(request.url), NOW);
   assert.equal(await judge(new Request("https://example.test/api/ai/chat", { method: "POST" })), "absent");
   assert.equal(await judge(new Request("https://example.test/api/ai/chat", { method: "POST", headers: { "x-studiquo-attest": "junk" } })), "malformed");
   assert.equal(await judge(await signedRequest(world, env, "/api/ai/chat", 1, { timestamp: NOW - 10 * 60_000 })), "stale");
@@ -295,12 +295,12 @@ test("enforce mode refuses every protected request without a valid assertion", a
     for (const path of ["/api/ai/chat", "/api/ai/review", "/api/auth/apple", "/api/auth/google", "/api/auth/email/send-code", "/api/auth/email/confirm-code", "/api/auth/local/login"]) {
       const bare = new Request(`https://example.test${path}`, { method: "POST" });
       const refused = await appAttestGate(bare, env, new URL(bare.url), NOW);
-      assert.equal(refused.status, 403, path);
-      assert.equal((await refused.json()).code, "app_attest_required");
+      assert.equal(refused!.status, 403, path);
+      assert.equal((await refused!.json()).code, "app_attest_required");
     }
     const good = await signedRequest(world, env, "/api/ai/chat", 1);
     assert.equal(await appAttestGate(good, env, new URL(good.url), NOW), null);
-    assert.equal((await appAttestGate(good, env, new URL(good.url), NOW)).status, 403);
+    assert.equal((await appAttestGate(good, env, new URL(good.url), NOW))!.status, 403);
   } finally { console.log = original; }
 });
 
@@ -328,7 +328,7 @@ test("base64 helpers round-trip and reject garbage", () => {
 
 test("the embedded Apple root parses and is self-signed, valid to 2045", async () => {
   const pem = (await import("node:fs")).readFileSync(fileURLToPath(import.meta.resolve("./app-attest.ts")), "utf8");
-  const base64 = /APPLE_ROOT_DER_BASE64 = "([^"]+)"/.exec(pem)[1];
+  const base64 = /APPLE_ROOT_DER_BASE64 = "([^"]+)"/.exec(pem)![1];
   assert.equal(createHash("sha256").update(Buffer.from(base64, "base64")).digest("hex").toUpperCase(),
     "1CB9823BA28BA6AD2D33A006941DE2AE4F513EF1D4E831B9F7E0FA7B6242C932");
   const { parseCertificate } = await import("./app-attest.ts");
@@ -350,8 +350,8 @@ test("a throttled address, a non-canonical key id and a broken signing key are h
   const header = (await signedRequest(world, open, "/api/ai/chat", 1)).headers.get("x-studiquo-attest");
   const last = world.keyId.at(-1);
   const alias = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-  const twin = alias[(alias.indexOf(last) + 1) % 64];
-  const forged = new Request("https://example.test/api/ai/chat", { method: "POST", headers: { "x-studiquo-attest": header.replace(world.keyId, world.keyId.slice(0, -1) + twin) } });
+  const twin = alias[(alias.indexOf(last!) + 1) % 64];
+  const forged = new Request("https://example.test/api/ai/chat", { method: "POST", headers: { "x-studiquo-attest": header!.replace(world.keyId, world.keyId.slice(0, -1) + twin) } });
   assert.equal(await assessAssertion(forged, open, new URL(forged.url), NOW), "malformed");
 
   assert.equal(appAttestMode(fakeEnv({ TOKEN_SIGNING_KEY: "c2hvcnQ=" })), "off");
@@ -368,10 +368,10 @@ test("enforce answers 503 when storage fails, and says why a request was refused
     const good = await signedRequest(world, broken, "/api/ai/chat", 1);
     broken.RATE_COUNTER.getByName = () => ({ attestKey: async () => { throw new Error("down"); } });
     const unavailable = await appAttestGate(good, broken, new URL(good.url), NOW);
-    assert.equal(unavailable.status, 503);
+    assert.equal(unavailable!.status, 503);
     const bare = new Request("https://example.test/api/passkeys/login/verify", { method: "POST" });
     const refused = await appAttestGate(bare, fakeEnv({ APP_ATTEST_MODE: "enforce" }), new URL(bare.url), NOW);
-    assert.equal(refused.status, 403);
-    assert.equal((await refused.json()).reason, "absent");
+    assert.equal(refused!.status, 403);
+    assert.equal((await refused!.json()).reason, "absent");
   } finally { console.log = original; }
 });
