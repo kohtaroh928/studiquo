@@ -119,3 +119,103 @@ enum EventReminderPlan {
         return min(requested, start.addingTimeInterval(-60))
     }
 }
+
+/// The bars behind the calendar's study-time chart, computed from plain
+/// (start, seconds) samples so they can be tested with a fixed `Calendar`.
+enum StudyBarMath {
+    enum Span { case week, month, year }
+
+    struct Sample {
+        let startedAt: Date
+        let seconds: TimeInterval
+    }
+
+    struct Bar: Identifiable {
+        let id = UUID()
+        let label: String
+        let seconds: TimeInterval
+        /// The day (week/month) or the month's first day (year) this bar
+        /// represents — used to build the tapped-detail text.
+        let date: Date
+        /// The bar for the selected day / current month, drawn in full colour.
+        let isHighlighted: Bool
+    }
+
+    /// Weekday short symbols rotated to the calendar's first weekday, so the
+    /// labels line up with the bars.
+    static func orderedWeekdaySymbols(calendar: Calendar) -> [String] {
+        let symbols = calendar.veryShortWeekdaySymbols
+        let shift = calendar.firstWeekday - 1
+        return Array(symbols[shift...] + symbols[..<shift])
+    }
+
+    static func seconds(on day: Date, in samples: [Sample], calendar: Calendar) -> TimeInterval {
+        samples.filter { calendar.isDate($0.startedAt, inSameDayAs: day) }.reduce(0) { $0 + $1.seconds }
+    }
+
+    /// Total study time in the month containing `day`, and how many days it has.
+    static func secondsInMonth(of day: Date, in samples: [Sample], calendar: Calendar) -> (total: TimeInterval, days: Int) {
+        guard let interval = calendar.dateInterval(of: .month, for: day),
+              let dayCount = calendar.range(of: .day, in: .month, for: day)?.count else {
+            return (0, 1)
+        }
+        let total = samples
+            .filter { $0.startedAt >= interval.start && $0.startedAt < interval.end }
+            .reduce(0) { $0 + $1.seconds }
+        return (total, max(dayCount, 1))
+    }
+
+    static func bars(span: Span, reference: Date, samples: [Sample], calendar: Calendar) -> [Bar] {
+        switch span {
+        case .week:
+            guard let start = calendar.dateInterval(of: .weekOfYear, for: reference)?.start else { return [] }
+            let symbols = orderedWeekdaySymbols(calendar: calendar)
+            return (0..<7).compactMap { offset in
+                guard let day = calendar.date(byAdding: .day, value: offset, to: start) else { return nil }
+                return Bar(
+                    label: symbols[offset],
+                    seconds: seconds(on: day, in: samples, calendar: calendar),
+                    date: day,
+                    isHighlighted: calendar.isDate(day, inSameDayAs: reference)
+                )
+            }
+        case .month:
+            guard let interval = calendar.dateInterval(of: .month, for: reference),
+                  let dayCount = calendar.range(of: .day, in: .month, for: reference)?.count else { return [] }
+            return (0..<dayCount).compactMap { offset in
+                guard let day = calendar.date(byAdding: .day, value: offset, to: interval.start) else { return nil }
+                return Bar(
+                    label: "\(calendar.component(.day, from: day))",
+                    seconds: seconds(on: day, in: samples, calendar: calendar),
+                    date: day,
+                    isHighlighted: calendar.isDate(day, inSameDayAs: reference)
+                )
+            }
+        case .year:
+            let year = calendar.component(.year, from: reference)
+            let selectedMonth = calendar.component(.month, from: reference)
+            return (1...12).compactMap { month in
+                guard let day = calendar.date(from: DateComponents(year: year, month: month, day: 1)) else { return nil }
+                let stats = secondsInMonth(of: day, in: samples, calendar: calendar)
+                return Bar(
+                    label: "\(month)",
+                    seconds: stats.total / Double(stats.days), // the month's daily average
+                    date: day,
+                    isHighlighted: month == selectedMonth
+                )
+            }
+        }
+    }
+
+    /// Average over the periods that actually had study, not over every bar.
+    /// Dividing by all 31 days of a month made a real hour read as "0分".
+    static func averageSeconds(of bars: [Bar]) -> TimeInterval {
+        let active = bars.filter { $0.seconds > 0 }
+        guard !active.isEmpty else { return 0 }
+        return active.reduce(0) { $0 + $1.seconds } / Double(active.count)
+    }
+
+    static func totalSeconds(of bars: [Bar]) -> TimeInterval {
+        bars.reduce(0) { $0 + $1.seconds }
+    }
+}
