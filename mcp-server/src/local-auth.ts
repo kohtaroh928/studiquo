@@ -212,10 +212,13 @@ function generationStub(env: Env, emailHash: string) {
  *
  * Throws if `email`/`password` don't pass basic validation.
  */
+export const MIN_PASSWORD_LENGTH = 12;
+export const MAX_PASSWORD_LENGTH = 1_024;
+
 export async function upsertLocalAccount(env: Env, email: unknown, password: unknown) {
   const normalized = normalizeEmail(email);
   if (!normalized) throw new Error("Invalid email address.");
-  if (typeof password !== "string" || password.length < 8 || password.length > 1_024) {
+  if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) {
     throw new Error("Invalid password.");
   }
   // Bumped before the record is written, so an in-flight upgrade that started

@@ -9,7 +9,7 @@ import { handleDocumentCollab } from "./document-collab.ts";
 import { handleLegal } from "./legal.ts";
 import { associationFile, handlePasskeys, revokePasskeysForAccount } from "./passkeys.ts";
 import { libraryIdObjectName } from "./library-id.ts";
-import { gatePasskeyAccount, requireRecentPasskey, resolveAccountKey } from "./passkey-policy.ts";
+import { accountHasEstablishedPasskey, gatePasskeyAccount, requireRecentPasskey, resolveAccountKey } from "./passkey-policy.ts";
 import { handleChat } from "./chat.ts";
 import { handleIssueReports } from "./issue-reports.ts";
 import { handleAppErrors } from "./app-errors.ts";
@@ -28,14 +28,15 @@ import { isRevoked, revoke } from "./revocation.ts";
 import { isExpired, remainingValiditySeconds } from "./token.ts";
 import { resolveChatUserKey } from "./chat-identity.ts";
 import { realSession } from "./session.ts";
+import { CRON_HEARTBEAT_KEY, OPS_ALERTS, raiseAlert } from "./ops-alerts.ts";
 import { handleMCPOAuth, externalSession, issueOwnerCode, listConnections, revokeConnection, revokeAllConnections } from "./mcp-oauth.ts";
 import { verifyAppleIdentityToken } from "./apple-auth.ts";
 import { verifyGoogleIdentityToken } from "./google-auth.ts";
 import { linkVerifiedEmail, identityKey } from "./oauth-links.ts";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.ts";
-import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError } from "./local-auth.ts";
+import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError, MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from "./local-auth.ts";
 import { startAccountDeletion } from "./account-deletion.ts";
-import { hasModerationMark, CHAT_SUSPENSION_PREFIX, mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted, accountIsUnavailable } from "./session.ts";
+import { hasModerationMark, CHAT_SUSPENSION_PREFIX, loggedInRecently, mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted, accountIsUnavailable } from "./session.ts";
 import { checkRateLimit, clientKey } from "./rate-limit.ts";
 import { beginLoginAttempt, finishLoginAttempt, abandonLoginAttempt } from "./login-throttle.ts";
 import { isBreachedPassword } from "./pwned-passwords.ts";
@@ -334,6 +335,8 @@ async function handleMCP(request: Request, env: Env) {
   return transport.handleRequest(request);
 }
 
+const heartbeatMemo = new WeakMap<object, { readAt: number; last: number }>();
+
 const handler = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     try {
@@ -341,7 +344,21 @@ const handler = {
       if (url.pathname === "/health") {
         // Stopped features are listed so a typo in DISABLED_FEATURES shows here.
         const stopped = [...disabledFeatures(env)];
-        return json({ ok: true, service: "studiquo-mcp", ...(stopped.length ? { disabledFeatures: stopped } : {}) });
+        // Seconds since the hourly cron last ran (absent if it never has, or KV is unreachable).
+        // An outside monitor should alert when this passes ~2 hours (docs/MONITORING.md).
+        // The KV read is remembered for 30 s per isolate, so a monitor (or anyone) polling
+        // this unauthenticated route does not turn into KV reads.
+        let cronAgeSeconds: number | undefined;
+        try {
+          let memo = heartbeatMemo.get(env);
+          if (!memo || Date.now() - memo.readAt > 30_000) {
+            memo = { readAt: Date.now(), last: Number(await env.STUDIQUO_DATA?.get(CRON_HEARTBEAT_KEY)) };
+            heartbeatMemo.set(env, memo);
+          }
+          const last = memo.last;
+          if (Number.isFinite(last) && last > 0) cronAgeSeconds = Math.max(0, Math.round((Date.now() - last) / 1000));
+        } catch { /* health must answer even when KV does not */ }
+        return json({ ok: true, service: "studiquo-mcp", ...(stopped.length ? { disabledFeatures: stopped } : {}), ...(cronAgeSeconds !== undefined ? { cronAgeSeconds } : {}) });
       }
       const gate = appGateRejection(request, env, url);
       if (gate) return gate;
@@ -468,6 +485,18 @@ const handler = {
         if (!session) return json({ error: "Sign in again." }, 401);
         const needsPasskey = await requireRecentPasskey(env, token, session, "delete-account");
         if (needsPasskey) return needsPasskey;
+        // Accounts without a passkey have no second check: a stolen or left-behind
+        // session would be enough to delete everything. Ask for a sign-in from the
+        // last few minutes instead. Off until the app that explains it is out
+        // (an older app would only show "could not delete").
+        if (env.REQUIRE_RECENT_LOGIN_FOR_DELETION === "true"
+          && !(await accountHasEstablishedPasskey(env, session.sub, null))
+          && !loggedInRecently(session)) {
+          return json({
+            error: "安全のため、いったんサインアウトして、もう一度サインインしてからアカウントを削除してください。",
+            code: "recent_login_required",
+          }, 403);
+        }
         const body = await readJSONLimited(request, 1_000);
         if (body?.confirmation !== "DELETE") return json({ error: "Confirmation is required." }, 400);
         const result = await startAccountDeletion(env, session.sub);
@@ -524,6 +553,7 @@ const handler = {
           if (accountHash) await env.STUDIQUO_DATA.put(`snapshot:${accountHash}`, await sealSnapshot(env, `snapshot:${accountHash}`, body), { expirationTtl: ACCOUNT_SNAPSHOT_TTL_SECONDS });
         } catch (error) {
           console.error(JSON.stringify({ message: "snapshot could not be stored", error: error instanceof Error ? error.message : String(error) }));
+          inBackground(ctx, raiseAlert(env, OPS_ALERTS.snapshotStore));
           return json({ error: "The snapshot could not be stored." }, 503);
         }
         return json({ synced: true, exportedAt: parsed.exportedAt });
@@ -587,6 +617,7 @@ const handler = {
       return json({ error: "Not found" }, 404);
     } catch (error) {
       console.error(JSON.stringify({ message: "request failed", error: error instanceof Error ? error.message : String(error) }));
+      inBackground(ctx, raiseAlert(env, OPS_ALERTS.serverError));
       return json({ error: "Internal server error." }, 500);
     }
   }
@@ -884,8 +915,19 @@ async function handleConfirmEmailVerification(request: Request, env: Env, ctx: E
   const { email, code, password } = parsed ?? {};
   if (typeof email !== "string" || !email) return json({ error: "email is required." }, 400);
   if (typeof code !== "string" || !code) return json({ error: "code is required." }, 400);
-  if (typeof password !== "string" || password.length < 8 || password.length > 1_024) {
+  if (typeof password !== "string" || password.length > MAX_PASSWORD_LENGTH) {
     return json({ error: "password is required." }, 400);
+  }
+  // 12 or more for a password being set (signup, reset). Sign-in is not
+  // limited: an existing 8-11 character password keeps working until it is
+  // next changed. The app shows `error` as is, so an older app that still
+  // accepts 8 characters tells the person what to fix.
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return json({
+      error: `パスワードは${MIN_PASSWORD_LENGTH}文字以上にしてください。`,
+      code: "password_too_short",
+      minLength: MIN_PASSWORD_LENGTH,
+    }, 400);
   }
 
   // Checked before the code is: a refused password costs the caller no code

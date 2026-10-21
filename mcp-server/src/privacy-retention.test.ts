@@ -3,6 +3,7 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { sha256Hex } from "./auth.ts";
+import { forgetSettledAlerts } from "./ops-alerts.ts";
 import { runPrivacyRetention, retryRevenueCatDeletion, PERSONAL_RETENTION_MS, ERROR_RETENTION_MS } from "./privacy-retention.ts";
 import { deleteAccount, startAccountDeletion } from "./account-deletion.ts";
 import { handleAdminWebhook } from "./admin.ts";
@@ -61,6 +62,25 @@ test("180-day aggregates expire with linked accounts and sweeps have bounded bat
   assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM app_error_users").get()!.n, 0);
   await runPrivacyRetention(env, now);
   assert.equal(env._db.prepare("SELECT COUNT(*) AS n FROM app_errors").get()!.n, 0);
+});
+
+test("a retention backlog that one run cannot clear alerts Slack once", async () => {
+  forgetSettledAlerts();
+  const env = environment(); const now = Date.now();
+  const counts = new Map<string, number>();
+  env.SLACK_ISSUE_REPORT_WEBHOOK_URL = "https://hooks.example.test/slack";
+  env.RATE_COUNTER = { getByName(name: string) { return { async bump(limit: number) { const used = (counts.get(name) ?? 0) + 1; if (used > limit) return false; counts.set(name, used); return true; } }; } };
+  for (let i = 0; i < 105; i++) env._db.prepare("INSERT INTO app_errors (fingerprint, kind, title, first_seen_at, last_seen_at, updated_at) VALUES (?, 'crash', 'test', 1, ?, 1)").run(String(i), now - ERROR_RETENTION_MS);
+  const original = globalThis.fetch; const originalWarn = console.warn;
+  const sent: string[] = [];
+  globalThis.fetch = (async (url: any) => { sent.push(String(url)); return new Response("{}"); }) as typeof fetch;
+  console.warn = () => {};
+  try {
+    await runPrivacyRetention(env, now);
+    assert.equal(sent.length, 1, "backlog left after the first run");
+    await runPrivacyRetention(env, now);
+    assert.equal(sent.length, 1, "no second alert in the same hour");
+  } finally { globalThis.fetch = original; console.warn = originalWarn; }
 });
 
 test("erasure deletes reports and billing across aliases while keeping another account", async () => {

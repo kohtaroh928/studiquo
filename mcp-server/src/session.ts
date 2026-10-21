@@ -265,3 +265,19 @@ export async function revokeSessionsIssuedBefore(env: Env, identityKey: string, 
   if (state?.status === "deleting" || state?.status === "deleted") return;
   await env.STUDIQUO_DATA.put(`${CUTOFF_PREFIX}${await sha256Hex(identityKey)}`, String(now), { expirationTtl: VALIDITY_SECONDS + 86_400 });
 }
+
+/**
+ * How long after the person actually signed in (not after the last token
+ * refresh) a session may do something that cannot be undone, such as deleting
+ * the account. A stolen or left-behind session is usually older than this.
+ */
+export const RECENT_LOGIN_SECONDS = 10 * 60;
+
+/** True when the login this session descends from began within RECENT_LOGIN_SECONDS. */
+export function loggedInRecently(session: Pick<SessionRecord, "issuedAt" | "issuedAtMs" | "originIssuedAtMs">, now = Date.now()) {
+  const began = Number.isFinite(session.originIssuedAtMs) ? session.originIssuedAtMs
+    : Number.isFinite(session.issuedAtMs) ? session.issuedAtMs
+    : Number.isFinite(session.issuedAt) ? (session.issuedAt as number) * 1000
+    : null;
+  return began !== null && now - (began as number) <= RECENT_LOGIN_SECONDS * 1000;
+}
