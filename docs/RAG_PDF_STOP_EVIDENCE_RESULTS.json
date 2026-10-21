@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-19",
+  "step": "6-A",
+  "baseCommit": "4debcd4",
+  "scope": "internal foundation only; processor/reaper/HTTP/cron/config not connected",
+  "serverTests": {
+    "tests": 1908,
+    "pass": 1908,
+    "fail": 0,
+    "skipped": 0
+  },
+  "focusedEvidenceTests": 20,
+  "localWorkerd": {
+    "localWorkerd": true,
+    "migrations": 16,
+    "newClaimReturning": true,
+    "liveTaskHeld": true,
+    "durableEvidenceRecovery": true,
+    "idempotentSettlement": true,
+    "proofRollbackRejected": true,
+    "legacyPurgeClosed": true,
+    "remoteCancel": "synthetic_adapter_only",
+    "remoteChanges": false
+  },
+  "priorAttempts": {
+    "preFinalSuite": "1907 tests, 3 failures in login timing/shared cleanup grace/stage comparison; overlapped execution, contention cause is an inference; no unrelated test changes; final suite1908 passes",
+    "initialLocalWorkerd": "UND_ERR_SOCKET during migration application; clean temporary runtime retry succeeded"
+  },
+  "reviews": {
+    "planner": "A/B split and evidence-before-loss constraint",
+    "code": "High cleanup-registration race fixed; rereview no findings",
+    "security": "High cleanup-registration race fixed; rereview no findings",
+    "independentTestRerun": false
+  },
+  "remaining": [
+    "connect real processor resource group and reaper",
+    "atomic evidence-child/parent retention contract before reopening purge",
+    "evidence absent before executor loss remains held",
+    "real DO/VM integration verification",
+    "remote deployment and iPad adoption"
+  ],
+  "remoteChanges": false,
+  "paidAI": false,
+  "commitOrPush": false,
+  "sourceHashes": {
+    "mcp-server/migrations/0016_rag_pdf_stop_evidence.sql": "25a51740a13dea28d80c325443ceae54bc0c4360da71b28821fa7b14553d356c",
+    "mcp-server/src/rag/pdf-jobs.js": "6a2b4b70282024777dcf8dd74e4030e3a392558ffe0d4bb73e81e82cc8e2b6e0",
+    "mcp-server/src/rag/pdf-stop-evidence.js": "6cb79f0365057566ce6b166df2beefafd23cadf1dda750bc459f0149e39578e3",
+    "mcp-server/src/rag/pdf-retention.js": "731621e6057cc12e9b832f3914d2e083ce4d416e3c4940e4b76d364f5e17d5dd",
+    "mcp-server/src/rag-pdf-stop-evidence.test.js": "6074c2369f05f98c2d715fa09f05282e586a9c5913ab1b93592d0c300a07c4cf",
+    "mcp-server/src/rag-pdf-migration.test.js": "d8581fc602be11f1400cbb1b6a1b206f51d263fe5109421baf8a67cc40c1682a",
+    "mcp-server/tools/rag-pdf-stop-evidence-local-smoke.mjs": "c331ab8d4e1ca6aeb48847556bbff72aece785615e8c734d4dadcb6e4347d569"
+  }
+}
