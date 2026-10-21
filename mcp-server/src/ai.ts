@@ -365,6 +365,8 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
     // student has the text, so the credits stay spent (refunding them would
     // make long outputs free).
     let truncated = false;
+    // A real failure (not just running out of output room) always refunds.
+    let hardFailed = false;
     let produced = 0;
 
     // Every write is guarded. Once the app has the answer it closes the
@@ -398,6 +400,7 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
             if (event?.type === "response.incomplete" && event?.response?.incomplete_details?.reason === "max_output_tokens") {
               truncated = true;
             }
+            if (event?.type === "response.failed" || event?.type === "error") hardFailed = true;
             if (event?.type === "response.failed" || event?.type === "response.incomplete" || event?.type === "error") {
               failed = true;
               // Type and error code/message only — never the content.
@@ -418,7 +421,7 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
       completed = true;
       // A stream that ends in failure, or without a single character, is not an
       // answer: tell the student, give the credits back, and send no "done" push.
-      if (truncated && produced > 0) {
+      if (truncated && produced > 0 && !hardFailed) {
         await send("\n\n（回答が長さの上限で途中までになりました。続きは「続けて」と送ってください）");
       } else if (failed || produced === 0) {
         completed = false;
@@ -715,9 +718,11 @@ function streamJSON(env: Env, { refund = async () => {}, model, account, systemI
             parsed = JSON.parse(assembled);
           } catch {
             console.error(JSON.stringify({ message: "AI structured output was not valid JSON", length: assembled.length, truncated }));
-            // Cut off at the output limit is work the model already did.
-            if (!truncated) await refund();
-            await emit({ error: failureMessage });
+            // Cut off after producing output is work the model already did;
+            // an empty answer (e.g. all room spent reasoning) is refunded.
+            const keepCredits = truncated && assembled.length > 0;
+            if (!keepCredits) await refund();
+            await emit({ error: keepCredits ? "回答が長さの上限で途中までになりました。入力を短くして、もう一度お試しください。" : failureMessage });
           }
           if (parsed !== undefined) {
             delivered = true;

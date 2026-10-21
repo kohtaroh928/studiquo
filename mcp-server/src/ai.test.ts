@@ -659,6 +659,27 @@ test("a structured answer cut off at the output limit keeps its credits spent", 
   }
 });
 
+test("a cut-off with nothing produced, or mixed with a real failure, still refunds", async () => {
+  const cut = { type: "response.incomplete", response: { incomplete_details: { reason: "max_output_tokens" } } };
+  const cases: Array<[string, () => Response]> = [
+    ["chat", () => sse({ type: "response.created" }, cut)],
+    ["chat", () => sse({ type: "response.output_text.delta", delta: "x" }, { type: "response.failed", response: { error: { message: "x" } } }, cut)],
+    ["rubric", () => sse({ type: "response.created" }, cut)],
+  ];
+  for (const [path, make] of cases) {
+    const fetchState = installFetch(make);
+    try {
+      const env = environment();
+      for (let i = 0; i < 10; i += 1) {
+        const { response } = await run(path, path === "chat" ? chatBody() : { modelAnswer: "m" }, { env });
+        assert.equal(response!.status, 200, `${path} #${i + 1} should be refunded`);
+      }
+    } finally {
+      fetchState.restore();
+    }
+  }
+});
+
 test("a chat that throws before streaming (e.g. no API key) gives the credits back", async () => {
   const fetchState = installFetch(() => responsesOK("ok"));
   try {
