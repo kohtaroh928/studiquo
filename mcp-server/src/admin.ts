@@ -76,16 +76,30 @@ async function countDistinctUsers(env: Env) {
 // `updated_at` holds the time of the RevenueCat event that wrote the row, not
 // the time it arrived: webhooks are delivered out of order and retried, and an
 // older event must never overwrite the state a newer one already set.
-async function upsertSubscriber(env: Env, appUserId: unknown, status: unknown, productId: unknown, expiresAt: unknown, identityHashes: string[], occurredAt: unknown) {
+async function upsertSubscriber(env: Env, appUserId: unknown, status: unknown, productId: unknown, expiresAt: unknown, identityHashes: string[], occurredAt: unknown, originalTransactionId: string | null) {
+  // RevenueCat's app_user_id is chosen by the app, so a purchase made by one
+  // person can arrive under another's id. A row remembers the store
+  // transaction it was written for, and an event for a different transaction:
+  //  - cannot end or degrade the subscription (expired / billing issue), and
+  //  - cannot replace one that is still in force (a new purchase after the old
+  //    one lapsed is accepted).
+  // Rows with no recorded transaction (written before this) are not guarded
+  // until their next event stamps them.
   await env.ADMIN_DB.prepare(
-    `INSERT INTO subscribers (app_user_id, status, product_id, expires_at, updated_at)
-     SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS
+    `INSERT INTO subscribers (app_user_id, status, product_id, expires_at, updated_at, original_transaction_id)
+     SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS
        (SELECT 1 FROM privacy_deleted_customers WHERE customer_hash IN (SELECT value FROM json_each(?)))
      ON CONFLICT(app_user_id) DO UPDATE SET
        status = excluded.status, product_id = excluded.product_id,
-       expires_at = excluded.expires_at, updated_at = excluded.updated_at
-     WHERE excluded.updated_at >= subscribers.updated_at`
-  ).bind(appUserId, status, productId, expiresAt, occurredAt, JSON.stringify(identityHashes)).run();
+       expires_at = excluded.expires_at, updated_at = excluded.updated_at,
+       original_transaction_id = COALESCE(excluded.original_transaction_id, subscribers.original_transaction_id)
+     WHERE excluded.updated_at >= subscribers.updated_at
+       AND (subscribers.original_transaction_id IS NULL
+         OR subscribers.original_transaction_id = excluded.original_transaction_id
+         OR (excluded.status = 'active'
+             AND NOT (subscribers.status IN ('active', 'billing_issue')
+                      AND (subscribers.expires_at IS NULL OR subscribers.expires_at > ?))))`
+  ).bind(appUserId, status, productId, expiresAt, occurredAt, originalTransactionId, JSON.stringify(identityHashes), Date.now()).run();
 }
 
 export async function handleAdminWebhook(url: URL, request: Request, env: Env) {
@@ -134,15 +148,16 @@ export async function handleAdminWebhook(url: URL, request: Request, env: Env) {
   }
 
   const expiresAt = Number(event.expiration_at_ms) || null;
+  const originalTransactionId = typeof event.original_transaction_id === "string" && event.original_transaction_id ? event.original_transaction_id.slice(0, 200) : null;
   if (ACTIVATING_EVENT_TYPES.has(event.type)) {
     const productId = event.type === "PRODUCT_CHANGE"
       ? productForPlanChange(event.product_id, event.new_product_id)
       : event.product_id ?? null;
-    await upsertSubscriber(env, event.app_user_id, "active", productId, expiresAt, identityHashes, occurredAt);
+    await upsertSubscriber(env, event.app_user_id, "active", productId, expiresAt, identityHashes, occurredAt, originalTransactionId);
   } else if (event.type === "BILLING_ISSUE") {
-    await upsertSubscriber(env, event.app_user_id, "billing_issue", event.product_id ?? null, expiresAt, identityHashes, occurredAt);
+    await upsertSubscriber(env, event.app_user_id, "billing_issue", event.product_id ?? null, expiresAt, identityHashes, occurredAt, originalTransactionId);
   } else if (DEACTIVATING_EVENT_TYPES.has(event.type)) {
-    await upsertSubscriber(env, event.app_user_id, "expired", event.product_id ?? null, expiresAt, identityHashes, occurredAt);
+    await upsertSubscriber(env, event.app_user_id, "expired", event.product_id ?? null, expiresAt, identityHashes, occurredAt, originalTransactionId);
   }
   // TRANSFER, TEST, SUBSCRIPTION_PAUSED and anything else are recorded in
   // the log above but don't change subscribers — a transferred entitlement
