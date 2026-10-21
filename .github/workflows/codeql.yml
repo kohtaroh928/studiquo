@@ -17,7 +17,7 @@ jobs:
   analyze:
     name: analyze (${{ matrix.language }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 90
     permissions:
       contents: read
       security-events: write
@@ -35,6 +35,15 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      # Before CodeQL starts tracing. Once it does, the build steps run under Rosetta, and Homebrew refuses
+      # to install there ("Cannot install under Rosetta 2 in ARM default prefix"). Generating the project
+      # needs no tracing: only the compile below is what CodeQL must watch.
+      - name: Generate the Xcode project (Swift only)
+        if: matrix.language == 'swift'
+        shell: bash
+        run: |
+          brew install xcodegen
+          xcodegen generate
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: ${{ matrix.language }}
@@ -43,9 +52,9 @@ jobs:
         if: matrix.language == 'swift'
         shell: bash
         run: |
-          brew install xcodegen
-          xcodegen generate
-          xcodebuild build -project studiquo.xcodeproj -scheme studiquo -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
+          # One architecture only: 'generic/platform' builds arm64 and x86_64, and under CodeQL's tracing the
+          # first attempt (both) did not finish in 45 minutes.
+          xcodebuild build -project studiquo.xcodeproj -scheme studiquo -destination 'generic/platform=iOS Simulator' ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           category: /language:${{ matrix.language }}
