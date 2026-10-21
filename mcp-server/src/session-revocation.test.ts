@@ -12,7 +12,7 @@ function environment() {
       async get(key: string, type: string) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix }: { prefix?: Untyped }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
+      async list({ prefix }: { prefix?: unknown }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
     },
     _values: values,
   });
@@ -146,7 +146,7 @@ async function connectApp(env: LooseEnv, sub: string, clientId: string, accessTo
   await env._values.set(`mcp:access:${await sha(accessToken)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read" }));
   await env._values.set(`mcp:refresh:${await sha("refresh-" + accessToken)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read" }));
 }
-const mcpRequest = (token: Untyped) => new Request("https://example.test/mcp", { headers: { authorization: `Bearer ${token}` } });
+const mcpRequest = (token: unknown) => new Request("https://example.test/mcp", { headers: { authorization: `Bearer ${token}` } });
 
 test("H-1: disconnecting all of an account's apps stops their access tokens, and only that account's", async () => {
   const env = environment();
@@ -183,7 +183,7 @@ test("H-1: disconnecting reads every page of grants, not just the first", async 
   const sub = "email:many-apps@example.com";
   for (let index = 0; index < 5; index += 1) await connectApp(env, sub, `client-${index}`, `mcp_many_${index}_` + "x".repeat(40));
   const realList = env.STUDIQUO_DATA.list;
-  env.STUDIQUO_DATA.list = async ({ prefix, cursor }: { prefix?: Untyped; cursor?: Untyped }) => {
+  env.STUDIQUO_DATA.list = async ({ prefix, cursor }: { prefix?: unknown; cursor?: unknown }) => {
     const all = (await realList({ prefix })).keys;
     const start = cursor ? Number(cursor) : 0;
     const keys = all.slice(start, start + 2);

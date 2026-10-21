@@ -24,7 +24,7 @@ function environment() {
       },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix }: { prefix?: Untyped }) {
+      async list({ prefix }: { prefix?: unknown }) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
       },
     },
@@ -467,7 +467,7 @@ test("49. KV削除が途中で失敗しても再実行できる", async () => {
   await env.STUDIQUO_DATA.put("snapshot:failure-token-49", JSON.stringify({ version: 1 }));
   const originalDelete = env.STUDIQUO_DATA.delete.bind(env.STUDIQUO_DATA);
   let failed = false;
-  env.STUDIQUO_DATA.delete = async (key: Untyped) => {
+  env.STUDIQUO_DATA.delete = async (key: unknown) => {
     if (key === "snapshot:failure-token-49" && !failed) {
       failed = true;
       throw new Error("injected KV failure");
@@ -577,7 +577,7 @@ test("53b. 片方が遅れて始まり、先の実行がセッションを消し
     if (key === stateKey && ++firstReadsOfState === 1) await slowGate;
     return value;
   };
-  kv.delete = async (key: Untyped) => {
+  kv.delete = async (key: unknown) => {
     const result = await realDelete(key);
     if (key === "session:concurrent-53b" && !heldFirst) { heldFirst = true; firstHeld(); await firstGate; }
     return result;
@@ -659,7 +659,7 @@ test("56. タイムアウト後に再試行すると残りを削除できる", a
   await env.STUDIQUO_DATA.put("snapshot:timeout-token-56", "{}");
   const originalDelete = env.STUDIQUO_DATA.delete.bind(env.STUDIQUO_DATA);
   let timedOut = false;
-  env.STUDIQUO_DATA.delete = async (key: Untyped) => {
+  env.STUDIQUO_DATA.delete = async (key: unknown) => {
     if (key === "snapshot:timeout-token-56" && !timedOut) {
       timedOut = true;
       throw new Error("operation timed out");
@@ -827,7 +827,7 @@ function recordD1(env: LooseEnv) {
   env.ADMIN_DB = {
     prepare(sql: string) {
       const statement = original.prepare(sql);
-      return { bind(...args: Untyped[]) { calls.push({ sql, args }); return statement.bind(...args); } };
+      return { bind(...args: unknown[]) { calls.push({ sql, args }); return statement.bind(...args); } };
     },
   };
   return calls;
@@ -1099,7 +1099,7 @@ test("deleting an account erases its library id, so signing up again gives a new
   env.USER_REGISTRY = { getByName(name: string) { return { async resolveChatKey(hash: string) { return hash; }, async getUser() { return null; }, async eraseLibraryID() { erased.push(name); } }; } };
   await seedLinked(env, "apple:alice", "alice@example.com", [{ provider: "apple", sub: "alice" }, { provider: "google", sub: "alice-g" }]);
   await deleteAccount(env, "apple:alice");
-  const named = (identity: Untyped) => `library-id:${hash(identity)}`;
+  const named = (identity: unknown) => `library-id:${hash(identity)}`;
   assert.ok(erased.includes(named("apple:alice")), "the account's own object");
   assert.ok(erased.includes(named("google:alice-g")) || erased.includes(named("alice")), "and the linked identities' too, in case an id was made under one");
   assert.ok(erased.includes(named("email:alice@example.com")), "and the e-mail identity, as for the passkey lists");

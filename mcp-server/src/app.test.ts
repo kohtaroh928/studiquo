@@ -26,7 +26,7 @@ import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv, t
 function fakeCloudflareLimiter(limit = 5) {
   const counts = new Map();
   return {
-    async limit({ key }: { key?: Untyped }) {
+    async limit({ key }: { key?: unknown }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -90,7 +90,7 @@ function environment({ strictSessions = false }: { strictSessions?: boolean } = 
       },
       async put(key: string, value: string, options: { expirationTtl: any; }) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix }: { prefix?: Untyped }) {
+      async list({ prefix }: { prefix?: unknown }) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
       },
     },
@@ -1464,7 +1464,7 @@ function collectingCtx() {
   return { waitUntil(promise: string) { pending.push(promise); }, flush: () => Promise.all(pending) };
 }
 
-function geoRequest(path: string, { cf, ip, body }: { cf?: Untyped; ip?: Untyped; body?: Untyped }) {
+function geoRequest(path: string, { cf, ip, body }: { cf?: unknown; ip?: Untyped; body?: unknown }) {
   const req = request(path, { method: "POST", ip, body });
   return Object.defineProperty(req, "cf", { value: cf });
 }
@@ -1629,7 +1629,7 @@ test("local login: if handing the refused attempt back fails, the answer is stil
     // The attempt is reserved first and then refused for the full queue; make
     // the call that hands the reservation back fail.
     const realGetByName = env.RATE_COUNTER.getByName.bind(env.RATE_COUNTER);
-    env.RATE_COUNTER.getByName = (name: Untyped) => {
+    env.RATE_COUNTER.getByName = (name: unknown) => {
       const stub = realGetByName(name);
       return { ...stub, loginRefund: async () => { throw new Error("DO down"); } };
     };
@@ -1888,7 +1888,7 @@ function withAuditDB(env: LooseEnv) {
     db.exec(readMigration(file));
   }
   const statement = (sql: string, params: Untyped[] = []) => ({
-    bind: (...next: Untyped[]) => statement(sql, next),
+    bind: (...next: unknown[]) => statement(sql, next),
     async run() { db.prepare(sql).run(...params); return { success: true, meta: { changes: 1 } }; },
     async all() { return { results: db.prepare(sql).all(...params) }; },
     async first() { return db.prepare(sql).get(...params) ?? null; },
@@ -2477,7 +2477,7 @@ test("POST /api/auth/email/confirm-code: passkeys are found across every page of
   for (let n = 1; n <= 7; n++) await seedPasskey(env, "pk-pages@example.com", `page-passkey-${n}`, `device-${n}`);
 
   const realList = env.STUDIQUO_DATA.list;
-  env.STUDIQUO_DATA.list = async ({ prefix, cursor }: { prefix?: Untyped; cursor?: Untyped }) => {
+  env.STUDIQUO_DATA.list = async ({ prefix, cursor }: { prefix?: unknown; cursor?: unknown }) => {
     const all = (await realList.call(env.STUDIQUO_DATA, { prefix })).keys;
     const start = cursor ? Number(cursor) : 0;
     return { keys: all.slice(start, start + 2), list_complete: start + 2 >= all.length, cursor: String(start + 2) };

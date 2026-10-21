@@ -13,7 +13,7 @@ test("resolveChatUserKey falls back to tokenKey when USER_REGISTRY or sub is abs
 });
 
 test("resolveChatUserKey delegates to the hashed chat-account registry object when present", async () => {
-  const calls: Untyped[] = [];
+  const calls: unknown[] = [];
   const env = partialEnv({
     USER_REGISTRY: {
       getByName(name: string) {

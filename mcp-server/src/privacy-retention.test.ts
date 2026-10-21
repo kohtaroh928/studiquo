@@ -15,7 +15,7 @@ function environment() {
   for (const name of readdirSync(new URL("../migrations/", import.meta.url) as any).sort()) db.exec(readFileSync(new URL(`../migrations/${name}`, import.meta.url) as any, "utf8"));
   const values = new Map();
   const statement = (sql: string, params: Untyped[] = []) => ({
-    bind(...args: Untyped[]) { return statement(sql, args); },
+    bind(...args: unknown[]) { return statement(sql, args); },
     async run() { return { success: true, meta: db.prepare(sql).run(...params) }; },
     async all() { return { results: db.prepare(sql).all(...params) }; },
     async first() { return db.prepare(sql).get(...params) ?? null; },
@@ -28,7 +28,7 @@ function environment() {
       async get(key: string, type: string) { const value = values.get(key) ?? null; return value && type === "json" ? JSON.parse(value) : value; },
       async put(key: string, value: string) { values.set(key, value); },
       async delete(key: string) { values.delete(key); },
-      async list({ prefix, limit = 1000 }: { prefix?: Untyped; limit?: Untyped }) { const keys = [...values.keys()].filter(key => key.startsWith(prefix)).slice(0, limit); return { keys: keys.map(name => ({ name })), list_complete: true }; },
+      async list({ prefix, limit = 1000 }: { prefix?: unknown; limit?: Untyped }) { const keys = [...values.keys()].filter(key => key.startsWith(prefix)).slice(0, limit); return { keys: keys.map(name => ({ name })), list_complete: true }; },
     },
     _db: db, _values: values,
   });
@@ -146,7 +146,7 @@ test("a deletion arriving after the webhook precheck still blocks both SQL write
   env.ADMIN_DB.prepare = (sql: Untyped) => {
     const statement = original(sql);
     if (!sql.startsWith("SELECT customer_hash")) return statement;
-    return { bind(...args: Untyped[]) {
+    return { bind(...args: unknown[]) {
       const bound = statement.bind(...args);
       return { async first() {
         const result = await bound.first();

@@ -8,7 +8,7 @@ import type { Untyped } from "./test-env.ts";
 function fakeCloudflareLimiter(limit: number) {
   const counts = new Map();
   return {
-    async limit({ key }: { key?: Untyped }) {
+    async limit({ key }: { key?: unknown }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
