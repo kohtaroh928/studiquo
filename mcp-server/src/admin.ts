@@ -18,7 +18,7 @@ import { productForPlanChange } from "./entitlements.ts";
 import { INBOX_CSS, INBOX_HTML, INBOX_SCRIPT } from "./admin-inbox-ui.ts";
 import { MODERATION_HTML, MODERATION_SCRIPT } from "./admin-moderation-ui.ts";
 import type { Env } from "./env.ts";
-import { environmentTag, markAdminPage } from "./environment.ts";
+import { isNonProduction, markAdminPage } from "./environment.ts";
 import { nextCursor } from "./kv.ts";
 
 // CANCELLATION isn't here on purpose: it only means "won't auto-renew", not
@@ -128,7 +128,7 @@ export async function handleAdminWebhook(url: URL, request: Request, env: Env) {
   // purchase (RevenueCat's PRODUCTION environment) sent to it by a mistaken
   // webhook setting is acknowledged and dropped, so no real customer's data
   // lands in the test database. An event without an `environment` counts as PRODUCTION.
-  if (environmentTag(env) && String(event.environment ?? "PRODUCTION").toUpperCase() === "PRODUCTION") {
+  if (isNonProduction(env) && String(event.environment ?? "PRODUCTION").toUpperCase() === "PRODUCTION") {
     return json({ received: true, ignored: true });
   }
 

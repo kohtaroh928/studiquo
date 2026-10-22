@@ -2,7 +2,7 @@ import { SignJWT, importPKCS8 } from "jose";
 import { loadDevices, removeDevice, type Device } from "./devices.ts";
 import { featureDisabled } from "./features.ts";
 import type { Env } from "./env.ts";
-import { tagged } from "./environment.ts";
+import { isNonProduction, tagged } from "./environment.ts";
 
 const INVALID_TOKEN_REASONS = new Set(["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"]);
 
@@ -115,6 +115,11 @@ export async function sendPush(env: Env, userKey: string, notification: PushNoti
   return Promise.all(devices.map(async device => {
     const quiet = Boolean(notification.category) && device.banners?.[notification.category as string] === false;
     try {
+      // A non-production deployment (staging) pushes to sandbox devices only: it never
+      // holds a production key on purpose, and must not fall back to a legacy all-environments one.
+      if (isNonProduction(env) && device.environment === "production") {
+        return { token: device.token, delivered: false, reason: "NonProductionDeployment" };
+      }
       const jwt = await jwtFor(device.environment);
       if (!jwt) {
         console.error(JSON.stringify({ event: "apns_configuration_missing", environment: device.environment }));

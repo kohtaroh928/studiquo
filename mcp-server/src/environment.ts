@@ -13,6 +13,17 @@ export function environmentTag(env: Pick<Env, "ENVIRONMENT_LABEL">): string | nu
   return label === "PRODUCTION" || label === "PROD" ? null : label;
 }
 
+/**
+ * Whether this deployment is anything other than production. Unlike
+ * `environmentTag` it also holds for a malformed label, so a typo in the label
+ * on staging still keeps the protections (dropping real purchases, no
+ * production-environment pushes) even though the visible mark is lost.
+ */
+export function isNonProduction(env: Pick<Env, "ENVIRONMENT_LABEL">): boolean {
+  const label = (env.ENVIRONMENT_LABEL ?? "").trim().toUpperCase();
+  return label !== "" && label !== "PRODUCTION" && label !== "PROD";
+}
+
 /** `text` with "[STAGING] " in front on a non-production deployment; unchanged on production. */
 export function tagged(env: Pick<Env, "ENVIRONMENT_LABEL">, text: string): string {
   const tag = environmentTag(env);

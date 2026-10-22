@@ -292,7 +292,7 @@ npx wrangler d1 delete studiquo-admin-staging
 | メール(確認コード、新しい環境の通知、パスキーの通知) | 件名の先頭に`[STAGING]`(送信元の名前は、元から`Studiquo Staging`) |
 | 管理画面(`/admin`、`/admin/announcements`) | タブの題名に`[STAGING]`、画面の上に橙色の帯「STAGING環境(本番ではありません)」 |
 
-目印に使う値は、`staging`のような短い英数字だけ(`environment.ts`)。秘密も個人情報も付かない。`production`・`prod`・空・変な文字の値は、目印なし(本番と同じ)として扱う。
+目印に使う値は、`staging`のような短い英数字だけ(`environment.ts`)。値が崩れていると目印は付かないが、本物の購入イベントの破棄と`production`端末への送信停止は、空でも`production`でもない値なら効く。秘密も個人情報も付かない。`production`・`prod`・空・変な文字の値は、目印なし(本番と同じ)として扱う。
 
 ### 10.2 Slackの宛先が本番と同じかの確認(結果: このセッションからは確認できない)
 
@@ -360,7 +360,7 @@ npx wrangler secret put ACCESS_AUD --env staging
 | `APNS_SANDBOX_KEY_ID` | APNsの鍵(`.p8`)のKey ID(10文字) | 秘密 |
 | `APNS_SANDBOX_AUTH_KEY` | `.p8`ファイルの中身 | 秘密 |
 
-**ステージングには、サンドボックスの鍵だけを入れる。** 本番(`production`)の鍵は入れない。TestFlightやApp Storeのアプリの端末は、ステージングを向かないので、不要。万が一、`production`の端末がステージングに登録されても、鍵がないので、送信されず、ログに`apns_configuration_missing`が出るだけ。(`APNS_AUTH_KEY`は、環境を問わない旧式の鍵なので、ステージングには入れない。入れると本番環境向けにも使われる。)
+**ステージングには、サンドボックスの鍵だけを入れる。** 本番(`production`)の鍵は入れない。TestFlightやApp Storeのアプリの端末は、ステージングを向かないので、不要。万が一、`production`の端末がステージングに登録されても、ステージングは`production`の端末には**送らない**(コードで止める。`ENVIRONMENT_LABEL`が設定されていれば、値が崩れていても止まる)。(`APNS_AUTH_KEY`は、環境を問わない旧式の鍵なので、ステージングには入れない。入れると本番環境向けにも使われる。)
 
 運営者の手順(Apple Developer。鍵の発行はあなたの操作):
 
