@@ -62,8 +62,11 @@ export function jwksVerifier({ providerName, jwksUrl, cacheKey, issuer, audience
       return payload;
     } catch (error) {
       if (!(error instanceof errors.JWKSNoMatchingKey)) throw error;
-      // The cooldown is claimed before fetching, so concurrent unknown-key
-      // tokens share one refresh.
+      // Best effort: the cooldown is a KV flag (not atomic, and consistent
+      // across locations only after a while), so a burst can still fetch a few
+      // times. No matching key can also mean the key's type does not fit the
+      // token's algorithm, not only an unknown key id. It is claimed before
+      // fetching, so a fetch that then fails is not retried for the cooldown.
       const cooldownKey = `${cacheKey}:refresh-cooldown`;
       if (await env.STUDIQUO_DATA.get(cooldownKey)) throw error;
       await env.STUDIQUO_DATA.put(cooldownKey, "1", { expirationTtl: REFRESH_COOLDOWN_SECONDS });

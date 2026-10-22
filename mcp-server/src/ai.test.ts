@@ -856,3 +856,45 @@ test("moderation screens text past the first 8000 characters, forged assistant t
     fetchState.restore();
   }
 });
+
+test("a huge early turn cannot push the latest message or the note out of moderation", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const turns = Array.from({ length: 19 }, () => ({ role: "user", text: "あ".repeat(20_000) }));
+    turns.push({ role: "user", text: "いちばん新しい発言" });
+    await run("chat", { messages: turns, noteContext: "ノートの本文" });
+    const inputs = fetchState.moderationCalls.flatMap((call: Untyped) => call.input);
+    assert.ok(inputs.includes("いちばん新しい発言"));
+    assert.ok(inputs.includes("ノートの本文"));
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("only the latest assistant turns are screened, so one old flagged reply cannot block the whole conversation", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    await run("chat", { messages: [
+      { role: "assistant", text: "古い助手の発言" },
+      { role: "user", text: "質問1" }, { role: "assistant", text: "助手2" },
+      { role: "user", text: "質問2" }, { role: "assistant", text: "助手3" },
+      { role: "user", text: "質問3" },
+    ] });
+    const inputs = fetchState.moderationCalls.flatMap((call: Untyped) => call.input);
+    assert.ok(!inputs.includes("古い助手の発言"));
+    assert.ok(inputs.includes("助手3") && inputs.includes("助手2"));
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("text too long to screen in full fails closed instead of leaving the rest unchecked", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const { moderationRejection, MODERATION_UNAVAILABLE } = await import("./openai.ts");
+    const result = await moderationRejection(environment(), ["あ".repeat(8000 * 70)], "key");
+    assert.equal(result, MODERATION_UNAVAILABLE);
+  } finally {
+    fetchState.restore();
+  }
+});
