@@ -263,12 +263,18 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
   });
   if (gate.response) return gate.response;
 
-  // Every turn and the attached note text are screened, not just the latest
-  // message (images are not screened).
+  // Every user turn and the attached note text are screened, not just the
+  // latest message (images are not screened), each cut to the length that is
+  // actually sent on. Assistant turns come from the client too, so the latest
+  // two are screened as well; older ones are not, or one flagged reply would
+  // block the whole conversation for as long as it stayed in the history.
+  const recent = turns.slice(-20);
+  const latestAssistant = new Set(recent.map((turn: { role: string }, index: number) => (turn?.role === "assistant" ? index : -1)).filter((index: number) => index >= 0).slice(-2));
   const rejected = await moderateOrRefund(env, gate, [
-    // Assistant turns come from the client too, so a forged one is screened like the rest.
-    ...turns.slice(-20).map((turn: { text: unknown; }) => turn?.text),
-    payload?.noteContext,
+    ...recent
+      .filter((turn: { role: string }, index: number) => turn?.role !== "assistant" || latestAssistant.has(index))
+      .map((turn: { text: unknown; }) => String(turn?.text ?? "").slice(0, 20_000)),
+    String(payload?.noteContext ?? "").trim().slice(0, 8000),
   ]);
   if (rejected) return rejected;
 

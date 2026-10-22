@@ -166,7 +166,7 @@ export const MODERATION_UNAVAILABLE = Object.freeze({ unavailable: true });
 // The moderation endpoint takes a bounded input, so long text is cut into
 // pieces and every piece is screened (cutting it off after the first 8000
 // characters left the rest unchecked). A request can carry at most this many
-// pieces; a text longer than that is already far past what the routes accept.
+// pieces. Callers cut each text to the length they actually send upstream first.
 const MODERATION_PIECE = 8000;
 const MODERATION_MAX_PIECES = 64;
 const MODERATION_BATCH = 20;
@@ -176,9 +176,14 @@ export async function moderationRejection(env: Env, texts: string[], apiKey = en
   const input: string[] = [];
   for (const text of texts) {
     const whole = String(text ?? "");
-    for (let start = 0; start < whole.length && input.length < MODERATION_MAX_PIECES; start += MODERATION_PIECE) {
+    for (let start = 0; start < whole.length; start += MODERATION_PIECE) {
       input.push(whole.slice(start, start + MODERATION_PIECE));
     }
+  }
+  // Never leave text unscreened: more than the limit is refused outright.
+  if (input.length > MODERATION_MAX_PIECES) {
+    console.error(JSON.stringify({ message: "moderation input too large", pieces: input.length }));
+    return MODERATION_UNAVAILABLE;
   }
   if (input.length === 0) return null;
   try {
