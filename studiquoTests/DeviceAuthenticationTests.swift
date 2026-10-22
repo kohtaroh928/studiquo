@@ -49,4 +49,25 @@ final class DeviceAuthenticationTests: XCTestCase {
 
         XCTAssertFalse(result)
     }
+
+    func testConfirmIfPossibleLetsADeviceWithoutAPasscodeThrough() async {
+        let outcome = await DeviceAuthentication.confirmIfPossible(
+            reason: "アカウントを削除します",
+            canEvaluate: { false },
+            evaluate: { _ in
+                XCTFail("尋ねられない端末では認証を開始してはいけません")
+                return true
+            }
+        )
+        XCTAssertEqual(outcome, .unavailable)
+    }
+
+    func testConfirmIfPossibleDistinguishesConfirmedFromDeclined() async {
+        let confirmed = await DeviceAuthentication.confirmIfPossible(reason: "r", canEvaluate: { true }, evaluate: { _ in true })
+        let declined = await DeviceAuthentication.confirmIfPossible(reason: "r", canEvaluate: { true }, evaluate: { _ in false })
+        let failed = await DeviceAuthentication.confirmIfPossible(reason: "r", canEvaluate: { true }, evaluate: { _ in throw TestError.failed })
+        XCTAssertEqual(confirmed, .confirmed)
+        XCTAssertEqual(declined, .declined)
+        XCTAssertEqual(failed, .declined)
+    }
 }

@@ -11,9 +11,15 @@ from run import semgrep_report, secret_report, audit_report
 
 class ReportsTest(unittest.TestCase):
     def test_semgrep_rejects_empty_or_partial_coverage(self):
-        for paths in ([], ['app.swift'], ['server.js']):
+        # The server is TypeScript now: a scan that saw only Swift and a stray .js
+        # file has lost its TypeScript coverage and must fail.
+        for paths in ([], ['app.swift'], ['server.ts'], ['app.swift', 'server.js']):
             with self.assertRaises(RuntimeError):
                 semgrep_report({'results': [], 'paths': {'scanned': paths}})
+
+    def test_semgrep_accepts_swift_and_typescript_coverage(self):
+        findings, count = semgrep_report({'results': [], 'paths': {'scanned': ['app.swift', 'server.ts']}})
+        self.assertEqual((findings, count), ([], 2))
 
     def test_semgrep_rejects_parser_error(self):
         with self.assertRaises(RuntimeError):
@@ -40,7 +46,7 @@ class FindingMergeTest(unittest.TestCase):
         duplicate = dict(native[0], tool='semgrep')
         new_rule = dict(duplicate, rule='studiquo.swift.future-rule')
         unmatched = dict(duplicate, line=20)
-        javascript = dict(duplicate, path='server.js')
+        javascript = dict(duplicate, path='server.ts')
         result = run.merge_code_findings([duplicate, new_rule, unmatched, javascript], native)
         self.assertEqual(result, [new_rule, unmatched, javascript, *native])
 
@@ -96,7 +102,7 @@ class RunnerContractTest(unittest.TestCase):
                     code = 3 if parser_error else 0
                     report = {'results': [{'check_id': 'studiquo.swift.credential-log', 'path': 'app.swift',
                                           'start': {'line': 1}, 'extra': {'severity': 'ERROR', 'lines': 'withheld fixture'}}],
-                              'paths': {'scanned': ['app.swift', 'server.js']},
+                              'paths': {'scanned': ['app.swift', 'server.ts']},
                               'errors': [{'type': 'Syntax error', 'path': 'app.swift', 'message': 'withheld fixture'}] if parser_error else []}
                     Path(command[command.index('--output') + 1]).write_text(json.dumps(report))
                 elif command[0] == 'gitleaks':
@@ -128,6 +134,29 @@ class RunnerContractTest(unittest.TestCase):
     def test_report_only_and_enforcement_exit_codes(self):
         self.assertEqual(self.simulate()[0], 0)
         self.assertEqual(self.simulate(enforce=True)[0], 1)
+
+
+class NpmAuditRetryTest(unittest.TestCase):
+    OK = json.dumps({'vulnerabilities': {}, 'metadata': {'dependencies': {'total': 1}}})
+
+    def run_audit(self, outputs):
+        calls = []
+        def execute(command, cwd=None):
+            calls.append(command)
+            code, text = outputs[min(len(calls), len(outputs)) - 1]
+            return subprocess.CompletedProcess(command, code, text, '')
+        with patch.object(run, 'execute', execute), patch.object(run.time, 'sleep'):
+            return run.npm_audit(), calls
+
+    def test_retries_a_transient_registry_error_then_succeeds(self):
+        error = json.dumps({'error': {'summary': 'audit endpoint returned an error'}})
+        data, calls = self.run_audit([(1, error), (1, ''), (0, self.OK)])
+        self.assertEqual(len(calls), 3)
+        self.assertIn('vulnerabilities', data)
+
+    def test_gives_up_after_the_attempt_limit_without_leaking_output(self):
+        with self.assertRaisesRegex(RuntimeError, 'npm audit failed after 3 attempts'):
+            self.run_audit([(1, 'secret-looking registry output')])
 
 
 if __name__ == '__main__':

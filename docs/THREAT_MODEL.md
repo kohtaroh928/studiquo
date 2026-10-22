@@ -83,7 +83,7 @@ flowchart LR
 
 信頼境界の越え方(攻撃者が狙う入口):
 
-1. **端末 → Worker**: HTTPS。入口で`MAINTENANCE_MODE`、レート制限、署名つきトークンの確認、実在セッションの確認、権限の確認の順に通す(`mcp-server/src/app.js`、`app-gate.js`)。
+1. **端末 → Worker**: HTTPS。入口で`MAINTENANCE_MODE`、レート制限、署名つきトークンの確認、実在セッションの確認、権限の確認の順に通す(`mcp-server/src/app.ts`、`app-gate.ts`)。
 2. **外部 → Worker**: MCPクライアント(OAuth)、RevenueCatのWebhook(秘密ヘッダ)、管理画面(Cloudflare Accessのトークン)。
 3. **Worker → 外部**: OpenAI(要約された範囲だけ)、Resend、APNs、Slack。受け取る側は信頼しない。
 4. **端末の中**: アプリと共有拡張(App Group)、他アプリ(URLスキーム、ペーストボード、ファイル)、バックアップ。
@@ -94,9 +94,9 @@ S=なりすまし、T=改ざん、R=否認、I=情報漏えい、D=サービス�
 
 | 要素 | S | T | R | I | D | E |
 |---|---|---|---|---|---|---|
-| アプリ→Worker(Bearer) | 偽トークンは署名とKVの実在で拒否(`token-signature.js`、`session.js`) | TLS | 操作ログは最小 | 通信はTLS、平文httpは未対応(カード) | レート制限、`/mcp`は120回/分 | トークンは自分のアカウントに限る |
-| サインイン(Apple/Google) | JWKS検証、audience・issuer・期限、nonce(`id-token-nonce.js`) | — | — | — | 5回/分/IP | 別アカウントへのリンクは検証済みメールのみ(`oauth-links.js`) |
-| メール+パスワード | Argon2id、漏えいPW照合、失敗の待機(`login-throttle.js`) | — | — | 同じ時間で応答(タイミング) | 同時Argon2を制限 | — |
+| アプリ→Worker(Bearer) | 偽トークンは署名とKVの実在で拒否(`token-signature.ts`、`session.ts`) | TLS | 操作ログは最小 | 通信はTLS、平文httpは未対応(カード) | レート制限、`/mcp`は120回/分 | トークンは自分のアカウントに限る |
+| サインイン(Apple/Google) | JWKS検証、audience・issuer・期限、nonce(`id-token-nonce.ts`) | — | — | — | 5回/分/IP | 別アカウントへのリンクは検証済みメールのみ(`oauth-links.ts`) |
+| メール+パスワード | Argon2id、漏えいPW照合、失敗の待機(`login-throttle.ts`) | — | — | 同じ時間で応答(タイミング) | 同時Argon2を制限 | — |
 | パスキー | WebAuthn、challenge | — | — | — | レート制限 | — |
 | チャット/文書(DO) | メンバー確認 | ルーム単位 | — | 非メンバーの読み書き拒否(テスト多数) | 6MB/10回/分 | 招待は友達のみ |
 | MCP(OAuth) | PKCE(S256)、redirect検証、コード1回 | — | — | トークンはハッシュ保存 | レート制限 | 範囲(scope)を限る |
@@ -113,14 +113,14 @@ S=なりすまし、T=改ざん、R=否認、I=情報漏えい、D=サービス�
 ### A1. AI料金の食い潰し(X1, X2)
 - **手口**: 大量のアカウント/トークンでAIを叩く。長い入力、画像、並列。
 - **影響**: OpenAIの料金、他の利用者の枠が尽きる。
-- **緩和**: 実在セッション必須、同意と年齢区分必須(`ai-privacy.js`、テスト「a request without a confirmed age band is refused」)、1分60回/アカウント(`api-hardening.test.js`「AI requests are limited to 60 a minute per account before any body is read」)、窓ごとのクレジット上限と全体上限(`ai-credits.js`、`ai-credits.test.js`)、無プランは本文を読む前に402、`AI_PROVIDER_APPROVED`(既定false)。
+- **緩和**: 実在セッション必須、同意と年齢区分必須(`ai-privacy.ts`、テスト「a request without a confirmed age band is refused」)、1分60回/アカウント(`api-hardening.test.js`「AI requests are limited to 60 a minute per account before any body is read」)、窓ごとのクレジット上限と全体上限(`ai-credits.ts`、`ai-credits.test.js`)、無プランは本文を読む前に402、`AI_PROVIDER_APPROVED`(既定false)。
 - **残る**: アカウントを大量に作られる(サインアップの自動化)。App Attest(カード「App Attest(サーバー側/iOS側)」)。上限に近づいたときの通知が無い(カード「異常検知のアラート」)。
 - **状態**: 一部(App Attestは未マージ)。
 
 ### A2. アカウント乗っ取り(X1, X2, X5)
 - **手口**: パスワードの総当たり・クレデンシャルスタッフィング、メール確認コードの総当たり、フィッシング(AiTM)、盗まれたIDトークンの再送、OAuthの連携で別アカウントに紐づける。
-- **緩和**: Argon2id(`local-auth.js`)、漏えいPW照合(`pwned-passwords.js`)、失敗の段階的な待機(IP+メール、メール、ASNの3系統、`login-throttle.js`)、確認コードは15分・5回で失効しハッシュ保存(`email-verification.test.js`)、Apple/Googleは署名・audience・issuer・期限・nonce(`apple-auth.test.js`、`google-auth.test.js`、`REQUIRE_ID_TOKEN_NONCE`)、連携は検証済みメールだけ(`oauth-links.js`)、新しい環境のサインインはメール通知(`login-monitor.js`)、パスキーの強制(`passkey-policy.js`、テスト「the first sign-in without a passkey is refused, starts a recovery and tells the owner」)、パスワード変更で古いセッションを失効(`session-revocation.test.js`)。
-- **残る**: パスワードの最小長が8(カード「パスワードの最小長」)。パスキー強制の配備と実機確認が未了(カード「AiTMフィッシング対策(パスキー強制)の配備判断と実機確認」)。**検証済みメールの所有権が人から人へ移る場合**(ドメインの失効後の再取得、会社・学校のアドレスの再割当)、そのアドレスで入った別人は、先着のオーナーの正規アカウントに紐づけられ、旧所有者のチャット・同期・課金・接続を引き継ぎうる(`oauth-links.js`の`email-account-owner:`、`app.js`の`canonicalIdentityKey`でセッションを発行)。Appleの非公開リレーのアドレスは別のアドレスとして扱われる(カード「検証済みメールの所有権が移ったときのアカウントの引き継ぎ」)。
+- **緩和**: Argon2id(`local-auth.ts`)、漏えいPW照合(`pwned-passwords.ts`)、失敗の段階的な待機(IP+メール、メール、ASNの3系統、`login-throttle.ts`)、確認コードは15分・5回で失効しハッシュ保存(`email-verification.test.js`)、Apple/Googleは署名・audience・issuer・期限・nonce(`apple-auth.test.js`、`google-auth.test.js`、`REQUIRE_ID_TOKEN_NONCE`)、連携は検証済みメールだけ(`oauth-links.ts`)、新しい環境のサインインはメール通知(`login-monitor.ts`)、パスキーの強制(`passkey-policy.ts`、テスト「the first sign-in without a passkey is refused, starts a recovery and tells the owner」)、パスワード変更で古いセッションを失効(`session-revocation.test.js`)。
+- **残る**: パスワードの最小長が8(カード「パスワードの最小長」)。パスキー強制の配備と実機確認が未了(カード「AiTMフィッシング対策(パスキー強制)の配備判断と実機確認」)。**検証済みメールの所有権が人から人へ移る場合**(ドメインの失効後の再取得、会社・学校のアドレスの再割当)、そのアドレスで入った別人は、先着のオーナーの正規アカウントに紐づけられ、旧所有者のチャット・同期・課金・接続を引き継ぎうる(`oauth-links.ts`の`email-account-owner:`、`app.ts`の`canonicalIdentityKey`でセッションを発行)。Appleの非公開リレーのアドレスは別のアドレスとして扱われる(カード「検証済みメールの所有権が移ったときのアカウントの引き継ぎ」)。
 - **状態**: 一部。
 
 ### A3. 他人の資料への到達(IDOR)(X2, X3)
@@ -131,13 +131,13 @@ S=なりすまし、T=改ざん、R=否認、I=情報漏えい、D=サービス�
 
 ### A4. フレンド招待リンクの悪用(X3, X6)
 - **手口**: リンクを手に入れた人は、承認なしで招待者の友達になれる。招待ページが`studiquo://`へ転送し、同じスキームを登録した別アプリがトークンを受け取る。
-- **緩和**: トークンは10文字(約50ビット)でレート制限付き(5回/分)、`https://…/invite`(Universal Link)を優先(`passkeys.js`の`associationFile`)、アプリは確認ダイアログを経て追加。
+- **緩和**: トークンは10文字(約50ビット)でレート制限付き(5回/分)、`https://…/invite`(Universal Link)を優先(`passkeys.ts`の`associationFile`)、アプリは確認ダイアログを経て追加。
 - **残る**: トークンは永続・複数回使用・再生成不可。カスタムスキームの横取り。
 - **状態**: 一部(招待ページの自動転送の廃止とonOpenURLの修正はブランチ`claude/net-server`・`claude/net-app`、**未マージ**。トークンの寿命はカード「フレンド招待…」)。
 
 ### A5. MCP連携(OAuth)の悪用(X1, X6)
 - **手口**: 動的登録で偽のクライアント名を登録し、承認画面でだます。認可コード・リフレッシュトークンの再利用。外部AIアプリに過大な範囲を与える。
-- **緩和**: PKCE(S256のみ)、redirect_uriは`https`または`localhost`だけで、認可時に完全一致(`mcp-oauth.js`の`validRedirect`)、コード1回、リフレッシュの再利用で接続ごと失効(ログ「mcp refresh token reused; connection revoked」)、アクセストークン1時間、`mcp-oauth.test.js`(13)、利用者は設定から接続を解除できる(`api-hardening.test.js`「the list of connected apps shows only what the app displays」)。
+- **緩和**: PKCE(S256のみ)、redirect_uriは`https`または`localhost`だけで、認可時に完全一致(`mcp-oauth.ts`の`validRedirect`)、コード1回、リフレッシュの再利用で接続ごと失効(ログ「mcp refresh token reused; connection revoked」)、アクセストークン1時間、`mcp-oauth.test.js`(13)、利用者は設定から接続を解除できる(`api-hardening.test.js`「the list of connected apps shows only what the app displays」)。
 - **残る**: 動的登録は誰でもできる。クライアント名は自己申告(カード「OAuth動的登録のクライアント名でのなりすまし対策」)。
 - **状態**: 一部。
 
@@ -149,20 +149,20 @@ S=なりすまし、T=改ざん、R=否認、I=情報漏えい、D=サービス�
 
 ### A7. 退会と再登録(X2)
 - **手口**: 退会後も残るデータ、再登録で過去の課金・資料が混ざる、削除の途中失敗。
-- **緩和**: 永続の削除ジョブ(再試行可能)、世代管理(`session.js`の`generationOf`)、全identityのalias削除、RevenueCat顧客削除の再試行、`account-deletion.test.js`(46以上のケース)。
+- **緩和**: 永続の削除ジョブ(再試行可能)、世代管理(`session.ts`の`generationOf`)、全identityのalias削除、RevenueCat顧客削除の再試行、`account-deletion.test.js`(46以上のケース)。
 - **残る**: 外部サービス(OpenAI等)に渡った分、iCloud上のデータは削除されない(ポリシーに記載)。CloudKit上の削除は実機での確認が未了(カード「CloudKitの実機確認」)。
 - **状態**: 一部。
 
 ### A8. 管理画面・Webhookの偽装(X1)
 - **手口**: `/api/admin/*`を直接叩く。偽の購入イベントを送る。他サイトから管理操作をさせる。
-- **緩和**: Cloudflare Accessのトークンを毎回検証し、設定が無ければ拒否(`access.js`の「Fails closed」)、他サイトからの書き込みを拒否(`isCrossSiteWrite`、`low-priority-hardening.test.js`)、Webhookは秘密ヘッダの定数時間比較(`admin.test.js`「a webhook with a missing/wrong Authorization header is rejected with 401」)、管理画面のCSP/フレーム禁止(`api-hardening.test.js`)。
-- Webhookの重複配信は`event.id`で無視し(`INSERT OR IGNORE`)、古い更新で新しい状態を上書きしない(`updated_at`の比較)。管理画面の表示は利用者入力を`textContent`で出し、`innerHTML`は数値だけ(`admin-inbox-ui.js`、`admin.js`)。
+- **緩和**: Cloudflare Accessのトークンを毎回検証し、設定が無ければ拒否(`access.ts`の「Fails closed」)、他サイトからの書き込みを拒否(`isCrossSiteWrite`、`low-priority-hardening.test.js`)、Webhookは秘密ヘッダの定数時間比較(`admin.test.js`「a webhook with a missing/wrong Authorization header is rejected with 401」)、管理画面のCSP/フレーム禁止(`api-hardening.test.js`)。
+- Webhookの重複配信は`event.id`で無視し(`INSERT OR IGNORE`)、古い更新で新しい状態を上書きしない(`updated_at`の比較)。管理画面の表示は利用者入力を`textContent`で出し、`innerHTML`は数値だけ(`admin-inbox-ui.ts`、`admin.ts`)。
 - **残る**: Webhook秘密が漏れると、任意の購読者IDに課金状態を付与でき、`event_timestamp_ms`は送る側の指定値なので、再送や過去日時での上書きも攻撃者の都合になる。失効手順は付録Aにあるが、訓練していない。
 - **状態**: 対応済み。
 
 ### A9. メール送信・プッシュ送信の悪用(X1)
 - **手口**: 確認コードの送信を連打して、Resendの料金や評判を損なう。他人に迷惑メールを送る。プッシュで偽の通知を送る。
-- **緩和**: 送信のレート制限(5回/分/IP)に加えて、**宛先のメールアドレスごとの上限**(`app.js`の`EMAIL_SEND_LIMIT_PER_WINDOW`=5、`withinEmailCodeBudget`)があり、多数のIPからでも同じ宛先への爆撃は窓内5通に収まる。応答は常に`{sent:true}`で、アドレスの存在は分からない。プッシュは友達関係が前提。`DISABLED_FEATURES`で個別に止められる(ブランチ`claude/kill-switch-server`、**未マージ**)。
+- **緩和**: 送信のレート制限(5回/分/IP)に加えて、**宛先のメールアドレスごとの上限**(`app.ts`の`EMAIL_SEND_LIMIT_PER_WINDOW`=5、`withinEmailCodeBudget`)があり、多数のIPからでも同じ宛先への爆撃は窓内5通に収まる。応答は常に`{sent:true}`で、アドレスの存在は分からない。プッシュは友達関係が前提。`DISABLED_FEATURES`で個別に止められる(ブランチ`claude/kill-switch-server`、**未マージ**)。
 - **残る**: 宛先を変え続ける送信量(Resendの料金)。送信量の異常を知らせる仕組みが無い。DMARCが無く、なりすましメールを拒否できない(カード「ドメインのDNS設定」)。
 - **状態**: 一部。
 
@@ -208,7 +208,7 @@ S=なりすまし、T=改ざん、R=否認、I=情報漏えい、D=サービス�
 - **状態**: 一部(CI・Dependabotはブランチ`claude/ci-setup`、**未マージ**)。
 
 ### A17. プッシュトークンの奪取(X2)
-- **手口**: 他人のAPNsトークンを知っている人が、自分のアカウントで同じトークンを登録する。登録は後勝ちで、前の持ち主から外れる(`devices.js`)。
+- **手口**: 他人のAPNsトークンを知っている人が、自分のアカウントで同じトークンを登録する。登録は後勝ちで、前の持ち主から外れる(`devices.ts`)。
 - **影響**: 被害者の通知が止まり、攻撃者に届く。
 - **緩和**: トークンは推測できない(漏えいが前提)。新しい端末の登録は、既存の端末へ通知される(`devices.test.js`「registering a genuinely new installation alerts the account's existing device only」)。
 - **状態**: 一部(漏えいが前提のため低い)。

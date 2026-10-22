@@ -1,0 +1,148 @@
+import { SignJWT, importPKCS8 } from "jose";
+import { loadDevices, removeDevice, type Device } from "./devices.ts";
+import { featureDisabled } from "./features.ts";
+import type { Env } from "./env.ts";
+
+const INVALID_TOKEN_REASONS = new Set(["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"]);
+
+function apnsHost(environment: string) {
+  return environment === "sandbox" ? "api.sandbox.push.apple.com" : "api.push.apple.com";
+}
+
+function apnsCredentials(env: Env, environment: string) {
+  const sandbox = environment === "sandbox";
+  return {
+    authKey: (sandbox ? env.APNS_SANDBOX_AUTH_KEY : env.APNS_PRODUCTION_AUTH_KEY) ?? env.APNS_AUTH_KEY,
+    keyID: (sandbox ? env.APNS_SANDBOX_KEY_ID : env.APNS_PRODUCTION_KEY_ID) ?? env.APNS_KEY_ID,
+  };
+}
+
+export async function createAPNsJWT(env: Env, now = Date.now(), environment = "production") {
+  const credentials = apnsCredentials(env, environment);
+  const key = await importPKCS8(credentials.authKey!, "ES256");
+  return new SignJWT({})
+    .setProtectedHeader({ alg: "ES256", kid: credentials.keyID })
+    .setIssuer(env.APNS_TEAM_ID!)
+    .setIssuedAt(Math.floor(now / 1_000))
+    .sign(key);
+}
+
+async function apnsErrorReason(response: Response) {
+  try {
+    const payload = (await response.json()) as { reason?: unknown } | null;
+    return typeof payload?.reason === "string" ? payload.reason : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface PushNotification {
+  category?: string;
+  title?: string;
+  body?: string;
+  threadID?: string;
+  data?: Record<string, unknown>;
+  [field: string]: unknown;
+}
+
+export interface SendPushOptions {
+  fetchImpl?: typeof fetch;
+  now?: number;
+  devices?: Device[];
+  excludeInstallationID?: string;
+  [field: string]: unknown;
+}
+
+/**
+ * Best-effort push delivery. It deliberately returns per-device results and
+ * never throws into the chat/friend action that triggered it.
+ */
+export async function sendPush(env: Env, userKey: string, notification: PushNotification, options: SendPushOptions = {}) {
+  // The "push" kill switch (features.ts): nothing is sent, nothing is thrown.
+  if (featureDisabled(env, "push")) return [];
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const now = options.now ?? Date.now();
+  if (!env.APNS_TEAM_ID || !env.APNS_TOPIC) {
+    console.error(JSON.stringify({ event: "apns_configuration_missing" }));
+    return [];
+  }
+
+  const devices = (options.devices ?? await loadDevices(env, userKey)).filter(device => {
+    if (options.excludeInstallationID && device.installationID === options.excludeInstallationID) return false;
+    const category = notification.category;
+    return !category || device.preferences?.[category] !== false;
+  });
+  if (devices.length === 0) return [];
+
+  // A modern APNs key is scoped to either Sandbox or Production. Cache one
+  // signing operation per actual key so mixed device lists use the correct
+  // credential, while a legacy all-environments key is still signed once.
+  const jwtByCredential = new Map<string, Promise<string>>();
+  const jwtFor = async (environment: string) => {
+    const credentials = apnsCredentials(env, environment);
+    if (!credentials.authKey || !credentials.keyID) return null;
+    const cacheKey = `${credentials.keyID}\u0000${credentials.authKey}`;
+    if (!jwtByCredential.has(cacheKey)) {
+      jwtByCredential.set(cacheKey, createAPNsJWT(env, now, environment));
+    }
+    return jwtByCredential.get(cacheKey);
+  };
+
+  const customData = notification.data && typeof notification.data === "object" && !Array.isArray(notification.data)
+    ? { ...notification.data }
+    : {};
+  delete customData.aps;
+  // A device that turned the banner off for this category still gets the
+  // notification, but quietly: `passive` goes to the notification centre
+  // without lighting the screen, showing a banner or making a sound.
+  const buildPayload = (quiet: boolean) => JSON.stringify({
+    ...customData,
+    aps: {
+      alert: { title: String(notification.title ?? ""), body: String(notification.body ?? "") },
+      ...(quiet ? { "interruption-level": "passive" } : { sound: "default" }),
+      ...(notification.category ? { category: `studiquo.${notification.category}` } : {}),
+      ...(notification.threadID ? { "thread-id": String(notification.threadID) } : {}),
+      ...(Number.isSafeInteger(notification.badge) ? { badge: notification.badge } : {}),
+    },
+  });
+  const payloads = { loud: buildPayload(false), quiet: buildPayload(true) };
+  if (new TextEncoder().encode(payloads.loud).byteLength > 4_096) {
+    console.error(JSON.stringify({ event: "apns_payload_too_large" }));
+    return devices.map(device => ({ token: device.token, delivered: false }));
+  }
+
+  return Promise.all(devices.map(async device => {
+    const quiet = Boolean(notification.category) && device.banners?.[notification.category as string] === false;
+    try {
+      const jwt = await jwtFor(device.environment);
+      if (!jwt) {
+        console.error(JSON.stringify({ event: "apns_configuration_missing", environment: device.environment }));
+        return { token: device.token, delivered: false, reason: "MissingConfiguration" };
+      }
+      const response = await fetchImpl(`https://${apnsHost(device.environment)}/3/device/${device.token}`, {
+        method: "POST",
+        headers: {
+          authorization: `bearer ${jwt}`,
+          "apns-topic": env.APNS_TOPIC!,
+          "apns-push-type": "alert",
+          // A quiet notification has no need to wake the screen, so it may be
+          // delivered at the system's convenience.
+          "apns-priority": quiet ? "5" : "10",
+          "apns-expiration": String(Math.floor(now / 1_000) + 3_600),
+          "content-type": "application/json",
+        },
+        body: quiet ? payloads.quiet : payloads.loud,
+      });
+      if (response.ok) return { token: device.token, delivered: true };
+      const reason = await apnsErrorReason(response);
+      if (response.status === 410 || (response.status === 400 && INVALID_TOKEN_REASONS.has(reason as string))) {
+        await removeDevice(env, userKey, device.token);
+      }
+      console.error(JSON.stringify({ event: "apns_delivery_failed", status: response.status, reason }));
+      return { token: device.token, delivered: false, status: response.status, reason };
+    } catch (error) {
+      console.error(JSON.stringify({ event: "apns_request_failed", environment: device.environment, error: String(error) }));
+      return { token: device.token, delivered: false };
+    }
+  }));
+}

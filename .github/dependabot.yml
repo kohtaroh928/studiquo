@@ -11,6 +11,15 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+  # scripts/vuln-watch has its own lockfile (typescript and @types/node, dev only).
+  - package-ecosystem: npm
+    directory: /scripts/vuln-watch
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
   # Moves the commit SHAs in .github/workflows/*.yml (and their version comments).
   - package-ecosystem: github-actions
     directory: /

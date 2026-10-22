@@ -9,9 +9,13 @@ import subprocess
 import shutil
 import sys
 import tempfile
+import time
 from swift_scan import scan as scan_swift
 
 ROOT = Path(__file__).resolve().parents[2]
+SEMGREP_TIMEOUT_SECONDS = "30"
+NPM_AUDIT_ATTEMPTS = 3
+NPM_AUDIT_RETRY_SECONDS = 15
 VERSIONS = {"semgrep": "1.179.0", "gitleaks": "8.24.3"}
 # Keep this list synchronized with the four structural rules in swift_scan.swift.
 NATIVE_SWIFT_RULES = frozenset({
@@ -28,6 +32,23 @@ def execute(args, cwd=ROOT):
     return subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True, timeout=600)
 
 
+def npm_audit(extra_args=()):
+    """Run npm audit, retrying transient registry failures (the bulk advisory endpoint times out now and then)."""
+    command = ["npm", "audit", "--package-lock-only", *extra_args, "--json", "--fetch-timeout=60000", "--fetch-retries=0"]
+    for attempt in range(NPM_AUDIT_ATTEMPTS):
+        if attempt:
+            time.sleep(NPM_AUDIT_RETRY_SECONDS * attempt)
+        result = execute(command, cwd=ROOT / "mcp-server")
+        if result.returncode in (0, 1):
+            try:
+                data = json.loads(result.stdout)
+            except ValueError:
+                continue
+            if "error" not in data and "vulnerabilities" in data:
+                return data
+    raise RuntimeError(f"npm audit failed after {NPM_AUDIT_ATTEMPTS} attempts (raw output withheld)")
+
+
 def field(value):
     # Strip control characters; reports must not carry scanner messages or code.
     return "".join(c for c in str(value) if c.isprintable())[:500]
@@ -37,8 +58,8 @@ def semgrep_report(data):
     if data.get("errors") or data.get("skipped_rules"):
         raise RuntimeError("Semgrep reported errors or skipped rules")
     scanned = data.get("paths", {}).get("scanned", [])
-    if not scanned or not any(p.endswith(".swift") for p in scanned) or not any(p.endswith(".js") for p in scanned):
-        raise RuntimeError("Semgrep did not scan both Swift and JavaScript files")
+    if not scanned or not any(p.endswith(".swift") for p in scanned) or not any(p.endswith(".ts") for p in scanned):
+        raise RuntimeError("Semgrep did not scan both Swift and TypeScript files")
     findings = []
     for item in data["results"]:
         findings.append({"tool": "semgrep", "rule": field(item["check_id"]),
@@ -139,8 +160,11 @@ def main():
                                   and (ROOT / path).is_file() and not (ROOT / path).is_symlink()})
             original_hashes = {path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest() for path in swift_files}
             raw = temporary / "semgrep.json"
+            # Semgrep's default per-rule-per-file timeout (5 s) is too tight for slow CI runners
+            # and makes the scan fail intermittently on large Swift and test files.
             result = execute(["semgrep", "scan", "--config", ".semgrep.yml", "--metrics", "off",
-                              "--disable-version-check", "--strict", "--json", "--output", str(raw), "."])
+                              "--disable-version-check", "--strict", "--timeout", SEMGREP_TIMEOUT_SECONDS,
+                              "--json", "--output", str(raw), "."])
             if result.returncode not in (0, 3) or not raw.exists():
                 raise RuntimeError("Semgrep execution failed (raw output withheld)")
             semgrep_data = json.loads(raw.read_text())
@@ -190,14 +214,8 @@ def main():
                         finding["path"] = finding["path"].removeprefix(str(snapshot) + "/")
                 report["findings"].extend(secrets)
             if not args.skip_audit:
-                result = execute(["npm", "audit", "--package-lock-only", "--json"], cwd=ROOT / "mcp-server")
-                if result.returncode not in (0, 1):
-                    raise RuntimeError("npm audit execution failed (raw output withheld)")
-                all_audit = json.loads(result.stdout)
-                production = execute(["npm", "audit", "--package-lock-only", "--omit=dev", "--json"], cwd=ROOT / "mcp-server")
-                if production.returncode not in (0, 1):
-                    raise RuntimeError("Production npm audit execution failed")
-                production_data = json.loads(production.stdout)
+                all_audit = npm_audit()
+                production_data = npm_audit(["--omit=dev"])
                 audit_report(production_data)
                 report["findings"].extend(audit_report(all_audit, set(production_data["vulnerabilities"])))
         unique = {json.dumps(item, sort_keys=True): item for item in report["findings"]}

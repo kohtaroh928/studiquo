@@ -10,7 +10,7 @@ developer_instructions = """
 - iPad向けSwiftUI手書きノートアプリ(studiquo/)+ Cloudflare Workersバックエンド(mcp-server/)の2部構成
 - studiquo/Models/ にSwiftDataモデル(Notebook, NotePage, FlashcardDeck, CalendarEvent, StudyDocument, PageElement, PageSnippet)
 - studiquo/Services/ に認証系(AppleSignInService, GoogleSignInService, PasskeyService, LocalAuthService, EmailVerificationService, AuthenticationStore)、AI連携(AIProvider, ClaudeChatService)、その他エクスポート・バックアップ・PDF処理など
-- mcp-server/src/ はCloudflare Workers。認証(apple-auth.js, google-auth.js, local-auth.js, passkeys.js, email-verification.js, oauth-links.js)、AIプロキシ(ai.js, chat.js)、ユーザー管理(user-registry.js, Durable Object)
+- mcp-server/src/ はCloudflare Workers。認証(apple-auth.ts, google-auth.ts, local-auth.ts, passkeys.ts, email-verification.ts, oauth-links.ts)、AIプロキシ(ai.ts, chat.ts)、ユーザー管理(user-registry.ts, Durable Object)
 - 現状データはSwiftDataでローカル保存のみ。CloudKitによる複数端末同期は未着手
 - xcodegenでproject.ymlからXcodeプロジェクトを生成する運用(project.pbxproj直接手編集が必要な既知の制約が一部ある)
 
