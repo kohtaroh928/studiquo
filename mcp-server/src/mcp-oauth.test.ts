@@ -402,5 +402,5 @@ test("an app's name is printed on the approval page as text, never as markup", a
   assert.ok(!page.includes("<img src=x"), "the tag didn't survive");
   assert.ok(!page.includes("alert(2)</script>"), "the injected script didn't survive");
   assert.ok(page.includes("&lt;img src=x onerror=alert(1)&gt;&quot;&#39;&amp;&lt;/p&gt;&lt;script&gt;"), "it is shown, escaped");
-  assert.equal((page.match(/<script>/g) ?? []).length, 1, "only the page's own script");
+  assert.equal((page.match(/<script>/gi) ?? []).length, 1, "only the page's own script");
 });
