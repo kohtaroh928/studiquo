@@ -628,6 +628,9 @@ export async function handleChat(url: URL, request: Request, env: Env, ctx: Exec
     const allowed = await checkRateLimit(env.RATE_LIMIT_CHAT_ATTACHMENT_UPLOAD, key);
     if (!allowed) return json({ error: "Too many uploads. Please slow down." }, 429);
     const body = await readBody(request, MAX_ATTACHMENT_UPLOAD_BODY);
+    // Stored attachments are decoded when downloaded, so one that is not
+    // well-formed base64 would make every later download fail with a 500.
+    if (!isWellFormedBase64(body?.data)) return json({ error: "Invalid attachment." }, 400);
     try {
       const result = await env.CHAT_ROOM.getByName(attachmentUploadMatch[1]).storeAttachment(key, body?.contentType, body?.data);
       return json(result, 201);

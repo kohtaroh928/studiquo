@@ -1898,6 +1898,19 @@ function withAuditDB(env: LooseEnv) {
   return env;
 }
 
+test("a report screenshot that is not well-formed base64 is refused when filed", async () => {
+  const env = environment();
+  withAuditDB(env);
+  const response = await worker.fetch(
+    request("/api/issue-reports", {
+      method: "POST", token: freshToken("q2"),
+      body: { description: "壊れた画像", screenshot: { contentType: "image/png", data: "%%% not base64 %%%" } },
+    }),
+    env, noopCtx,
+  );
+  assert.equal(response.status, 400);
+});
+
 test("report screenshots require verified Access and are not sent to Slack", async () => {
   const env = environment();
   Object.assign(env, ACCESS_ENV);
