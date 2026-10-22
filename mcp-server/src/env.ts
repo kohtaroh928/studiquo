@@ -89,9 +89,8 @@ export interface Env {
   REQUIRE_RECENT_LOGIN_FOR_DELETION?: string;
   SESSION_MAX_DAYS?: string;
   PRIVACY_RETENTION_ENABLED?: string;
-  GLOBAL_GRADING_DAILY_LIMIT?: string;
-  GLOBAL_REVIEW_DAILY_LIMIT?: string;
-  GLOBAL_CHAT_DAILY_LIMIT?: string;
+  /** JSON overrides for the AI limits (ai-limits.ts). Unset: the defaults there. */
+  AI_LIMITS?: string;
   ANNOUNCEMENT_PUSH_BATCH?: string;
   AI_RETRY_BASE_MS?: string;
   REQUIRE_SIGNED_TOKENS?: string;
