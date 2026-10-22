@@ -4,6 +4,6 @@
 [ "$3" = "1" ] || exit 0
 [ "$STUDIQUO_ALLOW_SHARED_CHECKOUT" = "1" ] && exit 0
 if is_main_checkout; then
-  echo "[warn] メインのチェックアウトで $(current_branch) に切り替わりました。他のエージェントの作業に影響する可能性があります。作業は git worktree add .worktrees/<task> -b <claude|codex>/<task> main で行ってください。" >&2
+  echo "[warn] メインのチェックアウトで $(current_branch) に切り替わりました。他のエージェントの作業に影響する可能性があります。作業は git worktree add .worktrees/<task> -b <claude|codex|antigravity>/<task> main で行ってください。" >&2
 fi
 exit 0

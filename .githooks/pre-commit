@@ -11,8 +11,8 @@ agent=$(agent_name)
 if is_main_checkout; then
   cat >&2 <<MSG
 [blocked] メインのチェックアウトでは編集内容をコミットできません(ブランチ: ${branch:-detached})。
-ClaudeとCodexの作業が混ざるのを防ぐため、作業は専用のworktreeで行ってください。
-  git worktree add .worktrees/<task> -b <claude|codex>/<task> main
+エージェントの作業が混ざるのを防ぐため、作業は専用のworktreeで行ってください。
+  git worktree add .worktrees/<task> -b <claude|codex|antigravity>/<task> main
 意図的にここでコミットする場合: STUDIQUO_ALLOW_SHARED_CHECKOUT=1 git commit ...
 MSG
   exit 1
