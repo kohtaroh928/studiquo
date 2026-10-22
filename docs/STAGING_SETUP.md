@@ -303,7 +303,7 @@ npx wrangler d1 delete studiquo-admin-staging
 
 ### 10.3 ステージングで管理画面を使う(Cloudflare Access)
 
-**コードは変更不要。** `access.ts`は、`ACCESS_TEAM_DOMAIN`と`ACCESS_AUD`が設定されていれば、その値でCloudflare Accessのログインを検証し、未設定なら、すべて401にする(安全側)。いまのステージングは未設定なので、`/api/admin/*`は全部401である(管理画面のページ自体は開けるが、数字は出ない)。
+**コードは変更不要。** `access.ts`は、`ACCESS_TEAM_DOMAIN`と`ACCESS_AUD`が設定されていれば、その値でCloudflare Accessのログインを検証し、未設定なら、すべて401にする(安全側)。いまのステージングは未設定なので、`/api/admin/*`は全部403(`Forbidden.`)である(管理画面のページ自体は開けるが、数字は出ない)。
 
 必要なもの:
 
@@ -338,9 +338,9 @@ npx wrangler secret put ACCESS_AUD --env staging
 
 | 確認 | 手順 | 期待 |
 | --- | --- | --- |
-| ログインなしで閉じている | ログインしていないブラウザ(または`curl`)で`https://<STG>/api/admin/stats`を開く | 401 |
+| ログインなしで閉じている | ログインしていないブラウザ(または`curl`)で`https://<STG>/api/admin/stats`を開く | 403(`Forbidden.`)。`/admin`は、Accessのログイン画面へ302で移る |
 | 管理画面が開く | ブラウザで`https://<STG>/admin`を開く→Accessのログイン→ダッシュボード | 橙色の「STAGING環境」の帯と、数字(新しい環境なので、ほぼ0)が出る |
-| **本番の証明書が通らない(必須)** | 本番の管理画面にログインした同じブラウザで、`https://<STG>/admin`を開き、その後`https://<STG>/api/admin/stats`を開く | ステージングのAccessのログインを別に求められ、ログイン前は401。すぐ通ってしまうなら、`ACCESS_AUD`に本番の値を入れてしまっている。入れ直す |
+| **本番の証明書が通らない(必須)** | 本番の管理画面にログインした同じブラウザで、`https://<STG>/admin`を開き、その後`https://<STG>/api/admin/stats`を開く | ステージングのAccessのログインを別に求められ、ログイン前は403。すぐ通ってしまうなら、`ACCESS_AUD`に本番の値を入れてしまっている。入れ直す |
 | 数字が本番でない | ユーザー数などが、本番の数字と違う | ステージングのD1のデータ |
 
 ### 10.4 プッシュ通知(APNs)
@@ -428,7 +428,7 @@ npx wrangler secret put REVENUECAT_WEBHOOK_SECRET --env staging   # クリップ
 ### 10.7 配備の後に、人が確認すること
 
 1. ステージングで問題報告を送る→Slackの投稿が、**ステージング専用のワークスペースだけ**に出る。
-2. 管理画面にログインできる。未ログインの`/api/admin/stats`が401。
+2. 管理画面にログインできる。未ログインの`/api/admin/stats`が403。
 3. Debugビルドの実機で、プッシュ通知が`[STAGING]`の題名で届く。
 4. RevenueCatのテストイベントが200。サンドボックス購入がステージングにだけ反映される。
 5. 本番のSlack・管理画面・RevenueCatの数字に、ステージングの痕跡が出ていない。
@@ -436,3 +436,7 @@ npx wrangler secret put REVENUECAT_WEBHOOK_SECRET --env staging   # クリップ
 ### 10.8 直した別件: レート制限の`namespace_id`の重複
 
 RAG統合ブランチで、`RATE_LIMIT_RAG_INDEX/SEARCH/PDF`が、mainの`RATE_LIMIT_ATTEST_*`と同じ番号(本番`1025`〜`1027`、ステージング`2025`〜`2027`)だった。同じ番号の制限はカウンターを共有する可能性がある。RAG側を本番`1028`〜`1030`、ステージング`2028`〜`2030`に変えた(RAGは本番に未配備なので、本番のカウンターには影響しない。mainの`ATTEST`は番号を変えていない)。環境ごとに番号が重ならないことを`environment.test.ts`で検査する。**ステージングへは、次の配備で反映される。**
+
+### 10.9 配備の記録(2026-10-22)
+
+`claude/stg-env-features`のコミット`b85dcd0`を、`DOCLING_PROCESSOR`の接続だけ一時的に外した複製(コミットしない)から、`--var RAG_ENABLED:true RAG_JUDGE:shadow AI_PROVIDER_APPROVED:true PAYWALL_ENABLED:true`付きでステージングへ配備した。版`1e1cb045-ed9a-4ac0-9982-1123f8728f4d`。ドライランで本番のIDが出ていないことを確認した。配備直後の確認: `/admin`はAccessのログインへ302、`/admin/announcements`も302、未ログインの`/api/admin/stats`は403、誤った秘密のWebhookは401、`/`は200。人の操作が要る確認(10.7)は未実施。**この配備は設定ファイルの値と違う(`DOCLING_PROCESSOR`なし、RAG等を上書き)ので、次の配備でも同じ上書きが要る。**
