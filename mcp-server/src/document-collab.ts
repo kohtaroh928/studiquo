@@ -247,6 +247,21 @@ export async function handleDocumentCollab(url: URL, request: Request, env: Env,
       await env.STUDIQUO_DATA.delete(inviteKey);
       return json({ status: "declined" });
     }
+    // The offer was made to a friend. If that friendship has ended, or either
+    // side has blocked the other, it cannot be taken up.
+    const inviter = await chatUser(env, invite.inviterKey);
+    const mine = await chatUser(env, key);
+    const friend = inviter ? (mine?.friends ?? []).find(item => item.code === inviter.code) : undefined;
+    // Only an inviter who is gone voids the offer for good. A missing
+    // friendship may just be this account's list not having caught up yet
+    // (KV reads lag), so it is refused but kept, and the offer expires by itself.
+    if (!inviter) {
+      await env.STUDIQUO_DATA.delete(inviteKey);
+      return json({ error: "This invitation is no longer available." }, 410);
+    }
+    if (!friend || await blockedBetween(env, key, friend)) {
+      return json({ error: "This invitation can't be accepted right now." }, 403);
+    }
     try {
       // The seat is given on the inviter's authority at this moment: if they
       // are no longer the room's owner (or are gone), the offer is void.
@@ -286,6 +301,37 @@ export async function handleDocumentCollab(url: URL, request: Request, env: Env,
     } catch (error) {
       const forbidden = roomForbiddenResponse(error);
       if (forbidden) return forbidden;
+      throw error;
+    }
+  }
+
+  // The owner takes a member out of the room, or a member leaves it. Either
+  // way the member's index entry and any invitation still waiting for the room
+  // go too, so they cannot walk back in on an old offer.
+  const removeMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/participants\/([a-f0-9]{64})$/.exec(url.pathname);
+  const leaveMatch = /^\/api\/document\/rooms\/([a-f0-9]{64})\/leave$/.exec(url.pathname);
+  if ((removeMatch && request.method === "DELETE") || (leaveMatch && request.method === "POST")) {
+    if (!(await withinLimit(env, "document-respond", key, RESPOND_LIMIT_PER_MINUTE))) {
+      return json({ error: "Too many attempts. Please slow down." }, 429);
+    }
+    const roomID = (removeMatch ?? leaveMatch)![1];
+    const memberKey = removeMatch ? removeMatch[2] : key;
+    try {
+      const room = env.DOCUMENT_ROOM.getByName(roomID);
+      const inviteKey = pendingInviteKey(memberKey, roomID);
+      const hadInvite = !!(await env.STUDIQUO_DATA.get(inviteKey));
+      const result = removeMatch ? await room.removeMember(key, memberKey) : await room.leave(key);
+      // Someone who was only invited, not seated, is "removed" by withdrawing the offer.
+      // Cleaned up even when the room had no seat for them, so a retry after a
+      // failed cleanup finishes the job instead of answering 404 forever.
+      await env.STUDIQUO_DATA.delete(roomMembershipKey(memberKey, roomID));
+      await env.STUDIQUO_DATA.delete(inviteKey);
+      if (result.status === "not_found" && !hadInvite) return json({ error: "That person is not in this room." }, 404);
+      return json(result.status === "not_found" ? { status: "withdrawn" } : result);
+    } catch (error) {
+      const forbidden = roomForbiddenResponse(error);
+      if (forbidden) return forbidden;
+      if (error instanceof Error && error.message === "OwnerCannotLeave") return json({ error: "The owner cannot leave the room." }, 400);
       throw error;
     }
   }

@@ -464,3 +464,48 @@ test("a PRODUCT_CHANGE without new_product_id behaves as before", async () => {
   await sendWebhook(env, purchaseEvent({ type: "PRODUCT_CHANGE", product_id: "com.yabuko.studiquo.plus.monthly" }));
   assert.equal(await subscriberProduct(env, "user-1"), "com.yabuko.studiquo.plus.monthly");
 });
+
+// MARK: A purchase made under someone else's app_user_id
+
+async function subscriberRow(env: LooseEnv, appUserId: string) {
+  return env.ADMIN_DB.prepare("SELECT status, product_id FROM subscribers WHERE app_user_id = ?").bind(appUserId).first();
+}
+
+test("another person's purchase under the same app_user_id does not replace an active subscription", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "email:victim@example.com", product_id: "studiquo_pro_monthly", original_transaction_id: "T-victim" }));
+  await sendWebhook(env, purchaseEvent({ app_user_id: "email:victim@example.com", product_id: "studiquo_standard_yearly", original_transaction_id: "T-attacker", event_timestamp_ms: Date.now() + 1000 }));
+  assert.deepEqual({ ...(await subscriberRow(env, "email:victim@example.com")) }, { status: "active", product_id: "studiquo_pro_monthly" });
+});
+
+test("another person's refund or expiry under the same app_user_id does not end an active subscription", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "email:victim@example.com", original_transaction_id: "T-victim" }));
+  for (const type of ["REFUND", "EXPIRATION"]) {
+    await sendWebhook(env, purchaseEvent({ app_user_id: "email:victim@example.com", type, original_transaction_id: "T-attacker", event_timestamp_ms: Date.now() + 1000 }));
+  }
+  assert.equal((await subscriberRow(env, "email:victim@example.com"))!.status, "active");
+});
+
+test("the same transaction's own refund still ends the subscription, and a new purchase after it is accepted", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u", original_transaction_id: "T1" }));
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u", type: "EXPIRATION", original_transaction_id: "T1", event_timestamp_ms: Date.now() + 1000, expiration_at_ms: Date.now() - 1000 }));
+  assert.equal((await subscriberRow(env, "u"))!.status, "expired");
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u", original_transaction_id: "T2", product_id: "studiquo_plus_monthly", event_timestamp_ms: Date.now() + 2000 }));
+  assert.deepEqual({ ...(await subscriberRow(env, "u")) }, { status: "active", product_id: "studiquo_plus_monthly" });
+});
+
+test("rows and events without a transaction id (written before this check) behave as they always did", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "old" }));
+  await sendWebhook(env, purchaseEvent({ app_user_id: "old", type: "EXPIRATION", event_timestamp_ms: Date.now() + 1000 }));
+  assert.equal((await subscriberRow(env, "old"))!.status, "expired");
+});
+
+test("an event that names no transaction is still applied to a row that has one (a real expiry is never dropped)", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u2", original_transaction_id: "T1" }));
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u2", type: "EXPIRATION", event_timestamp_ms: Date.now() + 1000 }));
+  assert.equal((await subscriberRow(env, "u2"))!.status, "expired");
+});

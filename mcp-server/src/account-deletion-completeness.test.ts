@@ -248,6 +248,8 @@ async function shareWithBob(env: LooseEnv) {
   // Only a friend can be invited to a document, so Bob must be on Alice's list.
   const aliceKey = await registerFriend(env, alice, "apple:alice", "ALICECODE1");
   env._values.set(`chat:user:${aliceKey}`, JSON.stringify({ key: aliceKey, name: "apple:alice", code: "ALICECODE1", friends: [{ code: "BOBCODE01", name: "apple:bob" }] }));
+  // Friendship is mutual, and accepting re-checks it.
+  env._values.set(`chat:user:${bobKey}`, JSON.stringify({ key: bobKey, name: "apple:bob", code: "BOBCODE01", friends: [{ code: "ALICECODE1", name: "apple:alice" }] }));
   const invited = await call(env, `/api/document/rooms/${ROOM}/invite`, { method: "POST", token: alice.token, body: { code: "BOBCODE01", role: "editor" } });
   assert.equal(invited.status, 200);
   // The invitation seats Bob only once he accepts it.
