@@ -802,3 +802,30 @@ test("a moderated request gets its credits back, so rejected text cannot use up 
     fetchState.restore();
   }
 });
+
+// MARK: Malformed grading criteria are a 400, not a server error
+
+test("grade rejects malformed criteria with 400 before spending credits or alerting", async () => {
+  const fetchState = installFetch(() => responsesOK("{}"));
+  try {
+    const env = environment();
+    for (const criteria of [[null], [5], [{ name: "a" }], [{ name: "a", maxPoints: "x", requirement: "b" }], [{ name: {}, maxPoints: 1, requirement: "b" }]]) {
+      const { response } = await run("grade", { question: "q", answerText: "a", criteria }, { env });
+      assert.equal(response!.status, 400, JSON.stringify(criteria));
+    }
+    assert.equal(fetchState.calls.length + fetchState.moderationCalls.length, 0);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("grade trims overlong criteria text instead of sending it all upstream", async () => {
+  const fetchState = installFetch(() => responsesOK('{"score":0,"maxScore":1,"verdict":"x","criteria":[],"issues":[]}'));
+  try {
+    await run("grade", { question: "q", answerText: "a", criteria: [{ name: "n".repeat(5000), maxPoints: 1, requirement: "r".repeat(9000) }] });
+    const sent = JSON.stringify(fetchState.calls[0].body);
+    assert.ok(sent.length < 6000, `criteria text was not bounded (${sent.length})`);
+  } finally {
+    fetchState.restore();
+  }
+});

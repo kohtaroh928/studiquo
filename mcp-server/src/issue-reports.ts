@@ -15,7 +15,7 @@ import { isRevoked } from "./revocation.ts";
 import { isExpired } from "./token.ts";
 import { checkRateLimit } from "./rate-limit.ts";
 import { bearerToken, sha256Hex } from "./auth.ts";
-import { json, binaryHeaders, readJSONLimited } from "./http.ts";
+import { json, binaryHeaders, isWellFormedBase64, readJSONLimited } from "./http.ts";
 import { realSession } from "./session.ts";
 import { postSlackBlocks } from "./slack.ts";
 import type { Env } from "./env.ts";
@@ -136,7 +136,7 @@ export async function handleIssueReports(url: URL, request: Request, env: Env) {
   if (body.screenshot && typeof body.screenshot === "object") {
     const contentType = String(body.screenshot.contentType ?? "");
     const data = String(body.screenshot.data ?? "");
-    if (!ALLOWED_SCREENSHOT_CONTENT_TYPES.has(contentType) || !data) {
+    if (!ALLOWED_SCREENSHOT_CONTENT_TYPES.has(contentType) || !data || !isWellFormedBase64(data)) {
       return json({ error: "Invalid screenshot." }, 400);
     }
     if (Math.floor(data.length * 3 / 4) > MAX_SCREENSHOT_BYTES) {
