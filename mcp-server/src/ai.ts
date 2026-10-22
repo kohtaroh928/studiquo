@@ -263,10 +263,11 @@ async function handleChat(request: Request, env: Env, key: string, ctx: Executio
   });
   if (gate.response) return gate.response;
 
-  // Every user-written turn and the attached note text are screened, not just
-  // the latest message (images are not screened).
+  // Every turn and the attached note text are screened, not just the latest
+  // message (images are not screened).
   const rejected = await moderateOrRefund(env, gate, [
-    ...turns.slice(-20).filter((turn: { role: string; }) => turn?.role !== "assistant").map((turn: { text: unknown; }) => turn?.text),
+    // Assistant turns come from the client too, so a forged one is screened like the rest.
+    ...turns.slice(-20).map((turn: { text: unknown; }) => turn?.text),
     payload?.noteContext,
   ]);
   if (rejected) return rejected;
@@ -789,7 +790,7 @@ async function handleGrade(request: Request, env: Env, key: string, ctx: Executi
     globalBucket: "grade", globalLimit: Number(env.GLOBAL_GRADING_DAILY_LIMIT) || DEFAULT_GLOBAL_GRADING_LIMIT,
   });
   if (gate.response) return gate.response;
-  const rejected = await moderateOrRefund(env, gate, [question, answerText]);
+  const rejected = await moderateOrRefund(env, gate, [question, answerText, ...criteria.flatMap(item => [item.name, item.requirement])]);
   if (rejected) return rejected;
 
   const parts = [];
