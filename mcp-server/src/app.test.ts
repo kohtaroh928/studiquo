@@ -2746,6 +2746,19 @@ test("POST /api/session/refresh exchanges a token only once and shortens the old
   assert.equal(env._ttls.get(`session:${sha256Hex(token)}`), 14 * 86_400, "the replaced token stops working after the grace period");
 });
 
+test("POST /api/session/refresh exchanges a token only once even when the store still reads the old marker as absent", async () => {
+  const env = environment({ strictSessions: true });
+  const token = tokenIssuedDaysAgo(30, "q");
+  await env.STUDIQUO_DATA.put(`session:${sha256Hex(token)}`, JSON.stringify({ sub: "email:race@example.com" }));
+  // Reads of the "already refreshed" marker lag behind its write.
+  const realGet = env.STUDIQUO_DATA.get;
+  env.STUDIQUO_DATA.get = async (key: string, ...rest: any[]) => key.startsWith("session-refreshed:") ? null : realGet(key, ...rest);
+  const send = (random: string) => worker.fetch(request("/api/session/refresh", { method: "POST", token, body: { randomValue: random.repeat(32) } }), env, noopCtx);
+  const results = await Promise.all([send("a"), send("b"), send("c")]);
+  const refreshed = (await Promise.all(results.map(response => response.json()))).filter(result => result.refreshed === true);
+  assert.equal(refreshed.length, 1, "exactly one child token comes out of one parent");
+});
+
 test("POST /api/session/refresh ignores a randomValue, whatever it holds, and makes its own", async () => {
   const env = environment({ strictSessions: true });
   const token = tokenIssuedDaysAgo(30, "p");
