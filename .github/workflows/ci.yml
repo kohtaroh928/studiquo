@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           cache: npm
@@ -54,6 +54,29 @@ jobs:
       # No install scripts: the tests need none, and a dependency's script would
       # otherwise run on the runner.
       - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+
+  # scripts/vuln-watch: the vulnerability-watch tool's type check and tests. It has
+  # no runtime dependencies; typescript and @types/node are dev-only.
+  scripts:
+    name: Scripts type check and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: scripts/vuln-watch
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: scripts/vuln-watch/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
       - run: npm test
 
   # Its own job so a new advisory, which has nothing to do with a pull request,
@@ -69,11 +92,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
       # Production dependencies only; fails on any known advisory.
-      - run: npm audit --omit=dev
+      # The registry's bulk advisory endpoint times out now and then, so retry
+      # when npm reports a registry error, but never when it reports advisories.
+      - run: |
+          for attempt in 1 2 3; do
+            report=$(npm audit --omit=dev --json --fetch-timeout=60000 --fetch-retries=0 2>/dev/null || true)
+            if echo "$report" | jq -e 'has("vulnerabilities") and (has("error") | not)' >/dev/null 2>&1; then
+              echo "$report" | jq -e '.metadata.vulnerabilities.total == 0' >/dev/null && exit 0
+              npm audit --omit=dev || true
+              exit 1
+            fi
+            echo "npm audit could not reach the registry (attempt $attempt)"
+            sleep $((attempt * 15))
+          done
+          exit 1
 
   secrets:
     name: Secret scan (full history)

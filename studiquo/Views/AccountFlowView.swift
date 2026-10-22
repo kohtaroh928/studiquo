@@ -213,7 +213,7 @@ private struct CreateAccountView: View {
                 TextField("メールアドレス", text: $email)
                     .textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never)
                     .accountFieldStyle()
-                SecureField(isPasswordReset ? "新しいパスワード（8文字以上）" : "パスワード（8文字以上）", text: $password)
+                SecureField(isPasswordReset ? "新しいパスワード（12文字以上）" : "パスワード（12文字以上）", text: $password)
                     .textContentType(.newPassword)
                     .accountFieldStyle()
                 if !authentication.errorMessage.isEmpty {
@@ -271,7 +271,7 @@ private struct EmailVerificationView: View {
                 if authentication.needsNewPassword {
                     // The server refused the password (it appears in a known
                     // breach) but kept the code valid: ask for another one here.
-                    SecureField("新しいパスワード(8文字以上)", text: $newPassword)
+                    SecureField("新しいパスワード(12文字以上)", text: $newPassword)
                         .textContentType(.newPassword)
                         .accountFieldStyle()
                         .frame(maxWidth: 320)
@@ -286,7 +286,7 @@ private struct EmailVerificationView: View {
                     }
                     .buttonStyle(.themePrimary)
                     .controlSize(.large)
-                    .disabled(code.count != 6 || newPassword.count < 8 || authentication.isEmailVerifyBusy)
+                    .disabled(code.count != 6 || newPassword.count < 12 || authentication.isEmailVerifyBusy)
                 } else {
                     Button("確認") {
                         Task {

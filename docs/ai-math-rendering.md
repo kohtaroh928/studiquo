@@ -5,7 +5,7 @@ AIは数式をLaTeX(`$\frac{a}{b}$`、`x^{2}`)で、書式をMarkdown(`**太字*
 アプリはそれを加工せずに表示するため、記号がそのまま画面に出て読みづらい。
 
 原因は3つ:
-1. サーバーの指示文(`mcp-server/src/ai.js` の `CHAT_SYSTEM` など)に、数式・書式の指定がない。
+1. サーバーの指示文(`mcp-server/src/ai.ts` の `CHAT_SYSTEM` など)に、数式・書式の指定がない。
 2. 返答を `Text(message.text)` でそのまま表示している(`Views/AIChatView.swift` の `AIChatBubble`)。
 3. 既存の `MathExpression` は小さな部分集合(分数・累乗・添字・根号・ギリシャ文字)で、AIの出力には足りない。
    未対応のコマンドは名前がそのまま出る(`\left` → 「left」)。
@@ -27,7 +27,7 @@ AIは数式をLaTeX(`$\frac{a}{b}$`、`x^{2}`)で、書式をMarkdown(`**太字*
 | 復習の通知の本文 | `Views/ContentView.swift`(`item.explanationMarkdown`) |
 | 復習用ドキュメントの生成 | `Services/AIReviewService.swift`(`DocumentBody.attributedString(fromMarkup:)`) |
 | ページへの貼り付け | `Views/NoteEditorView.swift`(`insertAIResponseOnPage`) |
-| AIへの指示(サーバー) | `mcp-server/src/ai.js`(`CHAT_SYSTEM` `RUBRIC_SYSTEM` `GRADE_SYSTEM` `REVIEW_SYSTEM`) |
+| AIへの指示(サーバー) | `mcp-server/src/ai.ts`(`CHAT_SYSTEM` `RUBRIC_SYSTEM` `GRADE_SYSTEM` `REVIEW_SYSTEM`) |
 | AIへの指示(アプリ内の直接Claude経路) | `Services/ClaudeChatService.swift`(`systemPrompt`) |
 
 ## ステップ
@@ -195,7 +195,7 @@ UIテストでは、テスト用のAIに `sample:<id>` と送ると、そのサ�
 
 ## ステップ7(AIへの指示文)の結果
 
-- `mcp-server/src/ai.js` に共通の `MATH_RULES` を追加し、`CHAT_SYSTEM`・`RUBRIC_SYSTEM`・`GRADE_SYSTEM`・`REVIEW_SYSTEM` の4つの末尾につなげた。
+- `mcp-server/src/ai.ts` に共通の `MATH_RULES` を追加し、`CHAT_SYSTEM`・`RUBRIC_SYSTEM`・`GRADE_SYSTEM`・`REVIEW_SYSTEM` の4つの末尾につなげた。
 - アプリ内の直接Claude経路(`ClaudeChatService.systemPrompt`)にも同じ内容を入れた。
 - 指示の内容: 数式は LaTeX で文中は `$...$`、独立行は `$$...$$`/式中の日本語は `\text{}`/通貨に `$` を使わない/式をコードやバッククォートに入れない/`\boxed`・`\ce`・`\underbrace` などを避け複数行は `aligned`/簡単な数は式にしなくてよい。
 - テスト: サーバーは4つのエンドポイントすべての指示文に規則が入ることを確認(全437件通過)。アプリは `ClaudeChatPromptMathTests`。

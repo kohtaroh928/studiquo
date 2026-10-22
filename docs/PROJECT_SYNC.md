@@ -46,7 +46,7 @@ claude.aiの2つのProject(「Studiquo プロダクト・設計」「Studiquo �
 | `docs/PRIVACY_RELEASE_CHECKLIST.md` | `PRIVACY_RELEASE_CHECKLIST.md` | リリース |
 | `docs/cloudkit-verification.md` | `cloudkit-verification.md` | リリース |
 | `docs/releases/<日付>-*.md`(新しいリリース記録) | `release-<日付>-*.md` | リリース |
-| `mcp-server/src/legal.js` | `legal-pages-source.js.txt` | リリース |
+| `mcp-server/src/legal.ts` | `legal-pages-source.js.txt` | リリース |
 
 意図して複製していないもの: ソースコード、`RAG_*`の評価報告と生データ、`STAGING_SETUP.md`、`RUNBOOK.md`、`notes/branches.md`。理由は、リポジトリとすぐ食い違うか、Projectの役割(設計の相談とリリース準備)に不要なため。
 
@@ -68,10 +68,10 @@ claude.aiの2つのProject(「Studiquo プロダクト・設計」「Studiquo �
 
 | 変更したもの | 確認する資料 |
 | --- | --- |
-| `studiquo/Services/SubscriptionStore.swift`、`studiquo/Views/SubscriptionPlansView.swift`、`mcp-server/src/entitlements.js` | `03_サブスク商品定義.md`、`01_ストアメタデータ原稿.md` |
-| `mcp-server/src/legal.js`、アプリ内の利用規約・プライバシーポリシー | `legal-pages-source.js.txt`(複製)、`01_ストアメタデータ原稿.md`(プライバシー申告の材料) |
+| `studiquo/Services/SubscriptionStore.swift`、`studiquo/Views/SubscriptionPlansView.swift`、`mcp-server/src/entitlements.ts` | `03_サブスク商品定義.md`、`01_ストアメタデータ原稿.md` |
+| `mcp-server/src/legal.ts`、アプリ内の利用規約・プライバシーポリシー | `legal-pages-source.js.txt`(複製)、`01_ストアメタデータ原稿.md`(プライバシー申告の材料) |
 | `project.yml`の権限の説明文(`NSCameraUsageDescription`など)、`Info.plist` | `02_審査メモ.md` |
-| `studiquo/Services/AuthenticationStore.swift`、`AccountFlowView.swift`、`mcp-server/src/account-deletion.js` | `02_審査メモ.md`、`00_残タスク表.md`、`SECURITY_AND_PRIVACY.md`(複製) |
+| `studiquo/Services/AuthenticationStore.swift`、`AccountFlowView.swift`、`mcp-server/src/account-deletion.ts` | `02_審査メモ.md`、`00_残タスク表.md`、`SECURITY_AND_PRIVACY.md`(複製) |
 | `mcp-server/wrangler.jsonc`の設定、デプロイ、migrationの適用 | `00_残タスク表.md`、リリース記録(複製) |
 | `studiquo/Models/`の変更(SwiftData) | `ARCHITECTURE.md`、`DATA_AND_MIGRATIONS.md`(複製) |
 | 新しいADR | ADRと`notes-open-decisions.md`(複製)、`01_意思決定ログ.md` |

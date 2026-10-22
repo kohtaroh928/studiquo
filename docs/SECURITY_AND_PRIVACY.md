@@ -127,17 +127,17 @@ Cloudflare Worker ── KV / D1 / Durable Objects
 
 | 層 | 内容 | 実装 |
 | --- | --- | --- |
-| IPごとの回数制限 | Cloudflare Rate Limitingで、IPごとに回数を制限する | `rate-limit.js`、`wrangler.jsonc` |
-| 複数キーの失敗回数 | アカウント、IP+アカウント、ASNを別々に数える。IPだけでは、分散した攻撃で効かないため | `login-throttle.js` |
-| 段階的な待機 | 無料回数を超えると、待ち時間が倍々に増える(上限あり)。ロックはしない。待機中はパスワードを検証しない | `login-throttle.js` |
-| 並行リクエスト対策 | 待機の確認と失敗の加算を、Durable Object内の1つの操作にする。検証の前に1回分を数え、正しければ戻す | `rate-counter.js` |
-| 信頼済みの組 | 過去にログインに成功したIP+アカウントは、共有(アカウント・ASN)の待機を免除する。失敗は共有にも数える。14日で失効。攻撃者が失敗を重ねて持ち主を待たせることを防ぐ | `login-throttle.js` |
-| 確認コードの制限 | メールごとに、送信は1時間5回、確認は1時間10回(成功も数える)。再送しても試行回数は戻らない。IPを分散した総当たりとメール爆撃を防ぐ | `app.js` |
-| 漏えいパスワードの拒否 | 登録・再設定で、HIBPのk-匿名性API(SHA-1の先頭5文字だけ)で照合する。拒否しても確認コードは消費しない。アプリは、コード入力の画面で、新しいパスワードだけを入れ直させ、同じコードで続ける。障害時は照合を飛ばして受け付け、ログに残す | `pwned-passwords.js` |
-| ユーザー列挙の防止 | 未登録・パスワード違い・壊れたレコードで、メッセージ・ステータス・処理量を揃える(PBKDF2とArgon2idを1回ずつ実行) | `local-auth.js` |
-| ハッシュ | Argon2id(m=19MiB, t=2, p=1、OWASPの最小構成)。純JSの`@noble/hashes`。同時実行は2、待ちは32まで。満杯のログインは、ハッシュも照合もせずに503(`Retry-After: 2`)とし、試行は数えない。ただし、過去にそのアカウントへのログインに成功したIP(信頼済みの組)だけは、予備の16件まで受け付ける。パスワードを保存する操作(登録・再設定)は、確認コードを消費した後なので、満杯でも待つ | `local-auth.js` |
-| 検知 | ログインの結果を、メール・IPを含めない構造化ログに出す。失敗(100件/時)・待機中の拒否(300件/時)・ハッシュ処理の混雑による拒否(50件/時)・履歴のあるアカウントへの未知の環境からの成功(10件/時)が閾値を超えたら、Slackへ1回通知する | `login-monitor.js` |
-| 本人への通知 | 過去90日に使われていない「国+ASN」からのログイン成功で、本人にメールする。IPは載せない。1日3通まで | `login-monitor.js` |
+| IPごとの回数制限 | Cloudflare Rate Limitingで、IPごとに回数を制限する | `rate-limit.ts`、`wrangler.jsonc` |
+| 複数キーの失敗回数 | アカウント、IP+アカウント、ASNを別々に数える。IPだけでは、分散した攻撃で効かないため | `login-throttle.ts` |
+| 段階的な待機 | 無料回数を超えると、待ち時間が倍々に増える(上限あり)。ロックはしない。待機中はパスワードを検証しない | `login-throttle.ts` |
+| 並行リクエスト対策 | 待機の確認と失敗の加算を、Durable Object内の1つの操作にする。検証の前に1回分を数え、正しければ戻す | `rate-counter.ts` |
+| 信頼済みの組 | 過去にログインに成功したIP+アカウントは、共有(アカウント・ASN)の待機を免除する。失敗は共有にも数える。14日で失効。攻撃者が失敗を重ねて持ち主を待たせることを防ぐ | `login-throttle.ts` |
+| 確認コードの制限 | メールごとに、送信は1時間5回、確認は1時間10回(成功も数える)。再送しても試行回数は戻らない。IPを分散した総当たりとメール爆撃を防ぐ | `app.ts` |
+| 漏えいパスワードの拒否 | 登録・再設定で、HIBPのk-匿名性API(SHA-1の先頭5文字だけ)で照合する。拒否しても確認コードは消費しない。アプリは、コード入力の画面で、新しいパスワードだけを入れ直させ、同じコードで続ける。障害時は照合を飛ばして受け付け、ログに残す | `pwned-passwords.ts` |
+| ユーザー列挙の防止 | 未登録・パスワード違い・壊れたレコードで、メッセージ・ステータス・処理量を揃える(PBKDF2とArgon2idを1回ずつ実行) | `local-auth.ts` |
+| ハッシュ | Argon2id(m=19MiB, t=2, p=1、OWASPの最小構成)。純JSの`@noble/hashes`。同時実行は2、待ちは32まで。満杯のログインは、ハッシュも照合もせずに503(`Retry-After: 2`)とし、試行は数えない。ただし、過去にそのアカウントへのログインに成功したIP(信頼済みの組)だけは、予備の16件まで受け付ける。パスワードを保存する操作(登録・再設定)は、確認コードを消費した後なので、満杯でも待つ | `local-auth.ts` |
+| 検知 | ログインの結果を、メール・IPを含めない構造化ログに出す。失敗(100件/時)・待機中の拒否(300件/時)・ハッシュ処理の混雑による拒否(50件/時)・履歴のあるアカウントへの未知の環境からの成功(10件/時)が閾値を超えたら、Slackへ1回通知する | `login-monitor.ts` |
+| 本人への通知 | 過去90日に使われていない「国+ASN」からのログイン成功で、本人にメールする。IPは載せない。1日3通まで | `login-monitor.ts` |
 
 運用上の性質は次の通り。
 
@@ -202,8 +202,8 @@ Keychain itemのserviceとaccountを固定し、tokenやkeyをUserDefaultsへ複
 - エラー応答にstack trace、secret、存在確認に不要な内部ID、上流providerの機密情報を含めない。
 - Rate Limitは認証、Passkey、チャット、AI、MCP、報告、Webhookごとに目的に合う単位で設定する。
 - セッショントークンのランダムな部分は、Workerが自分の乱数源(256ビット)で作る。アプリが送る`randomValue`は使わない。
-- Apple・GoogleのIDトークンは、そのサインインのために作られたnonceを含むことを確かめ、同じnonceを2回使わせない(`id-token-nonce.js`。`REQUIRE_ID_TOKEN_NONCE="true"`で、nonceのないサインインを拒否する)。
-- Workerが発行するトークン(セッション、MCPアクセス)には、署名(HMAC-SHA256)を付ける。署名が合わないトークンは、KVを読まずに拒否する(`token-signature.js`)。署名の鍵は`TOKEN_SIGNING_KEY`(Worker secret)で、鍵がなければ、従来どおり署名も確認もしない。署名のない従来のトークンは、`REQUIRE_SIGNED_TOKENS="true"`にするまで受け付ける。
+- Apple・GoogleのIDトークンは、そのサインインのために作られたnonceを含むことを確かめ、同じnonceを2回使わせない(`id-token-nonce.ts`。`REQUIRE_ID_TOKEN_NONCE="true"`で、nonceのないサインインを拒否する)。
+- Workerが発行するトークン(セッション、MCPアクセス)には、署名(HMAC-SHA256)を付ける。署名が合わないトークンは、KVを読まずに拒否する(`token-signature.ts`)。署名の鍵は`TOKEN_SIGNING_KEY`(Worker secret)で、鍵がなければ、従来どおり署名も確認もしない。署名のない従来のトークンは、`REQUIRE_SIGNED_TOKENS="true"`にするまで受け付ける。
 - 本番の入口は独自ドメイン`api.studiquo.app`だけとし、`workers.dev`とプレビューURLは無効にする。ゾーンのWAFのレート制限(IPごと、10秒に200件)で、認証より前の連打を止める。
 - AIはリクエストの入口(アカウントごとに1分60件)と、クレジットの確認を、本文を読む前・外部のモデレーションを呼ぶ前に行う。`/mcp`は資格情報ごとに1分120回、スナップショット保存はトークンごとに1時間30回、共同編集の部屋作成はアカウントごとに1時間20件に制限する。
 - 保存するデータは、形式と期限を決める(アイコンのBase64の検証、通報・失効記録・MCPクライアント登録の期限、自動エラーの新規行の1日あたりの上限)。
@@ -230,7 +230,7 @@ AI機能では、操作に応じて次の情報が端末外へ出る。
 - 画像は長辺を制限し、最大枚数とrequest sizeを制限する。
 - AIへのsystem instructionと利用者コンテンツを区切り、prompt delimiterを無害化する。
 - AI出力は信頼せず、JSON schema、型、文字数を検証してから保存・表示する。
-- AI要求本文、画像、API keyをアプリログ、Workerログ、エラーreportへ記録しない。(例外: OpenAIがエラーを返したとき、そのエラー応答の本文を最大300文字までWorkerログに出す箇所がある(`ai.js`)。応答は要求本文の再掲を含まない想定だが、含まないことは確認していない。)
+- AI要求本文、画像、API keyをアプリログ、Workerログ、エラーreportへ記録しない。(OpenAIがエラーを返したときは、エラーの`type`と`code`(短い識別子だけ)をWorkerログに出し、応答の本文は出さない。`ai.ts`の`upstreamErrorKind`)。
 - provider、model、送信項目を増やす変更では、アプリ内開示、プライバシーポリシー、App Store申告を同時に更新する。
 
 同意は`openai-v1`として端末に保存し、APIヘッダーにも付与する。旧booleanの確認済み状態は同意とみなさない。取消し時に翌日復習も停止する。`AI_PROVIDER_APPROVED`は既定falseで、対象年齢・訓練利用・保持条件の承認がない限り送信を拒否する。
@@ -416,7 +416,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Anthropic、OpenAI�
 
 5. 端末管理ファイルの消去と再試行を実装。CloudKit同期削除・App Group共有Inboxは実機でも確認する。
 6. 旧Slack投稿と所有者を復元できない旧問題報告の処理は別途運営対応が必要。
-7. `PrivacyPolicyView`と`mcp-server/src/legal.js`は手作業で重複管理されている。単一sourceから生成するか、同一性testを強化する。
+7. `PrivacyPolicyView`と`mcp-server/src/legal.ts`は手作業で重複管理されている。単一sourceから生成するか、同一性testを強化する。
 
 ### P1(追加): パスワード認証まわり
 
@@ -424,7 +424,7 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Anthropic、OpenAI�
 - 確認コードの送信・確認の429は、サーバーが待ち時間(`Retry-After`)を返さないので、アプリは時間を言わずに「しばらく待ってから」と案内する。メール単位の制限は最長1時間、IPごとの制限は1分と、原因で長さが違う。サーバーが残り時間を返すようにすれば、アプリは自動でその時間を表示する。
 - 応答時間の均一化、通知メールとSlackの実送信、`ARGON2_WRITE=true`の本番相当の環境での確認は未実施。
 - 保存する識別子の塩なしSHA-256は、メール・IPの推測に弱い。サーバー秘密鍵によるHMACへ、横断的に移行することを検討する。
-- Argon2id移行後に、PBKDF2のレコードが残らなくなったら、`local-auth.js`のPBKDF2のダミー計算と旧レコードの分岐を外す。
+- Argon2id移行後に、PBKDF2のレコードが残らなくなったら、`local-auth.ts`のPBKDF2のダミー計算と旧レコードの分岐を外す。
 - App Attest(端末とアプリの証明)の導入を、CAPTCHAに代わる強い対策として検討する。
 
 - ログインに成功する経路が、KVの遅さのために、約3〜6秒かかる(ステージングの実測。失敗の経路は約0.9秒)。`linkVerifiedEmail`の無駄な書き込みは減らした。残る主な原因は、`mintSession`のKVの操作を、順番に3回行っていること(最初の2つの読み取りは、並列にできる)と、KVの読み取りそのものの遅延。Apple・Google・メールのすべてのサインインが通る処理で、本番の現行コードにも、同じ遅さがある可能性が高い。
@@ -485,16 +485,16 @@ Apple、Google、Cloudflare、iCloud、RevenueCat、Resend、Anthropic、OpenAI�
 - `studiquo/Services/ErrorReportService.swift`: 自動診断のopt-out、queue、送信内容
 - `studiquo/Services/DiagnosticReportBuilder.swift`: MetricKit診断の最小化
 - `studiquo/Services/NotebookBackupService.swift`: 自動backupと保護ノートの扱い
-- `mcp-server/src/session.js`: sessionの実在確認とcanonical identity
-- `mcp-server/src/local-auth.js`: パスワードのhash(Argon2id、PBKDF2からの移行、世代による競合対策)
-- `mcp-server/src/login-throttle.js`: ログイン失敗の多段制限と待機
-- `mcp-server/src/login-monitor.js`: ログイン結果のログ、Slackアラート、新しい環境の通知
-- `mcp-server/src/pwned-passwords.js`: 漏えいパスワードの照合(HIBP)
-- `mcp-server/src/rate-counter.js`: 回数制限・失敗回数・履歴・世代を保持するDurable Object
-- `mcp-server/src/account-deletion.js`: server側account削除
-- `mcp-server/src/mcp-oauth.js`: MCP OAuth、PKCE、token期限
-- `mcp-server/src/ai.js`: AI provider、quota、入力処理
-- `mcp-server/src/issue-reports.js`: 問題報告、screenshot、90日TTL
-- `mcp-server/src/app-errors.js`: 自動診断の集約
-- `mcp-server/src/http.js`: body上限readerとsecurity headers
-- `mcp-server/src/legal.js`: 公開privacy policy
+- `mcp-server/src/session.ts`: sessionの実在確認とcanonical identity
+- `mcp-server/src/local-auth.ts`: パスワードのhash(Argon2id、PBKDF2からの移行、世代による競合対策)
+- `mcp-server/src/login-throttle.ts`: ログイン失敗の多段制限と待機
+- `mcp-server/src/login-monitor.ts`: ログイン結果のログ、Slackアラート、新しい環境の通知
+- `mcp-server/src/pwned-passwords.ts`: 漏えいパスワードの照合(HIBP)
+- `mcp-server/src/rate-counter.ts`: 回数制限・失敗回数・履歴・世代を保持するDurable Object
+- `mcp-server/src/account-deletion.ts`: server側account削除
+- `mcp-server/src/mcp-oauth.ts`: MCP OAuth、PKCE、token期限
+- `mcp-server/src/ai.ts`: AI provider、quota、入力処理
+- `mcp-server/src/issue-reports.ts`: 問題報告、screenshot、90日TTL
+- `mcp-server/src/app-errors.ts`: 自動診断の集約
+- `mcp-server/src/http.ts`: body上限readerとsecurity headers
+- `mcp-server/src/legal.ts`: 公開privacy policy

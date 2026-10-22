@@ -1,0 +1,60 @@
+name: CodeQL
+# 静的解析(JavaScript/TypeScript と Swift)。警告のみ: 必須チェックにはしない。
+# 結果は GitHub の Security タブ(Code scanning)に出る。リポジトリは公開なので無料。
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+  schedule:
+    - cron: '41 21 * * 1'
+permissions:
+  contents: read
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: javascript-typescript
+            runner: ubuntu-24.04
+            build-mode: none
+          - language: swift
+            runner: macos-15
+            build-mode: manual
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Before CodeQL starts tracing. Once it does, the build steps run under Rosetta, and Homebrew refuses
+      # to install there ("Cannot install under Rosetta 2 in ARM default prefix"). Generating the project
+      # needs no tracing: only the compile below is what CodeQL must watch.
+      - name: Generate the Xcode project (Swift only)
+        if: matrix.language == 'swift'
+        shell: bash
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+      - name: Build the app (Swift only)
+        if: matrix.language == 'swift'
+        shell: bash
+        run: |
+          # One architecture only: 'generic/platform' builds arm64 and x86_64, and under CodeQL's tracing the
+          # first attempt (both) did not finish in 45 minutes.
+          xcodebuild build -project studiquo.xcodeproj -scheme studiquo -destination 'generic/platform=iOS Simulator' ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO
+      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: /language:${{ matrix.language }}
