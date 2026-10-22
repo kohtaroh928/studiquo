@@ -96,7 +96,20 @@ jobs:
         with:
           node-version: "24"
       # Production dependencies only; fails on any known advisory.
-      - run: npm audit --omit=dev
+      # The registry's bulk advisory endpoint times out now and then, so retry
+      # when npm reports a registry error, but never when it reports advisories.
+      - run: |
+          for attempt in 1 2 3; do
+            report=$(npm audit --omit=dev --json --fetch-timeout=60000 --fetch-retries=0 2>/dev/null || true)
+            if echo "$report" | jq -e 'has("vulnerabilities") and (has("error") | not)' >/dev/null 2>&1; then
+              echo "$report" | jq -e '.metadata.vulnerabilities.total == 0' >/dev/null && exit 0
+              npm audit --omit=dev || true
+              exit 1
+            fi
+            echo "npm audit could not reach the registry (attempt $attempt)"
+            sleep $((attempt * 15))
+          done
+          exit 1
 
   secrets:
     name: Secret scan (full history)
