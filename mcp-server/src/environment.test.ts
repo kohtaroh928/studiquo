@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { environmentTag, markAdminPage, tagged } from "./environment.ts";
+import { environmentTag, isNonProduction, markAdminPage, tagged } from "./environment.ts";
 import { handleAdminPage } from "./admin.ts";
 import { handleAnnouncementsPage } from "./announcements.ts";
 import { markedPayload, postSlackBlocks } from "./slack.ts";
@@ -109,4 +109,24 @@ test("every rate limit in wrangler.jsonc has its own namespace_id within an envi
     assert.ok(ids.length > 20);
     assert.equal(new Set(ids).size, ids.length, "a shared id would share one counter between two limits");
   }
+});
+
+test("a malformed label still counts as non-production, an unset or production one does not", () => {
+  for (const label of ["staging", "stg!", "x".repeat(40), "ステージング"]) assert.equal(isNonProduction({ ENVIRONMENT_LABEL: label }), true, label);
+  for (const label of [undefined, "", "  ", "production", "PROD"]) assert.equal(isNonProduction({ ENVIRONMENT_LABEL: label }), false, String(label));
+});
+
+test("push: staging never sends to a production-environment device, even with a legacy all-environments key", async () => {
+  const { privateKey } = await generateKeyPair("ES256", { extractable: true });
+  const base = { APNS_AUTH_KEY: await exportPKCS8(privateKey), APNS_KEY_ID: "KEY1234567", APNS_TEAM_ID: "TEAM123456", APNS_TOPIC: "com.yabuko.studiquo" };
+  const devices = [{ token: "a".repeat(64), environment: "sandbox", updatedAt: 1 }, { token: "b".repeat(64), environment: "production", updatedAt: 2 }];
+  const hosts: string[] = [];
+  const options = { devices: devices as any, fetchImpl: (async (url: any) => { hosts.push(String(url)); return new Response(null, { status: 200 }); }) as typeof fetch };
+  const results = await sendPush(partialEnv({ ...base, ENVIRONMENT_LABEL: "stg!" }), "user-a", { title: "t", body: "b" }, options);
+  assert.equal(hosts.length, 1);
+  assert.match(hosts[0], /sandbox\.push\.apple\.com/);
+  assert.equal(results.find((r: any) => r.token === "b".repeat(64))?.delivered, false);
+  hosts.length = 0;
+  await sendPush(partialEnv(base), "user-a", { title: "t", body: "b" }, options);
+  assert.equal(hosts.length, 2, "production sends to both environments as before");
 });
