@@ -2,6 +2,10 @@
 
 最終更新: 2026-10-21。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
 
+## 2026-10-22 意味の判定の検証（未使用の固定119問）
+
+事前登録 `RAG_JUDGE_PREREGISTRATION.md`（ee0a218）に従い測定。結果は `RAG_JUDGE_VALIDATION_REPORT.md`。M1〜M5すべて合格（誤停止0、新規停止12/15）。しきい値は不変。次の一手：本番でshadowを回して確率分布を確認してからonを判断。質問は `~/.studiquo-private/rag-real-material-v7/`（調整に使わない）。
+
 ## 意味の判定の実装（2026-10-22、最新）
 
 - `rag/judge.ts`を追加し、検索の最後（認可と比較の評価の後）に、Cloudflareの判定専用モデル`clef-flash`で「求められた情報が抜粋にあるか」の確率を得る。**`RAG_JUDGE`の既定は`off`**（`wrangler.jsonc`の全環境）。`shadow`は記録だけ、`on`は1主題の質問で確率0.25未満なら出典を外し（`insufficient`、`detail: judged_unanswerable`）、0.5未満は`partial`、比較・2主題は`partial`まで。失敗は必ず出典を残す。設定は`rag/limits.ts`の`JUDGE`。詳細は`docs/RAG_SEMANTIC_JUDGE_IMPLEMENTATION_REPORT.md`、契約は`docs/RAG_PROMPT_CONTRACT.md`の4.1、運用は`docs/RUNBOOK.md`のRB-21。

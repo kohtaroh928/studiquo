@@ -1,0 +1,1219 @@
+{
+ "date": "2026-10-22",
+ "preregistration": "docs/RAG_JUDGE_PREREGISTRATION.md (ee0a218)",
+ "manifestSha256": {
+  "manifest_b1.json": "20cf3b00d8eca4059cb46a521bb66e03046257d7d93c53db96c7de3b00f42930",
+  "manifest_b2.json": "d83aac9b23ce363464983d043057e298678db1a58d116a0e433d7d842e4c162c",
+  "manifest_b3.json": "0dfbb8d22958d8d27c6b024e0e7cfe2791b07ba9dc92dfea0b614e24e770a236",
+  "manifest_b4.json": "b4af357dfd72606333ac2654c91f02561c6727aee7960f5b9ddc8e86014620a3"
+ },
+ "thresholds": {
+  "stopBelow": 0.25,
+  "partialBelow": 0.5
+ },
+ "summary": {
+  "positives": 74,
+  "negatives": 45,
+  "M1_singleSubjectPositivesStopped": "0/56",
+  "M2_multiPositivesStopped": "0/18",
+  "M3_groundedDemoted": "0/74",
+  "M4_negativesPassedAtShadow": 15,
+  "M4_newlyStopped": 12,
+  "M4_partial": 2,
+  "M4_unchanged": 1,
+  "M5_judgeCalls": 92,
+  "M5_failures": 2
+ },
+ "rows": [
+  {
+   "id": "v7-c01",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-c02",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-c03",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-c04",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-c05",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-c06",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-c07",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-c08",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-c09",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-c10",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-c11",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-c12",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d01",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d02",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d03",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d04",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d05",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d06",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "timeout"
+  },
+  {
+   "id": "v7-d07",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d08",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d09",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d10",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d11",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d12",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d13",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d14",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d15",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d16",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d17",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d18",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d19",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d20",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d21",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d22",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d23",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d24",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d25",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d26",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d27",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d28",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d29",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d30",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d31",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d32",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d33",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d34",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d35",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d36",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d37",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "timeout"
+  },
+  {
+   "id": "v7-d38",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d39",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d40",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d41",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d42",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d43",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": null,
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d44",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d45",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.6",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d46",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d47",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.7",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d48",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d49",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d50",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d51",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d52",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d53",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d54",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d55",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-d56",
+   "kind": "pos",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n01",
+   "kind": "neg:name",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.1",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n02",
+   "kind": "neg:name",
+   "multi": false,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n03",
+   "kind": "neg:name",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.1",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n04",
+   "kind": "neg:name",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.1",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n05",
+   "kind": "neg:name",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.0",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n06",
+   "kind": "neg:term",
+   "multi": false,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n07",
+   "kind": "neg:name",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.0",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n08",
+   "kind": "neg:name",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n09",
+   "kind": "neg:name",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.1",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n10",
+   "kind": "neg:unit",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.1",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n11",
+   "kind": "neg:unit",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "partial",
+   "bucket": "0.1",
+   "action": "partial",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n12",
+   "kind": "neg:unit",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.1",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n13",
+   "kind": "neg:unit",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.1",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n14",
+   "kind": "neg:unit",
+   "multi": false,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n15",
+   "kind": "neg:unit",
+   "multi": false,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n16",
+   "kind": "neg:unit",
+   "multi": false,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n17",
+   "kind": "neg:unit",
+   "multi": false,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n18",
+   "kind": "neg:unit",
+   "multi": false,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n19",
+   "kind": "neg:unrel",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n20",
+   "kind": "neg:unrel",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n21",
+   "kind": "neg:unrel",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n22",
+   "kind": "neg:unrel",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.0",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n23",
+   "kind": "neg:unrel",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n24",
+   "kind": "neg:unrel",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n25",
+   "kind": "neg:unrel",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n26",
+   "kind": "neg:unrel",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n27",
+   "kind": "neg:unrel",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n28",
+   "kind": "neg:unrel",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n29",
+   "kind": "neg:term",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n30",
+   "kind": "neg:term",
+   "multi": false,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n31",
+   "kind": "neg:term",
+   "multi": false,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n32",
+   "kind": "neg:term",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n33",
+   "kind": "neg:term",
+   "multi": false,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n34",
+   "kind": "neg:term",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n35",
+   "kind": "neg:term",
+   "multi": true,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n36",
+   "kind": "neg:term",
+   "multi": true,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n37",
+   "kind": "neg:alt",
+   "multi": false,
+   "shadow": "fallback",
+   "on": "fallback",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n38",
+   "kind": "neg:alt",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "grounded",
+   "bucket": "0.6",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n39",
+   "kind": "neg:alt",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.1",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n40",
+   "kind": "neg:alt",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.1",
+   "action": "partial",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n41",
+   "kind": "neg:alt",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "insufficient",
+   "bucket": "0.1",
+   "action": "stop",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n42",
+   "kind": "neg:alt",
+   "multi": false,
+   "shadow": "insufficient",
+   "on": "insufficient",
+   "bucket": null,
+   "action": null,
+   "outcome": null
+  },
+  {
+   "id": "v7-n43",
+   "kind": "neg:alt",
+   "multi": false,
+   "shadow": "grounded",
+   "on": "partial",
+   "bucket": "0.3",
+   "action": "partial",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n44",
+   "kind": "neg:name",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.2",
+   "action": "partial",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-n45",
+   "kind": "neg:name",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.1",
+   "action": "partial",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-t01",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-t02",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-t03",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-t04",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.8",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-t05",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.9",
+   "action": "keep",
+   "outcome": "ok"
+  },
+  {
+   "id": "v7-t06",
+   "kind": "pos",
+   "multi": true,
+   "shadow": "partial",
+   "on": "partial",
+   "bucket": "0.5",
+   "action": "keep",
+   "outcome": "ok"
+  }
+ ]
+}
