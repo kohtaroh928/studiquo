@@ -90,16 +90,15 @@ test("moderation: flagged text is refused in Japanese, but a self-harm flag alon
   assert.equal(typeof mixed, "string", "another flag alongside self-harm still refuses");
 });
 
-test("moderation: any one flagged text among several refuses; the request carries only non-empty text, cut to 8000 characters", async () => {
+test("moderation: any one flagged text among several refuses; the request carries only non-empty text, split into pieces of at most 8000 characters", async () => {
   const env = partialEnv({ OPENAI_API_KEY: "test-key" });
   let sent: Untyped;
   const result = await withFetch((_url, init) => {
     sent = JSON.parse(init!.body);
-    return Response.json({ results: [{ categories: {} }, { categories: { sexual: true } }] });
+    return Response.json({ results: [{ categories: {} }, { categories: {} }, { categories: { sexual: true } }] });
   }, () => moderationRejection(env, ["あ".repeat(9000), "", "b"]));
   assert.equal(typeof result, "string");
-  assert.equal(sent.input.length, 2);
-  assert.equal(sent.input[0].length, 8000);
+  assert.deepEqual(sent.input.map((piece: string) => piece.length), [8000, 1000, 1], "nothing past the first 8000 characters goes unchecked");
   assert.equal(sent.model, "omni-moderation-latest");
 });
 
