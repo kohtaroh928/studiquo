@@ -127,8 +127,8 @@ struct SubscriptionPlansView: View {
     private var standardFeatures: [String] {
         let models = AIModelCatalog.offered.filter { $0.requiredPlan == .standard }.map(\.displayName)
         let geminiCredits = AIModelCatalog.info(for: AIModelCatalog.defaultModel)?.credits ?? 1
-        let turns = PlanAllowance.forPlan(.standard).monthlyTurns(creditsPerTurn: geminiCredits)
-        return allowanceFeatures(.standard) + ["AIトークは月に約\(turns)回", models.joined(separator: "・"), "資料作成・共同編集は無制限"]
+        let turns = PlanAllowance.forPlan(.standard).weeklyTurns(creditsPerTurn: geminiCredits)
+        return allowanceFeatures(.standard) + ["AIトークは週に約\(turns)回", models.joined(separator: "・"), "資料作成・共同編集は無制限"]
     }
 
     private var plusFeatures: [String] {
@@ -139,13 +139,13 @@ struct SubscriptionPlansView: View {
         allowanceFeatures(.pro) + [modelsLine(for: .pro)]
     }
 
-    /// "月1,500 AIクレジット" plus the shorter-window limits that keep a month's
+    /// "週350 AIクレジット" plus the 5-hour limit that keeps a week's
     /// allowance from being spent in one sitting.
     private func allowanceFeatures(_ plan: StudiquoPlan) -> [String] {
         let allowance = PlanAllowance.forPlan(plan)
         return [
-            "月\(allowance.monthlyCredits.formatted()) AIクレジット",
-            "1日\(allowance.dailyCredits.formatted())・5時間\(allowance.fiveHourCredits.formatted())クレジットまで",
+            "週\(allowance.weeklyCredits.formatted()) AIクレジット",
+            "5時間\(allowance.fiveHourCredits.formatted())クレジットまで",
         ]
     }
 
