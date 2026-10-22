@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "./env.ts";
-import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, removeAccountData } from "./document-room-store.ts";
+import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, removeAccountData, removeParticipantData } from "./document-room-store.ts";
 
 // Mirrors chat-room.ts's ChatRoom shape closely — same Durable Object
 // pattern, same per-room SQLite storage, same requireParticipant-throws-
@@ -66,6 +66,27 @@ export class DocumentRoom extends DurableObject<Env> {
     if (userKey === ownerKey) throw new Error("InvalidRole");
     this.ctx.storage.sql.exec("INSERT OR REPLACE INTO participants (user_key, role) VALUES (?, ?)", userKey, role);
     return { status: "invited" };
+  }
+
+  // Only the owner may take someone else out, and never themselves (the
+  // owner's room has no other custodian; erasing it is account deletion's job).
+  // What the removed person proposed and nobody decided goes with them.
+  async removeMember(ownerKey: string, userKey: string) {
+    if (this.requireParticipant(ownerKey) !== "owner") throw new Error("Forbidden");
+    if (userKey === ownerKey) throw new Error("OwnerCannotLeave");
+    if (this.ctx.storage.sql.exec("SELECT 1 FROM participants WHERE user_key = ?", userKey).toArray().length === 0) {
+      return { status: "not_found" };
+    }
+    removeParticipantData(this.ctx.storage.sql, userKey);
+    return { status: "removed" };
+  }
+
+  // A member leaving on their own. The owner cannot: the room would lose its
+  // only custodian.
+  async leave(userKey: string) {
+    if (this.requireParticipant(userKey) === "owner") throw new Error("OwnerCannotLeave");
+    removeParticipantData(this.ctx.storage.sql, userKey);
+    return { status: "left" };
   }
 
   async listParticipants(userKey: string) {

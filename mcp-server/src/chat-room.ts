@@ -468,7 +468,14 @@ export class ChatRoom extends DurableObject<Env> {
   // ownership check `cancelMessage` uses; a canceled message stays
   // canceled — an edit must never resurrect a retracted message.
   async editMessage(userKey: string, messageID: number, text: string) {
-    this.requireParticipant(userKey);
+    // Same gate as sending: once a room is closed, or the other side has
+    // blocked this user, they must not be able to rewrite what the other
+    // person's screen shows as their earlier words.
+    this.requireOpen(userKey);
+    if (!this.isGroupRoom()) {
+      const other = this.otherParticipant(userKey);
+      if (other && this.isBlockedBy(other)) throw new Error("Blocked");
+    }
     const row = this.ctx.storage.sql.exec(
       "SELECT sender_key, is_canceled FROM messages WHERE id = ?", messageID,
     ).toArray()[0];
@@ -512,6 +519,12 @@ export class ChatRoom extends DurableObject<Env> {
   // database id, which meant nothing outside the sender's own device.
   async storeAttachment(userKey: string, contentType: unknown, base64Data: unknown) {
     this.requireOpen(userKey);
+    // Same gate as sendMessage: someone the other side has blocked gets no
+    // storage in that side's room.
+    if (!this.isGroupRoom()) {
+      const other = this.otherParticipant(userKey);
+      if (other && this.isBlockedBy(other)) throw new Error("Blocked");
+    }
     const type = String(contentType ?? "").slice(0, 100);
     if (!CONTENT_TYPE_PATTERN.test(type)) throw new Error("InvalidContentType");
     const data = String(base64Data ?? "");

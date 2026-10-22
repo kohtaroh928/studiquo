@@ -199,6 +199,11 @@ function fakeChatRoomBinding() {
         // may edit, and a canceled message can never be resurrected by one.
         async editMessage(userKey: string, messageID: string, text: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
+          if (state.closed) throw new Error("Closed");
+          if (state.kind !== "group") {
+            const theOther = other(userKey);
+            if (theOther && state.blocks.has(theOther)) throw new Error("Blocked");
+          }
           const message = state.messages.find((item: Untyped) => item.id === messageID);
           if (!message) return { status: "not_found" };
           if (message.senderKey !== userKey) throw new Error("Forbidden");
@@ -225,6 +230,10 @@ function fakeChatRoomBinding() {
         async storeAttachment(userKey: string, contentType: string, base64Data: string) {
           if (!state.participants.has(userKey)) throw new Error("Forbidden");
           if (state.closed) throw new Error("Closed");
+          if (state.kind !== "group") {
+            const theOther = other(userKey);
+            if (theOther && state.blocks.has(theOther)) throw new Error("Blocked");
+          }
           const type = String(contentType ?? "").slice(0, 100);
           if (!ATTACHMENT_CONTENT_TYPE_PATTERN.test(type)) throw new Error("InvalidContentType");
           const data = String(base64Data ?? "");
@@ -1661,6 +1670,7 @@ test("accepting a pending invite into a group that filled up in the meantime is 
   // Dave's invite was issued back when the group still had room — seeded
   // directly, since the real invite endpoint would itself now be blocked by
   // the "already full" check exercised in the previous test.
+  await env.USER_REGISTRY.getByName(daveKey).addFriendDirectly(daveKey, "SEEDCODE", "Seed", "e".repeat(64));
   await env.USER_REGISTRY.getByName(daveKey).addIncomingGroupInvite(daveKey, roomID, "Full Group", "SEEDCODE", "Seed");
 
   const response = await acceptGroupInvite(env, daveToken, roomID);
@@ -1697,6 +1707,7 @@ test("a rejected accept leaves no phantom group in the invitee's own list, and a
   await env.CHAT_ROOM.getByName(roomID).initialize(
     roomID, fillerKeys, { kind: "group", name: "Full Group", creatorCode: "SEEDCODE", creatorName: "Seed" },
   );
+  await env.USER_REGISTRY.getByName(daveKey).addFriendDirectly(daveKey, "SEEDCODE", "Seed", "e".repeat(64));
   await env.USER_REGISTRY.getByName(daveKey).addIncomingGroupInvite(daveKey, roomID, "Full Group", "SEEDCODE", "Seed");
 
   const firstAttempt = await acceptGroupInvite(env, daveToken, roomID);
@@ -1744,9 +1755,10 @@ test("when only one seat remains, simultaneous accepts from different people rac
   // All three invites are independently valid — each of Bob, Carol, and Dave
   // was genuinely invited while there was still room; the race is purely
   // about who gets to the single remaining seat first.
-  await Promise.all(keys.map(key =>
-    env.USER_REGISTRY.getByName(key).addIncomingGroupInvite(key, roomID, "One Seat Left", "SEEDCODE", "Seed")
-  ));
+  await Promise.all(keys.map(async key => {
+    await env.USER_REGISTRY.getByName(key).addFriendDirectly(key, "SEEDCODE", "Seed", "e".repeat(64));
+    await env.USER_REGISTRY.getByName(key).addIncomingGroupInvite(key, roomID, "One Seat Left", "SEEDCODE", "Seed");
+  }));
 
   const responses = await Promise.all(tokens.map(token => acceptGroupInvite(env, token, roomID)));
   const statuses = responses.map(response => response.status);
@@ -2725,6 +2737,26 @@ test("only the original sender can edit their own message", async () => {
 
   const alicesView = await (await readMessages(env, aliceToken, roomID)).json();
   assert.equal(alicesView[0].text, "Alice's message", "an unauthorized edit attempt must not have any effect");
+});
+
+test("a blocked user cannot rewrite their earlier messages in the room", async () => {
+  const env = environment();
+  const aliceToken = freshToken("ce7");
+  const bobToken = freshToken("ce8");
+  const alice = await registerUser(env, aliceToken, "Alice");
+  const bob = await registerUser(env, bobToken, "Bob");
+  await addFriend(env, aliceToken, bob.code);
+  const accepted = await (await acceptRequest(env, bobToken, alice.code)).json();
+  const roomID = accepted.roomID;
+
+  const sent = await (await sendMessage(env, bobToken, roomID, "Bob's message")).json();
+  await blockOtherParticipant(env, aliceToken, roomID);
+
+  const attempt = await editMessage(env, bobToken, roomID, sent.id, "harassment");
+  assert.notEqual(attempt.status, 200, "a blocked user's edit must be refused, like their sends");
+
+  const alicesView = await (await readMessages(env, aliceToken, roomID)).json();
+  assert.equal(alicesView[0].text, "Bob's message", "the blocker must still see the original words");
 });
 
 test("someone outside the room cannot edit a message in it", async () => {
@@ -3941,6 +3973,27 @@ test("a group invitation can't be accepted after the invitee blocks the inviter"
   assert.equal((await acceptGroupInvite(env, bobToken, group.roomID)).status, 200);
 });
 
+test("a group invitation can't be accepted once the inviter has removed the invitee as a friend, even if blocked then too", async () => {
+  const env = environment();
+  const { aliceToken, bobToken, alice, bob, roomID } = await befriended(env, "g7", "g8");
+  const group = await (await createGroup(env, aliceToken, "G", [bob.code])).json();
+  await blockOtherParticipant(env, aliceToken, roomID);
+  const removed = await worker.fetch(request(`/api/chat/friends/${bob.code}`, { method: "DELETE", token: aliceToken }), env, noopCtx);
+  assert.equal(removed.status, 200);
+  const accept = await acceptGroupInvite(env, bobToken, group.roomID);
+  assert.equal(accept.status, 403, `${alice.code} no longer a friend of Bob: the offer is void`);
+});
+
+test("someone blocked by the room's other side cannot upload an attachment into it", async () => {
+  const env = environment();
+  const { aliceToken, bobToken, roomID } = await befriended(env, "ab1", "ab2");
+  await blockOtherParticipant(env, aliceToken, roomID); // Alice blocks Bob
+  const blocked = await uploadAttachment(env, bobToken, roomID, "image/png", "aGVsbG8=");
+  assert.equal(blocked.status, 403, "the blocked side gets no storage in the blocker's room");
+  const blocker = await uploadAttachment(env, aliceToken, roomID, "image/png", "aGVsbG8=");
+  assert.equal(blocker.status, 201, "the blocker themself can still upload");
+});
+
 // ---- Operator actions on a report: remove the message, suspend the account ----
 
 const adminKeys = await generateKeyPair("ES256", { extractable: true });
@@ -4087,4 +4140,117 @@ test("the audit log can be read by the operator, newest first, and reading it is
   assert.equal(entries[0].action, "audit_log.view");
   assert.equal(entries[1].action, "chat_report.remove_message");
   assert.equal(entries[0].actor, "owner@example.test");
+});
+
+// ---- Operator actions: the lifting side, scopes, and what the records hold ----
+
+const friendsStatus = (env: LooseEnv, token: string) => worker.fetch(request("/api/chat/friends", { token }), env, noopCtx).then(response => response.status);
+const suspendedList = async (env: LooseEnv) => (await (await admin(env, "/api/admin/accounts/suspended", { method: "GET" })).json()).suspended;
+
+test("unsuspending by the report that caused it lifts the suspension", async () => {
+  const { env, bobToken, reportID } = await reportedSetup("ma", "mb");
+  await admin(env, "/api/admin/accounts/suspend", { body: { reportID } });
+  assert.equal(await friendsStatus(env, bobToken), 401);
+  const lifted = await admin(env, "/api/admin/accounts/unsuspend", { body: { reportID, scope: "account" } });
+  assert.equal(lifted.status, 200);
+  assert.deepEqual(await lifted.json(), { suspended: false });
+  assert.equal(await friendsStatus(env, bobToken), 200);
+  assert.deepEqual(await suspendedList(env), []);
+});
+
+test("lifting a chat stop leaves an account suspension in place, and the other way round", async () => {
+  const { env, bobToken, reportID } = await reportedSetup("mc", "md");
+  const account = await (await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "account" } })).json();
+  await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "chat" } });
+  assert.deepEqual((await suspendedList(env)).map((item: Untyped) => item.scope).sort(), ["account", "chat"]);
+
+  await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID: account.suspensionID, scope: "chat" } });
+  assert.equal(await friendsStatus(env, bobToken), 401, "the account stop still holds");
+  assert.deepEqual((await suspendedList(env)).map((item: Untyped) => item.scope), ["account"]);
+
+  await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "chat" } });
+  await admin(env, "/api/admin/accounts/unsuspend", { body: { suspensionID: account.suspensionID, scope: "account" } });
+  assert.deepEqual((await suspendedList(env)).map((item: Untyped) => item.scope), ["chat"], "the chat stop still holds");
+  const chat = await worker.fetch(request("/api/chat/friends", { token: bobToken }), env, noopCtx);
+  assert.equal(chat.status, 403);
+});
+
+test("unsuspending needs a well-formed id and a known report; lifting what isn't there is harmless and logged", async () => {
+  const { env, bobToken, reportID } = await reportedSetup("me", "mf");
+  const lift = (body: Record<string, unknown>) => admin(env, "/api/admin/accounts/unsuspend", { body });
+  assert.equal((await lift({ scope: "account" })).status, 400, "neither id nor report");
+  assert.equal((await lift({ suspensionID: "not-hex", scope: "account" })).status, 400);
+  assert.equal((await lift({ suspensionID: "a".repeat(63), scope: "account" })).status, 400, "one short");
+  assert.equal((await lift({ suspensionID: "A".repeat(64), scope: "account" })).status, 400, "upper case is not an id");
+  assert.equal((await lift({ reportID: "not-a-uuid", scope: "account" })).status, 400);
+  assert.equal((await lift({ reportID: crypto.randomUUID(), scope: "account" })).status, 404);
+  assert.equal((await lift({ suspensionID: "a".repeat(64) })).status, 400, "scope is required");
+  assert.equal((await lift({ suspensionID: "a".repeat(64), scope: "both" })).status, 400);
+  assert.equal(env._d1.prepare("SELECT COUNT(*) AS n FROM admin_audit_log").get().n, 0, "refused requests are not logged as actions");
+
+  assert.equal((await lift({ suspensionID: "a".repeat(64), scope: "account" })).status, 200);
+  assert.deepEqual(env._d1.prepare("SELECT action FROM admin_audit_log").all().map((row: Untyped) => row.action), ["account.unsuspend"]);
+  assert.equal(await friendsStatus(env, bobToken), 200, "nobody else was affected");
+  void reportID;
+});
+
+test("suspending twice leaves one record, and the suspension record holds only when and why", async () => {
+  const { env, reportID } = await reportedSetup("mg", "mh");
+  const first = await (await admin(env, "/api/admin/accounts/suspend", { body: { reportID } })).json();
+  const second = await (await admin(env, "/api/admin/accounts/suspend", { body: { reportID } })).json();
+  assert.equal(first.suspensionID, second.suspensionID);
+  const listed = await suspendedList(env);
+  assert.equal(listed.length, 1);
+  assert.deepEqual(Object.keys(listed[0]).sort(), ["at", "reportID", "scope", "suspensionID"]);
+  const serialized = JSON.stringify(listed);
+  assert.ok(!serialized.includes("owner@example.test"), "who acted is in the audit log, not here");
+  assert.ok(!serialized.includes("不適切な発言"), "the reported message isn't copied into the list");
+});
+
+test("suspending adds to the report's note instead of replacing what the operator wrote", async () => {
+  const { env, reportID } = await reportedSetup("mi", "mj");
+  env._d1.prepare("UPDATE chat_reports SET admin_note = '確認済み' WHERE id = ?").run(reportID);
+  await admin(env, "/api/admin/accounts/suspend", { body: { reportID, scope: "chat" } });
+  const row = env._d1.prepare("SELECT status, admin_note FROM chat_reports WHERE id = ?").get(reportID);
+  assert.deepEqual({ ...row }, { status: "resolved", admin_note: "確認済み / チャットを停止" });
+});
+
+test("the account actions accept only the right method and JSON, and the lists are read-only", async () => {
+  const { env, reportID } = await reportedSetup("mk", "ml");
+  // Whether the router or the handler turns it away, the wrong method is never served.
+  for (const [path, method] of [["/api/admin/accounts/suspend", "GET"], ["/api/admin/accounts/unsuspend", "GET"], ["/api/admin/accounts/suspended", "POST"], ["/api/admin/audit-log", "POST"]]) {
+    const status = (await admin(env, path, { method })).status;
+    assert.ok([404, 405].includes(status), `${method} ${path} answered ${status}`);
+  }
+  const plain = await worker.fetch(new Request("https://example.test/api/admin/accounts/suspend", {
+    method: "POST",
+    headers: { "cf-access-jwt-assertion": adminJWT, "content-type": "text/plain" },
+    body: JSON.stringify({ reportID }),
+  }), env, noopCtx);
+  assert.equal(plain.status, 415);
+  assert.deepEqual(await suspendedList(env), [], "nothing was suspended by the refused requests");
+  assert.equal((await admin(env, "/api/admin/accounts/nowhere", { body: {} })).status, 404);
+});
+
+test("a warning for an account that has gone is refused and not logged; a warning nobody receives is recorded as such", async () => {
+  const { env, reportID } = await reportedSetup("mm", "mn");
+  // Bob has no registered device, so nothing is delivered but the report is still worked.
+  const none = await (await admin(env, `/api/admin/chat-reports/${reportID}/warn`)).json();
+  assert.deepEqual(none, { warned: true, devices: 0, delivered: 0 });
+  assert.equal(env._d1.prepare("SELECT admin_note FROM chat_reports WHERE id = ?").get(reportID).admin_note, "注意を送ったが届いた端末なし");
+
+  const gone = await reportedSetup("mo", "mp");
+  gone.env._d1.prepare("UPDATE chat_reports SET reported_key = 'deleted:abc'").run();
+  const response = await admin(gone.env, `/api/admin/chat-reports/${gone.reportID}/warn`);
+  assert.equal(response.status, 410);
+  assert.equal(gone.env._d1.prepare("SELECT COUNT(*) AS n FROM admin_audit_log").get().n, 0, "nothing was done, so nothing is logged as done");
+  assert.equal(gone.env._d1.prepare("SELECT status FROM chat_reports WHERE id = ?").get(gone.reportID).status, "open");
+});
+
+test("the operator actions are unavailable, not open, when the admin database isn't bound", async () => {
+  const { env } = await reportedSetup("mq", "mr");
+  delete env.ADMIN_DB;
+  const response = await admin(env, "/api/admin/accounts/suspended", { method: "GET" });
+  assert.ok([503, 403].includes(response.status), `answered ${response.status}`);
+  assert.notEqual(response.status, 200);
 });
