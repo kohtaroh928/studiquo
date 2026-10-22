@@ -13,6 +13,7 @@
 // every account for one at its first sign-in and has no way to remove it; the
 // way back after losing it is the e-mailed recovery below.
 import { sha256Hex } from "./auth.ts";
+import { tagged } from "./environment.ts";
 import { json } from "./http.ts";
 import { featureDisabled } from "./features.ts";
 import { revokeAllConnections } from "./mcp-oauth.ts";
@@ -239,7 +240,7 @@ export async function sendPasskeyNotice(env: Env, email: string | null, subject:
       body: JSON.stringify({
         from: env.RESEND_FROM_EMAIL ?? "Studiquo <onboarding@resend.dev>",
         to: email,
-        subject,
+        subject: tagged(env, subject),
         text: lines.join("\n"),
       }),
     });

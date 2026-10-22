@@ -1,6 +1,6 @@
 # Studiquo ステージング環境の準備と確認
 
-最終更新: 2026-10-09
+最終更新: 2026-10-22(10章を追加)
 状態: **ステージング環境は作成済みで、一部の確認は完了している。** 3〜5章は作成時の手順(再作成や、別の環境を作るときの手引き)、6章は確認項目と実測の記録である。クラウド上のリソースの作成と秘密情報の設定は、運営者が行う。
 
 ## 現在の状態(認証検証は2026-10-08、RAG整備は2026-10-09時点)
@@ -48,7 +48,7 @@ RAGの追加整備記録（2026-10-09）: 専用Vectorize `studiquo-rag-v1-stagi
 | ランダムな値 | `CSRF_SECRET`など、ステージング専用の値(`openssl rand -base64 32`) |
 | シミュレータまたは実機 | アプリの表示確認用。アプリは`https`のエンドポイントだけ受け付ける |
 
-使わないもの(設定しない): `APNS_*`、`GEMINI_API_KEY`、`REVENUECAT_WEBHOOK_SECRET`、`ACCESS_*`。AI(`AI_PROVIDER_APPROVED=false`)、課金、管理画面、プッシュ通知は、この確認の対象外である。
+使わないもの(設定しない): `GEMINI_API_KEY`。AI(`AI_PROVIDER_APPROVED=false`)は、この確認の対象外である。管理画面(`ACCESS_*`)、プッシュ通知(`APNS_*`)、課金のWebhook(`REVENUECAT_WEBHOOK_SECRET`)は、2026-10-22に使えるようにした。設定は**10章**を参照(最初は、どれも未設定)。
 
 ## 3. リソースの作成
 
@@ -276,3 +276,166 @@ npx wrangler d1 delete studiquo-admin-staging
 - 本番へのデプロイは、この確認とは別の工程で、明示的な承認を得て行う。
 
 2026-10-09の出典修正版再検証: [RAG_CITATION_STAGING_RECHECK_REPORT.md](RAG_CITATION_STAGING_RECHECK_REPORT.md)。実環境76/76、終了時の無効化・削除確認済み。比較出典の適合性と実iPad確認は残る。
+
+## 10. ステージングの目印・管理画面・プッシュ通知・課金Webhook(2026-10-22追加)
+
+状態: **コードと設定ファイルは用意した。ステージングへは未配備。** 秘密の設定とCloudflare・Apple・RevenueCat・Slackの画面操作は、運営者が行う(下の手順)。
+
+### 10.1 ステージングからの連絡の目印
+
+`wrangler.jsonc`の`env.staging.vars`に`ENVIRONMENT_LABEL: "staging"`を置いた。本番(トップレベル)には置かない。これがあるとき、ステージングのWorkerが出す次のものに、`STAGING`の目印が付く。本番は何も変わらない。
+
+| 出るもの | 目印 |
+| --- | --- |
+| Slackの通知(問題報告、アプリのエラー、通報、ログイン失敗の急増などのアラート。すべて`slack.ts`を通る) | 見出しの先頭に`[STAGING]`、2行目に「STAGING環境(テスト用)からの通知です。本番ではありません」、通知の一覧に出る文字も`[STAGING]`で始まる |
+| プッシュ通知 | 題名の先頭に`[STAGING]` |
+| メール(確認コード、新しい環境の通知、パスキーの通知) | 件名の先頭に`[STAGING]`(送信元の名前は、元から`Studiquo Staging`) |
+| 管理画面(`/admin`、`/admin/announcements`) | タブの題名に`[STAGING]`、画面の上に橙色の帯「STAGING環境(本番ではありません)」 |
+
+目印に使う値は、`staging`のような短い英数字だけ(`environment.ts`)。秘密も個人情報も付かない。`production`・`prod`・空・変な文字の値は、目印なし(本番と同じ)として扱う。
+
+### 10.2 Slackの宛先が本番と同じかの確認(結果: このセッションからは確認できない)
+
+- **確認できなかった理由:** Cloudflareの秘密(`wrangler secret`)は、書き込み専用で、設定した後に値を読み出せない。`wrangler secret list`で分かるのは、**名前があるか**(ステージングにも本番にも`SLACK_ISSUE_REPORT_WEBHOOK_URL`はある)だけで、宛先は分からない。Webhookの値の比較(ハッシュの比較など)も、値を読めないので、できない。値を表示・記録する方法は、禁止されているので使っていない。
+- **ユーザーの確認方法(どれか1つ):**
+  1. **Slackの画面で確認する(読むだけ)。** <https://api.slack.com/apps> →Studiquoの通知用のアプリ→「Incoming Webhooks」。Webhook URLごとに「どのチャンネルに投稿するか」が一覧で出る。本番用に設定したURLと、ステージング用に設定したURLが、**別の行・別のチャンネル**になっているかを見る。(URLそのものは、どこにも貼らない。)
+  2. **一番確実なのは、確認せずに作り直すこと。** Slackにステージング専用のチャンネル(例: `#studiquo-staging-alerts`)を作り、そこ宛ての新しいWebhookを発行し、`npx wrangler secret put SLACK_ISSUE_REPORT_WEBHOOK_URL --env staging`で入れ替える。これで、必ず別の宛先になる。本番用の方は触らない。
+  3. 配備後に、ステージングで問題報告を1件送り、`[STAGING]`の付いた投稿がどのチャンネルに出るかを見る。本番のチャンネルに出たら、2.を行う(目印が付いているので、本番の利用者の報告とは区別できる)。
+- 推奨: 2.を先に行ってから、配備する。
+
+### 10.3 ステージングで管理画面を使う(Cloudflare Access)
+
+**コードは変更不要。** `access.ts`は、`ACCESS_TEAM_DOMAIN`と`ACCESS_AUD`が設定されていれば、その値でCloudflare Accessのログインを検証し、未設定なら、すべて401にする(安全側)。いまのステージングは未設定なので、`/api/admin/*`は全部401である(管理画面のページ自体は開けるが、数字は出ない)。
+
+必要なもの:
+
+| 名前 | 内容 | 本番との関係 |
+| --- | --- | --- |
+| Accessのアプリ | ステージングのURL用の、**別の**Access「Self-hosted」アプリ | 本番のアプリとは別に作る |
+| `ACCESS_TEAM_DOMAIN` | Zero Trustのチーム名のドメイン(`<チーム名>.cloudflareaccess.com`。`https://`は付けない) | 本番と同じ値 |
+| `ACCESS_AUD` | そのAccessアプリの「Application Audience (AUD) Tag」 | **本番とは別の値**。これが違うので、本番のログイン証明書は、ステージングでは通らない(逆も同じ) |
+| ポリシー | あなた(管理者)のメールアドレスだけを許可する | ステージング専用に作る |
+
+運営者の手順(Cloudflareの画面。Access for Workersの公式の説明: <https://developers.cloudflare.com/workers/configuration/cloudflare-access/>):
+
+1. Cloudflareの管理画面→Zero Trust→Access→Applications→「Add an application」→**Self-hosted**。
+2. 名前は`Studiquo Staging Admin`。Destination(保護する場所)に、次の2つを入れる。
+   - ホスト: `studiquo-mcp-staging.<アカウントのサブドメイン>.workers.dev`、パス: `admin`
+   - ホスト: 同じ、パス: `admin/*`
+   - **`api/admin`は入れない。** `/api/admin/revenuecat-webhook`はRevenueCatのサーバーが呼ぶので、Accessのログインで止めてはいけない(止めると課金が届かない)。`/api/admin/*`は、Worker自身がAccessの証明書を検証して守る(`access.ts`)。ページを開いてログインすると付くCookieで、画面からのAPI呼び出しは通る。
+   - **Workerの「Access」タブにある「Protect this Worker behind Access」(Worker全体の保護)は使わない。** アプリの通信とWebhookも止まる。
+3. ポリシーは、Action: Allow、Include: Emails→あなたのメールアドレス。他の人は入れない。
+4. 保存して、アプリの概要にある**Application Audience (AUD) Tag**を控える。(秘密ではないが、チャットには貼らなくてよい。)
+5. 秘密として設定する(値は対話入力で。履歴に残さない):
+
+```bash
+cd mcp-server
+npx wrangler secret put ACCESS_TEAM_DOMAIN --env staging
+npx wrangler secret put ACCESS_AUD --env staging
+```
+
+6. もし、Zero Trustの画面が、`workers.dev`のホスト名やパスの指定を受け付けないときは、ここで止めて知らせる。代わりに、ステージング用の独自ドメイン(例: `staging-api.studiquo.app`)をWorkerに付ける案があるが、アプリの向き先とRevenueCatのURLが変わるので、判断が要る。
+
+配備後の確認:
+
+| 確認 | 手順 | 期待 |
+| --- | --- | --- |
+| ログインなしで閉じている | ログインしていないブラウザ(または`curl`)で`https://<STG>/api/admin/stats`を開く | 401 |
+| 管理画面が開く | ブラウザで`https://<STG>/admin`を開く→Accessのログイン→ダッシュボード | 橙色の「STAGING環境」の帯と、数字(新しい環境なので、ほぼ0)が出る |
+| 本番の証明書が通らない | (任意)本番の管理画面にログインした状態で、ステージングを開く | ステージングのAccessのログインを、別に求められる |
+| 数字が本番でない | ユーザー数などが、本番の数字と違う | ステージングのD1のデータ |
+
+### 10.4 プッシュ通知(APNs)
+
+**コードは変更不要。** `push.ts`は、端末ごとの環境(`sandbox`か`production`)で、APNsのホストと鍵を切り替える。確認した内容:
+- `sandbox`の端末→`api.sandbox.push.apple.com`、鍵は`APNS_SANDBOX_AUTH_KEY`と`APNS_SANDBOX_KEY_ID`(なければ`APNS_AUTH_KEY`と`APNS_KEY_ID`)。`production`の端末→`api.push.apple.com`、鍵は`APNS_PRODUCTION_*`(なければ同じ`APNS_AUTH_KEY`と`APNS_KEY_ID`)。テストで確認済み(`push.test.ts`)。
+- アプリは、**Debugビルドが`sandbox`、Releaseが`production`**で端末を登録する(`FriendChatService.swift`)。Xcodeから実機に入れたDebugビルドは、`sandbox`になる。`aps-environment`も`development`(`project.yml`)で一致している。
+- `APNS_TOPIC`は、`env.staging.vars`に`com.yabuko.studiquo`を設定済み(本番と同じアプリなので同じ値)。
+
+ステージングに足りないもの:
+
+| 名前 | 内容 | 設定場所 |
+| --- | --- | --- |
+| `APNS_TEAM_ID` | AppleのTeam ID(10文字。Apple Developerの「Membership details」) | 秘密(`secret put`) |
+| `APNS_SANDBOX_KEY_ID` | APNsの鍵(`.p8`)のKey ID(10文字) | 秘密 |
+| `APNS_SANDBOX_AUTH_KEY` | `.p8`ファイルの中身 | 秘密 |
+
+**ステージングには、サンドボックスの鍵だけを入れる。** 本番(`production`)の鍵は入れない。TestFlightやApp Storeのアプリの端末は、ステージングを向かないので、不要。万が一、`production`の端末がステージングに登録されても、鍵がないので、送信されず、ログに`apns_configuration_missing`が出るだけ。(`APNS_AUTH_KEY`は、環境を問わない旧式の鍵なので、ステージングには入れない。入れると本番環境向けにも使われる。)
+
+運営者の手順(Apple Developer。鍵の発行はあなたの操作):
+
+1. Apple Developerの「Certificates, Identifiers & Profiles」→「Keys」を開く。**Appleは、APNsの鍵を2本までしか持てない。** 本番がすでに2本(`APNS_AUTH_KEY`系と`APNS_SANDBOX_*`)を使っているときは、新しく作れないので、次のどちらかにする。
+   - 本番で使っているサンドボックスの鍵の`.p8`を、手元に保存してあれば、それを再利用する(鍵はWorkerごとに、別の秘密として入れる。同じ鍵でも、ステージングから本番の端末へは送れない。端末のトークンは別)。**`.p8`は、再ダウンロードできない。**手元にないなら、ステージング用には作り直せない。
+   - 使っていない鍵があれば取り消して、新しく作る(本番が使っている鍵を取り消すと、本番の通知が止まるので、**取り消す前に必ずWorkerで使っていないことを確認する**)。
+2. 新しく作るときは、「Apple Push Notifications service (APNs)」にチェックし、環境は「Sandbox」(選べるとき)にする。`.p8`を一度だけダウンロードして、安全な場所に保存する。Key IDを控える。
+3. 秘密として設定する(`.p8`は、標準入力から渡す。チャットに貼らない):
+
+```bash
+cd mcp-server
+npx wrangler secret put APNS_TEAM_ID --env staging
+npx wrangler secret put APNS_SANDBOX_KEY_ID --env staging
+npx wrangler secret put APNS_SANDBOX_AUTH_KEY --env staging < /安全な場所/AuthKey_XXXXXXXXXX.p8
+```
+
+   (鍵とKey IDは、同時に入れ替える。片方だけ変えると、通知が失敗する。)
+
+配備後の確認:
+1. Debugビルドのアプリを、実機(iPad)に入れ、エンドポイントをステージングにする(6.1と同じ。`mcpCloudEndpoint`)。ステージング用のアカウントを2つ作ってフレンドにする。
+2. 受信側のアプリの通知を許可し、送信側からメッセージを送る→受信側に、題名が`[STAGING]`で始まる通知が届く。
+3. 届かないとき: `npx wrangler tail --env staging`で、`apns_configuration_missing`(鍵の設定漏れ)、APNsの応答の`reason`(`BadDeviceToken`は、環境の取り違え)を見る。
+
+### 10.5 RevenueCatのWebhook(課金のイベントの受信)
+
+**コードは変更不要。ただし、安全のため1つ足した:** ステージングは、RevenueCatの`PRODUCTION`(本物のお客さまの購入)のイベントを、**受け取って捨てる**(`{"received":true,"ignored":true}`を返し、DBに何も書かない)。サンドボックスのイベントだけを記録し、プランに反映する(`ALLOW_SANDBOX_PURCHASES: "true"`は元から設定済み)。Webhookの設定を間違えても、本物のお客さまの情報が、ステージングのDBに入らない。テストは`admin.test.ts`。
+
+ステージングのURL: `https://studiquo-mcp-staging.<アカウントのサブドメイン>.workers.dev/api/admin/revenuecat-webhook`(本番のURLとは別。本番のURLは、ここに書かない)。
+
+必要なもの:
+
+| 名前 | 内容 |
+| --- | --- |
+| `REVENUECAT_WEBHOOK_SECRET`(秘密) | **本番とは別の、ステージング専用のランダムな値。** `openssl rand -base64 32`で作る。RevenueCatの「Authorization header」に入れる文字列と、`secret put`する値を、**完全に同じ**にする(`Bearer `などの接頭辞も含む)。違うとすべて401 |
+| `REVENUECAT_SECRET_API_KEY`(秘密、任意) | 退会時にRevenueCat上の顧客を消すための鍵。ステージングで退会の外部削除まで試すときだけ。本番の鍵を流用せず、RevenueCatで別に作る(権限は最小に)。なければ、外部削除の予約が溜まるだけで、他の機能には影響しない |
+
+運営者の手順(RevenueCatの画面):
+1. 秘密を作って設定する:
+
+```bash
+cd mcp-server
+echo "Bearer $(openssl rand -base64 32)"   # 出た値を控える(この1回だけ画面に出る。どこにも貼らない)
+npx wrangler secret put REVENUECAT_WEBHOOK_SECRET --env staging   # 上の値を貼る
+```
+
+2. RevenueCatのダッシュボード→Project settings→Integrations→Webhooks→「Add new webhook」(追加。**既存の本番のWebhookは編集しない**)。
+   - Webhook URL: 上のステージングのURL
+   - Authorization header value: 手順1で作った値(`Bearer …`)
+   - **Environment（送るイベントの環境）: Sandbox のみ**
+   - 対象のアプリ: Studiquo
+3. (推奨・本番の設定の変更なので、あなたが判断する)既存の本番のWebhookの環境を **Production のみ**にする。いまの設定が「両方」だと、Debugビルドのサンドボックス購入が、本番にも届く。本番は`ALLOW_SANDBOX_PURCHASES: "false"`なのでプランには反映しないが、`revenuecat_events`に記録は残る。
+
+テストと確認:
+1. RevenueCatの「Send test event」で、ステージングのWebhookにテストイベントを送る。結果が**200**ならSecretが合っている(`401`なら、ヘッダーの値の不一致。`Bearer `の有無を見る)。
+2. Debugビルド(StoreKitのサンドボックス、またはテスト用Apple ID)で、アプリをステージングに向けて、サンドボックス購入をする。管理画面の「購読者」にプランが出る、または、アプリ側のプランが変わる。
+3. 本番のダッシュボードの数字(売上・購読者)が、増えていない。
+
+### 10.6 配備の前に確認すること(未配備のため)
+
+- [ ] `npx tsc --noEmit`・`npm test`が通る(作業の完了時点で通過済み)。
+- [ ] `wrangler deploy --env staging --dry-run`の出力で、`STUDIQUO_DATA`・`ADMIN_DB`がステージングのID、`ENVIRONMENT_LABEL`が`staging`、本番のID(`e1171479…`、`fb64e302…`)が出ていない。
+- [ ] **配備のときは、前回の配備(RAG有効・判定shadow)と同じ`--var`の上書きを付ける。** 設定ファイルの値は`RAG_ENABLED: "false"`などなので、付けないとRAGが無効に戻る。
+- [ ] 10.2の宛先を確認(または、新しいテスト用Webhookに入れ替え)した。
+- [ ] 秘密を設定した(10.3〜10.5)。名前は`npx wrangler secret list --env staging`で確認できる(値は出ない)。
+- [ ] ロールバック: 設定ファイルの変更は`ENVIRONMENT_LABEL`の1行だけ。戻すときは、前の版を`wrangler rollback --env staging`、または、このブランチの前の版から再配備する。秘密は`wrangler secret delete <名前> --env staging`で消せる。本番には何も触れていない。
+
+### 10.7 配備の後に、人が確認すること
+
+1. ステージングで問題報告を送る→Slackに`[STAGING]`の付いた投稿が、**テスト用のチャンネルだけ**に出る。
+2. 管理画面にログインできる。未ログインの`/api/admin/stats`が401。
+3. Debugビルドの実機で、プッシュ通知が`[STAGING]`の題名で届く。
+4. RevenueCatのテストイベントが200。サンドボックス購入がステージングにだけ反映される。
+5. 本番のSlack・管理画面・RevenueCatの数字に、ステージングの痕跡が出ていない。
+
+### 10.8 気づいた別件(今回は直さない)
+
+`wrangler.jsonc`で、レート制限の`namespace_id`が、本番(`1025`〜`1027`)もステージング(`2025`〜`2027`)も、2つの制限で重なっている(`RATE_LIMIT_RAG_INDEX/SEARCH/PDF`と`RATE_LIMIT_ATTEST_CHALLENGE/REGISTER/ASSERT`)。同じ識別番号の制限は、カウンターを共有する可能性がある。Notionに記録した。
+
