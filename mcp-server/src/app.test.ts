@@ -3173,6 +3173,8 @@ const ROUTES: Array<[RouteAuth, string, string]> = [
   ["bearer", "POST", `/api/document/rooms/${ROOM}/invite`],
   ["bearer", "POST", `/api/document/rooms/${ROOM}/invite/accept`],
   ["bearer", "GET", `/api/document/rooms/${ROOM}/participants`],
+  ["bearer", "DELETE", `/api/document/rooms/${ROOM}/participants/${ROOM}`],
+  ["bearer", "POST", `/api/document/rooms/${ROOM}/leave`],
   ["bearer", "GET", `/api/document/rooms/${ROOM}/state`],
   ["bearer", "POST", `/api/document/rooms/${ROOM}/propose`],
   ["bearer", "POST", `/api/document/rooms/${ROOM}/changes/1/review`],
