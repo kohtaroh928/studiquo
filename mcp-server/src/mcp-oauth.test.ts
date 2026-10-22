@@ -371,3 +371,42 @@ test("issued tokens are listed under their account, and the first listing starts
   assert.notEqual(await env.STUDIQUO_DATA.get(`mcp:token-index:${owner}:refresh:${hash(issued.refresh_token)}`), null);
   assert.ok(Number(await env.STUDIQUO_DATA.get("mcp:token-index-since")) > 0);
 });
+
+// ---- Discovery documents and what the approval page may print ----
+
+test("the discovery documents point at this server's own origin, offer only the S256 code flow and public clients", async () => {
+  const env = environment();
+  for (const origin of ["https://example.test", "https://staging.example.test"]) {
+    const get = (path: string) => worker.fetch(new Request(`${origin}${path}`), env, partialCtx({ waitUntil() {} }));
+    for (const path of ["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"]) {
+      const resource = await (await get(path)).json();
+      assert.equal(resource.resource, `${origin}/mcp`);
+      assert.deepEqual(resource.authorization_servers, [origin]);
+      assert.deepEqual(resource.scopes_supported, ["studiquo.read", "studiquo.write"]);
+    }
+    const server = await (await get("/.well-known/oauth-authorization-server")).json();
+    assert.equal(server.issuer, origin);
+    assert.equal(server.authorization_endpoint, `${origin}/oauth/authorize`);
+    assert.equal(server.token_endpoint, `${origin}/oauth/token`);
+    assert.equal(server.registration_endpoint, `${origin}/oauth/register`);
+    assert.deepEqual(server.response_types_supported, ["code"]);
+    assert.deepEqual(server.code_challenge_methods_supported, ["S256"], "no plain challenge");
+    assert.deepEqual(server.token_endpoint_auth_methods_supported, ["none"], "no client secret to leak");
+    assert.deepEqual(server.grant_types_supported, ["authorization_code", "refresh_token"]);
+  }
+});
+
+test("an app's name is printed on the approval page as text, never as markup", async () => {
+  const env = environment();
+  const redirectUri = "https://claude.example/callback";
+  const hostile = `<img src=x onerror=alert(1)>"'&</p><script>alert(2)</script>`;
+  const registered = await fetch(env, "/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ client_name: hostile, redirect_uris: [redirectUri] }) });
+  assert.equal(registered.status, 201);
+  const { client_id: clientId } = await registered.json();
+  const challenge = createHash("sha256").update("v".repeat(43)).digest("base64url");
+  const page = await (await fetch(env, `/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&code_challenge_method=S256&code_challenge=${challenge}&state=s`)).text();
+  assert.ok(!page.includes("<img src=x"), "the tag didn't survive");
+  assert.ok(!page.includes("alert(2)</script>"), "the injected script didn't survive");
+  assert.ok(page.includes("&lt;img src=x onerror=alert(1)&gt;&quot;&#39;&amp;&lt;/p&gt;&lt;script&gt;"), "it is shown, escaped");
+  assert.equal((page.match(/<script>/gi) ?? []).length, 1, "only the page's own script");
+});
