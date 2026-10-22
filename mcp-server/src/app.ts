@@ -34,6 +34,7 @@ import { verifyAppleIdentityToken } from "./apple-auth.ts";
 import { verifyGoogleIdentityToken } from "./google-auth.ts";
 import { linkVerifiedEmail, identityKey } from "./oauth-links.ts";
 import { sendVerificationCode, confirmVerificationCode } from "./email-verification.ts";
+import { warnOnUnsafeConfiguration } from "./config-warnings.ts";
 import { upsertLocalAccount, verifyLocalAccount, Argon2BusyError, MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from "./local-auth.ts";
 import { startAccountDeletion } from "./account-deletion.ts";
 import { hasModerationMark, CHAT_SUSPENSION_PREFIX, loggedInRecently, mintSession, hasRealSession, revokeSessionsIssuedBefore, accountIsBeingDeleted, accountIsUnavailable } from "./session.ts";
@@ -340,6 +341,7 @@ const heartbeatMemo = new WeakMap<object, { readAt: number; last: number }>();
 const handler = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     try {
+      warnOnUnsafeConfiguration(env);
       const url = new URL(request.url);
       if (url.pathname === "/health") {
         // Stopped features are listed so a typo in DISABLED_FEATURES shows here.
