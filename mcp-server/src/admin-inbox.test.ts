@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { compareVersions } from "./app-errors.ts";
-import { INBOX_SCRIPT } from "./admin-inbox-ui.ts";
+import { INBOX_CSS, INBOX_HTML, INBOX_SCRIPT } from "./admin-inbox-ui.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
 import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv, type Untyped } from "./test-env.ts";
 
@@ -508,4 +508,39 @@ test("the moderation section is on the dashboard, builds the page only through t
   const html = await page.text();
   assert.ok(html.includes('id="moderation"'));
   assert.ok(html.includes("mtab-reports"));
+});
+
+test("the inbox's HTML, CSS and script can sit inside the dashboard's template literal and its script parses", () => {
+  assert.doesNotMatch(INBOX_SCRIPT + INBOX_HTML + INBOX_CSS, /`|\$\{/);
+  assert.doesNotThrow(() => new Function(INBOX_SCRIPT));
+});
+
+test("the dashboard page can't be framed, can't load anything from elsewhere, and is never cached", async () => {
+  const response = await worker.fetch(request("/admin"), environment(), noopCtx);
+  const policy = response.headers.get("content-security-policy")!;
+  assert.match(policy, /default-src 'none'/);
+  assert.match(policy, /connect-src 'self'/);
+  assert.match(policy, /frame-ancestors 'none'/);
+  assert.doesNotMatch(policy, /script-src[^;]*https?:/);
+  assert.equal(response.headers.get("x-frame-options"), "DENY");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  const html = await response.text();
+  assert.doesNotMatch(html, /<script[^>]*\ssrc=|<link[^>]*\shref=|<img[^>]*\ssrc=["']?https?:/i, "no outside resource is loaded");
+});
+
+test("every inline script on the dashboard parses, and no element id is used twice", async () => {
+  const html = await (await worker.fetch(request("/admin"), environment(), noopCtx)).text();
+  // Taken apart with indexOf, not a pattern: this is our own page, and a tag-matching regex is what CodeQL flags.
+  const lower = html.toLowerCase();
+  const scripts: string[] = [];
+  for (let open = lower.indexOf("<script"); open !== -1; open = lower.indexOf("<script", open + 1)) {
+    const start = lower.indexOf(">", open) + 1;
+    scripts.push(html.slice(start, lower.indexOf("</script", start)));
+  }
+  assert.ok(scripts.length >= 3, "the stats, inbox and moderation scripts are all there");
+  for (const source of scripts) assert.doesNotThrow(() => new Function(source));
+  const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(match => match[1]);
+  const repeated = ids.filter((id, index) => ids.indexOf(id) !== index);
+  assert.deepEqual(repeated, [], "the inbox and moderation sections share one page, so their ids must not collide");
 });
