@@ -156,7 +156,7 @@ test("a refresh token from before a revocation stays dead when the same app is a
   assert.equal((await refresh(stolen)).status, 400, "and not revived by approving the app again");
 });
 
-test("a registered client expires after a year instead of staying forever", async () => {
+test("a registered client nobody has approved goes away after a day; approving it keeps it for a year", async () => {
   const env = environment();
   const ttls = new Map();
   const put = env.STUDIQUO_DATA.put;
@@ -167,7 +167,13 @@ test("a registered client expires after a year instead of staying forever", asyn
   });
   assert.equal(response.status, 201);
   const { client_id } = await response.json();
-  assert.equal(ttls.get(`mcp:client:${client_id}`), 365 * 24 * 3600);
+  assert.equal(ttls.get(`mcp:client:${client_id}`), 24 * 3600, "unapproved: one day");
+
+  const id = "4".repeat(64);
+  await env.STUDIQUO_DATA.put(`mcp:auth:${id}`, JSON.stringify({ kind: "other", clientId: client_id, clientName: "Claude", redirectUri: "https://claude.ai/callback", codeChallenge: "c".repeat(43), scope: "studiquo.read" }));
+  assert.equal((await enterOwnerCode(env, id, "apple:owner")).status, 200);
+  assert.equal(ttls.get(`mcp:client:${client_id}`), 365 * 24 * 3600, "approved: a year");
+  assert.ok(await env.STUDIQUO_DATA.get(`mcp:client:${client_id}`), "and the record is still there");
 });
 
 test("a refresh token that was already exchanged cuts the whole connection", async () => {
