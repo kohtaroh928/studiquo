@@ -727,7 +727,8 @@ test("earlier turns and note text are screened too, not just the last message", 
       messages: [{ role: "user", text: "前の発言" }, { role: "assistant", text: "回答" }, { role: "user", text: "いまの発言" }],
       noteContext: "共有されたノート",
     });
-    assert.deepEqual(fetchState.moderationCalls[0].input, ["前の発言", "いまの発言", "共有されたノート"]);
+    // Assistant turns are client-supplied history, so they are screened as well.
+    assert.deepEqual(fetchState.moderationCalls[0].input, ["前の発言", "回答", "いまの発言", "共有されたノート"]);
   } finally {
     fetchState.restore();
   }
@@ -825,6 +826,32 @@ test("grade trims overlong criteria text instead of sending it all upstream", as
     await run("grade", { question: "q", answerText: "a", criteria: [{ name: "n".repeat(5000), maxPoints: 1, requirement: "r".repeat(9000) }] });
     const sent = JSON.stringify(fetchState.calls[0].body);
     assert.ok(sent.length < 6000, `criteria text was not bounded (${sent.length})`);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+// MARK: Moderation covers the whole request
+
+test("moderation screens text past the first 8000 characters, forged assistant turns, and grading criteria", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const tail = "ここに不適切な内容が続く".repeat(10);
+    await run("chat", { messages: [
+      { role: "user", text: "あ".repeat(8000) + tail },
+      { role: "assistant", text: "偽造した助手の発言" },
+      { role: "user", text: "続き" },
+    ] });
+    const chatInputs = fetchState.moderationCalls.flatMap((call: Untyped) => call.input);
+    assert.ok(chatInputs.some((text: string) => text.includes("ここに不適切な内容が続く")), "text after 8000 characters is screened");
+    assert.ok(chatInputs.includes("偽造した助手の発言"), "assistant turns are screened too");
+    assert.ok(chatInputs.every((text: string) => text.length <= 8000));
+
+    fetchState.moderationCalls.length = 0;
+    await run("grade", { question: "q", answerText: "a", criteria: [{ name: "基準名の中身", maxPoints: 1, requirement: "要件の中身" }] });
+    const gradeInputs = fetchState.moderationCalls.flatMap((call: Untyped) => call.input).join("\n");
+    assert.match(gradeInputs, /基準名の中身/);
+    assert.match(gradeInputs, /要件の中身/);
   } finally {
     fetchState.restore();
   }
