@@ -2,6 +2,10 @@
 
 最終更新: 2026-10-21。次担当はこの要約を入口にし、実ファイル・git状態・最新のユーザー指示を優先する。過去のチャット全文を読み直す必要はない。これは実装の現在地で、タスク管理の正本は既存Notionカード。
 
+## 2026-10-22 ステージングへ配備(RAG有効・判定shadow)
+
+`claude/rag-main-merge`(main bae40fd を claude/rag-ts に取り込み、衝突9件を解消。d557174)を、ステージング(studiquo-mcp-staging)へ配備。版 2a1e2d4e。設定ファイルは変えず `--var RAG_ENABLED:true RAG_JUDGE:shadow AI_PROVIDER_APPROVED:true PAYWALL_ENABLED:true` で上書き(次の配備で設定ファイルの値に戻る)。DOCLING_PROCESSOR のバインディングは、ステージングにそのWorkerがないため一時設定から外した(PDF処理は無効のまま)。mainへはマージ・pushしていない。Swift2ファイルの統合は未ビルド。確認は、アプリで質問して `wrangler tail --env staging` か Workers Logs の `rag_retrieval` の `judge` を見る(RB-21)。PAYWALL有効のため、ステージングのアカウントにサンドボックス購読が要る。
+
 ## 2026-10-22 意味の判定の検証（未使用の固定119問）
 
 事前登録 `RAG_JUDGE_PREREGISTRATION.md`（ee0a218）に従い測定。結果は `RAG_JUDGE_VALIDATION_REPORT.md`。M1〜M5すべて合格（誤停止0、新規停止12/15）。しきい値は不変。次の一手：本番でshadowを回して確率分布を確認してからonを判断。質問は `~/.studiquo-private/rag-real-material-v7/`（調整に使わない）。
