@@ -24,7 +24,7 @@ const ATTEMPTS = 3;
 const MAX_OUTPUT_TOKENS = 8192;
 
 /** A user turn's content parts: its text, plus any images attached to it. */
-function userContent(turn: any, images: string[]) {
+function userContent(turn: { text?: unknown }, images: string[]) {
   const parts: Record<string, unknown>[] = [{ type: "input_text", text: String(turn.text ?? "") }];
   for (const image of images) {
     parts.push({ type: "input_image", image_url: `data:image/png;base64,${image}`, detail: "auto" });
@@ -80,21 +80,24 @@ export function buildResponsesBody({
  * Gemini dialect they were first written in) and returns strict JSON Schema:
  * lower-case types, no extra properties, every property required.
  */
-export function toStrictJSONSchema(schema: unknown): any {
-  if (Array.isArray(schema)) return schema.map(toStrictJSONSchema);
-  if (!schema || typeof schema !== "object") return schema;
-  const out: Record<string, any> = {};
-  for (const [name, value] of Object.entries(schema as Record<string, any>)) {
+/** A JSON Schema node as toStrictJSONSchema returns it (only the members it sets are named). */
+export interface StrictSchema { type?: string; properties?: Record<string, StrictSchema>; required?: string[]; additionalProperties?: boolean; items?: StrictSchema; [member: string]: unknown }
+
+export function toStrictJSONSchema(schema: unknown): StrictSchema {
+  if (Array.isArray(schema)) return schema.map(toStrictJSONSchema) as unknown as StrictSchema;
+  if (!schema || typeof schema !== "object") return schema as StrictSchema;
+  const out: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(schema)) {
     if (name === "type" && typeof value === "string") out.type = value.toLowerCase();
-    else if (name === "properties") out.properties = Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toStrictJSONSchema(v)]));
+    else if (name === "properties") out.properties = Object.fromEntries(Object.entries(value as object).map(([k, v]) => [k, toStrictJSONSchema(v)]));
     else if (name === "items") out.items = toStrictJSONSchema(value);
     else if (name !== "required") out[name] = value;
   }
   if (out.type === "object") {
     out.additionalProperties = false;
-    out.required = Object.keys(out.properties ?? {});
+    out.required = Object.keys((out.properties ?? {}) as object);
   }
-  return out;
+  return out as StrictSchema;
 }
 
 /**
@@ -104,7 +107,7 @@ export function toStrictJSONSchema(schema: unknown): any {
 export type BeforeDispatch = () => Promise<string | { instructions: string; reference?: unknown }>;
 
 /** Sends one Responses request, retrying overload/5xx with backoff. Returns the last response. */
-async function postWithRetry(env: Env, body: Record<string,unknown>, apiKey: any, beforeDispatch?: BeforeDispatch) {
+async function postWithRetry(env: Env, body: Record<string,unknown>, apiKey: string | undefined, beforeDispatch?: BeforeDispatch) {
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured on this Worker.");
   let last: Response | null = null;
   const baseInput = body.input as unknown[];
@@ -146,14 +149,14 @@ async function postWithRetry(env: Env, body: Record<string,unknown>, apiKey: any
 }
 
 /** Neutral content parts ({text} / {image: base64 PNG}) → Responses input parts. */
-function toInputParts(parts: unknown[]) {
-  return parts.map((part: any) => part.image
+function toInputParts(parts: { image?: string; text?: unknown }[]) {
+  return parts.map((part) => part.image
     ? { type: "input_image", image_url: `data:image/png;base64,${part.image}`, detail: "auto" }
     : { type: "input_text", text: String(part.text ?? "") });
 }
 
 /** A structured (JSON schema) call whose single user message is made of `parts`. */
-export async function callOpenAIStructured(env: Env, { model, systemInstruction, parts, schema, schemaName, safetyId, maxOutputTokens, apiKey = env.OPENAI_API_KEY }: any) {
+export async function callOpenAIStructured(env: Env, { model, systemInstruction, parts, schema, schemaName, safetyId, maxOutputTokens, apiKey = env.OPENAI_API_KEY }: Pick<ResponsesBodyOptions, "model" | "systemInstruction" | "schema" | "schemaName" | "safetyId" | "maxOutputTokens"> & { parts: { image?: string; text?: unknown }[]; apiKey?: string }) {
   const body = buildResponsesBody({ model, systemInstruction, turns: [], safetyId, schema, schemaName, maxOutputTokens });
   body.input = [{ role: "user", content: toInputParts(parts) }];
   return postWithRetry(env, body, apiKey);
@@ -168,7 +171,7 @@ export async function callOpenAIStructured(env: Env, { model, systemInstruction,
  * `apiKey` defaults to this Worker's own `OPENAI_API_KEY`; it is a parameter
  * so a per-user token can be passed here later without touching the body.
  */
-export async function callOpenAIChat(env: Env, { model, systemInstruction, turns, images = [], safetyId, beforeDispatch, apiKey = env.OPENAI_API_KEY }: any) {
+export async function callOpenAIChat(env: Env, { model, systemInstruction, turns, images = [], safetyId, beforeDispatch, apiKey = env.OPENAI_API_KEY }: Pick<ResponsesBodyOptions, "model" | "systemInstruction" | "turns" | "images" | "safetyId"> & { apiKey?: string; beforeDispatch?: BeforeDispatch }) {
   return postWithRetry(env, buildResponsesBody({ model, systemInstruction, turns, images, safetyId }), apiKey, beforeDispatch);
 }
 
@@ -183,32 +186,53 @@ export async function callOpenAIChat(env: Env, { model, systemInstruction, turns
  */
 export const MODERATION_UNAVAILABLE = Object.freeze({ unavailable: true });
 
+// The moderation endpoint takes a bounded input, so long text is cut into
+// pieces and every piece is screened (cutting it off after the first 8000
+// characters left the rest unchecked). A request can carry at most this many
+// pieces. Callers cut each text to the length they actually send upstream first.
+const MODERATION_PIECE = 8000;
+const MODERATION_MAX_PIECES = 64;
+const MODERATION_BATCH = 20;
+
 export async function moderationRejection(env: Env, texts: string[], apiKey = env.OPENAI_API_KEY, { timeoutMs }: { timeoutMs?: number } = {}) {
   if (env.AI_MODERATION === "off" || !apiKey) return null;
-  const input = texts.map((text: string) => String(text ?? "").slice(0, 8000)).filter(Boolean);
+  const input: string[] = [];
+  for (const text of texts) {
+    const whole = String(text ?? "");
+    for (let start = 0; start < whole.length; start += MODERATION_PIECE) {
+      input.push(whole.slice(start, start + MODERATION_PIECE));
+    }
+  }
+  // Never leave text unscreened: more than the limit is refused outright.
+  if (input.length > MODERATION_MAX_PIECES) {
+    console.error(JSON.stringify({ message: "moderation input too large", pieces: input.length }));
+    return MODERATION_UNAVAILABLE;
+  }
   if (input.length === 0) return null;
   try {
-    const response = await fetch(MODERATION_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: "omni-moderation-latest", input }),
-      // The finished reply waits on this check before the stream can close, so it is bounded.
-      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
-    });
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => {});
-      console.error(JSON.stringify({ message: "moderation unavailable", status: response.status }));
-      return MODERATION_UNAVAILABLE;
-    }
-    const payload = (await response.json()) as { results?: { categories?: Record<string, unknown> }[] } | null;
-    // An answer that does not say what was checked is no answer.
-    if (!Array.isArray(payload?.results) || payload.results.length === 0) {
-      console.error(JSON.stringify({ message: "moderation unreadable" }));
-      return MODERATION_UNAVAILABLE;
-    }
-    for (const result of payload.results) {
-      const hit = Object.entries(result?.categories ?? {}).some(([name, on]) => on && !name.startsWith("self-harm"));
-      if (hit) return "この内容は学習アプリでは扱えません。表現を変えて、もう一度送信してください。";
+    for (let from = 0; from < input.length; from += MODERATION_BATCH) {
+      const response = await fetch(MODERATION_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: "omni-moderation-latest", input: input.slice(from, from + MODERATION_BATCH) }),
+        // The finished reply waits on this check before the stream can close, so it is bounded.
+        ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+      });
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {});
+        console.error(JSON.stringify({ message: "moderation unavailable", status: response.status }));
+        return MODERATION_UNAVAILABLE;
+      }
+      const payload = (await response.json()) as { results?: { categories?: Record<string, unknown> }[] } | null;
+      // An answer that does not say what was checked is no answer.
+      if (!Array.isArray(payload?.results) || payload.results.length === 0) {
+        console.error(JSON.stringify({ message: "moderation unreadable" }));
+        return MODERATION_UNAVAILABLE;
+      }
+      for (const result of payload.results) {
+        const hit = Object.entries(result?.categories ?? {}).some(([name, on]) => on && !name.startsWith("self-harm"));
+        if (hit) return "この内容は学習アプリでは扱えません。表現を変えて、もう一度送信してください。";
+      }
     }
   } catch (error) {
     console.error(JSON.stringify({ message: "moderation failed", error: error instanceof Error ? error.message : String(error) }));
@@ -223,7 +247,8 @@ export async function moderationRejection(env: Env, texts: string[], apiKey = en
  * output_item.*, completed, ...) yields "". Responses streams have no
  * terminal `[DONE]` line — ai.ts's pump ends when the body ends.
  */
-export function extractDeltaText(event: any) {
+export function extractDeltaText(raw: unknown) {
+  const event = raw as { type?: string; delta?: unknown } | null | undefined;
   if (event?.type !== "response.output_text.delta") return "";
   return typeof event.delta === "string" ? event.delta : "";
 }

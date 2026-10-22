@@ -6,7 +6,7 @@ import { sha256Hex } from "./auth.ts";
 import { deleteAccount } from "./account-deletion.ts";
 import { DOCUMENT_ROOM_SCHEMA, membersIfOwner, purgeRoomData, removeAccountData, removeParticipantData, roomMembershipKey } from "./document-room-store.ts";
 import { VALIDITY_SECONDS, remainingValiditySeconds } from "./token.ts";
-import { partialCtx, partialEnv, partialSql } from "./test-env.ts";
+import { partialCtx, partialEnv, partialSql, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // What account deletion must leave nothing of: the synced snapshot kept under a
 // session's token, and collaborative document rooms. The room tests run the
@@ -21,7 +21,7 @@ function roomSql() {
   const db = new DatabaseSync(":memory:");
   db.exec(DOCUMENT_ROOM_SCHEMA);
   const sql = {
-    exec(query, ...params) {
+    exec(query: string, ...params: Untyped[]) {
       const statement = db.prepare(query);
       const returnsRows = /^\s*SELECT/i.test(query) || /RETURNING/i.test(query);
       const rows = returnsRows ? statement.all(...params) : (statement.run(...params), []);
@@ -31,7 +31,7 @@ function roomSql() {
   return { db, sql };
 }
 
-function seedRoom(sql, members, { changes = [] }: { changes?: any } = {}) {
+function seedRoom(sql: { exec: any; }, members: string[][], { changes = [] }: { changes?: any } = {}) {
   for (const [key, role] of members) sql.exec("INSERT INTO participants (user_key, role) VALUES (?, ?)", key, role);
   sql.exec("INSERT INTO blocks (block_order, kind, text) VALUES (0, 'paragraph', '本文')");
   for (const [author, status] of changes) {
@@ -42,7 +42,7 @@ function seedRoom(sql, members, { changes = [] }: { changes?: any } = {}) {
   }
 }
 
-const count = (db, table) => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
+const count = (db: Untyped, table: string) => db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
 
 test("purging a room erases its text, proposals and members, and reports who was in it", () => {
   const { db, sql } = roomSql();
@@ -75,7 +75,7 @@ test("a room is only erased for its owner, whatever an index says", () => {
 
   assert.equal(membersIfOwner(partialSql(sql), "bob"), null, "an editor is not the owner");
   assert.equal(membersIfOwner(partialSql(sql), "stranger"), null);
-  assert.deepEqual(membersIfOwner(partialSql(sql), "alice").sort(), ["alice", "bob"]);
+  assert.deepEqual(membersIfOwner(partialSql(sql), "alice")!.sort(), ["alice", "bob"]);
 
   // "bob" asking to be removed as if he owned it only removes him.
   assert.equal(removeAccountData(partialSql(sql), "bob"), "removed");
@@ -112,47 +112,47 @@ test("removing someone who is not in the room changes nothing", () => {
 // The bits of DocumentRoom the routes use, over the same SQL the real room runs.
 function sqlBackedRooms() {
   const rooms = new Map();
-  function room(id) {
+  function room(id: string) {
     if (!rooms.has(id)) rooms.set(id, roomSql());
     return rooms.get(id);
   }
   return {
     _rooms: rooms,
-    getByName(id) {
+    getByName(id: string) {
       const { db, sql } = room(id);
-      const requireParticipant = userKey => {
+      const requireParticipant = (userKey: unknown) => {
         const rows = sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray();
         if (rows.length !== 1) throw new Error("Forbidden");
         return rows[0].role;
       };
       return {
-        async initialize(ownerKey) {
+        async initialize(ownerKey: string) {
           if (count(db, "participants") > 0) return { status: "already_initialized" };
           sql.exec("INSERT OR IGNORE INTO participants (user_key, role) VALUES (?, 'owner')", ownerKey);
           sql.exec("INSERT INTO blocks (block_order, kind, text) VALUES (0, 'paragraph', '本文')");
           return { status: "initialized" };
         },
-        async invite(ownerKey, userKey, role) {
+        async invite(ownerKey: string, userKey: string, role: string) {
           if (requireParticipant(ownerKey) !== "owner") throw new Error("Forbidden");
           sql.exec("INSERT OR REPLACE INTO participants (user_key, role) VALUES (?, ?)", userKey, role);
           return { status: "invited" };
         },
-        async getState(userKey) {
+        async getState(userKey: string) {
           requireParticipant(userKey);
           return { blocks: sql.exec("SELECT * FROM blocks").toArray(), pendingChanges: [] };
         },
-        async roleOf(userKey) { return sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray()[0]?.role ?? null; },
-        async ownerMembers(userKey) { return membersIfOwner(sql, userKey); },
-        async removeAccount(userKey) { return removeAccountData(sql, userKey); },
+        async roleOf(userKey: string) { return sql.exec("SELECT role FROM participants WHERE user_key = ?", userKey).toArray()[0]?.role ?? null; },
+        async ownerMembers(userKey: string) { return membersIfOwner(sql, userKey); },
+        async removeAccount(userKey: string) { return removeAccountData(sql, userKey); },
         // Test helper standing in for the propose route.
-        _propose(userKey, text) {
+        _propose(userKey: string, text: string) {
           sql.exec(
             "INSERT INTO changes (author_key, block_order, previous_text, new_text, status, created_at) VALUES (?, 0, '', ?, 'pending', 1)",
             userKey, text,
           );
         },
         _changes() { return db.prepare("SELECT author_key, new_text FROM changes ORDER BY id").all(); },
-        _participants() { return db.prepare("SELECT user_key FROM participants").all().map(row => row.user_key).sort(); },
+        _participants() { return db.prepare("SELECT user_key FROM participants").all().map((row: Untyped) => row.user_key).sort(); },
       };
     },
   };
@@ -161,16 +161,16 @@ function sqlBackedRooms() {
 // Chat gives each account a key that does not change between sign-ins. Like the
 // real registry: settled on first use, and equal to the token-derived key only
 // when a chat user already exists under it, otherwise derived from the account.
-function fakeRegistry(values) {
+function fakeRegistry(values: Map<any,any>) {
   const keys = new Map();
   return {
-    getByName(identityHash) {
+    getByName(identityHash: string) {
       return {
-        async resolveChatKey(hash, legacyTokenHash) {
+        async resolveChatKey(hash: string, legacyTokenHash: string) {
           if (!keys.has(hash)) keys.set(hash, values.has(`chat:user:${legacyTokenHash}`) ? legacyTokenHash : hash);
           return keys.get(hash);
         },
-        async getUser(key) {
+        async getUser(key: string) {
           const stored = values.get(`chat:user:${key}`);
           return stored ? JSON.parse(stored) : null;
         },
@@ -182,16 +182,16 @@ function fakeRegistry(values) {
 
 function environment() {
   const values = new Map();
-  const puts = [];
+  const puts: { key: string; options: any; }[] = [];
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value, options) { puts.push({ key, options }); values.set(key, value); },
-      async delete(key) { values.delete(key); },
-      async list({ prefix }) {
+      async put(key: string, value: string, options: string) { puts.push({ key, options }); values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
+      async list({ prefix }: { prefix?: unknown }) {
         return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
       },
     },
@@ -209,7 +209,7 @@ let nextToken = 1;
 
 // A signed-in session for `sub`: the token the app would hold, and the server
 // side session row that makes it real.
-async function signIn(env, sub, { ageSeconds = 0 }: { ageSeconds?: number } = {}) {
+async function signIn(env: LooseEnv, sub: string, { ageSeconds = 0 }: { ageSeconds?: number } = {}) {
   const issuedAt = Math.floor(Date.now() / 1000) - ageSeconds;
   const token = `${issuedAt}.${String(nextToken++).padStart(4, "0").repeat(10)}`;
   const tokenHash = await sha256Hex(token);
@@ -217,8 +217,8 @@ async function signIn(env, sub, { ageSeconds = 0 }: { ageSeconds?: number } = {}
   return { token, tokenHash };
 }
 
-function call(env, path, { method = "GET", token, body }: { method?: string; token?: any; body?: any } = {}) {
-  const headers = { authorization: `Bearer ${token}` };
+function call(env: LooseEnv, path: string, { method = "GET", token, body }: { method?: string; token?: string; body?: unknown } = {}) {
+  const headers: Record<string, string> = { authorization: `Bearer ${token}` };
   if (body !== undefined) headers["content-type"] = "application/json";
   return worker.fetch(
     new Request(`https://example.test${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }),
@@ -227,12 +227,12 @@ function call(env, path, { method = "GET", token, body }: { method?: string; tok
 }
 
 const ROOM = "b".repeat(64);
-const initRoom = (env, token) => call(env, `/api/document/rooms/${ROOM}/init`, { method: "POST", token, body: { blocks: [] } });
-const roomState = (env, token) => call(env, `/api/document/rooms/${ROOM}/state`, { token });
+const initRoom = (env: LooseEnv, token: string) => call(env, `/api/document/rooms/${ROOM}/init`, { method: "POST", token, body: { blocks: [] } });
+const roomState = (env: LooseEnv, token: string) => call(env, `/api/document/rooms/${ROOM}/state`, { token });
 
 // Gives `sub` a friend code the way chat registration does, under the account's
 // stable chat key.
-async function registerFriend(env, session, sub, code) {
+async function registerFriend(env: LooseEnv, session: { token?: string; tokenHash: any; }, sub: string, code: string) {
   const identityHash = await sha256Hex(`chat-account:${sub}`);
   const key = await env.USER_REGISTRY.getByName(identityHash).resolveChatKey(identityHash, session.tokenHash);
   env._values.set(`chat:code:${code}`, key);
@@ -240,7 +240,7 @@ async function registerFriend(env, session, sub, code) {
   return key;
 }
 
-async function shareWithBob(env) {
+async function shareWithBob(env: LooseEnv) {
   const alice = await signIn(env, "apple:alice");
   const bob = await signIn(env, "apple:bob");
   assert.equal((await initRoom(env, alice.token)).status, 200);
@@ -248,6 +248,8 @@ async function shareWithBob(env) {
   // Only a friend can be invited to a document, so Bob must be on Alice's list.
   const aliceKey = await registerFriend(env, alice, "apple:alice", "ALICECODE1");
   env._values.set(`chat:user:${aliceKey}`, JSON.stringify({ key: aliceKey, name: "apple:alice", code: "ALICECODE1", friends: [{ code: "BOBCODE01", name: "apple:bob" }] }));
+  // Friendship is mutual, and accepting re-checks it.
+  env._values.set(`chat:user:${bobKey}`, JSON.stringify({ key: bobKey, name: "apple:bob", code: "BOBCODE01", friends: [{ code: "ALICECODE1", name: "apple:alice" }] }));
   const invited = await call(env, `/api/document/rooms/${ROOM}/invite`, { method: "POST", token: alice.token, body: { code: "BOBCODE01", role: "editor" } });
   assert.equal(invited.status, 200);
   // The invitation seats Bob only once he accepts it.
@@ -305,7 +307,7 @@ test("deleting an invited friend removes them and their open proposals, not the 
   await deleteAccount(env, "apple:bob");
 
   assert.deepEqual(room._participants(), [aliceKey]);
-  assert.deepEqual(room._changes().map(row => row.new_text), ["alice's idea"]);
+  assert.deepEqual(room._changes().map((row: Untyped) => row.new_text), ["alice's idea"]);
   assert.equal((await roomState(env, alice.token)).status, 200, "the owner still has the document");
   assert.equal((await roomState(env, bob.token)).status, 401, "the deleted account's own session is gone");
   assert.equal(env._values.has(roomMembershipKey(bobKey, ROOM)), false);
@@ -327,10 +329,10 @@ test("deletion that failed part-way finishes when it is run again", async () => 
 
   const rooms = env.DOCUMENT_ROOM;
   let fail = true;
-  (env.DOCUMENT_ROOM as any) = {
-    getByName(id) {
+  env.DOCUMENT_ROOM = {
+    getByName(id: string) {
       const room = rooms.getByName(id);
-      return { ...room, async removeAccount(userKey) { if (fail) throw new Error("storage hiccup"); return room.removeAccount(userKey); } };
+      return { ...room, async removeAccount(userKey: string) { if (fail) throw new Error("storage hiccup"); return room.removeAccount(userKey); } };
     },
   };
   await assert.rejects(() => deleteAccount(env, "apple:alice"), /storage hiccup/);
@@ -352,11 +354,11 @@ test("deleting an account that is in no room touches no room", async () => {
   assert.equal((await roomState(env, alice.token)).status, 200);
 });
 
-const initRoomById = (env, token, roomID) =>
+const initRoomById = (env: LooseEnv, token: string, roomID: string) =>
   call(env, `/api/document/rooms/${roomID}/init`, { method: "POST", token, body: { blocks: [] } });
-const roomIdNumber = n => n.toString(16).padStart(64, "0");
+const roomIdNumber = (n: Untyped) => n.toString(16).padStart(64, "0");
 
-async function stableKey(env, sub, tokenHash) {
+async function stableKey(env: LooseEnv, sub: string, tokenHash: string) {
   const identityHash = await sha256Hex(`chat-account:${sub}`);
   return env.USER_REGISTRY.getByName(identityHash).resolveChatKey(identityHash, tokenHash);
 }
@@ -385,7 +387,7 @@ test("a room whose index write failed at creation is still found when the client
 
   const put = env.STUDIQUO_DATA.put;
   let failOnce = true;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => {
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: string) => {
     if (failOnce && key.startsWith("doc-room:")) { failOnce = false; throw new Error("kv unavailable"); }
     return put(key, value, options);
   };
@@ -421,10 +423,10 @@ test("the other members' entries are dropped before the room is erased, so no re
 
   const rooms = env.DOCUMENT_ROOM;
   let fail = true;
-  (env.DOCUMENT_ROOM as any) = {
-    getByName(id) {
+  env.DOCUMENT_ROOM = {
+    getByName(id: string) {
       const room = rooms.getByName(id);
-      return { ...room, async removeAccount(userKey) { if (fail) throw new Error("cut short"); return room.removeAccount(userKey); } };
+      return { ...room, async removeAccount(userKey: string) { if (fail) throw new Error("cut short"); return room.removeAccount(userKey); } };
     },
   };
   await assert.rejects(() => deleteAccount(env, "apple:alice"), /cut short/);
@@ -445,11 +447,11 @@ test("one room that cannot be removed does not stop the others", async () => {
 
   const rooms = env.DOCUMENT_ROOM;
   let broken = true;
-  (env.DOCUMENT_ROOM as any) = {
-    getByName(id) {
+  env.DOCUMENT_ROOM = {
+    getByName(id: string) {
       const room = rooms.getByName(id);
       if (id !== roomIdNumber(2)) return room;
-      return { ...room, async removeAccount(userKey) { if (broken) throw new Error("this room is stuck"); return room.removeAccount(userKey); } };
+      return { ...room, async removeAccount(userKey: string) { if (broken) throw new Error("this room is stuck"); return room.removeAccount(userKey); } };
     },
   };
   await assert.rejects(() => deleteAccount(env, "apple:alice"), /this room is stuck/);
@@ -490,7 +492,7 @@ const snapshotBody = { version: 1, exportedAt: "2026-10-09T00:00:00Z", notebooks
 
 test("a token's remaining validity is what is left of its 90 days, never less than a minute", () => {
   const now = 1_800_000_000_000;
-  const mint = secondsAgo => `${Math.floor(now / 1000) - secondsAgo}.secret`;
+  const mint = (secondsAgo: Untyped) => `${Math.floor(now / 1000) - secondsAgo}.secret`;
   assert.equal(remainingValiditySeconds(mint(0), now), VALIDITY_SECONDS);
   assert.equal(remainingValiditySeconds(mint(89 * DAY), now), DAY);
   assert.equal(remainingValiditySeconds(mint(VALIDITY_SECONDS + 5 * DAY), now), 60, "expired: the smallest expiry KV accepts");
@@ -507,8 +509,8 @@ test("the snapshot kept under a session expires with that session; the account c
   assert.equal(response.status, 200);
 
   const tokenCopy = env._puts.find(put => put.key === `snapshot:${session.tokenHash}`);
-  assert.ok(tokenCopy.options?.expirationTtl, "an expiry is set");
-  assert.ok(Math.abs(tokenCopy.options.expirationTtl - 10 * DAY) < 120, `about 10 days left, got ${tokenCopy.options.expirationTtl}`);
+  assert.ok(tokenCopy!.options?.expirationTtl, "an expiry is set");
+  assert.ok(Math.abs(tokenCopy!.options.expirationTtl - 10 * DAY) < 120, `about 10 days left, got ${tokenCopy!.options.expirationTtl}`);
 
   const accountKey = await sha256Hex("mcp-account:apple:alice");
   const accountCopy = env._puts.find(put => put.key === `snapshot:${accountKey}`);

@@ -86,7 +86,12 @@ export async function readTextLimited(request: Request, maximumBytes: number): P
  * Content-Length and the actual bytes read), or invalid JSON — callers that
  * need to distinguish those cases (e.g. to return a specific error message)
  * should use `readTextLimited` and `JSON.parse` directly instead.
+ *
+ * The one deliberate `any` in `src`: this is the JSON boundary. The 40-odd callers each read the members they
+ * expect from an untrusted body and validate them before use; typing it `unknown` would only move a cast
+ * into every one of them.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function readJSONLimited(request: Request, maximumBytes: number): Promise<any> {
   const declaredSize = Number(request.headers.get("content-length") ?? 0);
   if (!request.body || declaredSize > maximumBytes) return null;

@@ -3,10 +3,10 @@ import { createHash, randomBytes } from "node:crypto";
 import test from "node:test";
 import worker from "./app.ts";
 import { sealSnapshot, openSnapshot } from "./snapshot-crypto.ts";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 const newKey = () => randomBytes(32).toString("base64");
-const hash = value => createHash("sha256").update(value).digest("hex");
+const hash = (value: Untyped) => createHash("sha256").update(value).digest("hex");
 const SNAPSHOT = JSON.stringify({ version: 1, notebooks: [{ id: "n", title: "秘密のノート", pages: [{ id: "p", title: "p", recognizedText: "ひみつの内容" }] }] });
 
 test("a sealed snapshot does not contain its plaintext and opens back to the original", async () => {
@@ -82,7 +82,7 @@ test("an 8 MB snapshot seals and opens", async () => {
 // ---- Through the Worker -------------------------------------------------
 
 const noopCtx = partialCtx({ waitUntil() {} });
-const fetchApp = (env, path, options = {}) => worker.fetch(new Request(`https://example.test${path}`, options), env, noopCtx);
+const fetchApp = (env: LooseEnv, path: string, options = {}) => worker.fetch(new Request(`https://example.test${path}`, options), env, noopCtx);
 
 function environment(extra = {}) {
   const values = new Map();
@@ -90,13 +90,13 @@ function environment(extra = {}) {
   return partialEnv({
     ttls,
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value, options) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
-      async delete(key) { values.delete(key); },
-      async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
+      async put(key: string, value: string, options: { expirationTtl: any; }) { values.set(key, value); ttls.set(key, options?.expirationTtl); },
+      async delete(key: string) { values.delete(key); },
+      async list({ prefix }: { prefix?: unknown }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
     },
     raw: values,
     RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
@@ -104,7 +104,7 @@ function environment(extra = {}) {
   });
 }
 
-async function syncAs(env, token, sub) {
+async function syncAs(env: LooseEnv, token: string, sub: string) {
   await env.STUDIQUO_DATA.put(`session:${hash(token)}`, JSON.stringify({ sub }));
   return fetchApp(env, "/api/snapshot", {
     method: "PUT",
@@ -113,7 +113,7 @@ async function syncAs(env, token, sub) {
   });
 }
 
-async function listNotebooks(env, token) {
+async function listNotebooks(env: LooseEnv, token: string) {
   const response = await fetchApp(env, "/mcp", {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" },

@@ -1,21 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { compareVersions } from "./app-errors.ts";
 import { INBOX_SCRIPT } from "./admin-inbox-ui.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
-import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // Same shape as admin.test.js's fake: a real in-memory SQLite database built
 // from the real migrations, behind the slice of D1's API the Worker uses.
 class FakeD1Statement {
-  db: any;
+  db: DatabaseSync;
   sql: string;
-  params: unknown[];
-  constructor(db: any, sql: string, params: unknown[] = []) { this.db = db; this.sql = sql; this.params = params; }
-  bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
+  params: SQLInputValue[];
+  constructor(db: DatabaseSync, sql: string, params: SQLInputValue[] = []) { this.db = db; this.sql = sql; this.params = params; }
+  bind(...params: Untyped[]) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() {
     const info = this.db.prepare(this.sql).run(...this.params);
     return { success: true, meta: { changes: info.changes, rows_written: info.changes } };
@@ -29,13 +29,13 @@ function fakeD1() {
   for (const file of migrationFiles()) {
     db.exec(readMigration(file));
   }
-  return { raw: db, prepare(sql) { return new FakeD1Statement(db, sql); } };
+  return { raw: db, prepare(sql: string) { return new FakeD1Statement(db, sql); } };
 }
 
 function fakeCloudflareLimiter(limit = 1000) {
   const counts = new Map();
   return {
-    async limit({ key }) {
+    async limit({ key }: { key?: unknown }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -47,8 +47,8 @@ function fakeCloudflareLimiter(limit = 1000) {
 function countingCounter() {
   const counts = new Map();
   return {
-    getByName(name) {
-      return { async bump(limit) { const used = (counts.get(name) ?? 0) + 1; if (used > limit) return false; counts.set(name, used); return true; } };
+    getByName(name: string) {
+      return { async bump(limit: number) { const used = (counts.get(name) ?? 0) + 1; if (used > limit) return false; counts.set(name, used); return true; } };
     },
   };
 }
@@ -57,13 +57,13 @@ function environment({ appErrorLimit = 1000 }: { appErrorLimit?: number } = {}) 
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
-      async list({ prefix, cursor }) {
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
+      async list({ prefix, cursor }: { prefix?: unknown; cursor?: unknown }) {
         const all = [...values.keys()].filter(k => k.startsWith(prefix)).sort();
         const start = cursor ? Number(cursor) : 0;
         const page = all.slice(start, start + 1000);
@@ -81,9 +81,9 @@ function environment({ appErrorLimit = 1000 }: { appErrorLimit?: number } = {}) 
 }
 
 const noopCtx = partialCtx({ waitUntil() {} });
-const freshToken = suffix => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
+const freshToken = (suffix: Untyped) => `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 
-function request(path, { method = "GET", token, body, contentType }: { method?: string; token?: any; body?: any; contentType?: any } = {}) {
+function request(path: string, { method = "GET", token, body, contentType }: { method?: string; token?: string; body?: unknown; contentType?: string } = {}) {
   // /api/admin/* is verified against the Cloudflare Access login (src/access.ts).
   const headers: Record<string, string> = path.startsWith("/api/admin/") ? { ...ACCESS_HEADERS } : {};
   if (token) headers.authorization = `Bearer ${token}`;
@@ -93,17 +93,17 @@ function request(path, { method = "GET", token, body, contentType }: { method?: 
   });
 }
 
-async function seedSession(env, token, sub) {
+async function seedSession(env: { STUDIQUO_DATA: { put: (arg0: string,arg1: string) => any; }; }, token: string | NodeJS.ArrayBufferView<ArrayBufferLike>, sub: string) {
   const key = createHash("sha256").update(token).digest("hex");
   await env.STUDIQUO_DATA.put(`session:${key}`, JSON.stringify({ sub, issuedAt: Math.floor(Date.now() / 1000) }));
 }
 
 // Captures every Slack post made while `run` executes.
-async function withSlack(run) {
-  const posts = [];
+async function withSlack(run: Untyped) {
+  const posts: { url: URL | RequestInfo<unknown,CfProperties<unknown>>; body: any; }[] = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
-    posts.push({ url, body: JSON.parse(init.body) });
+    posts.push({ url, body: JSON.parse(init!.body! as string) });
     return new Response("ok", { status: 200 });
   };
   try {
@@ -114,13 +114,13 @@ async function withSlack(run) {
   return posts;
 }
 
-async function signedInUser(env, name) {
+async function signedInUser(env: LooseEnv, name: string | any[]) {
   const token = freshToken(name.slice(0, 1));
   await seedSession(env, token, `user-${name}`);
   return token;
 }
 
-async function sendErrors(env, token, errors, extra = {}) {
+async function sendErrors(env: LooseEnv, token: string, errors: unknown[], extra = {}) {
   return worker.fetch(
     request("/api/app-errors", { method: "POST", token, body: { appVersion: "1.0 (10)", osVersion: "27.0", deviceModel: "iPad14,1", errors, ...extra } }),
     env, noopCtx
@@ -129,19 +129,19 @@ async function sendErrors(env, token, errors, extra = {}) {
 
 const crash = (overrides = {}) => ({ kind: "crash", signature: "EXC_BAD_ACCESS|SIGSEGV|studiquo+0x1a2b", title: "EXC_BAD_ACCESS (SIGSEGV)", detail: "frame 0\nframe 1", ...overrides });
 
-async function listErrors(env, query = "?status=all") {
+async function listErrors(env: LooseEnv, query = "?status=all") {
   const response = await worker.fetch(request(`/api/admin/app-errors${query}`), env, noopCtx);
   assert.equal(response.status, 200);
   return (await response.json()).errors;
 }
 
-async function listReports(env, query = "?status=all") {
+async function listReports(env: LooseEnv, query = "?status=all") {
   const response = await worker.fetch(request(`/api/admin/issue-reports${query}`), env, noopCtx);
   assert.equal(response.status, 200);
   return (await response.json()).reports;
 }
 
-async function stats(env) {
+async function stats(env: LooseEnv) {
   const response = await worker.fetch(request("/api/admin/stats"), env, noopCtx);
   return response.json();
 }
@@ -319,12 +319,12 @@ test("the error list filters by status and sorts by recency or by count", async 
   await sendErrors(env, token, [crash({ signature: "rare", title: "rare", occurredAt: Date.now() - 5_000 })]);
   await sendErrors(env, token, [crash({ signature: "common", title: "common", count: 50, occurredAt: Date.now() - 9_000 })]);
 
-  assert.deepEqual((await listErrors(env, "?status=open&sort=recent")).map(e => e.title), ["rare", "common"]);
-  assert.deepEqual((await listErrors(env, "?status=open&sort=count")).map(e => e.title), ["common", "rare"]);
+  assert.deepEqual((await listErrors(env, "?status=open&sort=recent")).map((e: Untyped) => e.title), ["rare", "common"]);
+  assert.deepEqual((await listErrors(env, "?status=open&sort=count")).map((e: Untyped) => e.title), ["common", "rare"]);
 
   const [rare] = await listErrors(env, "?status=open&sort=recent");
   await worker.fetch(request(`/api/admin/app-errors/${rare.fingerprint}`, { method: "POST", body: { status: "in_progress", note: "調査中" } }), env, noopCtx);
-  assert.deepEqual((await listErrors(env, "?status=open")).map(e => e.title), ["common"]);
+  assert.deepEqual((await listErrors(env, "?status=open")).map((e: Untyped) => e.title), ["common"]);
   const working = await listErrors(env, "?status=in_progress");
   assert.equal(working[0].note, "調査中");
   assert.equal((await listErrors(env, "?status=all")).length, 2);
@@ -415,7 +415,7 @@ test("a report can be moved through its statuses with a note", async () => {
 test("a report that fails to mirror into D1 is still accepted", async () => {
   const env = environment();
   const token = await signedInUser(env, "alice");
-  (env.ADMIN_DB as any) = { prepare() { throw new Error("D1 is down"); } };
+  env.ADMIN_DB = { prepare() { throw new Error("D1 is down"); } };
   const originalError = console.error;
   console.error = () => {};
   try {
@@ -431,7 +431,7 @@ test("a report that fails to mirror into D1 is still accepted", async () => {
 test("reports filed before the inbox existed can be imported once, without touching handled ones", async () => {
   const env = environment();
   const recent = Date.now() - 86_400_000;
-  const legacy = id => JSON.stringify({ id, reporterKey: "k", description: `legacy ${id}`, appVersion: "0.9", osVersion: "26", deviceModel: "iPad", language: "ja", hasScreenshot: id === "00000000-0000-0000-0000-000000000002", createdAt: recent });
+  const legacy = (id: unknown) => JSON.stringify({ id, reporterKey: "k", description: `legacy ${id}`, appVersion: "0.9", osVersion: "26", deviceModel: "iPad", language: "ja", hasScreenshot: id === "00000000-0000-0000-0000-000000000002", createdAt: recent });
   await env.STUDIQUO_DATA.put("issue-report:00000000-0000-0000-0000-000000000001", legacy("00000000-0000-0000-0000-000000000001"));
   await env.STUDIQUO_DATA.put("issue-report:00000000-0000-0000-0000-000000000002", legacy("00000000-0000-0000-0000-000000000002"));
   await env.STUDIQUO_DATA.put("issue-report-screenshot:00000000-0000-0000-0000-000000000002", JSON.stringify({ contentType: "image/png", data: "" }));
@@ -442,13 +442,13 @@ test("reports filed before the inbox existed can be imported once, without touch
   const reports = await listReports(env);
   assert.equal(reports.length, 2);
   assert.equal(reports[0].createdAt, recent);
-  assert.equal(reports.find(r => r.id.endsWith("2")).hasScreenshot, true);
+  assert.equal(reports.find((r: Untyped) => r.id.endsWith("2")).hasScreenshot, true);
 
   const handled = reports[0];
   await worker.fetch(request(`/api/admin/issue-reports/${handled.id}`, { method: "POST", body: { status: "resolved", note: "done" } }), env, noopCtx);
   const second = await worker.fetch(request("/api/admin/issue-reports/import-legacy", { method: "POST", body: {} }), env, noopCtx);
   assert.deepEqual(await second.json(), { imported: 0, skipped: 3 });
-  const after = (await listReports(env)).find(r => r.id === handled.id);
+  const after = (await listReports(env)).find((r: Untyped) => r.id === handled.id);
   assert.equal(after.status, "resolved");
   assert.equal(after.note, "done");
 });
@@ -479,7 +479,7 @@ test("the inbox script never writes outside text into the page as markup", () =>
 test("one account can open only 20 new problems a day, but can keep reporting known ones", async () => {
   const env = environment();
   const token = await signedInUser(env, "flooder");
-  const distinct = (from, to) => Array.from({ length: to - from }, (_, i) => crash({ signature: `made-up-${from + i}`, title: `made up ${from + i}` }));
+  const distinct = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => crash({ signature: `made-up-${from + i}`, title: `made up ${from + i}` }));
   const first = await (await sendErrors(env, token, distinct(0, 20))).json();
   assert.equal(first.accepted, 20);
   const second = await (await sendErrors(env, token, distinct(20, 25))).json();

@@ -388,6 +388,20 @@ struct NoteEditorView: View {
     /// dialogs do not force Swift to type-check the whole screen as one
     /// expression.
     private var editorCanvas: some View {
+        editorWithOverlays(
+            editorWithLifecycle(
+                editorWithReceivers(
+                    editorWithDialogs(
+                        editorWithSheets(
+                            editorWithNavigation(editorBase)
+                        )
+                    )
+                )
+            )
+        )
+    }
+
+    private var editorBase: some View {
         GeometryReader { geometry in
             let editorFrame = geometry.frame(in: .global)
             ZStack {
@@ -465,6 +479,10 @@ struct NoteEditorView: View {
                 updateOrientation(for: newSize)
             }
         }
+    }
+
+    private func editorWithNavigation(_ content: some View) -> some View {
+        content
         .navigationTitle(primaryFlashcardDeck?.title ?? displayedPrimaryNotebook.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
@@ -487,6 +505,10 @@ struct NoteEditorView: View {
             document: $pdfExportDocument,
             filename: pdfExportFilename
         ))
+    }
+
+    private func editorWithSheets(_ content: some View) -> some View {
+        content
         .sheet(isPresented: $showsStudySession) {
             StudySessionView(notebook: notebook)
         }
@@ -533,6 +555,10 @@ struct NoteEditorView: View {
         .sheet(isPresented: $showsDeletePagePicker) {
             PageDeletionPicker(notebook: activeNotebook, currentPageIndex: activePageIndexBinding)
         }
+    }
+
+    private func editorWithDialogs(_ content: some View) -> some View {
+        content
         .confirmationDialog(
             "「\(notebookPendingTrash?.title ?? "ノート")」をゴミ箱に移動しますか？",
             isPresented: Binding(
@@ -610,6 +636,10 @@ struct NoteEditorView: View {
             }
             #endif
         }
+    }
+
+    private func editorWithReceivers(_ content: some View) -> some View {
+        content
         .onChange(of: notebook.sortedPages.count) { _, count in
             primaryPageIndex = clamped(primaryPageIndex, pageCount: count)
             notebook.refreshLibraryMetadata()
@@ -643,6 +673,10 @@ struct NoteEditorView: View {
             secondaryPageIndex = clamped(secondaryPageIndex, pageCount: count ?? 0)
             secondaryNotebook?.refreshLibraryMetadata()
         }
+    }
+
+    private func editorWithLifecycle(_ content: some View) -> some View {
+        content
         .onAppear {
             splitState.isSplit = splitMode != .single
             aiChat.loadThreads()
@@ -679,6 +713,10 @@ struct NoteEditorView: View {
             if notebook.isLocked { NotebookEncryptionService.lock(notebook) }
             NotebookBackupService.saveAutomaticBackup(for: notebook)
         }
+    }
+
+    private func editorWithOverlays(_ content: some View) -> some View {
+        content
         .overlay(alignment: .top) {
             if isRecognizingHandwriting {
                 HStack(spacing: 10) {
@@ -723,6 +761,7 @@ struct NoteEditorView: View {
             onSelect: openAIChatThread
         ))
     }
+
 
     var body: some View { editorCanvas }
 
@@ -7647,14 +7686,14 @@ struct PageCanvasContainer: View {
             localPoints = zip(corners, corners.dropFirst()).flatMap { sampledLine(from: $0.0, to: $0.1, count: 14) }
         case .ellipse:
             localPoints = (0...72).map { index in
-                let angle = CGFloat(index) / 72 * .pi * 2
+                let angle: CGFloat = CGFloat(index) / 72 * .pi * 2
                 return CGPoint(x: cos(angle) * width / 2, y: sin(angle) * height / 2)
             }
         default:
             return nil
         }
 
-        let radians = CGFloat(rotation) * .pi / 180
+        let radians: CGFloat = CGFloat(rotation) * .pi / 180
         let points = localPoints.map { point in
             CGPoint(
                 x: centerPoint.x + point.x * cos(radians) - point.y * sin(radians),
@@ -7944,14 +7983,16 @@ struct PageCanvasContainer: View {
         let center = CGPoint(x: element.centerX * page.pageWidth, y: element.centerY * page.pageHeight)
         let halfWidth = element.width * page.pageWidth / 2
         let halfHeight = element.height * page.pageHeight / 2
-        let angle = CGFloat(element.rotation) * .pi / 180
+        let angle: CGFloat = CGFloat(element.rotation) * .pi / 180
 
         let local: [CGPoint]
         switch element.kind {
         case .ellipse:
             local = (0..<64).map { step in
-                let theta = CGFloat(step) / 64 * 2 * .pi
-                return CGPoint(x: cos(theta) * halfWidth, y: sin(theta) * halfHeight)
+                let theta: CGFloat = CGFloat(step) / 64 * 2 * .pi
+                let cosine: CGFloat = cos(theta)
+                let sine: CGFloat = sin(theta)
+                return CGPoint(x: cosine * halfWidth, y: sine * halfHeight)
             }
         default:
             let corners = [
@@ -8547,7 +8588,7 @@ private struct EditablePageElement: View {
     private func applyResize(anchor: ResizeAnchor, from origin: ElementFrame, translation: CGSize) {
         let pageWidth = max(pageSize.width, 1)
         let pageHeight = max(pageSize.height, 1)
-        let radians = element.rotation * .pi / 180
+        let radians: CGFloat = CGFloat(element.rotation) * .pi / 180
 
         // Screen-space drag rotated back into the element's own axes, so a
         // handle on a tilted photo still grows the edge it is attached to

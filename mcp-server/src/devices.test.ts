@@ -2,19 +2,19 @@ import assert from "node:assert/strict";
 import { exportPKCS8, generateKeyPair } from "jose";
 import test from "node:test";
 import { handleDeviceRoutes, loadDevices } from "./devices.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type Untyped } from "./test-env.ts";
 
 function environment(limit = 5) {
   const values = new Map();
   let count = 0;
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
     RATE_LIMIT_CHAT_DEVICE_REGISTER: {
       async limit() { count += 1; return { success: count <= limit }; },
@@ -22,7 +22,7 @@ function environment(limit = 5) {
   });
 }
 
-function request(method, body) {
+function request(method: string, body: unknown) {
   return new Request("https://example.test/api/chat/devices", {
     method,
     headers: { "content-type": "application/json" },
@@ -36,13 +36,13 @@ const secondToken = "b".repeat(64);
 test("device registration is idempotent and keeps multiple devices", async () => {
   const env = environment();
   const url = new URL("https://example.test/api/chat/devices");
-  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken, environment: "sandbox" }), env, "user-a")).status, 200);
-  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken.toUpperCase(), environment: "production" }), env, "user-a")).status, 200);
-  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: secondToken, environment: "production" }), env, "user-a")).status, 200);
+  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken, environment: "sandbox" }), env, "user-a"))!.status, 200);
+  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken.toUpperCase(), environment: "production" }), env, "user-a"))!.status, 200);
+  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: secondToken, environment: "production" }), env, "user-a"))!.status, 200);
 
   const devices = await loadDevices(env, "user-a");
   assert.equal(devices.length, 2);
-  assert.equal(devices.find(device => device.token === firstToken).environment, "production");
+  assert.equal(devices.find(device => device.token === firstToken)!.environment, "production");
 });
 
 test("device registration stores installation metadata and category preferences", async () => {
@@ -80,9 +80,9 @@ test("registering a genuinely new installation alerts the account's existing dev
   }), env, "user-a");
 
   const originalFetch = globalThis.fetch;
-  const calls = [];
+  const calls: Untyped[] = [];
   globalThis.fetch = async (requestURL, init) => {
-    calls.push({ requestURL, payload: JSON.parse(init.body) });
+    calls.push({ requestURL, payload: JSON.parse(init!.body! as string) });
     return new Response(null, { status: 200 });
   };
   try {
@@ -116,17 +116,17 @@ test("device unregister is idempotent", async () => {
   const env = environment();
   const url = new URL("https://example.test/api/chat/devices");
   await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken, environment: "sandbox" }), env, "user-a");
-  assert.equal((await handleDeviceRoutes(url, request("DELETE", { deviceToken: firstToken }), env, "user-a")).status, 200);
-  assert.equal((await handleDeviceRoutes(url, request("DELETE", { deviceToken: firstToken }), env, "user-a")).status, 200);
+  assert.equal((await handleDeviceRoutes(url, request("DELETE", { deviceToken: firstToken }), env, "user-a"))!.status, 200);
+  assert.equal((await handleDeviceRoutes(url, request("DELETE", { deviceToken: firstToken }), env, "user-a"))!.status, 200);
   assert.deepEqual(await loadDevices(env, "user-a"), []);
 });
 
 test("device registration validates tokens, environments, and rate limits", async () => {
   const env = environment(2);
   const url = new URL("https://example.test/api/chat/devices");
-  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: "not-a-token", environment: "sandbox" }), env, "user-a")).status, 400);
-  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken, environment: "preview" }), env, "user-a")).status, 400);
-  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken, environment: "sandbox" }), env, "user-a")).status, 429);
+  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: "not-a-token", environment: "sandbox" }), env, "user-a"))!.status, 400);
+  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken, environment: "preview" }), env, "user-a"))!.status, 400);
+  assert.equal((await handleDeviceRoutes(url, request("POST", { deviceToken: firstToken, environment: "sandbox" }), env, "user-a"))!.status, 429);
 });
 
 test("device registration keeps a valid language and the announcement preference", async () => {
@@ -142,9 +142,9 @@ test("device registration keeps a valid language and the announcement preference
 
   const devices = await loadDevices(env, "user-a");
   const first = devices.find(device => device.token === firstToken);
-  assert.equal(first.language, "zh-Hans");
-  assert.equal(first.preferences.announcement, false);
-  assert.equal(devices.find(device => device.token === secondToken).language, undefined);
+  assert.equal(first!.language, "zh-Hans");
+  assert.equal(first!.preferences!.announcement, false);
+  assert.equal(devices.find(device => device.token === secondToken)!.language, undefined);
 });
 
 test("device registration keeps the per-category banner choice and ignores anything else", async () => {

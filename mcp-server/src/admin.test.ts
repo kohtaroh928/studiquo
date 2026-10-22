@@ -1,24 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import worker from "./app.ts";
 import { PRODUCT_BILLING_MONTHS } from "./admin.ts";
 import { ACCESS_ENV, ACCESS_HEADERS } from "./test-access.ts";
-import { migrationFiles, partialCtx, partialEnv, readMigration } from "./test-env.ts";
+import { migrationFiles, partialCtx, partialEnv, readMigration, type LooseEnv, type Untyped } from "./test-env.ts";
 
 // Wraps a real in-memory SQLite database (seeded from the actual migration
 // file, so tests run against the real schema) in the shape D1 exposes to a
 // Worker: prepare(sql).bind(...params).run()/.all()/.first().
 class FakeD1Statement {
-  db: any;
+  db: DatabaseSync;
   sql: string;
-  params: unknown[];
-  constructor(db: any, sql: string, params: unknown[] = []) {
+  params: SQLInputValue[];
+  constructor(db: DatabaseSync, sql: string, params: SQLInputValue[] = []) {
     this.db = db;
     this.sql = sql;
     this.params = params;
   }
-  bind(...params) { return new FakeD1Statement(this.db, this.sql, params); }
+  bind(...params: Untyped[]) { return new FakeD1Statement(this.db, this.sql, params); }
   async run() {
     const info = this.db.prepare(this.sql).run(...this.params);
     return { success: true, meta: { changes: info.changes, rows_written: info.changes, last_row_id: info.lastInsertRowid } };
@@ -36,13 +36,13 @@ function fakeD1() {
   for (const file of migrationFiles()) {
     db.exec(readMigration(file));
   }
-  return { prepare(sql) { return new FakeD1Statement(db, sql); } };
+  return { prepare(sql: string) { return new FakeD1Statement(db, sql); } };
 }
 
 function fakeCloudflareLimiter(limit = 1000) {
   const counts = new Map();
   return {
-    async limit({ key }) {
+    async limit({ key }: { key?: unknown }) {
       const count = (counts.get(key) ?? 0) + 1;
       counts.set(key, count);
       return { success: count <= limit };
@@ -56,13 +56,13 @@ function environment() {
   const values = new Map();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
-      async list({ prefix, cursor }) {
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
+      async list({ prefix, cursor }: { prefix?: unknown; cursor?: unknown }) {
         const all = [...values.keys()].filter(k => k.startsWith(prefix)).sort();
         const start = cursor ? Number(cursor) : 0;
         const page = all.slice(start, start + 1000);
@@ -81,11 +81,11 @@ function environment() {
 
 const noopCtx = partialCtx({ waitUntil() {} });
 
-function freshToken(suffix) {
+function freshToken(suffix: string) {
   return `${Math.floor(Date.now() / 1000)}.${suffix.repeat(40)}`;
 }
 
-function request(path, { method = "GET", token, body, authorization }: { method?: string; token?: any; body?: any; authorization?: any } = {}) {
+function request(path: string, { method = "GET", token, body, authorization }: { method?: string; token?: string; body?: unknown; authorization?: string } = {}) {
   // The admin routes sit behind a verified Cloudflare Access login (src/access.ts);
   // RevenueCat's webhook is the one exception and authenticates by secret.
   const headers: Record<string, string> = path.startsWith("/api/admin/") && path !== "/api/admin/revenuecat-webhook" ? { ...ACCESS_HEADERS } : {};
@@ -97,13 +97,13 @@ function request(path, { method = "GET", token, body, authorization }: { method?
   });
 }
 
-async function seedSession(env, token, sub) {
+async function seedSession(env: LooseEnv, token: string | NodeJS.ArrayBufferView<ArrayBufferLike>, sub: string) {
   const { createHash } = await import("node:crypto");
   const key = createHash("sha256").update(token).digest("hex");
   await env.STUDIQUO_DATA.put(`session:${key}`, JSON.stringify({ sub, issuedAt: Math.floor(Date.now() / 1000) }));
 }
 
-async function sendWebhook(env, event, authorization = WEBHOOK_SECRET) {
+async function sendWebhook(env: LooseEnv, event: unknown, authorization = WEBHOOK_SECRET) {
   return worker.fetch(
     request("/api/admin/revenuecat-webhook", { method: "POST", authorization, body: { event } }),
     env, noopCtx
@@ -126,7 +126,7 @@ function purchaseEvent(overrides = {}) {
   };
 }
 
-async function stats(env) {
+async function stats(env: LooseEnv) {
   const response = await worker.fetch(request("/api/admin/stats"), env, noopCtx);
   assert.equal(response.status, 200);
   return response.json();
@@ -368,7 +368,7 @@ test("account count deduplicates linked identities but keeps unrelated ones sepa
 
 test("the issue report count is the reports still open, not everything ever filed", async () => {
   const env = environment();
-  const insert = (id, status) => env.ADMIN_DB.prepare(
+  const insert = (id: string, status: string) => env.ADMIN_DB.prepare(
     `INSERT INTO issue_reports (id, reporter_key, description, status, created_at, updated_at) VALUES (?, 'k', 'd', ?, 1, 1)`
   ).bind(id, status).run();
   await insert("report-open", "open");
@@ -393,25 +393,25 @@ test("MCP connection count reflects mcp:grant: entries in KV", async () => {
 
 test("the webhook endpoint is rate-limited", async () => {
   const env = environment();
-  (env.RATE_LIMIT_ADMIN_WEBHOOK as any) = fakeCloudflareLimiter(3);
+  env.RATE_LIMIT_ADMIN_WEBHOOK = fakeCloudflareLimiter(3);
   let last;
   for (let i = 0; i < 4; i += 1) {
     last = await sendWebhook(env, purchaseEvent({ id: crypto.randomUUID() }));
   }
-  assert.equal(last.status, 429);
+  assert.equal(last!.status, 429);
 });
 
 test("GET /admin serves the dashboard page", async () => {
   const env = environment();
   const response = await worker.fetch(request("/admin"), env, noopCtx);
   assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type"), /text\/html/);
+  assert.match(response.headers.get("content-type")!, /text\/html/);
   assert.match(await response.text(), /studiquo 管理ダッシュボード/);
 });
 
 test("every /api/admin/* route except RevenueCat's webhook needs a verified Access login", async () => {
   const env = environment();
-  const bare = path => new Request(`https://example.test${path}`);
+  const bare = (path: unknown) => new Request(`https://example.test${path}`);
   for (const path of ["/api/admin/stats", "/api/admin/announcements", "/api/admin/anything-else"]) {
     assert.equal((await worker.fetch(bare(path), env, noopCtx)).status, 403, path);
     const forged = new Request(`https://example.test${path}`, { headers: { "cf-access-jwt-assertion": "forged" } });
@@ -432,7 +432,7 @@ test("every /api/admin/* route except RevenueCat's webhook needs a verified Acce
 
 // --- PRODUCT_CHANGE: which product the subscriber is on afterwards ----------
 
-async function subscriberProduct(env, appUserId) {
+async function subscriberProduct(env: LooseEnv, appUserId: string) {
   const row = await env.ADMIN_DB.prepare("SELECT product_id FROM subscribers WHERE app_user_id = ?").bind(appUserId).first();
   return row?.product_id;
 }
@@ -463,4 +463,49 @@ test("a PRODUCT_CHANGE without new_product_id behaves as before", async () => {
   const env = environment();
   await sendWebhook(env, purchaseEvent({ type: "PRODUCT_CHANGE", product_id: "com.yabuko.studiquo.plus.monthly" }));
   assert.equal(await subscriberProduct(env, "user-1"), "com.yabuko.studiquo.plus.monthly");
+});
+
+// MARK: A purchase made under someone else's app_user_id
+
+async function subscriberRow(env: LooseEnv, appUserId: string) {
+  return env.ADMIN_DB.prepare("SELECT status, product_id FROM subscribers WHERE app_user_id = ?").bind(appUserId).first();
+}
+
+test("another person's purchase under the same app_user_id does not replace an active subscription", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "email:victim@example.com", product_id: "studiquo_pro_monthly", original_transaction_id: "T-victim" }));
+  await sendWebhook(env, purchaseEvent({ app_user_id: "email:victim@example.com", product_id: "studiquo_standard_yearly", original_transaction_id: "T-attacker", event_timestamp_ms: Date.now() + 1000 }));
+  assert.deepEqual({ ...(await subscriberRow(env, "email:victim@example.com")) }, { status: "active", product_id: "studiquo_pro_monthly" });
+});
+
+test("another person's refund or expiry under the same app_user_id does not end an active subscription", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "email:victim@example.com", original_transaction_id: "T-victim" }));
+  for (const type of ["REFUND", "EXPIRATION"]) {
+    await sendWebhook(env, purchaseEvent({ app_user_id: "email:victim@example.com", type, original_transaction_id: "T-attacker", event_timestamp_ms: Date.now() + 1000 }));
+  }
+  assert.equal((await subscriberRow(env, "email:victim@example.com"))!.status, "active");
+});
+
+test("the same transaction's own refund still ends the subscription, and a new purchase after it is accepted", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u", original_transaction_id: "T1" }));
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u", type: "EXPIRATION", original_transaction_id: "T1", event_timestamp_ms: Date.now() + 1000, expiration_at_ms: Date.now() - 1000 }));
+  assert.equal((await subscriberRow(env, "u"))!.status, "expired");
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u", original_transaction_id: "T2", product_id: "studiquo_plus_monthly", event_timestamp_ms: Date.now() + 2000 }));
+  assert.deepEqual({ ...(await subscriberRow(env, "u")) }, { status: "active", product_id: "studiquo_plus_monthly" });
+});
+
+test("rows and events without a transaction id (written before this check) behave as they always did", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "old" }));
+  await sendWebhook(env, purchaseEvent({ app_user_id: "old", type: "EXPIRATION", event_timestamp_ms: Date.now() + 1000 }));
+  assert.equal((await subscriberRow(env, "old"))!.status, "expired");
+});
+
+test("an event that names no transaction is still applied to a row that has one (a real expiry is never dropped)", async () => {
+  const env = environment();
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u2", original_transaction_id: "T1" }));
+  await sendWebhook(env, purchaseEvent({ app_user_id: "u2", type: "EXPIRATION", event_timestamp_ms: Date.now() + 1000 }));
+  assert.equal((await subscriberRow(env, "u2"))!.status, "expired");
 });

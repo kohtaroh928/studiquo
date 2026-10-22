@@ -1,3 +1,4 @@
+import type { Finding, RankedFinding, TriageItem, Verdict } from './types.ts';
 // LLM判定の入出力と検証(設計書 2.3)。
 // エージェントの出力は信用しない。ここの規則だけが区分を動かせる。
 //   - 入力に無いID・列挙外の値・長すぎる文字列は捨てる
@@ -20,13 +21,13 @@ const EVIDENCE_TYPES = ['code', 'advisory', 'inventory'];
 const CODE_ROOTS = ['mcp-server/', 'studiquo/', 'studiquoShare/'];
 const LIMITS = { input: 30, summary: 600, titleJa: 200, reason: 300, ref: 300, evidence: 5, references: 3, url: 300, fixed: 5, fixedLen: 40, asset: 200 };
 const ID_PATTERN = /^(CVE-\d{4}-\d{4,}|GHSA(-[a-z0-9]{4}){3}|JVNDB-\d{4}-\d+)$/;
-const num = (x: any) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
+const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : null);
 
 // eslint-disable-next-line no-control-regex
-const clean = (s: any, n: any) => String(s ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
+const clean = (s: string, n: number | undefined) => String(s ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
 
 /** 判定の入力が変わったかを見るためのハッシュ。点数・KEVなど、判定の中身に関係しない値は含めない。 */
-export function itemHash(item: any) {
+export function itemHash(item: TriageItem) {
   const { id, asset, summary, titleJa, fixed, status, matchedBy } = item;
   return createHash('sha256').update(JSON.stringify([id, asset, summary, titleJa, fixed, status, matchedBy])).digest('hex').slice(0, 16);
 }
@@ -45,7 +46,7 @@ const SECRET_PATTERNS = [
   /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g,
   /\b[0-9a-fA-F]{32,}\b/g,
 ];
-export function redactSecrets(text: any) {
+export function redactSecrets(text: string) {
   let count = 0;
   let out = String(text);
   for (const re of SECRET_PATTERNS) out = out.replace(re, () => (count++, '[伏字]'));
@@ -58,17 +59,17 @@ export function redactSecrets(text: any) {
   return { text: out, count };
 }
 
-export function findingId(f: any) {
+export function findingId(f: Pick<Finding, 'cve' | 'ids' | 'asset'>) {
   return `F-${createHash('sha256').update(`${f.cve ?? f.ids[0]}|${f.asset}`).digest('hex').slice(0, 12)}`;
 }
 
 /** 判定に回す指摘だけを、データとしてまとめる。脆弱性の文章は信頼できない入力。 */
-export function buildTriageInput(ranked: any, { limit = LIMITS.input, generatedAt = null as string | null } = {}) {
-  const picked = ranked.filter((f: any) => f.status === 'needs-review' || ['緊急', '高', '中'].includes(f.tier)).slice(0, limit);
-  const items = picked.map((f: any) => ({
+export function buildTriageInput(ranked: RankedFinding[], { limit = LIMITS.input, generatedAt = null as string | null } = {}) {
+  const picked = ranked.filter((f) => f.status === 'needs-review' || ['緊急', '高', '中'].includes(f.tier)).slice(0, limit);
+  const items: TriageItem[] = picked.map((f: RankedFinding) => ({
       id: f.id ?? findingId(f),
       cve: f.cve,
-      ids: f.ids.filter((x: any) => ID_PATTERN.test(x)).slice(0, 6),
+      ids: f.ids.filter((x: string) => ID_PATTERN.test(x)).slice(0, 6),
       asset: clean(f.asset, LIMITS.asset),
       exposure: f.exposure,
       sensitive: Boolean(f.sensitive),
@@ -80,11 +81,11 @@ export function buildTriageInput(ranked: any, { limit = LIMITS.input, generatedA
       cvss: num(f.cvss),
       kev: Boolean(f.kev),
       epss: num(f.epss),
-      fixed: f.fixed ? f.fixed.slice(0, LIMITS.fixed).map((x: any) => clean(x, LIMITS.fixedLen)) : null,
+      fixed: f.fixed ? f.fixed.slice(0, LIMITS.fixed).map((x: string) => clean(x, LIMITS.fixedLen)) : null,
       summary: clean(f.summary, LIMITS.summary),
       titleJa: f.titleJa ? clean(f.titleJa, LIMITS.titleJa) : null,
       // 外部由来のURLは https のものだけ、1行・長さ制限つきで渡す(advisory根拠の照合もこの値で行う)
-      references: f.references.filter((u: any) => /^https:\/\/[^\s]+$/.test(u) && u.length <= LIMITS.url).slice(0, LIMITS.references),
+      references: f.references.filter((u) => /^https:\/\/[^\s]+$/.test(u) && u.length <= LIMITS.url).slice(0, LIMITS.references),
   }));
   for (const it of items) it.hash = itemHash(it);
   return {
@@ -96,8 +97,11 @@ export function buildTriageInput(ranked: any, { limit = LIMITS.input, generatedA
 }
 
 /** エージェントの返信(文字列)からJSONを取り出す。コードフェンスや前後の文章は許す。 */
-export function parseVerdicts(raw: any) {
-  let data = raw;
+/** エージェントが返した判定1件(検証前)。 */
+export interface RawVerdict { id?: unknown; applicability?: string; confidence?: string; action?: string; reason?: unknown; evidence?: unknown }
+
+export function parseVerdicts(raw: unknown): RawVerdict[] {
+  let data: unknown = raw;
   if (typeof raw === 'string') {
     const t = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
     try {
@@ -109,23 +113,23 @@ export function parseVerdicts(raw: any) {
       data = JSON.parse(t.slice(a, b + 1));
     }
   }
-  const list = Array.isArray(data) ? data : data?.verdicts;
+  const list = Array.isArray(data) ? data : (data as { verdicts?: unknown } | null)?.verdicts;
   if (!Array.isArray(list)) throw new Error('判定の返信に verdicts 配列がありません');
   return list;
 }
 
 // エージェントの返信に入っていたIDは、親セッションの目に触れる前に形式を確かめる
-const safeId = (id: any) => (/^F-[0-9a-f]{12}$/.test(id) ? id : id ? '(不正なID)' : '(IDなし)');
+const safeId = (id: string) => (/^F-[0-9a-f]{12}$/.test(id) ? id : id ? '(不正なID)' : '(IDなし)');
 
 const lineCache = new Map();
-function lineCount(file: any) {
+function lineCount(file: string): number {
   if (!lineCache.has(file)) lineCache.set(file, readFileSync(file, 'utf8').split('\n').length);
   return lineCache.get(file);
 }
 
 /** 根拠が実在するか。code=ファイルと行が存在 / advisory=入力にあるURLかID / inventory=その資産の名前。 */
-export function verifyEvidence(ev: any, item: any, repoRoot: any) {
-  if (!EVIDENCE_TYPES.includes(ev?.type) || typeof ev.ref !== 'string' || !ev.ref || ev.ref.length > LIMITS.ref) return false;
+export function verifyEvidence(ev: { type?: string; ref?: unknown } | null | undefined, item: Pick<TriageItem, 'references' | 'ids' | 'cve' | 'asset'>, repoRoot: string) {
+  if (!ev || !EVIDENCE_TYPES.includes(ev.type as string) || typeof ev.ref !== 'string' || !ev.ref || ev.ref.length > LIMITS.ref) return false;
   if (ev.type === 'advisory') return item.references.includes(ev.ref) || item.ids.includes(ev.ref) || item.cve === ev.ref;
   // inventory は「入力にある資産名」と一致するだけで主張を裏づけない。実在の確認に使うだけで、区分を下げる根拠にはしない
   if (ev.type === 'inventory') return ev.ref === item.asset || item.asset.includes(`:${ev.ref}@`);
@@ -149,22 +153,23 @@ export function verifyEvidence(ev: any, item: any, repoRoot: any) {
   }
 }
 
-function checkVerdict(v: any, item: any, repoRoot: any) {
-  if (!APPLICABILITY.includes(v.applicability)) return { problem: 'applicability が列挙外' };
-  if (!CONFIDENCE.includes(v.confidence)) return { problem: 'confidence が列挙外' };
-  if (!ACTIONS.includes(v.action)) return { problem: 'action が列挙外' };
+function checkVerdict(v: RawVerdict, item: TriageItem, repoRoot: string): { problem: string } | { redacted: number; verdict: Verdict } {
+  if (!APPLICABILITY.includes(v.applicability as string)) return { problem: 'applicability が列挙外' };
+  if (!CONFIDENCE.includes(v.confidence as string)) return { problem: 'confidence が列挙外' };
+  if (!ACTIONS.includes(v.action as string)) return { problem: 'action が列挙外' };
   if (typeof v.reason !== 'string' || !v.reason.trim()) return { problem: 'reason が空' };
-  const evidence = (Array.isArray(v.evidence) ? v.evidence : []).slice(0, LIMITS.evidence);
-  const verified = evidence.filter((e: any) => verifyEvidence(e, item, repoRoot)).map((e: any) => ({ type: e.type, ref: e.ref }));
+  const evidence: ({ type?: string; ref?: unknown } | null)[] = (Array.isArray(v.evidence) ? v.evidence : []).slice(0, LIMITS.evidence);
+  // verifyEvidence を通ったものは type も ref も文字列
+  const verified = evidence.filter((e) => verifyEvidence(e, item, repoRoot)).map((e) => ({ type: e!.type as string, ref: e!.ref as string }));
   // 先に伏せてから切る(境界で切れた鍵の前半が残らないように)
   const { text: redactedReason, count: redacted } = redactSecrets(clean(v.reason, 2000));
   const reason = redactedReason.slice(0, LIMITS.reason);
   return {
     redacted,
     verdict: {
-      applicability: v.applicability,
-      confidence: v.confidence,
-      action: v.action,
+      applicability: v.applicability as string,
+      confidence: v.confidence as string,
+      action: v.action as string,
       reason,
       evidence: verified,
       unverifiedEvidence: evidence.length - verified.length,
@@ -172,7 +177,7 @@ function checkVerdict(v: any, item: any, repoRoot: any) {
   };
 }
 
-function lowered(tier: any) {
+function lowered(tier: string) {
   const i = TIERS.indexOf(tier);
   return TIERS[Math.min(i + 1, TIERS.length - 1)];
 }
@@ -183,10 +188,10 @@ function lowered(tier: any) {
  * @param {object} input buildTriageInput の結果
  * @param {string|object|null} rawVerdicts エージェントの返信
  */
-export function applyTriage(ranked: any, input: any, rawVerdicts: any, { repoRoot, allowLowering = true, cachedVerdicts = [], replyAllowedIds = null }: any) {
-  const rejected = [];
-  const byId = new Map(input.items.map((i: any) => [i.id, i]));
-  let list = [];
+export function applyTriage(ranked: RankedFinding[], input: { items: TriageItem[] }, rawVerdicts: string | null | undefined, { repoRoot, allowLowering = true, cachedVerdicts = [], replyAllowedIds = null }: { repoRoot: string; allowLowering?: boolean; cachedVerdicts?: RawVerdict[]; replyAllowedIds?: Set<string> | null }) {
+  const rejected: { id: string; reason: string }[] = [];
+  const byId = new Map<string, TriageItem>(input.items.map((i) => [i.id, i]));
+  let list: RawVerdict[] = [];
   if (rawVerdicts !== null && rawVerdicts !== undefined && rawVerdicts !== '') {
     try {
       list = parseVerdicts(rawVerdicts);
@@ -209,7 +214,7 @@ export function applyTriage(ranked: any, input: any, rawVerdicts: any, { repoRoo
   const replied = new Set(list.map((v) => v?.id));
   for (const c of cachedVerdicts) if (!replied.has(c.id)) list.push(c);
 
-  const accepted = new Map();
+  const accepted = new Map<string, Verdict>();
   let redactions = 0;
   for (const v of list) {
     const id = typeof v?.id === 'string' ? v.id : '';
@@ -222,18 +227,18 @@ export function applyTriage(ranked: any, input: any, rawVerdicts: any, { repoRoo
       rejected.push({ id, reason: '同じIDの判定が重複(最初のものだけ採用)' });
       continue;
     }
-    const { verdict, problem, redacted } = checkVerdict(v, item, repoRoot);
-    if (problem) rejected.push({ id, reason: problem });
+    const checked = checkVerdict(v, item, repoRoot);
+    if ('problem' in checked) rejected.push({ id, reason: checked.problem });
     else {
-      accepted.set(id, verdict);
-      redactions += redacted!;
+      accepted.set(id, checked.verdict);
+      redactions += checked.redacted;
     }
   }
   if (rejected.length > 50) rejected.splice(50, rejected.length - 50, { id: '(省略)', reason: '採用しなかった判定が多いため、以降を省略' });
 
   if (!allowLowering && accepted.size) rejected.push({ id: '(全体)', reason: '取得に失敗したデータ源があるため、区分は下げない(KEVなどの前提が崩れている)' });
 
-  const out = ranked.map((f: any) => {
+  const out: RankedFinding[] = ranked.map((f) => {
     const verdict = accepted.get(f.id);
     if (!verdict) return f;
     const next = { ...f, verdict, tierBefore: f.tier, needsHuman: false };
@@ -247,7 +252,7 @@ export function applyTriage(ranked: any, input: any, rawVerdicts: any, { repoRoo
     // 版まで確定した指摘は、「使っていない」というコードの根拠でしか下げられず、「中」より下には行かない。
     // advisory は入力に実在するだけで主張を裏づけず、inventory は資産名の一致でしかないため。
     const confirmed = f.status === 'confirmed';
-    const usable = (e: any) => (confirmed ? e.type === 'code' : e.type === 'code' || e.type === 'advisory');
+    const usable = (e: { type: string; }) => (confirmed ? e.type === 'code' : e.type === 'code' || e.type === 'advisory');
     const solid = verdict.confidence !== 'low' && verdict.evidence.some(usable);
     if (!solid) {
       rejected.push({ id: f.id, reason: '根拠または確度が足りないため区分を下げない' });
@@ -259,7 +264,7 @@ export function applyTriage(ranked: any, input: any, rawVerdicts: any, { repoRoo
     return next;
   });
 
-  out.sort((a: any, b: any) => TIERS.indexOf(a.tier) - TIERS.indexOf(b.tier) || b.score - a.score || (a.cve ?? a.ids[0]).localeCompare(b.cve ?? b.ids[0]));
+  out.sort((a, b) => TIERS.indexOf(a.tier) - TIERS.indexOf(b.tier) || b.score - a.score || (a.cve ?? a.ids[0]).localeCompare(b.cve ?? b.ids[0]));
   // idle: 判定に回す指摘そのものが無い(エージェントを呼ぶ必要が無かった)
   const status = accepted.size ? 'applied' : input.items.length === 0 ? 'idle' : 'none';
   return {

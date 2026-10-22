@@ -5,3 +5,5 @@
 ^studiquoTests/WorkerEndpointPolicyTests\.swift$
 # RAG品質評価の生成結果。caseHash(判定ケースのハッシュ)がアクセストークンに見えるだけで、鍵ではない。
 ^docs/RAG_[A-Z_]+_RESULTS\.json$
+# 架空のURL(user:pass@wikipedia.org)を拒否することを確かめるテスト。実在の資格情報ではない。
+^studiquoTests/RichTextParserTests\.swift$

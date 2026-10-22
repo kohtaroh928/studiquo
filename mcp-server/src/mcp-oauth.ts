@@ -6,6 +6,7 @@ import { resolveChatUserKey } from "./chat-identity.ts";
 import { sendPush } from "./push.ts";
 import { accessTokenAcceptable, signAccessToken } from "./token-signature.ts";
 import type { Env } from "./env.ts";
+import { OPS_ALERTS, raiseAlert } from "./ops-alerts.ts";
 
 const AUTH_TTL = 600;
 const CODE_TTL = 300;
@@ -14,6 +15,9 @@ const REFRESH_TTL = 90 * 24 * 3600;
 // A registration nobody uses again goes away; one in use is needed again only
 // when the app is connected anew.
 const CLIENT_TTL = 365 * 24 * 3600;
+// Anyone can register a client, so a registration starts short and is only
+// extended (to CLIENT_TTL) once a person has actually approved the app.
+const UNAPPROVED_CLIENT_TTL = 24 * 3600;
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 /** mcp:access:<hash> and mcp:refresh:<hash>: what an issued token stands for. */
@@ -109,7 +113,7 @@ export function classifyClient(client: ClientRecord) {
   return "other";
 }
 
-export function normalizeCode(value: any) {
+export function normalizeCode(value: unknown) {
   return String(value ?? "").toUpperCase().replace(/[\s-]/g, "");
 }
 
@@ -224,6 +228,9 @@ async function approveFlow(env: Env, flowId: string, pending: PendingAuthorizati
   await env.STUDIQUO_DATA.put(await grantKey(sub, pending.clientId), JSON.stringify({
     clientName: pending.clientName, kind: pending.kind, createdAt: Date.now(), nonce: randomToken(),
   }));
+  // Approved: from here the registration is kept for the full period.
+  const clientRecord = await env.STUDIQUO_DATA.get(`mcp:client:${pending.clientId}`);
+  if (clientRecord) await env.STUDIQUO_DATA.put(`mcp:client:${pending.clientId}`, clientRecord, { expirationTtl: CLIENT_TTL });
   await env.STUDIQUO_DATA.delete(`mcp:auth:${flowId}`);
   const redirect = new URL(pending.redirectUri);
   redirect.searchParams.set("code", authorizationCode);
@@ -253,7 +260,7 @@ export async function listConnections(env: Env, sub: string) {
   let cursor;
   do {
     const page: KVNamespaceListResult<unknown> = await env.STUDIQUO_DATA.list({ prefix, ...(cursor ? { cursor } : {}) });
-    names.push(...page.keys.map((key: any) => key.name));
+    names.push(...page.keys.map((key) => key.name));
     cursor = page.list_complete === false ? page.cursor : undefined;
   } while (cursor);
   // Only what the app lists: the grant's `nonce` is what ties issued tokens to
@@ -309,7 +316,7 @@ export async function handleMCPOAuth(url: URL, request: Request, env: Env, ctx?:
     }
     const clientId = `studiquo_${randomToken(16)}`;
     const clientName = String(body.client_name ?? "MCP client").slice(0, 100);
-    await env.STUDIQUO_DATA.put(`mcp:client:${clientId}`, JSON.stringify({ clientName, redirectUris: uris }), { expirationTtl: CLIENT_TTL });
+    await env.STUDIQUO_DATA.put(`mcp:client:${clientId}`, JSON.stringify({ clientName, redirectUris: uris }), { expirationTtl: UNAPPROVED_CLIENT_TTL });
     return json({ client_id: clientId, client_name: clientName, redirect_uris: uris,
       token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"] }, 201);
@@ -415,6 +422,7 @@ export async function handleMCPOAuth(url: URL, request: Request, env: Env, ctx?:
         if (spent?.sub && spent.clientId === clientId) {
           await env.STUDIQUO_DATA.delete(await grantKey(spent.sub, clientId));
           console.warn(JSON.stringify({ message: "mcp refresh token reused; connection revoked" }));
+          await raiseAlert(env, OPS_ALERTS.refreshTokenReuse);
         }
         return json({ error: "invalid_grant" }, 400);
       }

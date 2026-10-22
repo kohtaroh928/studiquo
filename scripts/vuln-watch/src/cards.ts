@@ -1,3 +1,4 @@
+import type { RankedFinding, RunSummary } from './types.ts';
 // Notionカードの計画(設計書 3.4・3.5)。
 // カードに書くのは、このファイルが組み立てた定型文だけ。脆弱性の説明文・LLMの reason・外部のURLは入れない。
 // 親セッションは、ここで作った操作リスト(cards-ops.json)を「そのまま転記する」だけにする。
@@ -27,6 +28,9 @@ const APPLIC: Record<string, string> = { applies: '該当', likely: 'おそら�
 const CONF: Record<string, string> = { high: '高', medium: '中', low: '低' };
 const SOURCES = ['osv', 'nvd', 'jvn'];
 
+/** Notion に対する1つの操作(カードの作成・更新・コメント)。 */
+export interface CardOp { op: string; properties?: Record<string, unknown>; url?: string; pageId?: string | null; text?: string }
+
 const CREATE_ENUMS = {
   作業の種類: ['不具合', '確認作業'],
   重要度: ['本番を止める', '高', '中'],
@@ -37,11 +41,11 @@ const CREATE_ENUMS = {
 const CREATE_PROPS = new Set(['名前', '作業の種類', '重要度', '領域', '担当', '状態', '次の一手', '経緯・結果', 'リンク']);
 const TEXT_LIMITS: Record<string, number> = { 名前: 260, 次の一手: 400, '経緯・結果': 800 };
 
-export function primaryId(f: any) {
+export function primaryId(f: RankedFinding) {
   return [f.cve, ...(f.ids ?? [])].find((x) => typeof x === 'string' && ID_RE.test(x)) ?? null;
 }
 
-export function canonicalUrl(id: any) {
+export function canonicalUrl(id: string) {
   if (/^CVE-/.test(id)) return `https://nvd.nist.gov/vuln/detail/${id}`;
   if (/^GHSA-/.test(id)) return `https://github.com/advisories/${id}`;
   const m = /^JVNDB-(\d{4})-\d{4,}$/.exec(id);
@@ -49,27 +53,27 @@ export function canonicalUrl(id: any) {
 }
 
 /** 緊急・高は全件、中は版まで確定したものだけ。情報は作らない。 */
-export function eligible(f: any) {
+export function eligible(f: { tier: string; status: string; }) {
   return f.tier === '緊急' || f.tier === '高' || (f.tier === '中' && f.status === 'confirmed');
 }
 
-export function cardTitle(f: any) {
+export function cardTitle(f: RankedFinding) {
   const id = primaryId(f);
   return id && typeof f.asset === 'string' && ASSET_RE.test(f.asset) ? `${CARD_PREFIX}${id} ${f.asset}` : null;
 }
 
 /** カードのURLから、Notionのページ ID(32桁の16進)を取り出す。形式に合わなければ null。 */
-export function extractPageId(url: any) {
+export function extractPageId(url: string) {
   return typeof url === 'string' ? (NOTION_URL_RE.exec(url)?.[1] ?? null) : null;
 }
 
-const normTitle = (t: any) => String(t).normalize('NFKC').trim();
+const normTitle = (t: string) => String(t).normalize('NFKC').trim();
 
-function createOp(f: any, today: any) {
-  const id = primaryId(f);
+function createOp(f: RankedFinding, today: unknown) {
+  const id = primaryId(f) as string; // eligible な指摘だけがここへ来る(ID を持つ)
   const url = canonicalUrl(id);
   const pkg = f.asset.slice(0, f.asset.lastIndexOf('@'));
-  const fixed = (Array.isArray(f.fixed) ? f.fixed : []).filter((v: any) => typeof v === 'string' && v.length <= 24 && FIXED_RE.test(v));
+  const fixed = (Array.isArray(f.fixed) ? f.fixed : []).filter((v) => typeof v === 'string' && v.length <= 24 && FIXED_RE.test(v));
   const needsCheck = f.status === 'needs-review';
   const next = [
     needsCheck ? '該当するかを確認する。' : '',
@@ -79,7 +83,7 @@ function createOp(f: any, today: any) {
   const cvss = typeof f.cvss === 'number' ? String(f.cvss) : '不明';
   const epss = typeof f.epss === 'number' ? `${(f.epss * 100).toFixed(1)}%` : '不明';
   const llm = f.verdict ? `${APPLIC[f.verdict.applicability] ?? '不明'}(確度${CONF[f.verdict.confidence] ?? '低'})` : 'なし';
-  const sources = (f.sources ?? []).filter((x: any) => SOURCES.includes(x)).join('・') || '不明';
+  const sources = (f.sources ?? []).filter((x: string) => SOURCES.includes(x)).join('・') || '不明';
   const history = `${today} 検出。区分 ${f.tier}、スコア ${Number(f.score)}、CVSS ${cvss}、KEV ${f.kev ? '有' : '無'}、EPSS ${epss}。LLM判定 ${llm}。出典 ${sources}。 ${url}`;
   return {
     op: 'create',
@@ -97,40 +101,42 @@ function createOp(f: any, today: any) {
   };
 }
 
-const importanceRank = (v: any) => IMPORTANCE_ORDER.indexOf(v);
+const importanceRank = (v: string) => IMPORTANCE_ORDER.indexOf(v);
 
-export const upText = (today: any, from: any, to: any) => `${today} 重要度を ${from}→${to} に上げた(区分または根拠の変化)。`;
-export const goneText = (today: any) => `${today} 検出されなくなった。更新されたかを確認して完了にする。`;
+export const upText = (today: unknown, from: unknown, to: string) => `${today} 重要度を ${from}→${to} に上げた(区分または根拠の変化)。`;
+export const goneText = (today: unknown) => `${today} 検出されなくなった。更新されたかを確認して完了にする。`;
 const COMMENT_RE = /^\d{4}-\d{2}-\d{2} (重要度を (低|中|高|本番を止める)→(低|中|高|本番を止める) に上げた\(区分または根拠の変化\)。|検出されなくなった。更新されたかを確認して完了にする。)$/;
 
 /** 操作を検証する。通らなければ理由の文字列、通れば null。 */
-export function validateOp(op: any) {
-  const str = (v: any, max: any) => typeof v === 'string' && v.length > 0 && v.length <= max && !CONTROL_RE.test(v);
+export function validateOp(raw: unknown) {
+  const str = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= max && !CONTROL_RE.test(v);
+  // 外部に渡す前の検証なので、形は信用しない。必要な項目だけを、疑ったまま読む
+  const op = raw as CardOp | null | undefined;
   if (op?.op === 'create') {
     const p = op.properties;
     if (!p || typeof p !== 'object') return 'properties が無い';
     for (const k of Object.keys(p)) if (!CREATE_PROPS.has(k)) return `許可していないプロパティ: ${k}`;
     const title = TITLE_RE.exec(str(p.名前, TEXT_LIMITS.名前) ? p.名前 : '');
     if (!title) return '名前の形式が違う';
-    for (const [k, allowed] of Object.entries(CREATE_ENUMS)) if (!allowed.includes(p[k])) return `${k} が選択肢に無い`;
+    for (const [k, allowed] of Object.entries(CREATE_ENUMS)) if (!allowed.includes(p[k] as string)) return `${k} が選択肢に無い`;
     for (const k of ['次の一手', '経緯・結果']) if (!str(p[k], TEXT_LIMITS[k])) return `${k} の形式が違う`;
-    if (!LINK_RE.test(p.リンク ?? '')) return 'リンクが許可した形式ではない';
+    if (!LINK_RE.test(String(p.リンク ?? ''))) return 'リンクが許可した形式ではない';
     if (p.リンク !== canonicalUrl(title[1])) return 'リンクが名前のIDと一致しない'; // 題名のIDと、リンクのIDが同じであること
     const fixedText = /^(該当するかを確認する。)?(?:(?:\S{1,120}) を (\d[0-9A-Za-z.+-]{0,23}) 以上へ更新する。|影響範囲を確認し、回避策を検討する。)(KEV掲載のため、人の確認が必要。)?$/;
-    if (!fixedText.test(p.次の一手)) return '次の一手が定型文ではない';
-    if (!/^\d{4}-\d{2}-\d{2} 検出。区分 (緊急|高|中)、スコア \d{1,3}、CVSS ([0-9.]{1,4}|不明)、KEV (有|無)、EPSS ([0-9.]{1,6}%|不明)。LLM判定 [^\s]{1,30}。出典 ([osvnjd・]{1,20}|不明)。 https:\/\/\S+$/.test(p['経緯・結果'])) return '経緯・結果が定型文ではない';
+    if (!fixedText.test(String(p.次の一手))) return '次の一手が定型文ではない';
+    if (!/^\d{4}-\d{2}-\d{2} 検出。区分 (緊急|高|中)、スコア \d{1,3}、CVSS ([0-9.]{1,4}|不明)、KEV (有|無)、EPSS ([0-9.]{1,6}%|不明)。LLM判定 [^\s]{1,30}。出典 ([osvnjd・]{1,20}|不明)。 https:\/\/\S+$/.test(String(p['経緯・結果']))) return '経緯・結果が定型文ではない';
     return null;
   }
   if (op?.op === 'update' || op?.op === 'comment') {
-    const id = extractPageId(op.url);
+    const id = extractPageId(op.url as string);
     if (!id) return 'カードのURLの形式が違う';
     if (op.pageId !== id) return 'pageId がURLと一致しない';
     if (op.op === 'comment') return str(op.text, 300) && COMMENT_RE.test(op.text) ? null : 'コメントが定型文ではない';
     const keys = Object.keys(op.properties ?? {});
     if (!keys.length) return '更新する項目が無い';
     for (const k of keys) {
-      if (k === '重要度' && ['中', '高', '本番を止める'].includes(op.properties[k])) continue; // 下げる更新は認めない
-      if (k === '状態' && op.properties[k] === '監視中') continue;
+      if (k === '重要度' && ['中', '高', '本番を止める'].includes(op.properties![k] as string)) continue; // 下げる更新は認めない
+      if (k === '状態' && op.properties![k] === '監視中') continue;
       return `許可していない更新: ${k}`;
     }
     return null;
@@ -142,20 +148,23 @@ export function validateOp(op: any) {
  * Notionから取得した既存カードを、題名・URL・状態・重要度だけに絞る。
  * 「[脆弱性]」で始まるのに形式が合わず捨てたものは dropped に数える(捨てたまま計画すると重複カードを作るため)。
  */
-export function sanitizeExisting(raw: any) {
-  const cards = [];
+/** Notion から取得した既存カードの、絞り込み後の形。 */
+export interface ExistingCard { title: string; url: string; status: string | null; importance: string | null }
+
+export function sanitizeExisting(raw: unknown) {
+  const cards: ExistingCard[] = [];
   let dropped = 0;
-  for (const c of Array.isArray(raw) ? raw : []) {
+  for (const c of (Array.isArray(raw) ? raw : []) as Record<string, unknown>[]) {
     if (typeof c?.title !== 'string') continue;
     const title = normTitle(c.title);
     if (!title.startsWith(CARD_PREFIX.trim())) continue;
-    if (title.length > 300 || CONTROL_RE.test(title) || !extractPageId(c.url)) {
+    if (title.length > 300 || CONTROL_RE.test(title) || !extractPageId(c.url as string)) {
       dropped++;
       continue;
     }
     cards.push({
       title,
-      url: c.url,
+      url: c.url as string,
       status: typeof c.status === 'string' ? c.status.slice(0, 20) : null,
       importance: typeof c.importance === 'string' ? c.importance.slice(0, 20) : null,
     });
@@ -167,10 +176,10 @@ export function sanitizeExisting(raw: any) {
  * @param {{ranked:object[], existing:object[], today:string, incomplete:boolean, maxCreate?:number}} o
  * incomplete: 取得に失敗したデータ源がある回。「検出されなくなった」ことを根拠にカードを動かさない。
  */
-export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 }: any) {
+export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 }: { ranked: unknown; existing: unknown; today: string; incomplete: boolean; maxCreate?: number }) {
   const { cards: list, dropped } = sanitizeExisting(existing);
-  const cards = new Map();
-  const notes = [];
+  const cards = new Map<string, ExistingCard>();
+  const notes: string[] = [];
   for (const c of list) {
     const prev = cards.get(c.title);
     if (!prev) cards.set(c.title, c);
@@ -183,17 +192,17 @@ export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 
   const blocked = dropped > 0;
   if (blocked) notes.push(`形式が合わず読み取れなかった[脆弱性]のカードが${dropped}件あるため、カードの新規作成と「検出されなくなった」の処理を止めた。`);
 
-  const ops: any[] = [];
-  const skipped = [];
-  const push = (op: any, label: any) => {
+  const ops: CardOp[] = [];
+  const skipped: { target: string; reason: string }[] = [];
+  const push = (op: CardOp, label: string) => {
     const problem = validateOp(op);
     if (problem) skipped.push({ target: label, reason: problem });
     else ops.push(op);
   };
-  const withPage = (op: any, url: any) => ({ ...op, url, pageId: extractPageId(url) });
+  const withPage = (op: CardOp, url: string): CardOp => ({ ...op, url, pageId: extractPageId(url) });
 
-  const current = new Set();
-  for (const f of Array.isArray(ranked) ? ranked : []) {
+  const current = new Set<string>();
+  for (const f of (Array.isArray(ranked) ? ranked : []) as RankedFinding[]) {
     try {
       const t = cardTitle(f);
       if (t) current.add(normTitle(t));
@@ -202,8 +211,8 @@ export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 
     }
   }
 
-  const created = new Set();
-  for (const f of Array.isArray(ranked) ? ranked : []) {
+  const created = new Set<string>();
+  for (const f of (Array.isArray(ranked) ? ranked : []) as RankedFinding[]) {
     try {
       if (!eligible(f)) continue;
       const title = cardTitle(f);
@@ -248,25 +257,25 @@ export function planCards({ ranked, existing, today, incomplete, maxCreate = 10 
     notes.push('取得に失敗したデータ源があるため、検出されなくなったカードは動かしていない。');
   }
 
-  const count = (k: any) => ops.filter((o) => o.op === k).length;
+  const count = (k: string) => ops.filter((o) => o.op === k).length;
   return { ops, skipped, notes: [...new Set(notes)], counts: { create: count('create'), update: count('update'), comment: count('comment') } };
 }
 
-const int = (v: any) => (Number.isInteger(v) && v >= 0 && v <= 999 ? v : null);
+const int = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 999 ? v : null);
 
 // LLMが確度中以上で「非該当」と判定した「情報」止まりの指摘。消さず latest.md には残すが、
 // 日次要約のカウントからは外す(ユーザー合意・2026-10-19)。要約から外れても判定自体は記録に残るため、
 // 誤判定を見逃さないための「情報」の目的(設計書2.3)は latest.md の確認で引き続き担保する。
-const judgedNotApplicable = (f: any) => f.tier === '情報' && f.verdict?.applicability === 'not_applicable' && f.verdict?.confidence !== 'low';
+const judgedNotApplicable = (f: Pick<RankedFinding, 'tier' | 'verdict'>) => f.tier === '情報' && f.verdict?.applicability === 'not_applicable' && f.verdict?.confidence !== 'low';
 
 /** 実行の最後に返す、固定書式の要約と、通知の文言(無ければ null)。 */
-export function buildSummary({ ranked, run, triage, plan, executed = {}, today, outDir }: any) {
+export function buildSummary({ ranked, run, triage, plan, executed = {}, today, outDir }: { ranked: RankedFinding[]; run: RunSummary; triage?: { status: string; total?: number; accepted?: number; rejected?: unknown[] } | null; plan?: ReturnType<typeof planCards> | null; executed?: Record<string, unknown>; today: string; outDir: string }) {
   const tiers = ['緊急', '高', '中', '情報'];
-  const visible = ranked.filter((f: any) => !judgedNotApplicable(f));
+  const visible = ranked.filter((f) => !judgedNotApplicable(f));
   const hidden = ranked.length - visible.length;
-  const n = (t: any) => visible.filter((f: any) => f.tier === t).length;
-  const fresh = visible.filter((f: any) => f.isNew).length;
-  const urgentNew = ranked.filter((f: any) => f.isNew && (f.tier === '緊急' || f.kev)).length;
+  const n = (t: string) => visible.filter((f) => f.tier === t).length;
+  const fresh = visible.filter((f) => f.isNew).length;
+  const urgentNew = ranked.filter((f) => f.isNew && (f.tier === '緊急' || f.kev)).length;
   const errors = run.sourceErrors?.length ?? 0;
   const ex = Object.fromEntries(['created', 'updated', 'commented', 'failed'].map((k) => [k, int(executed[k])]));
   const lines = [

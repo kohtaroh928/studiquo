@@ -6,33 +6,33 @@ import {
 } from "./passkey-policy.ts";
 import { sha256Hex } from "./auth.ts";
 import { realSession } from "./session.ts";
-import { partialEnv } from "./test-env.ts";
+import { partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
 function environment() {
   const values = new Map();
   return partialEnv({
     RESEND_API_KEY: "test-key",
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
     },
   });
 }
 
 function captureMail() {
-  const sent = [];
-  const original = mock.method(globalThis, "fetch", async (url, init) => {
+  const sent: { url: string; body: any; }[] = [];
+  const original = mock.method(globalThis, "fetch", async (url: string, init: { body: string; }) => {
     sent.push({ url, body: JSON.parse(init.body) });
     return new Response("{}", { status: 200 });
   });
   return { sent, restore: () => original.mock.restore() };
 }
 
-async function addPasskey(env, id, { account = ACCOUNT, email = EMAIL, createdAt }: { account?: any; email?: any; createdAt?: any } = {}) {
+async function addPasskey(env: LooseEnv, id: string, { account = ACCOUNT, email = EMAIL, createdAt }: { account?: string; email?: string; createdAt?: number } = {}) {
   await env.STUDIQUO_DATA.put(`passkeys:credential:${id}`, JSON.stringify({ id, email, ...(createdAt === undefined ? {} : { createdAt }) }));
   await indexAccountPasskey(env, account, email, id);
 }
@@ -63,12 +63,12 @@ test("the first sign-in without a passkey is refused, starts a recovery and tell
   try {
     await addPasskey(env, "cred-1");
     const now = Date.now();
-    const pending = [];
+    const pending: any[] = [];
     const response = await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now, notify: work => pending.push(work) });
     await Promise.all(pending);
 
-    assert.equal(response.status, 403);
-    const body = await response.json();
+    assert.equal(response!.status, 403);
+    const body = await response!.json();
     assert.equal(body.code, "passkey_required");
     assert.equal(body.recoveryAvailableAt, now + RECOVERY_DELAY_SECONDS * 1000);
     assert.equal(mail.sent.length, 1);
@@ -85,8 +85,8 @@ test("a second attempt during the wait is refused without another mail and keeps
     const first = await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now: start });
     await new Promise(resolve => setImmediate(resolve));
     const second = await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now: start + 24 * HOUR });
-    assert.equal(second.status, 403);
-    assert.equal((await second.json()).recoveryAvailableAt, (await first.json()).recoveryAvailableAt);
+    assert.equal(second!.status, 403);
+    assert.equal((await second!.json()).recoveryAvailableAt, (await first!.json()).recoveryAvailableAt);
     assert.equal(mail.sent.length, 1);
   } finally { mail.restore(); }
 });
@@ -115,7 +115,7 @@ test("a passkey sign-in calls off a recovery someone else started", async () => 
     await cancelPasskeyRecovery(env, ACCOUNT, EMAIL);
     // The wait starts over: a later attempt is a new recovery, not a finished one.
     const response = await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now: start + RECOVERY_DELAY_SECONDS * 1000 + 1 });
-    assert.equal(response.status, 403);
+    assert.equal(response!.status, 403);
   } finally { mail.restore(); }
 });
 
@@ -127,17 +127,17 @@ test("requireRecentPasskey: no passkey means no demand; with one it needs a fres
 
   await addPasskey(env, "cred-1");
   const refused = await requireRecentPasskey(env, token, session, "delete-account");
-  assert.equal(refused.status, 403);
-  assert.equal((await refused.json()).code, "reauth_required");
+  assert.equal(refused!.status, 403);
+  assert.equal((await refused!.json()).code, "reauth_required");
 
   await markRecentPasskey(env, await sha256Hex(token), "delete-account");
   // A check made for one action is not good for another, and is used up.
-  assert.equal((await requireRecentPasskey(env, token, session, "approve-app")).status, 403);
+  assert.equal((await requireRecentPasskey(env, token, session, "approve-app"))!.status, 403);
   assert.equal(await requireRecentPasskey(env, token, session, "delete-account"), null);
-  assert.equal((await requireRecentPasskey(env, token, session, "delete-account")).status, 403, "used up");
+  assert.equal((await requireRecentPasskey(env, token, session, "delete-account"))!.status, 403, "used up");
   // Another session of the same account has not proved anything.
   const other = `${Math.floor(Date.now() / 1000)}.${"u".repeat(40)}`;
-  assert.equal((await requireRecentPasskey(env, other, session, "delete-account")).status, 403);
+  assert.equal((await requireRecentPasskey(env, other, session, "delete-account"))!.status, 403);
   // A check right after signing in with a passkey is good for one action of any kind.
   await markRecentPasskey(env, await sha256Hex(other));
   assert.equal(await requireRecentPasskey(env, other, session, "approve-app"), null);
@@ -147,10 +147,10 @@ test("passkeys registered before the per-account list existed are found once and
   const env = environment();
   const keys = new Map();
   const base = env.STUDIQUO_DATA;
-  (env.STUDIQUO_DATA as any) = {
+  env.STUDIQUO_DATA = {
     ...base,
-    async put(key, value) { keys.set(key, value); return base.put(key, value); },
-    async list({ prefix }) {
+    async put(key: string, value: string) { keys.set(key, value); return base.put(key, value); },
+    async list({ prefix }: { prefix?: unknown }) {
       return { keys: [...keys.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true };
     },
   };
@@ -163,7 +163,7 @@ test("passkeys registered before the per-account list existed are found once and
   // The sign-in gate sees it too.
   const mail = captureMail();
   try {
-    assert.equal((await gatePasskeyAccount(env, ACCOUNT, EMAIL)).status, 403);
+    assert.equal((await gatePasskeyAccount(env, ACCOUNT, EMAIL))!.status, 403);
   } finally { mail.restore(); }
 });
 
@@ -174,8 +174,8 @@ test("a passkey protects the account from the moment it is registered", async ()
   try {
     const now = Date.now();
     await addPasskey(env, "fresh", { createdAt: now });
-    assert.equal((await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now })).status, 403);
-    assert.equal((await requireRecentPasskey(env, "1.t".padEnd(40, "t"), { sub: ACCOUNT }, "delete-account")).status, 403);
+    assert.equal((await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now }))!.status, 403);
+    assert.equal((await requireRecentPasskey(env, "1.t".padEnd(40, "t"), { sub: ACCOUNT }, "delete-account"))!.status, 403);
   } finally { mail.restore(); }
 });
 
@@ -193,7 +193,7 @@ test("finishing a recovery signs out every earlier session and tells the owner",
     await addPasskey(env, "cred-1");
     const start = Date.now();
     await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now: start });
-    const pending = [];
+    const pending: any[] = [];
     const done = start + RECOVERY_DELAY_SECONDS * 1000 + 1;
     assert.equal(await gatePasskeyAccount(env, ACCOUNT, EMAIL, { now: done, notify: work => pending.push(work) }), null);
     await Promise.all(pending);

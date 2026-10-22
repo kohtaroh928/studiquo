@@ -38,6 +38,34 @@ async function stillDeleting(env: Env, deletionStateKey: string, generation: num
   return state?.status === "deleting" && generationOf(state) === generation;
 }
 
+/**
+ * Where this run's account stands: "deleting" (this run's life, not finished), "deleted" (another
+ * run of the same life finished first), or "gone" (the person signed in again, so there is a new
+ * account that this run must not touch).
+ */
+async function standing(env: Env, deletionStateKey: string, generation: number): Promise<"deleting" | "deleted" | "gone"> {
+  const state = await env.STUDIQUO_DATA.get<DeletionState>(deletionStateKey, "json");
+  if (generationOf(state) !== generation) return "gone";
+  return state?.status === "deleting" || state?.status === "deleted" ? state.status : "gone";
+}
+
+/**
+ * True when this run should stop because the account is no longer in the "deleting" state of its own
+ * life. If the cause is that another run of this same deletion finished first, this run first erases
+ * the data only it knows about: that run never saw the sessions this run revoked, so it could not
+ * erase what they led to. Only that data goes (it is named by the old tokens, so a new account, which
+ * the person may open the moment the marker says "deleted", has none of it); the rest the other run erased.
+ * When the person has signed in again, nothing is touched.
+ */
+async function finishedByAnotherRun(env: Env, deletionStateKey: string, generation: number, ownedTokenHashes: string[]) {
+  const where = await standing(env, deletionStateKey, generation);
+  if (where === "deleting") return false;
+  if (where === "deleted") {
+    await deleteKeys(env, ownedTokenHashes.flatMap(hash => [`snapshot:${hash}`, `actions:${hash}`]));
+  }
+  return true;
+}
+
 // Collaborative document rooms. A room the account owns is erased: the document
 // is the owner's, and the people it was shared with lose their view of it. In a
 // room the account was only invited to, just its own place goes, with the
@@ -146,9 +174,9 @@ export async function deleteAccount(env: Env, canonicalSub: string) {
     const activeGeneration = previousState.generation;
     // Counts decide when both sides have one; the clock comparison remains
     // for markers and jobs written before the count existed.
-    const isRequestedSince = (job: any) => Number.isFinite(job?.generation) && Number.isFinite(activeGeneration)
-      ? job.generation === activeGeneration
-      : Number.isFinite(startedAt) ? job?.requestedAt >= (startedAt as number) : true;
+    const isRequestedSince = (job: Partial<DeletionJob> | null) => Number.isFinite(job?.generation) && Number.isFinite(activeGeneration)
+      ? job!.generation === activeGeneration
+      : Number.isFinite(startedAt) ? (job?.requestedAt as number) >= (startedAt as number) : true;
     let job = await env.STUDIQUO_DATA.get<DeletionJob>(jobKey, "json");
     if (!isRequestedSince(job)) {
       // Read once more before clearing: the person may have asked to delete
@@ -277,7 +305,7 @@ export async function deleteAccount(env: Env, canonicalSub: string) {
   // have dropped some), every record is read as before.
   const ownedCredentialKeys = [];
   const ownedPasskeyUserKeys = [];
-  const listKeys = new Set();
+  const listKeys = new Set<string>();
   for (const identity of new Set([...identityKeys, canonicalSub])) for (const key of await passkeyAccountKeys(env, identity, null)) listKeys.add(key);
   for (const email of emails) for (const key of await passkeyAccountKeys(env, `email:${String(email).trim().toLowerCase()}`, email)) listKeys.add(key);
   const listed = (await passkeyIndexComplete(env)) ? await indexedPasskeyIds(env, [...listKeys]) : null;
@@ -325,7 +353,7 @@ export async function deleteAccount(env: Env, canonicalSub: string) {
 
   // The steps below rewrite the checkpoint as they go, so a run that has lost
   // the account to a newer life must stop before them, not after.
-  if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
+  if (await finishedByAnotherRun(env, deletionStateKey, generation, ownedTokenHashes)) return { deleted: true };
   const usageHash = await sha256Hex(`usage-account:${canonicalSub}`);
   // A connected app's grant and tokens are keyed by the identity that approved
   // it, which may be any identity linked to the account, not only the
@@ -447,7 +475,7 @@ export async function deleteAccount(env: Env, canonicalSub: string) {
     ...devices.map(device => `chat:device-owner:${device.token}`),
   ];
   if (chatUser) deletionKeys.push(`chat:code:${chatUser.code}`, `chat:linktoken:${chatUser.linkToken}`, `chat:avatar:${chatUser.code}`);
-  if (!(await stillDeleting(env, deletionStateKey, generation))) return { deleted: true };
+  if (await finishedByAnotherRun(env, deletionStateKey, generation, ownedTokenHashes)) return { deleted: true };
   await env.STUDIQUO_DATA.put(deletionStateKey, JSON.stringify({ ...checkpoint, deletionKeys: [...new Set(deletionKeys)] }));
   await deleteKeys(env, deletionKeys);
 

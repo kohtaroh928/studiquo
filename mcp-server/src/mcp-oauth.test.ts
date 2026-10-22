@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test, { mock } from "node:test";
 import worker from "./app.ts";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type LooseEnv, type Untyped } from "./test-env.ts";
 
-const hash = value => createHash("sha256").update(value).digest("hex");
+const hash = (value: Untyped) => createHash("sha256").update(value).digest("hex");
 
 function environment() {
   const values = new Map();
@@ -12,24 +12,24 @@ function environment() {
   const consumed = new Set();
   return partialEnv({
     STUDIQUO_DATA: {
-      async get(key, type) {
+      async get(key: string, type: string) {
         const value = values.get(key) ?? null;
         return type === "json" && value ? JSON.parse(value) : value;
       },
-      async put(key, value) { values.set(key, value); },
-      async delete(key) { values.delete(key); },
-      async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
+      async put(key: string, value: string) { values.set(key, value); },
+      async delete(key: string) { values.delete(key); },
+      async list({ prefix }: { prefix?: unknown }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })) }; },
     },
-    MCP_INBOX: { getByName(account) { return {
-      async consumeOnce(id) { const key = `${account}:${id}`; if (consumed.has(key)) return false; consumed.add(key); return true; },
-      async enqueue(id, kind, payload, source) {
+    MCP_INBOX: { getByName(account: string) { return {
+      async consumeOnce(id: string) { const key = `${account}:${id}`; if (consumed.has(key)) return false; consumed.add(key); return true; },
+      async enqueue(id: string, kind: string, payload: unknown[], source: string) {
         const record = { id, kind, payload: { type: kind, ...payload }, source, status: "pending" };
         items.set(`${account}:${id}`, record);
         return { id, status: "pending" };
       },
       async list() { return [...items].filter(([key, value]) => key.startsWith(`${account}:`) && value.status === "pending").map(([, value]) => value); },
-      async status(id) { return items.get(`${account}:${id}`) ?? null; },
-      async acknowledge(id) { const item = items.get(`${account}:${id}`); if (item) item.status = "imported"; return item ?? null; },
+      async status(id: string) { return items.get(`${account}:${id}`) ?? null; },
+      async acknowledge(id: string) { const item = items.get(`${account}:${id}`); if (item) item.status = "imported"; return item ?? null; },
     }; } },
     RATE_COUNTER: { getByName() { return { async bump() { return true; } }; } },
     RATE_LIMIT_MCP_REGISTER: { async limit() { return { success: true }; } },
@@ -41,13 +41,13 @@ function environment() {
 
 // The owner makes a code in the app; the AI app's page takes it. Returns the
 // answer of the page's POST /oauth/pair.
-async function enterOwnerCode(env, flowId, sub, kind = "other") {
+async function enterOwnerCode(env: LooseEnv, flowId: string, sub: string, kind = "other") {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
-  const { code } = await issueOwnerCode(env, sub, kind);
+  const { code } = (await issueOwnerCode(env, sub, kind))!;
   return fetch(env, "/oauth/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: flowId, code }) });
 }
 
-const fetch = (env, path, options = {}) => worker.fetch(new Request(`https://example.test${path}`, options), env, partialCtx({ waitUntil() {} }));
+const fetch = (env: LooseEnv, path: string, options = {}) => worker.fetch(new Request(`https://example.test${path}`, options), env, partialCtx({ waitUntil() {} }));
 
 test("MCP connector pairs through the logged-in iPad, imports by account, and can be revoked", async () => {
   const env = environment();
@@ -62,7 +62,7 @@ test("MCP connector pairs through the logged-in iPad, imports by account, and ca
   const authorize = await fetch(env, `/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&code_challenge_method=S256&code_challenge=${challenge}&state=abc`);
   assert.equal(authorize.status, 200);
   // The page that shows the pairing code must not be embeddable in another site.
-  assert.match(authorize.headers.get("content-security-policy"), /frame-ancestors 'none'/);
+  assert.match(authorize.headers.get("content-security-policy")!, /frame-ancestors 'none'/);
   assert.equal(authorize.headers.get("x-content-type-options"), "nosniff");
   const page = await authorize.text();
   const requestId = page.match(/id:'([a-f0-9]{64})'/)?.[1];
@@ -77,10 +77,10 @@ test("MCP connector pairs through the logged-in iPad, imports by account, and ca
   const callback = new URL((await approve.json()).redirect);
   assert.equal(callback.searchParams.get("state"), "abc");
   const code = callback.searchParams.get("code");
-  const token = await fetch(env, "/oauth/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", client_id: clientId, redirect_uri: redirectUri, code, code_verifier: verifier }) });
+  const token = await fetch(env, "/oauth/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", client_id: clientId, redirect_uri: redirectUri, code: code!, code_verifier: verifier }) });
   assert.equal(token.status, 200);
   const { access_token: accessToken } = await token.json();
-  const replay = await fetch(env, "/oauth/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", client_id: clientId, redirect_uri: redirectUri, code, code_verifier: verifier }) });
+  const replay = await fetch(env, "/oauth/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", client_id: clientId, redirect_uri: redirectUri, code: code!, code_verifier: verifier }) });
   assert.equal(replay.status, 400);
   const call = await fetch(env, "/mcp", { method: "POST", headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "create_document", arguments: { title: "統計", body: "平均と分散", folderPath: "" } } }) });
   assert.equal(call.status, 200);
@@ -130,14 +130,14 @@ test("a refresh token from before a revocation stays dead when the same app is a
   const clientId = "studiquo_" + "a".repeat(32);
   const redirectUri = "https://client.example/callback";
   await env.STUDIQUO_DATA.put(`mcp:client:${clientId}`, JSON.stringify({ clientName: "App", redirectUris: [redirectUri] }));
-  const refresh = token => fetch(env, "/oauth/token", {
+  const refresh = (token: Untyped) => fetch(env, "/oauth/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "refresh_token", client_id: clientId, refresh_token: token }).toString(),
   });
 
   // Approve once and take the refresh token the app now holds.
-  const approve = async (id, code) => {
+  const approve = async (id: string, code: string) => {
     await env.STUDIQUO_DATA.put(`mcp:auth:${id}`, JSON.stringify({ kind: "other", clientId, clientName: "App", redirectUri, codeChallenge: "c".repeat(43), scope: "studiquo.read" }));
     assert.equal((await enterOwnerCode(env, id, sub)).status, 200);
   };
@@ -156,18 +156,24 @@ test("a refresh token from before a revocation stays dead when the same app is a
   assert.equal((await refresh(stolen)).status, 400, "and not revived by approving the app again");
 });
 
-test("a registered client expires after a year instead of staying forever", async () => {
+test("a registered client nobody has approved goes away after a day; approving it keeps it for a year", async () => {
   const env = environment();
   const ttls = new Map();
   const put = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: { expirationTtl: any; }) => { ttls.set(key, options?.expirationTtl); return put(key, value, options); };
   const response = await fetch(env, "/oauth/register", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ client_name: "Claude", redirect_uris: ["https://claude.ai/callback"] }),
   });
   assert.equal(response.status, 201);
   const { client_id } = await response.json();
-  assert.equal(ttls.get(`mcp:client:${client_id}`), 365 * 24 * 3600);
+  assert.equal(ttls.get(`mcp:client:${client_id}`), 24 * 3600, "unapproved: one day");
+
+  const id = "4".repeat(64);
+  await env.STUDIQUO_DATA.put(`mcp:auth:${id}`, JSON.stringify({ kind: "other", clientId: client_id, clientName: "Claude", redirectUri: "https://claude.ai/callback", codeChallenge: "c".repeat(43), scope: "studiquo.read" }));
+  assert.equal((await enterOwnerCode(env, id, "apple:owner")).status, 200);
+  assert.equal(ttls.get(`mcp:client:${client_id}`), 365 * 24 * 3600, "approved: a year");
+  assert.ok(await env.STUDIQUO_DATA.get(`mcp:client:${client_id}`), "and the record is still there");
 });
 
 test("a refresh token that was already exchanged cuts the whole connection", async () => {
@@ -181,7 +187,7 @@ test("a refresh token that was already exchanged cuts the whole connection", asy
   const grant = JSON.parse(await env.STUDIQUO_DATA.get(`mcp:grant:${hash(sub)}:${hash(clientId)}`));
   const first = "mcp_refresh_" + "1".repeat(40);
   await env.STUDIQUO_DATA.put(`mcp:refresh:${hash(first)}`, JSON.stringify({ sub, clientId, scope: "studiquo.read", grantId: grant.nonce }));
-  const refresh = token => fetch(env, "/oauth/token", {
+  const refresh = (token: Untyped) => fetch(env, "/oauth/token", {
     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "refresh_token", client_id: clientId, refresh_token: token }).toString(),
   });
@@ -190,7 +196,7 @@ test("a refresh token that was already exchanged cuts the whole connection", asy
   const rotated = await refresh(first);
   assert.equal(rotated.status, 200);
   const { access_token: access, refresh_token: second } = await rotated.json();
-  const mcp = token => fetch(env, "/mcp", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+  const mcp = (token: unknown) => fetch(env, "/mcp", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
   assert.notEqual((await mcp(access)).status, 401, "the new access token works");
 
   // The old token is shown again, by a client that retried or by whoever copied it.
@@ -221,7 +227,7 @@ test("an unknown refresh token revokes nothing", async () => {
 // A counter that really counts, so single-use and attempt limits can be tested.
 function countingCounter() {
   const counts = new Map();
-  return { getByName(name) { return { async bump(limit, _window, amount = 1) {
+  return { getByName(name: string) { return { async bump(limit: number, _window: string, amount = 1) {
     const used = (counts.get(name) ?? 0) + amount;
     if (used > limit) return false;
     counts.set(name, used);
@@ -229,15 +235,15 @@ function countingCounter() {
   } }; } };
 }
 
-async function startFlow(env, redirectUri, clientName = "Client") {
+async function startFlow(env: LooseEnv, redirectUri: string | number | boolean, clientName = "Client") {
   const registered = await fetch(env, "/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ client_name: clientName, redirect_uris: [redirectUri] }) });
   const { client_id: clientId } = await registered.json();
   const challenge = createHash("sha256").update("v".repeat(43)).digest("base64url");
   const page = await (await fetch(env, `/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&code_challenge_method=S256&code_challenge=${challenge}&state=s`)).text();
-  return page.match(/id:'([a-f0-9]{64})'/)[1];
+  return page.match(/id:'([a-f0-9]{64})'/)![1];
 }
 
-const submit = (env, id, code) => fetch(env, "/oauth/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, code }) });
+const submit = (env: LooseEnv, id: string, code: string) => fetch(env, "/oauth/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, code }) });
 
 test("clients are sorted into Claude, ChatGPT, Codex or other by where they send the owner back to", async () => {
   const { classifyClient } = await import("./mcp-oauth.ts");
@@ -255,10 +261,10 @@ test("clients are sorted into Claude, ChatGPT, Codex or other by where they send
 test("a code made for one kind of app is refused by another kind and is not used up", async () => {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const claudeFlow = await startFlow(env, "https://claude.ai/api/mcp/auth_callback", "Claude");
   const otherFlow = await startFlow(env, "https://attacker.example/callback", "Claude");
-  const { code } = await issueOwnerCode(env, "apple:owner", "claude");
+  const { code } = (await issueOwnerCode(env, "apple:owner", "claude"))!;
   const wrong = await submit(env, otherFlow, code);
   assert.equal(wrong.status, 400);
   assert.match((await wrong.json()).message, /別の種類/);
@@ -270,10 +276,10 @@ test("a code made for one kind of app is refused by another kind and is not used
 test("a code works once", async () => {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const first = await startFlow(env, "https://client.example/a");
   const second = await startFlow(env, "https://client.example/b");
-  const { code } = await issueOwnerCode(env, "apple:owner", "other");
+  const { code } = (await issueOwnerCode(env, "apple:owner", "other"))!;
   assert.equal((await submit(env, first, code)).status, 200);
   assert.equal((await submit(env, second, code)).status, 400);
 });
@@ -281,9 +287,9 @@ test("a code works once", async () => {
 test("the code is accepted with spaces, hyphens and lower case, as the owner types it", async () => {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const id = await startFlow(env, "https://client.example/a");
-  const { code } = await issueOwnerCode(env, "apple:owner", "other");
+  const { code } = (await issueOwnerCode(env, "apple:owner", "other"))!;
   const typed = `${code.slice(0, 4)}-${code.slice(4, 8)} ${code.slice(8)}`.toLowerCase();
   assert.equal((await submit(env, id, typed)).status, 200);
 });
@@ -291,25 +297,25 @@ test("the code is accepted with spaces, hyphens and lower case, as the owner typ
 test("a new code replaces the last one, and an expired code is gone", async () => {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const ttls = new Map();
   const put = env.STUDIQUO_DATA.put;
-  (env.STUDIQUO_DATA as any).put = async (key, value, options) => { ttls.set(key.split(":").slice(0, 2).join(":"), options?.expirationTtl); return put(key, value, options); };
+  env.STUDIQUO_DATA.put = async (key: string, value: string, options: { expirationTtl: any; }) => { ttls.set(key.split(":").slice(0, 2).join(":"), options?.expirationTtl); return put(key, value, options); };
   const id = await startFlow(env, "https://client.example/a");
   const old = await issueOwnerCode(env, "apple:owner", "other");
   const fresh = await issueOwnerCode(env, "apple:owner", "other");
   assert.equal(ttls.get("mcp:owner-code"), 300, "five minutes");
-  assert.equal((await submit(env, id, old.code)).status, 400);
-  assert.equal((await submit(env, id, fresh.code)).status, 200);
+  assert.equal((await submit(env, id, old!.code)).status, 400);
+  assert.equal((await submit(env, id, fresh!.code)).status, 200);
   assert.equal(await issueOwnerCode(env, "apple:owner", "not-a-kind"), null);
 });
 
 test("a page that keeps guessing is closed after five wrong tries, even if the next one is right", async () => {
   const { issueOwnerCode } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const id = await startFlow(env, "https://client.example/a");
-  const { code } = await issueOwnerCode(env, "apple:owner", "other");
+  const { code } = (await issueOwnerCode(env, "apple:owner", "other"))!;
   for (let i = 0; i < 5; i++) assert.equal((await submit(env, id, "AAAAAAAAAAAA")).status, 400);
   const closed = await submit(env, id, code);
   assert.equal(closed.status, 429);
@@ -318,23 +324,23 @@ test("a page that keeps guessing is closed after five wrong tries, even if the n
 
 test("guesses from one address are capped across pages", async () => {
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   let last;
   for (let i = 0; i < 21; i++) {
     const id = await startFlow(env, `https://client.example/${i}`);
     last = await submit(env, id, "AAAAAAAAAAAA");
   }
-  assert.equal(last.status, 429);
+  assert.equal(last!.status, 429);
 });
 
 test("connecting an app tells the owner's devices, and a failed notice does not undo the connection", async () => {
   const { issueOwnerCode, listConnections } = await import("./mcp-oauth.ts");
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const errors = mock.method(console, "error", () => {});
   try {
     const id = await startFlow(env, "https://claude.ai/api/mcp/auth_callback", "Claude");
-    const { code } = await issueOwnerCode(env, "apple:owner", "claude");
+    const { code } = (await issueOwnerCode(env, "apple:owner", "claude"))!;
     assert.equal((await submit(env, id, code)).status, 200);
     const connections = await listConnections(env, "apple:owner");
     assert.equal(connections.length, 1);
@@ -344,19 +350,19 @@ test("connecting an app tells the owner's devices, and a failed notice does not 
 
 test("issued tokens are listed under their account, and the first listing starts the clock for deletions", async () => {
   const env = environment();
-  (env.RATE_COUNTER as any) = countingCounter();
+  env.RATE_COUNTER = countingCounter();
   const redirectUri = "https://client.example/a";
   const registered = await fetch(env, "/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ client_name: "C", redirect_uris: [redirectUri] }) });
   const { client_id: clientId } = await registered.json();
   const challenge = createHash("sha256").update("v".repeat(43)).digest("base64url");
   const page = await (await fetch(env, `/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&code_challenge_method=S256&code_challenge=${challenge}&state=s`)).text();
-  const flowId = page.match(/id:'([a-f0-9]{64})'/)[1];
+  const flowId = page.match(/id:'([a-f0-9]{64})'/)![1];
   const { redirect } = await (await enterOwnerCode(env, flowId, "apple:owner")).json();
   const code = new URL(redirect).searchParams.get("code");
   assert.equal(await env.STUDIQUO_DATA.get("mcp:token-index-since"), null, "nothing issued yet");
   const token = await fetch(env, "/oauth/token", {
     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "authorization_code", client_id: clientId, redirect_uri: redirectUri, code, code_verifier: "v".repeat(43) }).toString(),
+    body: new URLSearchParams({ grant_type: "authorization_code", client_id: clientId, redirect_uri: redirectUri, code: code!, code_verifier: "v".repeat(43) }).toString(),
   });
   const issued = await token.json();
   assert.equal(token.status, 200);

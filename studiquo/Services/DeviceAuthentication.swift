@@ -23,6 +23,34 @@ enum DeviceAuthentication {
         )
     }
 
+    /// For actions that must not be blocked on a device that has no passcode
+    /// or biometrics at all (deleting one's own account has to stay possible):
+    /// asks when the device can ask, and says so when it can't.
+    enum Outcome: Equatable { case confirmed, declined, unavailable }
+
+    static func confirmIfPossible(reason: String) async -> Outcome {
+        let context = LAContext()
+        return await confirmIfPossible(
+            reason: reason,
+            canEvaluate: {
+                var error: NSError?
+                return context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error)
+            },
+            evaluate: { localizedReason in
+                try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: localizedReason)
+            }
+        )
+    }
+
+    static func confirmIfPossible(
+        reason: String,
+        canEvaluate: () -> Bool,
+        evaluate: (String) async throws -> Bool
+    ) async -> Outcome {
+        guard canEvaluate() else { return .unavailable }
+        return ((try? await evaluate(reason)) ?? false) ? .confirmed : .declined
+    }
+
     static func authenticate(
         reason: String,
         canEvaluate: () -> Bool,

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { isExpired } from "./token.ts";
+import type { Untyped } from "./test-env.ts";
 
-function tokenIssuedSecondsAgo(seconds) {
+function tokenIssuedSecondsAgo(seconds: number) {
   const issuedAt = Math.floor(Date.now() / 1000) - seconds;
   return `${issuedAt}.deadbeef`;
 }

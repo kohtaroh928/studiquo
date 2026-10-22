@@ -140,7 +140,7 @@ test("the policy and terms describe reports, blocks and what the operator can do
 // webhook (a secret URL) are not literals, so they are named by hand in the
 // MUST_NAME list below instead.
 import { readdirSync, readFileSync } from "node:fs";
-import { partialCtx, partialEnv } from "./test-env.ts";
+import { partialCtx, partialEnv, type Untyped } from "./test-env.ts";
 
 const HOST_TO_POLICY_TERM = {
   "api.openai.com": "OpenAI",
