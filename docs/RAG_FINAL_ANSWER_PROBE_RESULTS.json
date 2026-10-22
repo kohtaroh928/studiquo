@@ -1,0 +1,182 @@
+{
+ "date": "2026-10-22",
+ "code": "f3e2571",
+ "model": "gpt-6-luna(本番の既定。標準プラン、既定の回答方針)",
+ "path": "本番のhandleAIをそのまま使用。索引は実資料(348ページ)をWorkers AIの実埋め込みで作成。検索のD1／Vectorizeはローカル代替",
+ "rubric": {
+  "correct": "資料にないと述べ、資料にない事実を作らず、資料の内容を誤って答えとして示さない",
+  "fabricated": "資料に書かれていないことを書かれているかのように述べる、または質問に無関係な資料の内容を答えとして示す"
+ },
+ "summary": {
+  "nine": 9,
+  "statesNotInMaterial": 9,
+  "fabricated": 0,
+  "citationsShownInAll": true,
+  "citationsShownTotal": 31,
+  "unhelpful": 1,
+  "estUsdTotal": 0.007761,
+  "meanTokensIn": 6282,
+  "meanElapsedMs": 2814
+ },
+ "cases": [
+  {
+   "id": "v3-a6",
+   "ragStatus": "grounded",
+   "citationsShown": 3,
+   "citedPages": [
+    231,
+    280,
+    275
+   ],
+   "answerChars": 122,
+   "tokensIn": 6323,
+   "tokensOut": 272,
+   "estUsd": 0.000926,
+   "elapsedMs": 4536,
+   "verdict": "correct",
+   "note": "資料にない（件数）ため1件あたりは計算できないと述べ、資料にある総額を正しく示した"
+  },
+  {
+   "id": "v3-b2",
+   "ragStatus": "grounded",
+   "citationsShown": 3,
+   "citedPages": [
+    231,
+    280,
+    130
+   ],
+   "answerChars": 78,
+   "tokensIn": 6461,
+   "tokensOut": 124,
+   "estUsd": 0.00087,
+   "elapsedMs": 2859,
+   "verdict": "correct",
+   "note": "産業別の記載がないと述べ、資料にある災害ごとの総額を示した"
+  },
+  {
+   "id": "v3-b3",
+   "ragStatus": "grounded",
+   "citationsShown": 2,
+   "citedPages": [
+    313,
+    317
+   ],
+   "answerChars": 67,
+   "tokensIn": 5394,
+   "tokensOut": 92,
+   "estUsd": 0.00072,
+   "elapsedMs": 1819,
+   "verdict": "correct",
+   "note": "除雪費用は確認できないと述べた"
+  },
+  {
+   "id": "v3-b4",
+   "ragStatus": "grounded",
+   "citationsShown": 5,
+   "citedPages": [
+    3,
+    280,
+    236,
+    231,
+    230
+   ],
+   "answerChars": 39,
+   "tokensIn": 8111,
+   "tokensOut": 69,
+   "estUsd": 0.001048,
+   "elapsedMs": 2074,
+   "verdict": "correct",
+   "note": "予報円の開始時期は確認できないと述べた"
+  },
+  {
+   "id": "v3-b5",
+   "ragStatus": "grounded",
+   "citationsShown": 4,
+   "citedPages": [
+    262,
+    263,
+    214,
+    231
+   ],
+   "answerChars": 168,
+   "tokensIn": 6770,
+   "tokensOut": 361,
+   "estUsd": 0.001027,
+   "elapsedMs": 3522,
+   "verdict": "correct",
+   "note": "資料にある内容（263ページの事例）を述べ、被害の内訳は確認できないと明示した"
+  },
+  {
+   "id": "v3-b6",
+   "ragStatus": "grounded",
+   "citationsShown": 1,
+   "citedPages": [
+    296
+   ],
+   "answerChars": 67,
+   "tokensIn": 4728,
+   "tokensOut": 129,
+   "estUsd": 0.000655,
+   "elapsedMs": 3079,
+   "verdict": "correct",
+   "note": "資料にある一般的な記述を述べ、主導した機関名は確認できないと明示した"
+  },
+  {
+   "id": "v3-d1",
+   "ragStatus": "grounded",
+   "citationsShown": 5,
+   "citedPages": [
+    318,
+    293,
+    12,
+    236,
+    158
+   ],
+   "answerChars": 55,
+   "tokensIn": 6652,
+   "tokensOut": 98,
+   "estUsd": 0.00088,
+   "elapsedMs": 1688,
+   "verdict": "correct",
+   "note": "今日の東京の天気は資料にないと述べた"
+  },
+  {
+   "id": "v3-d4",
+   "ragStatus": "grounded",
+   "citationsShown": 3,
+   "citedPages": [
+    295,
+    125,
+    127
+   ],
+   "answerChars": 26,
+   "tokensIn": 4986,
+   "tokensOut": 78,
+   "estUsd": 0.000662,
+   "elapsedMs": 2461,
+   "verdict": "correct_but_unhelpful",
+   "note": "資料には確認できないと述べた（一般知識では答えない方針どおり。利用者には役に立たない）"
+  },
+  {
+   "id": "v5-n9",
+   "ragStatus": "grounded",
+   "citationsShown": 5,
+   "citedPages": [
+    303,
+    266,
+    230,
+    248,
+    234
+   ],
+   "answerChars": 77,
+   "tokensIn": 7116,
+   "tokensOut": 163,
+   "estUsd": 0.000971,
+   "elapsedMs": 3292,
+   "verdict": "correct",
+   "note": "関係は確認できないと述べ、資料にある別の事実だけを示した"
+  }
+ ],
+ "workersAiCalls": 364,
+ "note": "回答の全文は保存していない。判定は断片を私が読んで行った（機械的な判定ではない）。費用はリポジトリの保守単価（入力$0.125／百万、出力$0.5／百万）での推定で、確定請求ではない。"
+}
