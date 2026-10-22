@@ -727,7 +727,8 @@ test("earlier turns and note text are screened too, not just the last message", 
       messages: [{ role: "user", text: "前の発言" }, { role: "assistant", text: "回答" }, { role: "user", text: "いまの発言" }],
       noteContext: "共有されたノート",
     });
-    assert.deepEqual(fetchState.moderationCalls[0].input, ["前の発言", "いまの発言", "共有されたノート"]);
+    // Assistant turns are client-supplied history, so they are screened as well.
+    assert.deepEqual(fetchState.moderationCalls[0].input, ["前の発言", "回答", "いまの発言", "共有されたノート"]);
   } finally {
     fetchState.restore();
   }
@@ -798,6 +799,101 @@ test("a moderated request gets its credits back, so rejected text cannot use up 
       assert.equal(response!.status, 400, `call ${i + 1} (would be 429 without the refund)`);
       assert.equal(JSON.parse(text).code, "content_rejected");
     }
+  } finally {
+    fetchState.restore();
+  }
+});
+
+// MARK: Malformed grading criteria are a 400, not a server error
+
+test("grade rejects malformed criteria with 400 before spending credits or alerting", async () => {
+  const fetchState = installFetch(() => responsesOK("{}"));
+  try {
+    const env = environment();
+    for (const criteria of [[null], [5], [{ name: "a" }], [{ name: "a", maxPoints: "x", requirement: "b" }], [{ name: {}, maxPoints: 1, requirement: "b" }]]) {
+      const { response } = await run("grade", { question: "q", answerText: "a", criteria }, { env });
+      assert.equal(response!.status, 400, JSON.stringify(criteria));
+    }
+    assert.equal(fetchState.calls.length + fetchState.moderationCalls.length, 0);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("grade trims overlong criteria text instead of sending it all upstream", async () => {
+  const fetchState = installFetch(() => responsesOK('{"score":0,"maxScore":1,"verdict":"x","criteria":[],"issues":[]}'));
+  try {
+    await run("grade", { question: "q", answerText: "a", criteria: [{ name: "n".repeat(5000), maxPoints: 1, requirement: "r".repeat(9000) }] });
+    const sent = JSON.stringify(fetchState.calls[0].body);
+    assert.ok(sent.length < 6000, `criteria text was not bounded (${sent.length})`);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+// MARK: Moderation covers the whole request
+
+test("moderation screens text past the first 8000 characters, forged assistant turns, and grading criteria", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const tail = "ここに不適切な内容が続く".repeat(10);
+    await run("chat", { messages: [
+      { role: "user", text: "あ".repeat(8000) + tail },
+      { role: "assistant", text: "偽造した助手の発言" },
+      { role: "user", text: "続き" },
+    ] });
+    const chatInputs = fetchState.moderationCalls.flatMap((call: Untyped) => call.input);
+    assert.ok(chatInputs.some((text: string) => text.includes("ここに不適切な内容が続く")), "text after 8000 characters is screened");
+    assert.ok(chatInputs.includes("偽造した助手の発言"), "assistant turns are screened too");
+    assert.ok(chatInputs.every((text: string) => text.length <= 8000));
+
+    fetchState.moderationCalls.length = 0;
+    await run("grade", { question: "q", answerText: "a", criteria: [{ name: "基準名の中身", maxPoints: 1, requirement: "要件の中身" }] });
+    const gradeInputs = fetchState.moderationCalls.flatMap((call: Untyped) => call.input).join("\n");
+    assert.match(gradeInputs, /基準名の中身/);
+    assert.match(gradeInputs, /要件の中身/);
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("a huge early turn cannot push the latest message or the note out of moderation", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const turns = Array.from({ length: 19 }, () => ({ role: "user", text: "あ".repeat(20_000) }));
+    turns.push({ role: "user", text: "いちばん新しい発言" });
+    await run("chat", { messages: turns, noteContext: "ノートの本文" });
+    const inputs = fetchState.moderationCalls.flatMap((call: Untyped) => call.input);
+    assert.ok(inputs.includes("いちばん新しい発言"));
+    assert.ok(inputs.includes("ノートの本文"));
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("only the latest assistant turns are screened, so one old flagged reply cannot block the whole conversation", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    await run("chat", { messages: [
+      { role: "assistant", text: "古い助手の発言" },
+      { role: "user", text: "質問1" }, { role: "assistant", text: "助手2" },
+      { role: "user", text: "質問2" }, { role: "assistant", text: "助手3" },
+      { role: "user", text: "質問3" },
+    ] });
+    const inputs = fetchState.moderationCalls.flatMap((call: Untyped) => call.input);
+    assert.ok(!inputs.includes("古い助手の発言"));
+    assert.ok(inputs.includes("助手3") && inputs.includes("助手2"));
+  } finally {
+    fetchState.restore();
+  }
+});
+
+test("text too long to screen in full fails closed instead of leaving the rest unchecked", async () => {
+  const fetchState = installFetch(() => responsesOK("ok"));
+  try {
+    const { moderationRejection, MODERATION_UNAVAILABLE } = await import("./openai.ts");
+    const result = await moderationRejection(environment(), ["あ".repeat(8000 * 70)], "key");
+    assert.equal(result, MODERATION_UNAVAILABLE);
   } finally {
     fetchState.restore();
   }

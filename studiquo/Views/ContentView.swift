@@ -2339,7 +2339,6 @@ struct ContentView: View {
     @State private var showsMCPCloudSettings = false
     @State private var mcpCloudStatus = ""
     @State private var isMCPCloudSyncing = false
-    @State private var isMCPCloudTokenVisible = false
     @State private var mcpPairKind: MCPConnectionKind = .claude
     @State private var mcpIssuedCode: MCPPairingCode?
     @State private var mcpCodeExpiresAt: Date?
@@ -2957,45 +2956,6 @@ struct ContentView: View {
                         .disabled(mcpCloudEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-
-                LabeledContent("接続トークン") {
-                    HStack {
-                        Group {
-                            if isMCPCloudTokenVisible {
-                                TextField("接続トークン", text: $mcpCloudToken)
-                            } else {
-                                SecureField("接続トークン", text: $mcpCloudToken)
-                            }
-                        }
-                        .multilineTextAlignment(.trailing)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-
-                        Button {
-                            isMCPCloudTokenVisible.toggle()
-                        } label: {
-                            Image(systemName: isMCPCloudTokenVisible ? "eye.slash" : "eye")
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel(isMCPCloudTokenVisible ? L("トークンを隠す") : L("トークンを表示"))
-
-                        Button {
-                            // This device only, and gone after a minute.
-                            SecretPasteboard.copy(mcpCloudToken)
-                            mcpCloudStatus = L("接続トークンをコピーしました。60秒でクリップボードから消えます。")
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                        }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel("接続トークンをコピー")
-                        .disabled(mcpCloudToken.count < 32)
-                    }
-                }
-                // A revealed token must not show in the app switcher.
-                .hidesInAppSwitcher(when: isMCPCloudTokenVisible)
-                Button("新しいトークンを生成", systemImage: "arrow.clockwise") {
-                    mcpCloudToken = MCPCloudCredentials.generateAndSaveNewToken()
-                }
             }
             Section {
                 Button("今すぐ同期", systemImage: "icloud.and.arrow.up") {
@@ -3008,7 +2968,7 @@ struct ContentView: View {
                 if isMCPCloudSyncing { ProgressView() }
                 if !mcpCloudStatus.isEmpty { Text(mcpCloudStatus).foregroundStyle(.secondary) }
             } footer: {
-                Text("資料の参照には先に同期が必要です。Claude・ChatGPTなどにはMCP URLを登録し、下の「AIアプリを接続する」で発行したコードをAIアプリの画面に入力してください。接続トークンは他人へ共有しないでください。")
+                Text("資料の参照には先に同期が必要です。Claude・ChatGPTなどにはMCP URLを登録し、下の「AIアプリを接続する」で発行したコードをAIアプリの画面に入力してください。")
             }
             Section {
                 Picker("接続するAIアプリ", selection: $mcpPairKind) {
@@ -3282,8 +3242,6 @@ struct ContentView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            // A revealed token is hidden again as soon as the app leaves the front.
-            if phase != .active { isMCPCloudTokenVisible = false }
             StudyTimeTracker.shared.handle(scenePhase: phase)
             friendStore.handle(scenePhase: phase)
             if phase == .active {
