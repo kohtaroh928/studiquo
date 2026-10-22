@@ -526,11 +526,13 @@ function streamNormalizedText(upstream: Response, extractText: (event: unknown) 
       }
       // The text is already on the student's screen and cannot be taken back, so a
       // flagged reply gets a plain notice after it and a log line (no text).
-      if (moderateOutput && !failed && answer && typeof await moderationRejection(env, [answer], undefined, { timeoutMs: 4000 }) === "string") {
+      // A reply cut off at the output limit is still delivered, so it is screened like a finished one.
+      const delivered = !failed || (truncated && !hardFailed);
+      if (moderateOutput && delivered && answer && typeof await moderationRejection(env, [answer], undefined, { timeoutMs: 4000 }) === "string") {
         console.error(JSON.stringify({ message: "teen output flagged by moderation" }));
         await send("\n\n（この回答には学習アプリで扱えない内容が含まれている可能性があります。内容を信じすぎず、保護者や先生に相談してください）");
       }
-      if (groundingSource && !failed && answer) {
+      if (groundingSource && delivered && answer) {
         // Shadow mode: counts go to the log, the answer is untouched.
         console.log(JSON.stringify({ event: "rag_grounding", status: groundingStatus, ...groundingCheck(answer, groundingSource) }));
       }
