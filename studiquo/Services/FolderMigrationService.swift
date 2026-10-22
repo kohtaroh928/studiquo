@@ -23,6 +23,12 @@ enum FolderMigrationService {
     /// migration's per-item work is cheaper.
     private static let batchSize = 200
 
+    /// `@MainActor` because `context` is the main-queue context and the
+    /// `Folder`/item models are not `Sendable`: as a plain `nonisolated async`
+    /// function this ran on the global executor, and each `Task.yield()` could
+    /// resume on another thread, touching them off the main queue (an
+    /// intermittent crash in `FolderMigrationServiceTests`).
+    @MainActor
     static func migrateIfNeeded(
         context: ModelContext,
         folderNamesStorage: String,

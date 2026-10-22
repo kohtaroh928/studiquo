@@ -9,10 +9,13 @@ import subprocess
 import shutil
 import sys
 import tempfile
+import time
 from swift_scan import scan as scan_swift
 
 ROOT = Path(__file__).resolve().parents[2]
 SEMGREP_TIMEOUT_SECONDS = "30"
+NPM_AUDIT_ATTEMPTS = 3
+NPM_AUDIT_RETRY_SECONDS = 15
 VERSIONS = {"semgrep": "1.179.0", "gitleaks": "8.24.3"}
 # Keep this list synchronized with the four structural rules in swift_scan.swift.
 NATIVE_SWIFT_RULES = frozenset({
@@ -27,6 +30,23 @@ def execute(args, cwd=ROOT):
     env = dict(os.environ, SEMGREP_SEND_METRICS="off", SEMGREP_ENABLE_VERSION_CHECK="0")
     env.pop("SEMGREP_APP_TOKEN", None)
     return subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True, timeout=600)
+
+
+def npm_audit(extra_args=()):
+    """Run npm audit, retrying transient registry failures (the bulk advisory endpoint times out now and then)."""
+    command = ["npm", "audit", "--package-lock-only", *extra_args, "--json", "--fetch-timeout=60000", "--fetch-retries=0"]
+    for attempt in range(NPM_AUDIT_ATTEMPTS):
+        if attempt:
+            time.sleep(NPM_AUDIT_RETRY_SECONDS * attempt)
+        result = execute(command, cwd=ROOT / "mcp-server")
+        if result.returncode in (0, 1):
+            try:
+                data = json.loads(result.stdout)
+            except ValueError:
+                continue
+            if "error" not in data and "vulnerabilities" in data:
+                return data
+    raise RuntimeError(f"npm audit failed after {NPM_AUDIT_ATTEMPTS} attempts (raw output withheld)")
 
 
 def field(value):
@@ -194,14 +214,8 @@ def main():
                         finding["path"] = finding["path"].removeprefix(str(snapshot) + "/")
                 report["findings"].extend(secrets)
             if not args.skip_audit:
-                result = execute(["npm", "audit", "--package-lock-only", "--json"], cwd=ROOT / "mcp-server")
-                if result.returncode not in (0, 1):
-                    raise RuntimeError("npm audit execution failed (raw output withheld)")
-                all_audit = json.loads(result.stdout)
-                production = execute(["npm", "audit", "--package-lock-only", "--omit=dev", "--json"], cwd=ROOT / "mcp-server")
-                if production.returncode not in (0, 1):
-                    raise RuntimeError("Production npm audit execution failed")
-                production_data = json.loads(production.stdout)
+                all_audit = npm_audit()
+                production_data = npm_audit(["--omit=dev"])
                 audit_report(production_data)
                 report["findings"].extend(audit_report(all_audit, set(production_data["vulnerabilities"])))
         unique = {json.dumps(item, sort_keys=True): item for item in report["findings"]}
