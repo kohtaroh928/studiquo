@@ -136,5 +136,28 @@ class RunnerContractTest(unittest.TestCase):
         self.assertEqual(self.simulate(enforce=True)[0], 1)
 
 
+class NpmAuditRetryTest(unittest.TestCase):
+    OK = json.dumps({'vulnerabilities': {}, 'metadata': {'dependencies': {'total': 1}}})
+
+    def run_audit(self, outputs):
+        calls = []
+        def execute(command, cwd=None):
+            calls.append(command)
+            code, text = outputs[min(len(calls), len(outputs)) - 1]
+            return subprocess.CompletedProcess(command, code, text, '')
+        with patch.object(run, 'execute', execute), patch.object(run.time, 'sleep'):
+            return run.npm_audit(), calls
+
+    def test_retries_a_transient_registry_error_then_succeeds(self):
+        error = json.dumps({'error': {'summary': 'audit endpoint returned an error'}})
+        data, calls = self.run_audit([(1, error), (1, ''), (0, self.OK)])
+        self.assertEqual(len(calls), 3)
+        self.assertIn('vulnerabilities', data)
+
+    def test_gives_up_after_the_attempt_limit_without_leaking_output(self):
+        with self.assertRaisesRegex(RuntimeError, 'npm audit failed after 3 attempts'):
+            self.run_audit([(1, 'secret-looking registry output')])
+
+
 if __name__ == '__main__':
     unittest.main()
