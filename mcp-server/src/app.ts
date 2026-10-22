@@ -398,11 +398,11 @@ const handler = {
       if (chat) return chat;
       const issueReports = await handleIssueReports(url, request, env);
       if (issueReports) return issueReports;
-      const announcementsPage = handleAnnouncementsPage(url);
+      const announcementsPage = handleAnnouncementsPage(url, env);
       if (announcementsPage) return announcementsPage;
       const announcements = await handleAnnouncements(url, request, env);
       if (announcements) return announcements;
-      const adminPage = handleAdminPage(url);
+      const adminPage = handleAdminPage(url, env);
       if (adminPage) return adminPage;
       const adminWebhook = await handleAdminWebhook(url, request, env);
       if (adminWebhook) return adminWebhook;

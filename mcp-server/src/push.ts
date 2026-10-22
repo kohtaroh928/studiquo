@@ -2,6 +2,7 @@ import { SignJWT, importPKCS8 } from "jose";
 import { loadDevices, removeDevice, type Device } from "./devices.ts";
 import { featureDisabled } from "./features.ts";
 import type { Env } from "./env.ts";
+import { tagged } from "./environment.ts";
 
 const INVALID_TOKEN_REASONS = new Set(["BadDeviceToken", "DeviceTokenNotForTopic", "Unregistered"]);
 
@@ -98,7 +99,7 @@ export async function sendPush(env: Env, userKey: string, notification: PushNoti
   const buildPayload = (quiet: boolean) => JSON.stringify({
     ...customData,
     aps: {
-      alert: { title: String(notification.title ?? ""), body: String(notification.body ?? "") },
+      alert: { title: tagged(env, String(notification.title ?? "")), body: String(notification.body ?? "") },
       ...(quiet ? { "interruption-level": "passive" } : { sound: "default" }),
       ...(notification.category ? { category: `studiquo.${notification.category}` } : {}),
       ...(notification.threadID ? { "thread-id": String(notification.threadID) } : {}),

@@ -524,6 +524,8 @@ D1・KV・Durable Objectsの何を失ってよいか、目標(RPO/RTO)、復元�
 
 使っていない名前が残っていたら消す: `GEMINI_API_KEY`(コードに参照がない。2026-10-08の更新で登録された記録がある)、`LIBRARY_ID_SECRET`(RB-16。`npx wrangler secret delete LIBRARY_ID_SECRET --env=""`)。`CSRF_SECRET`はコードに無い(`STAGING_SETUP.md`の手順が古い)。設定してあれば消し、手順の記述も直す。
 
+ステージングだけの設定(2026-10-22): `ENVIRONMENT_LABEL`(`wrangler.jsonc`の`env.staging.vars`に`staging`。Slack・プッシュ・メール・管理画面に`[STAGING]`の目印を付ける。本番では設定しない)。ステージングの`ACCESS_*`、`APNS_SANDBOX_*`、`REVENUECAT_WEBHOOK_SECRET`は、**本番とは別の値・別のAccessアプリ**で設定する。手順と確認は`STAGING_SETUP.md`の10章。ステージングは、RevenueCatの本物(`PRODUCTION`)のイベントを捨てる。
+
 このほかコードが読む設定: `RESEND_FROM_EMAIL`(メールの送信元。秘密ではないが、本番に設定されていること)、`SNAPSHOT_ENCRYPTION_REQUIRED`(スナップショットの暗号化を必須にする旗。値ではなく設定)。
 
 秘密ではないもの(ソースに出てよい): Google・AppleのサインインのクライアントID、RevenueCatの公開SDKキー、`APNS_TOPIC`、`wrangler.jsonc`のKV・D1のID。サーバーはAppleとGoogleのIDトークンを公開鍵で検証するので、その発行元の秘密鍵はサーバーに無い。
